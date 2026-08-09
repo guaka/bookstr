@@ -45,6 +45,10 @@ android {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
         }
     }
+
+    testOptions {
+        unitTests.isReturnDefaultValues = true
+    }
 }
 
 dependencies {
@@ -78,4 +82,9 @@ dependencies {
 
     implementation("fr.acinq.secp256k1:secp256k1-kmp:0.15.0")
     implementation("fr.acinq.secp256k1:secp256k1-kmp-jni-android:0.15.0")
+
+    testImplementation("junit:junit:4.13.2")
+    testImplementation("org.jetbrains.kotlin:kotlin-test-junit:2.0.21")
+    // Real org.json for JVM unit tests (Android stubs are incomplete)
+    testImplementation("org.json:json:20240303")
 }

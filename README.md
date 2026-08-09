@@ -100,7 +100,7 @@ GitHub Actions (`.github/workflows/ci.yml`) runs catalog validation, web lint/te
 Opt-in progress sync (kind `30078`, `d=app.bookstr.progress.<sha256>`). Payload is a shared JSON schema (`v`, `bookId`, `locator`, `updatedAt`); last-write-wins by `updatedAt`.
 
 - **Web:** prefers a NIP-07 browser extension (Alby, nos2x, …). Pasted `nsec` is an advanced fallback.
-- **Android:** paste `nsec` (EncryptedSharedPreferences).
+- **Android:** prefers Amber (or another NIP-55 signer) so the private key never enters the app. Pasted `nsec` is an advanced fallback (EncryptedSharedPreferences). After connecting Amber, allow “remember” for kind `30078` so progress can sync in the background without a prompt on every page turn.
 
 Use disposable keys for testing; never commit `*.nsec`.
 

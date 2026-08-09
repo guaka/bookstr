@@ -1,0 +1,14 @@
+import { defineConfig } from 'vitest/config'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
+
+const rootDir = path.dirname(fileURLToPath(import.meta.url))
+
+export default defineConfig({
+  // Keep test config separate from Vite 8 app config (avoids plugin type clashes).
+  root: rootDir,
+  test: {
+    environment: 'node',
+    include: ['src/**/*.{test,spec}.{ts,tsx}'],
+  },
+})

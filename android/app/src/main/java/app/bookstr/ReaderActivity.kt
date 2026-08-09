@@ -43,6 +43,7 @@ import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.lifecycleScope
 import androidx.webkit.WebViewAssetLoader
 import app.bookstr.data.ReaderTheme
+import app.bookstr.nostr.AmberIntentSession
 import app.bookstr.ui.theme.BookstrThemeFromSettings
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -58,6 +59,7 @@ class ReaderActivity : ComponentActivity() {
     private var bookTitle: String = ""
     private var initialCfi: String? = null
     private var readerTheme: ReaderTheme = ReaderTheme.Paper
+    private lateinit var amberSession: AmberIntentSession
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -75,6 +77,8 @@ class ReaderActivity : ComponentActivity() {
         applyLockScreenPolicy(keepOnLockScreen)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
 
+        amberSession = AmberIntentSession(this)
+
         WindowCompat.setDecorFitsSystemWindows(window, false)
         hideSystemUi()
 
@@ -90,7 +94,12 @@ class ReaderActivity : ComponentActivity() {
                         onProgress = { progression, cfi ->
                             lifecycleScope.launch {
                                 app.catalogRepository.saveProgress(bookId, progression, cfi)
-                                app.nostrRepository.publishProgress(bookId, progression, cfi)
+                                app.nostrRepository.publishProgress(
+                                    bookId = bookId,
+                                    progression = progression,
+                                    cfi = cfi,
+                                    title = bookTitle,
+                                )
                             }
                         },
                     )
@@ -117,8 +126,18 @@ class ReaderActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
+        if (::amberSession.isInitialized) {
+            amberSession.attach()
+        }
         val app = application as BookstrApp
         applyLockScreenPolicy(app.settingsRepository.keepReadingOnLockScreen)
+    }
+
+    override fun onPause() {
+        if (::amberSession.isInitialized) {
+            amberSession.detach()
+        }
+        super.onPause()
     }
 
     override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {

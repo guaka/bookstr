@@ -29,17 +29,21 @@ object NostrCrypto {
         return pub.joinToString("") { "%02x".format(it) }
     }
 
-    fun signEvent(privateKey: ByteArray, event: JSONObject): JSONObject {
-        val pubkey = publicKeyHex(privateKey)
-        event.put("pubkey", pubkey)
+    /** Sets pubkey + id on an unsigned event template (no sig). */
+    fun prepareUnsignedEvent(pubkeyHex: String, event: JSONObject): JSONObject {
+        event.put("pubkey", pubkeyHex.lowercase())
         event.remove("id")
         event.remove("sig")
-
-        val serialized = serializeForHash(event)
-        val eventId = Sha256.hash(serialized)
+        val eventId = Sha256.hash(serializeForHash(event))
         event.put("id", eventId)
+        return event
+    }
 
-        val idBytes = hexToBytes(eventId)
+    fun signEvent(privateKey: ByteArray, event: JSONObject): JSONObject {
+        val pubkey = publicKeyHex(privateKey)
+        prepareUnsignedEvent(pubkey, event)
+
+        val idBytes = hexToBytes(event.getString("id"))
         val auxRand = ByteArray(32).also { SecureRandom().nextBytes(it) }
         val sigBytes = secp.signSchnorr(idBytes, privateKey, auxRand)
         event.put("sig", bytesToHex(sigBytes))

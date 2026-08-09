@@ -15,6 +15,18 @@ enum class ReaderTheme(val key: String) {
     }
 }
 
+enum class NostrAuthMode(val key: String) {
+    None("none"),
+    Nsec("nsec"),
+    Amber("amber"),
+    ;
+
+    companion object {
+        fun fromKey(key: String?): NostrAuthMode =
+            entries.firstOrNull { it.key == key } ?: None
+    }
+}
+
 class SettingsRepository(context: Context) {
     private val plainPrefs = context.getSharedPreferences("bookstr_settings", Context.MODE_PRIVATE)
 
@@ -45,6 +57,33 @@ class SettingsRepository(context: Context) {
         get() = plainPrefs.getBoolean(KEY_KEEP_ON_LOCK, false)
         set(value) = plainPrefs.edit().putBoolean(KEY_KEEP_ON_LOCK, value).apply()
 
+    var authMode: NostrAuthMode
+        get() {
+            val stored = plainPrefs.getString(KEY_AUTH_MODE, null)
+            if (stored != null) return NostrAuthMode.fromKey(stored)
+            // Legacy: nsec alone implied local signing
+            return if (!nsec.isNullOrBlank()) NostrAuthMode.Nsec else NostrAuthMode.None
+        }
+        set(value) = plainPrefs.edit().putString(KEY_AUTH_MODE, value.key).apply()
+
+    /** Hex pubkey for the configured identity (Amber or derived from nsec). */
+    var pubkeyHex: String?
+        get() = plainPrefs.getString(KEY_PUBKEY, null)?.takeIf { it.isNotBlank() }
+        set(value) {
+            plainPrefs.edit().apply {
+                if (value.isNullOrBlank()) remove(KEY_PUBKEY) else putString(KEY_PUBKEY, value.trim().lowercase())
+            }.apply()
+        }
+
+    /** Package name of the NIP-55 signer (e.g. Amber). */
+    var signerPackage: String?
+        get() = plainPrefs.getString(KEY_SIGNER_PACKAGE, null)?.takeIf { it.isNotBlank() }
+        set(value) {
+            plainPrefs.edit().apply {
+                if (value.isNullOrBlank()) remove(KEY_SIGNER_PACKAGE) else putString(KEY_SIGNER_PACKAGE, value.trim())
+            }.apply()
+        }
+
     var nsec: String?
         get() = securePrefs.getString(KEY_NSEC, null)
         set(value) {
@@ -53,14 +92,45 @@ class SettingsRepository(context: Context) {
             }.apply()
         }
 
+    fun hasNostrIdentity(): Boolean =
+        when (authMode) {
+            NostrAuthMode.None -> false
+            NostrAuthMode.Nsec -> !nsec.isNullOrBlank()
+            NostrAuthMode.Amber -> !pubkeyHex.isNullOrBlank() && !signerPackage.isNullOrBlank()
+        }
+
+    fun connectAmber(pubkeyHex: String, signerPackage: String) {
+        this.nsec = null
+        this.pubkeyHex = pubkeyHex
+        this.signerPackage = signerPackage
+        this.authMode = NostrAuthMode.Amber
+    }
+
+    fun connectNsec(nsecValue: String, pubkeyHex: String) {
+        this.signerPackage = null
+        this.nsec = nsecValue
+        this.pubkeyHex = pubkeyHex
+        this.authMode = NostrAuthMode.Nsec
+    }
+
+    fun disconnectNostr() {
+        nsec = null
+        pubkeyHex = null
+        signerPackage = null
+        authMode = NostrAuthMode.None
+    }
+
     companion object {
-        const val DEFAULT_CATALOG_URL = "https://example.com/catalog.json"
+        const val DEFAULT_CATALOG_URL = "https://example.org/catalog.json"
         const val DEFAULT_RELAYS = "wss://relay.damus.io\nwss://nos.lol"
 
         private const val KEY_CATALOG_URL = "catalog_url"
         private const val KEY_RELAYS = "relays"
         private const val KEY_THEME = "theme"
         private const val KEY_KEEP_ON_LOCK = "keep_on_lock"
+        private const val KEY_AUTH_MODE = "auth_mode"
+        private const val KEY_PUBKEY = "pubkey_hex"
+        private const val KEY_SIGNER_PACKAGE = "signer_package"
         private const val KEY_NSEC = "nsec"
     }
 }

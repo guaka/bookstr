@@ -133,10 +133,63 @@ class NostrClient(
 
         fun progressDTag(bookId: String): String = "app.bookstr.progress.$bookId"
 
-        fun progressContent(progression: Double, cfi: String): String =
-            JSONObject()
+        fun progressContent(
+            bookId: String,
+            progression: Double,
+            cfi: String,
+            title: String? = null,
+            author: String? = null,
+            updatedAt: Long = System.currentTimeMillis(),
+        ): String {
+            val locator = JSONObject()
                 .put("progression", progression)
                 .put("cfi", cfi)
-                .toString()
+            val obj = JSONObject()
+                .put("v", 1)
+                .put("bookId", bookId)
+                .put("locator", locator)
+                .put("updatedAt", updatedAt)
+            if (!title.isNullOrBlank()) obj.put("title", title)
+            if (!author.isNullOrBlank()) obj.put("author", author)
+            return obj.toString()
+        }
+
+        /** Parse web-compatible payload; also accept legacy {progression,cfi} events. */
+        fun parseProgressContent(content: String, fallbackBookId: String): Triple<String, Double, String>? {
+            return try {
+                val json = JSONObject(content)
+                val locator = json.optJSONObject("locator")
+                when {
+                    locator != null -> {
+                        val bookId = json.optString("bookId", fallbackBookId).ifBlank { fallbackBookId }
+                        Triple(
+                            bookId,
+                            locator.optDouble("progression", 0.0),
+                            locator.optString("cfi", ""),
+                        )
+                    }
+                    json.has("progression") -> {
+                        Triple(
+                            fallbackBookId,
+                            json.optDouble("progression", 0.0),
+                            json.optString("cfi", ""),
+                        )
+                    }
+                    else -> null
+                }
+            } catch (_: Exception) {
+                null
+            }
+        }
+
+        fun parseUpdatedAt(content: String, eventCreatedAtSec: Long): Long {
+            return try {
+                val json = JSONObject(content)
+                val fromPayload = json.optLong("updatedAt", 0L)
+                if (fromPayload > 0L) fromPayload else eventCreatedAtSec * 1000
+            } catch (_: Exception) {
+                eventCreatedAtSec * 1000
+            }
+        }
     }
 }
