@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - 'web/**'
+      - 'catalog/**'
       - '.github/workflows/deploy-web.yml'
   workflow_dispatch:
 
@@ -27,7 +28,7 @@ jobs:
           node-version: 22
           cache: npm
           cache-dependency-path: web/package-lock.json
-      - name: Install and build
+      - name: Install, test, and build
         working-directory: web
         env:
           # Project site: https://guaka.github.io/bookstr/
@@ -35,6 +36,8 @@ jobs:
           BASE_PATH: /bookstr/
         run: |
           npm ci
+          npm run lint
+          npm test
           npm run build
       - uses: actions/upload-pages-artifact@v3
         with:

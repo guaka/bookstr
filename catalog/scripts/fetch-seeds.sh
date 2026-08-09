@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Optional: fetch public-domain / CC seed EPUBs into staging, then hash into books/.
-# EPUB binaries are gitignored — run this locally or on your book server.
+# Fetch public-domain / CC seed EPUBs into staging, hash into books/, sync to web/public.
+# Local catalog/books/*.epub stay gitignored; seed copies under web/public/catalog/books/ ship with Pages.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 STAGING="${ROOT}/staging"
@@ -19,4 +19,5 @@ fetch time-machine.epub "https://www.gutenberg.org/ebooks/35.epub.images"
 fetch banqueiro-anarquista.epub "https://projectoadamastor.org/download/o-banqueiro-anarquista-fernando-pessoa/?wpdmdl=1786"
 
 "${ROOT}/scripts/hash-epubs.sh"
-echo "Done. Drop additional private EPUBs into staging/ and re-run hash-epubs.sh; update catalog.json ids."
+"${ROOT}/scripts/sync-to-web.sh"
+echo "Done. Drop additional private EPUBs into staging/ and re-run hash-epubs.sh + sync-to-web.sh; update catalog.json ids."

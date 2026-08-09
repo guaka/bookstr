@@ -14,7 +14,7 @@ web/dist/
 # Editor / local agent tooling
 .cursor/
 
-# Local / private book binaries (not for public repo)
+# Local working copies + private staging (seed EPUBs for Pages live in web/public/catalog/books/)
 catalog/books/*.epub
 catalog/staging/
 !catalog/books/.gitkeep
