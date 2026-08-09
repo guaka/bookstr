@@ -5,7 +5,8 @@ set -euo pipefail
 
 ANDROID_HOME="${ANDROID_HOME:-/opt/android-sdk}"
 CMDLINE_VERSION="${CMDLINE_VERSION:-11076708}"
-JDK_PACKAGE="${JDK_PACKAGE:-openjdk-17-jdk-headless}"
+# Debian 13 ships OpenJDK 21; AGP 8.7 builds fine with JDK 21 targeting bytecode 17.
+JDK_PACKAGE="${JDK_PACKAGE:-openjdk-21-jdk-headless}"
 MARKER=/var/lib/bookstr-android-toolchain-complete
 
 export DEBIAN_FRONTEND=noninteractive
