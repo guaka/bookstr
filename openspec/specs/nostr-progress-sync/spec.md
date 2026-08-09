@@ -13,7 +13,7 @@ When a Nostr identity is configured, clients SHALL publish reading progress as k
 - **THEN** after a short debounce the client publishes a replaceable progress event
 
 ### Requirement: Secure key storage
-Android SHALL prefer an external NIP-55 signer (Amber or compatible) so the app never holds the user's nsec; pasted nsec SHALL be an explicit advanced fallback stored in EncryptedSharedPreferences. Web SHALL prefer NIP-07 when available (extension signing; private key never enters the page); pasted nsec SHALL be an explicit advanced fallback and never logged. Disconnecting SHALL leave Nostr sync disabled until the user reconnects.
+Android SHALL prefer an external NIP-55 signer (Amber or compatible) so the app never holds the user's nsec; pasted nsec SHALL be an explicit advanced fallback stored in EncryptedSharedPreferences. Web SHALL prefer NIP-07 when available, else NIP-46 remote signing via a `nostrconnect://` QR (or pasted bunker URI); pasted nsec SHALL be an explicit advanced fallback and never logged. Disconnecting SHALL leave Nostr sync disabled until the user reconnects.
 
 #### Scenario: Logout
 - **GIVEN** a Nostr identity is configured
@@ -24,6 +24,11 @@ Android SHALL prefer an external NIP-55 signer (Amber or compatible) so the app 
 - **GIVEN** a NIP-07 extension is installed
 - **WHEN** the user connects via the extension
 - **THEN** progress publish/pull uses extension signing without storing an nsec
+
+#### Scenario: NIP-46 QR on web
+- **GIVEN** the user opens remote-signer connect in Settings
+- **WHEN** the client shows a `nostrconnect://` QR code
+- **THEN** scanning with Amber (or another NIP-46 signer) establishes a bunker session and progress publish/pull uses remote signing without storing the user's nsec
 
 #### Scenario: Amber preferred on Android
 - **GIVEN** Amber (or another NIP-55 signer) is installed

@@ -3,7 +3,13 @@ import { Library } from './components/Library'
 import { Reader } from './components/Reader'
 import { Settings } from './components/Settings'
 import { fetchCatalog, getSetting, setSetting } from './lib/catalog'
-import { pullProgress, waitForNip07, connectNip07, getAuthMode } from './lib/nostr'
+import {
+  pullProgress,
+  waitForNip07,
+  connectNip07,
+  getAuthMode,
+  restoreNip46,
+} from './lib/nostr'
 import type { CatalogBook } from './types'
 import './App.css'
 
@@ -45,13 +51,16 @@ export default function App() {
     void (async () => {
       const t = await getSetting('theme', 'paper')
       setTheme(t === 'night' ? 'night' : 'paper')
-      // Rehydrate an existing NIP-07 session (do not prompt after Disconnect)
+      // Rehydrate an existing session (do not prompt after Disconnect)
       try {
-        if ((await getAuthMode()) === 'nip07' && (await waitForNip07())) {
+        const mode = await getAuthMode()
+        if (mode === 'nip07' && (await waitForNip07())) {
           await connectNip07()
+        } else if (mode === 'nip46') {
+          await restoreNip46()
         }
       } catch {
-        /* extension prompt cancelled */
+        /* extension / bunker unavailable */
       }
       await refresh()
     })()

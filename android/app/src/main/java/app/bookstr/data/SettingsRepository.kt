@@ -122,7 +122,7 @@ class SettingsRepository(context: Context) {
 
     companion object {
         const val DEFAULT_CATALOG_URL = "https://example.org/catalog.json"
-        const val DEFAULT_RELAYS = "wss://relay.damus.io\nwss://nos.lol"
+        const val DEFAULT_RELAYS = "wss://relay.nomadwiki.org"
 
         private const val KEY_CATALOG_URL = "catalog_url"
         private const val KEY_RELAYS = "relays"

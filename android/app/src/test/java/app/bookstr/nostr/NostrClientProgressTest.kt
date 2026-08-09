@@ -52,4 +52,16 @@ class NostrClientProgressTest {
         assertNull(NostrClient.parseProgressContent("""{"hello":"world"}""", bookId))
         assertNull(NostrClient.parseProgressContent("{}", bookId))
     }
+
+    @Test
+    fun parseUpdatedAtFallsBackToEventTime() {
+        val withUpdated = NostrClient.progressContent(
+            bookId = bookId,
+            progression = 0.1,
+            cfi = "",
+            updatedAt = 42L,
+        )
+        assertEquals(42L, NostrClient.parseUpdatedAt(withUpdated, 99L))
+        assertEquals(99_000L, NostrClient.parseUpdatedAt("""{"progression":0.1}""", 99L))
+    }
 }

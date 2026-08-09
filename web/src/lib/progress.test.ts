@@ -84,4 +84,24 @@ describe('normalizeProgress', () => {
   it('rejects garbage', () => {
     expect(normalizeProgress({ hello: 'world' }, bookId, 1)).toBeNull()
   })
+
+  it('rejects non-finite locator progression', () => {
+    expect(
+      normalizeProgress({ locator: { progression: Number.NaN } }, bookId, 1),
+    ).toBeNull()
+  })
+
+  it('keeps author when present', () => {
+    const remote = normalizeProgress(
+      {
+        bookId,
+        author: 'Wells',
+        locator: { progression: 0 },
+        updatedAt: 9,
+      },
+      'fallback',
+      1,
+    )
+    expect(remote?.author).toBe('Wells')
+  })
 })

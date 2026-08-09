@@ -31,6 +31,21 @@ function db() {
   return dbPromise
 }
 
+/** Test-only: close and drop IndexedDB so suites start clean. */
+export async function resetCatalogDbForTests(): Promise<void> {
+  if (dbPromise) {
+    const database = await dbPromise
+    database.close()
+    dbPromise = null
+  }
+  await new Promise<void>((resolve, reject) => {
+    const req = indexedDB.deleteDatabase('bookstr')
+    req.onsuccess = () => resolve()
+    req.onerror = () => reject(req.error ?? new Error('deleteDatabase failed'))
+    req.onblocked = () => resolve()
+  })
+}
+
 export async function getSetting(key: string, fallback = ''): Promise<string> {
   const value = await (await db()).get('settings', key)
   return value ?? fallback

@@ -57,11 +57,14 @@ cd catalog
 ```bash
 cd web
 npm ci
-npm test          # Vitest unit tests
+npm test          # Vitest unit + component tests
+npm run test:e2e  # Playwright (builds + previews the app)
 npm run lint
 npm run build
 npm run dev       # catalog default: /catalog/catalog.json
 ```
+
+First e2e run installs the Chromium browser via Playwright (`npx playwright install chromium`).
 
 ### GitHub Pages
 
@@ -80,6 +83,7 @@ The web app deploys from `.github/workflows/deploy-web.yml` on pushes to `main` 
 sudo ./scripts/bootstrap-android-toolchain.sh
 cd android
 ./gradlew testDebugUnitTest
+./gradlew connectedDebugAndroidTest   # Compose UI tests (device/emulator)
 ./gradlew assembleDebug
 ```
 
@@ -93,13 +97,13 @@ cd android
 
 ## CI
 
-GitHub Actions (`.github/workflows/ci.yml`) runs catalog validation, web lint/test/build, and Android unit tests + `assembleDebug` on every push/PR to `main`.
+GitHub Actions (`.github/workflows/ci.yml`) runs catalog validation, web lint/unit/e2e/build, Android unit tests + `assembleDebug`, and Compose UI tests on an emulator.
 
 ## Nostr
 
 Opt-in progress sync (kind `30078`, `d=app.bookstr.progress.<sha256>`). Payload is a shared JSON schema (`v`, `bookId`, `locator`, `updatedAt`); last-write-wins by `updatedAt`.
 
-- **Web:** prefers a NIP-07 browser extension (Alby, nos2x, …). Pasted `nsec` is an advanced fallback.
+- **Web:** prefers a NIP-07 browser extension (Alby, nos2x, …), or **NIP-46** via Amber QR (`nostrconnect://`) / pasted `bunker://`. Pasted `nsec` is an advanced fallback.
 - **Android:** prefers Amber (or another NIP-55 signer) so the private key never enters the app. Pasted `nsec` is an advanced fallback (EncryptedSharedPreferences). After connecting Amber, allow “remember” for kind `30078` so progress can sync in the background without a prompt on every page turn.
 
 Use disposable keys for testing; never commit `*.nsec`.
