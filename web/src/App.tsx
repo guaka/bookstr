@@ -9,7 +9,7 @@ import './App.css'
 
 type Screen = 'library' | 'settings' | 'reader'
 
-const DEFAULT_CATALOG = '/catalog/catalog.json'
+const DEFAULT_CATALOG = `${import.meta.env.BASE_URL}catalog/catalog.json`
 
 export default function App() {
   const [screen, setScreen] = useState<Screen>('library')

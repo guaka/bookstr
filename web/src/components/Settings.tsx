@@ -24,7 +24,12 @@ export function Settings({ onBack, theme, onTheme }: Props) {
 
   useEffect(() => {
     void (async () => {
-      setCatalogUrl(await getSetting('catalogUrl', `${window.location.origin}/catalog/catalog.json`))
+      setCatalogUrl(
+        await getSetting(
+          'catalogUrl',
+          new URL(`${import.meta.env.BASE_URL}catalog/catalog.json`, window.location.origin).toString(),
+        ),
+      )
       setNsecField(await getNsec())
       setNpub(await getNpub())
       setRelaysField((await getRelays()).join('\n'))

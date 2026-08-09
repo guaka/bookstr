@@ -55,6 +55,16 @@ npm run dev      # catalog default: /catalog/catalog.json
 npm run build
 ```
 
+### GitHub Pages
+
+The web app deploys from `.github/workflows/deploy-web.yml` on pushes to `main` that touch `web/` (or via **Actions → Deploy web to GitHub Pages → Run workflow**).
+
+1. Repo **Settings → Pages → Build and deployment → Source: GitHub Actions**
+2. After the first green run: **https://guaka.github.io/bookstr/**
+3. Point Settings → catalog URL at a real HTTPS catalog (EPUB binaries are not in git). The bundled `public/catalog/catalog.json` is metadata-only unless you host books elsewhere.
+
+**Custom domain later (`bookstr.guaka.org`):** add a DNS CNAME to `guaka.github.io`, set the domain under Pages, change the workflow `BASE_PATH` to `/`, and optionally commit `web/public/CNAME` with `bookstr.guaka.org`.
+
 ## Android
 
 ```bash
