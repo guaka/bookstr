@@ -123,7 +123,7 @@ export function Reader({ book, catalogUrl, onClose, theme }: Props) {
       renditionRef.current?.destroy()
       bookRef.current?.destroy()
     }
-  }, [book, catalogUrl])
+  }, [book, catalogUrl, theme])
 
   useEffect(() => {
     renditionRef.current?.themes.select(theme === 'night' ? 'night' : 'paper')

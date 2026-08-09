@@ -16,12 +16,15 @@ import androidx.activity.compose.setContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
@@ -32,6 +35,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
@@ -49,6 +53,7 @@ import android.util.Base64
 class ReaderActivity : ComponentActivity() {
     private var webView: WebView? = null
     private var chromeVisible by mutableStateOf(false)
+    private var keepOnLockScreen by mutableStateOf(false)
     private var bookId: String = ""
     private var bookTitle: String = ""
     private var initialCfi: String? = null
@@ -66,7 +71,8 @@ class ReaderActivity : ComponentActivity() {
         readerTheme = ReaderTheme.fromKey(intent.getStringExtra(EXTRA_THEME))
 
         val app = application as BookstrApp
-        applyLockScreenPolicy(app.settingsRepository.keepReadingOnLockScreen)
+        keepOnLockScreen = app.settingsRepository.keepReadingOnLockScreen
+        applyLockScreenPolicy(keepOnLockScreen)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
 
         WindowCompat.setDecorFitsSystemWindows(window, false)
@@ -95,6 +101,12 @@ class ReaderActivity : ComponentActivity() {
                     ) {
                         ReaderChrome(
                             title = bookTitle,
+                            keepOnLockScreen = keepOnLockScreen,
+                            onKeepOnLockScreenChange = { enabled ->
+                                keepOnLockScreen = enabled
+                                app.settingsRepository.keepReadingOnLockScreen = enabled
+                                applyLockScreenPolicy(enabled)
+                            },
                             onBack = { finish() },
                         )
                     }
@@ -179,6 +191,8 @@ class ReaderActivity : ComponentActivity() {
 @Composable
 private fun ReaderChrome(
     title: String,
+    keepOnLockScreen: Boolean,
+    onKeepOnLockScreenChange: (Boolean) -> Unit,
     onBack: () -> Unit,
 ) {
     TopAppBar(
@@ -186,6 +200,18 @@ private fun ReaderChrome(
         navigationIcon = {
             IconButton(onClick = onBack) {
                 Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+            }
+        },
+        actions = {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.padding(end = 8.dp),
+            ) {
+                Text("Lock", color = Color.White)
+                Switch(
+                    checked = keepOnLockScreen,
+                    onCheckedChange = onKeepOnLockScreenChange,
+                )
             }
         },
         modifier = Modifier.background(Color.Black.copy(alpha = 0.55f)),
