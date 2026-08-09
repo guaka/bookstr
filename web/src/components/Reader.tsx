@@ -99,7 +99,8 @@ export function Reader({ book, catalogUrl, onClose, theme }: Props) {
           void persist()
         })
 
-        rendition.on('click', (e: MouseEvent) => {
+        rendition.on('click', (...args: unknown[]) => {
+          const e = args[0] as MouseEvent
           const w = hostRef.current?.clientWidth ?? 1
           const x = e.clientX
           if (x < w * 0.28) void rendition.prev()

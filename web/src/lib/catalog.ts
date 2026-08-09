@@ -1,5 +1,5 @@
 import { openDB, type DBSchema, type IDBPDatabase } from 'idb'
-import type { Catalog, CatalogBook, ReadingProgress } from './types'
+import type { Catalog, CatalogBook, ReadingProgress } from '../types'
 
 interface BookstrDB extends DBSchema {
   epubs: {
