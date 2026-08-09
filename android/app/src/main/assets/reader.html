@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>bookstr reader</title>
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: #f4ecd8;
+      color: #2c2416;
+      touch-action: manipulation;
+    }
+    body.night {
+      background: #1a1814;
+      color: #d4cfc4;
+    }
+    #viewer {
+      width: 100vw;
+      height: 100vh;
+    }
+    .epub-container {
+      background: transparent !important;
+    }
+  </style>
+  <script src="epub.min.js"></script>
+</head>
+<body>
+  <div id="viewer"></div>
+  <script>
+    let book = null;
+    let rendition = null;
+
+    function base64ToArrayBuffer(base64) {
+      const binary = atob(base64);
+      const len = binary.length;
+      const bytes = new Uint8Array(len);
+      for (let i = 0; i < len; i++) {
+        bytes[i] = binary.charCodeAt(i);
+      }
+      return bytes.buffer;
+    }
+
+    function applyTheme(theme) {
+      document.body.className = theme === "night" ? "night" : "";
+      if (rendition) {
+        if (theme === "night") {
+          rendition.themes.override("body", { color: "#d4cfc4 !important", background: "#1a1814 !important" });
+        } else {
+          rendition.themes.override("body", { color: "#2c2416 !important", background: "#f4ecd8 !important" });
+        }
+      }
+    }
+
+    window.loadBook = function(base64, cfi, theme) {
+      applyTheme(theme || "paper");
+      book = ePub(base64ToArrayBuffer(base64));
+      return book.ready.then(function() {
+        rendition = book.renderTo("viewer", {
+          width: "100%",
+          height: "100%",
+          spread: "none",
+          flow: "paginated"
+        });
+        rendition.themes.default({
+          body: {
+            "font-family": "Georgia, 'Times New Roman', serif !important",
+            "line-height": "1.6 !important"
+          }
+        });
+        applyTheme(theme || "paper");
+        return rendition.display(cfi || undefined);
+      }).then(function() {
+        rendition.on("relocated", function(location) {
+          if (window.AndroidBridge) {
+            AndroidBridge.onRelocated(JSON.stringify({
+              cfi: location.start.cfi,
+              progression: location.start.percentage || 0
+            }));
+          }
+        });
+      });
+    };
+
+    window.nextPage = function() {
+      if (rendition) rendition.next();
+    };
+
+    window.prevPage = function() {
+      if (rendition) rendition.prev();
+    };
+
+    window.setReaderTheme = function(theme) {
+      applyTheme(theme);
+    };
+
+    document.getElementById("viewer").addEventListener("click", function(e) {
+      const rect = document.body.getBoundingClientRect();
+      const cx = rect.width / 2;
+      const cy = rect.height / 2;
+      const dx = Math.abs(e.clientX - cx);
+      const dy = Math.abs(e.clientY - cy);
+      if (dx < rect.width * 0.12 && dy < rect.height * 0.12) {
+        if (window.AndroidBridge) {
+          AndroidBridge.onToggleChrome();
+        }
+      }
+    });
+  </script>
+</body>
+</html>

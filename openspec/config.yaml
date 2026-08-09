@@ -1,0 +1,8 @@
+schema: spec-driven
+
+context: |
+  Product: bookstr (applicationId app.bookstr)
+  Monorepo: android/ (Kotlin Compose + Readium), web/ (Vite React TS + epub.js), catalog/ (static HTTPS seed)
+  Book identity: lowercase hex SHA-256 of entire EPUB file bytes
+  Sync: Nostr NIP-78 kind 30078, d=app.bookstr.progress.<sha256>
+  Reader UX: distraction-free, chrome hidden by default, FBReader-like minimal

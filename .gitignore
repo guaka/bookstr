@@ -1,0 +1,25 @@
+# Dependencies
+node_modules/
+web/node_modules/
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+*.iml
+.idea/
+.DS_Store
+dist/
+web/dist/
+
+# Editor / local agent tooling
+.cursor/
+
+# Local / private book binaries (not for public repo)
+catalog/books/*.epub
+catalog/staging/
+!catalog/books/.gitkeep
+
+# Secrets
+.env
+.env.*
+*.nsec
