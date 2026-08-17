@@ -71,10 +71,10 @@ First e2e run installs the Chromium browser via Playwright (`npx playwright inst
 The web app deploys from `.github/workflows/deploy-web.yml` on pushes to `main` that touch `web/` (or via **Actions → Deploy web to GitHub Pages → Run workflow**).
 
 1. Repo **Settings → Pages → Build and deployment → Source: GitHub Actions**
-2. After the first green run: **https://books.guaka.org/**
+2. After the first green run: **https://guaka.github.io/bookstr/**
 3. Default catalog is the bundled seed set at `…/catalog/catalog.json` with EPUBs under `…/catalog/books/<sha256>.epub` (synced from `catalog/` into `web/public/catalog/`). Point Settings at another HTTPS catalog if you host your own books.
 
-The custom domain is preserved by `web/public/CNAME`; the Pages workflow builds with `BASE_PATH=/` for the domain root.
+**Custom domain later (`books.guaka.org`):** point DNS at GitHub Pages, set the domain under Pages, change the workflow `BASE_PATH` to `/`, and commit `web/public/CNAME` with `books.guaka.org`.
 
 ## Android
 
