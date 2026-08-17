@@ -51,6 +51,17 @@ test.describe('bookstr web', () => {
         await page.getByRole('button', { name: 'Increase font size' }).click()
         await expect(page.getByText('110%')).toBeVisible()
         await expect.poll(() => page.evaluate(() => localStorage.getItem('bookstr.fontSize'))).toBe('110')
+        const iframe = page.locator('.reader-surface iframe').first()
+        await expect(iframe).toBeVisible()
+        const margins = await iframe.evaluate((element) => {
+          const frame = element as HTMLIFrameElement
+          const body = frame.contentDocument?.body
+          if (!body) return null
+          const rect = body.getBoundingClientRect()
+          return { left: rect.left, right: frame.clientWidth - rect.right }
+        })
+        expect(margins).not.toBeNull()
+        expect(Math.abs((margins?.left ?? 0) - (margins?.right ?? 0))).toBeLessThan(2)
       } else {
         await expect(page.getByText('110%')).toBeVisible()
       }
@@ -69,6 +80,16 @@ test.describe('bookstr web', () => {
       await expect
         .poll(() => scroller.evaluate((element) => element.scrollTop))
         .toBeGreaterThan(0)
+      const afterSpace = await scroller.evaluate((element) => element.scrollTop)
+      await page.keyboard.press('ArrowUp')
+      await expect
+        .poll(() => scroller.evaluate((element) => element.scrollTop))
+        .toBeLessThan(afterSpace)
+      const afterUp = await scroller.evaluate((element) => element.scrollTop)
+      await page.keyboard.press('ArrowDown')
+      await expect
+        .poll(() => scroller.evaluate((element) => element.scrollTop))
+        .toBeGreaterThan(afterUp)
 
       const home = page.getByRole('button', { name: 'Back to library' })
       await expect(home).toBeVisible()

@@ -91,10 +91,17 @@ export function Reader({ book, catalogUrl, onClose, theme }: Props) {
       changeFontSize(-FONT_SIZE_STEP)
       return
     }
-    if (event.key === ' ' || event.key === 'PageDown' || event.key === 'PageUp') {
+    if (
+      event.key === ' ' ||
+      event.key === 'PageDown' ||
+      event.key === 'PageUp' ||
+      event.key === 'ArrowDown' ||
+      event.key === 'ArrowUp'
+    ) {
       event.preventDefault()
       const scroller = hostRef.current?.querySelector<HTMLElement>('.epub-container')
-      const backwards = event.key === 'PageUp' || (event.key === ' ' && event.shiftKey)
+      const backwards =
+        event.key === 'PageUp' || event.key === 'ArrowUp' || (event.key === ' ' && event.shiftKey)
       scroller?.scrollBy({
         top: (backwards ? -1 : 1) * scroller.clientHeight * 0.9,
         behavior: 'smooth',
@@ -126,7 +133,10 @@ export function Reader({ book, catalogUrl, onClose, theme }: Props) {
             color: '#1a1714',
             'font-family': 'Georgia, "Literata", serif',
             'line-height': '1.55',
-            margin: '0 !important',
+            width: 'min(46rem, calc(100% - 2rem)) !important',
+            'max-width': '46rem !important',
+            'box-sizing': 'border-box',
+            margin: '0 auto !important',
             padding: '0.4em 0.6em !important',
           },
           a: { color: '#1a1714' },
@@ -137,7 +147,10 @@ export function Reader({ book, catalogUrl, onClose, theme }: Props) {
             color: '#e8e4dc',
             'font-family': 'Georgia, "Literata", serif',
             'line-height': '1.55',
-            margin: '0 !important',
+            width: 'min(46rem, calc(100% - 2rem)) !important',
+            'max-width': '46rem !important',
+            'box-sizing': 'border-box',
+            margin: '0 auto !important',
             padding: '0.4em 0.6em !important',
           },
           a: { color: '#e8e4dc' },
