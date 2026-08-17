@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url'
 
 const rootDir = path.dirname(fileURLToPath(import.meta.url))
 
-// Project Pages: BASE_PATH=/bookstr/  ·  custom domain (bookstr.guaka.org): BASE_PATH=/
+// Project Pages: BASE_PATH=/bookstr/ · custom domain (books.guaka.org): BASE_PATH=/
 const base = process.env.BASE_PATH || '/'
 
 export default defineConfig({

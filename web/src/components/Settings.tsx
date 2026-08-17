@@ -17,6 +17,8 @@ import {
   type Nip46QrSession,
 } from '../lib/nostr'
 import { getSetting, setSetting } from '../lib/catalog'
+import { Footer } from './Footer'
+import { BackIcon } from './Icons'
 
 type Props = {
   onBack: () => void
@@ -77,7 +79,7 @@ export function Settings({ onBack, theme, onTheme }: Props) {
       const auth = await getAuthMode()
       const storedNsec = await getNsec()
 
-      if (available && auth === 'nip07') {
+      if (available) {
         try {
           const connected = await connectNip07()
           setMode(connected.mode)
@@ -158,8 +160,8 @@ export function Settings({ onBack, theme, onTheme }: Props) {
     <div className="settings">
       <header className="library-header">
         <h1>Settings</h1>
-        <button type="button" onClick={onBack}>
-          Back
+        <button className="icon-button" type="button" onClick={onBack} aria-label="Back to library">
+          <BackIcon />
         </button>
       </header>
 
@@ -413,6 +415,7 @@ export function Settings({ onBack, theme, onTheme }: Props) {
       </button>
 
       {status && <p className="status">{status}</p>}
+      <Footer />
     </div>
   )
 }

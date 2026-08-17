@@ -28,12 +28,13 @@ jobs:
           node-version: 22
           cache: npm
           cache-dependency-path: web/package-lock.json
+      - name: Record build time
+        run: echo "VITE_BUILD_TIME=$(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> "$GITHUB_ENV"
       - name: Install, test, and build
         working-directory: web
         env:
-          # Project site: https://guaka.github.io/bookstr/
-          # For bookstr.guaka.org later, set BASE_PATH=/ and add a CNAME (see README).
-          BASE_PATH: /bookstr/
+          # Custom-domain Pages site: https://books.guaka.org/
+          BASE_PATH: /
         run: |
           npm ci
           npm run lint

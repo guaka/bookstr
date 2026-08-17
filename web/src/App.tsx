@@ -5,10 +5,7 @@ import { Settings } from './components/Settings'
 import { fetchCatalog, getSetting, setSetting } from './lib/catalog'
 import {
   pullProgress,
-  waitForNip07,
-  connectNip07,
-  getAuthMode,
-  restoreNip46,
+  restorePreferredIdentity,
 } from './lib/nostr'
 import type { CatalogBook } from './types'
 import './App.css'
@@ -38,7 +35,7 @@ function navigate(path: string) {
 export default function App() {
   const [route, setRoute] = useState<Route>(routeFromHash)
   const [books, setBooks] = useState<CatalogBook[]>([])
-  const [loading, setLoading] = useState(false)
+  const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [catalogUrl, setCatalogUrl] = useState(DEFAULT_CATALOG)
   const [theme, setTheme] = useState<'paper' | 'night'>('paper')
@@ -55,11 +52,6 @@ export default function App() {
       setCatalogUrl(url)
       const catalog = await fetchCatalog(url)
       setBooks(catalog.books)
-      try {
-        await pullProgress()
-      } catch {
-        /* offline / no nsec */
-      }
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
       setBooks([])
@@ -85,18 +77,16 @@ export default function App() {
     void (async () => {
       const t = await getSetting('theme', 'paper')
       setTheme(t === 'night' ? 'night' : 'paper')
-      // Rehydrate an existing session (do not prompt after Disconnect)
+      // Match LibVault: start NIP-07 detection in the background so catalog
+      // rendering never waits for an extension to inject or answer.
+      const identity = restorePreferredIdentity()
       try {
-        const mode = await getAuthMode()
-        if (mode === 'nip07' && (await waitForNip07())) {
-          await connectNip07()
-        } else if (mode === 'nip46') {
-          await restoreNip46()
-        }
+        await refresh()
+        await identity
+        await pullProgress()
       } catch {
-        /* extension / bunker unavailable */
+        /* catalog error is rendered; signer/relay failures remain offline-first */
       }
-      await refresh()
     })()
   }, [refresh])
 
@@ -135,7 +125,6 @@ export default function App() {
       books={books}
       loading={loading}
       error={error}
-      onRefresh={() => void refresh()}
       onSettings={() => navigate('/settings')}
       onOpen={(book) => {
         navigate(`/read/${encodeURIComponent(book.id)}`)

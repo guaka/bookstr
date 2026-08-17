@@ -17,7 +17,6 @@ describe('Library', () => {
   it('renders books and wires actions', () => {
     const onOpen = vi.fn()
     const onSettings = vi.fn()
-    const onRefresh = vi.fn()
 
     render(
       <Library
@@ -26,19 +25,21 @@ describe('Library', () => {
         error={null}
         onOpen={onOpen}
         onSettings={onSettings}
-        onRefresh={onRefresh}
       />,
     )
 
     expect(screen.getByRole('heading', { name: 'bookstr' })).toBeTruthy()
     expect(screen.getByText('Little Brother')).toBeTruthy()
     expect(screen.getByText('Cory Doctorow')).toBeTruthy()
+    expect(screen.getByRole('link', { name: 'Bookstr on GitHub' }).getAttribute('href')).toBe(
+      'https://github.com/guaka/bookstr',
+    )
+    expect(screen.getByText('Development build')).toBeTruthy()
 
     fireEvent.click(screen.getByRole('button', { name: 'Settings' }))
     expect(onSettings).toHaveBeenCalledTimes(1)
 
-    fireEvent.click(screen.getByRole('button', { name: 'Refresh' }))
-    expect(onRefresh).toHaveBeenCalledTimes(1)
+    expect(screen.queryByRole('button', { name: 'Refresh' })).toBeNull()
 
     fireEvent.click(screen.getByRole('button', { name: /Little Brother/ }))
     expect(onOpen).toHaveBeenCalledWith(books[0])
@@ -52,7 +53,6 @@ describe('Library', () => {
         error={null}
         onOpen={vi.fn()}
         onSettings={vi.fn()}
-        onRefresh={vi.fn()}
       />,
     )
     expect(screen.getByText(/Loading catalog/)).toBeTruthy()
@@ -64,7 +64,6 @@ describe('Library', () => {
         error={null}
         onOpen={vi.fn()}
         onSettings={vi.fn()}
-        onRefresh={vi.fn()}
       />,
     )
     expect(screen.getByText(/No books/)).toBeTruthy()
@@ -76,7 +75,6 @@ describe('Library', () => {
         error="boom"
         onOpen={vi.fn()}
         onSettings={vi.fn()}
-        onRefresh={vi.fn()}
       />,
     )
     expect(screen.getByText('boom')).toBeTruthy()

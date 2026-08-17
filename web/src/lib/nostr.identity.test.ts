@@ -7,6 +7,7 @@ import {
   getAuthMode,
   getRelays,
   hasNip07,
+  restorePreferredIdentity,
   setNsec,
   setRelays,
   waitForNip07,
@@ -59,6 +60,19 @@ describe('nostr identity helpers', () => {
     }
     expect(hasNip07()).toBe(true)
     expect(await waitForNip07(50)).toBe(true)
+  })
+
+  it('automatically prefers an available NIP-07 signer', async () => {
+    const extensionKey = getPublicKey(generateSecretKey())
+    window.nostr = {
+      getPublicKey: vi.fn(async () => extensionKey),
+      signEvent: async (event) => ({ ...event, id: '1', pubkey: extensionKey, sig: 's' }),
+    }
+
+    const identity = await restorePreferredIdentity()
+    expect(identity?.mode).toBe('nip07')
+    expect(identity?.npub).toBe(nip19.npubEncode(extensionKey))
+    expect(await getAuthMode()).toBe('nip07')
   })
 
   it('reads authMode from settings', async () => {

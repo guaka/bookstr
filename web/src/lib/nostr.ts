@@ -304,6 +304,22 @@ export async function restoreNip46(): Promise<{ npub: string; mode: AuthMode } |
   return { npub, mode: 'nip46' }
 }
 
+/** Prefer an injected browser signer, then restore the previously selected remote signer. */
+export async function restorePreferredIdentity(): Promise<{
+  npub: string
+  mode: AuthMode
+} | null> {
+  const mode = await getAuthMode()
+  if (await waitForNip07()) {
+    try {
+      return await connectNip07()
+    } catch {
+      // If the extension declines or is unavailable, preserve the configured fallback.
+    }
+  }
+  return mode === 'nip46' ? restoreNip46() : null
+}
+
 export async function setNsec(nsec: string): Promise<string> {
   const trimmed = nsec.trim()
   if (!trimmed) {

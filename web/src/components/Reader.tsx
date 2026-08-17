@@ -1,8 +1,9 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import ePub, { type Book, type Rendition } from 'epubjs'
 import type { CatalogBook } from '../types'
 import { downloadAndVerify, getProgress, saveProgress } from '../lib/catalog'
 import { publishProgress } from '../lib/nostr'
+import { BackIcon, HomeIcon, NextIcon } from './Icons'
 
 type Props = {
   book: CatalogBook
@@ -15,11 +16,40 @@ export function Reader({ book, catalogUrl, onClose, theme }: Props) {
   const hostRef = useRef<HTMLDivElement>(null)
   const renditionRef = useRef<Rendition | null>(null)
   const bookRef = useRef<Book | null>(null)
-  const [chrome, setChrome] = useState(false)
+  const onCloseRef = useRef(onClose)
   const [pct, setPct] = useState(0)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const saveTimer = useRef<number | null>(null)
+  onCloseRef.current = onClose
+
+  const handleKey = useCallback((event: KeyboardEvent) => {
+    const rendition = renditionRef.current
+    if (event.key === 'Escape') {
+      event.preventDefault()
+      onCloseRef.current()
+      return
+    }
+    if (event.key === 'ArrowLeft') {
+      event.preventDefault()
+      void rendition?.prev()
+      return
+    }
+    if (event.key === 'ArrowRight') {
+      event.preventDefault()
+      void rendition?.next()
+      return
+    }
+    if (event.key === ' ' || event.key === 'PageDown' || event.key === 'PageUp') {
+      event.preventDefault()
+      const scroller = hostRef.current?.querySelector<HTMLElement>('.epub-container')
+      const backwards = event.key === 'PageUp' || (event.key === ' ' && event.shiftKey)
+      scroller?.scrollBy({
+        top: (backwards ? -1 : 1) * scroller.clientHeight * 0.9,
+        behavior: 'smooth',
+      })
+    }
+  }, [])
 
   useEffect(() => {
     let cancelled = false
@@ -33,7 +63,8 @@ export function Reader({ book, catalogUrl, onClose, theme }: Props) {
         const rendition = epub.renderTo(hostRef.current, {
           width: '100%',
           height: '100%',
-          flow: 'paginated',
+          manager: 'continuous',
+          flow: 'scrolled-doc',
           allowScriptedContent: true,
         })
         renditionRef.current = rendition
@@ -104,7 +135,9 @@ export function Reader({ book, catalogUrl, onClose, theme }: Props) {
           const x = e.clientX
           if (x < w * 0.28) void rendition.prev()
           else if (x > w * 0.72) void rendition.next()
-          else setChrome((c) => !c)
+        })
+        rendition.on('keydown', (...args: unknown[]) => {
+          handleKey(args[0] as KeyboardEvent)
         })
 
         setLoading(false)
@@ -122,21 +155,28 @@ export function Reader({ book, catalogUrl, onClose, theme }: Props) {
       renditionRef.current?.destroy()
       bookRef.current?.destroy()
     }
-  }, [book, catalogUrl, theme])
+  }, [book, catalogUrl, handleKey, theme])
 
   useEffect(() => {
     renditionRef.current?.themes.select(theme === 'night' ? 'night' : 'paper')
   }, [theme])
 
   useEffect(() => {
-    if (!chrome) return
-    const t = window.setTimeout(() => setChrome(false), 3500)
-    return () => window.clearTimeout(t)
-  }, [chrome])
+    window.addEventListener('keydown', handleKey)
+    return () => window.removeEventListener('keydown', handleKey)
+  }, [handleKey])
 
   return (
     <div className={`reader theme-${theme}`}>
       <div ref={hostRef} className="reader-surface" />
+      <button
+        type="button"
+        className="icon-button reader-home"
+        onClick={onClose}
+        aria-label="Back to library"
+      >
+        <HomeIcon />
+      </button>
       {loading && <div className="reader-status">Opening…</div>}
       {error && (
         <div className="reader-status error">
@@ -146,21 +186,28 @@ export function Reader({ book, catalogUrl, onClose, theme }: Props) {
           </button>
         </div>
       )}
-      {chrome && !error && (
+      {!error && (
         <div className="reader-chrome">
-          <button type="button" onClick={onClose}>
-            ← Library
-          </button>
           <div className="reader-meta">
             <strong>{book.title}</strong>
             <span>{pct}%</span>
           </div>
           <div className="reader-actions">
-            <button type="button" onClick={() => void renditionRef.current?.prev()}>
-              Prev
+            <button
+              className="icon-button"
+              type="button"
+              onClick={() => void renditionRef.current?.prev()}
+              aria-label="Previous section"
+            >
+              <BackIcon />
             </button>
-            <button type="button" onClick={() => void renditionRef.current?.next()}>
-              Next
+            <button
+              className="icon-button"
+              type="button"
+              onClick={() => void renditionRef.current?.next()}
+              aria-label="Next section"
+            >
+              <NextIcon />
             </button>
           </div>
         </div>
