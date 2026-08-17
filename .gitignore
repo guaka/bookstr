@@ -10,6 +10,8 @@ android/local.properties
 .DS_Store
 dist/
 web/dist/
+web/playwright-report/
+web/test-results/
 
 # Editor / local agent tooling
 .cursor/

@@ -24,5 +24,5 @@ declare module 'epubjs' {
     destroy(): void
   }
 
-  export default function ePub(url: string): Book
+  export default function ePub(input: string | ArrayBuffer): Book
 }

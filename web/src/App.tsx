@@ -14,17 +14,38 @@ import type { CatalogBook } from './types'
 import './App.css'
 
 type Screen = 'library' | 'settings' | 'reader'
+type Route = { screen: Screen; bookId?: string }
 
 const DEFAULT_CATALOG = `${import.meta.env.BASE_URL}catalog/catalog.json`
 
+function routeFromHash(): Route {
+  const path = window.location.hash.slice(1) || '/'
+  if (path === '/settings') return { screen: 'settings' }
+  if (path.startsWith('/read/')) {
+    try {
+      return { screen: 'reader', bookId: decodeURIComponent(path.slice('/read/'.length)) }
+    } catch {
+      return { screen: 'library' }
+    }
+  }
+  return { screen: 'library' }
+}
+
+function navigate(path: string) {
+  window.location.hash = path
+}
+
 export default function App() {
-  const [screen, setScreen] = useState<Screen>('library')
+  const [route, setRoute] = useState<Route>(routeFromHash)
   const [books, setBooks] = useState<CatalogBook[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [catalogUrl, setCatalogUrl] = useState(DEFAULT_CATALOG)
-  const [active, setActive] = useState<CatalogBook | null>(null)
   const [theme, setTheme] = useState<'paper' | 'night'>('paper')
+
+  const active = route.bookId
+    ? books.find((book) => book.id === route.bookId) ?? null
+    : null
 
   const refresh = useCallback(async () => {
     setLoading(true)
@@ -48,6 +69,19 @@ export default function App() {
   }, [])
 
   useEffect(() => {
+    if (!window.location.hash) {
+      window.history.replaceState(
+        null,
+        '',
+        `${window.location.pathname}${window.location.search}#/`,
+      )
+    }
+    const onHashChange = () => setRoute(routeFromHash())
+    window.addEventListener('hashchange', onHashChange)
+    return () => window.removeEventListener('hashchange', onHashChange)
+  }, [])
+
+  useEffect(() => {
     void (async () => {
       const t = await getSetting('theme', 'paper')
       setTheme(t === 'night' ? 'night' : 'paper')
@@ -66,22 +100,21 @@ export default function App() {
     })()
   }, [refresh])
 
-  if (screen === 'reader' && active) {
+  if (route.screen === 'reader' && active) {
     return (
       <Reader
         book={active}
         catalogUrl={catalogUrl}
         theme={theme}
         onClose={() => {
-          setActive(null)
-          setScreen('library')
+          navigate('/')
           void refresh()
         }}
       />
     )
   }
 
-  if (screen === 'settings') {
+  if (route.screen === 'settings') {
     return (
       <Settings
         theme={theme}
@@ -90,7 +123,7 @@ export default function App() {
           void setSetting('theme', t)
         }}
         onBack={() => {
-          setScreen('library')
+          navigate('/')
           void refresh()
         }}
       />
@@ -103,10 +136,9 @@ export default function App() {
       loading={loading}
       error={error}
       onRefresh={() => void refresh()}
-      onSettings={() => setScreen('settings')}
+      onSettings={() => navigate('/settings')}
       onOpen={(book) => {
-        setActive(book)
-        setScreen('reader')
+        navigate(`/read/${encodeURIComponent(book.id)}`)
       }}
     />
   )

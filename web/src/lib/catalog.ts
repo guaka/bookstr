@@ -69,7 +69,14 @@ export async function listProgress(): Promise<ReadingProgress[]> {
 
 export function resolveCatalogUrl(catalogUrl: string, epubUrl: string): string {
   try {
-    return new URL(epubUrl, catalogUrl).toString()
+    const relativeCatalog =
+      catalogUrl.startsWith('/') ||
+      catalogUrl.startsWith('./') ||
+      catalogUrl.startsWith('../')
+    const base = relativeCatalog
+      ? new URL(catalogUrl, globalThis.location.href)
+      : new URL(catalogUrl)
+    return new URL(epubUrl, base).toString()
   } catch {
     return epubUrl
   }

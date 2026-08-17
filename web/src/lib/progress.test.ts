@@ -19,6 +19,12 @@ describe('resolveCatalogUrl', () => {
     ).toBe('https://books.example.org/books/ab.epub')
   })
 
+  it('resolves relative epub paths for an app-hosted catalog', () => {
+    expect(resolveCatalogUrl('/catalog/catalog.json', './books/ab.epub')).toBe(
+      new URL('/catalog/books/ab.epub', globalThis.location.href).toString(),
+    )
+  })
+
   it('keeps absolute epub URLs', () => {
     expect(
       resolveCatalogUrl('https://books.example.org/catalog.json', 'https://cdn.example.org/x.epub'),

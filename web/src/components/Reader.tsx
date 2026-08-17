@@ -28,8 +28,7 @@ export function Reader({ book, catalogUrl, onClose, theme }: Props) {
         setLoading(true)
         const blob = await downloadAndVerify(book, catalogUrl)
         if (cancelled || !hostRef.current) return
-        const url = URL.createObjectURL(blob)
-        const epub = ePub(url)
+        const epub = ePub(await blob.arrayBuffer())
         bookRef.current = epub
         const rendition = epub.renderTo(hostRef.current, {
           width: '100%',
