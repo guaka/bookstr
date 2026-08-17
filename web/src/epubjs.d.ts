@@ -21,6 +21,10 @@ declare module 'epubjs' {
       element: HTMLElement,
       options?: Record<string, unknown>,
     ): Rendition
+    locations: {
+      generate(chars?: number): Promise<unknown>
+      percentageFromCfi(cfi: string): number
+    }
     destroy(): void
   }
 

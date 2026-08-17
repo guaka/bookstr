@@ -1,23 +1,25 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Library } from './components/Library'
 import { Reader } from './components/Reader'
 import { Settings } from './components/Settings'
-import { fetchCatalog, getSetting, setSetting } from './lib/catalog'
+import { fetchCatalog, getSetting, listProgress, setSetting } from './lib/catalog'
+import { loadFavorites, saveFavorites } from './lib/favorites'
 import {
   pullProgress,
   restorePreferredIdentity,
 } from './lib/nostr'
-import type { CatalogBook } from './types'
+import type { CatalogBook, ReadingProgress } from './types'
 import './App.css'
 
 type Screen = 'library' | 'settings' | 'reader'
-type Route = { screen: Screen; bookId?: string }
+type Route = { screen: Screen; bookId?: string; section?: 'favorites' }
 
 const DEFAULT_CATALOG = `${import.meta.env.BASE_URL}catalog/catalog.json`
 
 function routeFromHash(): Route {
   const path = window.location.hash.slice(1) || '/'
   if (path === '/settings') return { screen: 'settings' }
+  if (path === '/favorites') return { screen: 'library', section: 'favorites' }
   if (path.startsWith('/read/')) {
     try {
       return { screen: 'reader', bookId: decodeURIComponent(path.slice('/read/'.length)) }
@@ -39,6 +41,12 @@ export default function App() {
   const [error, setError] = useState<string | null>(null)
   const [catalogUrl, setCatalogUrl] = useState(DEFAULT_CATALOG)
   const [theme, setTheme] = useState<'paper' | 'night'>('paper')
+  const [favoriteIds, setFavoriteIds] = useState(() => new Set(loadFavorites()))
+  const [progress, setProgress] = useState<ReadingProgress[]>([])
+  const progressById = useMemo(
+    () => new Map(progress.map((item) => [item.bookId, item])),
+    [progress],
+  )
 
   const active = route.bookId
     ? books.find((book) => book.id === route.bookId) ?? null
@@ -60,6 +68,10 @@ export default function App() {
     }
   }, [])
 
+  const refreshProgress = useCallback(async () => {
+    setProgress(await listProgress())
+  }, [])
+
   useEffect(() => {
     if (!window.location.hash) {
       window.history.replaceState(
@@ -74,6 +86,12 @@ export default function App() {
   }, [])
 
   useEffect(() => {
+    if (route.section === 'favorites') {
+      requestAnimationFrame(() => document.getElementById('favorites-heading')?.scrollIntoView())
+    }
+  }, [route.section])
+
+  useEffect(() => {
     void (async () => {
       const t = await getSetting('theme', 'paper')
       setTheme(t === 'night' ? 'night' : 'paper')
@@ -84,11 +102,12 @@ export default function App() {
         await refresh()
         await identity
         await pullProgress()
+        await refreshProgress()
       } catch {
         /* catalog error is rendered; signer/relay failures remain offline-first */
       }
     })()
-  }, [refresh])
+  }, [refresh, refreshProgress])
 
   if (route.screen === 'reader' && active) {
     return (
@@ -98,7 +117,7 @@ export default function App() {
         theme={theme}
         onClose={() => {
           navigate('/')
-          void refresh()
+          void Promise.all([refresh(), refreshProgress()])
         }}
       />
     )
@@ -120,11 +139,27 @@ export default function App() {
     )
   }
 
+  const toggleFavorite = (bookId: string) => {
+    setFavoriteIds((current) => {
+      const next = new Set(current)
+      if (next.has(bookId)) next.delete(bookId)
+      else next.add(bookId)
+      saveFavorites(next)
+      return next
+    })
+  }
+
   return (
     <Library
       books={books}
       loading={loading}
       error={error}
+      favoriteIds={favoriteIds}
+      progressById={progressById}
+      favoritesActive={route.section === 'favorites'}
+      onHome={() => navigate('/')}
+      onFavorites={() => navigate('/favorites')}
+      onToggleFavorite={toggleFavorite}
       onSettings={() => navigate('/settings')}
       onOpen={(book) => {
         navigate(`/read/${encodeURIComponent(book.id)}`)

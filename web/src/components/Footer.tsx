@@ -8,11 +8,10 @@ function buildLabel() {
   const date = new Date(buildTime)
   if (Number.isNaN(date.getTime())) return 'Build time unavailable'
 
-  return `Built ${new Intl.DateTimeFormat(undefined, {
-    dateStyle: 'medium',
-    timeStyle: 'short',
-    timeZone: 'UTC',
-  }).format(date)} UTC`
+  const part = (value: number) => String(value).padStart(2, '0')
+  const day = `${date.getUTCFullYear()}-${part(date.getUTCMonth() + 1)}-${part(date.getUTCDate())}`
+  const time = `${part(date.getUTCHours())}:${part(date.getUTCMinutes())}`
+  return `Built ${day} ${time} UTC`
 }
 
 export function Footer() {
@@ -26,7 +25,6 @@ export function Footer() {
         aria-label="Bookstr on GitHub"
       >
         <GitHubIcon />
-        <span>GitHub</span>
       </a>
       <span>{buildLabel()}</span>
     </footer>

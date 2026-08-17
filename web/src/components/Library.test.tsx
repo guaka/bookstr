@@ -25,10 +25,19 @@ describe('Library', () => {
         error={null}
         onOpen={onOpen}
         onSettings={onSettings}
+        onFavorites={vi.fn()}
+        onHome={vi.fn()}
+        onToggleFavorite={vi.fn()}
+        favoriteIds={new Set()}
+        progressById={new Map()}
+        favoritesActive={false}
       />,
     )
 
-    expect(screen.getByRole('heading', { name: 'bookstr' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Bookstr home' })).toBeTruthy()
+    expect(screen.getByRole('heading', { name: 'Favorites' })).toBeTruthy()
+    expect(screen.getByRole('heading', { name: 'Reading' })).toBeTruthy()
+    expect(screen.getByRole('heading', { name: 'Examples' })).toBeTruthy()
     expect(screen.getByText('Little Brother')).toBeTruthy()
     expect(screen.getByText('Cory Doctorow')).toBeTruthy()
     expect(screen.getByRole('link', { name: 'Bookstr on GitHub' }).getAttribute('href')).toBe(
@@ -41,7 +50,7 @@ describe('Library', () => {
 
     expect(screen.queryByRole('button', { name: 'Refresh' })).toBeNull()
 
-    fireEvent.click(screen.getByRole('button', { name: /Little Brother/ }))
+    fireEvent.click(screen.getByText('Little Brother').closest('button')!)
     expect(onOpen).toHaveBeenCalledWith(books[0])
   })
 
@@ -53,6 +62,12 @@ describe('Library', () => {
         error={null}
         onOpen={vi.fn()}
         onSettings={vi.fn()}
+        onFavorites={vi.fn()}
+        onHome={vi.fn()}
+        onToggleFavorite={vi.fn()}
+        favoriteIds={new Set()}
+        progressById={new Map()}
+        favoritesActive={false}
       />,
     )
     expect(screen.getByText(/Loading catalog/)).toBeTruthy()
@@ -64,9 +79,15 @@ describe('Library', () => {
         error={null}
         onOpen={vi.fn()}
         onSettings={vi.fn()}
+        onFavorites={vi.fn()}
+        onHome={vi.fn()}
+        onToggleFavorite={vi.fn()}
+        favoriteIds={new Set()}
+        progressById={new Map()}
+        favoritesActive={false}
       />,
     )
-    expect(screen.getByText(/No books/)).toBeTruthy()
+    expect(screen.getAllByText(/Heart a book/).length).toBeGreaterThan(0)
 
     rerender(
       <Library
@@ -75,6 +96,12 @@ describe('Library', () => {
         error="boom"
         onOpen={vi.fn()}
         onSettings={vi.fn()}
+        onFavorites={vi.fn()}
+        onHome={vi.fn()}
+        onToggleFavorite={vi.fn()}
+        favoriteIds={new Set()}
+        progressById={new Map()}
+        favoritesActive={false}
       />,
     )
     expect(screen.getByText('boom')).toBeTruthy()

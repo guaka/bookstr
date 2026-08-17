@@ -72,20 +72,50 @@ button:hover {
 }
 
 .library-header {
+  position: sticky;
+  z-index: 5;
+  top: 0;
   display: flex;
-  align-items: baseline;
+  align-items: center;
   justify-content: space-between;
   gap: 1rem;
-  margin-bottom: 1.5rem;
-  border-bottom: 1px solid var(--line);
-  padding-bottom: 0.75rem;
+  margin: -1.25rem -1rem 1.5rem;
+  border-bottom: 1px solid color-mix(in srgb, var(--line) 70%, transparent);
+  padding: 0.7rem 1rem;
+  background: color-mix(in srgb, var(--bg) 86%, transparent);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
 }
 
-.library-header h1 {
-  font-size: 2rem;
-  font-weight: 600;
+.brand-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.65rem;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+.brand-mark {
+  display: inline-grid;
+  width: 2.35rem;
+  height: 2.35rem;
+  padding: 0.48rem;
+  place-items: center;
+  border-radius: 0.7rem;
+  color: white;
+  background: var(--accent);
+}
+
+.brand-mark svg {
+  width: 100%;
+  height: 100%;
+}
+
+.brand-name {
+  font-size: 1.4rem;
+  font-weight: 650;
   letter-spacing: -0.02em;
-  margin: 0;
 }
 
 .library-header-actions {
@@ -93,7 +123,50 @@ button:hover {
   gap: 0.5rem;
 }
 
+.settings .library-header h1 {
+  margin: 0;
+  font-size: 1.4rem;
+  font-weight: 650;
+}
+
+.book-shelf {
+  margin-top: 2.25rem;
+  scroll-margin-top: 5rem;
+}
+
+.book-shelf:first-of-type {
+  margin-top: 0;
+}
+
+.book-shelf h1,
+.book-shelf h2 {
+  margin: 0 0 0.55rem;
+  font-size: 1.2rem;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+}
+
+.shelf-empty {
+  margin: 0;
+  padding: 0.85rem 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.library-header .icon-button {
+  border-color: transparent;
+  border-radius: 0.7rem;
+  background: transparent;
+}
+
+.library-header .icon-button:hover,
+.library-header .icon-button.active {
+  border-color: var(--line);
+  background: color-mix(in srgb, var(--line) 28%, transparent);
+}
+
 .book-list {
+  display: grid;
+  gap: 0.6rem;
   list-style: none;
   margin: 0;
   padding: 0;
@@ -104,16 +177,51 @@ button:hover {
   text-align: left;
   display: grid;
   gap: 0.15rem;
-  padding: 0.9rem 0.2rem;
+  padding: 0.9rem 3.2rem 0.9rem 0.2rem;
   border: none;
-  border-bottom: 1px solid var(--line);
   background: transparent;
   border-radius: 0;
+}
+
+.book-item {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 0.75rem;
+  background: #fff;
+  box-shadow: 0 1px 2px rgba(28, 25, 22, 0.04);
+}
+
+.book-item:hover {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--line));
+}
+
+.book-favorite {
+  position: absolute;
+  top: 50%;
+  right: 0.15rem;
+  width: 2.2rem;
+  height: 2.2rem;
+  padding: 0.5rem;
+  transform: translateY(-50%);
+  border-color: transparent;
+  border-radius: 999px;
+  color: var(--muted);
+  background: transparent;
+}
+
+.book-favorite:hover,
+.book-favorite.active {
+  color: var(--accent);
+  background: color-mix(in srgb, var(--line) 30%, transparent);
 }
 
 .book-row-placeholder {
   min-height: 5.25rem;
   align-content: center;
+  border: 1px solid var(--line);
+  border-radius: 0.75rem;
+  background: #fff;
 }
 
 .skeleton-line {
@@ -138,6 +246,43 @@ button:hover {
 
 .book-license {
   font-size: 0.8rem;
+}
+
+.book-facts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem 0.75rem;
+}
+
+.book-progress {
+  color: var(--accent);
+  font-family: system-ui, sans-serif;
+  font-size: 0.78rem;
+  font-weight: 650;
+}
+
+.more-books > p {
+  margin: 0 0 0.75rem;
+}
+
+.source-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+}
+
+.source-links a {
+  padding: 0.55rem 0.75rem;
+  border: 1px solid var(--line);
+  border-radius: 0.6rem;
+  color: var(--accent);
+  background: color-mix(in srgb, var(--bg) 80%, white);
+  text-decoration: none;
+}
+
+.source-links a:hover {
+  border-color: var(--accent);
 }
 
 .site-footer {

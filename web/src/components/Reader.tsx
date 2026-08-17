@@ -42,7 +42,7 @@ export function Reader({ book, catalogUrl, onClose, theme }: Props) {
   const renditionRef = useRef<Rendition | null>(null)
   const bookRef = useRef<Book | null>(null)
   const onCloseRef = useRef(onClose)
-  const [pct, setPct] = useState(0)
+  const [pct, setPct] = useState('0%')
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [fontSize, setFontSize] = useState(initialFontSize)
@@ -111,6 +111,10 @@ export function Reader({ book, catalogUrl, onClose, theme }: Props) {
 
   useEffect(() => {
     let cancelled = false
+    let scroller: HTMLElement | null = null
+    let onScroll: (() => void) | null = null
+    let scrollPersistTimer: number | null = null
+    let hasMoved = false
     ;(async () => {
       try {
         setLoading(true)
@@ -157,20 +161,25 @@ export function Reader({ book, catalogUrl, onClose, theme }: Props) {
         })
         rendition.themes.select(theme === 'night' ? 'night' : 'paper')
         applyFontSize(rendition, fontSizeRef.current)
+        await epub.locations.generate(1600)
 
-        const saved = await getProgress(book.id)
-        if (saved?.locator?.cfi) {
-          await rendition.display(saved.locator.cfi)
-        } else {
-          await rendition.display()
-        }
-
-        const persist = async () => {
-          const loc = rendition.currentLocation() as {
+        const persist = async (reportedLocation?: unknown) => {
+          const loc = (reportedLocation ?? rendition.currentLocation()) as {
             start?: { cfi?: string; href?: string; percentage?: number }
           }
-          const progression = loc?.start?.percentage ?? 0
-          setPct(Math.round(progression * 100))
+          const cfi = loc?.start?.cfi
+          let progression = Math.max(
+            0,
+            Math.min(
+              1,
+              cfi ? epub.locations.percentageFromCfi(cfi) : (loc?.start?.percentage ?? 0),
+            ),
+          )
+          // The first generated EPUB location can cover several opening screens.
+          // Once the reader has moved, retain that fact instead of appearing stuck at 0%.
+          if (hasMoved && progression === 0) progression = 0.0001
+          const rounded = Math.round(progression * 100)
+          setPct(progression > 0 && rounded === 0 ? '<1%' : `${rounded}%`)
           const progress = {
             v: 1 as const,
             bookId: book.id,
@@ -179,7 +188,7 @@ export function Reader({ book, catalogUrl, onClose, theme }: Props) {
             locator: {
               href: loc?.start?.href,
               progression,
-              cfi: loc?.start?.cfi,
+              cfi,
             },
             updatedAt: Date.now(),
           }
@@ -190,8 +199,8 @@ export function Reader({ book, catalogUrl, onClose, theme }: Props) {
           }, 2000)
         }
 
-        rendition.on('relocated', () => {
-          void persist()
+        rendition.on('relocated', (...args: unknown[]) => {
+          void persist(args[0])
         })
 
         rendition.on('click', (...args: unknown[]) => {
@@ -205,6 +214,24 @@ export function Reader({ book, catalogUrl, onClose, theme }: Props) {
           handleKey(args[0] as KeyboardEvent)
         })
 
+        const saved = await getProgress(book.id)
+        if (saved?.locator?.cfi) {
+          await rendition.display(saved.locator.cfi)
+        } else {
+          await rendition.display()
+        }
+        await persist()
+
+        scroller = hostRef.current?.querySelector<HTMLElement>('.epub-container') ?? null
+        onScroll = () => {
+          hasMoved = true
+          if (scrollPersistTimer) window.clearTimeout(scrollPersistTimer)
+          scrollPersistTimer = window.setTimeout(() => {
+            void persist()
+          }, 250)
+        }
+        scroller?.addEventListener('scroll', onScroll, { passive: true })
+
         setLoading(false)
       } catch (e) {
         if (!cancelled) {
@@ -216,6 +243,8 @@ export function Reader({ book, catalogUrl, onClose, theme }: Props) {
 
     return () => {
       cancelled = true
+      if (scroller && onScroll) scroller.removeEventListener('scroll', onScroll)
+      if (scrollPersistTimer) window.clearTimeout(scrollPersistTimer)
       if (saveTimer.current) window.clearTimeout(saveTimer.current)
       renditionRef.current?.destroy()
       bookRef.current?.destroy()
@@ -255,7 +284,7 @@ export function Reader({ book, catalogUrl, onClose, theme }: Props) {
         <div className="reader-chrome">
           <div className="reader-meta">
             <strong>{book.title}</strong>
-            <span>{pct}%</span>
+            <span>{pct}</span>
           </div>
           <div className="reader-actions">
             <div className="reader-font-controls" aria-label="Font size controls">
