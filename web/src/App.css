@@ -337,5 +337,47 @@ button.linkish {
 
 .reader-actions {
   display: flex;
+  align-items: center;
   gap: 0.35rem;
+}
+
+.reader-font-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.2rem;
+  margin-right: 0.35rem;
+}
+
+.font-size-button {
+  width: 2.5rem;
+  font-family: system-ui, sans-serif;
+  font-size: 0.8rem;
+  font-weight: 650;
+}
+
+.font-size-value {
+  min-width: 2.8rem;
+  color: rgba(244, 240, 230, 0.8);
+  font-family: system-ui, sans-serif;
+  font-size: 0.72rem;
+  text-align: center;
+}
+
+.reader-chrome button:disabled {
+  cursor: default;
+  opacity: 0.35;
+}
+
+@media (max-width: 35rem) {
+  .reader-meta strong {
+    display: none;
+  }
+
+  .reader-chrome {
+    gap: 0.35rem;
+  }
+
+  .reader-font-controls {
+    margin-right: 0;
+  }
 }

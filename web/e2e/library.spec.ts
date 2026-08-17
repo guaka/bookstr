@@ -43,6 +43,17 @@ test.describe('bookstr web', () => {
       await expect(page.locator('.reader-status.error')).toHaveCount(0)
       await expect(page.getByRole('button', { name: 'Previous section' })).toBeVisible()
       await expect(page.getByRole('button', { name: 'Next section' })).toBeVisible()
+      await expect(page.getByRole('button', { name: 'Decrease font size' })).toBeVisible()
+      await expect(page.getByRole('button', { name: 'Increase font size' })).toBeVisible()
+
+      if (title === titles[0]) {
+        await expect(page.getByText('100%')).toBeVisible()
+        await page.getByRole('button', { name: 'Increase font size' }).click()
+        await expect(page.getByText('110%')).toBeVisible()
+        await expect.poll(() => page.evaluate(() => localStorage.getItem('bookstr.fontSize'))).toBe('110')
+      } else {
+        await expect(page.getByText('110%')).toBeVisible()
+      }
 
       const scroller = page.locator('.reader-surface .epub-container')
       await expect(scroller).toBeVisible()

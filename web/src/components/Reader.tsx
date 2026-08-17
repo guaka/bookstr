@@ -5,6 +5,31 @@ import { downloadAndVerify, getProgress, saveProgress } from '../lib/catalog'
 import { publishProgress } from '../lib/nostr'
 import { BackIcon, HomeIcon, NextIcon } from './Icons'
 
+const FONT_SIZE_KEY = 'bookstr.fontSize'
+const FONT_SIZE_MIN = 70
+const FONT_SIZE_MAX = 180
+const FONT_SIZE_STEP = 10
+
+type FontSizeThemes = Rendition['themes'] & {
+  fontSize(size: string): void
+}
+
+function applyFontSize(rendition: Rendition, size: number) {
+  ;(rendition.themes as FontSizeThemes).fontSize(`${size}%`)
+}
+
+function initialFontSize() {
+  try {
+    const stored = Number.parseInt(window.localStorage.getItem(FONT_SIZE_KEY) ?? '', 10)
+    if (Number.isFinite(stored)) {
+      return Math.min(FONT_SIZE_MAX, Math.max(FONT_SIZE_MIN, stored))
+    }
+  } catch {
+    // Reading remains available when storage is disabled.
+  }
+  return 100
+}
+
 type Props = {
   book: CatalogBook
   catalogUrl: string
@@ -20,8 +45,24 @@ export function Reader({ book, catalogUrl, onClose, theme }: Props) {
   const [pct, setPct] = useState(0)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
+  const [fontSize, setFontSize] = useState(initialFontSize)
+  const fontSizeRef = useRef(fontSize)
   const saveTimer = useRef<number | null>(null)
   onCloseRef.current = onClose
+
+  const changeFontSize = useCallback((delta: number) => {
+    setFontSize((current) => {
+      const next = Math.min(FONT_SIZE_MAX, Math.max(FONT_SIZE_MIN, current + delta))
+      fontSizeRef.current = next
+      if (renditionRef.current) applyFontSize(renditionRef.current, next)
+      try {
+        window.localStorage.setItem(FONT_SIZE_KEY, String(next))
+      } catch {
+        // Keep the in-memory preference when storage is disabled.
+      }
+      return next
+    })
+  }, [])
 
   const handleKey = useCallback((event: KeyboardEvent) => {
     const rendition = renditionRef.current
@@ -40,6 +81,16 @@ export function Reader({ book, catalogUrl, onClose, theme }: Props) {
       void rendition?.next()
       return
     }
+    if (event.key === '+' || event.key === '=') {
+      event.preventDefault()
+      changeFontSize(FONT_SIZE_STEP)
+      return
+    }
+    if (event.key === '-') {
+      event.preventDefault()
+      changeFontSize(-FONT_SIZE_STEP)
+      return
+    }
     if (event.key === ' ' || event.key === 'PageDown' || event.key === 'PageUp') {
       event.preventDefault()
       const scroller = hostRef.current?.querySelector<HTMLElement>('.epub-container')
@@ -49,7 +100,7 @@ export function Reader({ book, catalogUrl, onClose, theme }: Props) {
         behavior: 'smooth',
       })
     }
-  }, [])
+  }, [changeFontSize])
 
   useEffect(() => {
     let cancelled = false
@@ -92,6 +143,7 @@ export function Reader({ book, catalogUrl, onClose, theme }: Props) {
           a: { color: '#e8e4dc' },
         })
         rendition.themes.select(theme === 'night' ? 'night' : 'paper')
+        applyFontSize(rendition, fontSizeRef.current)
 
         const saved = await getProgress(book.id)
         if (saved?.locator?.cfi) {
@@ -193,6 +245,29 @@ export function Reader({ book, catalogUrl, onClose, theme }: Props) {
             <span>{pct}%</span>
           </div>
           <div className="reader-actions">
+            <div className="reader-font-controls" aria-label="Font size controls">
+              <button
+                className="icon-button font-size-button"
+                type="button"
+                onClick={() => changeFontSize(-FONT_SIZE_STEP)}
+                disabled={fontSize <= FONT_SIZE_MIN}
+                aria-label="Decrease font size"
+              >
+                A−
+              </button>
+              <span className="font-size-value" aria-live="polite">
+                {fontSize}%
+              </span>
+              <button
+                className="icon-button font-size-button"
+                type="button"
+                onClick={() => changeFontSize(FONT_SIZE_STEP)}
+                disabled={fontSize >= FONT_SIZE_MAX}
+                aria-label="Increase font size"
+              >
+                A+
+              </button>
+            </div>
             <button
               className="icon-button"
               type="button"
