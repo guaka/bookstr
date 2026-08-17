@@ -34,7 +34,7 @@ describe('Library', () => {
     expect(screen.getByRole('link', { name: 'Bookstr on GitHub' }).getAttribute('href')).toBe(
       'https://github.com/guaka/bookstr',
     )
-    expect(screen.getByText('Development build')).toBeTruthy()
+    expect(screen.getByText(/^(Development build|Built .+ UTC)$/)).toBeTruthy()
 
     fireEvent.click(screen.getByRole('button', { name: 'Settings' }))
     expect(onSettings).toHaveBeenCalledTimes(1)
