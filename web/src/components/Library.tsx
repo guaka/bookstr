@@ -214,6 +214,9 @@ export function Library({
                       {word.partOfSpeech && <span>{word.partOfSpeech}</span>}
                     </div>
                     <p>{word.translation ?? word.definitions[0]}</p>
+                    {word.contextSentence && (
+                      <blockquote className="word-context-sentence">“{word.contextSentence}”</blockquote>
+                    )}
                     <div className="word-context">
                       <span>{word.bookTitle}</span>
                       {word.lookupCount > 1 && <span>Looked up {word.lookupCount} times</span>}

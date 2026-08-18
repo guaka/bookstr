@@ -1,6 +1,7 @@
 /// <reference types="vite/client" />
 
 export type Theme = 'white' | 'paper' | 'night'
+export type TranslationLanguage = 'en' | 'pt'
 
 export interface CatalogBook {
   id: string
@@ -41,6 +42,7 @@ export interface VocabularyWord extends DictionaryEntry {
   bookId: string
   bookTitle: string
   cfi?: string
+  contextSentence?: string
   lookupCount: number
   firstSeenAt: number
   lastSeenAt: number

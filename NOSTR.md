@@ -25,7 +25,7 @@ Dictionary lookups are stored as private NIP-78 application data:
 - merge: entries are matched by normalized `language:word`; highest `updatedAt` wins
 
 The public tags do not contain the word or a word-derived hash. The encrypted payload includes the
-definitions, optional translation, source book, EPUB CFI, lookup count, and timestamps. Separate
+definitions, optional translation, surrounding sentence, source book, EPUB CFI, lookup count, and timestamps. Separate
 clients may initially create different replaceable events for the same word; Bookstr decrypts and
 deduplicates them locally.
 

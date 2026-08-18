@@ -30,6 +30,9 @@ test.describe('bookstr web', () => {
       .toBe('rgb(18, 18, 18)')
     await page.getByLabel('Theme').selectOption('white')
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'white')
+    await page.getByLabel('Translation language').selectOption('pt')
+    await expect(page.getByLabel('Translation language')).toHaveValue('pt')
+    await page.getByLabel('Translation language').selectOption('en')
 
     await page.keyboard.press('Escape')
     await expect(page).toHaveURL(/#\/$/)

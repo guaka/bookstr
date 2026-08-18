@@ -1,17 +1,21 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react'
 import { Library } from './components/Library'
-import { Reader } from './components/Reader'
-import { Settings } from './components/Settings'
 import { fetchCatalog, getSetting, listProgress, listVocabulary, setSetting } from './lib/catalog'
 import { loadFavorites, saveFavorites } from './lib/favorites'
-import {
-  pullSharedFavorites,
-  pullProgress,
-  pullVocabulary,
-  restorePreferredIdentity,
-} from './lib/nostr'
-import type { CatalogBook, ExternalFavorite, ReadingProgress, Theme, VocabularyWord } from './types'
+import type {
+  CatalogBook,
+  ExternalFavorite,
+  ReadingProgress,
+  Theme,
+  TranslationLanguage,
+  VocabularyWord,
+} from './types'
 import './App.css'
+
+const Reader = lazy(() => import('./components/Reader').then((module) => ({ default: module.Reader })))
+const Settings = lazy(() =>
+  import('./components/Settings').then((module) => ({ default: module.Settings })),
+)
 
 type Screen = 'library' | 'settings' | 'reader'
 type Route = { screen: Screen; bookId?: string; section?: 'favorites' | 'words'; settingsOpen?: boolean }
@@ -61,6 +65,7 @@ export default function App() {
   const [loading, setLoading] = useState(!LIBVAULT_BOOK)
   const [error, setError] = useState<string | null>(null)
   const [theme, setTheme] = useState<Theme>('white')
+  const [translationLanguage, setTranslationLanguage] = useState<TranslationLanguage>('en')
   const [favoriteIds, setFavoriteIds] = useState(() => new Set(loadFavorites()))
   const [externalFavorites, setExternalFavorites] = useState<ExternalFavorite[]>([])
   const [progress, setProgress] = useState<ReadingProgress[]>([])
@@ -131,22 +136,28 @@ export default function App() {
 
   useEffect(() => {
     void (async () => {
-      const t = await getSetting('theme', 'white')
+      const catalogPromise = refresh()
+      const [t, storedTranslationLanguage, loadedBooks] = await Promise.all([
+        getSetting('theme', 'white'),
+        getSetting('translationLanguage', 'en'),
+        catalogPromise,
+      ])
       setTheme(t === 'night' || t === 'paper' ? t : 'white')
-      // Match LibVault: start NIP-07 detection in the background so catalog
-      // rendering never waits for an extension to inject or answer.
-      const identity = restorePreferredIdentity()
+      setTranslationLanguage(storedTranslationLanguage === 'pt' ? 'pt' : 'en')
       try {
-        const loadedBooks = await refresh()
-        await identity
-        const shared = await pullSharedFavorites(loadedBooks)
+        // Let React paint the catalog before loading signer, relay, QR, and
+        // crypto code. Sync stays automatic but no longer delays interactivity.
+        await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
+        const nostr = await import('./lib/nostr')
+        await nostr.restorePreferredIdentity()
+        const shared = await nostr.pullSharedFavorites(loadedBooks)
         setFavoriteIds((current) => {
           const merged = new Set([...current, ...shared.bookIds])
           saveFavorites(merged)
           return merged
         })
         setExternalFavorites(shared.external)
-        await Promise.all([pullProgress(), pullVocabulary()])
+        await Promise.all([nostr.pullProgress(), nostr.pullVocabulary()])
         await Promise.all([refreshProgress(), refreshVocabulary()])
       } catch {
         /* catalog error is rendered; signer/relay failures remain offline-first */
@@ -157,29 +168,45 @@ export default function App() {
   if (route.screen === 'reader' && active) {
     return (
       <>
-        <Reader
-          book={active}
-          catalogUrl={DEFAULT_CATALOG}
-          theme={theme}
-          settingsOpen={Boolean(route.settingsOpen)}
-          onSettings={() => navigate(`/read/${encodeURIComponent(active.id)}/settings`)}
-          onVocabularySaved={(word) => {
-            setVocabulary((current) => [word, ...current.filter((item) => item.key !== word.key)])
-          }}
-          onClose={() => {
-            navigate('/')
-            void Promise.all([refresh(), refreshProgress(), refreshVocabulary()])
-          }}
-        />
-        {route.settingsOpen && (
-          <Settings
+        <Suspense fallback={<div className={`route-loading theme-${theme}`}>Opening book…</div>}>
+          <Reader
+            book={active}
+            catalogUrl={DEFAULT_CATALOG}
             theme={theme}
-            onTheme={(t) => {
-              setTheme(t)
-              void setSetting('theme', t)
+            translationLanguage={translationLanguage}
+            settingsOpen={Boolean(route.settingsOpen)}
+            onSettings={() => navigate(`/read/${encodeURIComponent(active.id)}/settings`)}
+            onProgressSaved={(savedProgress) => {
+              setProgress((current) => [
+                savedProgress,
+                ...current.filter((item) => item.bookId !== savedProgress.bookId),
+              ])
             }}
-            onBack={() => navigate(`/read/${encodeURIComponent(active.id)}`)}
+            onVocabularySaved={(word) => {
+              setVocabulary((current) => [word, ...current.filter((item) => item.key !== word.key)])
+            }}
+            onClose={() => {
+              navigate('/')
+              void Promise.all([refresh(), refreshVocabulary()])
+            }}
           />
+        </Suspense>
+        {route.settingsOpen && (
+          <Suspense fallback={null}>
+            <Settings
+              theme={theme}
+              translationLanguage={translationLanguage}
+              onTranslationLanguage={(language) => {
+                setTranslationLanguage(language)
+                void setSetting('translationLanguage', language)
+              }}
+              onTheme={(t) => {
+                setTheme(t)
+                void setSetting('theme', t)
+              }}
+              onBack={() => navigate(`/read/${encodeURIComponent(active.id)}`)}
+            />
+          </Suspense>
         )}
       </>
     )
@@ -187,17 +214,24 @@ export default function App() {
 
   if (route.screen === 'settings') {
     return (
-      <Settings
-        theme={theme}
-        onTheme={(t) => {
-          setTheme(t)
-          void setSetting('theme', t)
-        }}
-        onBack={() => {
-          navigate('/')
-          void refresh()
-        }}
-      />
+      <Suspense fallback={<div className={`route-loading theme-${theme}`}>Opening settings…</div>}>
+        <Settings
+          theme={theme}
+          translationLanguage={translationLanguage}
+          onTranslationLanguage={(language) => {
+            setTranslationLanguage(language)
+            void setSetting('translationLanguage', language)
+          }}
+          onTheme={(t) => {
+            setTheme(t)
+            void setSetting('theme', t)
+          }}
+          onBack={() => {
+            navigate('/')
+            void refresh()
+          }}
+        />
+      </Suspense>
     )
   }
 

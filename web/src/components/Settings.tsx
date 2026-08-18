@@ -17,7 +17,7 @@ import {
   type AuthMode,
   type Nip46QrSession,
 } from '../lib/nostr'
-import type { Theme } from '../types'
+import type { Theme, TranslationLanguage } from '../types'
 import { Footer } from './Footer'
 import { CloseIcon } from './Icons'
 
@@ -25,6 +25,8 @@ type Props = {
   onBack: () => void
   theme: Theme
   onTheme: (t: Theme) => void
+  translationLanguage: TranslationLanguage
+  onTranslationLanguage: (language: TranslationLanguage) => void
 }
 
 function shortNpub(npub: string) {
@@ -45,7 +47,13 @@ function modeLabel(mode: AuthMode): string {
   }
 }
 
-export function Settings({ onBack, theme, onTheme }: Props) {
+export function Settings({
+  onBack,
+  theme,
+  onTheme,
+  translationLanguage,
+  onTranslationLanguage,
+}: Props) {
   const [nsec, setNsecField] = useState('')
   const [npub, setNpub] = useState('')
   const [mode, setMode] = useState<AuthMode>('none')
@@ -181,6 +189,17 @@ export function Settings({ onBack, theme, onTheme }: Props) {
           <option value="white">White</option>
           <option value="paper">Paper</option>
           <option value="night">Night</option>
+        </select>
+      </label>
+
+      <label>
+        Translation language
+        <select
+          value={translationLanguage}
+          onChange={(event) => onTranslationLanguage(event.target.value as TranslationLanguage)}
+        >
+          <option value="en">English</option>
+          <option value="pt">Portuguese</option>
         </select>
       </label>
 

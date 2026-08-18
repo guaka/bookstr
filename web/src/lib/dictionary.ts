@@ -1,4 +1,4 @@
-import type { DictionaryEntry, VocabularyWord } from '../types'
+import type { DictionaryEntry, TranslationLanguage, VocabularyWord } from '../types'
 import {
   getDictionaryEntry,
   getVocabularyWord,
@@ -22,7 +22,31 @@ function cleanText(value: string) {
   return value.replace(/\s+/g, ' ').replace(/\[editar\]/gi, '').trim()
 }
 
-export function parseWiktionaryHtml(html: string, language: string) {
+export function extractSurroundingSentence(text: string, selection: string): string | undefined {
+  const normalizedText = cleanText(text)
+  const normalizedSelection = cleanText(selection)
+  if (!normalizedText || !normalizedSelection) return undefined
+  const matchAt = normalizedText.toLocaleLowerCase().indexOf(normalizedSelection.toLocaleLowerCase())
+  if (matchAt < 0) return undefined
+
+  const before = normalizedText.slice(0, matchAt)
+  const after = normalizedText.slice(matchAt + normalizedSelection.length)
+  const previousStop = Math.max(before.lastIndexOf('.'), before.lastIndexOf('!'), before.lastIndexOf('?'), before.lastIndexOf('…'))
+  const nextStops = ['.', '!', '?', '…']
+    .map((stop) => after.indexOf(stop))
+    .filter((index) => index >= 0)
+  const nextStop = nextStops.length > 0 ? Math.min(...nextStops) : -1
+  const start = previousStop >= 0 ? previousStop + 1 : 0
+  const end = nextStop >= 0 ? matchAt + normalizedSelection.length + nextStop + 1 : normalizedText.length
+  const sentence = normalizedText.slice(start, end).trim()
+  return sentence ? sentence.slice(0, 500) : undefined
+}
+
+export function parseWiktionaryHtml(
+  html: string,
+  language: string,
+  translationLanguage: TranslationLanguage = 'en',
+) {
   const document = new DOMParser().parseFromString(html, 'text/html')
   const portuguese = language.toLowerCase().startsWith('pt')
   const wantedLanguage = portuguese ? 'português' : 'english'
@@ -57,7 +81,8 @@ export function parseWiktionaryHtml(html: string, language: string) {
       if (text && !definitions.includes(text)) definitions.push(text)
       if (definitions.length >= 4) break
     }
-    const translationPattern = portuguese ? /^Inglês\s*:\s*(.+)$/i : /^Portuguese\s*:\s*(.+)$/i
+    const translationLabel = translationLanguage === 'pt' ? 'Portugu(?:ese|ês)' : 'Inglês'
+    const translationPattern = new RegExp(`^${translationLabel}\\s*:\\s*(.+)$`, 'i')
     for (const item of node.querySelectorAll('li')) {
       const match = cleanText(item.textContent ?? '').match(translationPattern)
       if (match?.[1]) {
@@ -70,11 +95,15 @@ export function parseWiktionaryHtml(html: string, language: string) {
   return { definitions: definitions.slice(0, 4), partOfSpeech, translation }
 }
 
-export async function lookupWord(selection: string, language: string): Promise<DictionaryEntry> {
+export async function lookupWord(
+  selection: string,
+  language: string,
+  translationLanguage: TranslationLanguage = 'en',
+): Promise<DictionaryEntry> {
   const word = normalizeSelectedWord(selection)
   if (!word) throw new Error('Select one word')
   const dictionaryLanguage = language.toLowerCase().startsWith('pt') ? 'pt' : 'en'
-  const key = `${dictionaryLanguage}:${word}`
+  const key = `${dictionaryLanguage}:${translationLanguage}:${word}`
   const cached = await getDictionaryEntry(key)
   if (cached && Date.now() - cached.updatedAt < CACHE_MAX_AGE) return cached
 
@@ -90,7 +119,7 @@ export async function lookupWord(selection: string, language: string): Promise<D
   const response = await fetch(`https://${host}/w/api.php?${params}`)
   if (!response.ok) throw new Error(`Dictionary HTTP ${response.status}`)
   const payload = (await response.json()) as { parse?: { text?: string } }
-  const parsed = parseWiktionaryHtml(payload.parse?.text ?? '', dictionaryLanguage)
+  const parsed = parseWiktionaryHtml(payload.parse?.text ?? '', dictionaryLanguage, translationLanguage)
   if (parsed.definitions.length === 0) throw new Error(`No definition found for “${word}”`)
 
   const entry: DictionaryEntry = {
@@ -109,7 +138,7 @@ export async function lookupWord(selection: string, language: string): Promise<D
 
 export async function rememberVocabulary(
   entry: DictionaryEntry,
-  context: { bookId: string; bookTitle: string; cfi?: string },
+  context: { bookId: string; bookTitle: string; cfi?: string; contextSentence?: string },
 ): Promise<VocabularyWord> {
   const existing = await getVocabularyWord(entry.key)
   const now = Date.now()
@@ -119,6 +148,7 @@ export async function rememberVocabulary(
     bookId: context.bookId,
     bookTitle: context.bookTitle,
     cfi: context.cfi,
+    contextSentence: context.contextSentence,
     lookupCount: (existing?.lookupCount ?? 0) + 1,
     firstSeenAt: existing?.firstSeenAt ?? now,
     lastSeenAt: now,

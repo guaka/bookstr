@@ -1,8 +1,20 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import ePub, { type Book, type Rendition } from 'epubjs'
-import type { CatalogBook, DictionaryEntry, Theme, VocabularyWord } from '../types'
+import type {
+  CatalogBook,
+  DictionaryEntry,
+  ReadingProgress,
+  Theme,
+  TranslationLanguage,
+  VocabularyWord,
+} from '../types'
 import { downloadAndVerify, getProgress, saveProgress } from '../lib/catalog'
-import { lookupWord, normalizeSelectedWord, rememberVocabulary } from '../lib/dictionary'
+import {
+  extractSurroundingSentence,
+  lookupWord,
+  normalizeSelectedWord,
+  rememberVocabulary,
+} from '../lib/dictionary'
 import { publishProgress, publishVocabularyWord } from '../lib/nostr'
 import { formatProgress } from '../lib/progress'
 import { BackIcon, CloseIcon, ExternalLinkIcon, HomeIcon, NextIcon, SettingsIcon } from './Icons'
@@ -49,9 +61,11 @@ type Props = {
   catalogUrl: string
   onClose: () => void
   onSettings: () => void
+  onProgressSaved: (progress: ReadingProgress) => void
   onVocabularySaved: (word: VocabularyWord) => void
   settingsOpen: boolean
   theme: Theme
+  translationLanguage: TranslationLanguage
 }
 
 type DictionaryCard = {
@@ -66,18 +80,22 @@ export function Reader({
   catalogUrl,
   onClose,
   onSettings,
+  onProgressSaved,
   onVocabularySaved,
   settingsOpen,
   theme,
+  translationLanguage,
 }: Props) {
   const hostRef = useRef<HTMLDivElement>(null)
   const renditionRef = useRef<Rendition | null>(null)
   const bookRef = useRef<Book | null>(null)
   const onCloseRef = useRef(onClose)
+  const onProgressSavedRef = useRef(onProgressSaved)
   const onVocabularySavedRef = useRef(onVocabularySaved)
   const settingsOpenRef = useRef(settingsOpen)
   const dictionaryOpenRef = useRef(false)
   const themeRef = useRef(theme)
+  const translationLanguageRef = useRef(translationLanguage)
   const [pct, setPct] = useState('0%')
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
@@ -86,10 +104,12 @@ export function Reader({
   const fontSizeRef = useRef(fontSize)
   const saveTimer = useRef<number | null>(null)
   onCloseRef.current = onClose
+  onProgressSavedRef.current = onProgressSaved
   onVocabularySavedRef.current = onVocabularySaved
   settingsOpenRef.current = settingsOpen
   dictionaryOpenRef.current = dictionary !== null
   themeRef.current = theme
+  translationLanguageRef.current = translationLanguage
 
   const changeFontSize = useCallback((delta: number) => {
     setFontSize((current) => {
@@ -270,6 +290,7 @@ export function Reader({
             updatedAt: Date.now(),
           }
           await saveProgress(progress)
+          onProgressSavedRef.current(progress)
           if (saveTimer.current) window.clearTimeout(saveTimer.current)
           saveTimer.current = window.setTimeout(() => {
             void publishProgress(progress)
@@ -293,18 +314,30 @@ export function Reader({
         rendition.on('selected', (...args: unknown[]) => {
           const cfi = typeof args[0] === 'string' ? args[0] : undefined
           const contents = args[1] as { window?: Window } | undefined
-          const selection = contents?.window?.getSelection()?.toString() ?? ''
+          const selectedRange = contents?.window?.getSelection()
+          const selection = selectedRange?.toString() ?? ''
           const word = normalizeSelectedWord(selection)
           if (!word) return
+          const selectionNode = selectedRange?.anchorNode
+          const selectionElement =
+            selectionNode?.nodeType === Node.ELEMENT_NODE
+              ? (selectionNode as Element)
+              : selectionNode?.parentElement
+          const contextElement = selectionElement?.closest('p, li, blockquote, dd, dt') ?? selectionElement
+          const contextSentence = extractSurroundingSentence(
+            contextElement?.textContent ?? '',
+            selection,
+          )
 
           dictionaryOpenRef.current = true
           setDictionary({ word, loading: true })
-          void lookupWord(word, book.language ?? 'en')
+          void lookupWord(word, book.language ?? 'en', translationLanguageRef.current)
             .then(async (entry) => {
               const saved = await rememberVocabulary(entry, {
                 bookId: book.id,
                 bookTitle: book.title,
                 cfi,
+                contextSentence,
               })
               onVocabularySavedRef.current(saved)
               setDictionary({ word, loading: false, entry })

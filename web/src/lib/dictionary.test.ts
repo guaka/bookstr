@@ -6,6 +6,7 @@ import {
   normalizeSelectedWord,
   parseWiktionaryHtml,
   rememberVocabulary,
+  extractSurroundingSentence,
 } from './dictionary'
 
 describe('dictionary', () => {
@@ -22,6 +23,15 @@ describe('dictionary', () => {
     expect(normalizeSelectedWord('  Coração! ')).toBe('coração')
     expect(normalizeSelectedWord("d'água")).toBe("d'água")
     expect(normalizeSelectedWord('duas palavras')).toBeNull()
+  })
+
+  it('keeps the surrounding sentence as learning context', () => {
+    expect(
+      extractSurroundingSentence(
+        'Uma frase anterior. O coração bombeia sangue pelo corpo. Outra frase depois!',
+        'coração',
+      ),
+    ).toBe('O coração bombeia sangue pelo corpo.')
   })
 
   it('extracts Portuguese definitions and an English translation', () => {

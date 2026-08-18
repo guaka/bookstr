@@ -49,6 +49,15 @@ body {
   background: var(--bg);
 }
 
+.route-loading {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+  background: var(--bg);
+}
+
 button,
 input,
 textarea,
@@ -341,6 +350,15 @@ a.book-row {
 
 .word-item p {
   margin: 0.45rem 0 0.7rem;
+}
+
+.word-context-sentence {
+  margin: 0 0 0.75rem;
+  padding-left: 0.75rem;
+  border-left: 2px solid var(--line);
+  color: var(--muted);
+  font-size: 0.9rem;
+  font-style: italic;
 }
 
 .word-context a {
