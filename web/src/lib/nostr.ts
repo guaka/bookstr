@@ -151,6 +151,7 @@ export function buildNostrConnectUri(params: {
 let bunkerSigner: BunkerSigner | null = null
 let bunkerPool: SimplePool | null = null
 let bunkerRelays: string[] = []
+let nip07Pubkey: string | null = null
 
 async function closeBunker(): Promise<void> {
   if (bunkerSigner) {
@@ -209,6 +210,7 @@ export async function connectNip07(): Promise<{ npub: string; mode: AuthMode }> 
   if (!ok || !window.nostr) throw new Error('No NIP-07 extension found')
   await closeBunker()
   const pubkey = await window.nostr.getPublicKey()
+  nip07Pubkey = pubkey
   const npub = hexToNpub(pubkey)
   await setSetting('authMode', 'nip07')
   await setSetting('npub', npub)
@@ -368,6 +370,7 @@ export async function clearIdentity(): Promise<void> {
     }
   }
   await closeBunker()
+  nip07Pubkey = null
   await setSetting('nsec', '')
   await setSetting('npub', '')
   await setSetting('nip46ClientNsec', '')
@@ -381,6 +384,7 @@ export async function resolvePubkey(): Promise<string | null> {
   const nsec = await getNsec()
 
   if (mode === 'nip07' && hasNip07()) {
+    if (nip07Pubkey) return nip07Pubkey
     try {
       const { npub } = await connectNip07()
       const decoded = nip19.decode(npub)
@@ -591,20 +595,28 @@ export async function pullSharedFavorites(books: CatalogBook[]): Promise<{
   const pubkey = await resolvePubkey()
   if (!pubkey) return { bookIds: [], external: [] }
 
-  const relays = await getRelays()
+  // LibVault publishes this shared list to its interoperability relay even
+  // when Bookstr uses another relay set for progress and saved words.
+  const relays = [...new Set([...(await getRelays()), ...DEFAULT_RELAYS])]
   const pool = new SimplePool()
   try {
-    const events = await pool.querySync(relays, {
-      kinds: [FAVORITES_KIND],
-      authors: [pubkey],
-      '#d': [FAVORITES_D_TAG],
-    })
+    const events = await pool.querySync(
+      relays,
+      {
+        kinds: [FAVORITES_KIND],
+        authors: [pubkey],
+        '#d': [FAVORITES_D_TAG],
+      },
+      { maxWait: 5000 },
+    )
     const latest = events.sort((a, b) => b.created_at - a.created_at)[0]
     if (!latest) return { bookIds: [], external: [] }
     const plaintext = await decryptFromSelf(pubkey, latest.content)
     return matchSharedFavorites(parseSharedFavoriteTags(JSON.parse(plaintext)), books)
-  } catch {
-    return { bookIds: [], external: [] }
+  } catch (error) {
+    throw new Error(
+      `Could not read LibVault favorites: ${error instanceof Error ? error.message : String(error)}`,
+    )
   } finally {
     pool.close(relays)
   }

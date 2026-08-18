@@ -19,6 +19,7 @@ const Settings = lazy(() =>
 
 type Screen = 'library' | 'settings' | 'reader'
 type Route = { screen: Screen; bookId?: string; section?: 'favorites' | 'words'; settingsOpen?: boolean }
+type FavoritesSyncStatus = 'idle' | 'syncing' | 'synced' | 'disconnected' | 'error'
 
 const DEFAULT_CATALOG = `${import.meta.env.BASE_URL}catalog/catalog.json`
 
@@ -70,6 +71,10 @@ export default function App() {
   const [externalFavorites, setExternalFavorites] = useState<ExternalFavorite[]>([])
   const [progress, setProgress] = useState<ReadingProgress[]>([])
   const [vocabulary, setVocabulary] = useState<VocabularyWord[]>([])
+  const [favoritesSync, setFavoritesSync] = useState<{
+    status: FavoritesSyncStatus
+    message: string
+  }>({ status: 'idle', message: '' })
   const progressById = useMemo(
     () => new Map(progress.map((item) => [item.bookId, item])),
     [progress],
@@ -107,6 +112,45 @@ export default function App() {
   const refreshVocabulary = useCallback(async () => {
     setVocabulary((await listVocabulary()).sort((a, b) => b.lastSeenAt - a.lastSeenAt))
   }, [])
+
+  const syncNostr = useCallback(
+    async (catalogBooks: CatalogBook[]): Promise<string> => {
+      setFavoritesSync({ status: 'syncing', message: 'Syncing Nostr favorites…' })
+      try {
+        const nostr = await import('./lib/nostr')
+        const identity = await nostr.restorePreferredIdentity()
+        if (!identity) {
+          const message = 'Nostr is not connected. Open Settings to connect your signer.'
+          setFavoritesSync({ status: 'disconnected', message })
+          return message
+        }
+
+        const shared = await nostr.pullSharedFavorites(catalogBooks)
+        setFavoriteIds((current) => {
+          const merged = new Set([...current, ...shared.bookIds])
+          saveFavorites(merged)
+          return merged
+        })
+        setExternalFavorites(shared.external)
+        const favoriteCount = shared.bookIds.length + shared.external.length
+        const message = `Nostr synced ${favoriteCount} LibVault favorite${favoriteCount === 1 ? '' : 's'}.`
+        setFavoritesSync({ status: 'synced', message })
+
+        try {
+          await Promise.all([nostr.pullProgress(), nostr.pullVocabulary()])
+          await Promise.all([refreshProgress(), refreshVocabulary()])
+        } catch {
+          // Favorites already synced; progress and words remain offline-first.
+        }
+        return message
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error)
+        setFavoritesSync({ status: 'error', message })
+        return message
+      }
+    },
+    [refreshProgress, refreshVocabulary],
+  )
 
   useEffect(() => {
     if (!window.location.hash) {
@@ -148,22 +192,12 @@ export default function App() {
         // Let React paint the catalog before loading signer, relay, QR, and
         // crypto code. Sync stays automatic but no longer delays interactivity.
         await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
-        const nostr = await import('./lib/nostr')
-        await nostr.restorePreferredIdentity()
-        const shared = await nostr.pullSharedFavorites(loadedBooks)
-        setFavoriteIds((current) => {
-          const merged = new Set([...current, ...shared.bookIds])
-          saveFavorites(merged)
-          return merged
-        })
-        setExternalFavorites(shared.external)
-        await Promise.all([nostr.pullProgress(), nostr.pullVocabulary()])
-        await Promise.all([refreshProgress(), refreshVocabulary()])
+        await syncNostr(loadedBooks)
       } catch {
         /* catalog error is rendered; signer/relay failures remain offline-first */
       }
     })()
-  }, [refresh, refreshProgress, refreshVocabulary])
+  }, [refresh, syncNostr])
 
   if (route.screen === 'reader' && active) {
     return (
@@ -204,6 +238,7 @@ export default function App() {
                 setTheme(t)
                 void setSetting('theme', t)
               }}
+              onSync={() => syncNostr(books)}
               onBack={() => navigate(`/read/${encodeURIComponent(active.id)}`)}
             />
           </Suspense>
@@ -226,6 +261,7 @@ export default function App() {
             setTheme(t)
             void setSetting('theme', t)
           }}
+          onSync={() => syncNostr(books)}
           onBack={() => {
             navigate('/')
             void refresh()
@@ -256,9 +292,12 @@ export default function App() {
       vocabulary={vocabulary}
       favoritesActive={route.section === 'favorites'}
       wordsActive={route.section === 'words'}
+      nostrFavoritesStatus={favoritesSync.status}
+      nostrFavoritesMessage={favoritesSync.message}
       onHome={() => navigate('/')}
       onFavorites={() => navigate('/favorites')}
       onWords={() => navigate('/words')}
+      onRetryNostr={() => void syncNostr(books)}
       onToggleFavorite={toggleFavorite}
       onSettings={() => navigate('/settings')}
       onOpen={(book) => {

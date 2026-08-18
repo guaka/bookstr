@@ -17,6 +17,9 @@ type Props = {
   vocabulary: VocabularyWord[]
   favoritesActive: boolean
   wordsActive: boolean
+  nostrFavoritesStatus: 'idle' | 'syncing' | 'synced' | 'disconnected' | 'error'
+  nostrFavoritesMessage: string
+  onRetryNostr: () => void
   loading: boolean
   error: string | null
 }
@@ -82,6 +85,9 @@ export function Library({
   vocabulary,
   favoritesActive,
   wordsActive,
+  nostrFavoritesStatus,
+  nostrFavoritesMessage,
+  onRetryNostr,
   loading,
   error,
 }: Props) {
@@ -163,6 +169,20 @@ export function Library({
 
           <section className="book-shelf" aria-labelledby="favorites-heading">
             <h2 id="favorites-heading">Favorites</h2>
+            {nostrFavoritesStatus !== 'idle' &&
+              (nostrFavoritesStatus !== 'synced' ||
+                (favorites.length === 0 && externalFavorites.length === 0)) && (
+                <div className={`shelf-sync ${nostrFavoritesStatus}`} role="status">
+                  <span>{nostrFavoritesMessage}</span>
+                  {(nostrFavoritesStatus === 'error' ||
+                    nostrFavoritesStatus === 'disconnected' ||
+                    nostrFavoritesStatus === 'synced') && (
+                    <button type="button" onClick={onRetryNostr}>
+                      Retry
+                    </button>
+                  )}
+                </div>
+              )}
             {favorites.length === 0 && externalFavorites.length === 0 ? (
               <p className="muted shelf-empty">Heart a book to keep it here.</p>
             ) : (

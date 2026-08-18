@@ -7,8 +7,6 @@ import {
   getNpub,
   getNsec,
   getRelays,
-  pullProgress,
-  pullVocabulary,
   restoreNip46,
   setNsec,
   setRelays,
@@ -27,6 +25,7 @@ type Props = {
   onTheme: (t: Theme) => void
   translationLanguage: TranslationLanguage
   onTranslationLanguage: (language: TranslationLanguage) => void
+  onSync: () => Promise<string>
 }
 
 function shortNpub(npub: string) {
@@ -53,6 +52,7 @@ export function Settings({
   onTheme,
   translationLanguage,
   onTranslationLanguage,
+  onSync,
 }: Props) {
   const [nsec, setNsecField] = useState('')
   const [npub, setNpub] = useState('')
@@ -412,11 +412,7 @@ export function Settings({
         onClick={() => {
           void (async () => {
             try {
-              const [progressCount, wordCount] = await Promise.all([
-                pullProgress(),
-                pullVocabulary(),
-              ])
-              setStatus(`Merged ${progressCount} progress update(s) and ${wordCount} word(s)`)
+              setStatus(await onSync())
             } catch (e) {
               setStatus(e instanceof Error ? e.message : String(e))
             }

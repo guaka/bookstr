@@ -35,6 +35,9 @@ describe('Library', () => {
         vocabulary={[]}
         favoritesActive={false}
         wordsActive={false}
+        nostrFavoritesStatus="idle"
+        nostrFavoritesMessage=""
+        onRetryNostr={vi.fn()}
       />,
     )
 
@@ -76,6 +79,9 @@ describe('Library', () => {
         vocabulary={[]}
         favoritesActive={false}
         wordsActive={false}
+        nostrFavoritesStatus="idle"
+        nostrFavoritesMessage=""
+        onRetryNostr={vi.fn()}
       />,
     )
     expect(screen.getByText(/Loading catalog/)).toBeTruthy()
@@ -97,6 +103,9 @@ describe('Library', () => {
         vocabulary={[]}
         favoritesActive={false}
         wordsActive={false}
+        nostrFavoritesStatus="idle"
+        nostrFavoritesMessage=""
+        onRetryNostr={vi.fn()}
       />,
     )
     expect(screen.getAllByText(/Heart a book/).length).toBeGreaterThan(0)
@@ -118,8 +127,41 @@ describe('Library', () => {
         vocabulary={[]}
         favoritesActive={false}
         wordsActive={false}
+        nostrFavoritesStatus="idle"
+        nostrFavoritesMessage=""
+        onRetryNostr={vi.fn()}
       />,
     )
     expect(screen.getByText('boom')).toBeTruthy()
+  })
+
+  it('shows a retry when Nostr favorites fail to sync', () => {
+    const onRetryNostr = vi.fn()
+    render(
+      <Library
+        books={books}
+        loading={false}
+        error={null}
+        onOpen={vi.fn()}
+        onSettings={vi.fn()}
+        onFavorites={vi.fn()}
+        onWords={vi.fn()}
+        onHome={vi.fn()}
+        onToggleFavorite={vi.fn()}
+        favoriteIds={new Set()}
+        progressById={new Map()}
+        externalFavorites={[]}
+        vocabulary={[]}
+        favoritesActive={false}
+        wordsActive={false}
+        nostrFavoritesStatus="error"
+        nostrFavoritesMessage="Could not read LibVault favorites"
+        onRetryNostr={onRetryNostr}
+      />,
+    )
+
+    expect(screen.getByText('Could not read LibVault favorites')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }))
+    expect(onRetryNostr).toHaveBeenCalledTimes(1)
   })
 })
