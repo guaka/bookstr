@@ -5,10 +5,11 @@ import { Settings } from './components/Settings'
 import { fetchCatalog, getSetting, listProgress, setSetting } from './lib/catalog'
 import { loadFavorites, saveFavorites } from './lib/favorites'
 import {
+  pullSharedFavorites,
   pullProgress,
   restorePreferredIdentity,
 } from './lib/nostr'
-import type { CatalogBook, ReadingProgress } from './types'
+import type { CatalogBook, ExternalFavorite, ReadingProgress, Theme } from './types'
 import './App.css'
 
 type Screen = 'library' | 'settings' | 'reader'
@@ -39,9 +40,9 @@ export default function App() {
   const [books, setBooks] = useState<CatalogBook[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [catalogUrl, setCatalogUrl] = useState(DEFAULT_CATALOG)
-  const [theme, setTheme] = useState<'paper' | 'night'>('paper')
+  const [theme, setTheme] = useState<Theme>('white')
   const [favoriteIds, setFavoriteIds] = useState(() => new Set(loadFavorites()))
+  const [externalFavorites, setExternalFavorites] = useState<ExternalFavorite[]>([])
   const [progress, setProgress] = useState<ReadingProgress[]>([])
   const progressById = useMemo(
     () => new Map(progress.map((item) => [item.bookId, item])),
@@ -56,13 +57,13 @@ export default function App() {
     setLoading(true)
     setError(null)
     try {
-      const url = (await getSetting('catalogUrl', DEFAULT_CATALOG)) || DEFAULT_CATALOG
-      setCatalogUrl(url)
-      const catalog = await fetchCatalog(url)
+      const catalog = await fetchCatalog(DEFAULT_CATALOG)
       setBooks(catalog.books)
+      return catalog.books
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
       setBooks([])
+      return []
     } finally {
       setLoading(false)
     }
@@ -92,15 +93,26 @@ export default function App() {
   }, [route.section])
 
   useEffect(() => {
+    document.documentElement.dataset.theme = theme
+  }, [theme])
+
+  useEffect(() => {
     void (async () => {
-      const t = await getSetting('theme', 'paper')
-      setTheme(t === 'night' ? 'night' : 'paper')
+      const t = await getSetting('theme', 'white')
+      setTheme(t === 'night' || t === 'paper' ? t : 'white')
       // Match LibVault: start NIP-07 detection in the background so catalog
       // rendering never waits for an extension to inject or answer.
       const identity = restorePreferredIdentity()
       try {
-        await refresh()
+        const loadedBooks = await refresh()
         await identity
+        const shared = await pullSharedFavorites(loadedBooks)
+        setFavoriteIds((current) => {
+          const merged = new Set([...current, ...shared.bookIds])
+          saveFavorites(merged)
+          return merged
+        })
+        setExternalFavorites(shared.external)
         await pullProgress()
         await refreshProgress()
       } catch {
@@ -113,7 +125,7 @@ export default function App() {
     return (
       <Reader
         book={active}
-        catalogUrl={catalogUrl}
+        catalogUrl={DEFAULT_CATALOG}
         theme={theme}
         onClose={() => {
           navigate('/')
@@ -156,6 +168,7 @@ export default function App() {
       error={error}
       favoriteIds={favoriteIds}
       progressById={progressById}
+      externalFavorites={externalFavorites}
       favoritesActive={route.section === 'favorites'}
       onHome={() => navigate('/')}
       onFavorites={() => navigate('/favorites')}

@@ -30,6 +30,7 @@ describe('Library', () => {
         onToggleFavorite={vi.fn()}
         favoriteIds={new Set()}
         progressById={new Map()}
+        externalFavorites={[]}
         favoritesActive={false}
       />,
     )
@@ -67,6 +68,7 @@ describe('Library', () => {
         onToggleFavorite={vi.fn()}
         favoriteIds={new Set()}
         progressById={new Map()}
+        externalFavorites={[]}
         favoritesActive={false}
       />,
     )
@@ -84,6 +86,7 @@ describe('Library', () => {
         onToggleFavorite={vi.fn()}
         favoriteIds={new Set()}
         progressById={new Map()}
+        externalFavorites={[]}
         favoritesActive={false}
       />,
     )
@@ -101,6 +104,7 @@ describe('Library', () => {
         onToggleFavorite={vi.fn()}
         favoriteIds={new Set()}
         progressById={new Map()}
+        externalFavorites={[]}
         favoritesActive={false}
       />,
     )

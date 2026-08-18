@@ -1,6 +1,7 @@
-import type { CatalogBook, ReadingProgress } from '../types'
+import type { CatalogBook, ExternalFavorite, ReadingProgress } from '../types'
+import { formatProgress } from '../lib/progress'
 import { Footer } from './Footer'
-import { BookIcon, HeartIcon, SettingsIcon } from './Icons'
+import { BookIcon, ExternalLinkIcon, HeartIcon, SettingsIcon } from './Icons'
 
 type Props = {
   books: CatalogBook[]
@@ -11,6 +12,7 @@ type Props = {
   onToggleFavorite: (bookId: string) => void
   favoriteIds: ReadonlySet<string>
   progressById: ReadonlyMap<string, ReadingProgress>
+  externalFavorites: ExternalFavorite[]
   favoritesActive: boolean
   loading: boolean
   error: string | null
@@ -36,15 +38,7 @@ function BookRows({
       {books.map((book) => {
         const favorite = favoriteIds.has(book.id)
         const progress = progressById.get(book.id)
-        const percentage = progress
-          ? Math.max(0, Math.min(100, Math.round(progress.locator.progression * 100)))
-          : null
-        const progressLabel =
-          progress && progress.locator.progression > 0 && percentage === 0
-            ? '<1% read'
-            : percentage !== null
-              ? `${percentage}% read`
-              : null
+        const progressLabel = progress ? formatProgress(progress.locator.progression, ' read') : null
         return (
           <li className="book-item" key={book.id}>
             <button type="button" className="book-row" onClick={() => onOpen(book)}>
@@ -80,6 +74,7 @@ export function Library({
   onToggleFavorite,
   favoriteIds,
   progressById,
+  externalFavorites,
   favoritesActive,
   loading,
   error,
@@ -153,14 +148,42 @@ export function Library({
 
           <section className="book-shelf" aria-labelledby="favorites-heading">
             <h2 id="favorites-heading">Favorites</h2>
-            <BookRows
-              books={favorites}
-              empty="Heart a book to keep it here."
-              onOpen={onOpen}
-              onToggleFavorite={onToggleFavorite}
-              favoriteIds={favoriteIds}
-              progressById={progressById}
-            />
+            {favorites.length === 0 && externalFavorites.length === 0 ? (
+              <p className="muted shelf-empty">Heart a book to keep it here.</p>
+            ) : (
+              <>
+                {favorites.length > 0 && (
+                  <BookRows
+                    books={favorites}
+                    empty=""
+                    onOpen={onOpen}
+                    onToggleFavorite={onToggleFavorite}
+                    favoriteIds={favoriteIds}
+                    progressById={progressById}
+                  />
+                )}
+                {externalFavorites.length > 0 && (
+                  <ul className="book-list external-favorites">
+                    {externalFavorites.map((favorite) => (
+                      <li className="book-item" key={favorite.key}>
+                        <a
+                          className="book-row external-favorite"
+                          href={favorite.url}
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          <span className="book-title">{favorite.title}</span>
+                          <span className="book-author">{favorite.detail}</span>
+                          <span className="external-favorite-source">
+                            LibVault <ExternalLinkIcon />
+                          </span>
+                        </a>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </>
+            )}
           </section>
 
           <section className="book-shelf" aria-labelledby="examples-heading">

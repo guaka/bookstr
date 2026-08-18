@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import ePub, { type Book, type Rendition } from 'epubjs'
-import type { CatalogBook } from '../types'
+import type { CatalogBook, Theme } from '../types'
 import { downloadAndVerify, getProgress, saveProgress } from '../lib/catalog'
 import { publishProgress } from '../lib/nostr'
+import { formatProgress } from '../lib/progress'
 import { BackIcon, HomeIcon, NextIcon } from './Icons'
 
 const FONT_SIZE_KEY = 'bookstr.fontSize'
@@ -12,6 +13,18 @@ const FONT_SIZE_STEP = 10
 
 type FontSizeThemes = Rendition['themes'] & {
   fontSize(size: string): void
+}
+
+type VisibleSection = {
+  index: number
+  href: string
+  pages: number[]
+  totalPages: number
+  mapping: { start: string; end: string }
+}
+
+type ContinuousRendition = Rendition & {
+  manager: { currentLocation(): VisibleSection[] }
 }
 
 function applyFontSize(rendition: Rendition, size: number) {
@@ -34,7 +47,7 @@ type Props = {
   book: CatalogBook
   catalogUrl: string
   onClose: () => void
-  theme: 'paper' | 'night'
+  theme: Theme
 }
 
 export function Reader({ book, catalogUrl, onClose, theme }: Props) {
@@ -114,7 +127,6 @@ export function Reader({ book, catalogUrl, onClose, theme }: Props) {
     let scroller: HTMLElement | null = null
     let onScroll: (() => void) | null = null
     let scrollPersistTimer: number | null = null
-    let hasMoved = false
     ;(async () => {
       try {
         setLoading(true)
@@ -130,7 +142,21 @@ export function Reader({ book, catalogUrl, onClose, theme }: Props) {
           allowScriptedContent: true,
         })
         renditionRef.current = rendition
-        rendition.themes.select(theme === 'night' ? 'night' : 'paper')
+        rendition.themes.select(theme)
+        rendition.themes.register('white', {
+          body: {
+            background: '#ffffff',
+            color: '#1a1714',
+            'font-family': 'Georgia, "Literata", serif',
+            'line-height': '1.55',
+            width: 'min(46rem, calc(100% - 2rem)) !important',
+            'max-width': '46rem !important',
+            'box-sizing': 'border-box',
+            margin: '0 auto !important',
+            padding: '0.4em 0.6em !important',
+          },
+          a: { color: '#1a1714' },
+        })
         rendition.themes.register('paper', {
           body: {
             background: '#f4f0e6',
@@ -159,34 +185,51 @@ export function Reader({ book, catalogUrl, onClose, theme }: Props) {
           },
           a: { color: '#e8e4dc' },
         })
-        rendition.themes.select(theme === 'night' ? 'night' : 'paper')
+        rendition.themes.select(theme)
         applyFontSize(rendition, fontSizeRef.current)
-        await epub.locations.generate(1600)
+        // Dense generated locations keep progress accurate even in a book's
+        // opening pages. The previous 1,600-character spacing stayed at zero
+        // across several reader screens.
+        await epub.locations.generate(100)
 
         const persist = async (reportedLocation?: unknown) => {
           const loc = (reportedLocation ?? rendition.currentLocation()) as {
-            start?: { cfi?: string; href?: string; percentage?: number }
+            start?: {
+              cfi?: string
+              href?: string
+              percentage?: number
+              index?: number
+              displayed?: { page?: number; total?: number }
+            }
+            end?: {
+              cfi?: string
+              href?: string
+              percentage?: number
+              index?: number
+              displayed?: { page?: number; total?: number }
+            }
           }
-          const cfi = loc?.start?.cfi
-          let progression = Math.max(
-            0,
-            Math.min(
-              1,
-              cfi ? epub.locations.percentageFromCfi(cfi) : (loc?.start?.percentage ?? 0),
-            ),
-          )
-          // The first generated EPUB location can cover several opening screens.
-          // Once the reader has moved, retain that fact instead of appearing stuck at 0%.
-          if (hasMoved && progression === 0) progression = 0.0001
-          const rounded = Math.round(progression * 100)
-          setPct(progression > 0 && rounded === 0 ? '<1%' : `${rounded}%`)
+          // epub.js can keep a one-page cover in the visible range while the
+          // reader is already inside the following section. Use that last
+          // visible section's start mapping for both progress and resuming.
+          const visible = (rendition as ContinuousRendition).manager.currentLocation()
+          const current = visible.at(-1)
+          const cfi = current?.mapping.start ?? loc?.start?.cfi
+          const generatedLocation = cfi ? epub.locations.locationFromCfi(cfi) : -1
+          const page = current?.pages[0] ?? loc?.end?.displayed?.page ?? 1
+          const totalPages = current?.totalPages ?? loc?.end?.displayed?.total ?? 1
+          const pageProgress = Math.max(0, page - 1) / Math.max(1, totalPages)
+          const generatedProgress =
+            cfi && generatedLocation >= 0 ? epub.locations.percentageFromCfi(cfi) : pageProgress
+          const progression = Math.max(0, Math.min(1, generatedProgress))
+          setPct(formatProgress(progression))
           const progress = {
             v: 1 as const,
             bookId: book.id,
             title: book.title,
             author: book.author,
             locator: {
-              href: loc?.start?.href,
+              href: current?.href ?? loc?.start?.href,
               progression,
               cfi,
             },
@@ -224,7 +267,6 @@ export function Reader({ book, catalogUrl, onClose, theme }: Props) {
 
         scroller = hostRef.current?.querySelector<HTMLElement>('.epub-container') ?? null
         onScroll = () => {
-          hasMoved = true
           if (scrollPersistTimer) window.clearTimeout(scrollPersistTimer)
           scrollPersistTimer = window.setTimeout(() => {
             void persist()
@@ -252,7 +294,7 @@ export function Reader({ book, catalogUrl, onClose, theme }: Props) {
   }, [book, catalogUrl, handleKey, theme])
 
   useEffect(() => {
-    renditionRef.current?.themes.select(theme === 'night' ? 'night' : 'paper')
+    renditionRef.current?.themes.select(theme)
   }, [theme])
 
   useEffect(() => {

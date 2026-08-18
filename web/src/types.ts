@@ -1,5 +1,7 @@
 /// <reference types="vite/client" />
 
+export type Theme = 'white' | 'paper' | 'night'
+
 export interface CatalogBook {
   id: string
   title: string
@@ -10,6 +12,17 @@ export interface CatalogBook {
   coverUrl?: string
   epubUrl: string
   sourceUrl?: string
+  isbn?: string
+  libvaultMd5?: string
+}
+
+export interface ExternalFavorite {
+  key: string
+  title: string
+  detail: string
+  url?: string
+  isbn?: string
+  libvaultMd5?: string
 }
 
 export interface Catalog {

@@ -23,6 +23,7 @@ declare module 'epubjs' {
     ): Rendition
     locations: {
       generate(chars?: number): Promise<unknown>
+      locationFromCfi(cfi: string): number
       percentageFromCfi(cfi: string): number
     }
     destroy(): void

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { resolveCatalogUrl, sha256Hex } from './catalog'
-import { normalizeProgress, progressDTag } from './progress'
+import { formatProgress, normalizeProgress, progressDTag } from './progress'
 
 describe('sha256Hex', () => {
   it('hashes UTF-8 bytes to known digests', async () => {
@@ -14,9 +14,9 @@ describe('sha256Hex', () => {
 
 describe('resolveCatalogUrl', () => {
   it('resolves relative epub paths against the catalog URL', () => {
-    expect(
-      resolveCatalogUrl('https://books.example.org/catalog.json', './books/ab.epub'),
-    ).toBe('https://books.example.org/books/ab.epub')
+    expect(resolveCatalogUrl('https://books.example.org/catalog.json', './books/ab.epub')).toBe(
+      'https://books.example.org/books/ab.epub',
+    )
   })
 
   it('resolves relative epub paths for an app-hosted catalog', () => {
@@ -64,11 +64,7 @@ describe('normalizeProgress', () => {
   })
 
   it('falls back to d-tag bookId and event time', () => {
-    const remote = normalizeProgress(
-      { locator: { progression: 0.1 } },
-      bookId,
-      1_700_000_001,
-    )
+    const remote = normalizeProgress({ locator: { progression: 0.1 } }, bookId, 1_700_000_001)
     expect(remote?.bookId).toBe(bookId)
     expect(remote?.updatedAt).toBe(1_700_000_001_000)
   })
@@ -87,27 +83,30 @@ describe('normalizeProgress', () => {
     })
   })
 
-  it('rejects garbage', () => {
+  it('rejects garbage and non-finite progression', () => {
     expect(normalizeProgress({ hello: 'world' }, bookId, 1)).toBeNull()
-  })
-
-  it('rejects non-finite locator progression', () => {
-    expect(
-      normalizeProgress({ locator: { progression: Number.NaN } }, bookId, 1),
-    ).toBeNull()
+    expect(normalizeProgress({ locator: { progression: Number.NaN } }, bookId, 1)).toBeNull()
   })
 
   it('keeps author when present', () => {
     const remote = normalizeProgress(
-      {
-        bookId,
-        author: 'Wells',
-        locator: { progression: 0 },
-        updatedAt: 9,
-      },
+      { bookId, author: 'Wells', locator: { progression: 0 }, updatedAt: 9 },
       'fallback',
       1,
     )
     expect(remote?.author).toBe('Wells')
+  })
+})
+
+describe('formatProgress', () => {
+  it('shows useful precision near the start of a book', () => {
+    expect(formatProgress(0)).toBe('0%')
+    expect(formatProgress(0.0004)).toBe('0.1%')
+    expect(formatProgress(0.0064, ' read')).toBe('0.6% read')
+  })
+
+  it('uses whole percentages for the rest of a book', () => {
+    expect(formatProgress(0.376)).toBe('38%')
+    expect(formatProgress(1)).toBe('100%')
   })
 })

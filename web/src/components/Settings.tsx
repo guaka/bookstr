@@ -16,14 +16,14 @@ import {
   type AuthMode,
   type Nip46QrSession,
 } from '../lib/nostr'
-import { getSetting, setSetting } from '../lib/catalog'
+import type { Theme } from '../types'
 import { Footer } from './Footer'
-import { BackIcon } from './Icons'
+import { CloseIcon } from './Icons'
 
 type Props = {
   onBack: () => void
-  theme: 'paper' | 'night'
-  onTheme: (t: 'paper' | 'night') => void
+  theme: Theme
+  onTheme: (t: Theme) => void
 }
 
 function shortNpub(npub: string) {
@@ -45,7 +45,6 @@ function modeLabel(mode: AuthMode): string {
 }
 
 export function Settings({ onBack, theme, onTheme }: Props) {
-  const [catalogUrl, setCatalogUrl] = useState('')
   const [nsec, setNsecField] = useState('')
   const [npub, setNpub] = useState('')
   const [mode, setMode] = useState<AuthMode>('none')
@@ -58,21 +57,22 @@ export function Settings({ onBack, theme, onTheme }: Props) {
   const [qrSession, setQrSession] = useState<Nip46QrSession | null>(null)
   const [connectingBunker, setConnectingBunker] = useState(false)
   const qrSessionRef = useRef<Nip46QrSession | null>(null)
+  const onBackRef = useRef(onBack)
+  onBackRef.current = onBack
 
   useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onBackRef.current()
+    }
+    window.addEventListener('keydown', onKeyDown)
     return () => {
+      window.removeEventListener('keydown', onKeyDown)
       qrSessionRef.current?.cancel()
     }
   }, [])
 
   useEffect(() => {
     void (async () => {
-      setCatalogUrl(
-        await getSetting(
-          'catalogUrl',
-          new URL(`${import.meta.env.BASE_URL}catalog/catalog.json`, window.location.origin).toString(),
-        ),
-      )
       setRelaysField((await getRelays()).join('\n'))
       const available = await waitForNip07()
       setNip07(available)
@@ -157,38 +157,27 @@ export function Settings({ onBack, theme, onTheme }: Props) {
   }
 
   return (
-    <div className="settings">
+    <div
+      className="settings-overlay"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) onBack()
+      }}
+    >
+      <section className="settings settings-panel" role="dialog" aria-modal="true" aria-labelledby="settings-heading">
       <header className="library-header">
-        <h1>Settings</h1>
+        <h1 id="settings-heading">Settings</h1>
         <button className="icon-button" type="button" onClick={onBack} aria-label="Back to library">
-          <BackIcon />
+          <CloseIcon />
         </button>
       </header>
-
-      <label>
-        Catalog URL
-        <input
-          value={catalogUrl}
-          onChange={(e) => setCatalogUrl(e.target.value)}
-          placeholder="https://books.example.org/catalog.json"
-        />
-      </label>
-      <button
-        type="button"
-        onClick={() => {
-          void setSetting('catalogUrl', catalogUrl.trim())
-          setStatus('Catalog URL saved')
-        }}
-      >
-        Save catalog URL
-      </button>
 
       <label>
         Theme
         <select
           value={theme}
-          onChange={(e) => onTheme(e.target.value as 'paper' | 'night')}
+          onChange={(e) => onTheme(e.target.value as Theme)}
         >
+          <option value="white">White</option>
           <option value="paper">Paper</option>
           <option value="night">Night</option>
         </select>
@@ -416,6 +405,7 @@ export function Settings({ onBack, theme, onTheme }: Props) {
 
       {status && <p className="status">{status}</p>}
       <Footer />
+      </section>
     </div>
   )
 }

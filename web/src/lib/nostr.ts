@@ -3,6 +3,7 @@ import {
   generateSecretKey,
   getPublicKey,
   nip19,
+  nip44,
   SimplePool,
   type EventTemplate,
   type VerifiedEvent,
@@ -14,12 +15,14 @@ import {
   toBunkerURL,
 } from 'nostr-tools/nip46'
 import QRCode from 'qrcode'
-import type { ReadingProgress } from '../types'
+import type { CatalogBook, ExternalFavorite, ReadingProgress } from '../types'
 import { getSetting, listProgress, saveProgress, setSetting } from './catalog'
 import { normalizeProgress, progressDTag } from './progress'
 
 const KIND = 30078
 const D_PREFIX = 'app.bookstr.progress.'
+const FAVORITES_KIND = 30003
+const FAVORITES_D_TAG = 'libvault-favorites'
 
 export const DEFAULT_RELAYS = ['wss://relay.nomadwiki.org']
 
@@ -43,6 +46,10 @@ declare global {
         content: string
         sig: string
       }>
+      nip44?: {
+        encrypt(pubkey: string, plaintext: string): Promise<string>
+        decrypt(pubkey: string, ciphertext: string): Promise<string>
+      }
     }
   }
 }
@@ -108,7 +115,13 @@ function randomConnectSecret(): string {
 }
 
 /** Permissions requested from remote signers (Amber, etc.). */
-export const NIP46_PERMS = [`sign_event:${KIND}`, 'get_public_key'] as const
+export const NIP46_PERMS = [
+  `sign_event:${KIND}`,
+  `sign_event:${FAVORITES_KIND}`,
+  'nip44_encrypt',
+  'nip44_decrypt',
+  'get_public_key',
+] as const
 
 export function buildNostrConnectUri(params: {
   clientPubkey: string
@@ -411,6 +424,152 @@ async function signTemplate(template: EventTemplate): Promise<VerifiedEvent> {
 
   if (!nsec) throw new Error('No Nostr identity')
   return finalizeEvent(template, secretFromNsec(nsec))
+}
+
+async function decryptFromSelf(pubkey: string, ciphertext: string): Promise<string> {
+  const mode = await getAuthMode()
+  const nsec = await getNsec()
+
+  if (mode === 'nip07' && window.nostr?.nip44?.decrypt) {
+    return window.nostr.nip44.decrypt(pubkey, ciphertext)
+  }
+
+  if (mode === 'nip46') {
+    const signer = await getBunkerSigner()
+    if (!signer) throw new Error('NIP-46 bunker not connected')
+    return signer.nip44Decrypt(pubkey, ciphertext)
+  }
+
+  if (nsec) {
+    const conversationKey = nip44.getConversationKey(secretFromNsec(nsec), pubkey)
+    return nip44.decrypt(ciphertext, conversationKey)
+  }
+
+  throw new Error('The active signer does not provide NIP-44 decryption')
+}
+
+type SharedFavoriteRef = {
+  bookstrId?: string
+  libvaultMd5?: string
+  isbn?: string
+  url?: string
+  title?: string
+  author?: string
+}
+
+function normalizeIsbn(value?: string) {
+  const normalized = value?.replace(/[^0-9X]/gi, '').toUpperCase() ?? ''
+  return normalized.length === 10 || normalized.length === 13 ? normalized : ''
+}
+
+export function parseSharedFavoriteTags(value: unknown): SharedFavoriteRef[] {
+  if (!Array.isArray(value)) return []
+  const refs: SharedFavoriteRef[] = []
+  let pendingUrl: string | undefined
+  let current: SharedFavoriteRef | undefined
+
+  for (const item of value) {
+    if (!Array.isArray(item) || typeof item[0] !== 'string') continue
+    const tag = item.filter((part): part is string => typeof part === 'string')
+    if (tag[0] === 'r' && tag[1]) {
+      pendingUrl = tag[1]
+      continue
+    }
+    if (tag[0] === 'libvault' && /^[a-f0-9]{32}$/i.test(tag[1] ?? '')) {
+      current = { libvaultMd5: tag[1].toLowerCase(), url: pendingUrl }
+      refs.push(current)
+      pendingUrl = undefined
+      continue
+    }
+    if (tag[0] === 'bookstr' && tag[1]) {
+      current = {
+        bookstrId: tag[1],
+        title: tag[2] || undefined,
+        author: tag[3] || undefined,
+        url: tag[4] || pendingUrl,
+      }
+      refs.push(current)
+      pendingUrl = undefined
+      continue
+    }
+    if (tag[0] === 'i' && tag[1]?.startsWith('isbn:')) {
+      const isbn = normalizeIsbn(tag[1].slice(5))
+      if (!isbn) continue
+      if (current) {
+        current.isbn = isbn
+        current.url ??= tag[2]
+      } else {
+        current = { isbn, url: tag[2] || pendingUrl }
+        refs.push(current)
+      }
+      pendingUrl = undefined
+    }
+  }
+
+  return refs
+}
+
+export function matchSharedFavorites(
+  refs: SharedFavoriteRef[],
+  books: CatalogBook[],
+): { bookIds: string[]; external: ExternalFavorite[] } {
+  const matched = new Set<string>()
+  const external = new Map<string, ExternalFavorite>()
+
+  for (const ref of refs) {
+    const isbn = normalizeIsbn(ref.isbn)
+    const book = books.find(
+      (candidate) =>
+        candidate.id === ref.bookstrId ||
+        (ref.libvaultMd5 && candidate.libvaultMd5?.toLowerCase() === ref.libvaultMd5) ||
+        (isbn && normalizeIsbn(candidate.isbn) === isbn) ||
+        (ref.url && candidate.sourceUrl === ref.url),
+    )
+    if (book) {
+      matched.add(book.id)
+      continue
+    }
+
+    const key = ref.libvaultMd5 ?? ref.bookstrId ?? isbn ?? ref.url
+    if (!key) continue
+    external.set(key, {
+      key,
+      title: ref.title || 'LibVault favorite',
+      detail: ref.author || (ref.libvaultMd5 ? `Edition ${ref.libvaultMd5.slice(0, 8)}…` : isbn ? `ISBN ${isbn}` : 'Saved on Nostr'),
+      url: ref.url,
+      isbn: isbn || undefined,
+      libvaultMd5: ref.libvaultMd5,
+    })
+  }
+
+  return { bookIds: [...matched], external: [...external.values()] }
+}
+
+/** Read LibVault's private NIP-51 bookmark set without replacing it. */
+export async function pullSharedFavorites(books: CatalogBook[]): Promise<{
+  bookIds: string[]
+  external: ExternalFavorite[]
+}> {
+  const pubkey = await resolvePubkey()
+  if (!pubkey) return { bookIds: [], external: [] }
+
+  const relays = await getRelays()
+  const pool = new SimplePool()
+  try {
+    const events = await pool.querySync(relays, {
+      kinds: [FAVORITES_KIND],
+      authors: [pubkey],
+      '#d': [FAVORITES_D_TAG],
+    })
+    const latest = events.sort((a, b) => b.created_at - a.created_at)[0]
+    if (!latest) return { bookIds: [], external: [] }
+    const plaintext = await decryptFromSelf(pubkey, latest.content)
+    return matchSharedFavorites(parseSharedFavoriteTags(JSON.parse(plaintext)), books)
+  } catch {
+    return { bookIds: [], external: [] }
+  } finally {
+    pool.close(relays)
+  }
 }
 
 export async function publishProgress(progress: ReadingProgress): Promise<void> {

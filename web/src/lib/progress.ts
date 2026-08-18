@@ -29,7 +29,6 @@ export function normalizeProgress(
     }
   }
 
-  // Legacy flat payload from early Android builds
   if (typeof raw.progression === 'number') {
     return {
       v: 1,
@@ -47,4 +46,14 @@ export function normalizeProgress(
 
 export function progressDTag(bookId: string): string {
   return `app.bookstr.progress.${bookId}`
+}
+
+export function formatProgress(progression: number, suffix = '') {
+  const percent = Math.max(0, Math.min(100, progression * 100))
+  if (percent === 0) return `0%${suffix}`
+  if (percent < 1) {
+    const tenths = Math.max(0.1, Math.round(percent * 10) / 10)
+    return `${tenths.toFixed(1)}%${suffix}`
+  }
+  return `${Math.round(percent)}%${suffix}`
 }

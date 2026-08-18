@@ -51,6 +51,23 @@ export function NextIcon() {
   )
 }
 
+export function CloseIcon() {
+  return (
+    <Icon>
+      <path d="M6 6l12 12M18 6 6 18" />
+    </Icon>
+  )
+}
+
+export function ExternalLinkIcon() {
+  return (
+    <Icon>
+      <path d="M14 4h6v6M20 4l-9 9" />
+      <path d="M18 13v6a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h6" />
+    </Icon>
+  )
+}
+
 export function GitHubIcon() {
   return (
     <svg aria-hidden="true" viewBox="0 0 24 24" fill="currentColor">

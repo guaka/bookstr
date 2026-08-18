@@ -18,10 +18,19 @@ test.describe('bookstr web', () => {
 
     await page.getByRole('button', { name: 'Settings' }).click()
     await expect(page).toHaveURL(/#\/settings$/)
-    await expect(page.getByRole('heading', { name: 'Settings' })).toBeVisible()
+    await expect(page.getByRole('dialog', { name: 'Settings' })).toBeVisible()
     await expect(page.getByRole('heading', { name: 'Nostr sync' })).toBeVisible()
+    await expect(page.getByText('Catalog URL')).toHaveCount(0)
 
-    await page.getByRole('button', { name: 'Back' }).click()
+    await page.getByLabel('Theme').selectOption('night')
+    await expect(page.locator('html')).toHaveAttribute('data-theme', 'night')
+    await expect
+      .poll(() => page.locator('.settings-panel').evaluate((el) => getComputedStyle(el).backgroundColor))
+      .toBe('rgb(18, 18, 18)')
+    await page.getByLabel('Theme').selectOption('white')
+    await expect(page.locator('html')).toHaveAttribute('data-theme', 'white')
+
+    await page.keyboard.press('Escape')
     await expect(page).toHaveURL(/#\/$/)
     await expect(page.getByRole('heading', { name: 'Favorites' })).toBeVisible()
     await expect(page.getByText('Little Brother')).toBeVisible()
@@ -65,6 +74,16 @@ test.describe('bookstr web', () => {
         })
         expect(margins).not.toBeNull()
         expect(Math.abs((margins?.left ?? 0) - (margins?.right ?? 0))).toBeLessThan(2)
+        await expect
+          .poll(() =>
+            iframe.evaluate((element) => {
+              const frame = element as HTMLIFrameElement
+              return frame.contentDocument?.defaultView?.getComputedStyle(
+                frame.contentDocument.body,
+              ).backgroundColor
+            }),
+          )
+          .toBe('rgb(255, 255, 255)')
       } else {
         await expect(page.locator('.font-size-value')).toHaveText('110%')
       }
@@ -99,6 +118,7 @@ test.describe('bookstr web', () => {
         await expect
           .poll(async () => page.locator('.reader-meta span').textContent())
           .not.toBe('0%')
+        await expect(page.locator('.reader-meta span')).not.toHaveText('<1%')
       }
 
       const home = page.getByRole('button', { name: 'Back to library' })
@@ -113,7 +133,7 @@ test.describe('bookstr web', () => {
       if (title === titles[0]) {
         const reading = page.locator('section[aria-labelledby="reading-heading"]')
         await expect(reading.getByText('Little Brother')).toBeVisible()
-        await expect(reading.getByText(/^(<1|[1-9]\d*)% read$/)).toBeVisible()
+        await expect(reading.getByText(/^(0\.[1-9]|[1-9]\d*)% read$/)).toBeVisible()
       }
     }
   })
