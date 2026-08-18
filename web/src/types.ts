@@ -25,6 +25,27 @@ export interface ExternalFavorite {
   libvaultMd5?: string
 }
 
+export interface DictionaryEntry {
+  key: string
+  word: string
+  language: string
+  partOfSpeech?: string
+  definitions: string[]
+  translation?: string
+  sourceUrl: string
+  updatedAt: number
+}
+
+export interface VocabularyWord extends DictionaryEntry {
+  syncId: string
+  bookId: string
+  bookTitle: string
+  cfi?: string
+  lookupCount: number
+  firstSeenAt: number
+  lastSeenAt: number
+}
+
 export interface Catalog {
   version: number
   books: CatalogBook[]

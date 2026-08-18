@@ -1,19 +1,22 @@
-import type { CatalogBook, ExternalFavorite, ReadingProgress } from '../types'
+import type { CatalogBook, ExternalFavorite, ReadingProgress, VocabularyWord } from '../types'
 import { formatProgress } from '../lib/progress'
 import { Footer } from './Footer'
-import { BookIcon, ExternalLinkIcon, HeartIcon, SettingsIcon } from './Icons'
+import { BookIcon, ExternalLinkIcon, HeartIcon, SettingsIcon, WordsIcon } from './Icons'
 
 type Props = {
   books: CatalogBook[]
   onOpen: (book: CatalogBook) => void
   onSettings: () => void
   onFavorites: () => void
+  onWords: () => void
   onHome: () => void
   onToggleFavorite: (bookId: string) => void
   favoriteIds: ReadonlySet<string>
   progressById: ReadonlyMap<string, ReadingProgress>
   externalFavorites: ExternalFavorite[]
+  vocabulary: VocabularyWord[]
   favoritesActive: boolean
+  wordsActive: boolean
   loading: boolean
   error: string | null
 }
@@ -70,12 +73,15 @@ export function Library({
   onOpen,
   onSettings,
   onFavorites,
+  onWords,
   onHome,
   onToggleFavorite,
   favoriteIds,
   progressById,
   externalFavorites,
+  vocabulary,
   favoritesActive,
+  wordsActive,
   loading,
   error,
 }: Props) {
@@ -108,6 +114,15 @@ export function Library({
             aria-pressed={favoritesActive}
           >
             <HeartIcon filled={favoritesActive} />
+          </button>
+          <button
+            className={`icon-button ${wordsActive ? 'active' : ''}`}
+            type="button"
+            onClick={onWords}
+            aria-label="Words"
+            aria-pressed={wordsActive}
+          >
+            <WordsIcon />
           </button>
           <button className="icon-button" type="button" onClick={onSettings} aria-label="Settings">
             <SettingsIcon />
@@ -183,6 +198,32 @@ export function Library({
                   </ul>
                 )}
               </>
+            )}
+          </section>
+
+          <section className="book-shelf" aria-labelledby="words-heading">
+            <h2 id="words-heading">Words</h2>
+            {vocabulary.length === 0 ? (
+              <p className="muted shelf-empty">Select a word while reading to look it up and save it here.</p>
+            ) : (
+              <ul className="word-list">
+                {vocabulary.map((word) => (
+                  <li className="word-item" key={word.key}>
+                    <div className="word-heading">
+                      <strong>{word.word}</strong>
+                      {word.partOfSpeech && <span>{word.partOfSpeech}</span>}
+                    </div>
+                    <p>{word.translation ?? word.definitions[0]}</p>
+                    <div className="word-context">
+                      <span>{word.bookTitle}</span>
+                      {word.lookupCount > 1 && <span>Looked up {word.lookupCount} times</span>}
+                      <a href={word.sourceUrl} target="_blank" rel="noreferrer" aria-label={`Open ${word.word} in Wiktionary`}>
+                        Wiktionary <ExternalLinkIcon />
+                      </a>
+                    </div>
+                  </li>
+                ))}
+              </ul>
             )}
           </section>
 

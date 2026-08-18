@@ -101,7 +101,7 @@ GitHub Actions (`.github/workflows/ci.yml`) runs catalog validation, web lint/un
 
 ## Nostr
 
-Opt-in progress sync (kind `30078`, `d=app.bookstr.progress.<sha256>`). Payload is a shared JSON schema (`v`, `bookId`, `locator`, `updatedAt`); last-write-wins by `updatedAt`.
+Opt-in progress sync (kind `30078`, `d=app.bookstr.progress.<sha256>`). Payload is a shared JSON schema (`v`, `bookId`, `locator`, `updatedAt`); last-write-wins by `updatedAt`. Dictionary lookups can also sync as private NIP-78 events encrypted to the user's own key with NIP-44. See [NOSTR.md](./NOSTR.md) for the event formats and LibVault favorites interoperability.
 
 - **Web:** prefers a NIP-07 browser extension (Alby, nos2x, …), or **NIP-46** via Amber QR (`nostrconnect://`) / pasted `bunker://`. Pasted `nsec` is an advanced fallback.
 - **Android:** prefers Amber (or another NIP-55 signer) so the private key never enters the app. Pasted `nsec` is an advanced fallback (EncryptedSharedPreferences). After connecting Amber, allow “remember” for kind `30078` so progress can sync in the background without a prompt on every page turn.

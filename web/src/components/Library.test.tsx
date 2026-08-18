@@ -26,12 +26,15 @@ describe('Library', () => {
         onOpen={onOpen}
         onSettings={onSettings}
         onFavorites={vi.fn()}
+        onWords={vi.fn()}
         onHome={vi.fn()}
         onToggleFavorite={vi.fn()}
         favoriteIds={new Set()}
         progressById={new Map()}
         externalFavorites={[]}
+        vocabulary={[]}
         favoritesActive={false}
+        wordsActive={false}
       />,
     )
 
@@ -64,12 +67,15 @@ describe('Library', () => {
         onOpen={vi.fn()}
         onSettings={vi.fn()}
         onFavorites={vi.fn()}
+        onWords={vi.fn()}
         onHome={vi.fn()}
         onToggleFavorite={vi.fn()}
         favoriteIds={new Set()}
         progressById={new Map()}
         externalFavorites={[]}
+        vocabulary={[]}
         favoritesActive={false}
+        wordsActive={false}
       />,
     )
     expect(screen.getByText(/Loading catalog/)).toBeTruthy()
@@ -82,12 +88,15 @@ describe('Library', () => {
         onOpen={vi.fn()}
         onSettings={vi.fn()}
         onFavorites={vi.fn()}
+        onWords={vi.fn()}
         onHome={vi.fn()}
         onToggleFavorite={vi.fn()}
         favoriteIds={new Set()}
         progressById={new Map()}
         externalFavorites={[]}
+        vocabulary={[]}
         favoritesActive={false}
+        wordsActive={false}
       />,
     )
     expect(screen.getAllByText(/Heart a book/).length).toBeGreaterThan(0)
@@ -100,12 +109,15 @@ describe('Library', () => {
         onOpen={vi.fn()}
         onSettings={vi.fn()}
         onFavorites={vi.fn()}
+        onWords={vi.fn()}
         onHome={vi.fn()}
         onToggleFavorite={vi.fn()}
         favoriteIds={new Set()}
         progressById={new Map()}
         externalFavorites={[]}
+        vocabulary={[]}
         favoritesActive={false}
+        wordsActive={false}
       />,
     )
     expect(screen.getByText('boom')).toBeTruthy()

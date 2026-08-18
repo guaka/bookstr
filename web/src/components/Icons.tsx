@@ -100,3 +100,12 @@ export function HeartIcon({ filled = false }: { filled?: boolean }) {
     </svg>
   )
 }
+
+export function WordsIcon() {
+  return (
+    <Icon>
+      <path d="M5 19 10 5l5 14M7 14h6" />
+      <path d="M16 8h4M18 8v11" />
+    </Icon>
+  )
+}

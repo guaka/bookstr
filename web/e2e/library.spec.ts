@@ -7,6 +7,7 @@ test.describe('bookstr web', () => {
     await expect(page.getByRole('button', { name: 'Bookstr home' })).toBeVisible()
     await expect(page.getByRole('heading', { name: 'Favorites' })).toBeVisible()
     await expect(page.getByRole('heading', { name: 'Reading' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Words' })).toBeVisible()
     await expect(page.getByRole('heading', { name: 'Examples' })).toBeVisible()
     await expect(page.getByText('Little Brother')).toBeVisible({ timeout: 30_000 })
     await expect(page.getByText('The Time Machine')).toBeVisible()
@@ -119,6 +120,59 @@ test.describe('bookstr web', () => {
           .poll(async () => page.locator('.reader-meta span').textContent())
           .not.toBe('0%')
         await expect(page.locator('.reader-meta span')).not.toHaveText('<1%')
+        await page.getByRole('button', { name: 'Settings' }).click()
+        await expect(page).toHaveURL(/#\/read\/[^/]+\/settings$/)
+        await expect(page.getByRole('dialog', { name: 'Settings' })).toBeVisible()
+        await page.keyboard.press('Escape')
+        await expect(page).toHaveURL(/#\/read\/[^/]+$/)
+        await expect(page.locator('.reader')).toBeVisible()
+      }
+
+      if (title === 'O Banqueiro Anarquista') {
+        await page.route('https://pt.wiktionary.org/**', async (route) => {
+          await route.fulfill({
+            contentType: 'application/json',
+            body: JSON.stringify({
+              parse: {
+                text: '<div class="mw-heading mw-heading1"><h1>Português</h1></div><div class="mw-heading mw-heading2"><h2>Substantivo</h2></div><ol><li>uma definição em português</li></ol><ul><li>Inglês: example</li></ul>',
+              },
+            }),
+          })
+        })
+        const contentFrame = page.locator('.reader-surface iframe').last()
+        const selectedWord = await contentFrame.evaluate((element) => {
+          const frame = element as HTMLIFrameElement
+          const doc = frame.contentDocument
+          const view = frame.contentWindow
+          if (!doc || !view) return ''
+          const walker = doc.createTreeWalker(doc.body, NodeFilter.SHOW_TEXT)
+          let node = walker.nextNode()
+          while (node) {
+            const match = node.textContent?.match(/\p{L}{4,}/u)
+            if (match && node.textContent) {
+              const start = node.textContent.indexOf(match[0])
+              const range = doc.createRange()
+              range.setStart(node, start)
+              range.setEnd(node, start + match[0].length)
+              const selection = view.getSelection()
+              selection?.removeAllRanges()
+              selection?.addRange(range)
+              const event = doc.createEvent('Event')
+              event.initEvent('selectionchange', true, false)
+              doc.dispatchEvent(event)
+              return match[0].toLocaleLowerCase()
+            }
+            node = walker.nextNode()
+          }
+          return ''
+        })
+        expect(selectedWord).not.toBe('')
+        await expect(page.getByLabel(`Definition of ${selectedWord}`)).toBeVisible()
+        await expect(page.getByText('uma definição em português')).toBeVisible()
+        await expect(page.getByText('Saved to Words')).toBeVisible()
+        await page.keyboard.press('Escape')
+        await expect(page.getByLabel(`Definition of ${selectedWord}`)).toHaveCount(0)
+        await expect(page.locator('.reader')).toBeVisible()
       }
 
       const home = page.getByRole('button', { name: 'Back to library' })
@@ -130,6 +184,10 @@ test.describe('bookstr web', () => {
       }
       await expect(page).toHaveURL(/#\/$/)
       await expect(page.getByRole('heading', { name: 'Favorites' })).toBeVisible()
+      if (title === 'O Banqueiro Anarquista') {
+        const words = page.locator('section[aria-labelledby="words-heading"]')
+        await expect(words.getByText('example')).toBeVisible()
+      }
       if (title === titles[0]) {
         const reading = page.locator('section[aria-labelledby="reading-heading"]')
         await expect(reading.getByText('Little Brother')).toBeVisible()

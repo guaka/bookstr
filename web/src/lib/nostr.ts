@@ -15,14 +15,22 @@ import {
   toBunkerURL,
 } from 'nostr-tools/nip46'
 import QRCode from 'qrcode'
-import type { CatalogBook, ExternalFavorite, ReadingProgress } from '../types'
-import { getSetting, listProgress, saveProgress, setSetting } from './catalog'
+import type { CatalogBook, ExternalFavorite, ReadingProgress, VocabularyWord } from '../types'
+import {
+  getSetting,
+  listProgress,
+  listVocabulary,
+  saveProgress,
+  saveVocabularyWord,
+  setSetting,
+} from './catalog'
 import { normalizeProgress, progressDTag } from './progress'
 
 const KIND = 30078
 const D_PREFIX = 'app.bookstr.progress.'
 const FAVORITES_KIND = 30003
 const FAVORITES_D_TAG = 'libvault-favorites'
+const VOCABULARY_D_PREFIX = 'app.bookstr.vocabulary.'
 
 export const DEFAULT_RELAYS = ['wss://relay.nomadwiki.org']
 
@@ -448,6 +456,28 @@ async function decryptFromSelf(pubkey: string, ciphertext: string): Promise<stri
   throw new Error('The active signer does not provide NIP-44 decryption')
 }
 
+async function encryptToSelf(pubkey: string, plaintext: string): Promise<string> {
+  const mode = await getAuthMode()
+  const nsec = await getNsec()
+
+  if (mode === 'nip07' && window.nostr?.nip44?.encrypt) {
+    return window.nostr.nip44.encrypt(pubkey, plaintext)
+  }
+
+  if (mode === 'nip46') {
+    const signer = await getBunkerSigner()
+    if (!signer) throw new Error('NIP-46 bunker not connected')
+    return signer.nip44Encrypt(pubkey, plaintext)
+  }
+
+  if (nsec) {
+    const conversationKey = nip44.getConversationKey(secretFromNsec(nsec), pubkey)
+    return nip44.encrypt(plaintext, conversationKey)
+  }
+
+  throw new Error('The active signer does not provide NIP-44 encryption')
+}
+
 type SharedFavoriteRef = {
   bookstrId?: string
   libvaultMd5?: string
@@ -490,6 +520,14 @@ export function parseSharedFavoriteTags(value: unknown): SharedFavoriteRef[] {
       }
       refs.push(current)
       pendingUrl = undefined
+      continue
+    }
+    if (tag[0] === 'libvault-book' && /^[a-f0-9]{32}$/i.test(tag[1] ?? '')) {
+      const md5 = tag[1].toLowerCase()
+      current = refs.find((ref) => ref.libvaultMd5 === md5) ?? { libvaultMd5: md5 }
+      if (!refs.includes(current)) refs.push(current)
+      current.title = tag[2] || current.title
+      current.author = tag[3] || current.author
       continue
     }
     if (tag[0] === 'i' && tag[1]?.startsWith('isbn:')) {
@@ -590,6 +628,73 @@ export async function publishProgress(progress: ReadingProgress): Promise<void> 
   } finally {
     pool.close(relays)
   }
+}
+
+function validVocabularyWord(value: unknown): value is VocabularyWord {
+  if (!value || typeof value !== 'object') return false
+  const word = value as Partial<VocabularyWord>
+  return (
+    typeof word.key === 'string' &&
+    typeof word.word === 'string' &&
+    typeof word.language === 'string' &&
+    typeof word.syncId === 'string' &&
+    Array.isArray(word.definitions) &&
+    word.definitions.every((definition) => typeof definition === 'string') &&
+    typeof word.bookId === 'string' &&
+    typeof word.bookTitle === 'string' &&
+    typeof word.updatedAt === 'number'
+  )
+}
+
+export async function publishVocabularyWord(word: VocabularyWord): Promise<void> {
+  const pubkey = await resolvePubkey()
+  if (!pubkey) return
+  const content = await encryptToSelf(pubkey, JSON.stringify(word))
+  const event = await signTemplate({
+    kind: KIND,
+    created_at: Math.floor(Date.now() / 1000),
+    // A random stable identifier avoids leaking a dictionary-attackable hash
+    // of the word in the otherwise encrypted event's public tags.
+    tags: [['d', `${VOCABULARY_D_PREFIX}${word.syncId}`]],
+    content,
+  })
+  const relays = await getRelays()
+  const pool = new SimplePool()
+  try {
+    await Promise.any(pool.publish(relays, event))
+  } finally {
+    pool.close(relays)
+  }
+}
+
+export async function pullVocabulary(): Promise<number> {
+  const pubkey = await resolvePubkey()
+  if (!pubkey) return 0
+  const relays = await getRelays()
+  const pool = new SimplePool()
+  let merged = 0
+  try {
+    const events = await pool.querySync(relays, { kinds: [KIND], authors: [pubkey] })
+    const local = new Map((await listVocabulary()).map((word) => [word.key, word]))
+    for (const event of events) {
+      const d = event.tags.find((tag) => tag[0] === 'd')?.[1]
+      if (!d?.startsWith(VOCABULARY_D_PREFIX)) continue
+      try {
+        const word = JSON.parse(await decryptFromSelf(pubkey, event.content)) as unknown
+        if (!validVocabularyWord(word)) continue
+        if (!local.has(word.key) || word.updatedAt > (local.get(word.key)?.updatedAt ?? 0)) {
+          await saveVocabularyWord(word)
+          local.set(word.key, word)
+          merged++
+        }
+      } catch {
+        /* skip undecryptable or malformed vocabulary entries */
+      }
+    }
+  } finally {
+    pool.close(relays)
+  }
+  return merged
 }
 
 export async function pullProgress(): Promise<number> {

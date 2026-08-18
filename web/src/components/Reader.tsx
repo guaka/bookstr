@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import ePub, { type Book, type Rendition } from 'epubjs'
-import type { CatalogBook, Theme } from '../types'
+import type { CatalogBook, DictionaryEntry, Theme, VocabularyWord } from '../types'
 import { downloadAndVerify, getProgress, saveProgress } from '../lib/catalog'
-import { publishProgress } from '../lib/nostr'
+import { lookupWord, normalizeSelectedWord, rememberVocabulary } from '../lib/dictionary'
+import { publishProgress, publishVocabularyWord } from '../lib/nostr'
 import { formatProgress } from '../lib/progress'
-import { BackIcon, HomeIcon, NextIcon } from './Icons'
+import { BackIcon, CloseIcon, ExternalLinkIcon, HomeIcon, NextIcon, SettingsIcon } from './Icons'
 
 const FONT_SIZE_KEY = 'bookstr.fontSize'
 const FONT_SIZE_MIN = 70
@@ -47,21 +48,48 @@ type Props = {
   book: CatalogBook
   catalogUrl: string
   onClose: () => void
+  onSettings: () => void
+  onVocabularySaved: (word: VocabularyWord) => void
+  settingsOpen: boolean
   theme: Theme
 }
 
-export function Reader({ book, catalogUrl, onClose, theme }: Props) {
+type DictionaryCard = {
+  word: string
+  loading: boolean
+  entry?: DictionaryEntry
+  error?: string
+}
+
+export function Reader({
+  book,
+  catalogUrl,
+  onClose,
+  onSettings,
+  onVocabularySaved,
+  settingsOpen,
+  theme,
+}: Props) {
   const hostRef = useRef<HTMLDivElement>(null)
   const renditionRef = useRef<Rendition | null>(null)
   const bookRef = useRef<Book | null>(null)
   const onCloseRef = useRef(onClose)
+  const onVocabularySavedRef = useRef(onVocabularySaved)
+  const settingsOpenRef = useRef(settingsOpen)
+  const dictionaryOpenRef = useRef(false)
+  const themeRef = useRef(theme)
   const [pct, setPct] = useState('0%')
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [fontSize, setFontSize] = useState(initialFontSize)
+  const [dictionary, setDictionary] = useState<DictionaryCard | null>(null)
   const fontSizeRef = useRef(fontSize)
   const saveTimer = useRef<number | null>(null)
   onCloseRef.current = onClose
+  onVocabularySavedRef.current = onVocabularySaved
+  settingsOpenRef.current = settingsOpen
+  dictionaryOpenRef.current = dictionary !== null
+  themeRef.current = theme
 
   const changeFontSize = useCallback((delta: number) => {
     setFontSize((current) => {
@@ -78,9 +106,15 @@ export function Reader({ book, catalogUrl, onClose, theme }: Props) {
   }, [])
 
   const handleKey = useCallback((event: KeyboardEvent) => {
+    if (settingsOpenRef.current) return
     const rendition = renditionRef.current
     if (event.key === 'Escape') {
       event.preventDefault()
+      if (dictionaryOpenRef.current) {
+        dictionaryOpenRef.current = false
+        setDictionary(null)
+        return
+      }
       onCloseRef.current()
       return
     }
@@ -142,7 +176,7 @@ export function Reader({ book, catalogUrl, onClose, theme }: Props) {
           allowScriptedContent: true,
         })
         renditionRef.current = rendition
-        rendition.themes.select(theme)
+        rendition.themes.select(themeRef.current)
         rendition.themes.register('white', {
           body: {
             background: '#ffffff',
@@ -185,7 +219,7 @@ export function Reader({ book, catalogUrl, onClose, theme }: Props) {
           },
           a: { color: '#e8e4dc' },
         })
-        rendition.themes.select(theme)
+        rendition.themes.select(themeRef.current)
         applyFontSize(rendition, fontSizeRef.current)
         // Dense generated locations keep progress accurate even in a book's
         // opening pages. The previous 1,600-character spacing stayed at zero
@@ -256,6 +290,38 @@ export function Reader({ book, catalogUrl, onClose, theme }: Props) {
         rendition.on('keydown', (...args: unknown[]) => {
           handleKey(args[0] as KeyboardEvent)
         })
+        rendition.on('selected', (...args: unknown[]) => {
+          const cfi = typeof args[0] === 'string' ? args[0] : undefined
+          const contents = args[1] as { window?: Window } | undefined
+          const selection = contents?.window?.getSelection()?.toString() ?? ''
+          const word = normalizeSelectedWord(selection)
+          if (!word) return
+
+          dictionaryOpenRef.current = true
+          setDictionary({ word, loading: true })
+          void lookupWord(word, book.language ?? 'en')
+            .then(async (entry) => {
+              const saved = await rememberVocabulary(entry, {
+                bookId: book.id,
+                bookTitle: book.title,
+                cfi,
+              })
+              onVocabularySavedRef.current(saved)
+              setDictionary({ word, loading: false, entry })
+              try {
+                await publishVocabularyWord(saved)
+              } catch {
+                // The local word list remains useful while offline or unsigned.
+              }
+            })
+            .catch((lookupError: unknown) => {
+              setDictionary({
+                word,
+                loading: false,
+                error: lookupError instanceof Error ? lookupError.message : String(lookupError),
+              })
+            })
+        })
 
         const saved = await getProgress(book.id)
         if (saved?.locator?.cfi) {
@@ -291,7 +357,7 @@ export function Reader({ book, catalogUrl, onClose, theme }: Props) {
       renditionRef.current?.destroy()
       bookRef.current?.destroy()
     }
-  }, [book, catalogUrl, handleKey, theme])
+  }, [book, catalogUrl, handleKey])
 
   useEffect(() => {
     renditionRef.current?.themes.select(theme)
@@ -355,6 +421,14 @@ export function Reader({ book, catalogUrl, onClose, theme }: Props) {
             <button
               className="icon-button"
               type="button"
+              onClick={onSettings}
+              aria-label="Settings"
+            >
+              <SettingsIcon />
+            </button>
+            <button
+              className="icon-button"
+              type="button"
               onClick={() => void renditionRef.current?.prev()}
               aria-label="Previous section"
             >
@@ -370,6 +444,47 @@ export function Reader({ book, catalogUrl, onClose, theme }: Props) {
             </button>
           </div>
         </div>
+      )}
+      {dictionary && (
+        <aside className="dictionary-card" aria-live="polite" aria-label={`Definition of ${dictionary.word}`}>
+          <div className="dictionary-heading">
+            <div>
+              <strong>{dictionary.word}</strong>
+              {dictionary.entry?.partOfSpeech && <span>{dictionary.entry.partOfSpeech}</span>}
+            </div>
+            <button
+              className="icon-button"
+              type="button"
+              onClick={() => setDictionary(null)}
+              aria-label="Close definition"
+            >
+              <CloseIcon />
+            </button>
+          </div>
+          {dictionary.loading && <p className="muted">Looking up…</p>}
+          {dictionary.error && <p className="error">{dictionary.error}</p>}
+          {dictionary.entry && (
+            <>
+              <ol>
+                {dictionary.entry.definitions.map((definition) => (
+                  <li key={definition}>{definition}</li>
+                ))}
+              </ol>
+              {dictionary.entry.translation && (
+                <p className="dictionary-translation">
+                  <span>{dictionary.entry.language === 'pt' ? 'English' : 'Portuguese'}</span>{' '}
+                  {dictionary.entry.translation}
+                </p>
+              )}
+              <div className="dictionary-footer">
+                <span>Saved to Words</span>
+                <a href={dictionary.entry.sourceUrl} target="_blank" rel="noreferrer">
+                  Wiktionary <ExternalLinkIcon />
+                </a>
+              </div>
+            </>
+          )}
+        </aside>
       )}
     </div>
   )

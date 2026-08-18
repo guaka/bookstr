@@ -117,4 +117,21 @@ describe('catalog helpers', () => {
       downloadAndVerify(book, 'https://books.example.org/catalog.json'),
     ).rejects.toThrow(/SHA-256 mismatch/)
   })
+
+  it('caches a same-origin LibVault EPUB by MD5', async () => {
+	const md5 = '13d8fb7e2afacb7f49811d40afb0d7c8'
+	const book: CatalogBook = {
+	  id: md5,
+	  libvaultMd5: md5,
+	  title: 'LibVault book',
+	  author: 'Author',
+	  epubUrl: `/api/files/${md5}`,
+	}
+	const fetchMock = vi.fn(async () => new Response(new TextEncoder().encode('epub'), { status: 200 }))
+	vi.stubGlobal('fetch', fetchMock)
+	const first = await downloadAndVerify(book, '/bookstr/catalog/catalog.json')
+	expect(await first.text()).toBe('epub')
+	await downloadAndVerify(book, '/bookstr/catalog/catalog.json')
+	expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
 })

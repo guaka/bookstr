@@ -8,6 +8,7 @@ import {
   getNsec,
   getRelays,
   pullProgress,
+  pullVocabulary,
   restoreNip46,
   setNsec,
   setRelays,
@@ -166,7 +167,7 @@ export function Settings({ onBack, theme, onTheme }: Props) {
       <section className="settings settings-panel" role="dialog" aria-modal="true" aria-labelledby="settings-heading">
       <header className="library-header">
         <h1 id="settings-heading">Settings</h1>
-        <button className="icon-button" type="button" onClick={onBack} aria-label="Back to library">
+        <button className="icon-button" type="button" onClick={onBack} aria-label="Close settings">
           <CloseIcon />
         </button>
       </header>
@@ -392,8 +393,11 @@ export function Settings({ onBack, theme, onTheme }: Props) {
         onClick={() => {
           void (async () => {
             try {
-              const n = await pullProgress()
-              setStatus(`Merged ${n} remote progress update(s)`)
+              const [progressCount, wordCount] = await Promise.all([
+                pullProgress(),
+                pullVocabulary(),
+              ])
+              setStatus(`Merged ${progressCount} progress update(s) and ${wordCount} word(s)`)
             } catch (e) {
               setStatus(e instanceof Error ? e.message : String(e))
             }

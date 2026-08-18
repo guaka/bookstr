@@ -1,5 +1,5 @@
 import { openDB, type DBSchema, type IDBPDatabase } from 'idb'
-import type { Catalog, CatalogBook, ReadingProgress } from '../types'
+import type { Catalog, CatalogBook, DictionaryEntry, ReadingProgress, VocabularyWord } from '../types'
 
 interface BookstrDB extends DBSchema {
   epubs: {
@@ -14,17 +14,31 @@ interface BookstrDB extends DBSchema {
     key: string
     value: string
   }
+  dictionary: {
+    key: string
+    value: DictionaryEntry
+  }
+  vocabulary: {
+    key: string
+    value: VocabularyWord
+  }
 }
 
 let dbPromise: Promise<IDBPDatabase<BookstrDB>> | null = null
 
 function db() {
   if (!dbPromise) {
-    dbPromise = openDB<BookstrDB>('bookstr', 1, {
-      upgrade(database) {
-        database.createObjectStore('epubs', { keyPath: 'id' })
-        database.createObjectStore('progress', { keyPath: 'bookId' })
-        database.createObjectStore('settings')
+    dbPromise = openDB<BookstrDB>('bookstr', 2, {
+      upgrade(database, oldVersion) {
+        if (oldVersion < 1) {
+          database.createObjectStore('epubs', { keyPath: 'id' })
+          database.createObjectStore('progress', { keyPath: 'bookId' })
+          database.createObjectStore('settings')
+        }
+        if (oldVersion < 2) {
+          database.createObjectStore('dictionary', { keyPath: 'key' })
+          database.createObjectStore('vocabulary', { keyPath: 'key' })
+        }
       },
     })
   }
@@ -65,6 +79,26 @@ export async function saveProgress(progress: ReadingProgress): Promise<void> {
 
 export async function listProgress(): Promise<ReadingProgress[]> {
   return (await db()).getAll('progress')
+}
+
+export async function getDictionaryEntry(key: string): Promise<DictionaryEntry | undefined> {
+  return (await db()).get('dictionary', key)
+}
+
+export async function saveDictionaryEntry(entry: DictionaryEntry): Promise<void> {
+  await (await db()).put('dictionary', entry)
+}
+
+export async function getVocabularyWord(key: string): Promise<VocabularyWord | undefined> {
+  return (await db()).get('vocabulary', key)
+}
+
+export async function saveVocabularyWord(word: VocabularyWord): Promise<void> {
+  await (await db()).put('vocabulary', word)
+}
+
+export async function listVocabulary(): Promise<VocabularyWord[]> {
+  return (await db()).getAll('vocabulary')
 }
 
 export function resolveCatalogUrl(catalogUrl: string, epubUrl: string): string {
@@ -110,12 +144,22 @@ export async function downloadAndVerify(
   if (cached) return cached
 
   const url = resolveCatalogUrl(catalogUrl, book.epubUrl)
+	if (book.libvaultMd5) {
+	  const source = new URL(url, globalThis.location.href)
+	  const expectedPath = `/api/files/${book.libvaultMd5.toLowerCase()}`
+	  if (book.id.toLowerCase() !== book.libvaultMd5.toLowerCase() ||
+	      source.origin !== globalThis.location.origin || source.pathname !== expectedPath) {
+	    throw new Error('Untrusted LibVault EPUB source')
+	  }
+	}
   const res = await fetch(url)
   if (!res.ok) throw new Error(`Download HTTP ${res.status}`)
   const buffer = await res.arrayBuffer()
-  const hash = await sha256Hex(buffer)
-  if (hash !== book.id.toLowerCase()) {
-    throw new Error(`SHA-256 mismatch: expected ${book.id}, got ${hash}`)
+	if (!book.libvaultMd5) {
+	  const hash = await sha256Hex(buffer)
+	  if (hash !== book.id.toLowerCase()) {
+	    throw new Error(`SHA-256 mismatch: expected ${book.id}, got ${hash}`)
+	  }
   }
   const blob = new Blob([buffer], { type: 'application/epub+zip' })
   await (await db()).put('epubs', { id: book.id, blob, cachedAt: Date.now() })
