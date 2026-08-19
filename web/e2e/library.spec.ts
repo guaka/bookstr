@@ -106,20 +106,44 @@ test.describe("bookstr web", () => {
     await expect(qr).toHaveAttribute("src", /^data:image\/svg\+xml/);
   });
 
-  test("opens a LibVault PDF", async ({ page }) => {
+  test("opens a LibVault PDF even when IndexedDB is blocked", async ({
+    page,
+    context,
+  }) => {
     const md5 = "a".repeat(32);
-    await page.route(`**/api/files/${md5}`, async (route) => {
+    await page.goto("/favicon.svg");
+    await page.evaluate(async () => {
+      const database = await new Promise<IDBDatabase>((resolve, reject) => {
+        const request = indexedDB.open("bookstr", 2);
+        request.onupgradeneeded = () => {
+          const db = request.result;
+          db.createObjectStore("epubs", { keyPath: "id" });
+          db.createObjectStore("progress", { keyPath: "bookId" });
+          db.createObjectStore("settings");
+          db.createObjectStore("dictionary", { keyPath: "key" });
+          db.createObjectStore("vocabulary", { keyPath: "key" });
+        };
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error);
+      });
+      Object.assign(window, { bookstrDatabaseBlocker: database });
+    });
+
+    const readerPage = await context.newPage();
+    await readerPage.route(`**/api/files/${md5}`, async (route) => {
       await route.fulfill({
         status: 200,
         contentType: "application/pdf",
         body: "%PDF-1.7\n",
       });
     });
-    await page.goto(
+    await readerPage.goto(
       `/?libvaultMd5=${md5}&format=pdf&title=Test%20PDF#/read/${md5}`,
     );
-    await expect(page.locator(".pdf-reader")).toBeVisible();
-    await expect(page.locator("object.pdf-document")).toBeVisible();
-    await expect(page.getByText("Test PDF")).toBeVisible();
+    await expect(readerPage.locator(".pdf-reader")).toBeVisible();
+    await expect(readerPage.locator("object.pdf-document")).toBeVisible({
+      timeout: 10_000,
+    });
+    await expect(readerPage.getByText("Test PDF")).toBeVisible();
   });
 });

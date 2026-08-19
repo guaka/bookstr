@@ -43,8 +43,10 @@ interface BookstrDB extends DBSchema {
 }
 
 let dbPromise: Promise<IDBPDatabase<BookstrDB>> | null = null;
+const publicationMemoryCache = new Map<string, CachedPublication>();
 const SETTING_PREFIX = "bookstr.setting.";
 const SETTING_READ_TIMEOUT_MS = 1_500;
+const PUBLICATION_CACHE_TIMEOUT_MS = 1_500;
 
 function localSetting(key: string): string | undefined {
   try {
@@ -107,6 +109,7 @@ function db() {
 
 /** Test-only: close and drop IndexedDB so suites start clean. */
 export async function resetCatalogDbForTests(): Promise<void> {
+  publicationMemoryCache.clear();
   if (dbPromise) {
     const database = await dbPromise;
     database.close();
@@ -279,15 +282,28 @@ export async function getCachedPublication(
   id: string,
   format?: BookFormat,
 ): Promise<Blob | undefined> {
+  const memoryCached = publicationMemoryCache.get(id);
+  if (memoryCached && (!format || memoryCached.format === format)) {
+    return memoryCached.blob;
+  }
   const database = await db();
   const cached = await database.get("publications", id);
-  if (cached && (!format || cached.format === format)) return cached.blob;
+  if (cached && (!format || cached.format === format)) {
+    publicationMemoryCache.set(id, cached);
+    return cached.blob;
+  }
 
   // Preserve EPUBs cached by Bookstr database versions 1 and 2.
   if (!format || format === "epub") {
     const legacy = await database.get("epubs", id);
     if (legacy) {
       await database.put("publications", {
+        id,
+        blob: legacy.blob,
+        format: "epub",
+        cachedAt: legacy.cachedAt,
+      });
+      publicationMemoryCache.set(id, {
         id,
         blob: legacy.blob,
         format: "epub",
@@ -305,7 +321,15 @@ export async function downloadAndVerify(
   onStatus?: (message: string) => void,
 ): Promise<Blob> {
   const format = getBookFormat(book);
-  const cached = await getCachedPublication(book.id, format);
+  let cached: Blob | undefined;
+  try {
+    cached = await withTimeout(
+      getCachedPublication(book.id, format),
+      PUBLICATION_CACHE_TIMEOUT_MS,
+    );
+  } catch {
+    // A blocked Firefox IndexedDB upgrade must not block opening the book.
+  }
   if (cached) return cached;
 
   const url = resolveCatalogUrl(catalogUrl, book.epubUrl);
@@ -369,8 +393,15 @@ export async function downloadAndVerify(
   const blob = new Blob([buffer], {
     type: format === "pdf" ? "application/pdf" : "application/epub+zip",
   });
-  await (
-    await db()
-  ).put("publications", { id: book.id, blob, format, cachedAt: Date.now() });
+  const publication = {
+    id: book.id,
+    blob,
+    format,
+    cachedAt: Date.now(),
+  };
+  publicationMemoryCache.set(book.id, publication);
+  void db()
+    .then((database) => database.put("publications", publication))
+    .catch(() => undefined);
   return blob;
 }
