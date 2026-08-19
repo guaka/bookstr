@@ -258,7 +258,7 @@ describe("catalog helpers", () => {
         blossomSha256: sha256,
         title: "Private Blossom book",
         author: "Author",
-        epubUrl: `https://blossom.bfr.ee/${sha256}.epub`,
+        epubUrl: `https://private.blossom.example/${sha256}.epub`,
       },
       "/catalog/catalog.json",
       onStatus,

@@ -320,15 +320,14 @@ export async function downloadAndVerify(
       throw new Error("Untrusted LibVault EPUB source");
     }
   }
-  if (book.blossomSha256) {
-    const source = new URL(url);
-    if (source.protocol !== "https:") {
+  const blossomSource = book.blossomSha256 ? new URL(url) : null;
+  if (blossomSource) {
+    if (blossomSource.protocol !== "https:") {
       throw new Error("Untrusted Blossom source");
     }
   }
-  let res = await fetch(url);
-  if (book.blossomSha256 && (res.status === 401 || res.status === 403)) {
-    const source = new URL(url);
+
+  const fetchWithBlossomAuthorization = async (): Promise<Response> => {
     onStatus?.("Approve download in your Nostr signer…");
     try {
       const { createBlossomDownloadAuthorization } = await import("./nostr");
@@ -336,16 +335,24 @@ export async function downloadAndVerify(
       headers.set(
         "Authorization",
         await createBlossomDownloadAuthorization(
-          book.blossomSha256,
-          source.hostname,
+          book.blossomSha256!,
+          blossomSource!.hostname,
         ),
       );
-      res = await fetch(url, { headers });
+      return await fetch(url, { headers });
     } catch (error) {
       throw new Error(
         `Blossom authorization failed: ${error instanceof Error ? error.message : String(error)}`,
       );
     }
+  };
+
+  let res =
+    blossomSource?.hostname.toLowerCase() === "blossom.bfr.ee"
+      ? await fetchWithBlossomAuthorization()
+      : await fetch(url);
+  if (blossomSource && (res.status === 401 || res.status === 403)) {
+    res = await fetchWithBlossomAuthorization();
   }
   if (!res.ok) throw new Error(`Download HTTP ${res.status}`);
   const buffer = await res.arrayBuffer();
