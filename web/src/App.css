@@ -24,6 +24,7 @@
 }
 
 :root[data-theme="night"] {
+  color-scheme: dark;
   --bg: #121212;
   --ink: #e8e4dc;
   --muted: #aaa39a;
@@ -532,8 +533,20 @@ a.book-row {
   width: 100%;
   padding: 0.55rem 0.65rem;
   border: 1px solid var(--line);
+  color: var(--ink);
   background: var(--surface);
   border-radius: 2px;
+}
+
+.settings option {
+  color: var(--ink);
+  background: var(--surface);
+}
+
+.settings input::placeholder,
+.settings textarea::placeholder {
+  color: var(--muted);
+  opacity: 1;
 }
 
 .settings .row {

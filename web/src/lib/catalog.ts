@@ -43,6 +43,43 @@ interface BookstrDB extends DBSchema {
 }
 
 let dbPromise: Promise<IDBPDatabase<BookstrDB>> | null = null;
+const SETTING_PREFIX = "bookstr.setting.";
+const SETTING_READ_TIMEOUT_MS = 1_500;
+
+function localSetting(key: string): string | undefined {
+  try {
+    return globalThis.localStorage?.getItem(`${SETTING_PREFIX}${key}`) ?? undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function cacheLocalSetting(key: string, value: string): void {
+  try {
+    globalThis.localStorage?.setItem(`${SETTING_PREFIX}${key}`, value);
+  } catch {
+    /* IndexedDB remains the fallback when localStorage is unavailable. */
+  }
+}
+
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = globalThis.setTimeout(
+      () => reject(new Error("Storage operation timed out")),
+      timeoutMs,
+    );
+    promise.then(
+      (value) => {
+        globalThis.clearTimeout(timer);
+        resolve(value);
+      },
+      (error) => {
+        globalThis.clearTimeout(timer);
+        reject(error);
+      },
+    );
+  });
+}
 
 function db() {
   if (!dbPromise) {
@@ -79,15 +116,37 @@ export async function resetCatalogDbForTests(): Promise<void> {
     req.onerror = () => reject(req.error ?? new Error("deleteDatabase failed"));
     req.onblocked = () => resolve();
   });
+  try {
+    for (let index = globalThis.localStorage.length - 1; index >= 0; index--) {
+      const key = globalThis.localStorage.key(index);
+      if (key?.startsWith(SETTING_PREFIX)) globalThis.localStorage.removeItem(key);
+    }
+  } catch {
+    /* ignore unavailable test storage */
+  }
 }
 
 export async function getSetting(key: string, fallback = ""): Promise<string> {
-  const value = await (await db()).get("settings", key);
-  return value ?? fallback;
+  const cached = localSetting(key);
+  if (cached !== undefined) return cached;
+  try {
+    const value = await withTimeout(
+      (async () => (await db()).get("settings", key))(),
+      SETTING_READ_TIMEOUT_MS,
+    );
+    if (value !== undefined) cacheLocalSetting(key, value);
+    return value ?? fallback;
+  } catch {
+    return fallback;
+  }
 }
 
 export async function setSetting(key: string, value: string): Promise<void> {
-  await (await db()).put("settings", value, key);
+  cacheLocalSetting(key, value);
+  // Do not let a blocked Firefox IndexedDB transaction freeze signer setup.
+  void db()
+    .then((database) => database.put("settings", value, key))
+    .catch(() => undefined);
 }
 
 export async function getProgress(

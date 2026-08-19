@@ -17,7 +17,7 @@ test.describe("bookstr web", () => {
     await expect(page.getByText("Little Brother")).toHaveCount(0);
   });
 
-  test("detects a late NIP-07 injection and shows a NIP-46 QR", async ({
+  test("detects a late NIP-07 injection and hides fallback signers", async ({
     page,
   }) => {
     await page.addInitScript(() => {
@@ -39,11 +39,36 @@ test.describe("bookstr web", () => {
     await expect(page.getByText("Connected via browser extension")).toBeVisible(
       { timeout: 10_000 },
     );
-
-    await page.getByRole("button", { name: "Show Amber QR" }).click();
+    await expect(page.getByText("Remote signer (NIP-46)")).toHaveCount(0);
     await expect(
-      page.getByAltText("nostrconnect QR code for Amber"),
-    ).toBeVisible();
+      page.getByRole("button", { name: "Show Amber QR" }),
+    ).toHaveCount(0);
+    await expect(page.getByText("Paste bunker:// instead")).toHaveCount(0);
+    await expect(page.getByText("Use nsec instead (advanced)")).toHaveCount(0);
+
+    await page.getByLabel("Theme").selectOption("night");
+    await expect
+      .poll(() =>
+        page
+          .getByLabel("Theme")
+          .evaluate((element) => getComputedStyle(element).color),
+      )
+      .toBe("rgb(232, 228, 220)");
+  });
+
+  test("shows a canvas-free NIP-46 QR without a browser signer", async ({
+    page,
+  }) => {
+    await page.addInitScript(() => {
+      HTMLCanvasElement.prototype.toDataURL = () => {
+        throw new Error("Canvas export blocked by Firefox privacy protection");
+      };
+    });
+    await page.goto("/#/settings");
+    await page.getByRole("button", { name: "Show Amber QR" }).click();
+    const qr = page.getByAltText("nostrconnect QR code for Amber");
+    await expect(qr).toBeVisible();
+    await expect(qr).toHaveAttribute("src", /^data:image\/svg\+xml/);
   });
 
   test("opens a LibVault PDF", async ({ page }) => {

@@ -27,7 +27,18 @@ describe("catalog helpers", () => {
   });
 
   it("persists settings and progress in IndexedDB", async () => {
+    const localValues = new Map<string, string>();
+    vi.stubGlobal("localStorage", {
+      get length() {
+        return localValues.size;
+      },
+      getItem: (key: string) => localValues.get(key) ?? null,
+      setItem: (key: string, value: string) => localValues.set(key, value),
+      removeItem: (key: string) => localValues.delete(key),
+      key: (index: number) => [...localValues.keys()][index] ?? null,
+    });
     await setSetting("theme", "night");
+    expect(localStorage.getItem("bookstr.setting.theme")).toBe("night");
     expect(await getSetting("theme")).toBe("night");
     expect(await getSetting("missing", "fallback")).toBe("fallback");
 

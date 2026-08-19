@@ -149,6 +149,22 @@ function randomConnectSecret(): string {
   return [...bytes].map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
+function withSignerTimeout<T>(promise: Promise<T>, message: string, timeoutMs = 15_000): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = globalThis.setTimeout(() => reject(new Error(message)), timeoutMs);
+    promise.then(
+      (value) => {
+        globalThis.clearTimeout(timer);
+        resolve(value);
+      },
+      (error) => {
+        globalThis.clearTimeout(timer);
+        reject(error);
+      },
+    );
+  });
+}
+
 /** Permissions requested from remote signers (Amber, etc.). */
 export const NIP46_PERMS = [
   `sign_event:${KIND}`,
@@ -245,7 +261,11 @@ export async function connectNip07(): Promise<{
   const ok = await waitForNip07();
   if (!ok || !window.nostr) throw new Error("No NIP-07 extension found");
   await closeBunker();
-  const pubkey = await window.nostr.getPublicKey();
+  const pubkey = await withSignerTimeout(
+    window.nostr.getPublicKey(),
+    "NIP-07 signer did not return control to the page",
+  );
+  if (!/^[a-f0-9]{64}$/i.test(pubkey)) throw new Error("NIP-07 signer returned an invalid public key");
   nip07Pubkey = pubkey;
   const npub = hexToNpub(pubkey);
   await setSetting("authMode", "nip07");
@@ -283,12 +303,14 @@ export async function startNip46QrConnect(
     secret,
     url: typeof window !== "undefined" ? window.location.origin : undefined,
   });
-  const qrDataUrl = await QRCode.toDataURL(uri, {
+  const qrSvg = await withSignerTimeout(QRCode.toString(uri, {
+    type: "svg",
     errorCorrectionLevel: "M",
     margin: 1,
     width: 280,
     color: { dark: "#1c1916", light: "#fffaf2" },
-  });
+  }), "QR generation timed out", 5_000);
+  const qrDataUrl = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(qrSvg)}`;
 
   const pool = new SimplePool();
   const ac = new AbortController();

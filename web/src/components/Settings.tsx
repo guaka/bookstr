@@ -314,153 +314,163 @@ export function Settings({
               </p>
             ) : null}
 
-            <div className="nip07-card">
-              <p>
-                <strong>Remote signer (NIP-46)</strong> — scan with Amber on
-                your phone. Uses your configured relays.
-              </p>
-              {qrSession ? (
-                <div className="nip46-qr">
-                  <img
-                    src={qrSession.qrDataUrl}
-                    alt="nostrconnect QR code for Amber"
-                    width={280}
-                    height={280}
-                  />
-                  <p className="muted">
-                    Scan with Amber, then approve bookstr.
-                  </p>
-                  {qrError && (
-                    <p className="error">
-                      Connection listener failed: {qrError}
+            {mode !== "nip07" && (
+              <div className="nip07-card">
+                <p>
+                  <strong>Remote signer (NIP-46)</strong> — scan with Amber on
+                  your phone. Uses your configured relays.
+                </p>
+                {qrSession ? (
+                  <div className="nip46-qr">
+                    <img
+                      src={qrSession.qrDataUrl}
+                      alt="nostrconnect QR code for Amber"
+                      width={280}
+                      height={280}
+                    />
+                    <p className="muted">
+                      Scan with Amber, then approve bookstr.
                     </p>
-                  )}
-                  <details>
-                    <summary>Show connection URI</summary>
-                    <code className="nip46-uri">{qrSession.uri}</code>
-                  </details>
+                    {qrError && (
+                      <p className="error">
+                        Connection listener failed: {qrError}
+                      </p>
+                    )}
+                    <details>
+                      <summary>Show connection URI</summary>
+                      <code className="nip46-uri">{qrSession.uri}</code>
+                    </details>
+                    <div className="row">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          qrSession.cancel();
+                          qrSessionRef.current = null;
+                          setQrSession(null);
+                          setQrError("");
+                          setStatus("Cancelled NIP-46 connect");
+                        }}
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                ) : (
                   <div className="row">
                     <button
                       type="button"
-                      onClick={() => {
-                        qrSession.cancel();
-                        qrSessionRef.current = null;
-                        setQrSession(null);
-                        setQrError("");
-                        setStatus("Cancelled NIP-46 connect");
-                      }}
+                      disabled={qrPending}
+                      onClick={() => void beginQrConnect()}
                     >
-                      Cancel
+                      {qrPending ? "Creating QR…" : "Show Amber QR"}
+                    </button>
+                    <button
+                      type="button"
+                      className="linkish"
+                      onClick={() => setShowBunkerPaste((v) => !v)}
+                    >
+                      {showBunkerPaste
+                        ? "Hide bunker paste"
+                        : "Paste bunker:// instead"}
                     </button>
                   </div>
-                </div>
-              ) : (
-                <div className="row">
-                  <button
-                    type="button"
-                    disabled={qrPending}
-                    onClick={() => void beginQrConnect()}
-                  >
-                    {qrPending ? "Creating QR…" : "Show Amber QR"}
-                  </button>
-                  <button
-                    type="button"
-                    className="linkish"
-                    onClick={() => setShowBunkerPaste((v) => !v)}
-                  >
-                    {showBunkerPaste
-                      ? "Hide bunker paste"
-                      : "Paste bunker:// instead"}
-                  </button>
-                </div>
-              )}
-              {showBunkerPaste && !qrSession && (
-                <>
-                  <label>
-                    bunker:// or NIP-05
-                    <input
-                      value={bunkerInput}
-                      onChange={(e) => setBunkerInput(e.target.value)}
-                      placeholder="bunker://… or name@domain"
-                      autoComplete="off"
-                    />
-                  </label>
-                  <button
-                    type="button"
-                    disabled={connectingBunker}
-                    onClick={() => {
-                      void (async () => {
-                        setConnectingBunker(true);
-                        setStatus("Connecting to bunker…");
-                        try {
-                          const connected =
-                            await connectBunkerInput(bunkerInput);
-                          setMode(connected.mode);
-                          setNpub(connected.npub);
-                          setNsecField("");
-                          setShowNsec(false);
-                          setBunkerInput("");
-                          setStatus("Connected via NIP-46 bunker");
-                        } catch (e) {
-                          setStatus(e instanceof Error ? e.message : String(e));
-                        } finally {
-                          setConnectingBunker(false);
-                        }
-                      })();
-                    }}
-                  >
-                    {connectingBunker ? "Connecting…" : "Connect bunker"}
-                  </button>
-                </>
-              )}
-            </div>
+                )}
+                {showBunkerPaste && !qrSession && (
+                  <>
+                    <label>
+                      bunker:// or NIP-05
+                      <input
+                        value={bunkerInput}
+                        onChange={(e) => setBunkerInput(e.target.value)}
+                        placeholder="bunker://… or name@domain"
+                        autoComplete="off"
+                      />
+                    </label>
+                    <button
+                      type="button"
+                      disabled={connectingBunker}
+                      onClick={() => {
+                        void (async () => {
+                          setConnectingBunker(true);
+                          setStatus("Connecting to bunker…");
+                          try {
+                            const connected =
+                              await connectBunkerInput(bunkerInput);
+                            setMode(connected.mode);
+                            setNpub(connected.npub);
+                            setNsecField("");
+                            setShowNsec(false);
+                            setBunkerInput("");
+                            setStatus("Connected via NIP-46 bunker");
+                          } catch (e) {
+                            setStatus(
+                              e instanceof Error ? e.message : String(e),
+                            );
+                          } finally {
+                            setConnectingBunker(false);
+                          }
+                        })();
+                      }}
+                    >
+                      {connectingBunker ? "Connecting…" : "Connect bunker"}
+                    </button>
+                  </>
+                )}
+              </div>
+            )}
 
-            <button
-              type="button"
-              className="linkish"
-              onClick={() => setShowNsec((v) => !v)}
-            >
-              {showNsec ? "Hide nsec fallback" : "Use nsec instead (advanced)"}
-            </button>
-          </>
-        )}
-
-        {(showNsec || (!nip07 && mode === "nsec")) && mode !== "nip46" && (
-          <>
-            <label>
-              nsec
-              <input
-                type="password"
-                autoComplete="off"
-                value={nsec}
-                onChange={(e) => setNsecField(e.target.value)}
-                placeholder="nsec1…"
-              />
-            </label>
-            <div className="row">
+            {mode !== "nip07" && (
               <button
                 type="button"
-                onClick={() => {
-                  void (async () => {
-                    try {
-                      const pub = await setNsec(nsec);
-                      setNpub(pub);
-                      setMode(pub ? "nsec" : "none");
-                      setStatus(pub ? "nsec saved" : "Cleared");
-                    } catch (e) {
-                      setStatus(e instanceof Error ? e.message : String(e));
-                    }
-                  })();
-                }}
+                className="linkish"
+                onClick={() => setShowNsec((v) => !v)}
               >
-                Save nsec
+                {showNsec
+                  ? "Hide nsec fallback"
+                  : "Use nsec instead (advanced)"}
               </button>
-              <button type="button" onClick={() => void disconnect()}>
-                Clear
-              </button>
-            </div>
+            )}
           </>
         )}
+
+        {(showNsec || (!nip07 && mode === "nsec")) &&
+          mode !== "nip46" &&
+          mode !== "nip07" && (
+            <>
+              <label>
+                nsec
+                <input
+                  type="password"
+                  autoComplete="off"
+                  value={nsec}
+                  onChange={(e) => setNsecField(e.target.value)}
+                  placeholder="nsec1…"
+                />
+              </label>
+              <div className="row">
+                <button
+                  type="button"
+                  onClick={() => {
+                    void (async () => {
+                      try {
+                        const pub = await setNsec(nsec);
+                        setNpub(pub);
+                        setMode(pub ? "nsec" : "none");
+                        setStatus(pub ? "nsec saved" : "Cleared");
+                      } catch (e) {
+                        setStatus(e instanceof Error ? e.message : String(e));
+                      }
+                    })();
+                  }}
+                >
+                  Save nsec
+                </button>
+                <button type="button" onClick={() => void disconnect()}>
+                  Clear
+                </button>
+              </div>
+            </>
+          )}
 
         <label>
           Relays (one per line)
