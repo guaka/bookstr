@@ -28,7 +28,6 @@ import {
   listVocabulary,
   saveProgress,
   saveVocabularyWord,
-  deleteVocabularyWord,
   setSetting,
 } from "./catalog";
 import { normalizeProgress, progressDTag } from "./progress";
@@ -915,15 +914,6 @@ export async function pullVocabulary(): Promise<number> {
           await decryptFromSelf(pubkey, event.content),
         ) as unknown;
         if (!validVocabularyWord(word)) continue;
-        if (word.deleted) {
-          const existing = local.get(word.key);
-          if (!existing || word.updatedAt > existing.updatedAt) {
-            await deleteVocabularyWord(word.key);
-            local.delete(word.key);
-            merged++;
-          }
-          continue;
-        }
         if (
           !local.has(word.key) ||
           word.updatedAt > (local.get(word.key)?.updatedAt ?? 0)
