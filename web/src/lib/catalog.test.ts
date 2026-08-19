@@ -217,14 +217,35 @@ describe("catalog helpers", () => {
     });
   });
 
-  it("rejects Blossom favorite URLs on untrusted hosts", () => {
+  it("downloads and verifies a Blossom favorite that also has a LibVault MD5", async () => {
+    const bytes = new TextEncoder().encode("blossom epub");
+    const sha256 = await sha256Hex(bytes.buffer);
+    const book: CatalogBook = {
+      id: sha256,
+      libvaultMd5: "a".repeat(32),
+      blossomSha256: sha256,
+      title: "Blossom book",
+      author: "Author",
+      epubUrl: `https://blossom.bfr.ee/${sha256}`,
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(bytes, { status: 200 })),
+    );
+
+    await expect(
+      downloadAndVerify(book, "/catalog/catalog.json"),
+    ).resolves.toBeInstanceOf(Blob);
+  });
+
+  it("rejects insecure Blossom favorite URLs", () => {
     expect(
       catalogBookFromBlossomFavorite({
         key: "favorite",
         title: "Nope",
         detail: "Unknown",
         blossomSha256: "b".repeat(64),
-        blossomUrl: `https://evil.example/${"b".repeat(64)}`,
+        blossomUrl: `http://blossom.example/${"b".repeat(64)}`,
       }),
     ).toBeNull();
   });

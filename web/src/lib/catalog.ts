@@ -48,7 +48,9 @@ const SETTING_READ_TIMEOUT_MS = 1_500;
 
 function localSetting(key: string): string | undefined {
   try {
-    return globalThis.localStorage?.getItem(`${SETTING_PREFIX}${key}`) ?? undefined;
+    return (
+      globalThis.localStorage?.getItem(`${SETTING_PREFIX}${key}`) ?? undefined
+    );
   } catch {
     return undefined;
   }
@@ -119,7 +121,8 @@ export async function resetCatalogDbForTests(): Promise<void> {
   try {
     for (let index = globalThis.localStorage.length - 1; index >= 0; index--) {
       const key = globalThis.localStorage.key(index);
-      if (key?.startsWith(SETTING_PREFIX)) globalThis.localStorage.removeItem(key);
+      if (key?.startsWith(SETTING_PREFIX))
+        globalThis.localStorage.removeItem(key);
     }
   } catch {
     /* ignore unavailable test storage */
@@ -214,8 +217,6 @@ export async function fetchCatalog(catalogUrl: string): Promise<Catalog> {
   return data;
 }
 
-const BLOSSOM_HOST = "blossom.bfr.ee";
-
 export function catalogBookFromBlossomFavorite(
   favorite: import("../types").ExternalFavorite,
 ): CatalogBook | null {
@@ -228,11 +229,7 @@ export function catalogBookFromBlossomFavorite(
   } catch {
     return null;
   }
-  if (
-    source.protocol !== "https:" ||
-    source.hostname.toLowerCase() !== BLOSSOM_HOST
-  )
-    return null;
+  if (source.protocol !== "https:") return null;
   return {
     id: sha256,
     title: favorite.title,
@@ -311,7 +308,7 @@ export async function downloadAndVerify(
   if (cached) return cached;
 
   const url = resolveCatalogUrl(catalogUrl, book.epubUrl);
-  if (book.libvaultMd5) {
+  if (book.libvaultMd5 && !book.blossomSha256) {
     const source = new URL(url, globalThis.location.href);
     const expectedPath = `/api/files/${book.libvaultMd5.toLowerCase()}`;
     if (
@@ -322,31 +319,40 @@ export async function downloadAndVerify(
       throw new Error("Untrusted LibVault EPUB source");
     }
   }
-  const headers = new Headers();
   if (book.blossomSha256) {
     const source = new URL(url);
-    if (
-      source.protocol !== "https:" ||
-      source.hostname.toLowerCase() !== BLOSSOM_HOST
-    ) {
+    if (source.protocol !== "https:") {
       throw new Error("Untrusted Blossom source");
     }
-    const { createBlossomDownloadAuthorization } = await import("./nostr");
-    headers.set(
-      "Authorization",
-      await createBlossomDownloadAuthorization(
-        book.blossomSha256,
-        source.hostname,
-      ),
-    );
   }
-  const res = await fetch(url, { headers });
+  let res = await fetch(url);
+  if (book.blossomSha256 && (res.status === 401 || res.status === 403)) {
+    const source = new URL(url);
+    try {
+      const { createBlossomDownloadAuthorization } = await import("./nostr");
+      const headers = new Headers();
+      headers.set(
+        "Authorization",
+        await createBlossomDownloadAuthorization(
+          book.blossomSha256,
+          source.hostname,
+        ),
+      );
+      res = await fetch(url, { headers });
+    } catch {
+      // Preserve the original HTTP response when signer authorization fails.
+    }
+  }
   if (!res.ok) throw new Error(`Download HTTP ${res.status}`);
   const buffer = await res.arrayBuffer();
-  if (!book.libvaultMd5) {
+  const expectedSha256 =
+    book.blossomSha256 ?? (!book.libvaultMd5 ? book.id : null);
+  if (expectedSha256) {
     const hash = await sha256Hex(buffer);
-    if (hash !== book.id.toLowerCase()) {
-      throw new Error(`SHA-256 mismatch: expected ${book.id}, got ${hash}`);
+    if (hash !== expectedSha256.toLowerCase()) {
+      throw new Error(
+        `SHA-256 mismatch: expected ${expectedSha256}, got ${hash}`,
+      );
     }
   }
   const blob = new Blob([buffer], {

@@ -110,7 +110,7 @@ describe("Library", () => {
         onRetryNostr={vi.fn()}
       />,
     );
-    expect(screen.getAllByText(/Heart a book/).length).toBeGreaterThan(0);
+    expect(screen.queryByText("Heart a book to keep it here.")).toBeNull();
 
     rerender(
       <Library

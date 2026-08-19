@@ -17,7 +17,13 @@ import {
   listVocabulary,
   setSetting,
 } from "./lib/catalog";
-import { loadFavorites, saveFavorites } from "./lib/favorites";
+import {
+  loadFavorites,
+  loadNostrFavorites,
+  saveFavorites,
+  saveNostrFavorites,
+  type CachedNostrFavorites,
+} from "./lib/favorites";
 import type {
   CatalogBook,
   ExternalFavorite,
@@ -162,12 +168,47 @@ export default function App() {
     );
   }, []);
 
+  const applySharedFavorites = useCallback((shared: CachedNostrFavorites) => {
+    const blossomBooks = shared.external
+      .map(catalogBookFromBlossomFavorite)
+      .filter((book): book is CatalogBook => book !== null);
+    const blossomMd5s = new Set(blossomBooks.map((book) => book.libvaultMd5));
+    setBooks((current) =>
+      [...current, ...blossomBooks].filter(
+        (book, index, all) =>
+          all.findIndex((candidate) => candidate.id === book.id) === index,
+      ),
+    );
+    setFavoriteIds((current) => {
+      const merged = new Set([
+        ...current,
+        ...shared.bookIds,
+        ...blossomBooks.map((book) => book.id),
+      ]);
+      saveFavorites(merged);
+      return merged;
+    });
+    setExternalFavorites(
+      shared.external.filter(
+        (favorite) => !blossomMd5s.has(favorite.libvaultMd5),
+      ),
+    );
+    return shared.bookIds.length + shared.external.length;
+  }, []);
+
   const syncNostr = useCallback(
     async (catalogBooks: CatalogBook[]): Promise<string> => {
-      setFavoritesSync({
-        status: "syncing",
-        message: "Syncing Nostr favorites…",
-      });
+      const cachedNpub = await getSetting("npub");
+      const cachedFavorites = loadNostrFavorites(cachedNpub);
+      if (cachedFavorites) {
+        applySharedFavorites(cachedFavorites);
+        setFavoritesSync({ status: "syncing", message: "" });
+      } else {
+        setFavoritesSync({
+          status: "syncing",
+          message: "Syncing Nostr favorites…",
+        });
+      }
       try {
         const nostr = await import("./lib/nostr");
         const identity = await nostr.restorePreferredIdentity();
@@ -179,33 +220,8 @@ export default function App() {
         }
 
         const shared = await nostr.pullSharedFavorites(catalogBooks);
-        const blossomBooks = shared.external
-          .map(catalogBookFromBlossomFavorite)
-          .filter((book): book is CatalogBook => book !== null);
-        const blossomMd5s = new Set(
-          blossomBooks.map((book) => book.libvaultMd5),
-        );
-        setBooks((current) =>
-          [...current, ...blossomBooks].filter(
-            (book, index, all) =>
-              all.findIndex((candidate) => candidate.id === book.id) === index,
-          ),
-        );
-        setFavoriteIds((current) => {
-          const merged = new Set([
-            ...current,
-            ...shared.bookIds,
-            ...blossomBooks.map((book) => book.id),
-          ]);
-          saveFavorites(merged);
-          return merged;
-        });
-        setExternalFavorites(
-          shared.external.filter(
-            (favorite) => !blossomMd5s.has(favorite.libvaultMd5),
-          ),
-        );
-        const favoriteCount = shared.bookIds.length + shared.external.length;
+        saveNostrFavorites(identity.npub, shared);
+        const favoriteCount = applySharedFavorites(shared);
         const message = `Nostr synced ${favoriteCount} LibVault favorite${favoriteCount === 1 ? "" : "s"}.`;
         setFavoritesSync({ status: "synced", message });
 
@@ -222,7 +238,7 @@ export default function App() {
         return message;
       }
     },
-    [refreshProgress, refreshVocabulary],
+    [applySharedFavorites, refreshProgress, refreshVocabulary],
   );
 
   useEffect(() => {

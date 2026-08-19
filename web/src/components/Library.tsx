@@ -259,7 +259,8 @@ export function Library({
           <section className="book-shelf" aria-labelledby="favorites-heading">
             <h2 id="favorites-heading">Favorites</h2>
             {nostrFavoritesStatus !== "idle" &&
-              (nostrFavoritesStatus !== "synced" ||
+              (nostrFavoritesStatus === "error" ||
+                nostrFavoritesStatus === "disconnected" ||
                 (favorites.length === 0 && externalFavorites.length === 0)) && (
                 <div
                   className={`shelf-sync ${nostrFavoritesStatus}`}
@@ -275,9 +276,7 @@ export function Library({
                   )}
                 </div>
               )}
-            {favorites.length === 0 && externalFavorites.length === 0 ? (
-              <p className="muted shelf-empty">Heart a book to keep it here.</p>
-            ) : (
+            {favorites.length > 0 || externalFavorites.length > 0 ? (
               <>
                 <label className="favorite-search">
                   <span className="visually-hidden">Search favorites</span>
@@ -336,7 +335,7 @@ export function Library({
                   </ul>
                 )}
               </>
-            )}
+            ) : null}
           </section>
 
           <section className="book-shelf" aria-labelledby="words-heading">
