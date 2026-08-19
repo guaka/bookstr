@@ -124,6 +124,9 @@ export default function App() {
   const [progress, setProgress] = useState<ReadingProgress[]>([]);
   const [vocabulary, setVocabulary] = useState<VocabularyWord[]>([]);
   const [openingBookId, setOpeningBookId] = useState<string | null>(null);
+  const [openingBookMessage, setOpeningBookMessage] = useState<string | null>(
+    null,
+  );
   const [favoritesSync, setFavoritesSync] = useState<{
     status: FavoritesSyncStatus;
     message: string;
@@ -411,6 +414,7 @@ export default function App() {
       loading={loading}
       error={error}
       openingBookId={openingBookId}
+      openingBookMessage={openingBookMessage}
       favoriteIds={favoriteIds}
       progressById={progressById}
       externalFavorites={externalFavorites}
@@ -428,12 +432,16 @@ export default function App() {
       onOpen={(book) => {
         if (openingBookId) return;
         setOpeningBookId(book.id);
-        void downloadAndVerify(book, DEFAULT_CATALOG)
+        setOpeningBookMessage("Downloading and opening…");
+        void downloadAndVerify(book, DEFAULT_CATALOG, setOpeningBookMessage)
           .then(() => navigate(`/read/${encodeURIComponent(book.id)}`))
           .catch((reason) =>
             setError(reason instanceof Error ? reason.message : String(reason)),
           )
-          .finally(() => setOpeningBookId(null));
+          .finally(() => {
+            setOpeningBookId(null);
+            setOpeningBookMessage(null);
+          });
       }}
     />
   );

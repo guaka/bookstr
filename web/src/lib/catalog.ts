@@ -302,6 +302,7 @@ export async function getCachedPublication(
 export async function downloadAndVerify(
   book: CatalogBook,
   catalogUrl: string,
+  onStatus?: (message: string) => void,
 ): Promise<Blob> {
   const format = getBookFormat(book);
   const cached = await getCachedPublication(book.id, format);
@@ -328,6 +329,7 @@ export async function downloadAndVerify(
   let res = await fetch(url);
   if (book.blossomSha256 && (res.status === 401 || res.status === 403)) {
     const source = new URL(url);
+    onStatus?.("Approve download in your Nostr signer…");
     try {
       const { createBlossomDownloadAuthorization } = await import("./nostr");
       const headers = new Headers();
@@ -339,8 +341,10 @@ export async function downloadAndVerify(
         ),
       );
       res = await fetch(url, { headers });
-    } catch {
-      // Preserve the original HTTP response when signer authorization fails.
+    } catch (error) {
+      throw new Error(
+        `Blossom authorization failed: ${error instanceof Error ? error.message : String(error)}`,
+      );
     }
   }
   if (!res.ok) throw new Error(`Download HTTP ${res.status}`);

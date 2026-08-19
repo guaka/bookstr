@@ -16,6 +16,10 @@ import {
 } from "./catalog";
 import type { CatalogBook } from "../types";
 
+vi.mock("./nostr", () => ({
+  createBlossomDownloadAuthorization: vi.fn(async () => "Nostr signed-token"),
+}));
+
 describe("catalog helpers", () => {
   beforeEach(async () => {
     await resetCatalogDbForTests();
@@ -236,6 +240,38 @@ describe("catalog helpers", () => {
     await expect(
       downloadAndVerify(book, "/catalog/catalog.json"),
     ).resolves.toBeInstanceOf(Blob);
+  });
+
+  it("requests signer authorization and retries a private Blossom download", async () => {
+    const bytes = new TextEncoder().encode("private blossom epub");
+    const sha256 = await sha256Hex(bytes.buffer);
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response("auth required", { status: 401 }))
+      .mockResolvedValueOnce(new Response(bytes, { status: 200 }));
+    const onStatus = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    await downloadAndVerify(
+      {
+        id: sha256,
+        blossomSha256: sha256,
+        title: "Private Blossom book",
+        author: "Author",
+        epubUrl: `https://blossom.bfr.ee/${sha256}.epub`,
+      },
+      "/catalog/catalog.json",
+      onStatus,
+    );
+
+    expect(onStatus).toHaveBeenCalledWith(
+      "Approve download in your Nostr signer…",
+    );
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const retryInit = fetchMock.mock.calls[1][1] as RequestInit;
+    expect((retryInit.headers as Headers).get("Authorization")).toBe(
+      "Nostr signed-token",
+    );
   });
 
   it("rejects insecure Blossom favorite URLs", () => {

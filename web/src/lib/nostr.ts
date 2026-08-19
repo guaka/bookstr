@@ -549,15 +549,23 @@ async function signTemplate(template: EventTemplate): Promise<VerifiedEvent> {
 
   if (mode === "nip07" && hasNip07()) {
     if (!window.nostr) throw new Error("NIP-07 unavailable");
-    await connectNip07();
-    const signed = await window.nostr.signEvent(template);
+    if (!nip07Pubkey) await connectNip07();
+    const signed = await withSignerTimeout(
+      window.nostr.signEvent(template),
+      "Nostr signer did not approve the request",
+      20_000,
+    );
     return signed as VerifiedEvent;
   }
 
   if (mode === "nip46") {
     const signer = await getBunkerSigner();
     if (!signer) throw new Error("NIP-46 bunker not connected");
-    return signer.signEvent(template);
+    return withSignerTimeout(
+      signer.signEvent(template),
+      "Remote signer did not approve the request",
+      20_000,
+    );
   }
 
   if (!nsec) throw new Error("No Nostr identity");

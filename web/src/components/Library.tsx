@@ -37,6 +37,7 @@ type Props = {
   loading: boolean;
   error: string | null;
   openingBookId?: string | null;
+  openingBookMessage?: string | null;
 };
 
 type BookRowsProps = Pick<
@@ -46,6 +47,7 @@ type BookRowsProps = Pick<
   books: CatalogBook[];
   empty: string;
   openingBookId: string | null;
+  openingBookMessage?: string | null;
   showPublicationStatus?: boolean;
 };
 
@@ -66,6 +68,7 @@ function BookRows({
   favoriteIds,
   progressById,
   openingBookId = null,
+  openingBookMessage = null,
   showPublicationStatus = false,
 }: BookRowsProps) {
   if (books.length === 0) return <p className="muted shelf-empty">{empty}</p>;
@@ -107,7 +110,9 @@ function BookRows({
                   <span className="book-progress">{progressLabel}</span>
                 )}
                 {opening && (
-                  <span className="book-opening">Downloading and opening…</span>
+                  <span className="book-opening">
+                    {openingBookMessage || "Downloading and opening…"}
+                  </span>
                 )}
               </span>
               {progress && progress.locator.progression > 0 && (
@@ -154,6 +159,7 @@ export function Library({
   loading,
   error,
   openingBookId = null,
+  openingBookMessage = null,
 }: Props) {
   const [favoriteQuery, setFavoriteQuery] = useState("");
   const favorites = books.filter((book) => favoriteIds.has(book.id));
@@ -253,6 +259,7 @@ export function Library({
               favoriteIds={favoriteIds}
               progressById={progressById}
               openingBookId={openingBookId}
+              openingBookMessage={openingBookMessage}
             />
           </section>
 
@@ -302,6 +309,7 @@ export function Library({
                     favoriteIds={favoriteIds}
                     progressById={progressById}
                     openingBookId={openingBookId}
+                    openingBookMessage={openingBookMessage}
                     showPublicationStatus
                   />
                 )}
@@ -352,7 +360,11 @@ export function Library({
                       <strong>{word.word}</strong>
                       {word.partOfSpeech && <span>{word.partOfSpeech}</span>}
                     </div>
-                    <p>{word.translation ?? word.definitions[0]}</p>
+                    <p>
+                      {word.translation ??
+                        word.definitions[0] ??
+                        "No definition found"}
+                    </p>
                     {word.contextSentence && (
                       <blockquote className="word-context-sentence">
                         “{word.contextSentence}”
