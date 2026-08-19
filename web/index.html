@@ -3,8 +3,35 @@
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, viewport-fit=cover"
+    />
     <meta name="theme-color" content="#f7f3ea" />
+    <script>
+      try {
+        const theme = localStorage.getItem("bookstr.setting.theme");
+        if (theme === "night" || theme === "paper" || theme === "white") {
+          document.documentElement.dataset.theme = theme;
+          document.documentElement.style.background =
+            theme === "night"
+              ? "#121212"
+              : theme === "paper"
+                ? "#f7f3ea"
+                : "#ffffff";
+          document.documentElement.style.colorScheme =
+            theme === "night" ? "dark" : "light";
+          document.querySelector('meta[name="theme-color"]').content =
+            theme === "night"
+              ? "#121212"
+              : theme === "paper"
+                ? "#f7f3ea"
+                : "#ffffff";
+        }
+      } catch {
+        // The stylesheet supplies the default when storage is unavailable.
+      }
+    </script>
     <title>bookstr</title>
   </head>
   <body>

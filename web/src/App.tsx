@@ -60,6 +60,15 @@ type FavoritesSyncStatus =
 
 const DEFAULT_CATALOG = `${import.meta.env.BASE_URL}catalog/catalog.json`;
 
+function initialTheme(): Theme {
+  try {
+    const stored = localStorage.getItem("bookstr.setting.theme");
+    return stored === "night" || stored === "paper" ? stored : "white";
+  } catch {
+    return "white";
+  }
+}
+
 function libvaultBookFromLocation(): CatalogBook | null {
   const params = new URLSearchParams(window.location.search);
   const md5 = (params.get("libvaultMd5") || "").toLowerCase();
@@ -112,7 +121,7 @@ export default function App() {
   );
   const [loading, setLoading] = useState(!LIBVAULT_BOOK);
   const [error, setError] = useState<string | null>(null);
-  const [theme, setTheme] = useState<Theme>("white");
+  const [theme, setTheme] = useState<Theme>(initialTheme);
   const [translationLanguage, setTranslationLanguage] =
     useState<TranslationLanguage>("en");
   const [favoriteIds, setFavoriteIds] = useState(
@@ -230,6 +239,14 @@ export default function App() {
 
         try {
           await Promise.all([nostr.pullProgress(), nostr.pullVocabulary()]);
+          const [localProgress, localWords] = await Promise.all([
+            listProgress(),
+            listVocabulary(),
+          ]);
+          await Promise.allSettled([
+            ...localProgress.map((progress) => nostr.publishProgress(progress)),
+            ...localWords.map((word) => nostr.publishVocabularyWord(word)),
+          ]);
           await Promise.all([refreshProgress(), refreshVocabulary()]);
         } catch {
           // Favorites already synced; progress and words remain offline-first.
@@ -272,6 +289,14 @@ export default function App() {
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
+    const background =
+      theme === "night" ? "#121212" : theme === "paper" ? "#f7f3ea" : "#ffffff";
+    document.documentElement.style.background = background;
+    document.documentElement.style.colorScheme =
+      theme === "night" ? "dark" : "light";
+    document
+      .querySelector('meta[name="theme-color"]')
+      ?.setAttribute("content", background);
   }, [theme]);
 
   useEffect(() => {
@@ -431,13 +456,16 @@ export default function App() {
       onSettings={() => navigate("/settings")}
       onOpen={(book) => {
         if (openingBookId) return;
+        setError(null);
         setOpeningBookId(book.id);
         setOpeningBookMessage("Downloading and opening…");
         void downloadAndVerify(book, DEFAULT_CATALOG, setOpeningBookMessage)
           .then(() => navigate(`/read/${encodeURIComponent(book.id)}`))
-          .catch((reason) =>
-            setError(reason instanceof Error ? reason.message : String(reason)),
-          )
+          .catch((reason) => {
+            setOpeningBookId(null);
+            setOpeningBookMessage(null);
+            setError(reason instanceof Error ? reason.message : String(reason));
+          })
           .finally(() => {
             setOpeningBookId(null);
             setOpeningBookMessage(null);

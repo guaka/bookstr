@@ -28,6 +28,7 @@ import {
   listVocabulary,
   saveProgress,
   saveVocabularyWord,
+  deleteVocabularyWord,
   setSetting,
 } from "./catalog";
 import { normalizeProgress, progressDTag } from "./progress";
@@ -504,12 +505,12 @@ export async function clearIdentity(): Promise<void> {
   await setSetting("authMode", "none");
 }
 
-/** Resolve active pubkey for the configured auth mode only (no surprise prompts). */
+/** Prefer an injected browser signer, then use the configured fallback. */
 export async function resolvePubkey(): Promise<string | null> {
   const mode = await getAuthMode();
   const nsec = await getNsec();
 
-  if (mode === "nip07" && hasNip07()) {
+  if (hasNip07()) {
     if (nip07Pubkey) return nip07Pubkey;
     try {
       const { npub } = await connectNip07();
@@ -547,9 +548,9 @@ async function signTemplate(template: EventTemplate): Promise<VerifiedEvent> {
   const mode = await getAuthMode();
   const nsec = await getNsec();
 
-  if (mode === "nip07" && hasNip07()) {
+  if (hasNip07()) {
     if (!window.nostr) throw new Error("NIP-07 unavailable");
-    if (!nip07Pubkey) await connectNip07();
+    if (!nip07Pubkey || mode !== "nip07") await connectNip07();
     const signed = await withSignerTimeout(
       window.nostr.signEvent(template),
       "Nostr signer did not approve the request",
@@ -609,7 +610,7 @@ async function decryptFromSelf(
   const mode = await getAuthMode();
   const nsec = await getNsec();
 
-  if (mode === "nip07" && window.nostr?.nip44?.decrypt) {
+  if (window.nostr?.nip44?.decrypt) {
     return window.nostr.nip44.decrypt(pubkey, ciphertext);
   }
 
@@ -637,7 +638,7 @@ async function encryptToSelf(
   const mode = await getAuthMode();
   const nsec = await getNsec();
 
-  if (mode === "nip07" && window.nostr?.nip44?.encrypt) {
+  if (window.nostr?.nip44?.encrypt) {
     return window.nostr.nip44.encrypt(pubkey, plaintext);
   }
 
@@ -914,6 +915,15 @@ export async function pullVocabulary(): Promise<number> {
           await decryptFromSelf(pubkey, event.content),
         ) as unknown;
         if (!validVocabularyWord(word)) continue;
+        if (word.deleted) {
+          const existing = local.get(word.key);
+          if (!existing || word.updatedAt > existing.updatedAt) {
+            await deleteVocabularyWord(word.key);
+            local.delete(word.key);
+            merged++;
+          }
+          continue;
+        }
         if (
           !local.has(word.key) ||
           word.updatedAt > (local.get(word.key)?.updatedAt ?? 0)

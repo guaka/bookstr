@@ -17,6 +17,41 @@ test.describe("bookstr web", () => {
     await expect(page.getByText("Little Brother")).toHaveCount(0);
   });
 
+  test("applies a stored night theme before the app loads", async ({
+    page,
+  }) => {
+    await page.addInitScript(() =>
+      localStorage.setItem("bookstr.setting.theme", "night"),
+    );
+    await page.goto("/");
+
+    await expect(page.locator("html")).toHaveAttribute("data-theme", "night");
+    await expect
+      .poll(() =>
+        page.evaluate(
+          () => getComputedStyle(document.documentElement).backgroundColor,
+        ),
+      )
+      .toBe("rgb(18, 18, 18)");
+  });
+
+  test("clears the opening state after a download fails", async ({ page }) => {
+    const md5 = "d".repeat(32);
+    await page.addInitScript((bookId) => {
+      localStorage.setItem("bookstr.favorites", JSON.stringify([bookId]));
+    }, md5);
+    await page.route(`**/api/files/${md5}`, async (route) => {
+      await route.fulfill({ status: 500, body: "failed" });
+    });
+    await page.goto(`/?libvaultMd5=${md5}&title=Broken%20Book#/`);
+
+    const book = page.getByRole("button", { name: /Broken Book/ }).first();
+    await book.click();
+    await expect(page.getByText("Download HTTP 500")).toBeVisible();
+    await expect(page.getByText("Downloading and opening…")).toHaveCount(0);
+    await expect(book).toBeEnabled();
+  });
+
   test("detects a late NIP-07 injection and hides fallback signers", async ({
     page,
   }) => {

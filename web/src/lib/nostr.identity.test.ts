@@ -106,6 +106,26 @@ describe("nostr identity helpers", () => {
     expect(event.tags).toContainEqual(["x", "a".repeat(64)]);
   });
 
+  it("uses NIP-07 for Blossom even when NIP-46 was previously selected", async () => {
+    const pubkey = getPublicKey(generateSecretKey());
+    const signEvent = vi.fn(async (event) => ({
+      ...event,
+      id: "1",
+      pubkey,
+      sig: "s",
+    }));
+    await setSetting("authMode", "nip46");
+    window.nostr = {
+      getPublicKey: async () => pubkey,
+      signEvent,
+    };
+
+    await createBlossomDownloadAuthorization("a".repeat(64), "blossom.bfr.ee");
+
+    expect(signEvent).toHaveBeenCalledTimes(1);
+    expect(await getAuthMode()).toBe("nip07");
+  });
+
   it("automatically prefers an available NIP-07 signer", async () => {
     const extensionKey = getPublicKey(generateSecretKey());
     window.nostr = {
