@@ -9,6 +9,7 @@ BOOKS_DEST="${DEST}/books"
 
 mkdir -p "$BOOKS_DEST"
 cp -f "${ROOT}/catalog.json" "${DEST}/catalog.json"
+find "$BOOKS_DEST" -maxdepth 1 -type f -name '*.epub' -delete
 
 shopt -s nullglob
 count=0

@@ -1,32 +1,61 @@
-import type { CatalogBook, ExternalFavorite, ReadingProgress, VocabularyWord } from '../types'
-import { formatProgress } from '../lib/progress'
-import { Footer } from './Footer'
-import { BookIcon, ExternalLinkIcon, HeartIcon, SettingsIcon, WordsIcon } from './Icons'
+import { useState } from "react";
+import { getBookFormat } from "../lib/catalog";
+import type {
+  CatalogBook,
+  ExternalFavorite,
+  ReadingProgress,
+  VocabularyWord,
+} from "../types";
+import { formatProgress } from "../lib/progress";
+import { Footer } from "./Footer";
+import {
+  BookIcon,
+  ExternalLinkIcon,
+  HeartIcon,
+  SettingsIcon,
+  WordsIcon,
+} from "./Icons";
 
 type Props = {
-  books: CatalogBook[]
-  onOpen: (book: CatalogBook) => void
-  onSettings: () => void
-  onFavorites: () => void
-  onWords: () => void
-  onHome: () => void
-  onToggleFavorite: (bookId: string) => void
-  favoriteIds: ReadonlySet<string>
-  progressById: ReadonlyMap<string, ReadingProgress>
-  externalFavorites: ExternalFavorite[]
-  vocabulary: VocabularyWord[]
-  favoritesActive: boolean
-  wordsActive: boolean
-  nostrFavoritesStatus: 'idle' | 'syncing' | 'synced' | 'disconnected' | 'error'
-  nostrFavoritesMessage: string
-  onRetryNostr: () => void
-  loading: boolean
-  error: string | null
+  books: CatalogBook[];
+  onOpen: (book: CatalogBook) => void;
+  onSettings: () => void;
+  onFavorites: () => void;
+  onWords: () => void;
+  onHome: () => void;
+  onToggleFavorite: (bookId: string) => void;
+  favoriteIds: ReadonlySet<string>;
+  progressById: ReadonlyMap<string, ReadingProgress>;
+  externalFavorites: ExternalFavorite[];
+  vocabulary: VocabularyWord[];
+  favoritesActive: boolean;
+  wordsActive: boolean;
+  nostrFavoritesStatus:
+    "idle" | "syncing" | "synced" | "disconnected" | "error";
+  nostrFavoritesMessage: string;
+  onRetryNostr: () => void;
+  loading: boolean;
+  error: string | null;
+  openingBookId?: string | null;
+};
+
+type BookRowsProps = Pick<
+  Props,
+  "onOpen" | "onToggleFavorite" | "favoriteIds" | "progressById"
+> & {
+  books: CatalogBook[];
+  empty: string;
+  openingBookId: string | null;
+  showPublicationStatus?: boolean;
+};
+
+function cleanAuthor(author?: string) {
+  const value = author?.trim();
+  return value && value.toLowerCase() !== "unknown" ? value : "Author unknown";
 }
 
-type BookRowsProps = Pick<Props, 'onOpen' | 'onToggleFavorite' | 'favoriteIds' | 'progressById'> & {
-  books: CatalogBook[]
-  empty: string
+function publicationLabel(format: string, blossomSha256?: string) {
+  return `${format.toUpperCase()} · ${blossomSha256 ? "On Blossom" : "Not on Blossom"}`;
 }
 
 function BookRows({
@@ -36,39 +65,73 @@ function BookRows({
   onToggleFavorite,
   favoriteIds,
   progressById,
+  openingBookId = null,
+  showPublicationStatus = false,
 }: BookRowsProps) {
-  if (books.length === 0) return <p className="muted shelf-empty">{empty}</p>
+  if (books.length === 0) return <p className="muted shelf-empty">{empty}</p>;
 
   return (
     <ul className="book-list">
       {books.map((book) => {
-        const favorite = favoriteIds.has(book.id)
-        const progress = progressById.get(book.id)
-        const progressLabel = progress ? formatProgress(progress.locator.progression, ' read') : null
+        const favorite = favoriteIds.has(book.id);
+        const progress = progressById.get(book.id);
+        const progressLabel = progress
+          ? formatProgress(progress.locator.progression, " read")
+          : null;
+        const opening = openingBookId === book.id;
         return (
           <li className="book-item" key={book.id}>
-            <button type="button" className="book-row" onClick={() => onOpen(book)}>
+            <button
+              type="button"
+              className="book-row"
+              disabled={openingBookId !== null}
+              onClick={() => onOpen(book)}
+            >
               <span className="book-title">{book.title}</span>
-              <span className="book-author">{book.author}</span>
-              <span className="book-facts">
-                {book.license && <span className="book-license">{book.license}</span>}
-                {progressLabel && <span className="book-progress">{progressLabel}</span>}
+              <span className="book-author">
+                {cleanAuthor(book.author)}
+                {book.year ? ` · ${book.year}` : ""}
               </span>
+              <span className="book-facts">
+                {book.license && (
+                  <span className="book-license">{book.license}</span>
+                )}
+                {showPublicationStatus && (
+                  <span
+                    className={`book-publication ${book.blossomSha256 ? "available" : ""}`}
+                  >
+                    {publicationLabel(getBookFormat(book), book.blossomSha256)}
+                  </span>
+                )}
+                {progressLabel && (
+                  <span className="book-progress">{progressLabel}</span>
+                )}
+                {opening && (
+                  <span className="book-opening">Downloading and opening…</span>
+                )}
+              </span>
+              {progress && progress.locator.progression > 0 && (
+                <progress
+                  max={1}
+                  value={progress.locator.progression}
+                  aria-label={`${progressLabel}`}
+                />
+              )}
             </button>
             <button
-              className={`icon-button book-favorite ${favorite ? 'active' : ''}`}
+              className={`icon-button book-favorite ${favorite ? "active" : ""}`}
               type="button"
               onClick={() => onToggleFavorite(book.id)}
-              aria-label={`${favorite ? 'Remove' : 'Add'} ${book.title} ${favorite ? 'from' : 'to'} favorites`}
+              aria-label={`${favorite ? "Remove" : "Add"} ${book.title} ${favorite ? "from" : "to"} favorites`}
               aria-pressed={favorite}
             >
               <HeartIcon filled={favorite} />
             </button>
           </li>
-        )
+        );
       })}
     </ul>
-  )
+  );
 }
 
 export function Library({
@@ -90,22 +153,42 @@ export function Library({
   onRetryNostr,
   loading,
   error,
+  openingBookId = null,
 }: Props) {
-  const favorites = books.filter((book) => favoriteIds.has(book.id))
+  const [favoriteQuery, setFavoriteQuery] = useState("");
+  const favorites = books.filter((book) => favoriteIds.has(book.id));
   const reading = books
     .filter((book) => progressById.has(book.id) && !favoriteIds.has(book.id))
     .sort(
       (a, b) =>
-        (progressById.get(b.id)?.updatedAt ?? 0) - (progressById.get(a.id)?.updatedAt ?? 0),
-    )
-  const examples = books.filter(
-    (book) => !favoriteIds.has(book.id) && !progressById.has(book.id),
-  )
+        (progressById.get(b.id)?.updatedAt ?? 0) -
+        (progressById.get(a.id)?.updatedAt ?? 0),
+    );
+  const query = favoriteQuery.trim().toLocaleLowerCase();
+  const visibleFavorites = favorites.filter(
+    (book) =>
+      !query ||
+      [book.title, book.author, book.year, getBookFormat(book)].some((value) =>
+        value?.toLocaleLowerCase().includes(query),
+      ),
+  );
+  const visibleExternalFavorites = externalFavorites.filter(
+    (favorite) =>
+      !query ||
+      [favorite.title, favorite.author, favorite.year, favorite.format].some(
+        (value) => value?.toLocaleLowerCase().includes(query),
+      ),
+  );
 
   return (
     <div className="library">
       <header className="library-header">
-        <button className="brand-link" type="button" onClick={onHome} aria-label="Bookstr home">
+        <button
+          className="brand-link"
+          type="button"
+          onClick={onHome}
+          aria-label="Bookstr home"
+        >
           <span className="brand-mark">
             <BookIcon />
           </span>
@@ -113,7 +196,7 @@ export function Library({
         </button>
         <div className="library-header-actions">
           <button
-            className={`icon-button ${favoritesActive ? 'active' : ''}`}
+            className={`icon-button ${favoritesActive ? "active" : ""}`}
             type="button"
             onClick={onFavorites}
             aria-label="Favorites"
@@ -122,7 +205,7 @@ export function Library({
             <HeartIcon filled={favoritesActive} />
           </button>
           <button
-            className={`icon-button ${wordsActive ? 'active' : ''}`}
+            className={`icon-button ${wordsActive ? "active" : ""}`}
             type="button"
             onClick={onWords}
             aria-label="Words"
@@ -130,7 +213,12 @@ export function Library({
           >
             <WordsIcon />
           </button>
-          <button className="icon-button" type="button" onClick={onSettings} aria-label="Settings">
+          <button
+            className="icon-button"
+            type="button"
+            onClick={onSettings}
+            aria-label="Settings"
+          >
             <SettingsIcon />
           </button>
         </div>
@@ -153,7 +241,7 @@ export function Library({
         </ul>
       )}
 
-      {!error && (!loading || books.length > 0) && (
+      {(!loading || books.length > 0) && (
         <>
           <section className="book-shelf" aria-labelledby="reading-heading">
             <h1 id="reading-heading">Reading</h1>
@@ -164,19 +252,23 @@ export function Library({
               onToggleFavorite={onToggleFavorite}
               favoriteIds={favoriteIds}
               progressById={progressById}
+              openingBookId={openingBookId}
             />
           </section>
 
           <section className="book-shelf" aria-labelledby="favorites-heading">
             <h2 id="favorites-heading">Favorites</h2>
-            {nostrFavoritesStatus !== 'idle' &&
-              (nostrFavoritesStatus !== 'synced' ||
+            {nostrFavoritesStatus !== "idle" &&
+              (nostrFavoritesStatus !== "synced" ||
                 (favorites.length === 0 && externalFavorites.length === 0)) && (
-                <div className={`shelf-sync ${nostrFavoritesStatus}`} role="status">
+                <div
+                  className={`shelf-sync ${nostrFavoritesStatus}`}
+                  role="status"
+                >
                   <span>{nostrFavoritesMessage}</span>
-                  {(nostrFavoritesStatus === 'error' ||
-                    nostrFavoritesStatus === 'disconnected' ||
-                    nostrFavoritesStatus === 'synced') && (
+                  {(nostrFavoritesStatus === "error" ||
+                    nostrFavoritesStatus === "disconnected" ||
+                    nostrFavoritesStatus === "synced") && (
                     <button type="button" onClick={onRetryNostr}>
                       Retry
                     </button>
@@ -187,19 +279,36 @@ export function Library({
               <p className="muted shelf-empty">Heart a book to keep it here.</p>
             ) : (
               <>
-                {favorites.length > 0 && (
+                <label className="favorite-search">
+                  <span className="visually-hidden">Search favorites</span>
+                  <input
+                    type="search"
+                    value={favoriteQuery}
+                    onChange={(event) => setFavoriteQuery(event.target.value)}
+                    placeholder="Search favorites"
+                  />
+                </label>
+                {visibleFavorites.length === 0 &&
+                  visibleExternalFavorites.length === 0 && (
+                    <p className="muted shelf-empty">
+                      No favorites match “{favoriteQuery.trim()}”.
+                    </p>
+                  )}
+                {visibleFavorites.length > 0 && (
                   <BookRows
-                    books={favorites}
+                    books={visibleFavorites}
                     empty=""
                     onOpen={onOpen}
                     onToggleFavorite={onToggleFavorite}
                     favoriteIds={favoriteIds}
                     progressById={progressById}
+                    openingBookId={openingBookId}
+                    showPublicationStatus
                   />
                 )}
-                {externalFavorites.length > 0 && (
+                {visibleExternalFavorites.length > 0 && (
                   <ul className="book-list external-favorites">
-                    {externalFavorites.map((favorite) => (
+                    {visibleExternalFavorites.map((favorite) => (
                       <li className="book-item" key={favorite.key}>
                         <a
                           className="book-row external-favorite"
@@ -208,7 +317,16 @@ export function Library({
                           rel="noreferrer"
                         >
                           <span className="book-title">{favorite.title}</span>
-                          <span className="book-author">{favorite.detail}</span>
+                          <span className="book-author">
+                            {cleanAuthor(favorite.author)}
+                            {favorite.year ? ` · ${favorite.year}` : ""}
+                          </span>
+                          <span className="book-publication">
+                            {publicationLabel(
+                              favorite.format ?? "epub",
+                              favorite.blossomSha256,
+                            )}
+                          </span>
                           <span className="external-favorite-source">
                             LibVault <ExternalLinkIcon />
                           </span>
@@ -224,7 +342,9 @@ export function Library({
           <section className="book-shelf" aria-labelledby="words-heading">
             <h2 id="words-heading">Words</h2>
             {vocabulary.length === 0 ? (
-              <p className="muted shelf-empty">Select a word while reading to look it up and save it here.</p>
+              <p className="muted shelf-empty">
+                Select a word while reading to look it up and save it here.
+              </p>
             ) : (
               <ul className="word-list">
                 {vocabulary.map((word) => (
@@ -235,12 +355,21 @@ export function Library({
                     </div>
                     <p>{word.translation ?? word.definitions[0]}</p>
                     {word.contextSentence && (
-                      <blockquote className="word-context-sentence">“{word.contextSentence}”</blockquote>
+                      <blockquote className="word-context-sentence">
+                        “{word.contextSentence}”
+                      </blockquote>
                     )}
                     <div className="word-context">
                       <span>{word.bookTitle}</span>
-                      {word.lookupCount > 1 && <span>Looked up {word.lookupCount} times</span>}
-                      <a href={word.sourceUrl} target="_blank" rel="noreferrer" aria-label={`Open ${word.word} in Wiktionary`}>
+                      {word.lookupCount > 1 && (
+                        <span>Looked up {word.lookupCount} times</span>
+                      )}
+                      <a
+                        href={word.sourceUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        aria-label={`Open ${word.word} in Wiktionary`}
+                      >
                         Wiktionary <ExternalLinkIcon />
                       </a>
                     </div>
@@ -249,38 +378,10 @@ export function Library({
               </ul>
             )}
           </section>
-
-          <section className="book-shelf" aria-labelledby="examples-heading">
-            <h2 id="examples-heading">Examples</h2>
-            <BookRows
-              books={examples}
-              empty="All example books are in Favorites or Reading."
-              onOpen={onOpen}
-              onToggleFavorite={onToggleFavorite}
-              favoriteIds={favoriteIds}
-              progressById={progressById}
-            />
-          </section>
-
-          <section className="book-shelf more-books" aria-labelledby="more-books-heading">
-            <h2 id="more-books-heading">More books</h2>
-            <p className="muted">More legal catalogs are being connected. Explore the sources:</p>
-            <div className="source-links">
-              <a href="https://standardebooks.org/ebooks" target="_blank" rel="noreferrer">
-                Standard Ebooks
-              </a>
-              <a href="https://www.gutenberg.org/" target="_blank" rel="noreferrer">
-                Project Gutenberg
-              </a>
-              <a href="https://wikisource.org/" target="_blank" rel="noreferrer">
-                Wikisource
-              </a>
-            </div>
-          </section>
         </>
       )}
 
       <Footer />
     </div>
-  )
+  );
 }

@@ -6,7 +6,8 @@ describe('shared LibVault favorites', () => {
     const refs = parseSharedFavoriteTags([
       ['r', 'https://lib.b.bfr.ee/#book?md5=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'],
       ['libvault', 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'],
-      ['libvault-book', 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 'A Book', 'An Author', 'epub'],
+      ['libvault-book', 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 'A Book', 'An Author', 'epub', '1234', '2024'],
+      ['blossom', 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 'b'.repeat(64), `https://blossom.bfr.ee/${'b'.repeat(64)}`, 'epub'],
       ['i', 'isbn:978-0-123456-78-9', 'https://lib.b.bfr.ee/#book?md5=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'],
       ['k', 'isbn'],
     ])
@@ -16,6 +17,10 @@ describe('shared LibVault favorites', () => {
         libvaultMd5: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
         title: 'A Book',
         author: 'An Author',
+        year: '2024',
+        format: 'epub',
+        blossomSha256: 'b'.repeat(64),
+        blossomUrl: `https://blossom.bfr.ee/${'b'.repeat(64)}`,
         isbn: '9780123456789',
         url: 'https://lib.b.bfr.ee/#book?md5=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
       },

@@ -12,7 +12,7 @@ with open(path, encoding="utf-8") as f:
     data = json.load(f)
 assert data.get("version") == 1, "version must be 1"
 books = data.get("books")
-assert isinstance(books, list) and books, "books must be a non-empty array"
+assert isinstance(books, list), "books must be an array"
 ids = []
 for i, book in enumerate(books):
     for key in ("id", "title", "author", "epubUrl"):

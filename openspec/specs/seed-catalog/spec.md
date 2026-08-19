@@ -1,16 +1,16 @@
 ## Purpose
 
-Provide a seed set of openly licensed / public-domain EPUBs with honest license metadata.
+Define the optional hashed catalog format without bundling example books in the web build.
 
 ## ADDED Requirements
 
-### Requirement: Seed books with license metadata
-The seed catalog SHALL include at least Little Brother (Doctorow), O Banqueiro Anarquista (Pessoa, PT), and Da Terra à Lua (Verne, PT), each with `license`, `licenseUrl` when applicable, and `sourceUrl`.
+### Requirement: No bundled examples
+The web catalog SHALL NOT contain example books or bundled publication files.
 
-#### Scenario: Doctorow license honesty
-- **GIVEN** Little Brother is in the catalog
-- **WHEN** a client displays license metadata
-- **THEN** it shows CC BY-NC-SA (not BY-SA alone)
+#### Scenario: Fresh web library
+- **GIVEN** the user has no favorites or reading progress
+- **WHEN** the web Library opens
+- **THEN** it shows empty Reading and Favorites shelves without an Examples shelf
 
 ### Requirement: Files stored by hash
 Seed EPUBs SHALL be stored as `catalog/books/{sha256}.epub` matching catalog `id`.

@@ -28,18 +28,6 @@ type FontSizeThemes = Rendition['themes'] & {
   fontSize(size: string): void
 }
 
-type VisibleSection = {
-  index: number
-  href: string
-  pages: number[]
-  totalPages: number
-  mapping: { start: string; end: string }
-}
-
-type ContinuousRendition = Rendition & {
-  manager: { currentLocation(): VisibleSection[] }
-}
-
 function applyFontSize(rendition: Rendition, size: number) {
   ;(rendition.themes as FontSizeThemes).fontSize(`${size}%`)
 }
@@ -102,6 +90,7 @@ export function Reader({
   const [fontSize, setFontSize] = useState(initialFontSize)
   const [dictionary, setDictionary] = useState<DictionaryCard | null>(null)
   const fontSizeRef = useRef(fontSize)
+  const progressionRef = useRef(0)
   const saveTimer = useRef<number | null>(null)
   onCloseRef.current = onClose
   onProgressSavedRef.current = onProgressSaved
@@ -181,6 +170,10 @@ export function Reader({
     let scroller: HTMLElement | null = null
     let onScroll: (() => void) | null = null
     let scrollPersistTimer: number | null = null
+    const previousRootOverflow = document.documentElement.style.overflow
+    const previousBodyOverflow = document.body.style.overflow
+    document.documentElement.style.overflow = 'hidden'
+    document.body.style.overflow = 'hidden'
     ;(async () => {
       try {
         setLoading(true)
@@ -251,6 +244,7 @@ export function Reader({
             start?: {
               cfi?: string
               href?: string
+              location?: number
               percentage?: number
               index?: number
               displayed?: { page?: number; total?: number }
@@ -258,24 +252,35 @@ export function Reader({
             end?: {
               cfi?: string
               href?: string
+              location?: number
               percentage?: number
               index?: number
               displayed?: { page?: number; total?: number }
             }
           }
-          // epub.js can keep a one-page cover in the visible range while the
-          // reader is already inside the following section. Use that last
-          // visible section's start mapping for both progress and resuming.
-          const visible = (rendition as ContinuousRendition).manager.currentLocation()
-          const current = visible.at(-1)
-          const cfi = current?.mapping.start ?? loc?.start?.cfi
-          const generatedLocation = cfi ? epub.locations.locationFromCfi(cfi) : -1
-          const page = current?.pages[0] ?? loc?.end?.displayed?.page ?? 1
-          const totalPages = current?.totalPages ?? loc?.end?.displayed?.total ?? 1
-          const pageProgress = Math.max(0, page - 1) / Math.max(1, totalPages)
-          const generatedProgress =
-            cfi && generatedLocation >= 0 ? epub.locations.percentageFromCfi(cfi) : pageProgress
-          const progression = Math.max(0, Math.min(1, generatedProgress))
+          // Continuous mode preloads adjacent spine items, so a loaded
+          // chapter is not necessarily visible. The reported start/end CFIs
+          // delimit the actual viewport; their midpoint is a stable reading
+          // position even when the first generated location spans two screens.
+          const cfi = loc?.start?.cfi
+          const percentageFor = (point?: { cfi?: string; percentage?: number }) => {
+            if (Number.isFinite(point?.percentage)) return point?.percentage as number
+            if (!point?.cfi) return Number.NaN
+            const location = epub.locations.locationFromCfi(point.cfi)
+            return location >= 0 ? epub.locations.percentageFromCfi(point.cfi) : Number.NaN
+          }
+          const startProgress = percentageFor(loc?.start)
+          const endProgress = percentageFor(loc?.end)
+          const visibleProgress =
+            Number.isFinite(startProgress) && Number.isFinite(endProgress)
+              ? (startProgress + endProgress) / 2
+              : Number.isFinite(startProgress)
+                ? startProgress
+                : endProgress
+          const progression = Number.isFinite(visibleProgress)
+            ? Math.max(0, Math.min(1, visibleProgress))
+            : progressionRef.current
+          progressionRef.current = progression
           setPct(formatProgress(progression))
           const progress = {
             v: 1 as const,
@@ -283,7 +288,7 @@ export function Reader({
             title: book.title,
             author: book.author,
             locator: {
-              href: current?.href ?? loc?.start?.href,
+              href: loc?.start?.href,
               progression,
               cfi,
             },
@@ -357,6 +362,7 @@ export function Reader({
         })
 
         const saved = await getProgress(book.id)
+        progressionRef.current = Math.max(0, Math.min(1, saved?.locator.progression ?? 0))
         if (saved?.locator?.cfi) {
           await rendition.display(saved.locator.cfi)
         } else {
@@ -387,6 +393,8 @@ export function Reader({
       if (scroller && onScroll) scroller.removeEventListener('scroll', onScroll)
       if (scrollPersistTimer) window.clearTimeout(scrollPersistTimer)
       if (saveTimer.current) window.clearTimeout(saveTimer.current)
+      document.documentElement.style.overflow = previousRootOverflow
+      document.body.style.overflow = previousBodyOverflow
       renditionRef.current?.destroy()
       bookRef.current?.destroy()
     }
