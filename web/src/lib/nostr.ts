@@ -149,9 +149,54 @@ function randomConnectSecret(): string {
   return [...bytes].map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
-function withSignerTimeout<T>(promise: Promise<T>, message: string, timeoutMs = 15_000): Promise<T> {
+function browserName(): string {
+  if (typeof navigator === "undefined") return "Browser";
+  const nav = navigator as Navigator & { brave?: unknown };
+  const ua = nav.userAgent;
+  if (nav.brave) return "Brave";
+  if (/Firefox\//i.test(ua)) return "Firefox";
+  if (/Edg\//i.test(ua)) return "Edge";
+  if (/Chrome\//i.test(ua)) return "Chrome";
+  if (/Safari\//i.test(ua)) return "Safari";
+  return "Browser";
+}
+
+function platformName(): string {
+  if (typeof navigator === "undefined") return "Device";
+  const nav = navigator as Navigator & {
+    userAgentData?: { platform?: string };
+  };
+  const platform = nav.userAgentData?.platform || nav.platform || nav.userAgent;
+  if (/android/i.test(platform)) return "Android";
+  if (/iphone|ipad|ipod/i.test(platform)) return "iOS";
+  if (/mac/i.test(platform)) return "macOS";
+  if (/win/i.test(platform)) return "Windows";
+  if (/linux/i.test(platform)) return "Linux";
+  return "Device";
+}
+
+/** Stable, recognizable name for this browser profile in a remote signer. */
+export async function getNip46ClientName(): Promise<string> {
+  let id = await getSetting("nip46ClientId");
+  if (!/^[a-f0-9]{6}$/i.test(id)) {
+    id = [...crypto.getRandomValues(new Uint8Array(3))]
+      .map((byte) => byte.toString(16).padStart(2, "0"))
+      .join("");
+    await setSetting("nip46ClientId", id);
+  }
+  return `bookstr web · ${browserName()}/${platformName()} · ${id.toLowerCase()}`;
+}
+
+function withSignerTimeout<T>(
+  promise: Promise<T>,
+  message: string,
+  timeoutMs = 15_000,
+): Promise<T> {
   return new Promise<T>((resolve, reject) => {
-    const timer = globalThis.setTimeout(() => reject(new Error(message)), timeoutMs);
+    const timer = globalThis.setTimeout(
+      () => reject(new Error(message)),
+      timeoutMs,
+    );
     promise.then(
       (value) => {
         globalThis.clearTimeout(timer);
@@ -265,7 +310,8 @@ export async function connectNip07(): Promise<{
     window.nostr.getPublicKey(),
     "NIP-07 signer did not return control to the page",
   );
-  if (!/^[a-f0-9]{64}$/i.test(pubkey)) throw new Error("NIP-07 signer returned an invalid public key");
+  if (!/^[a-f0-9]{64}$/i.test(pubkey))
+    throw new Error("NIP-07 signer returned an invalid public key");
   nip07Pubkey = pubkey;
   const npub = hexToNpub(pubkey);
   await setSetting("authMode", "nip07");
@@ -277,6 +323,7 @@ export async function connectNip07(): Promise<{
 }
 
 export type Nip46QrSession = {
+  name: string;
   uri: string;
   qrDataUrl: string;
   cancel: () => void;
@@ -297,19 +344,25 @@ export async function startNip46QrConnect(
 
   const clientSk = generateSecretKey();
   const secret = randomConnectSecret();
+  const name = await getNip46ClientName();
   const uri = buildNostrConnectUri({
     clientPubkey: getPublicKey(clientSk),
     relays,
     secret,
+    name,
     url: typeof window !== "undefined" ? window.location.origin : undefined,
   });
-  const qrSvg = await withSignerTimeout(QRCode.toString(uri, {
-    type: "svg",
-    errorCorrectionLevel: "M",
-    margin: 1,
-    width: 280,
-    color: { dark: "#1c1916", light: "#fffaf2" },
-  }), "QR generation timed out", 5_000);
+  const qrSvg = await withSignerTimeout(
+    QRCode.toString(uri, {
+      type: "svg",
+      errorCorrectionLevel: "M",
+      margin: 1,
+      width: 280,
+      color: { dark: "#1c1916", light: "#fffaf2" },
+    }),
+    "QR generation timed out",
+    5_000,
+  );
   const qrDataUrl = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(qrSvg)}`;
 
   const pool = new SimplePool();
@@ -344,6 +397,7 @@ export async function startNip46QrConnect(
   })();
 
   return {
+    name,
     uri,
     qrDataUrl,
     cancel: () => ac.abort(),
@@ -367,7 +421,7 @@ export async function connectBunkerInput(
   const signer = BunkerSigner.fromBunker(clientSk, bp, { pool });
   try {
     await signer.connect({
-      name: "bookstr",
+      name: await getNip46ClientName(),
       url: typeof window !== "undefined" ? window.location.origin : undefined,
     });
     bunkerSigner = signer;

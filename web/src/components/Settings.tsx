@@ -329,7 +329,8 @@ export function Settings({
                       height={280}
                     />
                     <p className="muted">
-                      Scan with Amber, then approve bookstr.
+                      Scan with Amber, then approve{" "}
+                      <strong>{qrSession.name}</strong>.
                     </p>
                     {qrError && (
                       <p className="error">
