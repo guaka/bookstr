@@ -33,8 +33,8 @@ jobs:
       - name: Install, test, and build
         working-directory: web
         env:
-          # Project Pages site: https://guaka.github.io/bookstr/
-          BASE_PATH: /bookstr/
+          # Custom-domain Pages site: https://books.guaka.org/
+          BASE_PATH: /
         run: |
           npm ci
           npm run lint
