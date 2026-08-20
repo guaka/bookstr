@@ -364,7 +364,6 @@
         text-align: right;
         font-size: 0.68rem;
         color: color-mix(in srgb, var(--note-text, #666) 70%, transparent);
-        opacity: 0.78;
         margin-top: -0.15rem;
       }
       .footer a { color: var(--note-text, #666); font-weight: 600; }
@@ -401,7 +400,7 @@
       </header>
 
       <section class="card">
-        <p id="status" class="note">Search books by title, author, ISBN or publisher and open one. Data can be local API or all.books.party fallback.</p>
+        <p id="status" class="note">Search books by title, author, ISBN or publisher and open one.</p>
         <form id="search-form" class="row-3" autocomplete="off">
           <input id="query-input" placeholder="Search title, author, ISBN, publisher" aria-label="Book search query" autofocus />
           <select id="search-type" aria-label="Search type">
@@ -1052,6 +1051,10 @@
             : String(item.author || item.authors || 'Unknown author');
           const year = String(item.issued || item.year || '').split('-')[0];
           const ext = String(item.extension || item.format || item.media_type || item.type || 'epub').replace(/^\./, '').toLowerCase();
+          const provider = String(item.source || source).toLowerCase();
+          const directReadUrl = provider === 'gutenberg' && item.id
+            ? `https://all.books.party/api/books/${encodeURIComponent(item.id)}/download`
+            : item.readUrl || item.url || item.link || '';
           return {
             md5,
             title: item.title || 'Untitled',
@@ -1060,9 +1063,9 @@
             publisher: item.publisher || '',
             extension: ext,
             filesize: Number(item.filesize_bytes || item.filesize || 0),
-            source,
-            readUrl: item.readUrl || item.url || item.link || '',
-            fallback: Boolean(item.readUrl || item.url || item.link)
+            source: item.source || source,
+            readUrl: directReadUrl,
+            fallback: Boolean(directReadUrl)
           };
         });
       }
@@ -1147,10 +1150,13 @@
           return;
         }
         for (const word of state.words.slice().sort((a, b) => a.localeCompare(b)).slice(0, 36)) {
-          const span = document.createElement('span');
-          span.className = 'badge';
-          span.textContent = word;
-          wordsList.appendChild(span);
+          const link = document.createElement('a');
+          link.className = 'badge';
+          link.href = `https://en.wiktionary.org/wiki/${encodeURIComponent(word)}`;
+          link.target = '_blank';
+          link.rel = 'noopener noreferrer';
+          link.textContent = word;
+          wordsList.appendChild(link);
         }
       }
 
@@ -1271,21 +1277,30 @@
         }
       }
 
-      function openBook(book) {
+      function setHashRoute(route) {
+        const nextHash = route ? `#${route}` : '';
+        if (window.location.hash === nextHash) return;
+        history.pushState(null, '', `${window.location.pathname}${window.location.search}${nextHash}`);
+      }
+
+      function openBook(book, { updateHash = true, addToReading = true } = {}) {
         if (!book || (!isMd5(book.md5) && !book.readUrl && !book.url)) {
           status.textContent = 'No direct read link for this item.';
           return;
         }
 
-        const readPath = isMd5(book.md5)
+        const readPath = book.readUrl || book.url || (isMd5(book.md5)
           ? `/api/read/${encodeURIComponent(book.md5)}`
-          : (book.readUrl || book.url);
+          : '');
 
         const isBlob = readPath.startsWith('blob:') || /^https?:/i.test(readPath);
         readerFrame.src = isBlob ? readPath : `${readPath}`;
         status.textContent = `Opening ${book.title || 'book'}…`;
+        if (updateHash) {
+          setHashRoute(`read=${encodeURIComponent(readPath)}`);
+        }
 
-        if (state.settings.autoReading && isMd5(book.md5)) {
+        if (addToReading && state.settings.autoReading && isMd5(book.md5)) {
           upsertById(state.reading, {
             md5: book.md5,
             title: book.title,
@@ -1299,66 +1314,42 @@
         }
       }
 
-      async function searchBooks(query, type) {
-        const localResp = await fetch(`/api/search?q=${encodeURIComponent(query)}&type=${encodeURIComponent(type)}`);
-        const localPayload = await localResp.json().catch(() => ({}));
-        if (!localResp.ok) {
-          const localError = localPayload?.error || `search failed (${localResp.status})`;
-          throw new Error(localError);
-        }
-        return normalizeSearchBooks(localPayload, 'local');
-      }
-
       async function searchAllBooksParty(query) {
-        try {
-          const resp = await fetch(`/api/search-all?q=${encodeURIComponent(query)}&limit=20`);
-          const payload = await resp.json().catch(() => ({}));
-          if (!resp.ok) {
-            const msg = payload?.error || `search failed (${resp.status})`;
-            throw new Error(msg);
-          }
-          return normalizeSearchBooks(payload, 'all.books.party');
-        } catch (err) {
-          const resp = await fetch(`https://all.books.party/api/search?q=${encodeURIComponent(query)}&limit=20`);
-          const payload = await resp.json().catch(() => ({}));
-          if (!resp.ok) {
-            const msg = payload?.error || `search failed (${resp.status})`;
-            throw new Error(msg);
-          }
-          return normalizeSearchBooks(payload, 'all.books.party');
+        const resp = await fetch(`https://all.books.party/api/search?q=${encodeURIComponent(query)}&limit=20`);
+        const payload = await resp.json().catch(() => ({}));
+        if (!resp.ok) {
+          const msg = payload?.error || `search failed (${resp.status})`;
+          throw new Error(msg);
         }
+        return normalizeSearchBooks(payload, 'all.books.party');
       }
 
-      async function startSearch() {
+      async function startSearch({ updateHash = true } = {}) {
         const query = queryInput.value.trim();
-        const type = searchType.value;
         if (!query || query.length < 2) {
           status.textContent = 'Type at least 2 characters to search.';
           queryInput.focus();
           return;
         }
+        if (updateHash) {
+          setHashRoute(`search=${encodeURIComponent(query)}`);
+        }
         searchBtn.disabled = true;
         resultsEl.innerHTML = '';
         status.textContent = 'Searching…';
         try {
-          let books = [];
-          try {
-            books = await searchBooks(query, type);
-            status.textContent = `Found ${books.length} result(s).`;
-          } catch (err) {
-            books = await searchAllBooksParty(query);
-            status.textContent = `all.books.party returned ${books.length} result(s).`;
-          }
+          const books = await searchAllBooksParty(query);
+          status.textContent = `all.books.party returned ${books.length} result(s).`;
           renderResults(books);
           renderButtonsState();
           if (books.length) {
             recordWords(query);
           } else {
-            status.textContent += ' No matches in this backend.';
+            status.textContent += ' No matches found.';
           }
         } catch (error) {
           status.textContent = `Search failed: ${error.message || error}`;
-          resultsEl.innerHTML = '<p class="note">Search failed. Keep backend and network settings active and try again.</p>';
+          resultsEl.innerHTML = '<p class="note">Search failed. Check your network connection and try again.</p>';
         } finally {
           searchBtn.disabled = false;
         }
@@ -1673,7 +1664,7 @@
 
       let settingsReturnFocus = null;
 
-      function openSettings() {
+      function openSettings({ updateHash = true } = {}) {
         settingsModal.classList.remove('hidden');
         settingsModal.setAttribute('aria-hidden', 'false');
         settingsBtn.setAttribute('aria-pressed', 'true');
@@ -1684,9 +1675,12 @@
         if (state.settings.useNip7 && !state.nip7.pubkey) {
           void connectNip7();
         }
+        if (updateHash) {
+          setHashRoute('settings');
+        }
       }
 
-      function closeSettings() {
+      function closeSettings({ updateHash = true } = {}) {
         settingsModal.classList.add('hidden');
         settingsModal.setAttribute('aria-hidden', 'true');
         settingsBtn.setAttribute('aria-pressed', 'false');
@@ -1694,6 +1688,34 @@
           settingsReturnFocus.focus();
         } else {
           settingsBtn.focus();
+        }
+        if (updateHash && window.location.hash === '#settings') {
+          setHashRoute('');
+        }
+      }
+
+      function applyHashRoute() {
+        const route = window.location.hash.slice(1);
+        if (route === 'settings') {
+          openSettings({ updateHash: false });
+          return;
+        }
+        if (!settingsModal.classList.contains('hidden')) {
+          closeSettings({ updateHash: false });
+        }
+        if (route.startsWith('search=')) {
+          const query = decodeURIComponent(route.slice('search='.length));
+          if (query.length >= 2) {
+            queryInput.value = query;
+            void startSearch({ updateHash: false });
+          }
+          return;
+        }
+        if (route.startsWith('read=')) {
+          const readUrl = decodeURIComponent(route.slice('read='.length));
+          if (/^(https?:|blob:)/i.test(readUrl)) {
+            openBook({ title: 'book', readUrl }, { updateHash: false, addToReading: false });
+          }
         }
       }
 
@@ -1729,6 +1751,9 @@
         startSearch();
       });
 
+      window.addEventListener('popstate', applyHashRoute);
+      window.addEventListener('hashchange', applyHashRoute);
+
       const fileTime = new Date(document.lastModified);
       buildTime.textContent = Number.isNaN(fileTime.getTime())
         ? 'Unavailable'
@@ -1737,7 +1762,10 @@
       queryInput.focus();
       queryInput.setSelectionRange(queryInput.value.length, queryInput.value.length);
       loadState();
-      status.textContent = 'Search by title, author, ISBN, or publisher to begin.';
+      applyHashRoute();
+      if (!window.location.hash) {
+        status.textContent = 'Search by title, author, ISBN, or publisher to begin.';
+      }
     </script>
   </body>
 </html>
