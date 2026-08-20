@@ -108,9 +108,10 @@ describe("catalog helpers", () => {
     const id = await sha256Hex(bytes.buffer);
     const book: CatalogBook = {
       id,
+      blossomSha256: id,
       title: "T",
       author: "A",
-      epubUrl: "./books/x.epub",
+      epubUrl: `https://blossom.bfr.ee/${id}`,
     };
 
     const fetchMock = vi.fn(async () => new Response(bytes, { status: 200 }));
@@ -134,9 +135,10 @@ describe("catalog helpers", () => {
   it("downloadAndVerify rejects hash mismatches", async () => {
     const book: CatalogBook = {
       id: "0".repeat(64),
+      blossomSha256: "0".repeat(64),
       title: "T",
       author: "A",
-      epubUrl: "./books/x.epub",
+      epubUrl: `https://blossom.bfr.ee/${"0".repeat(64)}`,
     };
     vi.stubGlobal(
       "fetch",
@@ -258,7 +260,7 @@ describe("catalog helpers", () => {
         blossomSha256: sha256,
         title: "Private Blossom book",
         author: "Author",
-        epubUrl: `https://private.blossom.example/${sha256}.epub`,
+        epubUrl: `https://blossom.bfr.ee/${sha256}.epub`,
       },
       "/catalog/catalog.json",
       onStatus,
