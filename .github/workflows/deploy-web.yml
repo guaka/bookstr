@@ -23,26 +23,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-          cache-dependency-path: web/package-lock.json
-      - name: Record build time
-        run: echo "VITE_BUILD_TIME=$(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> "$GITHUB_ENV"
-      - name: Install, test, and build
-        working-directory: web
-        env:
-          # Custom-domain Pages site: https://books.guaka.org/
-          BASE_PATH: /
-        run: |
-          npm ci
-          npm run lint
-          npm test
-          npm run build
+      - name: Check static web entrypoint
+        run: test -f web/index.html
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: web/dist
+          path: web
 
   deploy:
     needs: build

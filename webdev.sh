@@ -3,7 +3,6 @@ set -euo pipefail
 
 readonly PORT=11111
 readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-readonly BACKEND_URL="${BOOKSTR_BACKEND_URL:-${LIBVAULT_BACKEND_URL:-http://localhost:8080}}"
 readonly REPO_ROOT="$(cd "${SCRIPT_DIR}" && pwd)"
 readonly BOOKSTR_WEB_DIR="${REPO_ROOT}/web"
 readonly BOOKSTR_DIST_DIR="${REPO_ROOT}/bookstr-dist"
@@ -33,16 +32,9 @@ import json
 import mimetypes
 import os
 import socketserver
-import urllib.error
-import urllib.request
 from pathlib import Path
 
 SERVE_DIR = Path(os.environ["BOOKSTR_SERVE_DIR"]).resolve()
-BACKEND_URL = os.environ.get("BOOKSTR_BACKEND_URL", "http://localhost:8080").rstrip("/")
-WATCH_EXTS = {
-    ".html", ".css", ".js", ".json", ".svg", ".png", ".jpg", ".jpeg", ".gif",
-    ".ico", ".woff", ".woff2", ".ttf", ".webp"
-}
 
 
 class BookstrDevHandler(http.server.SimpleHTTPRequestHandler):
@@ -107,31 +99,6 @@ class BookstrDevHandler(http.server.SimpleHTTPRequestHandler):
             self.wfile.write(data)
             return
 
-        if path.startswith("/api/"):
-            target = f"{BACKEND_URL}{path}"
-            try:
-                req = urllib.request.Request(target, method="GET")
-                with urllib.request.urlopen(req, timeout=20) as upstream:
-                    self.send_response(upstream.status)
-                    for key, value in upstream.headers.items():
-                        if key.lower() in {"transfer-encoding", "connection"}:
-                            continue
-                        self.send_header(key, value)
-                    self.send_header("Cache-Control", "no-store")
-                    self.end_headers()
-                    self.wfile.write(upstream.read())
-            except urllib.error.HTTPError as err:
-                self.send_response(err.code)
-                for key, value in err.headers.items():
-                    if key.lower() in {"transfer-encoding", "connection"}:
-                        continue
-                    self.send_header(key, value)
-                self.end_headers()
-                self.wfile.write(err.read())
-            except Exception as exc:
-                self.send_error(502, f"Backend unavailable: {exc}")
-            return
-
         if path == "/" or path.endswith("/") or path.endswith(".html"):
             self.serve_html(path)
             return
@@ -170,7 +137,6 @@ def main():
     with ReusableTCPServer(("", PORT), BookstrDevHandler) as httpd:
         print(f"Serving Bookstr frontend from: {SERVE_DIR}")
         print(f"Open: http://localhost:{PORT}")
-        print(f"API proxy: {BACKEND_URL}")
         httpd.serve_forever()
 
 
@@ -180,7 +146,6 @@ PY
 
 if command -v python3 >/dev/null 2>&1; then
   export BOOKSTR_SERVE_DIR="${SERVE_DIR}"
-  export BOOKSTR_BACKEND_URL="${BACKEND_URL}"
   export BOOKSTR_PORT="${PORT}"
   cd "${SERVE_DIR}"
   python3 "${SERVER_SCRIPT}"
@@ -188,7 +153,6 @@ elif command -v python >/dev/null 2>&1; then
   echo "Serving Bookstr frontend from:"
   echo "  ${SERVE_DIR}"
   echo "Open: http://localhost:${PORT}"
-  echo "API routes are not proxied in this fallback mode."
   cd "${SERVE_DIR}"
   python -m SimpleHTTPServer "${PORT}"
 else
