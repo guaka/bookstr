@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { matchSharedFavorites, parseSharedFavoriteTags } from './nostr'
+import {
+  favoriteChunkManifest,
+  matchSharedFavorites,
+  parseSharedFavoriteTags,
+} from './nostr'
 
 describe('shared LibVault favorites', () => {
   it('parses the encrypted NIP-51 tag format from LibVault', () => {
@@ -41,5 +45,14 @@ describe('shared LibVault favorites', () => {
     expect(result.bookIds).toEqual(['book-1'])
     expect(result.external).toHaveLength(1)
     expect(result.external[0].libvaultMd5).toBe('bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb')
+  })
+
+  it('reads the encrypted chunk manifest without treating it as a book', () => {
+    const tags = [['libvault-chunks', '3', 'libvault-favorites-chunk']]
+    expect(favoriteChunkManifest(tags)).toEqual({
+      count: 3,
+      prefix: 'libvault-favorites-chunk',
+    })
+    expect(parseSharedFavoriteTags(tags)).toEqual([])
   })
 })

@@ -8,7 +8,6 @@ import {
 } from "react";
 import { Library } from "./components/Library";
 import {
-  fetchCatalog,
   catalogBookFromBlossomFavorite,
   downloadAndVerify,
   getBookFormat,
@@ -58,8 +57,6 @@ type Route = {
 type FavoritesSyncStatus =
   "idle" | "syncing" | "synced" | "disconnected" | "error";
 
-const DEFAULT_CATALOG = `${import.meta.env.BASE_URL}catalog/catalog.json`;
-
 function initialTheme(): Theme {
   try {
     const stored = localStorage.getItem("bookstr.setting.theme");
@@ -67,6 +64,35 @@ function initialTheme(): Theme {
   } catch {
     return "white";
   }
+}
+
+const LIBVAULT_MD5_PATTERN = /^[a-f0-9]{32}$/i;
+
+function bookFromProgress(progress: ReadingProgress): CatalogBook {
+  const bookId = progress.bookId.toLowerCase();
+  const isLibvaultBook = LIBVAULT_MD5_PATTERN.test(bookId);
+  return {
+    id: bookId,
+    title: progress.title || "Unknown title",
+    author: progress.author || "Unknown author",
+    epubUrl: isLibvaultBook ? `/api/files/${bookId}` : "",
+    format: "epub",
+    libvaultMd5: isLibvaultBook ? bookId : undefined,
+    unresolved: isLibvaultBook ? undefined : true,
+  };
+}
+
+function mergeCatalogBooks(...sources: CatalogBook[][]): CatalogBook[] {
+  const merged = [];
+  const seen = new Set<string>();
+  for (const source of sources) {
+    for (const book of source) {
+      if (seen.has(book.id)) continue;
+      seen.add(book.id);
+      merged.push(book);
+    }
+  }
+  return merged;
 }
 
 function libvaultBookFromLocation(): CatalogBook | null {
@@ -152,19 +178,33 @@ export default function App() {
   const refresh = useCallback(async () => {
     if (LIBVAULT_BOOK) {
       setBooks([LIBVAULT_BOOK]);
+      const localProgress = await listProgress();
+      const localVocabulary = await listVocabulary();
+      setProgress(localProgress);
+      setVocabulary(
+        localVocabulary.sort((a, b) => b.lastSeenAt - a.lastSeenAt),
+      );
       setLoading(false);
-      return [LIBVAULT_BOOK];
+      return mergeCatalogBooks([LIBVAULT_BOOK], localProgress.map(bookFromProgress));
     }
     setLoading(true);
     setError(null);
     try {
-      const catalog = await fetchCatalog(DEFAULT_CATALOG);
-      setBooks(catalog.books);
-      return catalog.books;
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-      setBooks([]);
-      return [];
+      const [localProgress, localVocabulary] = await Promise.all([
+        listProgress(),
+        listVocabulary(),
+      ]);
+      const fallbackBooks = localProgress.map(bookFromProgress);
+      setProgress(localProgress);
+      setVocabulary(
+        localVocabulary.sort((a, b) => b.lastSeenAt - a.lastSeenAt),
+      );
+      let nextBooks: CatalogBook[] = [];
+      setBooks((current) => {
+        nextBooks = mergeCatalogBooks(current, fallbackBooks);
+        return nextBooks;
+      });
+      return nextBooks;
     } finally {
       setLoading(false);
     }
@@ -301,23 +341,23 @@ export default function App() {
 
   useEffect(() => {
     void (async () => {
-      const catalogPromise = refresh();
+      const bootstrapPromise = refresh();
       const [t, storedTranslationLanguage, loadedBooks] = await Promise.all([
         getSetting("theme", "white"),
         getSetting("translationLanguage", "en"),
-        catalogPromise,
+        bootstrapPromise,
       ]);
       setTheme(t === "night" || t === "paper" ? t : "white");
       setTranslationLanguage(storedTranslationLanguage === "pt" ? "pt" : "en");
       try {
-        // Let React paint the catalog before loading signer, relay, QR, and
+        // Let React paint the screen before loading signer, relay, QR, and
         // crypto code. Sync stays automatic but no longer delays interactivity.
         await new Promise<void>((resolve) =>
           requestAnimationFrame(() => resolve()),
         );
         await syncNostr(loadedBooks);
       } catch {
-        /* catalog error is rendered; signer/relay failures remain offline-first */
+        /* sync errors are rendered; signer/relay failures remain offline-first */
       }
     })();
   }, [refresh, syncNostr]);
@@ -334,7 +374,6 @@ export default function App() {
           {isPdf ? (
             <PdfReader
               book={active}
-              catalogUrl={DEFAULT_CATALOG}
               onSettings={() =>
                 navigate(`/read/${encodeURIComponent(active.id)}/settings`)
               }
@@ -343,7 +382,6 @@ export default function App() {
           ) : (
             <Reader
               book={active}
-              catalogUrl={DEFAULT_CATALOG}
               theme={theme}
               translationLanguage={translationLanguage}
               settingsOpen={Boolean(route.settingsOpen)}
@@ -454,12 +492,12 @@ export default function App() {
       onRetryNostr={() => void syncNostr(books)}
       onToggleFavorite={toggleFavorite}
       onSettings={() => navigate("/settings")}
-      onOpen={(book) => {
+        onOpen={(book) => {
         if (openingBookId) return;
         setError(null);
         setOpeningBookId(book.id);
         setOpeningBookMessage("Downloading and opening…");
-        void downloadAndVerify(book, DEFAULT_CATALOG, setOpeningBookMessage)
+        void downloadAndVerify(book, setOpeningBookMessage)
           .then(() => navigate(`/read/${encodeURIComponent(book.id)}`))
           .catch((reason) => {
             setOpeningBookId(null);

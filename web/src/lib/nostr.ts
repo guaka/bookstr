@@ -28,6 +28,7 @@ import {
   listVocabulary,
   saveProgress,
   saveVocabularyWord,
+  deleteVocabularyWord,
   setSetting,
 } from "./catalog";
 import { normalizeProgress, progressDTag } from "./progress";
@@ -37,6 +38,7 @@ const D_PREFIX = "app.bookstr.progress.";
 const FAVORITES_KIND = 30003;
 const BLOSSOM_AUTH_KIND = 24242;
 const FAVORITES_D_TAG = "libvault-favorites";
+const FAVORITES_CHUNK_PREFIX = "libvault-favorites-chunk";
 const VOCABULARY_D_PREFIX = "app.bookstr.vocabulary.";
 
 export const DEFAULT_RELAYS = ["wss://relay.nomadwiki.org"];
@@ -676,6 +678,23 @@ function normalizeIsbn(value?: string) {
   return normalized.length === 10 || normalized.length === 13 ? normalized : "";
 }
 
+export function favoriteChunkManifest(
+  value: unknown,
+): { count: number; prefix: string } | null {
+  if (!Array.isArray(value)) return null;
+  for (const item of value) {
+    if (!Array.isArray(item) || item[0] !== "libvault-chunks") continue;
+    const count = Number(item[1]);
+    if (!Number.isInteger(count) || count <= 0) continue;
+    const prefix =
+      typeof item[2] === "string" && item[2]
+        ? item[2]
+        : FAVORITES_CHUNK_PREFIX;
+    return { count, prefix };
+  }
+  return null;
+}
+
 export function parseSharedFavoriteTags(value: unknown): SharedFavoriteRef[] {
   if (!Array.isArray(value)) return [];
   const refs: SharedFavoriteRef[] = [];
@@ -817,11 +836,30 @@ export async function pullSharedFavorites(books: CatalogBook[]): Promise<{
     );
     const latest = events.sort((a, b) => b.created_at - a.created_at)[0];
     if (!latest) return { bookIds: [], external: [] };
-    const plaintext = await decryptFromSelf(pubkey, latest.content);
-    return matchSharedFavorites(
-      parseSharedFavoriteTags(JSON.parse(plaintext)),
-      books,
-    );
+    const tags = JSON.parse(await decryptFromSelf(pubkey, latest.content));
+    const manifest = favoriteChunkManifest(tags);
+    if (!manifest) {
+      return matchSharedFavorites(parseSharedFavoriteTags(tags), books);
+    }
+    const parts: unknown[] = [];
+    for (let index = 0; index < manifest.count; index++) {
+      const chunkEvents = await pool.querySync(
+        relays,
+        {
+          kinds: [FAVORITES_KIND],
+          authors: [pubkey],
+          "#d": [`${manifest.prefix}-${index}`],
+        },
+        { maxWait: 5000 },
+      );
+      const chunk = chunkEvents.sort((a, b) => b.created_at - a.created_at)[0];
+      if (!chunk) continue;
+      const chunkTags = JSON.parse(
+        await decryptFromSelf(pubkey, chunk.content),
+      );
+      if (Array.isArray(chunkTags)) parts.push(...chunkTags);
+    }
+    return matchSharedFavorites(parseSharedFavoriteTags(parts), books);
   } catch (error) {
     throw new Error(
       `Could not read LibVault favorites: ${error instanceof Error ? error.message : String(error)}`,
@@ -914,6 +952,15 @@ export async function pullVocabulary(): Promise<number> {
           await decryptFromSelf(pubkey, event.content),
         ) as unknown;
         if (!validVocabularyWord(word)) continue;
+        if (word.deleted) {
+          const existing = local.get(word.key);
+          if (!existing || word.updatedAt > existing.updatedAt) {
+            await deleteVocabularyWord(word.key);
+            local.delete(word.key);
+            merged++;
+          }
+          continue;
+        }
         if (
           !local.has(word.key) ||
           word.updatedAt > (local.get(word.key)?.updatedAt ?? 0)

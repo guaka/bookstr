@@ -19,6 +19,7 @@ export interface CatalogBook {
   libvaultMd5?: string;
   year?: string;
   blossomSha256?: string;
+  unresolved?: true;
 }
 
 export interface ExternalFavorite {
@@ -55,6 +56,7 @@ export interface VocabularyWord extends DictionaryEntry {
   lookupCount: number;
   firstSeenAt: number;
   lastSeenAt: number;
+  deleted?: boolean;
 }
 
 export interface Catalog {

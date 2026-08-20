@@ -5,12 +5,11 @@ import { CloseIcon, SettingsIcon } from './Icons'
 
 type Props = {
   book: CatalogBook
-  catalogUrl: string
   onClose: () => void
   onSettings: () => void
 }
 
-export function PdfReader({ book, catalogUrl, onClose, onSettings }: Props) {
+export function PdfReader({ book, onClose, onSettings }: Props) {
   const [pdfUrl, setPdfUrl] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
@@ -22,7 +21,7 @@ export function PdfReader({ book, catalogUrl, onClose, onSettings }: Props) {
     document.documentElement.style.overflow = 'hidden'
     document.body.style.overflow = 'hidden'
 
-    void downloadAndVerify(book, catalogUrl)
+    void downloadAndVerify(book)
       .then((blob) => {
         if (disposed) return
         objectUrl = URL.createObjectURL(blob)
@@ -38,7 +37,7 @@ export function PdfReader({ book, catalogUrl, onClose, onSettings }: Props) {
       document.documentElement.style.overflow = previousRootOverflow
       document.body.style.overflow = previousBodyOverflow
     }
-  }, [book, catalogUrl])
+  }, [book])
 
   return (
     <div className="reader pdf-reader">

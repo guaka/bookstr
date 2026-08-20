@@ -46,7 +46,6 @@ function initialFontSize() {
 
 type Props = {
   book: CatalogBook
-  catalogUrl: string
   onClose: () => void
   onSettings: () => void
   onProgressSaved: (progress: ReadingProgress) => void
@@ -65,7 +64,6 @@ type DictionaryCard = {
 
 export function Reader({
   book,
-  catalogUrl,
   onClose,
   onSettings,
   onProgressSaved,
@@ -177,7 +175,7 @@ export function Reader({
     ;(async () => {
       try {
         setLoading(true)
-        const blob = await downloadAndVerify(book, catalogUrl)
+        const blob = await downloadAndVerify(book, setError)
         if (cancelled || !hostRef.current) return
         const epub = ePub(await blob.arrayBuffer())
         bookRef.current = epub
@@ -336,14 +334,32 @@ export function Reader({
 
           dictionaryOpenRef.current = true
           setDictionary({ word, loading: true })
-          void lookupWord(word, book.language ?? 'en', translationLanguageRef.current)
+          const dictionaryLanguage = (book.language ?? 'en').toLowerCase().startsWith('pt') ? 'pt' : 'en'
+          const key = `${dictionaryLanguage}:${translationLanguageRef.current}:${word}`
+          const sourceUrl = `https://${dictionaryLanguage}.wiktionary.org/wiki/${encodeURIComponent(word)}`
+          const selectedPromise = rememberVocabulary(
+            {
+              key,
+              word,
+              language: dictionaryLanguage,
+              definitions: [],
+              sourceUrl,
+              updatedAt: Date.now(),
+            },
+            { bookId: book.id, bookTitle: book.title, cfi, contextSentence },
+          )
+          void selectedPromise.then(async (selected) => {
+            onVocabularySavedRef.current(selected)
+            try { await publishVocabularyWord(selected) } catch { /* stays local while offline */ }
+            return lookupWord(word, book.language ?? 'en', translationLanguageRef.current)
+          })
             .then(async (entry) => {
               const saved = await rememberVocabulary(entry, {
                 bookId: book.id,
                 bookTitle: book.title,
                 cfi,
                 contextSentence,
-              })
+              }, false)
               onVocabularySavedRef.current(saved)
               setDictionary({ word, loading: false, entry })
               try {
@@ -398,7 +414,7 @@ export function Reader({
       renditionRef.current?.destroy()
       bookRef.current?.destroy()
     }
-  }, [book, catalogUrl, handleKey])
+  }, [book, handleKey])
 
   useEffect(() => {
     renditionRef.current?.themes.select(theme)

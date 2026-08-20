@@ -49,6 +49,7 @@ type BookRowsProps = Pick<
   openingBookId: string | null;
   openingBookMessage?: string | null;
   showPublicationStatus?: boolean;
+  openDisabledReason?: (book: CatalogBook) => string | null;
 };
 
 function cleanAuthor(author?: string) {
@@ -70,6 +71,7 @@ function BookRows({
   openingBookId = null,
   openingBookMessage = null,
   showPublicationStatus = false,
+  openDisabledReason,
 }: BookRowsProps) {
   if (books.length === 0) return <p className="muted shelf-empty">{empty}</p>;
 
@@ -82,13 +84,15 @@ function BookRows({
           ? formatProgress(progress.locator.progression, " read")
           : null;
         const opening = openingBookId === book.id;
+        const disabledReason = openDisabledReason?.(book) ?? null;
         return (
           <li className="book-item" key={book.id}>
             <button
               type="button"
               className="book-row"
-              disabled={openingBookId !== null}
-              onClick={() => onOpen(book)}
+              disabled={openingBookId !== null || disabledReason !== null}
+              title={disabledReason ?? ""}
+              onClick={disabledReason ? undefined : () => onOpen(book)}
             >
               <span className="book-title">{book.title}</span>
               <span className="book-author">
@@ -113,6 +117,9 @@ function BookRows({
                   <span className="book-opening">
                     {openingBookMessage || "Downloading and opening…"}
                   </span>
+                )}
+                {!opening && disabledReason && (
+                  <span className="book-opening">{disabledReason}</span>
                 )}
               </span>
               {progress && progress.locator.progression > 0 && (
@@ -163,13 +170,38 @@ export function Library({
 }: Props) {
   const [favoriteQuery, setFavoriteQuery] = useState("");
   const favorites = books.filter((book) => favoriteIds.has(book.id));
-  const reading = books
-    .filter((book) => progressById.has(book.id) && !favoriteIds.has(book.id))
-    .sort(
-      (a, b) =>
-        (progressById.get(b.id)?.updatedAt ?? 0) -
-        (progressById.get(a.id)?.updatedAt ?? 0),
-    );
+  const booksById = new Map<string, CatalogBook>(books.map((book) => [book.id, book]));
+  const readingById = new Map<string, { book: CatalogBook; updatedAt: number }>();
+  const favoriteSet = new Set(favoriteIds);
+
+  for (const book of books) {
+    const progress = progressById.get(book.id);
+    if (!progress || favoriteSet.has(book.id)) continue;
+    readingById.set(book.id, { book, updatedAt: progress.updatedAt });
+  }
+
+  for (const [bookId, progress] of progressById) {
+    if (favoriteSet.has(bookId) || booksById.has(bookId)) continue;
+    readingById.set(bookId, {
+      book: {
+        id: bookId,
+        title: progress.title || "Unknown title",
+        author: progress.author || "Unknown author",
+        epubUrl: "",
+        format: "epub",
+        unresolved: true,
+      },
+      updatedAt: progress.updatedAt,
+    });
+  }
+
+  const reading = [...readingById.values()]
+    .sort((a, b) => b.updatedAt - a.updatedAt)
+    .map(({ book }) => book);
+  const openDisabledReason = (book: CatalogBook): string | null =>
+    book.unresolved
+      ? "Waiting for book metadata from Nostr favorites."
+      : null;
   const query = favoriteQuery.trim().toLocaleLowerCase();
   const visibleFavorites = favorites.filter(
     (book) =>
@@ -232,12 +264,12 @@ export function Library({
 
       {error && <p className="error">{error}</p>}
       {loading && books.length === 0 && (
-        <ul className="book-list" aria-label="Loading catalog">
+        <ul className="book-list" aria-label="Loading library">
           {Array.from({ length: 5 }, (_, index) => (
             <li key={index}>
               <div className="book-row book-row-placeholder">
                 {index === 0 ? (
-                  <span className="muted">Loading catalog…</span>
+                  <span className="muted">Loading books…</span>
                 ) : (
                   <span className="skeleton-line" aria-hidden="true" />
                 )}
@@ -260,6 +292,7 @@ export function Library({
               progressById={progressById}
               openingBookId={openingBookId}
               openingBookMessage={openingBookMessage}
+              openDisabledReason={openDisabledReason}
             />
           </section>
 

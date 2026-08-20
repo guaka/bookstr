@@ -51,7 +51,7 @@ export function parseWiktionaryHtml(
   const portuguese = language.toLowerCase().startsWith('pt')
   const wantedLanguage = portuguese ? 'português' : 'english'
   const languageHeading = [...document.querySelectorAll<HTMLElement>('h1, h2')].find((heading) =>
-    cleanText(heading.textContent ?? '').toLocaleLowerCase().startsWith(wantedLanguage),
+    cleanText(heading.textContent ?? '').toLocaleLowerCase().includes(wantedLanguage),
   )
   const headingRow = languageHeading?.parentElement
   if (!languageHeading || !headingRow) return { definitions: [] as string[] }
@@ -139,6 +139,7 @@ export async function lookupWord(
 export async function rememberVocabulary(
   entry: DictionaryEntry,
   context: { bookId: string; bookTitle: string; cfi?: string; contextSentence?: string },
+  incrementLookup = true,
 ): Promise<VocabularyWord> {
   const existing = await getVocabularyWord(entry.key)
   const now = Date.now()
@@ -149,7 +150,7 @@ export async function rememberVocabulary(
     bookTitle: context.bookTitle,
     cfi: context.cfi,
     contextSentence: context.contextSentence,
-    lookupCount: (existing?.lookupCount ?? 0) + 1,
+    lookupCount: (existing?.lookupCount ?? 0) + (incrementLookup ? 1 : 0),
     firstSeenAt: existing?.firstSeenAt ?? now,
     lastSeenAt: now,
     updatedAt: now,

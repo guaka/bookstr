@@ -48,6 +48,18 @@ describe('dictionary', () => {
     })
   })
 
+  it('recognizes Portuguese headings containing embedded template CSS', () => {
+    const html = `
+      <div class="mw-heading mw-heading1"><h1><style>.foo { color: red }</style><span>Português</span></h1></div>
+      <div class="mw-heading mw-heading2"><h2>Preposição</h2></div>
+      <ol><li>exprime fim, destino, lugar, tempo ou direção</li></ol>
+    `
+    expect(parseWiktionaryHtml(html, 'pt')).toMatchObject({
+      partOfSpeech: 'Preposição',
+      definitions: ['exprime fim, destino, lugar, tempo ou direção'],
+    })
+  })
+
   it('caches a lookup and remembers its reading context', async () => {
     vi.stubGlobal(
       'fetch',

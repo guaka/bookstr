@@ -47,6 +47,9 @@ const publicationMemoryCache = new Map<string, CachedPublication>();
 const SETTING_PREFIX = "bookstr.setting.";
 const SETTING_READ_TIMEOUT_MS = 1_500;
 const PUBLICATION_CACHE_TIMEOUT_MS = 1_500;
+const DOWNLOAD_TIMEOUT_MS = 30_000;
+const BLOSSOM_SIGN_PROMPT_DELAY_MS = 2_500;
+const BLOSSOM_DOMAIN = "blossom.bfr.ee";
 
 function localSetting(key: string): string | undefined {
   try {
@@ -83,6 +86,37 @@ function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
       },
     );
   });
+}
+
+async function fetchWithTimeout(
+  input: string,
+  init: RequestInit,
+  timeoutMs: number,
+  errorMessage: string,
+): Promise<Response> {
+  const controller = new AbortController();
+  const timer = globalThis.setTimeout(() => {
+    controller.abort(new DOMException(errorMessage, "TimeoutError"));
+  }, timeoutMs);
+  try {
+    return await fetch(input, { ...init, signal: controller.signal });
+  } catch (error) {
+    if (error instanceof DOMException && error.name === "AbortError") {
+      throw new Error(errorMessage);
+    }
+    throw error;
+  } finally {
+    globalThis.clearTimeout(timer);
+  }
+}
+
+function getLibvaultFallbackUrl(md5?: string): string | null {
+  if (!md5 || !/^[a-f0-9]{32}$/i.test(md5)) return null;
+  try {
+    return new URL(`/api/files/${md5.toLowerCase()}`, globalThis.location.href).toString();
+  } catch {
+    return null;
+  }
 }
 
 function db() {
@@ -189,6 +223,10 @@ export async function getVocabularyWord(
 
 export async function saveVocabularyWord(word: VocabularyWord): Promise<void> {
   await (await db()).put("vocabulary", word);
+}
+
+export async function deleteVocabularyWord(key: string): Promise<void> {
+  await (await db()).delete("vocabulary", key);
 }
 
 export async function listVocabulary(): Promise<VocabularyWord[]> {
@@ -317,9 +355,15 @@ export async function getCachedPublication(
 
 export async function downloadAndVerify(
   book: CatalogBook,
-  catalogUrl: string,
+  catalogUrlOrStatus?: string | ((message: string) => void),
   onStatus?: (message: string) => void,
 ): Promise<Blob> {
+  const status =
+    typeof catalogUrlOrStatus === "function" ? catalogUrlOrStatus : onStatus;
+  const resolvedSourceUrl =
+    typeof catalogUrlOrStatus === "string"
+      ? resolveCatalogUrl(catalogUrlOrStatus, book.epubUrl)
+      : book.epubUrl;
   const format = getBookFormat(book);
   let cached: Blob | undefined;
   try {
@@ -332,9 +376,9 @@ export async function downloadAndVerify(
   }
   if (cached) return cached;
 
-  const url = resolveCatalogUrl(catalogUrl, book.epubUrl);
+  const source = new URL(resolvedSourceUrl, globalThis.location.href);
+  const sourceHref = source.toString();
   if (book.libvaultMd5 && !book.blossomSha256) {
-    const source = new URL(url, globalThis.location.href);
     const expectedPath = `/api/files/${book.libvaultMd5.toLowerCase()}`;
     if (
       book.id.toLowerCase() !== book.libvaultMd5.toLowerCase() ||
@@ -344,15 +388,20 @@ export async function downloadAndVerify(
       throw new Error("Untrusted LibVault EPUB source");
     }
   }
-  const blossomSource = book.blossomSha256 ? new URL(url) : null;
+  const blossomSource = book.blossomSha256 ? new URL(sourceHref) : null;
   if (blossomSource) {
     if (blossomSource.protocol !== "https:") {
+      throw new Error("Untrusted Blossom source");
+    }
+    if (blossomSource.hostname.toLowerCase() !== BLOSSOM_DOMAIN) {
       throw new Error("Untrusted Blossom source");
     }
   }
 
   const fetchWithBlossomAuthorization = async (): Promise<Response> => {
-    onStatus?.("Approve download in your Nostr signer…");
+    const approvalTimer = globalThis.setTimeout(() => {
+      status?.("Approve download in your Nostr signer…");
+    }, BLOSSOM_SIGN_PROMPT_DELAY_MS);
     try {
       const { createBlossomDownloadAuthorization } = await import("./nostr");
       const headers = new Headers();
@@ -363,20 +412,65 @@ export async function downloadAndVerify(
           blossomSource!.hostname,
         ),
       );
-      return await fetch(url, { headers });
-    } catch (error) {
-      throw new Error(
-        `Blossom authorization failed: ${error instanceof Error ? error.message : String(error)}`,
+      return await fetchWithTimeout(
+        sourceHref,
+        { headers },
+        DOWNLOAD_TIMEOUT_MS,
+        "Blossom download timed out",
       );
+    } catch (error) {
+      globalThis.clearTimeout(approvalTimer);
+      throw new Error(
+              `Blossom authorization failed: ${error instanceof Error ? error.message : String(error)}`,
+            );
+    } finally {
+      globalThis.clearTimeout(approvalTimer);
     }
   };
 
-  let res =
-    blossomSource?.hostname.toLowerCase() === "blossom.bfr.ee"
-      ? await fetchWithBlossomAuthorization()
-      : await fetch(url);
-  if (blossomSource && (res.status === 401 || res.status === 403)) {
-    res = await fetchWithBlossomAuthorization();
+  const fallbackUrl = getLibvaultFallbackUrl(book.libvaultMd5);
+  const fetchFromLibvault = async () => {
+    if (!fallbackUrl) return null;
+    status?.("Downloading from LibVault copy…");
+    return fetchWithTimeout(
+      fallbackUrl,
+      {},
+      DOWNLOAD_TIMEOUT_MS,
+      "LibVault copy download timed out",
+    );
+  };
+  const fetchPublic = () =>
+    fetchWithTimeout(
+      sourceHref,
+      {},
+      DOWNLOAD_TIMEOUT_MS,
+      "Book download timed out",
+    );
+
+  let res: Response;
+  if (blossomSource) {
+    try {
+      res = await fetchWithBlossomAuthorization();
+      if (res.status === 401 || res.status === 403) {
+        res = await fetchWithBlossomAuthorization();
+      }
+      if (!res.ok) {
+        const fallback = await fetchFromLibvault();
+        if (fallback) res = fallback;
+      }
+    } catch (error) {
+      if (fallbackUrl) {
+        const fallback = await fetchFromLibvault();
+        if (!fallback) throw error;
+        res = fallback;
+      } else {
+        throw error;
+      }
+    }
+  } else if (book.libvaultMd5) {
+    res = await fetchPublic();
+  } else {
+    throw new Error("No trusted source configured for this book.");
   }
   if (!res.ok) throw new Error(`Download HTTP ${res.status}`);
   const buffer = await res.arrayBuffer();

@@ -86,7 +86,7 @@ describe("Library", () => {
         onRetryNostr={vi.fn()}
       />,
     );
-    expect(screen.getByText(/Loading catalog/)).toBeTruthy();
+    expect(screen.getByText(/Loading books/)).toBeTruthy();
 
     rerender(
       <Library
