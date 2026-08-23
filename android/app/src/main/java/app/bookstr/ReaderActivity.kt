@@ -558,11 +558,15 @@ class ReaderActivity : ComponentActivity() {
         }
 
         val requestedLocale = preferredSpeechLocale(languageTag)
-        val matchingOfflineVoices = engine.voices.orEmpty().filter { voice ->
+        val sameLanguageOfflineVoices = engine.voices.orEmpty().filter { voice ->
             !voice.isNetworkConnectionRequired &&
-                voice.locale.language == requestedLocale.language &&
-                voice.locale.country == requestedLocale.country
+                voice.locale.language.equals(requestedLocale.language, ignoreCase = true)
         }
+        val exactRegionOfflineVoices = sameLanguageOfflineVoices.filter { voice ->
+            requestedLocale.country.isNotBlank() &&
+                voice.locale.country.equals(requestedLocale.country, ignoreCase = true)
+        }
+        val matchingOfflineVoices = exactRegionOfflineVoices.ifEmpty { sameLanguageOfflineVoices }
         val currentMatchingVoice = engine.voice?.takeIf { current ->
             matchingOfflineVoices.any { it.name == current.name }
         }

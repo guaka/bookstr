@@ -30,6 +30,15 @@ class ReaderTextToSpeechTest {
     }
 
     @Test
+    fun voiceSelectionFallsBackToAnyOfflineVoiceInTheRequestedLanguage() {
+        val source = File("src/main/java/app/bookstr/ReaderActivity.kt").readText()
+
+        assertTrue(source.contains("val sameLanguageOfflineVoices"))
+        assertTrue(source.contains("val exactRegionOfflineVoices"))
+        assertTrue(source.contains("exactRegionOfflineVoices.ifEmpty { sameLanguageOfflineVoices }"))
+    }
+
+    @Test
     fun activeNarrationUsesVolumeKeysAndNaturalVoiceConfiguration() {
         val source = File("src/main/java/app/bookstr/ReaderActivity.kt").readText()
 
