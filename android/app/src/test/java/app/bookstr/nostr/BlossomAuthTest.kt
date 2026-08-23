@@ -3,6 +3,7 @@ package app.bookstr.nostr
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
+import org.junit.Assert.assertThrows
 import org.junit.Test
 import java.util.Base64
 
@@ -34,5 +35,43 @@ class BlossomAuthTest {
         val decoded = JSONObject(String(Base64.getDecoder().decode(header.removePrefix("Nostr "))))
         assertEquals(BlossomAuth.KIND, decoded.getInt("kind"))
         assertEquals("33".repeat(64), decoded.getString("sig"))
+    }
+
+    @Test
+    fun normalizesUppercaseHashInAuthorizationEvent() {
+        val event = BlossomAuth.unsignedGetEvent("AB".repeat(32), "blossom.bfr.ee", 10)
+        val tags = event.getJSONArray("tags")
+        val hashTag = (0 until tags.length())
+            .map { tags.getJSONArray(it) }
+            .single { it.getString(0) == "x" }
+
+        assertEquals("ab".repeat(32), hashTag.getString(1))
+    }
+
+    @Test
+    fun rejectsInvalidHashAndUnscopedServerNames() {
+        assertThrows(IllegalArgumentException::class.java) {
+            BlossomAuth.unsignedGetEvent("short", "blossom.bfr.ee", 10)
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            BlossomAuth.unsignedGetEvent("aa".repeat(32), "", 10)
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            BlossomAuth.unsignedGetEvent("aa".repeat(32), "blossom.bfr.ee/path", 10)
+        }
+    }
+
+    @Test
+    fun authorizationHeaderUsesUnpaddedBase64() = kotlinx.coroutines.runBlocking {
+        val signer = object : NostrSigner {
+            override fun isConfigured() = true
+            override suspend fun getPublicKey() = "11".repeat(32)
+            override suspend fun signEvent(unsigned: JSONObject) = unsigned.put("sig", "x")
+        }
+
+        val header = BlossomAuth.authorization(signer, "aa".repeat(32), "blossom.bfr.ee", 1)
+
+        assertTrue(!header.contains('='))
+        assertTrue(String(Base64.getDecoder().decode(header.removePrefix("Nostr "))).contains("\"sig\":\"x\""))
     }
 }

@@ -102,4 +102,20 @@ class DictionaryRepositoryTest {
         assertEquals(4, parsed.second.distinct().size)
         assertTrue("fifth definition" !in parsed.second)
     }
+
+    @Test
+    fun packIdsAreUniqueAndNeverTranslateLanguageToItself() {
+        val packs = DictionaryRepository().packs()
+
+        assertEquals(packs.size, packs.map { it.id }.distinct().size)
+        assertTrue(packs.filter { it.id != "kaikki-pt-pt" }.none { it.sourceLanguage == it.targetLanguage })
+    }
+
+    @Test
+    fun regionalPortugueseContextSignalsStillResolveToPortuguese() {
+        val repository = DictionaryRepository()
+
+        assertEquals("pt", repository.languageFor("Isto é para alguém com atenção."))
+        assertEquals("en", repository.languageFor("Portuguese is the language name."))
+    }
 }

@@ -4,6 +4,7 @@ import app.bookstr.util.Sha256
 import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Test
 
@@ -116,6 +117,26 @@ class NostrClientProgressTest {
     fun nonPositiveUpdatedAtFallsBackToEventTimestamp() {
         assertEquals(10_000L, NostrClient.parseUpdatedAt("""{"updatedAt":0}""", 10L))
         assertEquals(10_000L, NostrClient.parseUpdatedAt("""{"updatedAt":-5}""", 10L))
+    }
+
+    @Test
+    fun optionalProgressMetadataIsOnlyIncludedWhenPresent() {
+        val bare = JSONObject(NostrClient.progressContent(bookId, 0.1, "cfi", updatedAt = 1))
+        val described = JSONObject(
+            NostrClient.progressContent(
+                bookId,
+                0.1,
+                "cfi",
+                title = "Title",
+                author = "Author",
+                updatedAt = 1,
+            ),
+        )
+
+        assertFalse(bare.has("title"))
+        assertFalse(bare.has("author"))
+        assertEquals("Title", described.getString("title"))
+        assertEquals("Author", described.getString("author"))
     }
 
 }

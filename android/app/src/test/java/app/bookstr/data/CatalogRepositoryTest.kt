@@ -146,4 +146,43 @@ class CatalogRepositoryTest {
 
         assertTrue(results.isEmpty())
     }
+
+    @Test
+    fun trimsSearchMetadataAndKeepsRatingFields() {
+        val result = CatalogRepository.parseSearchResponse(
+            """{"books":[{
+              "id":" 42 ","source":" GUTENBERG ","title":"  A title  ","authors":"  An author  ",
+              "publisher":"  A publisher  ","language":" pt ","avg_rating":4.5,"edition_count":7
+            }]}""",
+        ).single()
+
+        assertEquals("gutenberg:42", result.id)
+        assertEquals("A title", result.title)
+        assertEquals("An author", result.author)
+        assertEquals("A publisher", result.publisher)
+        assertEquals("pt", result.language)
+        assertEquals(4.5, result.rating, 0.0)
+        assertEquals(7, result.editionCount)
+    }
+
+    @Test
+    fun readUrlTakesPriorityOverOtherDownloadLinks() {
+        val result = CatalogRepository.parseSearchResponse(
+            """{"results":[{
+              "id":"1","format":"epub","readUrl":"https://example.org/read.epub",
+              "url":"https://example.org/url.epub","link":"https://example.org/link.epub"
+            }]}""",
+        ).single()
+
+        assertEquals("https://example.org/read.epub", result.downloadUrl)
+    }
+
+    @Test
+    fun booksArrayTakesPriorityWhenBothResponseShapesExist() {
+        val results = CatalogRepository.parseSearchResponse(
+            """{"books":[{"id":"book-shape"}],"results":[{"id":"result-shape"}]}""",
+        )
+
+        assertEquals(listOf("all.books.party:book-shape"), results.map { it.id })
+    }
 }
