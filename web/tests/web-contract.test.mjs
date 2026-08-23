@@ -38,8 +38,29 @@ test('favorites are not truncated to fifty items', () => {
   assert.doesNotMatch(html, /state\.favorites[^;]*slice\(0,\s*50\)/s);
 });
 
+test('compact favorites retain cached metadata and resolve LibVault IDs', () => {
+  assert.match(html, /function preserveFavoriteMetadata\(remote\)/);
+  assert.match(html, /\.map\(preserveFavoriteMetadata\)/);
+  assert.match(html, /https:\/\/lib\.b\.bfr\.ee\/api\/books\/\$\{libvaultMd5\}/);
+  assert.match(html, /api\/read\/\$\{libvaultMd5\}/);
+});
+
+test('an incomplete new favorites generation falls back to an older root', () => {
+  assert.match(html, /for \(const rootEvent of rootEvents\)/);
+  assert.match(html, /A partial new generation must not hide an older complete snapshot/);
+});
+
+test('legacy LibVault URL tags restore their embedded favorite ID', () => {
+  assert.match(html, /new URLSearchParams\(url\.hash\.split\('\?'\)\[1\] \|\| ''\)\.get\('md5'\)/);
+});
+
 test('Home title links invoke the library book resolver', () => {
   assert.match(html, /titleLink\.addEventListener\('click',[\s\S]*?openLibraryBook\(book\)/);
+});
+
+test('Home shows the deduplicated library book count below its heading', () => {
+  assert.match(html, /homeLibraryHeading\?\.after\(homeLibraryCount\)/);
+  assert.match(html, /homeLibraryCount\.textContent = `\$\{library\.length\} \$\{library\.length === 1 \? 'book' : 'books'\}`/);
 });
 
 test('Home shows accessible APK-style reading progress', () => {
@@ -56,6 +77,10 @@ test('web chrome uses the shared Bookstr identity', () => {
   assert.match(html, /public\/apple-touch-icon\.png/);
   assert.match(html, /--reading-progress:\s*#2f5d50/);
   assert.match(html, /background:\s*#e7c766/);
+});
+
+test('settings groups Nostr controls and connection status together', () => {
+  assert.match(html, /settings-section settings-nostr[\s\S]*?<h3>Nostr<\/h3>[\s\S]*?id="nip7-enabled"[\s\S]*?id="nip7-status"/);
 });
 
 test('vocabulary deletion publishes a NIP-09 event', () => {

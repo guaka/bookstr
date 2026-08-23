@@ -2,8 +2,8 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" href="/public/favicon.svg" type="image/svg+xml" />
-    <link rel="apple-touch-icon" href="/public/apple-touch-icon.png" />
+    <link rel="icon" href="public/favicon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="public/apple-touch-icon.png" />
     <meta
       name="viewport"
       content="width=device-width, initial-scale=1.0, viewport-fit=cover"
@@ -157,13 +157,6 @@
           linear-gradient(105deg, color-mix(in srgb, #2f5d50 9%, var(--card-bg, #fff)), transparent 48%),
           var(--card-bg, #fff);
         box-shadow: 0 5px 24px var(--card-shadow, rgba(0, 0, 0, 0.06));
-      }
-      .app-header::before {
-        content: '';
-        position: absolute;
-        inset: 0 auto 0 0;
-        width: 0.28rem;
-        background: #c74b32;
       }
       .app-header-left {
         display: flex;
@@ -491,6 +484,11 @@
       }
       .home-column h3 {
         margin: 0 0 0.3rem;
+      }
+      .library-book-count {
+        margin: -0.12rem 0 0.42rem;
+        color: var(--muted-text, #666);
+        font-size: 0.78rem;
       }
       .home-book-table {
         display: grid;
@@ -869,7 +867,7 @@
         background: var(--settings-bg, #faf9f5);
         position: relative;
         z-index: 21;
-        width: min(430px, 100%);
+        width: min(860px, 100%);
         max-height: calc(100vh - 1.7rem);
         overflow: auto;
         box-shadow: 0 22px 70px rgba(0, 0, 0, 0.28);
@@ -895,6 +893,11 @@
         display: grid;
         gap: 0;
         padding: 0.45rem 0;
+      }
+      .settings-section h3 {
+        margin: 0 0 0.2rem;
+        font-family: Georgia, 'Times New Roman', serif;
+        font-size: 1rem;
       }
       .setting-option {
         display: flex;
@@ -949,12 +952,63 @@
       }
       .settings-tab .settings-panel {
         position: static;
-        width: 100%;
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(16rem, 0.78fr);
+        column-gap: 1rem;
+        row-gap: 0;
+        width: min(820px, 100%);
         max-height: none;
-        padding: 0;
-        border: 0;
-        background: transparent;
-        box-shadow: none;
+        margin: 0 auto;
+        padding: 0.8rem 1rem 0.9rem;
+        border: 1px solid var(--settings-border, #ddd);
+        background: var(--settings-bg, #faf9f5);
+        box-shadow: 0 12px 36px var(--card-shadow, rgba(0, 0, 0, 0.08));
+      }
+      .settings-tab .settings-panel-header,
+      .settings-tab .settings-dictionaries {
+        grid-column: 1 / -1;
+      }
+      .settings-tab .settings-preferences {
+        grid-column: 1;
+        grid-row: 2;
+        padding: 0.35rem 0.75rem 0.15rem 0;
+      }
+      .settings-tab .settings-appearance {
+        grid-column: 1;
+        grid-row: 3;
+        padding: 0.15rem 0.75rem 0.35rem 0;
+      }
+      .settings-tab .settings-nostr {
+        grid-column: 2;
+        grid-row: 2 / span 2;
+        align-content: start;
+        padding: 0.35rem 0 0.35rem 1rem;
+        border-left: 1px solid var(--settings-border, #ddd);
+      }
+      .settings-tab .settings-nostr .settings-status {
+        margin-top: 0.35rem;
+        padding: 0.5rem 0.55rem;
+      }
+      .settings-tab .settings-dictionaries {
+        grid-row: 4;
+        margin-top: 0.2rem;
+        padding-top: 0.65rem;
+        border-top: 1px solid var(--settings-border, #ddd);
+      }
+      .settings-tab .dictionary-controls {
+        grid-template-columns: minmax(8rem, 1fr) auto minmax(8rem, 1fr) auto;
+        max-width: 720px;
+      }
+      .settings-tab .dictionary-packs {
+        max-width: 720px;
+      }
+      .settings-tab .dictionary-pack {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+      }
+      .settings-tab .setting-option {
+        min-height: 0;
+        padding-block: 0.45rem;
       }
       @media (max-width: 560px) {
         .app-header {
@@ -979,6 +1033,24 @@
           border-radius: 0;
           padding: 0.75rem;
         }
+        .settings-tab .settings-panel {
+          display: block;
+          width: 100%;
+          padding: 0.75rem;
+          box-shadow: none;
+        }
+        .settings-tab .settings-preferences,
+        .settings-tab .settings-appearance,
+        .settings-tab .settings-nostr {
+          padding-inline: 0;
+          border-left: 0;
+        }
+        .settings-tab .dictionary-controls {
+          grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+        }
+        .settings-tab #dictionary-install {
+          grid-column: 1 / -1;
+        }
       }
       .footer {
         display: flex;
@@ -990,13 +1062,13 @@
         color: color-mix(in srgb, var(--note-text, #666) 70%, transparent);
         margin-top: -0.15rem;
       }
-      .footer a { color: var(--note-text, #666); font-weight: 600; }
+      .footer a { color: var(--reading-progress); font-weight: 600; }
       .footer-note { margin: 0; }
       .footer-icon-link {
         display: inline-flex;
         align-items: center;
         justify-content: center;
-        color: var(--note-text, #666);
+        color: var(--reading-progress);
       }
       .footer-icon-link svg {
         width: 1rem;
@@ -1015,7 +1087,7 @@
     <main class="wrap">
       <header class="app-header">
         <a class="app-header-left app-home" href="#" aria-label="Bookstr home">
-          <img class="brand-mark" src="/public/favicon.svg" alt="" />
+          <img class="brand-mark" src="public/favicon.svg" alt="" />
           <span id="header-book-title" class="header-book-title hidden"></span>
         </a>
         <div class="app-header-right">
@@ -1110,17 +1182,13 @@
             <h2 id="settings-title">Settings</h2>
             <button id="settings-close" type="button" class="icon-btn" aria-label="Close settings">✕</button>
           </header>
-          <div class="settings-section">
+          <div class="settings-section settings-preferences">
             <label class="setting-option">
               <input id="auto-reading" type="checkbox" checked />
               <span class="setting-copy"><strong>Reading library</strong><small>Add books when you open them.</small></span>
             </label>
-            <label class="setting-option">
-              <input id="nip7-enabled" type="checkbox" checked />
-              <span class="setting-copy"><strong>Use NIP-07</strong><small>Connect your browser signer when available.</small></span>
-            </label>
           </div>
-          <div class="settings-section">
+          <div class="settings-section settings-appearance">
             <label class="setting-option theme-option">
               <span class="setting-copy"><strong>Appearance</strong><small>Choose the light you want to read in.</small></span>
             <select id="theme-mode">
@@ -1130,7 +1198,15 @@
             </select>
             </label>
           </div>
-          <div class="settings-section">
+          <div class="settings-section settings-nostr">
+            <h3>Nostr</h3>
+            <label class="setting-option">
+              <input id="nip7-enabled" type="checkbox" checked />
+              <span class="setting-copy"><strong>Use NIP-07</strong><small>Connect your browser signer when available.</small></span>
+            </label>
+            <p id="nip7-status" class="settings-status"></p>
+          </div>
+          <div class="settings-section settings-dictionaries">
             <h3>Offline dictionaries</h3>
             <p class="meta-note">WikDict packs are downloaded only when requested and kept in this browser.</p>
             <div class="dictionary-controls">
@@ -1142,7 +1218,6 @@
             <p id="dictionary-status" class="meta-note"></p>
             <div id="dictionary-packs" class="dictionary-packs"></div>
           </div>
-          <p id="nip7-status" class="settings-status"></p>
         </section>
       </section>
 
@@ -1171,6 +1246,7 @@
       const NOSTR_PROGRESS_KIND = 30078;
       const FAVORITES_D_TAG = 'libvault-favorites';
       const FAVORITES_CHUNK_PREFIX = 'libvault-favorites-chunk';
+      const FAVORITES_CHUNK_LIMIT = 6000;
       const READING_D_PREFIX = 'app.bookstr.progress.';
       const WORDS_D_PREFIX = 'app.bookstr.vocabulary.';
       const NOSTR_SYNC_CACHE_PREFIX = 'bookstr_nostr_sync_v1_';
@@ -1217,6 +1293,10 @@
       const homeFavoritesSection = homeFavoritesList.closest('.home-column');
       const homeLibraryHeading = homeReadingSection?.querySelector('h3');
       if (homeLibraryHeading) homeLibraryHeading.textContent = 'Library';
+      const homeLibraryCount = document.createElement('p');
+      homeLibraryCount.className = 'library-book-count';
+      homeLibraryCount.setAttribute('aria-live', 'polite');
+      homeLibraryHeading?.after(homeLibraryCount);
       homeFavoritesSection?.remove();
       const homeWordsList = document.getElementById('home-words-list');
       const homeBookSorts = Object.create(null);
@@ -1586,24 +1666,43 @@
         });
       }
 
-      function favoriteNostrTags() {
+      function favoriteNostrItemTags(now = Math.floor(Date.now() / 1000)) {
         const tags = [];
         for (const favorite of state.favorites) {
           const id = String(favorite.md5 || '');
           const readUrl = favorite.readUrl || favorite.url || '';
+          const addedAt = String(BookMetadata.normalizeFavoriteAddedAt(favorite.favoriteAddedAt) || now);
           if (isMd5(id)) {
-            if (readUrl) tags.push(['r', readUrl]);
-            const addedTag = BookMetadata.favoriteAddedTag(id, favorite.favoriteAddedAt);
-            if (addedTag) tags.push(addedTag);
-            tags.push(['libvault-book', id, favorite.title || '', favorite.authors || favorite.author || '', favorite.extension || favorite.format || '', String(favorite.filesize || ''), favorite.year || '', favorite.language || '', favorite.source || '']);
-            if (favorite.blossomSha256 && readUrl) {
-              tags.push(['blossom', id, favorite.blossomSha256, readUrl, favorite.extension || 'epub', favorite.authors || favorite.author || '', favorite.language || '', favorite.source || '']);
-            }
+            tags.push(['book', 'libvault', id.toLowerCase(), addedAt]);
+          } else if (/^[a-f0-9]{64}$/i.test(String(favorite.blossomSha256 || ''))) {
+            tags.push(['book', 'blossom', favorite.blossomSha256.toLowerCase(), addedAt, readUrl].filter(Boolean));
           } else {
-            tags.push(['bookstr-book', id, favorite.title || '', favorite.authors || favorite.author || '', favorite.extension || favorite.format || '', String(favorite.filesize || ''), favorite.year || '', readUrl, favorite.language || '', favorite.source || '']);
+            tags.push(['book', 'bookstr', id, addedAt, readUrl].filter(Boolean));
           }
         }
         return tags;
+      }
+
+      function splitFavoriteTags(tags) {
+        const chunks = [];
+        let current = [];
+        for (const tag of tags) {
+          const candidate = [...current, tag];
+          if (current.length && JSON.stringify(candidate).length > FAVORITES_CHUNK_LIMIT) {
+            chunks.push(current);
+            current = [tag];
+          } else {
+            current = candidate;
+          }
+        }
+        if (current.length) chunks.push(current);
+        return chunks.length ? chunks : [[]];
+      }
+
+      function randomCollectionChunkPrefix() {
+        const random = crypto.randomUUID?.().replaceAll('-', '')
+          || `${Date.now().toString(16)}${Math.random().toString(16).slice(2)}`;
+        return `bookstr-chunk-${random.slice(0, 32)}`;
       }
 
       async function syncFavoritesToNostr() {
@@ -1611,15 +1710,37 @@
           throw new Error('NIP-07 with NIP-44 support is required to sync favorites.');
         }
         const pubkey = state.nip7.pubkey || await window.nostr.getPublicKey();
-        const content = await window.nostr.nip44.encrypt(pubkey, JSON.stringify(favoriteNostrTags()));
-        const event = await window.nostr.signEvent({
-          kind: NOSTR_FAVORITES_KIND,
-          created_at: Math.floor(Date.now() / 1000),
-          tags: [['d', FAVORITES_D_TAG]],
-          content,
-        });
-        const accepted = await Promise.all(NOSTR_RELAYS.map(relay => publishRelayEvent(relay, event)));
-        if (!accepted.some(Boolean)) throw new Error('No Nostr relay accepted the favorites update.');
+        const now = Math.floor(Date.now() / 1000);
+        const header = [['bookstr-collection', '2'], ['title', 'Favorites'], ['updated', String(now)]];
+        const itemTags = favoriteNostrItemTags(now);
+        const publishEncrypted = async (dTag, tags) => {
+          const plaintext = JSON.stringify(tags);
+          if (plaintext.length > FAVORITES_CHUNK_LIMIT) throw new Error('One favorite reference is too large to encrypt safely.');
+          const content = await window.nostr.nip44.encrypt(pubkey, plaintext);
+          const event = await window.nostr.signEvent({
+            kind: NOSTR_FAVORITES_KIND,
+            created_at: now,
+            tags: [['d', dTag]],
+            content,
+          });
+          const accepted = await Promise.all(NOSTR_RELAYS.map(relay => publishRelayEvent(relay, event)));
+          if (!accepted.some(Boolean)) throw new Error('No Nostr relay accepted the favorites update.');
+          return event;
+        };
+        const directTags = [...header, ...itemTags];
+        if (JSON.stringify(directTags).length <= FAVORITES_CHUNK_LIMIT) {
+          await publishEncrypted(FAVORITES_D_TAG, directTags);
+        } else {
+          const chunks = splitFavoriteTags(itemTags);
+          const prefix = randomCollectionChunkPrefix();
+          for (let index = 0; index < chunks.length; index += 1) {
+            await publishEncrypted(`${prefix}-${index}`, chunks[index]);
+          }
+          await publishEncrypted(FAVORITES_D_TAG, [
+            ...header,
+            ['bookstr-chunks', String(chunks.length), prefix],
+          ]);
+        }
         saveNostrSyncCache(pubkey, {
           favorites: state.favorites,
           reading: state.reading,
@@ -1666,8 +1787,35 @@
           }
           const tag = rawTag.map(parseNostrTagsValue);
           const name = tag[0];
+          if (name === 'book' && tag.length > 3) {
+            const namespace = tag[1];
+            const identifier = tag[2];
+            const favoriteAddedAt = BookMetadata.normalizeFavoriteAddedAt(tag[3]);
+            const locator = tag[4] || '';
+            if (namespace === 'libvault' && isMd5(identifier)) {
+              entries.push({ md5: identifier.toLowerCase(), favoriteAddedAt });
+            } else if (namespace === 'bookstr' && identifier) {
+              entries.push({ md5: identifier, url: locator, readUrl: locator, favoriteAddedAt });
+            } else if (namespace === 'isbn' && normalizeIsbnFromTag(identifier)) {
+              entries.push({ md5: pseudoIdForSeed(identifier), isbn: normalizeIsbnFromTag(identifier), url: locator, favoriteAddedAt });
+            } else if (namespace === 'url' && identifier) {
+              entries.push({ md5: pseudoIdForSeed(identifier), url: identifier, readUrl: identifier, favoriteAddedAt });
+            } else if (namespace === 'blossom' && /^[a-f0-9]{64}$/i.test(identifier)) {
+              entries.push({ md5: identifier.toLowerCase(), blossomSha256: identifier.toLowerCase(), blossomUrl: locator, url: locator, favoriteAddedAt });
+            }
+            continue;
+          }
           if (name === 'r') {
             contextUrl = tag[1] || contextUrl;
+            try {
+              const url = new URL(tag[1]);
+              const md5 = new URLSearchParams(url.hash.split('?')[1] || '').get('md5');
+              if (isMd5(md5) && !entries.some(item => item.md5 === md5.toLowerCase())) {
+                entries.push({ md5: md5.toLowerCase(), url: tag[1], readUrl: tag[1] });
+              }
+            } catch {
+              // Legacy URL tags are optional context and may not be valid URLs.
+            }
             continue;
           }
           if (name === 'libvault' && isMd5(tag[1])) {
@@ -1772,22 +1920,22 @@
 
       async function pullNostrFavorites(pubkey) {
         if (!pubkey) return [];
-        try {
-          const rootEvents = await queryNostrEvents(pubkey, {
-            kinds: [NOSTR_FAVORITES_KIND],
-            limit: 10,
-            '#d': [FAVORITES_D_TAG],
-          });
-          const latest = rootEvents[0];
-          if (!latest) {
-            return null;
-          }
-          const rootTags = await decryptFavoritePayload(pubkey, latest.content);
-          const manifest = rootTags.find((tag) => Array.isArray(tag) && tag[0] === 'libvault-chunks');
-          const chunks = Array.isArray(manifest) ? Number(manifest[1] || 0) : 0;
-          const chunkPrefix = String(manifest?.[2] || FAVORITES_CHUNK_PREFIX);
-          let allTags = [...rootTags];
-          if (chunks > 0) {
+        const rootEvents = await queryNostrEvents(pubkey, {
+          kinds: [NOSTR_FAVORITES_KIND],
+          limit: 10,
+          '#d': [FAVORITES_D_TAG],
+        });
+        if (!rootEvents.length) return null;
+        for (const rootEvent of rootEvents) {
+          try {
+            const rootTags = await decryptFavoritePayload(pubkey, rootEvent.content);
+            const manifest = rootTags.find((tag) => Array.isArray(tag) && (tag[0] === 'bookstr-chunks' || tag[0] === 'libvault-chunks'));
+            const chunks = Array.isArray(manifest) ? Number(manifest[1] || 0) : 0;
+            const chunkPrefix = String(manifest?.[2] || FAVORITES_CHUNK_PREFIX);
+            if (manifest && (!Number.isInteger(chunks) || chunks < 1 || chunks > 10000 || !chunkPrefix)) {
+              throw new Error('Favorite chunk manifest is invalid.');
+            }
+            let allTags = [...rootTags];
             for (let index = 0; index < chunks; index += 1) {
               const chunkEvents = await queryNostrEvents(pubkey, {
                 kinds: [NOSTR_FAVORITES_KIND],
@@ -1795,23 +1943,21 @@
                 '#d': [`${chunkPrefix}-${index}`],
               });
               const chunkLatest = chunkEvents[0];
-              if (!chunkLatest) {
-                continue;
-              }
+              if (!chunkLatest) throw new Error(`Favorite chunk ${index + 1} of ${chunks} is missing.`);
               const chunkTags = await decryptFavoritePayload(pubkey, chunkLatest.content);
-              if (Array.isArray(chunkTags)) {
-                allTags = allTags.concat(chunkTags);
-              }
+              if (!Array.isArray(chunkTags)) throw new Error(`Favorite chunk ${index + 1} is invalid.`);
+              allTags = allTags.concat(chunkTags);
             }
+            const fallbackAddedAt = BookMetadata.normalizeFavoriteAddedAt(rootEvent.created_at);
+            return parseSharedFavoriteTags(allTags).map(ref => normalizeFavoriteFromRemote({
+              ...ref,
+              favoriteAddedAt: ref.favoriteAddedAt || fallbackAddedAt,
+            }));
+          } catch {
+            // A partial new generation must not hide an older complete snapshot.
           }
-          const fallbackAddedAt = BookMetadata.normalizeFavoriteAddedAt(latest.created_at);
-          return parseSharedFavoriteTags(allTags).map(ref => normalizeFavoriteFromRemote({
-            ...ref,
-            favoriteAddedAt: ref.favoriteAddedAt || fallbackAddedAt,
-          }));
-        } catch {
-          return null;
         }
+        return null;
       }
 
       function parseReadingProgressEvent(event) {
@@ -1995,11 +2141,31 @@
         localStorage.setItem(cacheKey, JSON.stringify(next));
       }
 
+      function preserveFavoriteMetadata(remote) {
+        const cachedMetadata = Object.values(metadataCacheRead())
+          .map(entry => entry?.book)
+          .filter(Boolean);
+        const known = [...state.favorites, ...state.reading, ...cachedMetadata]
+          .find(book => BookMetadata.sameLibraryBook(book, remote));
+        if (!known) return remote;
+        const enriched = BookMetadata.enrichBookMetadata(remote, known, 'local-cache');
+        enriched.blossomSha256 ||= known.blossomSha256 || '';
+        enriched.blossomUrl ||= known.blossomUrl || '';
+        enriched.sourceUrl ||= known.sourceUrl || known.url || '';
+        enriched.favoriteAddedAt = BookMetadata.earliestFavoriteAddedAt(
+          remote.favoriteAddedAt,
+          known.favoriteAddedAt,
+        );
+        return enriched;
+      }
+
       function applyNostrSnapshot(snapshot, { render = true, authoritativeFavorites = false } = {}) {
         const next = { ...snapshot };
         if (Array.isArray(next.favorites)) {
-          const normalizedFavorites = next.favorites.map(normalizeFavoriteFromRemote);
-          const replaceFavorites = authoritativeFavorites && (normalizedFavorites.length > 0 || state.favorites.length === 0);
+          const normalizedFavorites = next.favorites
+            .map(normalizeFavoriteFromRemote)
+            .map(preserveFavoriteMetadata);
+          const replaceFavorites = authoritativeFavorites;
           state.favorites = (replaceFavorites
             ? normalizedFavorites
             : mergeStateList(state.favorites, normalizedFavorites))
@@ -2728,6 +2894,35 @@
       }
 
       async function remoteMetadataForBook(book) {
+        const libvaultMd5 = String(book?.md5 || '').trim().toLowerCase();
+        if (isMd5(libvaultMd5)) {
+          const endpoints = [
+            new URL(`/api/books/${libvaultMd5}`, window.location.origin).href,
+            `https://lib.b.bfr.ee/api/books/${libvaultMd5}`,
+          ].filter((value, index, values) => values.indexOf(value) === index);
+          for (const endpoint of endpoints) {
+            try {
+              const response = await fetch(endpoint);
+              if (!response.ok) continue;
+              const metadata = await response.json();
+              const origin = new URL(endpoint).origin;
+              return {
+                ...metadata,
+                md5: libvaultMd5,
+                title: BookMetadata.resolveTitle(metadata),
+                authors: metadata?.authors || metadata?.author || '',
+                year: BookMetadata.yearForBook(metadata),
+                language: BookMetadata.languageForBook(metadata),
+                extension: metadata?.extension || metadata?.format || 'epub',
+                source: metadata?.source || 'libvault',
+                isbn: metadata?.isbn || '',
+                readUrl: `${origin}/api/read/${libvaultMd5}`,
+              };
+            } catch {
+              // Try the canonical public LibVault endpoint next.
+            }
+          }
+        }
         const readUrl = BookMetadata.canonicalReadUrl(book, BOOKS_API_BASE);
         const metadataUrl = BookMetadata.metadataEndpointForReadUrl(readUrl);
         if (metadataUrl) {
@@ -2959,6 +3154,7 @@
           item => cachedBookKeys.has(bookCacheKey(item, item.readUrl || item.url))
         ));
         const library = BookMetadata.mergeLibraryState(state.reading, state.favorites);
+        homeLibraryCount.textContent = `${library.length} ${library.length === 1 ? 'book' : 'books'}`;
         renderHomeBookList(homeReadingList, matchingBooks(enrichedHomeBooks(library)), 'Your library is empty.');
         homeWordsList.innerHTML = '';
         const words = [...new Set([...state.words].map(word => String(word?.word || word)).filter(Boolean))].sort((a, b) => a.localeCompare(b)).slice(0, 18);

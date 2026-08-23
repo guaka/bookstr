@@ -223,6 +223,15 @@ test('does not merge different IDs merely because titles match', () => {
   assert.equal(books.length, 2);
 });
 
+test('different stable IDs never merge through a shared URL or ISBN', () => {
+  const sharedUrl = 'https://lib.b.bfr.ee/#search?favorites=1';
+  const books = dedupeLibraryBooks([
+    { md5: '1'.repeat(32), title: 'First edition', readUrl: sharedUrl, isbn: '9781234567890' },
+    { md5: '2'.repeat(32), title: 'Second edition', readUrl: sharedUrl, isbn: '9781234567890' },
+  ]);
+  assert.equal(books.length, 2);
+});
+
 test('keeps a known read URL when a partial duplicate omits it', () => {
   const md5 = 'd'.repeat(32);
   const [book] = dedupeLibraryBooks([

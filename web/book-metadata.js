@@ -290,7 +290,7 @@
   function sameLibraryBook(left, right) {
     const leftId = String(left?.md5 || left?.libvaultMd5 || left?.id || '').trim().toLowerCase();
     const rightId = String(right?.md5 || right?.libvaultMd5 || right?.id || '').trim().toLowerCase();
-    if (leftId && rightId && leftId === rightId) return true;
+    if (leftId && rightId) return leftId === rightId;
     const leftUrl = left?.readUrl || left?.url || left?.blossomUrl;
     const rightUrl = right?.readUrl || right?.url || right?.blossomUrl;
     if (leftUrl && rightUrl && normalizeReadUrl(leftUrl) === normalizeReadUrl(rightUrl)) return true;
