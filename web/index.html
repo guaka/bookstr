@@ -493,15 +493,72 @@
       }
       .home-grid {
         display: grid;
-        grid-template-columns: repeat(3, minmax(0, 1fr));
+        grid-template-columns: minmax(0, 1fr);
         gap: 0.8rem;
       }
       .home-column + .home-column {
-        border-left: 1px solid var(--card-border, #ddd);
-        padding-left: 0.8rem;
+        border-top: 1px solid var(--card-border, #ddd);
+        padding-top: 0.65rem;
       }
       .home-column h3 {
         margin: 0 0 0.3rem;
+      }
+      .home-book-table {
+        display: grid;
+        min-width: 850px;
+        margin: 0;
+        padding: 0;
+        list-style: none;
+      }
+      .home-column:has(.home-book-table) {
+        overflow-x: auto;
+      }
+      .home-book-row {
+        display: grid;
+        grid-template-columns: minmax(180px, 2fr) minmax(140px, 1.4fr) 60px 110px 70px 72px;
+        gap: 0.55rem;
+        align-items: baseline;
+        padding: 0.3rem 0;
+        border-bottom: 1px solid var(--card-border, #ddd);
+      }
+      .home-book-head {
+        color: var(--muted-text, #666);
+        font-size: 0.68rem;
+        font-weight: 700;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+      }
+      .home-book-head button {
+        width: 100%;
+        padding: 0;
+        border: 0;
+        background: transparent;
+        color: inherit;
+        font: inherit;
+        letter-spacing: inherit;
+        text-align: left;
+        text-transform: inherit;
+      }
+      .home-book-head button:hover,
+      .home-book-head button:focus-visible {
+        color: #d7352a;
+      }
+      .home-availability {
+        display: inline-flex;
+        gap: 0.35rem;
+        align-items: center;
+      }
+      .home-cache-icon {
+        width: 0.9rem;
+        height: 0.9rem;
+        flex: 0 0 auto;
+        fill: #d7352a;
+      }
+      .home-book-row > span {
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
       }
       .words-toolbar {
         display: grid;
@@ -521,19 +578,50 @@
         gap: 0.45rem;
         align-items: baseline;
       }
+      .word-delete {
+        width: 1.8rem;
+        height: 1.8rem;
+        margin-left: auto;
+        padding: 0.3rem;
+        border: 0;
+        background: transparent;
+        color: var(--muted-text, #666);
+      }
+      .word-delete:hover,
+      .word-delete:focus-visible {
+        color: #d7352a;
+      }
+      .word-delete svg {
+        display: block;
+        width: 100%;
+        height: 100%;
+        fill: currentColor;
+      }
       .word-heading a {
         font-family: 'Iowan Old Style', Georgia, serif;
         font-size: 1.2rem;
         font-weight: 700;
       }
       .word-kind,
+      .word-language,
       .word-source {
         color: var(--muted-text, #666);
         font-size: 0.75rem;
       }
+      .word-language {
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
       .word-definition,
       .word-context {
         margin: 0.2rem 0 0;
+      }
+      .word-definition svg {
+        display: block;
+        width: 1.35rem;
+        height: 1.35rem;
+        fill: currentColor;
       }
       .word-context {
         color: var(--muted-text, #666);
@@ -557,6 +645,22 @@
       .word-lookup p {
         margin: 0.2rem 0;
       }
+      .wiki-definition h3,
+      .wiki-definition h4,
+      .wiki-definition h5,
+      .wiki-definition h6 {
+        margin: 0.65rem 0 0.2rem;
+        line-height: 1.15;
+      }
+      .wiki-definition h3 {
+        border-bottom: 1px solid var(--card-border, #ddd);
+        padding-bottom: 0.15rem;
+      }
+      .wiki-definition ul,
+      .wiki-definition ol {
+        margin: 0.25rem 0;
+        padding-left: 1.25rem;
+      }
       .dictionary-controls {
         display: grid;
         grid-template-columns: 1fr auto 1fr auto;
@@ -578,6 +682,20 @@
       #reading-favorite-btn.hearted {
         color: #d7352a;
       }
+      #reading-favorite-btn {
+        order: 0 !important;
+        flex: 0 0 auto;
+        margin-left: 0 !important;
+      }
+      .header-book-meta {
+        flex: 0 1 auto;
+        min-width: 0;
+        overflow: hidden;
+        color: var(--muted-text, #777);
+        font-size: 0.78rem;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
       #settings-btn {
         flex: 0 0 auto;
         margin-left: auto;
@@ -585,6 +703,19 @@
       .app-header-left {
         order: -2;
         flex: 0 1 auto;
+      }
+      .app-title > :last-child {
+        margin-left: -0.2rem;
+        color: #d7352a !important;
+        font-size: 0.9em;
+      }
+      body a:any-link,
+      body a:visited {
+        color: #d7352a;
+      }
+      body a:hover,
+      body a:focus-visible {
+        color: #ef5a47;
       }
       .app-header-right {
         order: -1;
@@ -1004,6 +1135,7 @@
     </section>
     </main>
 
+    <script src="book-metadata.js"></script>
     <script src="vendor/sql-wasm.js"></script>
     <script>
       const FAVORITES_KEY = 'bookstr_nostr_favorites_v1';
@@ -1026,6 +1158,8 @@
       const WIKDICT_BASE = `${BOOKS_API_BASE}/dictionaries`;
       const DICTIONARY_DB_NAME = 'bookstr_dictionaries_v1';
       const DICTIONARY_STORAGE_LIMIT = 250 * 1024 * 1024;
+      const BOOK_CACHE_DB_NAME = 'bookstr_epub_cache_v1';
+      const BOOK_CACHE_STORAGE_LIMIT = 300 * 1024 * 1024;
       const DICTIONARY_LANGUAGES = {
         bg: 'Bulgarian', ca: 'Catalan', cs: 'Czech', da: 'Danish', de: 'German', el: 'Greek',
         en: 'English', es: 'Spanish', fi: 'Finnish', fr: 'French', ga: 'Irish', id: 'Indonesian',
@@ -1052,9 +1186,11 @@
       const homeTab = document.getElementById('home-tab');
       const homeSearchForm = document.getElementById('home-search-form');
       const homeQueryInput = document.getElementById('home-query-input');
+      homeQueryInput.placeholder = 'Filter here · press Enter to search all books';
       const homeReadingList = document.getElementById('home-reading-list');
       const homeFavoritesList = document.getElementById('home-favorites-list');
       const homeWordsList = document.getElementById('home-words-list');
+      const homeBookSorts = Object.create(null);
       const searchType = document.getElementById('search-type');
       const searchForm = document.getElementById('search-form');
       const resultsEl = document.getElementById('results');
@@ -1068,14 +1204,34 @@
       const readerSection = document.getElementById('reader-section');
       const searchTab = document.getElementById('search-tab');
       const readingLibraryTab = document.getElementById('reading-library-tab');
+      for (const heading of readingLibraryTab.querySelectorAll('h1, h2, h3')) {
+        if (heading.textContent.trim() !== 'Words') continue;
+        const section = heading.closest('section');
+        if (section && section !== readingLibraryTab) section.remove();
+      }
       const wordsTab = document.getElementById('words-tab');
       const searchTabBtn = document.getElementById('search-tab-btn');
       const readingTabBtn = document.getElementById('reading-tab-btn');
+      readingTabBtn.remove();
+      readingLibraryTab.remove();
       const wordsTabBtn = document.getElementById('words-tab-btn');
       const appTitle = document.querySelector('.app-title');
+      const appTitleWord = appTitle.lastElementChild;
+      if (appTitleWord?.textContent.trim().toLowerCase() === 'bookstr') {
+        appTitleWord.textContent = 'ookstr';
+      } else {
+        for (const node of appTitle.childNodes) {
+          if (node.nodeType === Node.TEXT_NODE && /bookstr/i.test(node.textContent)) {
+            node.textContent = node.textContent.replace(/bookstr/i, 'ookstr');
+            break;
+          }
+        }
+      }
       const headerBookTitle = document.getElementById('header-book-title');
       const readingFavoriteBtn = document.getElementById('reading-favorite-btn');
-      headerBookTitle.after(readingFavoriteBtn);
+      const headerBookMeta = document.createElement('span');
+      headerBookMeta.className = 'header-book-meta hidden';
+      document.querySelector('.app-header-right').after(headerBookTitle, readingFavoriteBtn, headerBookMeta);
       let activeReadingBook = null;
       let activeTab = 'home';
       const settingsBtn = document.getElementById('settings-btn');
@@ -1420,12 +1576,14 @@
           const readUrl = favorite.readUrl || favorite.url || '';
           if (isMd5(id)) {
             if (readUrl) tags.push(['r', readUrl]);
-            tags.push(['libvault-book', id, favorite.title || '', favorite.authors || favorite.author || '', favorite.extension || favorite.format || '', String(favorite.filesize || ''), favorite.year || '']);
+            const addedTag = BookMetadata.favoriteAddedTag(id, favorite.favoriteAddedAt);
+            if (addedTag) tags.push(addedTag);
+            tags.push(['libvault-book', id, favorite.title || '', favorite.authors || favorite.author || '', favorite.extension || favorite.format || '', String(favorite.filesize || ''), favorite.year || '', favorite.language || '', favorite.source || '']);
             if (favorite.blossomSha256 && readUrl) {
-              tags.push(['blossom', id, favorite.blossomSha256, readUrl, favorite.extension || 'epub', favorite.authors || favorite.author || '']);
+              tags.push(['blossom', id, favorite.blossomSha256, readUrl, favorite.extension || 'epub', favorite.authors || favorite.author || '', favorite.language || '', favorite.source || '']);
             }
           } else {
-            tags.push(['bookstr-book', id, favorite.title || '', favorite.authors || favorite.author || '', favorite.extension || favorite.format || '', String(favorite.filesize || ''), favorite.year || '', readUrl]);
+            tags.push(['bookstr-book', id, favorite.title || '', favorite.authors || favorite.author || '', favorite.extension || favorite.format || '', String(favorite.filesize || ''), favorite.year || '', readUrl, favorite.language || '', favorite.source || '']);
           }
         }
         return tags;
@@ -1505,6 +1663,13 @@
             }
             continue;
           }
+          if (name === 'libvault-added' && isMd5(tag[1])) {
+            const md5 = tag[1].toLowerCase();
+            const entry = entries.find(item => item.md5 === md5) || { md5 };
+            if (!entries.includes(entry)) entries.push(entry);
+            entry.favoriteAddedAt = BookMetadata.earliestFavoriteAddedAt(entry.favoriteAddedAt, tag[2]);
+            continue;
+          }
           if (name === 'libvault-book' && isMd5(tag[1])) {
             const md5 = tag[1].toLowerCase();
             const entry = entries.find(item => item.md5 === md5) || { md5 };
@@ -1513,11 +1678,13 @@
             entry.author = tag[3] || entry.author || '';
             entry.format = tag[4] || entry.format || '';
             entry.year = tag[6] || entry.year || '';
+            entry.language = tag[7] || entry.language || '';
+            entry.source = tag[8] || entry.source || '';
             entry.url ||= contextUrl || '';
             continue;
           }
           if (name === 'bookstr-book' && tag[1]) {
-            entries.push({
+            BookMetadata.mergeFavoriteEntry(entries, {
               md5: tag[1],
               title: tag[2] || '',
               author: tag[3] || '',
@@ -1526,6 +1693,8 @@
               year: tag[6] || '',
               readUrl: tag[7] || '',
               url: tag[7] || '',
+              language: tag[8] || '',
+              source: tag[9] || '',
             });
             continue;
           }
@@ -1537,6 +1706,8 @@
             entry.blossomUrl = tag[3] || entry.blossomUrl || '';
             entry.blossomFormat = tag[4] || entry.blossomFormat || '';
             entry.author = tag[5] || entry.author || '';
+            entry.language = tag[6] || entry.language || '';
+            entry.source = tag[7] || entry.source || '';
             entry.url = tag[3] || entry.url || contextUrl || '';
             continue;
           }
@@ -1557,33 +1728,23 @@
 
       function normalizeFavoriteFromRemote(ref) {
         const md5 = String(ref.md5 || '').trim().toLowerCase() || null;
-        const readUrl = ref.blossomUrl || ref.readUrl || '';
+        const readUrl = ref.blossomUrl || ref.readUrl || ref.epubUrl || ref.downloadUrl || ref.url || '';
         const sourceUrl = ref.sourceUrl || ref.url || readUrl;
-        const rawTitle = String(ref.title || '').trim();
-        const isPlaceholderTitle = /^(?:LibVault favorite|Saved in Nostr)$/i.test(rawTitle)
-          || /^(?:book\s+)?[a-f0-9]{8,64}$/i.test(rawTitle);
-        const usefulTitle = isPlaceholderTitle ? '' : rawTitle;
-        let titleFromUrl = '';
-        try {
-          const pathname = new URL(readUrl, window.location.href).pathname;
-          const filename = decodeURIComponent(pathname.split('/').filter(Boolean).pop() || '');
-          titleFromUrl = filename.replace(/\.[^.]+$/, '').replace(/[-_]+/g, ' ').trim();
-          if (/^[a-f0-9]{16,64}$/i.test(titleFromUrl.replace(/\s+/g, ''))) {
-            titleFromUrl = '';
-          }
-        } catch (_) {
-          // Missing or malformed URLs use the short identifier fallback below.
-        }
+        const title = BookMetadata.resolveTitle(ref, readUrl, window.location.href);
+        const favoriteAddedAt = BookMetadata.normalizeFavoriteAddedAt(ref.favoriteAddedAt);
         return {
-          md5: md5 || pseudoIdForSeed(`${usefulTitle || ''}${readUrl}`),
-          title: usefulTitle || titleFromUrl || 'Untitled book',
-          authors: ref.author || ref.authors || '',
+          md5: md5 || pseudoIdForSeed(`${title}${readUrl}`),
+          title,
+          authors: ref.author || ref.authors || ref.creator || ref.bookAuthor || ref.metadata?.author || '',
           year: ref.year || '',
+          language: BookMetadata.languageForBook(ref),
           extension: (ref.blossomFormat || ref.format || ref.extension || 'epub').replace(/^\./, '').toLowerCase(),
           blossomSha256: ref.blossomSha256 || '',
           readUrl,
-          source: 'nostr',
+          source: ref.source || 'nostr',
           sourceUrl,
+          favoriteAddedAt,
+          updatedAt: Number(ref.updatedAt || favoriteAddedAt || 0),
         };
       }
 
@@ -1621,7 +1782,11 @@
               }
             }
           }
-          return parseSharedFavoriteTags(allTags).map(normalizeFavoriteFromRemote);
+          const fallbackAddedAt = BookMetadata.normalizeFavoriteAddedAt(latest.created_at);
+          return parseSharedFavoriteTags(allTags).map(ref => normalizeFavoriteFromRemote({
+            ...ref,
+            favoriteAddedAt: ref.favoriteAddedAt || fallbackAddedAt,
+          }));
         } catch {
           return null;
         }
@@ -1644,8 +1809,9 @@
           }
           return {
             md5: bookId.toLowerCase(),
-            title: String(payload.title || 'Saved book'),
-            authors: String(payload.author || ''),
+            title: BookMetadata.resolveTitle(payload),
+            authors: String(payload.author || payload.authors || payload.creator || ''),
+            language: BookMetadata.languageForBook(payload),
             updatedAt,
             extension: 'epub',
             readUrl: payload.readUrl || '',
@@ -1672,18 +1838,19 @@
             latestByBook.set(parsed.md5, parsed);
           }
         }
-        return sortByUpdatedAt(Array.from(latestByBook.values())).slice(0, 50);
+        return sortByUpdatedAt(Array.from(latestByBook.values())).slice();
       }
 
       function normalizeVocabularyWord(value) {
         const source = value && typeof value === 'object' ? value : { word: value };
         const word = String(source.word || '').trim().toLowerCase();
         if (!word) return null;
+        const language = String(source.sourceLanguage || source.lang || source.language || 'pt').toLowerCase();
         return {
           ...source,
-          key: source.key || `${source.language || 'en'}:${word}`,
+          key: source.key || `${language}:${word}`,
           word,
-          language: String(source.language || 'en').toLowerCase(),
+          language,
           bookId: String(source.bookId || ''),
           bookTitle: String(source.bookTitle || ''),
           cfi: String(source.cfi || ''),
@@ -1757,7 +1924,12 @@
           }
           const index = next.findIndex((row) => row && row[dedupeBy] === id);
           if (index >= 0) {
+            const favoriteAddedAt = BookMetadata.earliestFavoriteAddedAt(
+              next[index].favoriteAddedAt,
+              item.favoriteAddedAt,
+            );
             next[index] = { ...next[index], ...item, dedupSource: 'nostr', updatedAt: Number(item.updatedAt || Date.now()) };
+            if (favoriteAddedAt) next[index].favoriteAddedAt = favoriteAddedAt;
           } else {
             next.push(item);
           }
@@ -1805,12 +1977,12 @@
           state.favorites = (replaceFavorites
             ? normalizedFavorites
             : mergeStateList(state.favorites, normalizedFavorites))
-            .slice(0, 50);
+            .slice();
         }
         if (Array.isArray(next.reading)) {
-          state.reading = mergeStateList(state.reading, next.reading)
+          state.reading = BookMetadata.dedupeLibraryBooks(mergeStateList(state.reading, next.reading.map(normalizeFavoriteFromRemote)))
             .sort((a, b) => Number(b.updatedAt || 0) - Number(a.updatedAt || 0))
-            .slice(0, 50);
+            .slice();
         }
         if (Array.isArray(next.words)) {
           const merged = new Map();
@@ -1991,7 +2163,7 @@
           list[index] = { ...list[index], ...entry, updatedAt: Date.now() };
           return;
         }
-        list.push({ ...entry, updatedAt: Date.now() });
+        list.unshift({ ...entry, updatedAt: Date.now() });
       }
 
       function removeById(list, id) {
@@ -2026,6 +2198,48 @@
         }
       }
 
+      function formatMediaWikiText(value) {
+        let text = escapeHtml(String(value || '').trim());
+        text = text
+          .replace(/\[\[[^\]|]+\|([^\]]+)\]\]/g, '$1')
+          .replace(/\[\[([^\]]+)\]\]/g, '$1')
+          .replace(/'''([^']+?)'''/g, '<strong>$1</strong>')
+          .replace(/''([^']+?)''/g, '<em>$1</em>')
+          .replace(/(={2,6})\s*([^=]+?)\s*\1/g, (_, marks, title) => {
+            const level = Math.min(6, marks.length + 1);
+            return `\n<h${level}>${title.trim()}</h${level}>\n`;
+          });
+        const blocks = text.split(/\n+/).map(block => block.trim()).filter(Boolean);
+        let listType = '';
+        let html = '';
+        const closeList = () => {
+          if (listType) html += `</${listType}>`;
+          listType = '';
+        };
+        for (const block of blocks) {
+          if (/^<h[3-6]>/.test(block)) {
+            closeList();
+            html += block;
+            continue;
+          }
+          const list = block.match(/^([*#])\s*(.+)$/);
+          if (list) {
+            const nextType = list[1] === '*' ? 'ul' : 'ol';
+            if (listType !== nextType) {
+              closeList();
+              listType = nextType;
+              html += `<${listType}>`;
+            }
+            html += `<li>${list[2]}</li>`;
+            continue;
+          }
+          closeList();
+          html += `<p>${block}</p>`;
+        }
+        closeList();
+        return html;
+      }
+
       async function lookupAllOfflineWords(word, language) {
         const normalized = String(language || '').split('-')[0].toLowerCase();
         const packs = (await dictionaryRecords()).filter(pack => pack.source === normalized);
@@ -2056,6 +2270,69 @@
         return groups.length ? { label: 'Offline dictionaries', definitions: groups } : null;
       }
 
+      function publishNostrDeletion(event) {
+        return Promise.all(NOSTR_RELAYS.map(relay => new Promise(resolve => {
+          const socket = new WebSocket(relay);
+          const timer = setTimeout(() => {
+            socket.close();
+            resolve(false);
+          }, 5000);
+          const finish = success => {
+            clearTimeout(timer);
+            socket.close();
+            resolve(success);
+          };
+          socket.addEventListener('open', () => socket.send(JSON.stringify(['EVENT', event])));
+          socket.addEventListener('message', message => {
+            try {
+              const payload = JSON.parse(message.data);
+              if (payload[0] === 'OK' && payload[1] === event.id) finish(Boolean(payload[2]));
+            } catch {}
+          });
+          socket.addEventListener('error', () => finish(false));
+        }))).then(results => results.some(Boolean));
+      }
+
+      async function deleteVocabularyWord(entry) {
+        const pubkey = state.nip7.pubkey || await window.nostr?.getPublicKey?.();
+        if (!pubkey || !window.nostr?.signEvent) {
+          throw new Error('Connect NIP-07 to delete this word from Nostr.');
+        }
+        const events = await queryNostrEvents(pubkey, { kinds: [NOSTR_PROGRESS_KIND], limit: 500 });
+        const matchingEvents = [];
+        for (const event of events) {
+          try {
+            const saved = await decryptVocabularyPayload(pubkey, event);
+            if (!saved) continue;
+            const sameKey = entry.key && saved.key === entry.key;
+            const sameWord = saved.word === entry.word && (saved.bookId || saved.bookTitle) === (entry.bookId || entry.bookTitle);
+            if (sameKey || sameWord) matchingEvents.push(event);
+          } catch {}
+        }
+        if (matchingEvents.length) {
+          const tags = [];
+          for (const event of matchingEvents) {
+            tags.push(['e', event.id]);
+            const dTag = event.tags?.find(tag => tag?.[0] === 'd')?.[1];
+            if (dTag) tags.push(['a', `${event.kind}:${pubkey}:${dTag}`]);
+          }
+          const deletion = await window.nostr.signEvent({
+            kind: 5,
+            created_at: Math.floor(Date.now() / 1000),
+            tags,
+            content: `Delete vocabulary word: ${entry.word}`
+          });
+          if (!await publishNostrDeletion(deletion)) throw new Error('Nostr relays did not accept the deletion.');
+        }
+        state.words = state.words.filter(value => {
+          const saved = normalizeVocabularyWord(value);
+          return saved && saved.key !== entry.key && !(saved.word === entry.word && (saved.bookId || saved.bookTitle) === (entry.bookId || entry.bookTitle));
+        });
+        localStorage.setItem(WORDS_KEY, JSON.stringify(state.words));
+        renderWords();
+        renderHome();
+      }
+
       function renderWords() {
         wordsList.innerHTML = '';
         if (!state.words.length) {
@@ -2063,7 +2340,13 @@
           return;
         }
         const needle = wordsFilter.value.trim().toLowerCase();
-        const words = state.words.map(normalizeVocabularyWord).filter(Boolean).filter((entry) => {
+        const uniqueWords = new Map();
+        for (const entry of state.words.map(normalizeVocabularyWord).filter(Boolean)) {
+          const identity = `${entry.word}\u0000${entry.bookId || entry.bookTitle}`;
+          const existing = uniqueWords.get(identity);
+          if (!existing || entry.language === 'pt' || entry.lastSeenAt > existing.lastSeenAt) uniqueWords.set(identity, entry);
+        }
+        const words = [...uniqueWords.values()].filter((entry) => {
           if (!needle) return true;
           return [entry.word, entry.bookTitle, entry.contextSentence, ...entry.definitions]
             .some(value => String(value).toLowerCase().includes(needle));
@@ -2095,13 +2378,27 @@
           row.innerHTML = `
             <div class="word-heading">
               <a href="${escapeHtml(sourceHref)}">${escapeHtml(entry.word)}</a>
+              <span class="word-language" title="${escapeHtml(DICTIONARY_LANGUAGES[entry.language.split('-')[0]] || entry.language)}">${escapeHtml(entry.language.split('-')[0])}</span>
               ${entry.partOfSpeech ? `<span class="word-kind">${escapeHtml(entry.partOfSpeech)}</span>` : ''}
+              <button class="word-delete" type="button" aria-label="Delete ${escapeHtml(entry.word)}" title="Delete word"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 3h6l1 2h4v2H4V5h4l1-2Zm-3 6h12l-1 12H7L6 9Zm3 2v7h2v-7H9Zm4 0v7h2v-7h-2Z"/></svg></button>
             </div>
-            <p class="word-definition" role="button" tabindex="0" title="Show definitions">${escapeHtml(entry.definitions[0] || 'Show definitions')}</p>
+            <p class="word-definition" role="button" tabindex="0" aria-label="Show definitions" title="Show definitions">${entry.definitions[0] ? escapeHtml(entry.definitions[0]) : '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4.5A3.5 3.5 0 0 1 7.5 1H11v17H7.5A3.5 3.5 0 0 0 4 21.5v-17ZM13 1h3.5A3.5 3.5 0 0 1 20 4.5v17a3.5 3.5 0 0 0-3.5-3.5H13V1Z"/></svg>'}</p>
             <p class="word-context">${highlightedWordSnippet(entry.contextSentence, entry.word)}</p>
             ${entry.bookTitle ? `<div class="word-source">${escapeHtml(entry.bookTitle)}${entry.lookupCount > 1 ? ` · seen ${entry.lookupCount} times` : ''}</div>` : ''}
             <div class="word-lookup hidden" aria-live="polite"></div>
           `;
+          row.querySelector('.word-delete').addEventListener('click', async () => {
+            const button = row.querySelector('.word-delete');
+            button.disabled = true;
+            status.textContent = `Deleting ${entry.word}…`;
+            try {
+              await deleteVocabularyWord(entry);
+              status.textContent = `Deleted ${entry.word}.`;
+            } catch (error) {
+              button.disabled = false;
+              status.textContent = `Could not delete ${entry.word}: ${error?.message || error}`;
+            }
+          });
           row.querySelector('.word-heading a').addEventListener('click', (event) => {
             event.preventDefault();
             if (sourceBook) void openBook({ ...sourceBook, cfi: entry.cfi });
@@ -2134,7 +2431,7 @@
                 label = 'Wiktionary';
               }
               panel.innerHTML = definitions.length
-                ? `<strong>${escapeHtml(label)}</strong>${definitions.map(definition => `<p>${escapeHtml(definition)}</p>`).join('')}`
+                ? `<strong>${escapeHtml(label)}</strong>${definitions.map(definition => `<div class="wiki-definition">${formatMediaWikiText(definition)}</div>`).join('')}`
                 : 'No definition found.';
             } catch (error) {
               panel.textContent = `Definition unavailable: ${error?.message || error}`;
@@ -2276,9 +2573,12 @@
             title: book.title,
             authors: book.authors,
             year: book.year || '',
+            language: book.language || '',
+            source: book.source || '',
             extension: book.extension || 'epub',
             blossomSha256: book.blossomSha256 || '',
-            readUrl: book.readUrl || book.url || ''
+            readUrl: book.readUrl || book.url || '',
+            favoriteAddedAt: Math.floor(Date.now() / 1000)
           });
           if (button) {
             button.textContent = '♥';
@@ -2287,7 +2587,7 @@
             button.title = 'Remove from favorites';
           }
         }
-        state.favorites = state.favorites.slice(0, 50);
+        state.favorites = sortByUpdatedAt(BookMetadata.dedupeLibraryBooks(state.favorites));
         localStorage.setItem(FAVORITES_KEY, JSON.stringify(state.favorites));
         renderFavorites();
         renderButtonsState();
@@ -2332,38 +2632,185 @@
         history.pushState(null, '', `${window.location.pathname}${window.location.search}${nextHash}`);
       }
 
+      async function resolveReadRouteBook(readUrl) {
+        const saved = BookMetadata.findBookByReadUrl(readUrl, state.reading, state.favorites);
+        if (saved) return saved;
+        try {
+          const cached = BookMetadata.findBookByReadUrl(readUrl, await bookCacheRecords());
+          if (cached?.title && !BookMetadata.isPlaceholderTitle(cached.title)) {
+            return { ...cached, md5: cached.key, extension: 'epub', readUrl };
+          }
+        } catch {}
+        const metadataUrl = BookMetadata.metadataEndpointForReadUrl(readUrl);
+        if (metadataUrl) {
+          try {
+            const response = await fetch(metadataUrl);
+            if (response.ok) {
+              const payload = await response.json();
+              const metadata = payload?.book || payload?.data || payload;
+              const id = readUrl.match(/\/api\/books\/(\d+)\/download/)?.[1] || readUrl;
+              return {
+                md5: `gutenberg:${id}`,
+                title: BookMetadata.resolveTitle(metadata, readUrl, window.location.href),
+                authors: Array.isArray(metadata?.authors)
+                  ? metadata.authors.join(', ')
+                  : String(metadata?.author || metadata?.authors || ''),
+                year: String(metadata?.issued || metadata?.year || '').split('-')[0],
+                language: BookMetadata.languageForBook(metadata),
+                extension: 'epub',
+                readUrl,
+              };
+            }
+          } catch {}
+        }
+        return { title: 'Untitled book', readUrl, extension: 'epub' };
+      }
+
+      function enrichedHomeBooks(books) {
+        const library = BookMetadata.dedupeLibraryBooks([...state.reading, ...state.favorites]);
+        return books.map(book => {
+          const peer = library.find(item =>
+            (book.md5 && item.md5 === book.md5) ||
+            ((book.readUrl || book.url) && BookMetadata.findBookByReadUrl(book.readUrl || book.url, [item]))
+          );
+          if (!peer) return book;
+          const merged = { ...peer, ...book };
+          if (BookMetadata.isPlaceholderTitle(merged.title)) merged.title = BookMetadata.resolveTitle(peer);
+          merged.readUrl ||= peer.readUrl || peer.url || peer.blossomUrl || '';
+          merged.authors ||= peer.authors || peer.author || '';
+          merged.year ||= peer.year || '';
+          merged.language ||= peer.language || '';
+          return merged;
+        });
+      }
+
+      async function openLibraryBook(book) {
+        const directUrl = BookMetadata.canonicalReadUrl(book, BOOKS_API_BASE);
+        if (directUrl) {
+          await openBook({ ...book, readUrl: directUrl });
+          return;
+        }
+        const gutenbergId = String(book.md5 || '').match(/^gutenberg:(\d+)$/i)?.[1];
+        if (gutenbergId) {
+          await openBook({ ...book, extension: 'epub', readUrl: `${BOOKS_API_BASE}/books/${gutenbergId}/download` });
+          return;
+        }
+        status.textContent = `Finding a readable copy of ${book.title || 'this book'}…`;
+        try {
+          const query = BookMetadata.isPlaceholderTitle(book.title) ? book.md5 : book.title;
+          const results = await searchAllBooksParty(query || book.authors || '');
+          const normalizedTitle = String(book.title || '').toLocaleLowerCase();
+          const match = results.find(item => item.md5 === book.md5 && (item.readUrl || item.url))
+            || results.find(item => String(item.title || '').toLocaleLowerCase() === normalizedTitle && (item.readUrl || item.url))
+            || results.find(item => item.readUrl || item.url);
+          if (!match) throw new Error('No readable copy was found.');
+          await openBook({ ...book, ...match, title: BookMetadata.resolveTitle({ ...book, ...match }) });
+        } catch (error) {
+          status.textContent = `Could not open ${book.title || 'book'}: ${error?.message || error}`;
+        }
+      }
+
       function renderHomeBookList(target, books, emptyText) {
         target.innerHTML = '';
-        const visible = books;
+        target.classList.add('home-book-table');
+        const sort = homeBookSorts[target.id] || { key: 'title', direction: 'asc' };
+        const isCached = book => cachedBookKeys.has(bookCacheKey(book, book.readUrl || book.url));
+        const visible = BookMetadata.sortBooks(books, sort.key, sort.direction, isCached);
         if (!visible.length) {
           const item = document.createElement('li');
           item.textContent = emptyText;
           target.appendChild(item);
           return;
         }
+        const head = document.createElement('li');
+        head.className = 'home-book-row home-book-head';
+        const columns = [
+          ['title', 'Title'],
+          ['author', 'Author'],
+          ['year', 'Year'],
+          ['availability', 'Available'],
+          ['format', 'Format'],
+          ['language', 'Language'],
+        ];
+        for (const [key, label] of columns) {
+          const cell = document.createElement('span');
+          if (key) {
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.textContent = `${label}${sort.key === key ? (sort.direction === 'asc' ? ' ↑' : ' ↓') : ''}`;
+            button.addEventListener('click', () => {
+              homeBookSorts[target.id] = {
+                key,
+                direction: sort.key === key && sort.direction === 'asc' ? 'desc' : 'asc',
+              };
+              renderHome();
+            });
+            cell.setAttribute('aria-sort', sort.key === key ? (sort.direction === 'asc' ? 'ascending' : 'descending') : 'none');
+            cell.appendChild(button);
+          } else {
+            cell.textContent = label;
+          }
+          head.appendChild(cell);
+        }
+        target.appendChild(head);
         for (const book of visible) {
           const item = document.createElement('li');
-          const link = document.createElement('a');
-          link.href = book.readUrl || book.url ? `#read=${encodeURIComponent(book.readUrl || book.url)}` : '#reading';
-          link.textContent = book.title || 'Untitled book';
-          link.addEventListener('click', (event) => {
+          item.className = 'home-book-row';
+          const titleCell = document.createElement('span');
+          const titleLink = document.createElement('a');
+          titleLink.href = book.readUrl || book.url || book.blossomUrl
+            ? `#read=${encodeURIComponent(book.readUrl || book.url || book.blossomUrl)}`
+            : `#search=${encodeURIComponent(book.title || book.md5 || '')}`;
+          titleLink.textContent = book.title || 'Untitled book';
+          titleLink.title = `Open ${book.title || 'book'}`;
+          titleLink.addEventListener('click', event => {
             event.preventDefault();
-            openBook(book);
+            void openLibraryBook(book);
           });
-          item.appendChild(link);
+          titleCell.appendChild(titleLink);
+          item.appendChild(titleCell);
+          const cells = [
+            book.authors || book.author || '—',
+            book.year || '—',
+          ];
+          for (const value of cells) {
+            const cell = document.createElement('span');
+            cell.textContent = value;
+            cell.title = value;
+            item.appendChild(cell);
+          }
+          const availability = BookMetadata.availabilityForBook(book);
+          const availabilityCell = document.createElement('span');
+          availabilityCell.className = 'home-availability';
+          availabilityCell.append(document.createTextNode(availability));
+          if (cachedBookKeys.has(bookCacheKey(book, book.readUrl || book.url))) {
+            availabilityCell.insertAdjacentHTML('beforeend', '<svg class="home-cache-icon" viewBox="0 0 24 24" aria-label="Cached" role="img"><path d="M12 3a9 9 0 1 0 8.49 12H18.3A7 7 0 1 1 19 12h-3l4-4 4 4h-3a9 9 0 0 0-9-9Zm-1 5v5h5v-2h-3V8h-2Z"/></svg>');
+          }
+          item.appendChild(availabilityCell);
+          for (const value of [
+            String(book.extension || book.format || '—').replace(/^\./, '').toUpperCase(),
+            String(book.language || '—').toUpperCase(),
+          ]) {
+            const cell = document.createElement('span');
+            cell.textContent = value;
+            cell.title = value;
+            item.appendChild(cell);
+          }
           target.appendChild(item);
         }
       }
 
       function renderHome() {
         const needle = homeQueryInput.value.trim().toLocaleLowerCase();
-        const matchingBooks = books => books.filter(book =>
-          !needle || `${book.title || ''} ${book.authors || ''}`.toLocaleLowerCase().includes(needle)
-        );
-        renderHomeBookList(homeReadingList, matchingBooks(state.reading), 'Nothing open yet.');
-        renderHomeBookList(homeFavoritesList, matchingBooks(state.favorites), 'No favorites yet.');
+        const matchingBooks = books => books.filter(book => BookMetadata.matchesBookFilter(
+          book,
+          needle,
+          item => cachedBookKeys.has(bookCacheKey(item, item.readUrl || item.url))
+        ));
+        renderHomeBookList(homeReadingList, matchingBooks(enrichedHomeBooks(state.reading)), 'Nothing open yet.');
+        renderHomeBookList(homeFavoritesList, matchingBooks(enrichedHomeBooks(state.favorites)), 'No favorites yet.');
         homeWordsList.innerHTML = '';
-        const words = [...state.words].map(word => String(word?.word || word)).filter(Boolean).sort((a, b) => a.localeCompare(b)).slice(0, 18);
+        const words = [...new Set([...state.words].map(word => String(word?.word || word)).filter(Boolean))].sort((a, b) => a.localeCompare(b)).slice(0, 18);
         if (!words.length) {
           homeWordsList.textContent = 'No saved words yet.';
           return;
@@ -2378,6 +2825,7 @@
             activateTab('words');
             renderWords();
             setHashRoute(`words=${encodeURIComponent(word)}`);
+            requestAnimationFrame(() => wordsList.querySelector('.word-definition')?.click());
           });
           homeWordsList.appendChild(link);
         }
@@ -2402,6 +2850,12 @@
         headerBookTitle.classList.toggle('hidden', !showBookTitle);
         headerBookTitle.textContent = showBookTitle ? activeReadingBook.title : '';
         headerBookTitle.title = showBookTitle ? activeReadingBook.title : '';
+        const bookMeta = showBookTitle
+          ? [activeReadingBook.authors || activeReadingBook.author, activeReadingBook.year].filter(Boolean).join(' · ')
+          : '';
+        headerBookMeta.classList.toggle('hidden', !bookMeta);
+        headerBookMeta.textContent = bookMeta;
+        headerBookMeta.title = bookMeta;
         updateReadingFavoriteButton();
         if (activeTab === 'home') renderHome();
         if (activeTab === 'words') requestAnimationFrame(() => wordsFilter.focus());
@@ -2465,6 +2919,174 @@
         });
       }
 
+      let bookCacheDatabase;
+      const cachedBookKeys = new Set();
+
+      function openBookCache() {
+        if (bookCacheDatabase) return bookCacheDatabase;
+        bookCacheDatabase = new Promise((resolve, reject) => {
+          const request = indexedDB.open(BOOK_CACHE_DB_NAME, 1);
+          request.onupgradeneeded = () => request.result.createObjectStore('books', { keyPath: 'key' });
+          request.onsuccess = () => resolve(request.result);
+          request.onerror = () => reject(request.error || new Error('Could not open the book cache.'));
+        });
+        return bookCacheDatabase;
+      }
+
+      async function bookCacheRecords() {
+        const database = await openBookCache();
+        return new Promise((resolve, reject) => {
+          const request = database.transaction('books').objectStore('books').getAll();
+          request.onsuccess = () => resolve(request.result || []);
+          request.onerror = () => reject(request.error);
+        });
+      }
+
+      async function bookCachePut(record) {
+        const database = await openBookCache();
+        return new Promise((resolve, reject) => {
+          const request = database.transaction('books', 'readwrite').objectStore('books').put(record);
+          request.onsuccess = () => resolve();
+          request.onerror = () => reject(request.error);
+        });
+      }
+
+      async function bookCacheDelete(key) {
+        const database = await openBookCache();
+        return new Promise((resolve, reject) => {
+          const request = database.transaction('books', 'readwrite').objectStore('books').delete(key);
+          request.onsuccess = () => resolve();
+          request.onerror = () => reject(request.error);
+        });
+      }
+
+      function bookCacheKey(book, readUrl) {
+        return String(readUrl || book?.md5 || '').trim();
+      }
+
+      async function cachedBookBlob(book, readUrl) {
+        const key = bookCacheKey(book, readUrl);
+        if (!key) return null;
+        const record = (await bookCacheRecords()).find(item => item.key === key);
+        if (!(record?.blob instanceof Blob)) return null;
+        record.lastUsed = Date.now();
+        void bookCachePut(record).catch(() => {});
+        return record.blob;
+      }
+
+      async function cacheBookBlob(book, readUrl, blob) {
+        if (!(blob instanceof Blob) || !blob.size) return;
+        const key = bookCacheKey(book, readUrl);
+        if (!key || blob.size > BOOK_CACHE_STORAGE_LIMIT) return;
+        const records = (await bookCacheRecords()).filter(item => item.key !== key).sort((a, b) => a.lastUsed - b.lastUsed);
+        let total = records.reduce((sum, item) => sum + Number(item.size || item.blob?.size || 0), 0) + blob.size;
+        while (total > BOOK_CACHE_STORAGE_LIMIT && records.length) {
+          const oldest = records.shift();
+          await bookCacheDelete(oldest.key);
+          cachedBookKeys.delete(oldest.key);
+          total -= Number(oldest.size || oldest.blob?.size || 0);
+        }
+        await bookCachePut({
+          key,
+          blob,
+          size: blob.size,
+          title: book?.title || '',
+          authors: book?.authors || '',
+          year: book?.year || '',
+          language: book?.language || '',
+          source: book?.source || '',
+          readUrl,
+          lastUsed: Date.now()
+        });
+        cachedBookKeys.add(key);
+      }
+
+      let epubTypographyObserver;
+
+      function improveEpubTypography() {
+        const shell = readerFrame.contentDocument;
+        if (!shell) return;
+        const applyToFrame = frame => {
+          const apply = () => {
+            try {
+              const document = frame.contentDocument;
+              if (!document?.head || document.getElementById('bookstr-epub-type')) return;
+              const style = document.createElement('style');
+              style.id = 'bookstr-epub-type';
+              style.textContent = `
+                html, body {
+                  font-family: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Palatino, Georgia, serif !important;
+                  font-size: 1.04em;
+                  line-height: 1.62 !important;
+                  text-rendering: optimizeLegibility;
+                  font-kerning: normal;
+                }
+                p { margin-block: 0.72em; orphans: 3; widows: 3; }
+                h1, h2, h3, h4, h5, h6 {
+                  font-family: "Avenir Next", Avenir, "Gill Sans", sans-serif !important;
+                  line-height: 1.18 !important;
+                  text-wrap: balance;
+                }
+                a, a:visited { color: #d7352a !important; }
+                blockquote { margin-inline: 1.2em; }
+                body.cover,
+                body[epub\\:type~="cover"],
+                body:has(img.cover),
+                body:has(img[id*="cover" i]),
+                body:has(img[src*="cover" i]),
+                body:has(img[alt*="cover" i]),
+                section.cover,
+                section[epub\\:type~="cover"] {
+                  width: 100% !important;
+                  height: 100vh !important;
+                  margin: 0 !important;
+                  padding: 0 !important;
+                  overflow: hidden !important;
+                }
+                body:has(img.cover) > *,
+                body:has(img[id*="cover" i]) > *,
+                body:has(img[src*="cover" i]) > *,
+                body:has(img[alt*="cover" i]) > * {
+                  width: 100% !important;
+                  max-width: none !important;
+                  height: 100% !important;
+                  margin: 0 !important;
+                  padding: 0 !important;
+                }
+                body.cover img,
+                body[epub\\:type~="cover"] img,
+                section.cover img,
+                section[epub\\:type~="cover"] img,
+                img.cover,
+                img[id*="cover" i],
+                img[src*="cover" i],
+                img[alt*="cover" i],
+                body.cover svg,
+                body[epub\\:type~="cover"] svg,
+                section.cover svg,
+                section[epub\\:type~="cover"] svg {
+                  display: block !important;
+                  width: 100% !important;
+                  height: 100% !important;
+                  max-width: none !important;
+                  max-height: none !important;
+                  margin: 0 !important;
+                  object-fit: contain !important;
+                }
+              `;
+              document.head.appendChild(style);
+            } catch {}
+          };
+          frame.addEventListener('load', apply, { once: true });
+          apply();
+        };
+        const applyAll = () => shell.querySelectorAll('iframe').forEach(applyToFrame);
+        epubTypographyObserver?.disconnect();
+        epubTypographyObserver = new MutationObserver(applyAll);
+        epubTypographyObserver.observe(shell.documentElement, { childList: true, subtree: true });
+        applyAll();
+      }
+
       async function displayEpub(blob, book) {
         const theme = state.settings.theme === 'dark' ? 'night' : state.settings.theme;
         const base64 = await blobToBase64(blob);
@@ -2474,6 +3096,7 @@
               const readerLoad = readerFrame.contentWindow?.loadBook;
               if (typeof readerLoad !== 'function') throw new Error('EPUB reader did not load.');
               await readerLoad(base64, book.cfi || '', theme);
+              improveEpubTypography();
               status.textContent = `Opened ${book.title || 'book'}.`;
               resolve();
             } catch (error) {
@@ -2490,7 +3113,7 @@
           return;
         }
 
-        const readPath = book.readUrl || book.url;
+        const readPath = BookMetadata.canonicalReadUrl(book, BOOKS_API_BASE);
         if (!book.md5) {
           const gutenbergId = readPath.match(/\/api\/books\/(\d+)\/download(?:\?|$)/)?.[1];
           if (gutenbergId) book = { ...book, md5: `gutenberg:${gutenbergId}` };
@@ -2518,10 +3141,17 @@
               await displayEpub(blossomBlob, book);
             }
           } else if (String(book.extension || '').toLowerCase() === 'epub' || /\/download(?:\?|$)/i.test(readPath)) {
-            status.textContent = `Loading ${book.title || 'book'}…`;
-            const response = await fetch(readPath);
-            if (!response.ok) throw new Error(`EPUB download failed (${response.status}).`);
-            await displayEpub(await response.blob(), book);
+            let blob = await cachedBookBlob(book, readPath).catch(() => null);
+            if (blob) {
+              status.textContent = `Opening cached ${book.title || 'book'}…`;
+            } else {
+              status.textContent = `Loading ${book.title || 'book'}…`;
+              const response = await fetch(readPath);
+              if (!response.ok) throw new Error(`EPUB download failed (${response.status}).`);
+              blob = await response.blob();
+              void cacheBookBlob(book, readPath, blob).catch(() => {});
+            }
+            await displayEpub(blob, book);
           } else {
             readerFrame.src = readPath;
             status.textContent = `Opening ${book.title || 'book'}…`;
@@ -2536,11 +3166,13 @@
             title: book.title,
             authors: book.authors,
             year: book.year || '',
+            language: book.language || '',
+            source: book.source || '',
             extension: book.extension || 'epub',
             blossomSha256: book.blossomSha256 || '',
             readUrl: readPath
           });
-          state.reading = state.reading.sort((a, b) => b.updatedAt - a.updatedAt).slice(0, 50);
+          state.reading = state.reading.sort((a, b) => b.updatedAt - a.updatedAt).slice();
           localStorage.setItem(READING_KEY, JSON.stringify(state.reading));
           renderReading();
         }
@@ -2589,7 +3221,11 @@
 
       homeSearchForm.addEventListener('submit', (event) => {
         event.preventDefault();
-        renderHome();
+        const query = homeQueryInput.value.trim();
+        if (!query) return;
+        queryInput.value = query;
+        activateTab('search');
+        void startSearch();
       });
       homeQueryInput.addEventListener('input', renderHome);
 
@@ -2602,17 +3238,19 @@
         const hasFreshNip7Status = Date.now() - Number(nip7.ts || 0) < NIP7_CACHE_TTL_MS;
 
         if (Array.isArray(favorites)) {
-          state.favorites = favorites
+          state.favorites = BookMetadata.dedupeLibraryBooks(favorites
             .filter(item => item && typeof item.md5 === 'string')
             .filter(item => item.md5)
             .map(item => normalizeFavoriteFromRemote(item))
-            .slice(0, 50);
+          ).slice();
         }
         if (Array.isArray(reading)) {
-          state.reading = reading
+          state.reading = BookMetadata.dedupeLibraryBooks(reading
             .filter(item => item && typeof item.md5 === 'string')
+            .map(item => normalizeFavoriteFromRemote(item))
+          )
             .sort((a, b) => Number(b.updatedAt || 0) - Number(a.updatedAt || 0))
-            .slice(0, 50);
+            .slice();
         }
         if (Array.isArray(words)) {
           state.words = words.map(normalizeVocabularyWord).filter(Boolean).slice(0, 120);
@@ -2955,6 +3593,7 @@
           wordsFilter.value = decodeURIComponent(route.slice('words='.length));
           activateTab('words');
           renderWords();
+          requestAnimationFrame(() => wordsList.querySelector('.word-definition')?.click());
           return;
         }
         if (route === 'words') {
@@ -2962,15 +3601,16 @@
           return;
         }
         if (route === 'reading') {
-          activateTab('reading');
+          activateTab('home');
+          setHashRoute('');
           return;
         }
         if (route.startsWith('read=')) {
           const readUrl = decodeURIComponent(route.slice('read='.length));
           if (/^(https?:|blob:)/i.test(readUrl)) {
-            const extension = /\.epub(?:\?|$)|\/download(?:\?|$)/i.test(readUrl) ? 'epub' : '';
-            const savedBook = state.reading.find(item => item.readUrl === readUrl);
-            openBook(savedBook || { title: 'book', readUrl, extension }, { updateHash: false, addToReading: false });
+            void resolveReadRouteBook(readUrl).then(book =>
+              openBook(book, { updateHash: false, addToReading: false })
+            );
           }
           return;
         }
@@ -3036,6 +3676,11 @@
       dictionaryInstall.addEventListener('click', installDictionaryPack);
       void refreshDictionaryTargetOptions('en');
       void renderDictionaryPacks();
+      void bookCacheRecords().then(records => {
+        cachedBookKeys.clear();
+        records.forEach(record => cachedBookKeys.add(record.key));
+        if (activeTab === 'home') renderHome();
+      }).catch(() => {});
 
       window.addEventListener('popstate', applyHashRoute);
       window.addEventListener('hashchange', applyHashRoute);
