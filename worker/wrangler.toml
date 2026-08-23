@@ -1,0 +1,6 @@
+name = "bookstr-cors-proxy"
+main = "src/index.js"
+compatibility_date = "2026-08-23"
+
+# This leaves the GitHub Pages site in place and handles only its API requests.
+routes = [{ pattern = "books.guaka.org/api/*", zone_name = "guaka.org" }]

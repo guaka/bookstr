@@ -173,7 +173,7 @@
         gap: 0.45rem;
       }
       .row-3 {
-        grid-template-columns: minmax(0, 1fr) minmax(130px, 220px) auto;
+        grid-template-columns: minmax(0, 1fr) minmax(130px, 220px);
         gap: 0.45rem;
       }
       .results {
@@ -410,7 +410,6 @@
             <option value="isbn">ISBN</option>
             <option value="publisher">Publisher</option>
           </select>
-          <button id="search-btn" type="submit">Search</button>
         </form>
         <div id="results" class="results" aria-live="polite"></div>
       </section>
@@ -495,12 +494,14 @@
       const NOSTR_SYNC_CACHE_PREFIX = 'bookstr_nostr_sync_v1_';
       const NOSTR_SYNC_CACHE_TTL_MS = 30 * 60 * 1000;
       const NIP7_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+      const BOOKS_API_BASE = window.location.hostname === 'books.guaka.org'
+        ? '/api'
+        : 'https://all.books.party/api';
       const NOSTR_QUERY_TIMEOUT_MS = 5000;
 
       const status = document.getElementById('status');
       const queryInput = document.getElementById('query-input');
       const searchType = document.getElementById('search-type');
-      const searchBtn = document.getElementById('search-btn');
       const searchForm = document.getElementById('search-form');
       const resultsEl = document.getElementById('results');
       const favoritesList = document.getElementById('favorites-list');
@@ -1053,7 +1054,7 @@
           const ext = String(item.extension || item.format || item.media_type || item.type || 'epub').replace(/^\./, '').toLowerCase();
           const provider = String(item.source || source).toLowerCase();
           const directReadUrl = provider === 'gutenberg' && item.id
-            ? `https://all.books.party/api/books/${encodeURIComponent(item.id)}/download`
+            ? `${BOOKS_API_BASE}/books/${encodeURIComponent(item.id)}/download`
             : item.readUrl || item.url || item.link || '';
           return {
             md5,
@@ -1160,6 +1161,13 @@
         }
       }
 
+      function matchesLibraryFilter(entry) {
+        const terms = queryInput.value.trim().toLowerCase().split(/\s+/).filter(Boolean);
+        if (!terms.length) return true;
+        const searchable = `${entry.title || ''} ${entry.authors || ''}`.toLowerCase();
+        return terms.every(term => searchable.includes(term));
+      }
+
       function renderFavorites() {
         favoritesList.innerHTML = '';
         if (!state.favorites.length) {
@@ -1168,7 +1176,14 @@
           favoritesList.appendChild(p);
           return;
         }
-        for (const entry of state.favorites) {
+        const matches = state.favorites.filter(matchesLibraryFilter);
+        if (!matches.length) {
+          const p = document.createElement('li');
+          p.textContent = 'No matching favorites.';
+          favoritesList.appendChild(p);
+          return;
+        }
+        for (const entry of matches) {
           const item = document.createElement('li');
           item.textContent = `${entry.title} · ${entry.authors}`;
           item.title = `Open ${entry.title}`;
@@ -1186,7 +1201,14 @@
           readingList.appendChild(item);
           return;
         }
-        for (const entry of state.reading) {
+        const matches = state.reading.filter(matchesLibraryFilter);
+        if (!matches.length) {
+          const item = document.createElement('li');
+          item.textContent = 'No matching reading books.';
+          readingList.appendChild(item);
+          return;
+        }
+        for (const entry of matches) {
           const item = document.createElement('li');
           item.textContent = `${entry.title} · ${entry.authors}`;
           item.title = `Open ${entry.title}`;
@@ -1315,7 +1337,7 @@
       }
 
       async function searchAllBooksParty(query) {
-        const resp = await fetch(`https://all.books.party/api/search?q=${encodeURIComponent(query)}&limit=20`);
+        const resp = await fetch(`${BOOKS_API_BASE}/search?q=${encodeURIComponent(query)}&limit=20`);
         const payload = await resp.json().catch(() => ({}));
         if (!resp.ok) {
           const msg = payload?.error || `search failed (${resp.status})`;
@@ -1334,7 +1356,6 @@
         if (updateHash) {
           setHashRoute(`search=${encodeURIComponent(query)}`);
         }
-        searchBtn.disabled = true;
         resultsEl.innerHTML = '';
         status.textContent = 'Searching…';
         try {
@@ -1350,8 +1371,6 @@
         } catch (error) {
           status.textContent = `Search failed: ${error.message || error}`;
           resultsEl.innerHTML = '<p class="note">Search failed. Check your network connection and try again.</p>';
-        } finally {
-          searchBtn.disabled = false;
         }
       }
 
@@ -1749,6 +1768,11 @@
       searchForm.addEventListener('submit', (event) => {
         event.preventDefault();
         startSearch();
+      });
+
+      queryInput.addEventListener('input', () => {
+        renderFavorites();
+        renderReading();
       });
 
       window.addEventListener('popstate', applyHashRoute);
