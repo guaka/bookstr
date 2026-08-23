@@ -190,16 +190,26 @@
     }
 
     function openBook(source, cfi, theme, highlightCfi, bookId) {
+      if (window.AndroidBridge && AndroidBridge.onReaderStage) AndroidBridge.onReaderStage("Opening archive");
       currentBookId = String(bookId || "");
       applyTheme(theme || "paper");
       try {
         book = ePub(source);
+        if (window.AndroidBridge && AndroidBridge.onReaderStage) AndroidBridge.onReaderStage("Reading book metadata");
       } catch (error) {
         return Promise.reject(error);
       }
-      return book.ready.then(function() {
+      return waitForReaderViewport().then(function() { return book.ready; }).then(function() {
+        if (window.AndroidBridge && AndroidBridge.onReaderStage) {
+          const viewer = document.getElementById("viewer");
+          AndroidBridge.onReaderStage("Laying out pages " + window.innerWidth + "×" + window.innerHeight +
+            " (viewer " + viewer.clientWidth + "×" + viewer.clientHeight + ")");
+        }
         reportBookMetadata();
         reportBookSections();
+        // Keep the same continuous document model on Android, iOS, and web.
+        // iOS adds a native horizontal gesture on top, but that gesture still
+        // advances through this vertical document by one viewport.
         rendition = book.renderTo("viewer", {
           width: "100%",
           height: "100%",
@@ -324,8 +334,10 @@
       if (window.AndroidBridge) AndroidBridge.onReaderError(message);
     }
 
-    window.loadBook = function(base64, cfi, theme) {
-      return reportPromise(openBook(base64ToArrayBuffer(base64), cfi, theme, null));
+    window.loadBook = function(base64, cfi, theme, highlightCfi, bookId) {
+      if (window.AndroidBridge && AndroidBridge.onReaderStage) AndroidBridge.onReaderStage("Decoding EPUB");
+      const loading = openBook(base64ToArrayBuffer(base64), cfi, theme, highlightCfi || null, bookId || "");
+      return reportPromise(withTimeout(loading, 30000, "EPUB reader timed out"));
     };
 
     window.loadBookUrl = function(url, cfi, theme, highlightCfi, bookId) {
@@ -349,6 +361,19 @@
         timer = setTimeout(function() { reject(new Error(message)); }, milliseconds);
       });
       return Promise.race([promise, timeout]).finally(function() { clearTimeout(timer); });
+    }
+
+    function waitForReaderViewport() {
+      if (window.innerWidth > 0 && window.innerHeight > 0) return Promise.resolve();
+      return new Promise(function(resolve, reject) {
+        const started = Date.now();
+        const check = function() {
+          if (window.innerWidth > 0 && window.innerHeight > 0) return resolve();
+          if (Date.now() - started > 5000) return reject(new Error("EPUB reader has no visible viewport"));
+          requestAnimationFrame(check);
+        };
+        requestAnimationFrame(check);
+      });
     }
 
     function reportPromise(promise) {
@@ -764,8 +789,11 @@
       const body = contentDocument.body;
       const textLength = body ? String(body.innerText || "").trim().length : 0;
       const hasLargeMedia = Boolean(body && body.querySelector("svg, img, image"));
-      const looksLikeCover = section.index === 0 || href.includes("cover") ||
-        properties.includes("cover") || (hasLargeMedia && textLength < 80);
+      // The first spine item is often Chapter 1, not a cover. Treating every
+      // index-zero section as a cover forces normal paragraphs into one fixed
+      // height flex row and removes the document's vertical scroll range.
+      const looksLikeCover = href.includes("cover") || properties.includes("cover") ||
+        (hasLargeMedia && textLength < 80);
       if (!looksLikeCover) return;
       const container = document.querySelector(".epub-container");
       const viewportHeight = Math.max(320, container ? container.clientHeight : window.innerHeight);
@@ -1310,12 +1338,26 @@
       const container = document.querySelector(".epub-container");
       const distance = Math.max(180, (container ? container.clientHeight : window.innerHeight) * 0.88);
       if (container && container.scrollBy) {
+        const before = container.scrollTop;
         container.scrollBy({ top: direction * distance, behavior: "auto" });
+        setTimeout(function() {
+          if (Math.abs(container.scrollTop - before) > 2) return;
+          const movement = direction > 0 ? rendition.next() : rendition.prev();
+          if (movement && typeof movement.catch === "function") movement.catch(reportReaderError);
+        }, 40);
         return;
       }
       const contents = rendition.getContents();
       const win = contents[0] && contents[0].window;
-      if (win) win.scrollBy({ top: direction * distance, behavior: "auto" });
+      if (win) {
+        const before = win.scrollY;
+        win.scrollBy({ top: direction * distance, behavior: "auto" });
+        setTimeout(function() {
+          if (Math.abs(win.scrollY - before) > 2) return;
+          const movement = direction > 0 ? rendition.next() : rendition.prev();
+          if (movement && typeof movement.catch === "function") movement.catch(reportReaderError);
+        }, 40);
+      }
     }
 
     window.setReaderTheme = function(theme) {

@@ -51,6 +51,7 @@ class ReaderAssetContractTest {
         assertTrue(html.contains("AndroidBridge.onKnownWordTapped"))
         assertTrue(html.contains("AndroidBridge.onReaderInteracted"))
         assertTrue(html.contains("stabilizeCoverPage(section, contentDocument)"))
+        assertFalse(html.contains("section.index === 0 || href.includes(\"cover\")"))
         assertTrue(html.contains("bookstr-cover-layout"))
         assertTrue(html.contains("renderContext(contextNode"))
         assertTrue(html.contains("pt.wiktionary.org"))
