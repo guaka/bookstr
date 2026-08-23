@@ -54,16 +54,23 @@ class NostrClient(
         }
 
     suspend fun fetchLatestFavorites(pubkey: String): JSONObject? =
+        fetchLatestAddressableEvent(pubkey, FAVORITES_D_TAG, "bookstr-favorites")
+
+    suspend fun fetchLatestAddressableEvent(
+        pubkey: String,
+        dTag: String,
+        subscriptionName: String = "bookstr-addressable",
+    ): JSONObject? =
         withContext(Dispatchers.IO) {
             val taggedFilter = JSONObject()
                 .put("kinds", JSONArray().put(KIND_FAVORITES))
                 .put("authors", JSONArray().put(pubkey))
-                .put("#d", JSONArray().put(FAVORITES_D_TAG))
+                .put("#d", JSONArray().put(dTag))
                 .put("limit", 1)
 
             val taggedSubscription = JSONArray()
                 .put("REQ")
-                .put("bookstr-favorites")
+                .put(subscriptionName)
                 .put(taggedFilter)
 
             var latest: JSONObject? = null
@@ -84,12 +91,12 @@ class NostrClient(
                 .put("limit", 50)
             val broadSubscription = JSONArray()
                 .put("REQ")
-                .put("bookstr-favorites-all")
+                .put("$subscriptionName-all")
                 .put(broadFilter)
                 .toString()
             for (relay in combinedRelays) {
                 queryRelayAll(relay, broadSubscription)
-                    .filter(::isFavoritesEvent)
+                    .filter { hasDTag(it, dTag) }
                     .forEach { event ->
                         if (latest == null || event.optLong("created_at") > latest!!.optLong("created_at")) {
                             latest = event
@@ -99,11 +106,11 @@ class NostrClient(
             latest
         }
 
-    private fun isFavoritesEvent(event: JSONObject): Boolean {
+    private fun hasDTag(event: JSONObject, dTag: String): Boolean {
         val tags = event.optJSONArray("tags") ?: return false
         for (index in 0 until tags.length()) {
             val tag = tags.optJSONArray(index) ?: continue
-            if (tag.optString(0) == "d" && tag.optString(1) == FAVORITES_D_TAG) return true
+            if (tag.optString(0) == "d" && tag.optString(1) == dTag) return true
         }
         return false
     }

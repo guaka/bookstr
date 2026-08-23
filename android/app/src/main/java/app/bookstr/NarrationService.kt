@@ -20,6 +20,7 @@ import android.os.Looper
 import android.os.SystemClock
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
+import android.speech.tts.Voice
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
@@ -462,11 +463,12 @@ class NarrationService : MediaBrowserServiceCompat(), TextToSpeech.OnInitListene
             requestedLocale.country.isNotBlank() &&
                 voice.locale.country.equals(requestedLocale.country, ignoreCase = true)
         }
-        val matchingOfflineVoices = exactRegionOfflineVoices.ifEmpty { sameLanguageOfflineVoices }
-        val currentMatchingVoice = engine.voice?.takeIf { current ->
-            matchingOfflineVoices.any { it.name == current.name }
-        }
-        val resolvedVoice = currentMatchingVoice ?: matchingOfflineVoices.maxByOrNull { it.quality }
+        val currentVoiceName = engine.voice?.name
+        val resolvedVoice = sameLanguageOfflineVoices.maxWithOrNull(
+            compareBy<Voice> { it.quality }
+                .thenBy { voice -> exactRegionOfflineVoices.any { it.name == voice.name } }
+                .thenBy { it.name == currentVoiceName },
+        )
         if (resolvedVoice != null) {
             engine.voice = resolvedVoice
             Log.i(

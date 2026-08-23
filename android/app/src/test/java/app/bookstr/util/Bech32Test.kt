@@ -38,4 +38,21 @@ class Bech32Test {
             assertTrue(e.message!!.contains("HRP"))
         }
     }
+
+    @Test
+    fun roundTripsEmptyAndBinaryPayloads() {
+        assertArrayEquals(byteArrayOf(), Bech32.decode("test", Bech32.encode("test", byteArrayOf())))
+        val binary = byteArrayOf(0, 1, 2, 127, -128, -1)
+        assertArrayEquals(binary, Bech32.decode("data", Bech32.encode("data", binary)))
+    }
+
+    @Test(expected = IllegalArgumentException::class)
+    fun rejectsCharactersOutsideBech32Alphabet() {
+        Bech32.decode("npub", "npub1iiiiii")
+    }
+
+    @Test(expected = IllegalArgumentException::class)
+    fun rejectsPayloadShorterThanChecksum() {
+        Bech32.decode("npub", "npub1abc")
+    }
 }

@@ -5,6 +5,8 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.os.Build
 import android.os.Bundle
 import android.speech.tts.TextToSpeech
@@ -26,6 +28,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -42,6 +45,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.runtime.Composable
@@ -89,6 +93,12 @@ class ReaderActivity : ComponentActivity() {
     private var readerSectionIndex by mutableStateOf(0)
     private var readerSections by mutableStateOf<List<ReaderSection>>(emptyList())
     private var showSections by mutableStateOf(false)
+    private var showReaderMenu by mutableStateOf(false)
+    private var showBookSearch by mutableStateOf(false)
+    private var bookSearchQuery by mutableStateOf("")
+    private var bookSearchLoading by mutableStateOf(false)
+    private var bookSearchResults by mutableStateOf<List<ReaderSearchResult>>(emptyList())
+    private var longPressedText by mutableStateOf("")
     private var knownWords by mutableStateOf<List<String>>(emptyList())
     private var bookId: String = ""
     private var bookTitle by mutableStateOf("")
@@ -183,6 +193,14 @@ class ReaderActivity : ComponentActivity() {
                             year?.takeIf(String::isNotBlank)?.let { bookYear = it }
                         },
                         onSections = { sections -> readerSections = sections },
+                        onReaderLongPress = { selectedText ->
+                            longPressedText = selectedText
+                            showReaderMenu = true
+                        },
+                        onSearchResults = { results ->
+                            bookSearchResults = results
+                            bookSearchLoading = false
+                        },
                         onReaderError = { message ->
                             readerError = message
                             app.settingsRepository.clearReaderSession()
@@ -379,6 +397,104 @@ class ReaderActivity : ComponentActivity() {
                             },
                             confirmButton = {
                                 TextButton(onClick = { showSections = false }) { Text("Close") }
+                            },
+                        )
+                    }
+                    if (showReaderMenu) {
+                        AlertDialog(
+                            onDismissRequest = { showReaderMenu = false },
+                            title = { Text("Reader options") },
+                            text = {
+                                Column {
+                                    ReaderMenuAction("Search inside this book") {
+                                        showReaderMenu = false
+                                        showBookSearch = true
+                                    }
+                                    ReaderMenuAction("Sections and chapters") {
+                                        showReaderMenu = false
+                                        showSections = true
+                                    }
+                                    ReaderMenuAction(if (isSpeaking) "Pause reading aloud" else "Read aloud from here") {
+                                        showReaderMenu = false
+                                        toggleTextToSpeech()
+                                    }
+                                    ReaderMenuAction("Make text larger") {
+                                        showReaderMenu = false
+                                        webView?.evaluateJavascript("adjustReaderFont(10);", null)
+                                    }
+                                    ReaderMenuAction("Make text smaller") {
+                                        showReaderMenu = false
+                                        webView?.evaluateJavascript("adjustReaderFont(-10);", null)
+                                    }
+                                    if (longPressedText.isNotBlank()) {
+                                        ReaderMenuAction("Copy selected text") {
+                                            val clipboard = getSystemService(ClipboardManager::class.java)
+                                            clipboard.setPrimaryClip(ClipData.newPlainText("Book text", longPressedText))
+                                            showReaderMenu = false
+                                        }
+                                    }
+                                }
+                            },
+                            confirmButton = {
+                                TextButton(onClick = { showReaderMenu = false }) { Text("Close") }
+                            },
+                        )
+                    }
+                    if (showBookSearch) {
+                        AlertDialog(
+                            onDismissRequest = { showBookSearch = false },
+                            title = { Text("Search inside book") },
+                            text = {
+                                Column {
+                                    OutlinedTextField(
+                                        value = bookSearchQuery,
+                                        onValueChange = { bookSearchQuery = it },
+                                        label = { Text("Word or phrase") },
+                                        singleLine = true,
+                                        modifier = Modifier.fillMaxWidth(),
+                                    )
+                                    TextButton(
+                                        enabled = bookSearchQuery.trim().length >= 2 && !bookSearchLoading,
+                                        onClick = {
+                                            bookSearchLoading = true
+                                            bookSearchResults = emptyList()
+                                            webView?.evaluateJavascript(
+                                                "searchBook(${JSONObject.quote(bookSearchQuery.trim())});",
+                                                null,
+                                            )
+                                        },
+                                    ) { Text(if (bookSearchLoading) "Searching…" else "Search") }
+                                    if (!bookSearchLoading && bookSearchQuery.isNotBlank() && bookSearchResults.isEmpty()) {
+                                        Text("No matches yet.", fontSize = 13.sp)
+                                    }
+                                    LazyColumn(modifier = Modifier.heightIn(max = 420.dp)) {
+                                        items(bookSearchResults, key = { it.cfi }) { result ->
+                                            Column(
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .clickable {
+                                                        showBookSearch = false
+                                                        webView?.evaluateJavascript(
+                                                            "displaySearchResult(${JSONObject.quote(result.cfi)});",
+                                                            null,
+                                                        )
+                                                    }
+                                                    .padding(vertical = 10.dp),
+                                            ) {
+                                                Text(
+                                                    readerSections.firstOrNull { it.index == result.sectionIndex }?.label
+                                                        ?: "Section ${result.sectionIndex + 1}",
+                                                    fontSize = 13.sp,
+                                                    color = androidx.compose.material3.MaterialTheme.colorScheme.primary,
+                                                )
+                                                Text(result.excerpt, fontSize = 13.sp, maxLines = 3)
+                                            }
+                                        }
+                                    }
+                                }
+                            },
+                            confirmButton = {
+                                TextButton(onClick = { showBookSearch = false }) { Text("Close") }
                             },
                         )
                     }
@@ -737,6 +853,18 @@ private fun ReaderChrome(
 private val TIME_FORMAT: DateTimeFormatter = DateTimeFormatter.ofPattern("HH:mm")
 
 private data class ReaderSection(val index: Int, val label: String, val href: String)
+private data class ReaderSearchResult(val sectionIndex: Int, val cfi: String, val excerpt: String)
+
+@Composable
+private fun ReaderMenuAction(label: String, onClick: () -> Unit) {
+    Text(
+        text = label,
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(vertical = 13.dp),
+    )
+}
 
 @Composable
 private fun SegmentedReadingProgress(
@@ -780,6 +908,8 @@ private fun ReaderWebView(
     onReaderReady: () -> Unit,
     onMetadata: (String?, String?, String?) -> Unit,
     onSections: (List<ReaderSection>) -> Unit,
+    onReaderLongPress: (String) -> Unit,
+    onSearchResults: (List<ReaderSearchResult>) -> Unit,
     onReaderError: (String) -> Unit,
     onWordSelected: (String, String, String, String) -> Unit,
     onDictionaryResult: (String, String, String, List<String>, String) -> Unit,
@@ -925,6 +1055,35 @@ private fun ReaderWebView(
                                 }.filter { it.href.isNotBlank() }
                                 (ctx as? ComponentActivity)?.runOnUiThread { onSections(sections) }
                             } catch (_: Exception) {
+                            }
+                        }
+
+                        @JavascriptInterface
+                        fun onReaderLongPress(selectedText: String) {
+                            (ctx as? ComponentActivity)?.runOnUiThread {
+                                onReaderLongPress(selectedText.trim())
+                            }
+                        }
+
+                        @JavascriptInterface
+                        fun onSearchResults(json: String) {
+                            runCatching {
+                                val array = JSONArray(json)
+                                val results = buildList {
+                                    for (index in 0 until array.length()) {
+                                        val obj = array.optJSONObject(index) ?: continue
+                                        val cfi = obj.optString("cfi")
+                                        if (cfi.isBlank()) continue
+                                        add(
+                                            ReaderSearchResult(
+                                                sectionIndex = obj.optInt("sectionIndex", 0),
+                                                cfi = cfi,
+                                                excerpt = obj.optString("excerpt").ifBlank { "Match" },
+                                            ),
+                                        )
+                                    }
+                                }
+                                (ctx as? ComponentActivity)?.runOnUiThread { onSearchResults(results) }
                             }
                         }
 

@@ -208,7 +208,6 @@ fun SearchScreen(
                         }
                     }
                     IconButton(
-                        enabled = book != null,
                         onClick = { onToggleFavorite(result) },
                     ) {
                         Icon(

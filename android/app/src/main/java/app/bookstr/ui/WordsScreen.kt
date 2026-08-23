@@ -294,8 +294,8 @@ private fun highlightedContext(context: String, word: String) = buildAnnotatedSt
             append(context.substring(cursor, match))
             pushStyle(
                 SpanStyle(
-                    background = Color(0xFFFFD966),
-                    color = Color(0xFF1A1714),
+                    background = Color(0xFFE7C766),
+                    color = Color(0xFF1C1916),
                     fontWeight = FontWeight.Bold,
                     fontStyle = FontStyle.Normal,
                 ),

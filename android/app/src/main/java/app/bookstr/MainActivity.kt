@@ -43,6 +43,7 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import app.bookstr.data.CatalogBook
 import app.bookstr.data.BookSearchResult
+import app.bookstr.data.SharedFavoriteRef
 import app.bookstr.data.CatalogRepository
 import app.bookstr.data.BookFormat
 import app.bookstr.data.NostrAuthMode
@@ -756,30 +757,41 @@ class MainActivity : ComponentActivity() {
                                 onSearch = ::runSearch,
                                 onOpen = { result -> result.asCatalogBook()?.let(::openBook) },
                                 onToggleFavorite = { result ->
-                                    result.asCatalogBook()?.let { book ->
-                                        scope.launch {
-                                            try {
-                                                val allBooks = (books + book).distinctBy { it.id }
-                                                val externalMatch = matchingSearchFavorite(result)
-                                                val updated = when {
-                                                    externalMatch != null ->
-                                                        favoritesRepository.removeFavorite(externalMatch, allBooks)
-                                                    isSearchFavorite(result) ->
-                                                        favoritesRepository.removeFavorite(
-                                                            matchingSearchBook(result) ?: book,
-                                                            allBooks,
-                                                        )
-                                                    else -> favoritesRepository.addFavorite(book, allBooks)
-                                                }
-                                                applyFavorites(updated, allBooks)
-                                                searchMessage = if (book.id in updated.bookIds) {
-                                                    "Added to Nostr favorites"
-                                                } else {
-                                                    "Removed from Nostr favorites"
-                                                }
-                                            } catch (e: Exception) {
-                                                searchMessage = e.message ?: "Could not update favorites"
+                                    scope.launch {
+                                        try {
+                                            val book = result.asCatalogBook()
+                                            val allBooks = (books + listOfNotNull(book)).distinctBy { it.id }
+                                            val externalMatch = matchingSearchFavorite(result)
+                                            val localMatch = matchingSearchBook(result)
+                                            val wasFavorite = isSearchFavorite(result)
+                                            val updated = when {
+                                                externalMatch != null ->
+                                                    favoritesRepository.removeFavorite(externalMatch, allBooks)
+                                                wasFavorite && localMatch != null ->
+                                                    favoritesRepository.removeFavorite(localMatch, allBooks)
+                                                wasFavorite && book != null ->
+                                                    favoritesRepository.removeFavorite(book, allBooks)
+                                                book != null -> favoritesRepository.addFavorite(book, allBooks)
+                                                else -> favoritesRepository.addFavorite(
+                                                    SharedFavoriteRef(
+                                                        bookstrId = result.id,
+                                                        title = result.title,
+                                                        author = result.author,
+                                                        year = result.year,
+                                                        format = result.format?.extension,
+                                                        url = result.downloadUrl,
+                                                    ),
+                                                    allBooks,
+                                                )
                                             }
+                                            applyFavorites(updated, allBooks)
+                                            searchMessage = if (wasFavorite) {
+                                                "Removed from Nostr favorites"
+                                            } else {
+                                                "Added to Nostr favorites"
+                                            }
+                                        } catch (e: Exception) {
+                                            searchMessage = e.message ?: "Could not update favorites"
                                         }
                                     }
                                 },

@@ -612,7 +612,7 @@ private fun PdfReaderChrome(
         modifier = modifier
             .fillMaxWidth()
             .height(24.dp)
-            .background(androidx.compose.material3.MaterialTheme.colorScheme.surface.copy(alpha = 0.98f)),
+            .background(androidx.compose.material3.MaterialTheme.colorScheme.primary.copy(alpha = 0.98f)),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(
@@ -622,21 +622,21 @@ private fun PdfReaderChrome(
             Icon(
                 Icons.AutoMirrored.Filled.ArrowBack,
                 contentDescription = "Back",
-                tint = androidx.compose.material3.MaterialTheme.colorScheme.primary,
+                tint = androidx.compose.material3.MaterialTheme.colorScheme.onPrimary,
                 modifier = Modifier.size(18.dp),
             )
         }
         Text(
             if (detail.isBlank()) title else "$title — $detail",
             fontSize = 11.sp,
-            color = androidx.compose.material3.MaterialTheme.colorScheme.onSurface,
+            color = androidx.compose.material3.MaterialTheme.colorScheme.onPrimary,
             maxLines = 1,
             modifier = Modifier.weight(1f),
         )
         Text(
             "$clock  PDF",
             fontSize = 9.sp,
-            color = androidx.compose.material3.MaterialTheme.colorScheme.secondary,
+            color = androidx.compose.material3.MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.78f),
             modifier = Modifier.padding(horizontal = 8.dp),
         )
     }
@@ -753,7 +753,7 @@ private fun PdfPage(
                 ) {
                     highlights.bounds.forEach { bounds ->
                         drawRect(
-                            color = androidx.compose.ui.graphics.Color(0x99FFD54F),
+                            color = androidx.compose.ui.graphics.Color(0xB3E7C766),
                             topLeft = androidx.compose.ui.geometry.Offset(
                                 bounds.left / highlights.pageWidth * size.width,
                                 bounds.top / highlights.pageHeight * size.height,

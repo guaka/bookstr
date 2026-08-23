@@ -80,4 +80,42 @@ class NostrClientProgressTest {
         assertEquals(Sha256.hash(canonical), NostrCrypto.eventId(event))
     }
 
+    @Test
+    fun payloadNeverPublishesFurthestProgressBehindCurrentPosition() {
+        val json = NostrClient.progressContent(
+            bookId = bookId,
+            progression = 0.8,
+            cfi = "here",
+            furthestProgression = 0.2,
+        )
+
+        assertEquals(0.8, JSONObject(json).getJSONObject("locator").getDouble("furthestProgression"), 1e-9)
+    }
+
+    @Test
+    fun parseFurthestProgressionNeverRegressesBelowFallback() {
+        val behind = """{"locator":{"furthestProgression":0.2}}"""
+        val ahead = """{"locator":{"furthestProgression":0.9}}"""
+
+        assertEquals(0.7, NostrClient.parseFurthestProgression(behind, 0.7), 1e-9)
+        assertEquals(0.9, NostrClient.parseFurthestProgression(ahead, 0.7), 1e-9)
+        assertEquals(0.7, NostrClient.parseFurthestProgression("garbage", 0.7), 1e-9)
+    }
+
+    @Test
+    fun blankPayloadBookIdUsesFallback() {
+        val parsed = NostrClient.parseProgressContent(
+            """{"bookId":"","locator":{"progression":0.3,"cfi":"cfi"}}""",
+            bookId,
+        )!!
+
+        assertEquals(bookId, parsed.first)
+    }
+
+    @Test
+    fun nonPositiveUpdatedAtFallsBackToEventTimestamp() {
+        assertEquals(10_000L, NostrClient.parseUpdatedAt("""{"updatedAt":0}""", 10L))
+        assertEquals(10_000L, NostrClient.parseUpdatedAt("""{"updatedAt":-5}""", 10L))
+    }
+
 }

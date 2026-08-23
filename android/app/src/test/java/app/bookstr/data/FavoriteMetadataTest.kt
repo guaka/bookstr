@@ -2,6 +2,7 @@ package app.bookstr.data
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class FavoriteMetadataTest {
@@ -37,5 +38,23 @@ class FavoriteMetadataTest {
                 favorite.copy(blossomUrl = "https://lib.b.bfr.ee/api/files/book.epub"),
             ),
         )
+    }
+
+    @Test
+    fun rejectsInvalidHashAndInsecureBlossomUrl() {
+        assertNull(CatalogRepository.fromBlossomFavorite(favorite.copy(blossomSha256 = "short")))
+        assertNull(
+            CatalogRepository.fromBlossomFavorite(
+                favorite.copy(blossomUrl = "http://blossom.bfr.ee/$sha256"),
+            ),
+        )
+    }
+
+    @Test
+    fun preservesPdfFormatFromFavoriteDescriptor() {
+        val book = CatalogRepository.fromBlossomFavorite(favorite.copy(format = "pdf"))!!
+
+        assertEquals(BookFormat.Pdf, book.format)
+        assertTrue(book.epubUrl.endsWith(sha256))
     }
 }

@@ -71,6 +71,13 @@ class ReaderAssetContractTest {
         assertTrue(html.contains("speechTextMap"))
         assertTrue(html.contains("notifyNative !== false"))
         assertTrue(html.contains("reportLocation(rendition.currentLocation())"))
+        assertTrue(html.contains("installReaderContextMenu(contentDocument)"))
+        assertTrue(html.contains("AndroidBridge.onReaderLongPress(selection)"))
+        assertTrue(html.contains("window.searchBook = async function(query)"))
+        assertTrue(html.contains("section.find(needle)"))
+        assertTrue(html.contains("AndroidBridge.onSearchResults(JSON.stringify(results))"))
+        assertTrue(html.contains("window.displaySearchResult = function(cfi)"))
+        assertTrue(html.contains("window.adjustReaderFont = function(delta)"))
         assertFalse(html.contains("book = ePub(base64ToArrayBuffer(base64))"))
     }
 }

@@ -44,6 +44,8 @@ data class SharedFavorites(
     val external: List<ExternalFavorite> = emptyList(),
 )
 
+data class FavoriteChunkManifest(val count: Int, val prefix: String)
+
 class NostrFavoritesRepository(
     private val context: Context,
     private val settings: SettingsRepository,
@@ -72,12 +74,44 @@ class NostrFavoritesRepository(
             )
         }
 
-        val plaintext = ensureFavoriteAddedAtTags(
-            event.getString("content").let { decryptFromSelf(pubkey, it) },
-            event.optLong("created_at"),
-        )
+        val rootPlaintext = event.getString("content").let { decryptFromSelf(pubkey, it) }
+        val plaintext = resolveFavoriteChunks(pubkey, rootPlaintext, event.optLong("created_at"))
         settings.cacheNostrFavorites(pubkey, plaintext)
         return matchSharedFavorites(parseSharedFavoriteTags(plaintext), books)
+    }
+
+    private suspend fun resolveFavoriteChunks(
+        pubkey: String,
+        rootPlaintext: String,
+        fallbackAddedAt: Long,
+    ): String {
+        val manifest = chunkManifest(rootPlaintext)
+            ?: return ensureFavoriteAddedAtTags(rootPlaintext, fallbackAddedAt)
+        val combined = JSONArray(rootPlaintext)
+        val client = NostrClient(settings.relays)
+        for (index in 0 until manifest.count) {
+            val dTag = "${manifest.prefix}-$index"
+            val event = client.fetchLatestAddressableEvent(pubkey, dTag, "bookstr-favorites-chunk-$index")
+                ?: throw IllegalStateException(
+                    "Favorite sync is incomplete: chunk ${index + 1} of ${manifest.count} is missing",
+                )
+            require(event.optString("pubkey").equals(pubkey, ignoreCase = true)) {
+                "Favorite chunk ${index + 1} has the wrong author"
+            }
+            require(NostrCrypto.verifyEvent(event)) {
+                "Favorite chunk ${index + 1} has an invalid signature"
+            }
+            val chunk = runCatching {
+                JSONArray(decryptFromSelf(pubkey, event.getString("content")))
+            }.getOrElse {
+                throw IllegalStateException(
+                    "Favorite sync is incomplete: chunk ${index + 1} of ${manifest.count} could not be read",
+                    it,
+                )
+            }
+            for (tagIndex in 0 until chunk.length()) combined.put(chunk.get(tagIndex))
+        }
+        return ensureFavoriteAddedAtTags(combined.toString(), fallbackAddedAt)
     }
 
     fun cached(books: List<CatalogBook>): SharedFavorites? {
@@ -96,22 +130,8 @@ class NostrFavoritesRepository(
         }
 
     suspend fun addFavorite(book: CatalogBook, books: List<CatalogBook>): SharedFavorites {
-        val pubkey = settings.pubkeyHex ?: throw Nip55Exception("Connect Nostr to edit favorites")
-        var plaintext = settings.cachedNostrFavorites(pubkey)
-        if (plaintext == null) {
-            fetch(books)
-            plaintext = settings.cachedNostrFavorites(pubkey)
-        }
-        val refs = parseSharedFavoriteTags(plaintext ?: "[]").toMutableList()
-        val alreadyPresent = refs.any { ref ->
-            ref.bookstrId == book.id ||
-                (!book.libvaultMd5.isNullOrBlank() &&
-                    ref.libvaultMd5.equals(book.libvaultMd5, ignoreCase = true)) ||
-                (normalizeIsbn(book.isbn).isNotEmpty() && normalizeIsbn(ref.isbn) == normalizeIsbn(book.isbn)) ||
-                (!book.sourceUrl.isNullOrBlank() && ref.url == book.sourceUrl)
-        }
-        if (!alreadyPresent) {
-            refs += SharedFavoriteRef(
+        return addFavorite(
+            SharedFavoriteRef(
                 bookstrId = book.id,
                 libvaultMd5 = book.libvaultMd5,
                 isbn = book.isbn,
@@ -122,6 +142,29 @@ class NostrFavoritesRepository(
                 format = book.format.extension,
                 blossomSha256 = book.blossomSha256,
                 blossomUrl = book.epubUrl.takeIf { !book.blossomSha256.isNullOrBlank() },
+            ),
+            books,
+        )
+    }
+
+    suspend fun addFavorite(reference: SharedFavoriteRef, books: List<CatalogBook>): SharedFavorites {
+        val pubkey = settings.pubkeyHex ?: throw Nip55Exception("Connect Nostr to edit favorites")
+        var plaintext = settings.cachedNostrFavorites(pubkey)
+        if (plaintext == null) {
+            fetch(books)
+            plaintext = settings.cachedNostrFavorites(pubkey)
+        }
+        val refs = parseSharedFavoriteTags(plaintext ?: "[]").toMutableList()
+        val alreadyPresent = refs.any { ref ->
+            (!reference.bookstrId.isNullOrBlank() && ref.bookstrId == reference.bookstrId) ||
+                (!reference.libvaultMd5.isNullOrBlank() &&
+                    ref.libvaultMd5.equals(reference.libvaultMd5, ignoreCase = true)) ||
+                (normalizeIsbn(reference.isbn).isNotEmpty() &&
+                    normalizeIsbn(ref.isbn) == normalizeIsbn(reference.isbn)) ||
+                (!reference.url.isNullOrBlank() && ref.url == reference.url)
+        }
+        if (!alreadyPresent) {
+            refs += reference.copy(
                 addedAt = System.currentTimeMillis() / 1000,
             )
         }
@@ -209,6 +252,20 @@ class NostrFavoritesRepository(
     }
 
     companion object {
+        fun chunkManifest(plaintext: String): FavoriteChunkManifest? {
+            val tags = JSONArray(plaintext)
+            for (index in 0 until tags.length()) {
+                val tag = tags.optJSONArray(index) ?: continue
+                if (tag.optString(0) != "bookstr-chunks" && tag.optString(0) != "libvault-chunks") continue
+                val count = tag.optString(1).toIntOrNull() ?: return null
+                if (count !in 1..10_000) return null
+                val prefix = tag.optString(2).ifBlank { "libvault-favorites-chunk" }
+                if (prefix.isBlank()) return null
+                return FavoriteChunkManifest(count, prefix)
+            }
+            return null
+        }
+
         fun ensureFavoriteAddedAtTags(plaintext: String, fallbackAddedAt: Long): String {
             if (fallbackAddedAt <= 0) return plaintext
             val tags = JSONArray(plaintext)
@@ -281,6 +338,21 @@ class NostrFavoritesRepository(
                             .put(ref.author.orEmpty())
                             .put(ref.url.orEmpty()),
                     )
+                    !ref.blossomSha256.isNullOrBlank() && SHA256.matches(ref.blossomSha256) -> tags.put(
+                        JSONArray()
+                            .put("book")
+                            .put("blossom")
+                            .put(ref.blossomSha256.lowercase())
+                            .put((ref.addedAt ?: 0L).toString())
+                            .put(ref.blossomUrl ?: ref.url.orEmpty()),
+                    )
+                    !ref.url.isNullOrBlank() && normalizeIsbn(ref.isbn).isEmpty() -> tags.put(
+                        JSONArray()
+                            .put("book")
+                            .put("url")
+                            .put(ref.url)
+                            .put((ref.addedAt ?: 0L).toString()),
+                    )
                 }
                 val isbn = normalizeIsbn(ref.isbn)
                 if (isbn.isNotEmpty()) {
@@ -305,25 +377,91 @@ class NostrFavoritesRepository(
                 val item = value.optJSONArray(i) ?: continue
                 val name = item.optString(0)
                 when {
+                    name == "book" && item.length() > 3 -> {
+                        val namespace = item.optString(1)
+                        val identifier = item.optString(2)
+                        val addedAt = item.optString(3).toLongOrNull()?.takeIf { it > 0 }
+                        val locator = item.optString(4).ifBlank { null }
+                        val ref = when {
+                            namespace == "libvault" && MD5.matches(identifier) -> SharedFavoriteRef(
+                                libvaultMd5 = identifier.lowercase(), url = locator, addedAt = addedAt,
+                            )
+                            namespace == "bookstr" && identifier.isNotBlank() -> SharedFavoriteRef(
+                                bookstrId = identifier, url = locator, addedAt = addedAt,
+                            )
+                            namespace == "isbn" && normalizeIsbn(identifier).isNotEmpty() -> SharedFavoriteRef(
+                                isbn = normalizeIsbn(identifier), url = locator, addedAt = addedAt,
+                            )
+                            namespace == "url" && identifier.isNotBlank() -> SharedFavoriteRef(
+                                url = identifier, addedAt = addedAt,
+                            )
+                            namespace == "blossom" && SHA256.matches(identifier) -> SharedFavoriteRef(
+                                url = locator, blossomSha256 = identifier.lowercase(),
+                                blossomUrl = locator, addedAt = addedAt,
+                            )
+                            else -> null
+                        }
+                        if (ref != null) {
+                            val existing = refs.indexOfFirst {
+                                (ref.libvaultMd5 != null && it.libvaultMd5 == ref.libvaultMd5) ||
+                                    (ref.bookstrId != null && it.bookstrId == ref.bookstrId) ||
+                                    (ref.isbn != null && normalizeIsbn(it.isbn) == ref.isbn) ||
+                                    (ref.blossomSha256 != null && it.blossomSha256 == ref.blossomSha256) ||
+                                    (ref.url != null && it.url == ref.url)
+                            }
+                            if (existing >= 0) {
+                                val old = refs[existing]
+                                refs[existing] = old.copy(
+                                    bookstrId = old.bookstrId ?: ref.bookstrId,
+                                    libvaultMd5 = old.libvaultMd5 ?: ref.libvaultMd5,
+                                    isbn = old.isbn ?: ref.isbn,
+                                    url = old.url ?: ref.url,
+                                    blossomSha256 = old.blossomSha256 ?: ref.blossomSha256,
+                                    blossomUrl = old.blossomUrl ?: ref.blossomUrl,
+                                    addedAt = listOfNotNull(old.addedAt, ref.addedAt).minOrNull(),
+                                )
+                                currentIndex = existing
+                            } else {
+                                refs += ref
+                                currentIndex = refs.lastIndex
+                            }
+                        }
+                    }
                     name == "r" && item.optString(1).isNotBlank() -> {
                         pendingUrl = item.optString(1)
                     }
                     name == "libvault" && MD5.matches(item.optString(1)) -> {
-                        refs += SharedFavoriteRef(
-                            libvaultMd5 = item.optString(1).lowercase(),
-                            url = pendingUrl,
-                        )
-                        currentIndex = refs.lastIndex
+                        val md5 = item.optString(1).lowercase()
+                        val existing = refs.indexOfFirst { it.libvaultMd5 == md5 }
+                        if (existing >= 0) {
+                            refs[existing] = refs[existing].copy(url = refs[existing].url ?: pendingUrl)
+                            currentIndex = existing
+                        } else {
+                            refs += SharedFavoriteRef(libvaultMd5 = md5, url = pendingUrl)
+                            currentIndex = refs.lastIndex
+                        }
                         pendingUrl = null
                     }
                     name == "bookstr" && item.optString(1).isNotBlank() -> {
-                        refs += SharedFavoriteRef(
+                        val next = SharedFavoriteRef(
                             bookstrId = item.optString(1),
                             title = item.optString(2).ifBlank { null },
                             author = item.optString(3).ifBlank { null },
                             url = item.optString(4).ifBlank { pendingUrl },
                         )
-                        currentIndex = refs.lastIndex
+                        val existing = refs.indexOfFirst { it.bookstrId == next.bookstrId }
+                        if (existing >= 0) {
+                            val old = refs[existing]
+                            refs[existing] = old.copy(
+                                title = old.title ?: next.title,
+                                author = old.author ?: next.author,
+                                url = old.url ?: next.url,
+                            )
+                            currentIndex = existing
+                        } else {
+                            refs += next
+                            currentIndex = refs.lastIndex
+                        }
                         pendingUrl = null
                     }
                     name == "libvault-added" && MD5.matches(item.optString(1)) -> {
@@ -340,7 +478,7 @@ class NostrFavoritesRepository(
                             currentIndex = refs.lastIndex
                         }
                     }
-                    name == "libvault-book" && MD5.matches(item.optString(1)) -> {
+                    (name == "libvault-book" || name == "bookstr-book") && MD5.matches(item.optString(1)) -> {
                         val md5 = item.optString(1).lowercase()
                         val index = refs.indexOfFirst { it.libvaultMd5 == md5 }
                         if (index >= 0) {
@@ -416,6 +554,8 @@ class NostrFavoritesRepository(
                         (ref.libvaultMd5 != null &&
                             candidate.libvaultMd5.equals(ref.libvaultMd5, ignoreCase = true)) ||
                         (isbn.isNotEmpty() && normalizeIsbn(candidate.isbn) == isbn) ||
+                        (ref.blossomSha256 != null &&
+                            candidate.blossomSha256.equals(ref.blossomSha256, ignoreCase = true)) ||
                         (ref.url != null && candidate.sourceUrl == ref.url)
                 }
                 if (book != null) {
@@ -423,7 +563,8 @@ class NostrFavoritesRepository(
                     continue
                 }
 
-                val key = ref.libvaultMd5 ?: ref.bookstrId ?: isbn.ifEmpty { null } ?: ref.url ?: continue
+                val key = ref.libvaultMd5 ?: ref.bookstrId ?: isbn.ifEmpty { null }
+                    ?: ref.blossomSha256 ?: ref.url ?: continue
                 external[key] = ExternalFavorite(
                     key = key,
                     title = ref.title ?: "LibVault favorite",
@@ -447,6 +588,7 @@ class NostrFavoritesRepository(
         }
 
         private val MD5 = Regex("^[a-fA-F0-9]{32}$")
+        private val SHA256 = Regex("^[a-fA-F0-9]{64}$")
         private const val TAG = "NostrFavorites"
     }
 }

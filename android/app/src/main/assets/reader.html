@@ -213,6 +213,7 @@
             stabilizeCoverPage(section, contentDocument);
             installSwipeNavigation(contentDocument);
             installImageZoom(contentDocument);
+            installReaderContextMenu(contentDocument);
             installKnownWordNavigation(contentDocument);
             highlightKnownWords(contentDocument);
           }
@@ -607,6 +608,65 @@
         showImageZoom(media);
       }, true);
     }
+
+    function installReaderContextMenu(contentDocument) {
+      if (contentDocument.__bookstrContextMenuInstalled) return;
+      contentDocument.__bookstrContextMenuInstalled = true;
+      contentDocument.addEventListener("contextmenu", function(event) {
+        const media = event.target && event.target.closest
+          ? event.target.closest("img, svg") : null;
+        if (media) return;
+        event.preventDefault();
+        event.stopPropagation();
+        const selection = contentDocument.defaultView && contentDocument.defaultView.getSelection
+          ? contentDocument.defaultView.getSelection().toString().trim() : "";
+        if (window.AndroidBridge) AndroidBridge.onReaderLongPress(selection);
+      }, true);
+    }
+
+    window.adjustReaderFont = function(delta) {
+      readerFontPercent = Math.max(75, Math.min(180, readerFontPercent + Number(delta || 0)));
+      if (rendition) rendition.themes.fontSize(readerFontPercent + "%");
+      localStorage.setItem("bookstr-reader-font-percent", String(readerFontPercent));
+    };
+
+    window.searchBook = async function(query) {
+      const needle = String(query || "").trim();
+      const results = [];
+      if (!book || needle.length < 2) {
+        if (window.AndroidBridge) AndroidBridge.onSearchResults("[]");
+        return;
+      }
+      const sections = (book.spine && book.spine.spineItems) || [];
+      for (let index = 0; index < sections.length && results.length < 100; index += 1) {
+        const section = sections[index];
+        try {
+          await section.load(book.load.bind(book));
+          const matches = section.find(needle) || [];
+          matches.slice(0, 100 - results.length).forEach(function(match) {
+            results.push({
+              sectionIndex: index,
+              cfi: match.cfi,
+              excerpt: String(match.excerpt || needle).replace(/\s+/g, " ").trim()
+            });
+          });
+        } catch (error) {
+          console.warn("Could not search EPUB section", index, error);
+        } finally {
+          try { section.unload(); } catch (_) {}
+        }
+      }
+      if (window.AndroidBridge) AndroidBridge.onSearchResults(JSON.stringify(results));
+    };
+
+    window.displaySearchResult = function(cfi) {
+      if (!rendition || !cfi) return;
+      reportReaderInteraction();
+      rendition.display(cfi).then(function() {
+        applyHighlight(cfi);
+        positionReferenceBelowTop();
+      });
+    };
 
     function normalizeSelectedWord(selection) {
       const word = String(selection || "").normalize("NFC").trim()

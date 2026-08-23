@@ -30,12 +30,14 @@ class ReaderTextToSpeechTest {
     }
 
     @Test
-    fun voiceSelectionFallsBackToAnyOfflineVoiceInTheRequestedLanguage() {
+    fun voiceSelectionPrefersQualityThenRequestedRegionWithinTheLanguage() {
         val source = File("src/main/java/app/bookstr/NarrationService.kt").readText()
 
         assertTrue(source.contains("val sameLanguageOfflineVoices"))
         assertTrue(source.contains("val exactRegionOfflineVoices"))
-        assertTrue(source.contains("exactRegionOfflineVoices.ifEmpty { sameLanguageOfflineVoices }"))
+        assertTrue(source.contains("sameLanguageOfflineVoices.maxWithOrNull"))
+        assertTrue(source.contains("compareBy<Voice> { it.quality }"))
+        assertTrue(source.contains("exactRegionOfflineVoices.any"))
     }
 
     @Test
@@ -52,7 +54,34 @@ class ReaderTextToSpeechTest {
         assertTrue(serviceSource.contains("MediaPlayer()"))
         assertTrue(serviceSource.contains("player.currentPosition"))
         assertTrue(serviceSource.contains("SENTENCE_PAUSE_MILLIS = 240L"))
-        assertTrue(serviceSource.contains("matchingOfflineVoices"))
-        assertTrue(serviceSource.contains("val resolvedVoice = currentMatchingVoice"))
+        assertTrue(serviceSource.contains("val resolvedVoice = sameLanguageOfflineVoices.maxWithOrNull"))
+    }
+
+    @Test
+    fun blankSpeechTextProducesNoUtterances() {
+        assertTrue(ReaderActivity.speechChunks(" \n\n  ").isEmpty())
+    }
+
+    @Test
+    fun paragraphBoundariesProduceSeparateUtterances() {
+        assertEquals(
+            listOf("First paragraph.", "Second paragraph."),
+            ReaderActivity.speechChunks("First paragraph.\n\nSecond paragraph."),
+        )
+    }
+
+    @Test
+    fun unbrokenTextUsesSafeHardLimitsWithoutLoss() {
+        val text = "x".repeat(401)
+        val chunks = ReaderActivity.speechChunks(text)
+
+        assertEquals(text, chunks.joinToString(""))
+        assertTrue(chunks.all { it.length <= 160 })
+    }
+
+    @Test
+    fun emptyLanguageDefaultsToEnglish() {
+        assertEquals("en", ReaderActivity.preferredSpeechLocale("  ").toLanguageTag())
+        assertEquals("fr-FR", ReaderActivity.preferredSpeechLocale(" FR-fr ").toLanguageTag())
     }
 }

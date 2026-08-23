@@ -410,48 +410,52 @@ class CatalogRepository(
             val payload = JSONObject(json)
             val items = payload.optJSONArray("books") ?: payload.optJSONArray("results") ?: JSONArray()
             return buildList {
-                for (index in 0 until minOf(items.length(), limit)) {
+                for (index in 0 until items.length()) {
+                    if (size >= limit.coerceAtLeast(0)) break
                     val item = items.optJSONObject(index) ?: continue
-                    val source = item.optString("source", "all.books.party").lowercase()
-                    val nativeId = item.optString("id").ifBlank { item.optString("source_native_id") }
-                    if (nativeId.isBlank()) continue
-                    val rawFormat = item.optString("extension").ifBlank {
-                        item.optString("format").ifBlank { if (source == "gutenberg") "epub" else "" }
+                    val source = item.cleanString("source")?.lowercase() ?: "all.books.party"
+                    val nativeId = item.cleanString("id") ?: item.cleanString("source_native_id") ?: continue
+                    val rawFormat = item.cleanString("extension") ?: item.cleanString("format")
+                        ?: if (source == "gutenberg") "epub" else null
+                    val format = rawFormat?.let {
+                        BookFormat.from(it, item.cleanString("url").orEmpty())
                     }
-                    val format = rawFormat.takeIf(String::isNotBlank)?.let {
-                        BookFormat.from(it, item.optString("url"))
-                    }
-                    val explicitUrl = item.optString("readUrl").ifBlank {
-                        item.optString("url").ifBlank { item.optString("link") }
-                    }
+                    val explicitUrl = item.cleanString("readUrl") ?: item.cleanString("url")
+                        ?: item.cleanString("link")
                     val downloadUrl = when {
-                        explicitUrl.isNotBlank() -> explicitUrl
+                        explicitUrl != null -> explicitUrl
                         source == "gutenberg" -> "$BOOKS_API_BASE/books/$nativeId/download"
                         else -> null
                     }
-                    val coverId = item.optString("cover_id")
+                    val coverId = item.cleanString("cover_id")
                     add(
                         BookSearchResult(
                             id = "$source:$nativeId",
                             source = source,
-                            title = item.optString("title", "Untitled"),
-                            author = item.optString("author").ifBlank {
-                                item.optString("authors", "Unknown author")
-                            },
-                            year = item.optString("issued").substringBefore('-').takeIf(String::isNotBlank)
-                                ?: item.optString("year").takeIf(String::isNotBlank),
-                            publisher = item.optString("publisher").takeIf(String::isNotBlank),
-                            language = item.optString("language").takeIf(String::isNotBlank),
+                            title = item.cleanString("title") ?: "Untitled",
+                            author = item.cleanString("author") ?: item.cleanString("authors")
+                                ?: "Unknown author",
+                            year = item.cleanString("issued")?.substringBefore('-')
+                                ?: item.cleanString("year"),
+                            publisher = item.cleanString("publisher"),
+                            language = item.cleanString("language"),
                             format = format,
                             downloadUrl = downloadUrl,
-                            coverUrl = coverId.takeIf(String::isNotBlank)
-                                ?.let { "https://covers.openlibrary.org/b/id/$it-M.jpg" },
+                            coverUrl = coverId?.let { "https://covers.openlibrary.org/b/id/$it-M.jpg" },
                             rating = item.optDouble("avg_rating", item.optDouble("rating", 0.0)),
                             editionCount = item.optInt("edition_count", 0),
                         ),
                     )
                 }
             }.sortedByDescending(BookSearchResult::isReadable)
+        }
+
+        private fun JSONObject.cleanString(key: String): String? {
+            if (!has(key) || isNull(key)) return null
+            return optString(key).trim().takeUnless {
+                it.isBlank() || it.equals("null", ignoreCase = true) ||
+                    it.equals("undefined", ignoreCase = true)
+            }
         }
 
         fun fromBlossomFavorite(favorite: ExternalFavorite): CatalogBook? {
