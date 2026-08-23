@@ -1,13 +1,5 @@
 ## ADDED Requirements
 
-### Requirement: App-owned seed catalog
-Bookstr clients SHALL load an app-owned seed catalog without exposing a user-editable catalog URL. Seed catalog EPUBs SHALL retain SHA-256 identity, verification, and caching requirements.
-
-#### Scenario: Fresh install
-- **GIVEN** Bookstr has no saved settings
-- **WHEN** the Library opens
-- **THEN** the client loads its canonical seed catalog rather than requesting a placeholder or user-entered URL
-
 ### Requirement: Private LibVault favorites
 When a Nostr identity is connected, Bookstr SHALL query kind `30003` events authored by that identity with `d=libvault-favorites`, select the newest event by `created_at`, and decrypt its `content` as a NIP-44 message to the user's own public key.
 
@@ -38,25 +30,25 @@ Android SHALL NOT call the LibVault web origin to hydrate or fetch a favorite. I
 - **THEN** Android downloads and verifies the EPUB or PDF directly from Blossom
 
 ### Requirement: Favorite matching and external entries
-Clients SHALL match favorite references to locally known catalog books by Bookstr id, LibVault MD5, normalized ISBN, or source URL. A valid unmatched reference SHALL remain visible as a deduplicated external favorite using its encrypted metadata and URL.
+Clients SHALL match favorite references to locally known books by Bookstr id, LibVault MD5, normalized ISBN, or source URL. A valid unmatched reference SHALL remain visible as a deduplicated external favorite using its encrypted metadata and URL.
 
-#### Scenario: Favorite absent from seed catalog
-- **GIVEN** a private LibVault favorite does not match any seed book
+#### Scenario: Favorite absent locally
+- **GIVEN** a private LibVault favorite does not match any locally known book
 - **WHEN** the Library renders
 - **THEN** it appears under Favorites as a LibVault entry rather than being discarded
 
 ### Requirement: Shelf organization
-Clients SHALL distinguish books with local progress and favorite books. Favorite membership takes precedence over Reading for shelf placement. Neither client SHALL show an Examples shelf or expose unsaved seed books in its Library.
+Clients SHALL distinguish books with local progress and favorite books. Favorite membership takes precedence over Reading for shelf placement. Neither client SHALL show an Examples shelf.
 
 #### Scenario: Favorite with progress
-- **GIVEN** a seed book is both favorited and has saved reading progress
+- **GIVEN** a book is both favorited and has saved reading progress
 - **WHEN** the Library renders
 - **THEN** it appears in Favorites with its progress and not again in Reading
 
 ### Requirement: Independent source failures
-Catalog, Nostr favorite, and progress synchronization failures SHALL NOT discard library data successfully loaded from other sources. The UI SHALL identify the failed source and provide retry behavior.
+Nostr favorite and progress synchronization failures SHALL NOT discard downloaded books or other library data loaded successfully. The UI SHALL identify the failed source and provide retry behavior.
 
 #### Scenario: Nostr unavailable
-- **GIVEN** the seed catalog and local progress load successfully
+- **GIVEN** downloaded books and local progress load successfully
 - **WHEN** relay access or favorite decryption fails
-- **THEN** catalog shelves remain usable and the Favorites shelf shows a retryable Nostr error
+- **THEN** the local library remains usable and the Favorites shelf shows a retryable Nostr error

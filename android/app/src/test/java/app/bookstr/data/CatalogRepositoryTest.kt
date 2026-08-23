@@ -7,17 +7,6 @@ import org.junit.Test
 
 class CatalogRepositoryTest {
     @Test
-    fun resolvesBookUrlRelativeToCatalog() {
-        assertEquals(
-            "https://guaka.github.io/bookstr/catalog/books/example.epub",
-            CatalogRepository.resolveCatalogUrl(
-                "https://guaka.github.io/bookstr/catalog/catalog.json",
-                "./books/example.epub",
-            ),
-        )
-    }
-
-    @Test
     fun parsesAndPrioritizesReadableWebSearchResults() {
         val results = CatalogRepository.parseSearchResponse(
             """{"results":[

@@ -124,22 +124,6 @@ class CatalogRepository(
             merged
         }
 
-    suspend fun fetchCatalog(): List<CatalogBook> = withContext(Dispatchers.IO) {
-        val request = Request.Builder().url(CANONICAL_CATALOG_URL).get().build()
-        try {
-            client.newCall(request).execute().use { response ->
-                require(response.isSuccessful) { "Catalog fetch failed: HTTP ${response.code}" }
-                val body = response.body?.string() ?: throw IllegalStateException("Empty catalog response")
-                val parsed = parseCatalog(body, CANONICAL_CATALOG_URL)
-                require(parsed.isNotEmpty()) { "Catalog is empty" }
-                cacheCatalog(body)
-                parsed
-            }
-        } catch (error: Exception) {
-            loadCachedCatalog().takeIf(List<CatalogBook>::isNotEmpty) ?: throw error
-        }
-    }
-
     suspend fun search(query: String, limit: Int = 20): List<BookSearchResult> =
         withContext(Dispatchers.IO) {
             val normalized = query.trim()
@@ -155,22 +139,6 @@ class CatalogRepository(
                 parseSearchResponse(response.body?.string() ?: "{}", limit)
             }
         }
-
-    fun loadCachedCatalog(): List<CatalogBook> {
-        val file = File(context.filesDir, CATALOG_CACHE_FILE)
-        if (!file.isFile) return emptyList()
-        return runCatching { parseCatalog(file.readText(), CANONICAL_CATALOG_URL) }.getOrDefault(emptyList())
-    }
-
-    private fun cacheCatalog(json: String) {
-        val target = File(context.filesDir, CATALOG_CACHE_FILE)
-        val temporary = File(context.filesDir, "$CATALOG_CACHE_FILE.part")
-        temporary.writeText(json)
-        if (!temporary.renameTo(target)) {
-            temporary.copyTo(target, overwrite = true)
-            temporary.delete()
-        }
-    }
 
     suspend fun ensureDownloaded(book: CatalogBook): File = withContext(Dispatchers.IO) {
         val target = publicationFile(book.id, book.format)
@@ -313,7 +281,7 @@ class CatalogRepository(
     private fun loadDownloadedBookMetadata(): List<CatalogBook> {
         val file = File(context.filesDir, DOWNLOADED_BOOKS_CACHE_FILE)
         if (!file.isFile) return emptyList()
-        return runCatching { parseCatalog(file.readText(), CANONICAL_CATALOG_URL) }.getOrDefault(emptyList())
+        return runCatching { parseDownloadedBookMetadata(file.readText()) }.getOrDefault(emptyList())
     }
 
     private fun saveDownloadedBookMetadata(books: List<CatalogBook>) {
@@ -325,6 +293,7 @@ class CatalogRepository(
                     .put("title", book.title)
                     .put("author", book.author)
                     .put("epubUrl", book.epubUrl)
+                    .put("coverUrl", book.coverUrl)
                     .put("format", book.format.extension)
                     .put("blossomSha256", book.blossomSha256)
                     .put("year", book.year)
@@ -390,7 +359,7 @@ class CatalogRepository(
         progressDao.upsert(BookProgress(bookId, 0.0, "", System.currentTimeMillis(), 0.0))
     }
 
-    private fun parseCatalog(json: String, catalogUrl: String): List<CatalogBook> {
+    private fun parseDownloadedBookMetadata(json: String): List<CatalogBook> {
         val root = JSONObject(json)
         val items: JSONArray = when {
             root.has("books") -> root.getJSONArray("books")
@@ -404,19 +373,15 @@ class CatalogRepository(
                 val id = item.optString("id").ifBlank { item.optString("sha256") }
                 val title = item.optString("title", "Untitled")
                 val author = item.optString("author", "Unknown")
-                val blossomUrl = item.optString("blossomUrl")
-                val epubUrl = blossomUrl.ifBlank {
-                    item.optString("epubUrl", item.optString("url", item.optString("epub")))
-                }
+                val epubUrl = item.optString("epubUrl")
                 if (id.isBlank() || epubUrl.isBlank()) continue
                 add(
                     CatalogBook(
                         id = id.lowercase(),
                         title = title,
                         author = author,
-                        epubUrl = resolveCatalogUrl(catalogUrl, epubUrl),
-                        coverUrl = item.optString("coverUrl").takeIf { it.isNotBlank() }
-                            ?.let { resolveCatalogUrl(catalogUrl, it) },
+                        epubUrl = epubUrl,
+                        coverUrl = item.optString("coverUrl").takeIf { it.isNotBlank() },
                         sourceUrl = item.optString("sourceUrl").takeIf { it.isNotBlank() },
                         isbn = item.optString("isbn").takeIf { it.isNotBlank() },
                         libvaultMd5 = item.optString("libvaultMd5").takeIf { it.isNotBlank() },
@@ -427,7 +392,6 @@ class CatalogRepository(
                             epubUrl,
                         ),
                         blossomSha256 = item.optString("blossomSha256")
-                            .ifBlank { if (blossomUrl.isNotBlank()) item.optString("sha256", id) else "" }
                             .takeIf { it.matches(Regex("^[a-fA-F0-9]{64}$")) }
                             ?.lowercase(),
                         year = item.optString("year").takeIf(String::isNotBlank),
@@ -438,14 +402,9 @@ class CatalogRepository(
     }
 
     companion object {
-        const val CANONICAL_CATALOG_URL = "https://guaka.github.io/bookstr/catalog/catalog.json"
         const val BLOSSOM_HOST = "blossom.bfr.ee"
         const val BOOKS_API_BASE = "https://books-api.guaka.org/api"
-        private const val CATALOG_CACHE_FILE = "catalog.json"
         private const val DOWNLOADED_BOOKS_CACHE_FILE = "downloaded-books.json"
-
-        fun resolveCatalogUrl(catalogUrl: String, value: String): String =
-            catalogUrl.toHttpUrl().resolve(value)?.toString() ?: value
 
         fun parseSearchResponse(json: String, limit: Int = 20): List<BookSearchResult> {
             val payload = JSONObject(json)

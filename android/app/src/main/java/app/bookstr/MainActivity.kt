@@ -171,8 +171,8 @@ class MainActivity : ComponentActivity() {
                 }
 
                 suspend fun applyFavorites(
-                    seedBooks: List<CatalogBook>,
                     shared: app.bookstr.data.SharedFavorites,
+                    knownBooks: List<CatalogBook> = emptyList(),
                 ) {
                     val blossomBooks = shared.external
                         .mapNotNull(CatalogRepository::fromBlossomFavorite)
@@ -186,7 +186,7 @@ class MainActivity : ComponentActivity() {
                                     downloaded.format.extension.equals(favorite.format, ignoreCase = true))
                         }
                     }.map { it.id }.toSet()
-                    books = (seedBooks + blossomBooks.values + downloadedBooks).distinctBy { it.id }
+                    books = (knownBooks + blossomBooks.values + downloadedBooks).distinctBy { it.id }
                     favoriteIds = shared.bookIds + blossomBooks.values.map { it.id } + downloadedFavoriteIds
                     externalFavorites = shared.external.filter { favorite ->
                         favorite.libvaultMd5 !in blossomBooks && downloadedBooks.none { downloaded ->
@@ -199,8 +199,8 @@ class MainActivity : ComponentActivity() {
                     progress = catalog.getProgressForBooks(books)
                 }
 
-                suspend fun applyLocalBooks(seedBooks: List<CatalogBook>) {
-                    books = (seedBooks + catalog.downloadedBooks(emptyList())).distinctBy { it.id }
+                suspend fun applyLocalBooks() {
+                    books = catalog.downloadedBooks(emptyList())
                     progress = catalog.getProgressForBooks(books)
                 }
 
@@ -209,35 +209,13 @@ class MainActivity : ComponentActivity() {
                         loading = true
                         error = null
                         val errors = mutableListOf<String>()
-                        val cachedSeedBooks = catalog.loadCachedCatalog()
-                        if (cachedSeedBooks.isNotEmpty()) {
-                            val cachedFavorites = favoritesRepository.cached(cachedSeedBooks)
-                            if (cachedFavorites != null) applyFavorites(cachedSeedBooks, cachedFavorites)
-                            else {
-                                applyLocalBooks(cachedSeedBooks)
-                            }
-                        } else {
-                            favoritesRepository.cached(emptyList())?.let { applyFavorites(emptyList(), it) }
-                                ?: applyLocalBooks(emptyList())
-                        }
-                        val fetched = try {
-                            catalog.fetchCatalog().also { seedBooks ->
-                                if (books.isEmpty()) applyLocalBooks(seedBooks)
-                                else {
-                                    books = (books + seedBooks).distinctBy { it.id }
-                                    progress = catalog.getProgressForBooks(books)
-                                }
-                            }
-                        } catch (e: Exception) {
-                            Log.w("BookstrLibrary", "Seed catalog load failed", e)
-                            errors += "Library data: ${e.message ?: "failed to load"}"
-                            books
-                        }
+                        favoritesRepository.cached(emptyList())?.let { applyFavorites(it) }
+                            ?: applyLocalBooks()
                         if (settings.hasNostrIdentity()) {
                             try {
                                 val shared = favoritesRepository.fetch(emptyList())
                                 externalFavorites = shared.external
-                                applyFavorites(fetched, shared)
+                                applyFavorites(shared)
                             } catch (e: Exception) {
                                 Log.w("BookstrLibrary", "Favorite sync failed", e)
                                 errors += "Favorites: ${e.message ?: "failed to sync"}"
@@ -253,7 +231,7 @@ class MainActivity : ComponentActivity() {
                         } else {
                             favoriteIds = emptySet()
                             externalFavorites = emptyList()
-                            applyLocalBooks(fetched)
+                            applyLocalBooks()
                         }
                         try {
                             progress = catalog.getProgressForBooks(books)
@@ -518,7 +496,7 @@ class MainActivity : ComponentActivity() {
                                     scope.launch {
                                         try {
                                             val updated = favoritesRepository.removeFavorite(book, books)
-                                            applyFavorites(books, updated)
+                                            applyFavorites(updated, books)
                                             error = null
                                         } catch (e: Exception) {
                                             error = e.message ?: "Could not unfavorite this book"
@@ -529,7 +507,7 @@ class MainActivity : ComponentActivity() {
                                     scope.launch {
                                         try {
                                             val updated = favoritesRepository.removeFavorite(favorite, books)
-                                            applyFavorites(books, updated)
+                                            applyFavorites(updated, books)
                                             error = null
                                         } catch (e: Exception) {
                                             error = e.message ?: "Could not unfavorite this book"
@@ -739,10 +717,9 @@ class MainActivity : ComponentActivity() {
                                             vocabularyRepository.allForSync().forEach {
                                                 nostr.publishVocabularyWord(it)
                                             }
-                                            val seedBooks = books.filter { it.libvaultMd5 == null }
                                             val shared = favoritesRepository.fetch(emptyList())
                                             externalFavorites = shared.external
-                                            applyFavorites(seedBooks, shared)
+                                            applyFavorites(shared)
                                             if (books.isNotEmpty()) {
                                                 progress = catalog.getProgressForBooks(books)
                                             }
@@ -792,7 +769,7 @@ class MainActivity : ComponentActivity() {
                                                         )
                                                     else -> favoritesRepository.addFavorite(book, allBooks)
                                                 }
-                                                applyFavorites(allBooks, updated)
+                                                applyFavorites(updated, allBooks)
                                                 searchMessage = if (book.id in updated.bookIds) {
                                                     "Added to Nostr favorites"
                                                 } else {

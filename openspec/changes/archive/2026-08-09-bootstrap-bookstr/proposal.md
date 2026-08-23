@@ -4,9 +4,8 @@ Readers need a calm, distraction-free way to read EPUBs from a self-hosted HTTPS
 
 ## What Changes
 
-- Introduce **bookstr** monorepo: Android app (`app.bookstr`), web app, and example HTTPS `catalog/` tree.
+- Introduce **bookstr** with Android and web clients.
 - Books are identified by **SHA-256 of EPUB bytes**; clients verify downloads.
-- Seed catalog with CC/PD works (Doctorow, Pessoa, Portuguese Verne/sci-fi adjacent).
 - Distraction-free immersive reading (FBReader-like, more minimal).
 - Optional Android lock-screen reading via `setShowWhenLocked`.
 - Optional Nostr NIP-78 progress sync keyed by SHA-256.
@@ -15,8 +14,6 @@ Readers need a calm, distraction-free way to read EPUBs from a self-hosted HTTPS
 
 ### New Capabilities
 
-- `https-catalog`: Catalog fetch, SHA-256 ids, download + verify + cache
-- `seed-catalog`: Seed EPUB set with license metadata
 - `distraction-free-reader`: Immersive reader UX (Android + web)
 - `lock-screen-reading`: Optional read-over-keyguard on Android
 - `nostr-progress-sync`: nsec + NIP-78 progress sync
@@ -29,6 +26,6 @@ None (greenfield).
 
 ## Impact
 
-- New Android and web clients; static catalog hosting docs
+- New Android and web clients
 - No backend service required beyond static HTTPS + public Nostr relays
 - Users may paste nsec (sensitive); encrypted local storage required on Android

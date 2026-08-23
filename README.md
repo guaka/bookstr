@@ -1,122 +1,100 @@
-# bookstr
+# Bookstr
 
-AGPL-3.0 EPUB/PDF reader: native Android (Kotlin/Compose) + web (React/Vite). Publications are cached locally and identified by their content hash. Optional Nostr progress sync. Optional Android lock-screen reading.
+**A calm, open-source EPUB and PDF reader for the web, Android, and iOS.**
 
-## Public file delivery
+[Read on the web](https://books.guaka.org) · [Download the Android APK](./android/releases/bookstr-0.0.3-20260823-1538.apk) · [View the source](https://github.com/guaka/bookstr)
 
-Blossom is the preferred layer for resilient file delivery. A LibVault-fetched EPUB or PDF can be published to one or more Blossom servers under its SHA-256, and Bookstr can verify the bytes after downloading them. Search and server-side fetching remain LibVault responsibilities; Blossom only distributes blobs.
+> [!IMPORTANT]
+> Bookstr is early-stage software and is approaching its first broadly usable release. Expect rough edges, incomplete platform parity, and occasional data-format changes. Keep copies of books you care about.
 
-An access-restricted Blossom deployment can require a short-lived BUD-11 `get` authorization event and allow only selected reader pubkeys. The reference server can restrict uploaders through pubkey-scoped storage rules; reader allowlisting requires an authentication gateway or server extension. This is access control, not DRM: blobs are not encrypted and an authorized reader can redistribute downloaded bytes. Server retention, file-size, acceptable-use, and copyright policies still apply.
+## Reading without the noise
 
-## Reader design reference
+Bookstr is built around the book rather than the storefront. Open an EPUB or PDF, pick a comfortable theme, and keep reading without accounts, recommendations, or attention-grabbing chrome.
 
-[FBReader](https://fbreader.org/) is a mature, pleasantly focused ebook reader and a useful reference for Bookstr's navigation, typography, progress, and library behavior. Bookstr should learn from the way it handles reading while keeping its own implementation and respecting the licenses of any code or assets being studied.
+Your library and reading state work locally. If you want the same favorites, progress, and saved words on several devices, you can opt into Nostr sync without making Bookstr the owner of your identity or data.
 
-## Layout
+## Highlights
 
-- `android/` — `app.bookstr` (Gradle 8.11.1, AGP 8.7.3, Kotlin 2.0.21, compile/target SDK 35, minSdk 27)
-- `web/` — Vite + React + TypeScript + epub.js + nostr-tools
-- `catalog/` — `catalog.json` + seed/hash/sync scripts (`catalog/books/*.epub` gitignored; seeds ship via `web/public/catalog/`)
-- `scripts/bootstrap-android-toolchain.sh` — JDK 17 + Android SDK 35 on a build VM
-- `openspec/` — spec-driven change tracking
+- **EPUB and PDF reading** with focused, responsive reader interfaces.
+- **A personal library** for books in progress, favorites, and search.
+- **Reading tools** including themes, progress tracking, text-to-speech, dictionary lookup, and saved vocabulary.
+- **Local-first behavior** so a relay, signer, or service outage does not prevent you from reading cached books.
+- **Optional Nostr sync** for progress, private favorites shared with LibVault, and encrypted vocabulary.
+- **Content-addressed delivery** with SHA-256 verification and optional Blossom mirrors.
+- **Android lock-screen reading** for continuing above the active keyguard without dismissing it.
+- **AGPL-licensed source** with native Android and iOS apps plus a dependency-free web client.
 
-## Android reader
+Feature details vary by platform while Bookstr moves toward parity.
 
-Uses a **WebView + bundled epub.js** (distraction-free chrome, volume keys, paper/night). **Readium is not a dependency yet.**
+## Try Bookstr
 
-Lock-screen reading: toggle in Settings or the in-reader overlay. Uses `setShowWhenLocked` / `setInheritShowWhenLocked` and does **not** dismiss the keyguard. Some OEMs (especially Xiaomi/MIUI) need an extra “display over lock screen” app permission.
+| Platform | Status | Start here |
+| --- | --- | --- |
+| Web | Live early preview; no installation required | [Open books.guaka.org](https://books.guaka.org) |
+| Android | Early-access APK for Android 8.1 and newer | [Download the latest APK](./android/releases/bookstr-0.0.3-20260823-1538.apk) |
+| iPhone and iPad | Native SwiftUI app available from source; no App Store or TestFlight release yet | [Build the iOS app](./ios/README.md) |
 
-## iOS
+### Install on Android
 
-No iOS app yet. A native port (SwiftUI / WKWebView + epub.js, or Readium) could reuse the HTTPS catalog and Nostr progress sync.
+1. Download the APK on your Android device.
+2. If prompted, allow your browser or file manager to install apps from this source.
+3. Open the downloaded file and choose **Install**.
 
-**Lock-screen reading does not translate.** Apple does not allow a third-party app to stay fully interactive over the keyguard the way Android’s `setShowWhenLocked` does. Closest options are a normal in-app reader (keep screen awake) plus optional Lock Screen widgets or Live Activities for glanceable progress — not full-page EPUB reading without unlocking.
+The early-access APK is distributed directly from this repository and does not update automatically. Android's “unknown app” warning is expected for an app installed outside an app store.
 
-## Host your catalog
+## How the pieces fit together
 
-Serve static files over HTTPS:
+Bookstr can work on its own or with content delivery and sync services:
 
-```text
-https://books.example.org/catalog.json
-https://books.example.org/books/<sha256>.epub
-```
+- **Blossom** distributes EPUB and PDF blobs from one or more servers.
+- **Bookstr** downloads, verifies, caches, and reads those files.
+- **Nostr** optionally carries portable reading progress, favorites, and vocabulary.
 
-`catalog.json` `id` must equal the lowercase hex SHA-256 of that EPUB. Clients verify on download.
+Nostr is never required for reading. Bookstr prefers external signers—NIP-07 in the browser, Amber or another NIP-55 signer on Android, and NIP-46 on iOS—so private keys can remain outside the app. A locally stored `nsec` is available only as an advanced fallback. See [NOSTR.md](./NOSTR.md) for the implemented event formats and privacy model.
 
-CORS for the web app (adjust origin as needed):
+Blossom access controls are not DRM. An authorized reader receives the original bytes and can redistribute them. Anyone hosting books remains responsible for retention, file-size, acceptable-use, and copyright policies.
 
-```nginx
-location / {
-  add_header Access-Control-Allow-Origin *;
-  add_header Access-Control-Allow-Methods "GET, OPTIONS";
-}
-```
+## Develop Bookstr
 
-Hash / sync for a self-hosted catalog:
+The repository contains three clients that share formats and reader behavior:
 
-```bash
-cd catalog
-# Drop private EPUBs into staging/ (do not commit those)
-./scripts/hash-epubs.sh && ./scripts/sync-to-web.sh
-# then update catalog.json (+ web/public copy) ids to match
-```
+- `web/` — a static HTML, CSS, and JavaScript app with no build step or runtime backend.
+- `android/` — a native Kotlin and Jetpack Compose app using a bundled epub.js reader and Android's PDF renderer.
+- `ios/` — a native SwiftUI app using the shared epub.js assets and PDFKit.
+- `worker/` — the optional Books API and dictionary proxy for the hosted web client.
+- `openspec/` — specifications and change tracking.
 
-## Web
-
-```bash
-cd web
-npm ci
-npm test          # Vitest unit + component tests
-npm run test:e2e  # Playwright (builds + previews the app)
-npm run lint
-npm run build
-npm run dev       # catalog default: /catalog/catalog.json
-```
-
-First e2e run installs the Chromium browser via Playwright (`npx playwright install chromium`).
-
-### GitHub Pages
-
-The web app deploys from `.github/workflows/deploy-web.yml` on pushes to `main` that touch `web/` (or via **Actions → Deploy web to GitHub Pages → Run workflow**).
-
-1. Repo **Settings → Pages → Build and deployment → Source: GitHub Actions**
-2. After the first green run: **https://guaka.github.io/bookstr/**
-3. The web build ships without example books. Its Reading and Favorites shelves are populated from LibVault/Nostr favorites and books opened from LibVault.
-
-**Custom domain later (`books.guaka.org`):** point DNS at GitHub Pages, set the domain under Pages, change the workflow `BASE_PATH` to `/`, and commit `web/public/CNAME` with `books.guaka.org`.
-
-## Android
+### Web
 
 ```bash
-# on ebook-dev / a build host:
-sudo ./scripts/bootstrap-android-toolchain.sh
+./webdev.sh
+```
+
+The development server opens Bookstr at `http://localhost:11111`. Run the dependency-free regression tests with:
+
+```bash
+node --test web/tests/*.test.mjs
+```
+
+### Android
+
+The Android project targets SDK 35, supports API 27 and newer, and requires a JDK plus the Android SDK. On a fresh Linux build host, `scripts/bootstrap-android-toolchain.sh` can install the expected toolchain.
+
+```bash
 cd android
 ./gradlew testDebugUnitTest
-./gradlew connectedDebugAndroidTest   # Compose UI tests (device/emulator)
 ./gradlew assembleDebug
+./gradlew connectedDebugAndroidTest  # requires a device or emulator
 ```
 
-`local.properties` with `sdk.dir=...` is generated by the bootstrap script (gitignored).
+### iOS
 
-## Catalog
+The native iOS app targets iOS 17. Open `ios/BookstrIOS.xcodeproj` in Xcode, select the `BookstrIOS` scheme, and run it on a simulator or device. See the [iOS README](./ios/README.md) for its structure and shared assets.
 
-```bash
-./catalog/scripts/validate-catalog.sh
-```
+## Project status
 
-## CI
-
-GitHub Actions (`.github/workflows/ci.yml`) runs catalog validation, web lint/unit/e2e/build, Android unit tests + `assembleDebug`, and Compose UI tests on an emulator.
-
-## Nostr
-
-Opt-in progress sync (kind `30078`, `d=app.bookstr.progress.<sha256>`). Payload is a shared JSON schema (`v`, `bookId`, `locator`, `updatedAt`); last-write-wins by `updatedAt`. Dictionary lookups can also sync as private NIP-78 events encrypted to the user's own key with NIP-44. See [NOSTR.md](./NOSTR.md) for the event formats and LibVault favorites interoperability.
-
-- **Web:** prefers a NIP-07 browser extension (Alby, nos2x, …), or **NIP-46** via Amber QR (`nostrconnect://`) / pasted `bunker://`. Pasted `nsec` is an advanced fallback.
-- **Android:** prefers Amber (or another NIP-55 signer) so the private key never enters the app. Pasted `nsec` is an advanced fallback (EncryptedSharedPreferences). After connecting Amber, allow “remember” for kind `30078` so progress can sync in the background without a prompt on every page turn.
-
-Use disposable keys for testing; never commit `*.nsec`.
+Bookstr is being actively shaped into a reliable everyday reader. The web client is available now, the Android app is distributed as an early APK, and the iOS app can be built from source. Bug reports and focused contributions are welcome through [GitHub Issues](https://github.com/guaka/bookstr/issues).
 
 ## License
 
-GNU Affero General Public License v3.0 — see [LICENSE](LICENSE).
+Bookstr is free software licensed under the [GNU Affero General Public License v3.0](./LICENSE).

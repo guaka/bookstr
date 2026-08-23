@@ -15,9 +15,6 @@ The Android APK version name SHALL use the format `0.0.3-yyyyMMdd-HHmm`, with a 
 - **WHEN** its version metadata and release filename are generated
 - **THEN** both expose the `0.0.3-yyyyMMdd-HHmm` version and its version code is greater than the prior build
 
-### Requirement: Library from catalog URL
-The app SHALL let the user set a catalog HTTPS URL, fetch `catalog.json`, list books, and open the immersive reader after download/verify.
-
 ### Requirement: Local progress persistence
 The app SHALL persist last reading position per SHA-256 book id in Room, independent of Nostr.
 

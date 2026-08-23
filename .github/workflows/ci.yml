@@ -10,14 +10,6 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  catalog:
-    name: Catalog
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Validate catalog.json
-        run: chmod +x catalog/scripts/validate-catalog.sh && ./catalog/scripts/validate-catalog.sh
-
   web:
     name: Static web
     runs-on: ubuntu-latest
