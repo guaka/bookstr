@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 
 const html = await readFile(new URL('../index.html', import.meta.url), 'utf8');
+const readerHtml = await readFile(new URL('../reader.html', import.meta.url), 'utf8');
 
 test('served web app remains React- and bundle-free', () => {
   assert.doesNotMatch(html, /react(?:-dom)?(?:\.production)?/i);
@@ -111,13 +112,11 @@ test('Search requires whole query tokens instead of prefix matches', () => {
   assert.match(html, /books = books\.filter\(book => matchesExactSearchTokens\(book, query, searchType\.value \|\| 'all'\)\)/);
 });
 
-test('availability source names are shown in full instead of ellipsized', () => {
-  assert.match(html, /\.result-availability small\s*\{[^}]*text-overflow: clip/);
-  assert.match(html, /\.result-availability small\s*\{[^}]*white-space: normal/);
-  assert.match(html, /\.availability-detail[\s\S]*?white-space: nowrap/);
+test('availability is reduced to one priority label', () => {
+  assert.match(html, /const availability = isCached\(book\)[\s\S]*?availabilitySources\.includes\('Blossom'\)[\s\S]*?availabilitySources\.includes\('Gutenberg'\)[\s\S]*?: '—'/);
   assert.match(html, /class="availability-primary"/);
-  assert.match(html, /class="availability-detail"/);
-  assert.doesNotMatch(html, /\.result-availability small\s*\{[^}]*overflow-wrap: anywhere/);
+  assert.doesNotMatch(html, /secondaryAvailability/);
+  assert.doesNotMatch(html, /class="availability-detail"/);
 });
 
 test('book opening canonicalizes stable Gutenberg IDs', () => {
@@ -197,7 +196,8 @@ test('table authors are green and only unavailable titles are red', () => {
   assert.match(html, /\.result-author:visited[\s\S]*?color: var\(--reading-progress\)/);
   assert.match(html, /\.result-title\.readable:visited[\s\S]*?color: var\(--reading-progress\)/);
   assert.match(html, /\.result-title\.unavailable:visited[\s\S]*?color: var\(--link-hover\)/);
-  assert.match(html, /availabilitySources\.includes\('Gutenberg'\)/);
+  assert.match(html, /Boolean\(BookMetadata\.canonicalReadUrl\(book, BOOKS_API_BASE\)\)/);
+  assert.match(html, /const readableNow = isBookReadableNow\(book\)/);
   assert.match(html, /titleAvailabilityClass = readableNow \? 'readable' : 'unavailable'/);
   assert.match(html, /<span class="result-author">\$\{escapeHtml\(book\.authors \|\| ''\)\}<\/span>/);
   assert.match(html, /\.result-author:focus-visible[\s\S]*?color: var\(--reading-progress\)/);
@@ -219,12 +219,20 @@ test('table formats use lowercase names', () => {
 test('the complete merged library refreshes newly available Blossom copies', () => {
   assert.match(html, /function refreshFavoriteBlossomCopies\(\)/);
   assert.match(html, /BookMetadata\.dedupeLibraryBooks\(\[\.\.\.state\.favorites, \.\.\.state\.reading\]\)/);
-  assert.match(html, /lookupLibVaultBlossom\(book\.md5\)/);
+  assert.match(html, /lookupLibVaultBlossomState\(book\.md5\)/);
   assert.match(html, /state\.favorites = state\.favorites\.map\(update\)/);
   assert.match(html, /state\.reading = state\.reading\.map\(update\)/);
-  assert.match(html, /Found \$\{found\} newly readable library book/);
+  assert.match(html, /const newlyReadable = found \+ cachedFound/);
+  assert.match(html, /Found \$\{newlyReadable\} newly readable library book/);
   assert.match(html, /await refreshFavoriteBlossomCopies\(\)/);
   assert.match(html, /void refreshFavoriteBlossomCopies\(\)/);
+});
+
+test('Home retries LibVault books that are still publishing to Blossom', () => {
+  assert.match(html, /lookupLibVaultBlossomState\(book\.md5\)/);
+  assert.match(html, /if \(blossom\?\.status === 'publishing'\) \{[\s\S]*?publishing \+= 1/);
+  assert.match(html, /favoriteBlossomRefreshRetryTimer = setTimeout/);
+  assert.match(html, /}, 5000\)/);
 });
 
 test('EPUBs use persistent IndexedDB caching', () => {
@@ -234,15 +242,32 @@ test('EPUBs use persistent IndexedDB caching', () => {
   assert.match(html, /function cacheRecordMatches\(record, book, readUrl\)/);
   assert.match(html, /if \(record\.key !== key\) await bookCacheDelete\(record\.key\)/);
   assert.match(html, /records\.forEach\(rememberCachedRecord\)/);
+  assert.match(html, /const openGeneration = \+\+readerOpenGeneration/);
+  assert.match(html, /if \(openGeneration !== readerOpenGeneration\) return/);
 });
 
 test('PDFs are fetched and displayed inside the Bookstr reader pane', () => {
-  assert.match(html, /function displayPdf\(blob, book\)/);
+  assert.match(html, /async function displayPdf\(blob, book, openGeneration\)/);
   assert.match(html, /new Blob\(\[blob\], \{ type: 'application\/pdf' \}\)/);
   assert.match(html, /PDF download failed/);
-  assert.match(html, /displayPdf\(blob, book\)/);
+  assert.match(html, /await displayPdf\(blob, book, openGeneration\)/);
+  assert.match(html, /readerFrame\.src = `pdf-reader\.html#/);
+  assert.match(html, /filename: pdfDownloadFilename\(book\)/);
+  assert.match(html, /return `\$\{safeTitle \|\| 'Bookstr book'\}\.pdf`/);
   assert.match(html, /String\.fromCharCode\(\.\.\.bytes\) === '%PDF-'/);
   assert.match(html, /const cachedFormat = await bookFormatForBlob\(cached\)/);
+  assert.match(html, /const blossomFormat = await bookFormatForBlob\(blossomBlob\)/);
+  assert.match(html, /api\\\/files\\\/\[a-f0-9\]\{32\}/);
+  assert.match(html, /if \(format === 'pdf'\) await displayPdf\(blob, book, openGeneration\)/);
+});
+
+test('EPUB reader destroys the previous rendition without transform flicker', () => {
+  assert.match(readerHtml, /const generation = \+\+bookLoadGeneration/);
+  assert.match(readerHtml, /if \(rendition\) rendition\.destroy\(\)/);
+  assert.match(readerHtml, /if \(book\) book\.destroy\(\)/);
+  assert.match(readerHtml, /document\.getElementById\("viewer"\)\.replaceChildren\(\)/);
+  assert.doesNotMatch(readerHtml, /#viewer\.page-forward/);
+  assert.doesNotMatch(readerHtml, /viewer\.offsetWidth/);
 });
 
 test('favorites are not truncated to fifty items', () => {
@@ -293,9 +318,25 @@ test('Home title links do not use the catalog-search workaround', () => {
 test('Home shows the deduplicated library book count inline after its heading', () => {
   assert.match(html, /homeLibraryHeading\?\.append\(homeLibraryCount\)/);
   assert.match(html, /\.library-book-count[\s\S]*?font-size: 0\.68rem/);
-  assert.match(html, /homeLibraryCount\.textContent = matchingBooks\.length === library\.length/);
+  assert.match(html, /const visibleCount = matchingBooks\.length === library\.length/);
   assert.match(html, /`\$\{library\.length\} \$\{library\.length === 1 \? 'book' : 'books'\}`/);
   assert.match(html, /`\$\{matchingBooks\.length\} of \$\{library\.length\} books`/);
+  assert.match(html, /const readableCount = matchingBooks\.filter\(isBookReadableNow\)\.length/);
+  assert.match(html, /`\$\{visibleCount\} · \$\{readableCount\} readable now`/);
+});
+
+test('Home readable count uses the same availability rule as title coloring', () => {
+  assert.match(html, /function isBookReadableNow\(book\)/);
+  assert.match(html, /cachedBookKeys\.has\(bookCacheKey\(book, book\.readUrl \|\| book\.url\)\)/);
+  assert.match(html, /Boolean\(BookMetadata\.canonicalReadUrl\(book, BOOKS_API_BASE\)\)/);
+  assert.match(html, /const readableNow = isBookReadableNow\(book\)/);
+});
+
+test('Home uses cached LibVault files while their Blossom copies publish', () => {
+  assert.match(html, /const localReadUrl = `\$\{LIBVAULT_API_BASE\}\/files\/\$\{book\.md5\}`/);
+  assert.match(html, /\? \{ \.\.\.item, readUrl: localReadUrl \}/);
+  assert.match(html, /some are using LibVault while Blossom finishes/);
+  assert.match(html, /favoriteBlossomRefreshRetryCount < 6/);
 });
 
 test('Home can delete a book locally and across synced clients', () => {
@@ -316,7 +357,17 @@ test('Home can refresh and sync merged LibVault and Open Library metadata', () =
   assert.match(html, /async function libVaultMetadataForBook\(book\)/);
   assert.match(html, /`\$\{LIBVAULT_API_BASE\}\/books\/\$\{md5\}`/);
   assert.match(html, /async function openLibraryMetadataForBook\(book\)/);
+  assert.match(html, /Refreshing metadata for \$\{title\} from LibVault, Open Library, and all\.books/);
   assert.match(html, /openlibrary\.org\/works\/\$\{workId\}\.json/);
+  assert.match(html, /year: edition\?\.publish_date[\s\S]*?work\?\.first_publish_date[\s\S]*?source\.first_publish_year/);
+  assert.match(html, /function isMissingAuthor\(value\)[\s\S]*?unknown\(\?: author\)\?/);
+  assert.match(html, /function authorMatchKey\(value\)[\s\S]*?commaParts\.length === 2/);
+  assert.match(html, /authors,\s*year: BookMetadata\.yearForBook/);
+  assert.match(html, /const mergeOpenLibraryMetadata = \(\) => merge\(openLibraryMetadata, 'openlibrary'\)/);
+  assert.match(html, /const knownReadUrl = BookMetadata\.canonicalReadUrl\(combined \|\| book, BOOKS_API_BASE\)/);
+  assert.match(html, /if \(openLibraryMetadata && knownReadUrl/);
+  assert.match(html, /const wantedAuthor = authorMatchKey\(book\.authors \|\| book\.author\)/);
+  assert.match(html, /merge\(matched, matched\?\.source \|\| 'remote'\);\s*mergeOpenLibraryMetadata\(\)/);
   assert.match(html, /if \(refreshed\.isFavorite\) syncTasks\.push\(syncFavoritesToNostr\(\)\)/);
   assert.match(html, /if \(refreshed\.isReading\) syncTasks\.push\(publishReadingMetadata\(refreshed\)\)/);
 });
@@ -384,4 +435,11 @@ test('deleting the word used as the exact Words filter clears that filter', () =
 test('deleted vocabulary remains cached but is not rendered', () => {
   assert.match(html, /return sortByUpdatedAt\(Array\.from\(latestByWord\.values\(\)\)\);/);
   assert.match(html, /filter\(entry => entry && !entry\.deleted\)/);
+});
+
+test('Words definitions are expanded by default', () => {
+  assert.match(html, /<div class="word-lookup" aria-live="polite" data-loaded=/);
+  assert.doesNotMatch(html, /<div class="word-lookup hidden"/);
+  assert.match(html, /if \(!entry\.definitions\.length\) \{[\s\S]*?row\.querySelector\('\.word-definition'\)\.click\(\)/);
+  assert.doesNotMatch(html, /requestAnimationFrame\(\(\) => wordsList\.querySelector\('\.word-definition'\)\?\.click\(\)\)/);
 });

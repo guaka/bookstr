@@ -317,12 +317,17 @@ export async function monitorLibVaultFetch(md5, options = {}) {
   return result;
 }
 
-export async function lookupLibVaultBlossom(md5, fetchImpl = fetch) {
+export async function lookupLibVaultBlossomState(md5, fetchImpl = fetch) {
   const normalized = String(md5 || '').toLowerCase();
   if (!validHex(normalized, 32)) return null;
   const response = await fetchImpl(`${LIBVAULT_API}/blossom/${normalized}`, { headers: { Accept: 'application/json' } });
   if (!response.ok) return null;
-  const blossom = await response.json();
+  return response.json();
+}
+
+export async function lookupLibVaultBlossom(md5, fetchImpl = fetch) {
+  const blossom = await lookupLibVaultBlossomState(md5, fetchImpl);
+  if (!blossom) return null;
   if (blossom.status !== 'ready' || !validHex(blossom.sha256, 64) || !/^https:\/\//i.test(String(blossom.url || ''))) return null;
   return blossom;
 }

@@ -471,26 +471,8 @@
       }
       .availability-primary {
         display: inline-flex;
-        gap: 0.35rem;
         align-items: center;
-      }
-      .result-availability small {
-        display: flex;
-        gap: 0.28rem;
-        align-items: baseline;
-        overflow: hidden;
-        text-overflow: clip;
-        overflow-wrap: normal;
-        word-break: normal;
-        white-space: normal;
-      }
-      .availability-detail {
-        flex: 0 0 auto;
         white-space: nowrap;
-      }
-      .availability-separator {
-        flex: 0 0 auto;
-        opacity: 0.65;
       }
       .result-tags {
         display: flex;
@@ -2174,6 +2156,8 @@
       }
 
       let favoriteBlossomRefreshTask;
+      let favoriteBlossomRefreshRetryTimer;
+      let favoriteBlossomRefreshRetryCount = 0;
       function refreshFavoriteBlossomCopies() {
         if (favoriteBlossomRefreshTask) return favoriteBlossomRefreshTask;
         const pending = BookMetadata.dedupeLibraryBooks([...state.favorites, ...state.reading])
@@ -2182,14 +2166,30 @@
               || !/^https:\/\//i.test(String(book.blossomUrl || ''))));
         if (!pending.length) return Promise.resolve(0);
         nip17FetchModule ||= import('./nip17-fetch.js');
+        let publishing = 0;
+        let cachedFound = 0;
         favoriteBlossomRefreshTask = nip17FetchModule.then(async module => {
           let found = 0;
           const queue = pending.slice();
           const worker = async () => {
             while (queue.length) {
               const book = queue.shift();
-              const blossom = await module.lookupLibVaultBlossom(book.md5).catch(() => null);
-              if (!blossom) continue;
+              const blossom = await module.lookupLibVaultBlossomState(book.md5).catch(() => null);
+              if (blossom?.status === 'publishing') {
+                publishing += 1;
+                const localReadUrl = `${LIBVAULT_API_BASE}/files/${book.md5}`;
+                if (!BookMetadata.canonicalReadUrl(book, BOOKS_API_BASE)) {
+                  const update = item => BookMetadata.sameLibraryBook(item, book)
+                    ? { ...item, readUrl: localReadUrl }
+                    : item;
+                  state.favorites = state.favorites.map(update);
+                  state.reading = state.reading.map(update);
+                  cachedFound += 1;
+                }
+              }
+              if (blossom?.status !== 'ready'
+                || !/^[a-f0-9]{64}$/i.test(String(blossom.sha256 || ''))
+                || !/^https:\/\//i.test(String(blossom.url || ''))) continue;
               const update = item => BookMetadata.sameLibraryBook(item, book) ? {
                 ...item,
                 blossomSha256: blossom.sha256,
@@ -2203,17 +2203,31 @@
             }
           };
           await Promise.all(Array.from({ length: Math.min(4, queue.length) }, worker));
-          if (found) {
+          if (found || cachedFound) {
             localStorage.setItem(FAVORITES_KEY, JSON.stringify(state.favorites));
             localStorage.setItem(READING_KEY, JSON.stringify(state.reading));
             renderFavorites();
             renderReading();
             renderHome();
-            status.textContent = `Found ${found} newly readable library book${found === 1 ? '' : 's'} on Blossom.`;
+            const newlyReadable = found + cachedFound;
+            status.textContent = found
+              ? `Found ${newlyReadable} newly readable library book${newlyReadable === 1 ? '' : 's'}${cachedFound ? '; some are using LibVault while Blossom finishes' : ' on Blossom'}.`
+              : `Found ${newlyReadable} newly readable library book${newlyReadable === 1 ? '' : 's'} in LibVault; Blossom is still publishing.`;
             queueFavoriteSync();
           }
           return found;
-        }).finally(() => { favoriteBlossomRefreshTask = null; });
+        }).finally(() => {
+          favoriteBlossomRefreshTask = null;
+          if (publishing > 0 && favoriteBlossomRefreshRetryCount < 6 && !favoriteBlossomRefreshRetryTimer) {
+            favoriteBlossomRefreshRetryCount += 1;
+            favoriteBlossomRefreshRetryTimer = setTimeout(() => {
+              favoriteBlossomRefreshRetryTimer = null;
+              void refreshFavoriteBlossomCopies();
+            }, 5000);
+          } else if (publishing === 0) {
+            favoriteBlossomRefreshRetryCount = 0;
+          }
+        });
         return favoriteBlossomRefreshTask;
       }
 
@@ -2793,6 +2807,19 @@
         return BookMetadata.authorSearchName(value);
       }
 
+      function isMissingAuthor(value) {
+        const author = String(value || '').trim();
+        return !author || /^(?:unknown(?: author)?|n\/?a|none|—)$/i.test(author);
+      }
+
+      function authorMatchKey(value) {
+        const author = authorSearchName(value);
+        const commaParts = author.split(',').map(part => part.trim()).filter(Boolean);
+        const ordered = commaParts.length === 2 ? `${commaParts[1]} ${commaParts[0]}` : author;
+        return ordered.normalize('NFKD').replace(/[\u0300-\u036f]/g, '')
+          .toLocaleLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+      }
+
       function normalizeSearchBooks(payload, source) {
         const results = Array.isArray(payload?.books)
           ? payload.books
@@ -3244,7 +3271,9 @@
             <p class="word-definition" role="button" tabindex="0" aria-label="Show definitions" title="Show definitions">${entry.definitions[0] ? escapeHtml(entry.definitions[0]) : '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4.5A3.5 3.5 0 0 1 7.5 1H11v17H7.5A3.5 3.5 0 0 0 4 21.5v-17ZM13 1h3.5A3.5 3.5 0 0 1 20 4.5v17a3.5 3.5 0 0 0-3.5-3.5H13V1Z"/></svg>'}</p>
             <p class="word-context">${highlightedWordSnippet(entry.contextSentence, entry.word)}</p>
             ${entry.bookTitle ? `<div class="word-source">${escapeHtml(entry.bookTitle)}${entry.lookupCount > 1 ? ` · seen ${entry.lookupCount} times` : ''}</div>` : ''}
-            <div class="word-lookup hidden" aria-live="polite"></div>
+            <div class="word-lookup" aria-live="polite" data-loaded="${entry.definitions.length ? 'true' : 'false'}">${entry.definitions.length
+              ? `<strong>${escapeHtml(entry.partOfSpeech || 'Saved definition')}</strong>${entry.definitions.map(definition => `<div class="wiki-definition">${formatMediaWikiText(definition)}</div>`).join('')}`
+              : 'Looking up…'}</div>
           `;
           row.querySelector('.word-delete').addEventListener('click', async () => {
             const button = row.querySelector('.word-delete');
@@ -3271,6 +3300,7 @@
               return;
             }
             panel.classList.remove('hidden');
+            if (panel.dataset.loaded === 'true') return;
             panel.textContent = 'Looking up…';
             try {
               let label = entry.partOfSpeech || 'Saved definition';
@@ -3292,11 +3322,17 @@
               panel.innerHTML = definitions.length
                 ? `<strong>${escapeHtml(label)}</strong>${definitions.map(definition => `<div class="wiki-definition">${formatMediaWikiText(definition)}</div>`).join('')}`
                 : 'No definition found.';
+              panel.dataset.loaded = 'true';
             } catch (error) {
               panel.textContent = `Definition unavailable: ${error?.message || error}`;
             }
           });
           wordsList.appendChild(row);
+          if (!entry.definitions.length) {
+            const panel = row.querySelector('.word-lookup');
+            panel.classList.add('hidden');
+            row.querySelector('.word-definition').click();
+          }
         }
       }
 
@@ -3375,6 +3411,13 @@
         void startSearch();
       }
 
+      function isBookReadableNow(book) {
+        const cached = cachedBookKeys.has(bookCacheKey(book, book.readUrl || book.url));
+        return cached
+          || /^https:\/\//i.test(String(book.blossomUrl || ''))
+          || Boolean(BookMetadata.canonicalReadUrl(book, BOOKS_API_BASE));
+      }
+
       function renderBookTable(target, books, options = {}) {
         const sort = options.sort || { key: '', direction: 'asc' };
         const isCached = book => cachedBookKeys.has(bookCacheKey(book, book.readUrl || book.url));
@@ -3417,10 +3460,14 @@
           const readUrl = book.readUrl || book.url || '';
           const authorQuery = authorSearchName(book.authors);
           const availabilitySources = BookMetadata.availabilitySourcesForBook(book, isCached(book));
-          const availability = availabilitySources.join(' · ');
-          const readableNow = isCached(book)
-            || /^https:\/\//i.test(String(book.blossomUrl || ''))
-            || availabilitySources.includes('Gutenberg');
+          const availability = isCached(book)
+            ? 'Cached'
+            : availabilitySources.includes('Blossom')
+              ? 'Blossom'
+              : availabilitySources.includes('Gutenberg')
+                ? 'Gutenberg'
+                : '—';
+          const readableNow = isBookReadableNow(book);
           const titleAvailabilityClass = readableNow ? 'readable' : 'unavailable';
           const rawLanguage = BookMetadata.languageForBook(book);
           const languageCode = Object.entries(DICTIONARY_LANGUAGES)
@@ -3430,13 +3477,13 @@
           const catalogUrl = BookMetadata.canonicalCatalogUrl(book);
           const sourceMarkup = catalogUrl
             ? `<a class="result-source" href="${escapeHtml(catalogUrl)}" target="_blank" rel="noopener noreferrer">${escapeHtml(book.source)}</a>`
-            : escapeHtml(book.source || '');
-          const secondaryAvailability = [
+            : '';
+          const titleDetails = [
+            book.publisher ? escapeHtml(book.publisher) : '',
             sourceMarkup,
             book.rating > 0 ? `★ ${book.rating.toFixed(1)}` : '',
             book.editionCount > 0 ? `${book.editionCount} editions` : '',
-          ].filter(Boolean).map(detail => `<span class="availability-detail">${detail}</span>`)
-            .join('<span class="availability-separator" aria-hidden="true">·</span>');
+          ].filter(Boolean).join(' · ');
           const coverUrl = bookCoverUrl(book);
           const statusMarkup = options.library
             ? `${book.isReading ? '<svg viewBox="0 0 24 24" aria-label="Currently reading" role="img"><path d="M4 4.5A3.5 3.5 0 0 1 7.5 1H11v17H7.5A3.5 3.5 0 0 0 4 21.5v-17ZM13 1h3.5A3.5 3.5 0 0 1 20 4.5v17a3.5 3.5 0 0 0-3.5-3.5H13V1Z"/></svg>' : ''}${book.isFavorite ? '<svg class="favorite-status" viewBox="0 0 24 24" aria-label="Favorite" role="img"><path d="M12 21s-8-4.8-8-11a4.5 4.5 0 0 1 8-2.8A4.5 4.5 0 0 1 20 10c0 6.2-8 11-8 11Z"/></svg>' : ''}${favoriteFetchStatusMarkup(book.md5)}<button type="button" class="library-refresh" data-action="refresh-library" aria-label="Refresh metadata for ${escapeHtml(book.title || 'book')}" title="Refresh metadata"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 6v5h-5"/><path d="M19 11a8 8 0 1 0 1 4"/></svg></button><button type="button" class="library-delete" data-action="delete-library" aria-label="Delete ${escapeHtml(book.title || 'book')} from library" title="Delete from library"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3m3 0-1 13H7L6 7m4 4v5m4-5v5"/></svg></button>`
@@ -3446,10 +3493,10 @@
           row.setAttribute('role', 'row');
           row.innerHTML = `
             <span class="result-cover-slot" role="cell">${coverUrl ? `<img class="result-cover" src="${escapeHtml(coverUrl)}" alt="" loading="lazy">` : ''}</span>
-            <span class="result-cell" role="cell">${canOpen ? `<a class="result-title ${titleAvailabilityClass}" data-action="open" href="#read=${encodeURIComponent(readRouteValue(book, readUrl))}">${escapeHtml(book.title)}</a>` : `<span class="result-title ${titleAvailabilityClass}">${escapeHtml(book.title)}</span>`}${book.publisher ? `<small>${escapeHtml(book.publisher)}</small>` : ''}</span>
+            <span class="result-cell" role="cell">${canOpen ? `<a class="result-title ${titleAvailabilityClass}" data-action="open" href="#read=${encodeURIComponent(readRouteValue(book, readUrl))}">${escapeHtml(book.title)}</a>` : `<span class="result-title ${titleAvailabilityClass}">${escapeHtml(book.title)}</span>`}${titleDetails ? `<small>${titleDetails}</small>` : ''}</span>
             <span class="result-cell" role="cell">${authorQuery ? `<a class="result-author" data-action="author-search" href="#search=${encodeURIComponent(authorQuery)}">${escapeHtml(book.authors)}</a>` : `<span class="result-author">${escapeHtml(book.authors || '')}</span>`}</span>
             <span class="result-cell" role="cell">${escapeHtml(book.year || '—')}</span>
-            <span class="result-cell result-availability" role="cell"><span class="availability-primary">${escapeHtml(availability)}${isCached(book) ? '<svg class="home-cache-icon" viewBox="0 0 24 24" aria-label="Cached" role="img"><path d="M12 3a9 9 0 1 0 8.49 12H18.3A7 7 0 1 1 19 12h-3l4-4 4 4h-3a9 9 0 0 0-9-9Zm-1 5v5h5v-2h-3V8h-2Z"/></svg>' : ''}</span>${secondaryAvailability ? `<small>${secondaryAvailability}</small>` : ''}</span>
+            <span class="result-cell result-availability" role="cell"><span class="availability-primary">${escapeHtml(availability)}</span></span>
             <span class="result-cell" role="cell">${escapeHtml(String(book.extension || book.format || '—').toLowerCase())}${Number(book.filesize) > 0 ? `<small>${escapeHtml(bytesLabel(book.filesize))}</small>` : ''}</span>
             <span class="result-cell" role="cell">${escapeHtml(languageCode ? languageCode.toUpperCase() : '—')}</span>
             <span class="row-actions home-book-status" role="cell">${statusMarkup}</span>
@@ -3956,8 +4003,15 @@
         const coverId = Number(source.covers?.[0] || 0) || '';
         return {
           title: source.title || '',
-          authors: authors || book.authors || book.author || '',
-          year: BookMetadata.yearForBook({ year: source.first_publish_date || source.publish_date || work?.first_publish_date || '' }),
+          authors,
+          year: BookMetadata.yearForBook({
+            year: edition?.publish_date
+              || work?.first_publish_date
+              || source.first_publish_date
+              || source.first_publish_year
+              || source.publish_date
+              || '',
+          }),
           language,
           publisher: Array.isArray(source.publishers) ? source.publishers.join(', ') : source.publishers || '',
           isbn: source.isbn_13?.[0] || source.isbn_10?.[0] || '',
@@ -3991,7 +4045,9 @@
           }
         };
         try { merge(await libVaultMetadataForBook(book), 'libvault'); } catch {}
-        try { merge(await openLibraryMetadataForBook(combined || book), 'openlibrary'); } catch {}
+        let openLibraryMetadata = null;
+        try { openLibraryMetadata = await openLibraryMetadataForBook(combined || book); } catch {}
+        const mergeOpenLibraryMetadata = () => merge(openLibraryMetadata, 'openlibrary');
         const readUrl = BookMetadata.canonicalReadUrl(book, BOOKS_API_BASE);
         const metadataUrl = BookMetadata.metadataEndpointForReadUrl(readUrl);
         if (metadataUrl) {
@@ -4009,32 +4065,52 @@
             source: metadata?.source || 'gutenberg',
             readUrl,
           }, 'gutenberg');
+          mergeOpenLibraryMetadata();
+          return combined;
+        }
+        const knownAuthor = combined?.authors || combined?.author || book.authors || book.author || '';
+        const knownReadUrl = BookMetadata.canonicalReadUrl(combined || book, BOOKS_API_BASE);
+        if (openLibraryMetadata && knownReadUrl
+          && (!isMissingAuthor(knownAuthor) || !isMissingAuthor(openLibraryMetadata.authors))) {
+          mergeOpenLibraryMetadata();
           return combined;
         }
         const isbn = BookMetadata.isbnForBook(book);
         const title = BookMetadata.resolveTitle(book);
         const query = isbn || (!BookMetadata.isPlaceholderTitle(title) ? title : '');
-        if (!query) return combined;
-        const results = await searchAllBooksParty(query);
+        if (!query) {
+          mergeOpenLibraryMetadata();
+          return combined;
+        }
+        let results;
+        try {
+          results = await searchAllBooksParty(query);
+        } catch (error) {
+          if (!openLibraryMetadata) throw error;
+          mergeOpenLibraryMetadata();
+          return combined;
+        }
         const exact = results.find(result => BookMetadata.sameLibraryBook(book, result));
         if (exact) {
           merge(exact, exact.source || 'remote');
+          mergeOpenLibraryMetadata();
           return combined;
         }
         const wantedTitle = title.toLocaleLowerCase();
-        const wantedAuthor = authorSearchName(book.authors || book.author).toLocaleLowerCase();
+        const wantedAuthor = authorMatchKey(book.authors || book.author);
         const matched = results.find(result => {
           const sameTitle = String(result.title || '').toLocaleLowerCase() === wantedTitle;
-          const resultAuthor = authorSearchName(result.authors || result.author).toLocaleLowerCase();
+          const resultAuthor = authorMatchKey(result.authors || result.author);
           return sameTitle && wantedAuthor && resultAuthor === wantedAuthor;
         }) || null;
         merge(matched, matched?.source || 'remote');
+        mergeOpenLibraryMetadata();
         return combined;
       }
 
       async function refreshLibraryBookMetadata(book) {
         const title = book?.title || 'book';
-        status.textContent = `Refreshing metadata for ${title} from LibVault and Open Library…`;
+        status.textContent = `Refreshing metadata for ${title} from LibVault, Open Library, and all.books…`;
         try {
           const metadata = await remoteMetadataForBook(book);
           if (!metadata) throw new Error('No newer metadata was found.');
@@ -4065,7 +4141,7 @@
           if (refreshed.isFavorite) syncTasks.push(syncFavoritesToNostr());
           if (refreshed.isReading) syncTasks.push(publishReadingMetadata(refreshed));
           if (syncTasks.length) await Promise.all(syncTasks);
-          status.textContent = `Updated ${refreshed.title || title} from LibVault and Open Library across apps.`;
+          status.textContent = `Updated ${refreshed.title || title} from LibVault, Open Library, and all.books across apps.`;
         } catch (error) {
           status.textContent = `Could not refresh ${title}: ${error?.message || error}`;
         }
@@ -4184,9 +4260,11 @@
             item => cachedBookKeys.has(bookCacheKey(item, item.readUrl || item.url))
           )
         ));
-        homeLibraryCount.textContent = matchingBooks.length === library.length
+        const visibleCount = matchingBooks.length === library.length
           ? `${library.length} ${library.length === 1 ? 'book' : 'books'}`
           : `${matchingBooks.length} of ${library.length} books`;
+        const readableCount = matchingBooks.filter(isBookReadableNow).length;
+        homeLibraryCount.textContent = `${visibleCount} · ${readableCount} readable now`;
         renderHomeBookList(homeReadingList, matchingBooks, 'No books match these filters.');
         homeWordsList.innerHTML = '';
         const words = [...new Set([...state.words].map(word => String(word?.word || word)).filter(Boolean))].sort((a, b) => a.localeCompare(b)).slice(0, 18);
@@ -4204,7 +4282,6 @@
             activateTab('words');
             renderWords();
             setHashRoute(`words=${encodeURIComponent(word)}`);
-            requestAnimationFrame(() => wordsList.querySelector('.word-definition')?.click());
           });
           homeWordsList.appendChild(link);
         }
@@ -4539,15 +4616,22 @@
         applyAll();
       }
 
-      async function displayEpub(blob, book) {
+      let readerOpenGeneration = 0;
+
+      async function displayEpub(blob, book, openGeneration) {
         const theme = state.settings.theme === 'dark' ? 'night' : state.settings.theme;
         const base64 = await blobToBase64(blob);
+        if (openGeneration !== readerOpenGeneration) return;
         return new Promise((resolve, reject) => {
           readerFrame.onload = async () => {
+            if (openGeneration !== readerOpenGeneration) {
+              resolve();
+              return;
+            }
             try {
               const readerLoad = readerFrame.contentWindow?.loadBook;
               if (typeof readerLoad !== 'function') throw new Error('EPUB reader did not load.');
-              await readerLoad(base64, book.cfi || '', theme);
+              await readerLoad(base64, book.cfi || '', theme, book.md5 || BookMetadata.bookIdentity(book));
               status.textContent = `Opened ${book.title || 'book'}.`;
               resolve();
             } catch (error) {
@@ -4558,16 +4642,43 @@
         });
       }
 
-      let activeReaderObjectUrl = '';
+      function pdfDownloadFilename(book) {
+        const resolvedTitle = BookMetadata.resolveTitle(book);
+        const identity = String(book?.sourceNativeId || book?.source_native_id || book?.md5 || 'book').replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '').slice(0, 32);
+        const usefulTitle = BookMetadata.isPlaceholderTitle(resolvedTitle) ? `Bookstr book ${identity || 'book'}` : resolvedTitle;
+        const safeTitle = usefulTitle.replace(/[\\/:*?"<>|\u0000-\u001f]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 120);
+        return `${safeTitle || 'Bookstr book'}.pdf`;
+      }
 
-      function displayPdf(blob, book) {
-        if (activeReaderObjectUrl) URL.revokeObjectURL(activeReaderObjectUrl);
+      async function displayPdf(blob, book, openGeneration) {
         const pdfBlob = blob.type === 'application/pdf'
           ? blob
           : new Blob([blob], { type: 'application/pdf' });
-        activeReaderObjectUrl = URL.createObjectURL(pdfBlob);
-        readerFrame.src = activeReaderObjectUrl;
-        status.textContent = `Opened ${book.title || 'PDF'}.`;
+        const base64 = await blobToBase64(pdfBlob);
+        if (openGeneration !== readerOpenGeneration) return;
+        return new Promise((resolve, reject) => {
+          readerFrame.onload = async () => {
+            if (openGeneration !== readerOpenGeneration) {
+              resolve();
+              return;
+            }
+            try {
+              const readerLoad = readerFrame.contentWindow?.loadPdf;
+              if (typeof readerLoad !== 'function') throw new Error('PDF reader did not load.');
+              await readerLoad({
+                base64,
+                bookTitle: BookMetadata.resolveTitle(book),
+                filename: pdfDownloadFilename(book),
+                theme: state.settings.theme === 'dark' ? 'night' : state.settings.theme,
+              });
+              status.textContent = `Opened ${book.title || 'PDF'}.`;
+              resolve();
+            } catch (error) {
+              reject(error);
+            }
+          };
+          readerFrame.src = `pdf-reader.html#${Date.now()}`;
+        });
       }
 
       document.addEventListener('keydown', event => {
@@ -4585,6 +4696,7 @@
           return;
         }
 
+        const openGeneration = ++readerOpenGeneration;
         const readPath = BookMetadata.canonicalReadUrl(book, BOOKS_API_BASE);
         if (!book.md5) {
           const gutenbergId = readPath.match(/\/api\/books\/(\d+)\/download(?:\?|$)/)?.[1];
@@ -4603,25 +4715,30 @@
             status.textContent = `Authorizing ${book.title || 'book'} download…`;
           }
           const blossomBlob = await fetchBlossomCopy(book, readPath);
+          if (openGeneration !== readerOpenGeneration) return;
           if (blossomBlob) {
-            if (String(book.extension || '').toLowerCase() === 'pdf') {
-              displayPdf(blossomBlob, book);
+            const blossomFormat = await bookFormatForBlob(blossomBlob) || String(book.extension || '').toLowerCase();
+            if (blossomFormat === 'pdf') {
+              await displayPdf(blossomBlob, book, openGeneration);
             } else {
               status.textContent = `Opening ${book.title || 'book'}…`;
-              await displayEpub(blossomBlob, book);
+              await displayEpub(blossomBlob, book, openGeneration);
             }
           } else if (String(book.extension || '').toLowerCase() === 'pdf' || /\.pdf(?:\?|$)/i.test(readPath)) {
             let blob = await cachedBookBlob(book, readPath).catch(() => null);
+            if (openGeneration !== readerOpenGeneration) return;
             if (!blob) {
               status.textContent = `Loading ${book.title || 'PDF'}…`;
               const response = await fetch(readPath);
               if (!response.ok) throw new Error(`PDF download failed (${response.status}).`);
               blob = await response.blob();
+              if (openGeneration !== readerOpenGeneration) return;
               void cacheBookBlob(book, readPath, blob).catch(() => {});
             }
-            displayPdf(blob, book);
+            await displayPdf(blob, book, openGeneration);
           } else if (String(book.extension || '').toLowerCase() === 'epub' || /\/download(?:\?|$)/i.test(readPath) || (!readPath && isMd5(book.md5))) {
             let blob = await cachedBookBlob(book, readPath).catch(() => null);
+            if (openGeneration !== readerOpenGeneration) return;
             if (blob) {
               status.textContent = `Opening cached ${book.title || 'book'}…`;
             } else {
@@ -4630,9 +4747,23 @@
               const response = await fetch(readPath);
               if (!response.ok) throw new Error(`EPUB download failed (${response.status}).`);
               blob = await response.blob();
+              if (openGeneration !== readerOpenGeneration) return;
               void cacheBookBlob(book, readPath, blob).catch(() => {});
             }
-            await displayEpub(blob, book);
+            const format = await bookFormatForBlob(blob);
+            if (format === 'pdf') await displayPdf(blob, book, openGeneration);
+            else await displayEpub(blob, book, openGeneration);
+          } else if (/\/api\/files\/[a-f0-9]{32}(?:\?|$)/i.test(readPath)) {
+            status.textContent = `Loading ${book.title || 'book'}…`;
+            const response = await fetch(readPath);
+            if (!response.ok) throw new Error(`Book download failed (${response.status}).`);
+            const blob = await response.blob();
+            if (openGeneration !== readerOpenGeneration) return;
+            const format = await bookFormatForBlob(blob);
+            if (format === 'pdf') await displayPdf(blob, book, openGeneration);
+            else if (format === 'epub') await displayEpub(blob, book, openGeneration);
+            else throw new Error('The downloaded book format is not supported.');
+            void cacheBookBlob(book, readPath, blob).catch(() => {});
           } else {
             readerFrame.src = readPath;
             status.textContent = `Opening ${book.title || 'book'}…`;
@@ -4641,6 +4772,7 @@
           status.textContent = `Could not open ${book.title || 'book'}: ${error?.message || error}`;
           return;
         }
+        if (openGeneration !== readerOpenGeneration) return;
         if (addToReading && state.settings.autoReading && book.md5) {
           upsertById(state.reading, {
             md5: book.md5,
@@ -5180,7 +5312,6 @@
           wordsFilter.value = decodeURIComponent(route.slice('words='.length));
           activateTab('words');
           renderWords();
-          requestAnimationFrame(() => wordsList.querySelector('.word-definition')?.click());
           return;
         }
         if (route === 'words') {

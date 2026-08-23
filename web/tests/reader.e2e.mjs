@@ -1,5 +1,28 @@
 import { test, expect } from '@playwright/test';
 
+function minimalPdf(text) {
+  const escaped = String(text).replace(/([\\()])/g, '\\$1');
+  const stream = `BT /F1 24 Tf 72 720 Td (${escaped}) Tj ET`;
+  const objects = [
+    '<< /Type /Catalog /Pages 2 0 R >>',
+    '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+    '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 5 0 R >> >> /Contents 4 0 R >>',
+    `<< /Length ${Buffer.byteLength(stream)} >>\nstream\n${stream}\nendstream`,
+    '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>',
+  ];
+  let body = '%PDF-1.4\n';
+  const offsets = [0];
+  objects.forEach((object, index) => {
+    offsets.push(Buffer.byteLength(body));
+    body += `${index + 1} 0 obj\n${object}\nendobj\n`;
+  });
+  const xref = Buffer.byteLength(body);
+  body += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
+  body += offsets.slice(1).map(offset => `${String(offset).padStart(10, '0')} 00000 n \n`).join('');
+  body += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`;
+  return Buffer.from(body);
+}
+
 const books = [
   { id: '30142', title: 'Little Brother' },
   { id: '34527', title: 'Gutenberg 34527' },
@@ -150,8 +173,45 @@ test('the f527 MD5 infers and opens a legacy cached PDF without a source URL', a
 
   await page.goto(`/#read=${md5}`);
 
-  await expect(page.locator('#reader-frame')).toHaveAttribute('src', /^blob:/);
+  await expect(page.locator('#reader-frame')).toHaveAttribute('src', /pdf-reader\.html/);
   await expect(page).toHaveURL(new RegExp(`#read=${md5}$`));
+});
+
+test('PDFs render inside Bookstr and download with the book title', async ({ page }) => {
+  const md5 = '33333333333333333333333333333333';
+  const pdfUrl = 'https://files.test/readable.pdf';
+  await page.addInitScript(({ md5, pdfUrl }) => {
+    localStorage.setItem('bookstr_nostr_favorites_v1', JSON.stringify([{
+      md5,
+      title: 'Readable PDF Test',
+      authors: 'Test Author',
+      extension: 'pdf',
+      readUrl: pdfUrl,
+    }]));
+  }, { md5, pdfUrl });
+  await page.route(pdfUrl, route => route.fulfill({
+    status: 200,
+    contentType: 'application/pdf',
+    body: minimalPdf('Readable PDF Test'),
+  }));
+
+  await page.goto(`/#read=${md5}`);
+
+  await expect(page.locator('#reader-frame')).toHaveAttribute('src', /pdf-reader\.html/);
+  const pdfReader = page.frameLocator('#reader-frame');
+  await expect(pdfReader.locator('.pdf-page canvas')).toHaveAttribute('data-rendered', 'true');
+  await expect(pdfReader.locator('#download')).toHaveAttribute('download', 'Readable PDF Test.pdf');
+});
+
+test('switching EPUBs quickly leaves only the newest book in the reader', async ({ page }) => {
+  const first = 'https://books-api.guaka.org/api/books/30142/download';
+  const second = 'https://books-api.guaka.org/api/books/34527/download';
+  await page.goto(`/#read=${encodeURIComponent(first)}`);
+  await page.goto(`/#read=${encodeURIComponent(second)}`);
+
+  const reader = page.frameLocator('#reader-frame');
+  await expect(reader.locator('body')).toHaveAttribute('data-book-id', 'gutenberg:34527', { timeout: 45_000 });
+  await expect(reader.locator('#viewer > .epub-container')).toHaveCount(1);
 });
 
 test('Open Library search results expose canonical work links', async ({ page }) => {

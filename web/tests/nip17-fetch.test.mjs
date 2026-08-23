@@ -6,6 +6,7 @@ import {
   LIBVAULT_NIP05,
   libvaultBookRef,
   lookupLibVaultBlossom,
+  lookupLibVaultBlossomState,
   monitorLibVaultFetch,
   resolveLibVaultService,
   sendLibVaultFetchRequest,
@@ -189,6 +190,14 @@ test('looks up newly published Blossom copies for existing favorites', async () 
     };
   });
   assert.equal(blossom.sha256, 'e'.repeat(64));
+});
+
+test('preserves publishing state so the library can retry availability', async () => {
+  const blossom = await lookupLibVaultBlossomState('d'.repeat(32), async () => ({
+    ok: true,
+    json: async () => ({ status: 'publishing', md5: 'd'.repeat(32) }),
+  }));
+  assert.equal(blossom.status, 'publishing');
 });
 
 test('sends a private search and returns its matching response', async () => {

@@ -153,6 +153,11 @@ test('never uses a legacy LibVault read endpoint as a book source', () => {
   assert.equal(availabilityForBook({ md5: 'a'.repeat(32), source: 'libvault' }), 'Metadata only');
 });
 
+test('allows an immediately readable cached LibVault file while Blossom publishes', () => {
+  const url = 'https://lib.b.bfr.ee/api/files/' + 'a'.repeat(32);
+  assert.equal(canonicalReadUrl({ md5: 'a'.repeat(32), readUrl: url }), url);
+});
+
 test('builds stable identities for books without MD5 hashes', () => {
   assert.equal(bookIdentity({ source: 'gutenberg', sourceNativeId: 34527 }), 'source:gutenberg:34527');
   assert.equal(bookIdentity({ blossomSha256: 'A'.repeat(64) }), `sha256:${'a'.repeat(64)}`);

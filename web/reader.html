@@ -54,16 +54,6 @@
     }
     #reader-prev { left: 0; }
     #reader-next { right: 0; }
-    #viewer.page-forward { animation: page-forward 180ms ease-out; }
-    #viewer.page-back { animation: page-back 180ms ease-out; }
-    @keyframes page-forward {
-      from { transform: translateX(7%); opacity: 0.82; }
-      to { transform: translateX(0); opacity: 1; }
-    }
-    @keyframes page-back {
-      from { transform: translateX(-7%); opacity: 0.82; }
-      to { transform: translateX(0); opacity: 1; }
-    }
     .epub-container {
       background: transparent !important;
       overflow-x: hidden !important;
@@ -166,6 +156,7 @@
     let rendition = null;
     let currentBookId = "";
     let activeDictionary = null;
+    let bookLoadGeneration = 0;
     let readerFontPercent = Number(localStorage.getItem("bookstr-reader-font-percent")) || 100;
 
     function base64ToArrayBuffer(base64) {
@@ -275,15 +266,30 @@
     }
 
     function openBook(source, cfi, theme, highlightCfi, bookId) {
+      const generation = ++bookLoadGeneration;
       currentBookId = String(bookId || "");
+      document.body.dataset.bookId = currentBookId;
       applyTheme(theme || "paper");
+      if (rendition) rendition.destroy();
+      if (book) book.destroy();
+      rendition = null;
+      book = null;
+      document.getElementById("viewer").replaceChildren();
+      document.body.removeAttribute("data-location");
+      updateReaderProgress(0);
+      let nextBook;
       try {
-        book = ePub(source);
+        nextBook = ePub(source);
       } catch (error) {
         return Promise.reject(error);
       }
-      return book.ready.then(function() {
-        rendition = book.renderTo("viewer", {
+      return nextBook.ready.then(function() {
+        if (generation !== bookLoadGeneration) {
+          nextBook.destroy();
+          return Promise.reject(new DOMException("A newer book was opened.", "AbortError"));
+        }
+        book = nextBook;
+        rendition = nextBook.renderTo("viewer", {
           width: "100%",
           height: "100%",
           spread: "none",
@@ -311,6 +317,7 @@
         });
         return rendition.display(cfi || undefined);
       }).then(function() {
+        if (generation !== bookLoadGeneration) return;
         restoredHighlights(highlightCfi).forEach(applyHighlight);
         if (window.AndroidBridge) AndroidBridge.onReaderReady();
         reportLocation(rendition.currentLocation());
@@ -355,8 +362,8 @@
       if (window.AndroidBridge) AndroidBridge.onReaderError(message);
     }
 
-    window.loadBook = function(base64, cfi, theme) {
-      return reportPromise(openBook(base64ToArrayBuffer(base64), cfi, theme, null));
+    window.loadBook = function(base64, cfi, theme, bookId) {
+      return reportPromise(openBook(base64ToArrayBuffer(base64), cfi, theme, null, bookId));
     };
 
     window.loadBookUrl = function(url, cfi, theme, highlightCfi, bookId) {
@@ -728,10 +735,6 @@
     function moveViewportPage(direction) {
       if (!rendition) return;
       const container = document.querySelector(".epub-container");
-      const viewer = document.getElementById("viewer");
-      viewer.classList.remove("page-forward", "page-back");
-      void viewer.offsetWidth;
-      viewer.classList.add(direction > 0 ? "page-forward" : "page-back");
       if (container && container.scrollBy) {
         const before = container.scrollTop;
         const distance = Math.max(180, container.clientHeight * 0.88);
@@ -745,7 +748,6 @@
         const movement = direction > 0 ? rendition.next() : rendition.prev();
         if (movement && typeof movement.catch === "function") movement.catch(reportReaderError);
       }
-      setTimeout(function() { viewer.classList.remove("page-forward", "page-back"); }, 220);
     }
 
     document.getElementById("reader-prev").addEventListener("click", window.prevPage);

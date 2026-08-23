@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Bookstr PDF reader</title>
+    <link rel="stylesheet" href="pdf-reader.css">
+  </head>
+  <body>
+    <header class="toolbar">
+      <strong id="title">PDF</strong>
+      <span id="page-count" aria-live="polite"></span>
+      <div class="actions">
+        <button id="zoom-out" type="button" aria-label="Zoom out">−</button>
+        <span id="zoom-label">100%</span>
+        <button id="zoom-in" type="button" aria-label="Zoom in">+</button>
+        <a id="download" href="#">Download</a>
+      </div>
+    </header>
+    <main id="pages" aria-label="PDF pages"></main>
+    <p id="message" role="status">Opening PDF…</p>
+    <script type="module" src="pdf-reader.js"></script>
+  </body>
+</html>

@@ -170,7 +170,7 @@
     if (!direct) return '';
     try {
       const url = new URL(direct);
-      if (url.hostname === 'lib.b.bfr.ee' || /^\/api\/read\/[a-f0-9]{32}\/?$/i.test(url.pathname)) return '';
+      if (/^\/api\/read\/[a-f0-9]{32}\/?$/i.test(url.pathname)) return '';
     } catch {}
     return direct;
   }
