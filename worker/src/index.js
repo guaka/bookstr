@@ -1,4 +1,5 @@
 const UPSTREAM_ORIGIN = 'https://all.books.party';
+const WIKDICT_ORIGIN = 'https://download.wikdict.com/dictionaries/sqlite/2';
 const ALLOWED_ORIGINS = new Set([
   'https://books.guaka.org',
   'http://localhost:11111',
@@ -21,7 +22,8 @@ function corsHeaders(request) {
 function allowedPath(pathname) {
   return /^\/api\/search$/.test(pathname)
     || /^\/api\/books\/\d+$/.test(pathname)
-    || /^\/api\/books\/\d+\/download$/.test(pathname);
+    || /^\/api\/books\/\d+\/download$/.test(pathname)
+    || /^\/api\/dictionaries\/[a-z]{2}-[a-z]{2}(?:\.sqlite3)?$/.test(pathname);
 }
 
 export default {
@@ -39,8 +41,11 @@ export default {
       return new Response('Not found', { status: 404, headers: cors });
     }
 
-    const upstream = new URL(`${UPSTREAM_ORIGIN}${incoming.pathname}`);
-    upstream.search = incoming.search;
+    const dictionaryMatch = incoming.pathname.match(/^\/api\/dictionaries\/([a-z]{2}-[a-z]{2})(?:\.sqlite3)?$/);
+    const upstream = dictionaryMatch
+      ? new URL(`${WIKDICT_ORIGIN}/${dictionaryMatch[1]}.sqlite3`)
+      : new URL(`${UPSTREAM_ORIGIN}${incoming.pathname}`);
+    if (!dictionaryMatch) upstream.search = incoming.search;
 
     try {
       const response = await fetch(upstream, {

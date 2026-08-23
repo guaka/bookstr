@@ -138,7 +138,7 @@
         z-index: 35;
         overflow: hidden;
         display: flex;
-        justify-content: space-between;
+        justify-content: flex-start;
         gap: 0.75rem;
         align-items: center;
         min-height: 2.1rem;
@@ -161,6 +161,7 @@
       }
       .app-header-left {
         display: flex;
+        flex: 1;
         align-items: center;
         gap: 0.4rem;
         min-width: 0;
@@ -170,7 +171,8 @@
         gap: 0.12rem;
         align-items: center;
         min-width: 0;
-        margin-left: auto;
+        margin-left: 0;
+        order: -1;
       }
       .app-title {
         margin: 0;
@@ -225,6 +227,7 @@
         border-radius: 0;
         background: color-mix(in srgb, var(--card-bg, #fff) 84%, transparent);
         cursor: pointer;
+        display: none !important;
       }
       .npub-info:hover {
         border-color: #c74b32;
@@ -265,6 +268,7 @@
         fill: none;
         stroke: currentColor;
         stroke-width: 1.8;
+        order: 5;
       }
       .header-tab {
         display: grid;
@@ -536,6 +540,11 @@
         font-family: 'Iowan Old Style', Georgia, serif;
         font-style: italic;
       }
+      .word-context mark {
+        background: #ffd54f;
+        color: #17120a;
+        padding: 0 .08em;
+      }
       .word-source {
         margin-top: 0.25rem;
       }
@@ -565,6 +574,58 @@
         align-items: center;
         padding: 0.3rem 0;
         border-bottom: 1px solid var(--settings-border, #ddd);
+      }
+      #reading-favorite-btn.hearted {
+        color: #d7352a;
+      }
+      #settings-btn {
+        flex: 0 0 auto;
+        margin-left: auto;
+      }
+      .app-header-left {
+        order: -2;
+        flex: 0 1 auto;
+      }
+      .app-header-right {
+        order: -1;
+      }
+      body.book-open {
+        display: flex;
+        flex-direction: column;
+        height: 100dvh;
+        overflow: hidden;
+      }
+      body.book-open .app-header {
+        flex: 0 0 auto;
+      }
+      body.book-open main {
+        display: flex;
+        flex-direction: column;
+        flex: 1 1 auto;
+        width: 100%;
+        min-height: 0;
+        max-width: none;
+        padding: 0;
+        overflow: hidden;
+      }
+      body.book-open main > :not(.app-header):not(#reader-section) {
+        display: none !important;
+      }
+      body.book-open #reader-section {
+        display: block !important;
+        width: 100%;
+        flex: 1 1 auto;
+        height: auto;
+        min-height: 0;
+        margin: 0;
+        overflow: hidden;
+      }
+      body.book-open #reader-frame {
+        display: block;
+        width: 100%;
+        height: 100%;
+        min-height: 0;
+        border: 0;
       }
       @media (max-width: 700px) {
         .home-grid {
@@ -819,7 +880,7 @@
 
       <section id="home-tab" class="card" data-tab-panel="home">
         <form id="home-search-form" class="home-search" autocomplete="off">
-          <input id="home-query-input" placeholder="Search books" aria-label="Search books" autofocus />
+          <input id="home-query-input" placeholder="Filter your library" aria-label="Filter currently reading and favorites" autofocus />
         </form>
         <div class="home-grid">
           <div class="home-column">
@@ -962,7 +1023,7 @@
       const NOSTR_SYNC_CACHE_TTL_MS = 30 * 60 * 1000;
       const NIP7_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
       const BOOKS_API_BASE = 'https://books-api.guaka.org/api';
-      const WIKDICT_BASE = 'https://download.wikdict.com/dictionaries/sqlite/2';
+      const WIKDICT_BASE = `${BOOKS_API_BASE}/dictionaries`;
       const DICTIONARY_DB_NAME = 'bookstr_dictionaries_v1';
       const DICTIONARY_STORAGE_LIMIT = 250 * 1024 * 1024;
       const DICTIONARY_LANGUAGES = {
@@ -1014,9 +1075,11 @@
       const appTitle = document.querySelector('.app-title');
       const headerBookTitle = document.getElementById('header-book-title');
       const readingFavoriteBtn = document.getElementById('reading-favorite-btn');
+      headerBookTitle.after(readingFavoriteBtn);
       let activeReadingBook = null;
       let activeTab = 'home';
       const settingsBtn = document.getElementById('settings-btn');
+      document.querySelector('.app-header').append(settingsBtn);
       const settingsModal = document.getElementById('settings-modal');
       const settingsPanel = document.getElementById('settings-panel');
       const settingsBackdrop = document.getElementById('settings-backdrop');
@@ -1123,6 +1186,7 @@
             await dictionaryDelete(pack.id);
             dictionaryStatus.textContent = `Removed ${pack.label}.`;
             await renderDictionaryPacks();
+            await refreshDictionaryTargetOptions();
           });
           row.append(label, remove);
           dictionaryPacks.appendChild(row);
@@ -1160,11 +1224,25 @@
           await dictionaryPut({ id, source, target, label, bytes, size: bytes.byteLength, lastUsed: Date.now() });
           dictionaryStatus.textContent = `Installed ${label}.`;
           await renderDictionaryPacks();
+          await refreshDictionaryTargetOptions();
         } catch (error) {
           dictionaryStatus.textContent = `Could not install dictionary: ${error?.message || error}`;
         } finally {
           dictionaryInstall.disabled = false;
         }
+      }
+
+      async function refreshDictionaryTargetOptions(preferredTarget = '') {
+        const source = dictionarySource.value;
+        const installed = new Set((await dictionaryRecords()).map(pack => pack.id));
+        const available = Object.entries(DICTIONARY_LANGUAGES)
+          .filter(([code]) => code !== source && !installed.has(`${source}-${code}`))
+          .sort(([, left], [, right]) => left.localeCompare(right));
+        const previous = preferredTarget || dictionaryTarget.value;
+        dictionaryTarget.replaceChildren(...available.map(([code, label]) => new Option(label, code)));
+        if (available.some(([code]) => code === previous)) dictionaryTarget.value = previous;
+        dictionaryTarget.disabled = !available.length;
+        dictionaryInstall.disabled = !available.length;
       }
 
       async function lookupOfflineWord(word, language) {
@@ -1608,6 +1686,7 @@
           language: String(source.language || 'en').toLowerCase(),
           bookId: String(source.bookId || ''),
           bookTitle: String(source.bookTitle || ''),
+          cfi: String(source.cfi || ''),
           contextSentence: String(source.contextSentence || ''),
           partOfSpeech: String(source.partOfSpeech || ''),
           definitions: Array.isArray(source.definitions) ? source.definitions.filter(Boolean) : [],
@@ -1922,6 +2001,61 @@
         }
       }
 
+      function highlightedWordSnippet(context, word) {
+        const text = String(context || '').trim();
+        const needle = String(word || '').trim();
+        if (!needle) return escapeHtml(text);
+        const index = text.toLocaleLowerCase().indexOf(needle.toLocaleLowerCase());
+        if (index < 0) return `<mark>${escapeHtml(needle)}</mark>`;
+        return `${escapeHtml(text.slice(0, index))}<mark>${escapeHtml(text.slice(index, index + needle.length))}</mark>${escapeHtml(text.slice(index + needle.length))}`;
+      }
+
+      function dictionaryTextValues(value) {
+        if (!value) return [];
+        try {
+          const parsed = typeof value === 'string' ? JSON.parse(value) : value;
+          const values = Array.isArray(parsed) ? parsed : [parsed];
+          return values.flatMap(item => {
+            if (typeof item === 'string') return [item];
+            if (!item || typeof item !== 'object') return [];
+            const text = item.written_rep || item.translation || item.text || item.word || item.definition;
+            return text ? [String(text)] : Object.values(item).filter(part => typeof part === 'string');
+          }).filter(Boolean);
+        } catch {
+          return [String(value)].filter(Boolean);
+        }
+      }
+
+      async function lookupAllOfflineWords(word, language) {
+        const normalized = String(language || '').split('-')[0].toLowerCase();
+        const packs = (await dictionaryRecords()).filter(pack => pack.source === normalized);
+        if (!packs.length) return null;
+        const SQL = await sqlRuntime();
+        const groups = [];
+        for (const pack of packs.sort((a, b) => a.label.localeCompare(b.label))) {
+          const database = new SQL.Database(new Uint8Array(pack.bytes));
+          try {
+            const statement = database.prepare(
+              'SELECT trans_list, sense_list FROM translation_grouped WHERE written_rep = ? COLLATE NOCASE ORDER BY score DESC, importance DESC LIMIT 6'
+            );
+            statement.bind([word]);
+            const definitions = [];
+            while (statement.step()) {
+              const row = statement.getAsObject();
+              definitions.push(...dictionaryTextValues(row.trans_list), ...dictionaryTextValues(row.sense_list));
+            }
+            statement.free();
+            const unique = [...new Set(definitions.map(value => value.trim()).filter(Boolean))].slice(0, 8);
+            if (unique.length) groups.push(`${DICTIONARY_LANGUAGES[pack.target] || pack.target}: ${unique.join('; ')}`);
+            pack.lastUsed = Date.now();
+            await dictionaryPut(pack);
+          } finally {
+            database.close();
+          }
+        }
+        return groups.length ? { label: 'Offline dictionaries', definitions: groups } : null;
+      }
+
       function renderWords() {
         wordsList.innerHTML = '';
         if (!state.words.length) {
@@ -1951,17 +2085,29 @@
           row.className = 'word-row';
           const host = entry.language.startsWith('pt') ? 'pt.wiktionary.org' : 'en.wiktionary.org';
           const sourceUrl = entry.sourceUrl || `https://${host}/wiki/${encodeURIComponent(entry.word)}`;
+          const sourceBook = [...state.reading, ...state.favorites].find(book =>
+            (entry.bookId && book.md5 === entry.bookId) ||
+            (entry.bookTitle && book.title === entry.bookTitle)
+          );
+          const sourceHref = sourceBook?.readUrl || sourceBook?.url
+            ? `#read=${encodeURIComponent(sourceBook.readUrl || sourceBook.url)}`
+            : '#reading';
           row.innerHTML = `
             <div class="word-heading">
-              <a href="${escapeHtml(sourceUrl)}" target="_blank" rel="noopener noreferrer">${escapeHtml(entry.word)}</a>
+              <a href="${escapeHtml(sourceHref)}">${escapeHtml(entry.word)}</a>
               ${entry.partOfSpeech ? `<span class="word-kind">${escapeHtml(entry.partOfSpeech)}</span>` : ''}
             </div>
-            <p class="word-definition">${escapeHtml(entry.definitions[0] || 'No definition found')}</p>
-            ${entry.contextSentence ? `<p class="word-context">${escapeHtml(entry.contextSentence)}</p>` : ''}
+            <p class="word-definition" role="button" tabindex="0" title="Show definitions">${escapeHtml(entry.definitions[0] || 'Show definitions')}</p>
+            <p class="word-context">${highlightedWordSnippet(entry.contextSentence, entry.word)}</p>
             ${entry.bookTitle ? `<div class="word-source">${escapeHtml(entry.bookTitle)}${entry.lookupCount > 1 ? ` · seen ${entry.lookupCount} times` : ''}</div>` : ''}
             <div class="word-lookup hidden" aria-live="polite"></div>
           `;
-          row.querySelector('.word-heading a').addEventListener('click', async (event) => {
+          row.querySelector('.word-heading a').addEventListener('click', (event) => {
+            event.preventDefault();
+            if (sourceBook) void openBook({ ...sourceBook, cfi: entry.cfi });
+            else activateTab('reading', { updateHash: true });
+          });
+          row.querySelector('.word-definition').addEventListener('click', async (event) => {
             event.preventDefault();
             const panel = row.querySelector('.word-lookup');
             if (!panel.classList.contains('hidden')) {
@@ -1972,13 +2118,11 @@
             panel.textContent = 'Looking up…';
             try {
               let label = entry.partOfSpeech || 'Saved definition';
-              let definitions = entry.definitions;
-              if (!definitions.length) {
-                const offline = await lookupOfflineWord(entry.word, entry.language);
-                if (offline) {
-                  label = offline.label;
-                  definitions = offline.definitions;
-                }
+              let definitions = [...entry.definitions];
+              const offline = await lookupAllOfflineWords(entry.word, entry.language);
+              if (offline) {
+                label = offline.label;
+                definitions = [...offline.definitions, ...definitions];
               }
               if (!definitions.length) {
                 const host = entry.language.startsWith('pt') ? 'pt.wiktionary.org' : 'en.wiktionary.org';
@@ -2152,12 +2296,14 @@
       }
 
       function updateReadingFavoriteButton() {
-        if (!activeReadingBook?.md5) {
+        if (activeTab !== 'reading' || !activeReadingBook?.md5) {
           readingFavoriteBtn.classList.add('hidden');
+          readingFavoriteBtn.classList.remove('hearted');
           return;
         }
         const pressed = isFavoriteMd5(activeReadingBook.md5);
         readingFavoriteBtn.classList.remove('hidden');
+        readingFavoriteBtn.classList.toggle('hearted', pressed);
         readingFavoriteBtn.textContent = pressed ? '♥' : '♡';
         readingFavoriteBtn.setAttribute('aria-pressed', String(pressed));
         readingFavoriteBtn.setAttribute('aria-label', pressed ? 'Remove from favorites' : 'Add to favorites');
@@ -2210,8 +2356,12 @@
       }
 
       function renderHome() {
-        renderHomeBookList(homeReadingList, state.reading, 'Nothing open yet.');
-        renderHomeBookList(homeFavoritesList, state.favorites, 'No favorites yet.');
+        const needle = homeQueryInput.value.trim().toLocaleLowerCase();
+        const matchingBooks = books => books.filter(book =>
+          !needle || `${book.title || ''} ${book.authors || ''}`.toLocaleLowerCase().includes(needle)
+        );
+        renderHomeBookList(homeReadingList, matchingBooks(state.reading), 'Nothing open yet.');
+        renderHomeBookList(homeFavoritesList, matchingBooks(state.favorites), 'No favorites yet.');
         homeWordsList.innerHTML = '';
         const words = [...state.words].map(word => String(word?.word || word)).filter(Boolean).sort((a, b) => a.localeCompare(b)).slice(0, 18);
         if (!words.length) {
@@ -2220,10 +2370,15 @@
         }
         for (const word of words) {
           const link = document.createElement('a');
-          link.href = `https://en.wiktionary.org/wiki/${encodeURIComponent(word)}`;
-          link.target = '_blank';
-          link.rel = 'noopener noreferrer';
+          link.href = `#words=${encodeURIComponent(word)}`;
           link.textContent = word;
+          link.addEventListener('click', event => {
+            event.preventDefault();
+            wordsFilter.value = word;
+            activateTab('words');
+            renderWords();
+            setHashRoute(`words=${encodeURIComponent(word)}`);
+          });
           homeWordsList.appendChild(link);
         }
       }
@@ -2237,6 +2392,7 @@
         settingsModal.classList.toggle('hidden', activeTab !== 'settings');
         settingsModal.setAttribute('aria-hidden', String(activeTab !== 'settings'));
         readerSection.classList.toggle('hidden', activeTab !== 'reading' || !activeReadingBook);
+        document.body.classList.toggle('book-open', activeTab === 'reading' && Boolean(activeReadingBook));
         searchTabBtn.setAttribute('aria-selected', String(activeTab === 'search'));
         readingTabBtn.setAttribute('aria-selected', String(activeTab === 'reading'));
         wordsTabBtn.setAttribute('aria-selected', String(activeTab === 'words'));
@@ -2246,6 +2402,7 @@
         headerBookTitle.classList.toggle('hidden', !showBookTitle);
         headerBookTitle.textContent = showBookTitle ? activeReadingBook.title : '';
         headerBookTitle.title = showBookTitle ? activeReadingBook.title : '';
+        updateReadingFavoriteButton();
         if (activeTab === 'home') renderHome();
         if (activeTab === 'words') requestAnimationFrame(() => wordsFilter.focus());
         if (!updateHash) return;
@@ -2316,7 +2473,7 @@
             try {
               const readerLoad = readerFrame.contentWindow?.loadBook;
               if (typeof readerLoad !== 'function') throw new Error('EPUB reader did not load.');
-              await readerLoad(base64, '', theme);
+              await readerLoad(base64, book.cfi || '', theme);
               status.textContent = `Opened ${book.title || 'book'}.`;
               resolve();
             } catch (error) {
@@ -2432,12 +2589,9 @@
 
       homeSearchForm.addEventListener('submit', (event) => {
         event.preventDefault();
-        const query = homeQueryInput.value.trim();
-        if (!query) return;
-        queryInput.value = query;
-        activateTab('search');
-        void startSearch();
+        renderHome();
       });
+      homeQueryInput.addEventListener('input', renderHome);
 
       function loadState() {
         const favorites = safeJSONRead(localStorage.getItem(FAVORITES_KEY), []);
@@ -2797,6 +2951,12 @@
           }
           return;
         }
+        if (route.startsWith('words=')) {
+          wordsFilter.value = decodeURIComponent(route.slice('words='.length));
+          activateTab('words');
+          renderWords();
+          return;
+        }
         if (route === 'words') {
           activateTab('words');
           return;
@@ -2868,13 +3028,13 @@
         renderWords();
       });
 
-      for (const [code, label] of Object.entries(DICTIONARY_LANGUAGES)) {
+      for (const [code, label] of Object.entries(DICTIONARY_LANGUAGES).sort(([, left], [, right]) => left.localeCompare(right))) {
         dictionarySource.add(new Option(label, code));
-        dictionaryTarget.add(new Option(label, code));
       }
-      dictionarySource.value = 'en';
-      dictionaryTarget.value = 'pt';
+      dictionarySource.value = 'pt';
+      dictionarySource.addEventListener('change', () => void refreshDictionaryTargetOptions());
       dictionaryInstall.addEventListener('click', installDictionaryPack);
+      void refreshDictionaryTargetOptions('en');
       void renderDictionaryPacks();
 
       window.addEventListener('popstate', applyHashRoute);
