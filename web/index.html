@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" href="/public/favicon.svg" type="image/svg+xml" />
-    <link rel="apple-touch-icon" href="/public/favicon.svg" />
+    <link rel="apple-touch-icon" href="/public/apple-touch-icon.png" />
     <meta
       name="viewport"
       content="width=device-width, initial-scale=1.0, viewport-fit=cover"
@@ -34,18 +34,20 @@
         --chip-bg: #fafafa;
         --chip-border: #d4d4d4;
         --chip-text: #111827;
-        --link: #0f5d78;
-        --link-hover: #b8422d;
+        --link: #2f5d50;
+        --link-hover: #c74b32;
         --link-visited: #65447c;
+        --reading-progress: #2f5d50;
+        --reading-progress-track: rgba(47, 93, 80, 0.22);
         --backdrop: rgba(17, 24, 39, 0.45);
       }
       body.theme-paper {
-        --page-bg: #f7ecde;
-        --page-text: #2f271e;
-        --note-text: #5f574f;
-        --muted-text: #645e56;
-        --card-bg: #fffaf4;
-        --card-border: #dcc8b0;
+        --page-bg: #f7f3ea;
+        --page-text: #1c1916;
+        --note-text: #6b635a;
+        --muted-text: #6b635a;
+        --card-bg: #fffaf2;
+        --card-border: #d8cfc3;
         --card-shadow: rgba(70, 46, 22, 0.09);
         --badge-bg: #efe2d2;
         --badge-border: #d8c3ad;
@@ -53,41 +55,45 @@
         --result-title: #221c14;
         --settings-bg: #fff7ee;
         --settings-border: #e2cdb2;
-        --btn-bg: #3d2b1b;
+        --btn-bg: #2f5d50;
         --btn-text: #fff;
-        --btn-border: #3d2b1b;
+        --btn-border: #2f5d50;
         --chip-bg: #efe4d6;
         --chip-border: #d4c0a6;
         --chip-text: #3a2d1f;
-        --link: #8a3d24;
-        --link-hover: #b5482f;
+        --link: #2f5d50;
+        --link-hover: #c74b32;
         --link-visited: #6c4c70;
+        --reading-progress: #2f5d50;
+        --reading-progress-track: rgba(47, 93, 80, 0.22);
         --backdrop: rgba(56, 38, 18, 0.45);
       }
       body.theme-dark {
         color-scheme: dark;
-        --page-bg: #101827;
-        --page-text: #e5e7eb;
-        --note-text: #9ca3af;
-        --muted-text: #9ca3af;
-        --card-bg: #1f2937;
-        --card-border: #374151;
+        --page-bg: #121212;
+        --page-text: #e8e4dc;
+        --note-text: #aaa39a;
+        --muted-text: #aaa39a;
+        --card-bg: #1b1a18;
+        --card-border: #3b3833;
         --card-shadow: rgba(0, 0, 0, 0.45);
-        --badge-bg: #111827;
-        --badge-border: #374151;
-        --badge-text: #e5e7eb;
-        --result-title: #e5e7eb;
-        --settings-bg: #111827;
-        --settings-border: #374151;
-        --btn-bg: #f9fafb;
-        --btn-text: #111827;
-        --btn-border: #f9fafb;
-        --chip-bg: #374151;
-        --chip-border: #4b5563;
-        --chip-text: #e5e7eb;
-        --link: #8fcaff;
-        --link-hover: #ff9b7d;
+        --badge-bg: #23211e;
+        --badge-border: #3b3833;
+        --badge-text: #e8e4dc;
+        --result-title: #e8e4dc;
+        --settings-bg: #1b1a18;
+        --settings-border: #3b3833;
+        --btn-bg: #7fb8a7;
+        --btn-text: #121212;
+        --btn-border: #7fb8a7;
+        --chip-bg: #292724;
+        --chip-border: #48443e;
+        --chip-text: #e8e4dc;
+        --link: #7fb8a7;
+        --link-hover: #e49a83;
         --link-visited: #d0a8e8;
+        --reading-progress: #7fb8a7;
+        --reading-progress-track: rgba(127, 184, 167, 0.24);
         --backdrop: rgba(3, 7, 18, 0.55);
       }
       * {
@@ -141,14 +147,14 @@
         justify-content: flex-start;
         gap: 0.75rem;
         align-items: center;
-        min-height: 2.1rem;
-        padding: 0.14rem 0.35rem 0.14rem 0.48rem;
+        min-height: 2.4rem;
+        padding: 0 0.35rem 0 0.48rem;
         margin: -0.45rem -0.45rem 0;
         border: 0;
         border-bottom: 1px solid var(--card-border, #ddd);
         border-radius: 0;
         background:
-          linear-gradient(105deg, color-mix(in srgb, #c74b32 8%, var(--card-bg, #fff)), transparent 48%),
+          linear-gradient(105deg, color-mix(in srgb, #2f5d50 9%, var(--card-bg, #fff)), transparent 48%),
           var(--card-bg, #fff);
         box-shadow: 0 5px 24px var(--card-shadow, rgba(0, 0, 0, 0.06));
       }
@@ -174,14 +180,6 @@
         margin-left: 0;
         order: -1;
       }
-      .app-title {
-        margin: 0;
-        font-family: Georgia, 'Times New Roman', serif;
-        font-size: clamp(1.15rem, 2.5vw, 1.35rem);
-        font-weight: 700;
-        letter-spacing: -0.055em;
-        line-height: 1;
-      }
       .header-book-title {
         min-width: 0;
         max-width: min(40vw, 32rem);
@@ -194,20 +192,11 @@
         white-space: nowrap;
       }
       .brand-mark {
-        display: grid;
-        place-items: center;
-        width: 1.65rem;
-        height: 1.65rem;
+        display: block;
+        width: 2.4rem;
+        height: 2.4rem;
         flex: 0 0 auto;
         border-radius: 0;
-        clip-path: polygon(0 0, 100% 0, 100% 76%, 76% 100%, 0 100%);
-        background: #c74b32;
-        color: #fffaf4;
-        box-shadow: inset 0 -3px 0 rgba(74, 20, 12, 0.2);
-        font-family: Georgia, 'Times New Roman', serif;
-        font-size: 1rem;
-        font-weight: 700;
-        letter-spacing: -0.08em;
       }
       .app-home {
         color: inherit;
@@ -515,7 +504,7 @@
       }
       .home-book-row {
         display: grid;
-        grid-template-columns: minmax(180px, 2fr) minmax(140px, 1.4fr) 60px 110px 70px 72px;
+        grid-template-columns: minmax(180px, 2fr) 70px minmax(140px, 1.4fr) 60px 110px 70px 72px;
         gap: 0.55rem;
         align-items: baseline;
         padding: 0.3rem 0;
@@ -553,6 +542,42 @@
         height: 0.9rem;
         flex: 0 0 auto;
         fill: #d7352a;
+      }
+      .home-book-status {
+        display: inline-flex;
+        gap: 0.3rem;
+        align-items: center;
+      }
+      .home-book-status svg {
+        width: 1rem;
+        height: 1rem;
+        fill: currentColor;
+      }
+      .home-book-status .favorite-status {
+        color: #d7352a;
+      }
+      .home-title-cell {
+        min-width: 0;
+      }
+      .home-reading-progress {
+        display: grid;
+        grid-template-columns: minmax(5rem, 12rem) auto;
+        align-items: center;
+        gap: 0.45rem;
+        margin-top: 0.3rem;
+        color: var(--muted-text);
+        font-size: 0.72rem;
+        font-variant-numeric: tabular-nums;
+      }
+      .home-reading-progress-track {
+        height: 4px;
+        background: var(--reading-progress-track);
+        overflow: hidden;
+      }
+      .home-reading-progress-value {
+        display: block;
+        height: 100%;
+        background: var(--reading-progress);
       }
       .home-book-row > span {
         min-width: 0;
@@ -629,8 +654,8 @@
         font-style: italic;
       }
       .word-context mark {
-        background: #ffd54f;
-        color: #17120a;
+        background: #e7c766;
+        color: #1c1916;
         padding: 0 .08em;
       }
       .word-source {
@@ -703,11 +728,6 @@
       .app-header-left {
         order: -2;
         flex: 0 1 auto;
-      }
-      .app-title > :last-child {
-        margin-left: -0.2rem;
-        color: #d7352a !important;
-        font-size: 0.9em;
       }
       body a:any-link,
       body a:visited {
@@ -972,13 +992,13 @@
       }
       .footer a { color: var(--note-text, #666); font-weight: 600; }
       .footer-note { margin: 0; }
-      .github-link {
+      .footer-icon-link {
         display: inline-flex;
         align-items: center;
         justify-content: center;
         color: var(--note-text, #666);
       }
-      .github-link svg {
+      .footer-icon-link svg {
         width: 1rem;
         height: 1rem;
         fill: currentColor;
@@ -995,8 +1015,7 @@
     <main class="wrap">
       <header class="app-header">
         <a class="app-header-left app-home" href="#" aria-label="Bookstr home">
-          <span class="brand-mark" aria-hidden="true">b</span>
-          <h1 class="app-title">bookstr</h1>
+          <img class="brand-mark" src="/public/favicon.svg" alt="" />
           <span id="header-book-title" class="header-book-title hidden"></span>
         </a>
         <div class="app-header-right">
@@ -1128,7 +1147,10 @@
       </section>
 
     <section class="footer">
-      <a class="github-link" href="https://github.com/guaka/bookstr" target="_blank" rel="noopener noreferrer" aria-label="Bookstr on GitHub" title="Bookstr on GitHub">
+      <a class="footer-icon-link" href="https://github.com/guaka/bookstr/releases/latest" target="_blank" rel="noopener noreferrer" aria-label="Download the latest Bookstr Android APK" title="Download Android APK">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m17.6 9.48 1.84-3.18a.63.63 0 0 0-1.09-.63l-1.87 3.24A11.46 11.46 0 0 0 12 8c-1.63 0-3.15.32-4.48.91L5.65 5.67a.63.63 0 0 0-1.09.63L6.4 9.48C3.32 11.16 1.25 14.2 1.25 17.69h21.5c0-3.49-2.07-6.53-5.15-8.21ZM7.06 14.44a.94.94 0 1 1 0-1.88.94.94 0 0 1 0 1.88Zm9.88 0a.94.94 0 1 1 0-1.88.94.94 0 0 1 0 1.88Z"/></svg>
+      </a>
+      <a class="footer-icon-link" href="https://github.com/guaka/bookstr" target="_blank" rel="noopener noreferrer" aria-label="Bookstr on GitHub" title="Bookstr on GitHub">
         <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82A7.65 7.65 0 0 1 8 3.8c.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg>
       </a>
       <p id="build-time" class="note footer-note"></p>
@@ -1160,6 +1182,8 @@
       const DICTIONARY_STORAGE_LIMIT = 250 * 1024 * 1024;
       const BOOK_CACHE_DB_NAME = 'bookstr_epub_cache_v1';
       const BOOK_CACHE_STORAGE_LIMIT = 300 * 1024 * 1024;
+      const BOOK_METADATA_CACHE_KEY = 'bookstr_metadata_cache_v1';
+      const BOOK_METADATA_CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
       const DICTIONARY_LANGUAGES = {
         bg: 'Bulgarian', ca: 'Catalan', cs: 'Czech', da: 'Danish', de: 'German', el: 'Greek',
         en: 'English', es: 'Spanish', fi: 'Finnish', fr: 'French', ga: 'Irish', id: 'Indonesian',
@@ -1189,6 +1213,11 @@
       homeQueryInput.placeholder = 'Filter here · press Enter to search all books';
       const homeReadingList = document.getElementById('home-reading-list');
       const homeFavoritesList = document.getElementById('home-favorites-list');
+      const homeReadingSection = homeReadingList.closest('.home-column');
+      const homeFavoritesSection = homeFavoritesList.closest('.home-column');
+      const homeLibraryHeading = homeReadingSection?.querySelector('h3');
+      if (homeLibraryHeading) homeLibraryHeading.textContent = 'Library';
+      homeFavoritesSection?.remove();
       const homeWordsList = document.getElementById('home-words-list');
       const homeBookSorts = Object.create(null);
       const searchType = document.getElementById('search-type');
@@ -1215,18 +1244,6 @@
       readingTabBtn.remove();
       readingLibraryTab.remove();
       const wordsTabBtn = document.getElementById('words-tab-btn');
-      const appTitle = document.querySelector('.app-title');
-      const appTitleWord = appTitle.lastElementChild;
-      if (appTitleWord?.textContent.trim().toLowerCase() === 'bookstr') {
-        appTitleWord.textContent = 'ookstr';
-      } else {
-        for (const node of appTitle.childNodes) {
-          if (node.nodeType === Node.TEXT_NODE && /bookstr/i.test(node.textContent)) {
-            node.textContent = node.textContent.replace(/bookstr/i, 'ookstr');
-            break;
-          }
-        }
-      }
       const headerBookTitle = document.getElementById('header-book-title');
       const readingFavoriteBtn = document.getElementById('reading-favorite-btn');
       const headerBookMeta = document.createElement('span');
@@ -1736,7 +1753,7 @@
           md5: md5 || pseudoIdForSeed(`${title}${readUrl}`),
           title,
           authors: ref.author || ref.authors || ref.creator || ref.bookAuthor || ref.metadata?.author || '',
-          year: ref.year || '',
+          year: BookMetadata.yearForBook(ref),
           language: BookMetadata.languageForBook(ref),
           extension: (ref.blossomFormat || ref.format || ref.extension || 'epub').replace(/^\./, '').toLowerCase(),
           blossomSha256: ref.blossomSha256 || '',
@@ -1745,6 +1762,11 @@
           sourceUrl,
           favoriteAddedAt,
           updatedAt: Number(ref.updatedAt || favoriteAddedAt || 0),
+          progression: BookMetadata.readingProgressForBook(ref),
+          furthestProgression: Number(ref.furthestProgression || 0) || 0,
+          cfi: String(ref.cfi || ref.locator?.locations?.cfi || ref.locator?.href || ''),
+          metadataLookupComplete: Boolean(ref.metadataLookupComplete),
+          metadataProvenance: ref.metadataProvenance && typeof ref.metadataProvenance === 'object' ? ref.metadataProvenance : {},
         };
       }
 
@@ -1812,7 +1834,11 @@
             title: BookMetadata.resolveTitle(payload),
             authors: String(payload.author || payload.authors || payload.creator || ''),
             language: BookMetadata.languageForBook(payload),
+            year: BookMetadata.yearForBook(payload),
             updatedAt,
+            progression: BookMetadata.readingProgressForBook(payload),
+            furthestProgression: Number(payload.furthestProgression ?? locator?.furthestProgression ?? 0) || 0,
+            cfi: String(payload.cfi || locator?.locations?.cfi || locator?.href || ''),
             extension: 'epub',
             readUrl: payload.readUrl || '',
           };
@@ -2655,7 +2681,7 @@
                 authors: Array.isArray(metadata?.authors)
                   ? metadata.authors.join(', ')
                   : String(metadata?.author || metadata?.authors || ''),
-                year: String(metadata?.issued || metadata?.year || '').split('-')[0],
+                year: BookMetadata.yearForBook(metadata),
                 language: BookMetadata.languageForBook(metadata),
                 extension: 'epub',
                 readUrl,
@@ -2682,6 +2708,95 @@
           merged.language ||= peer.language || '';
           return merged;
         });
+      }
+
+      function metadataCacheRead() {
+        const cached = safeJSONRead(localStorage.getItem(BOOK_METADATA_CACHE_KEY), {});
+        return cached && typeof cached === 'object' ? cached : {};
+      }
+
+      function metadataCacheWrite(cache) {
+        localStorage.setItem(BOOK_METADATA_CACHE_KEY, JSON.stringify(cache));
+      }
+
+      function applyLibraryEnrichment(book, metadata, provenance) {
+        const update = item => BookMetadata.sameLibraryBook(item, book)
+          ? BookMetadata.enrichBookMetadata(item, metadata, provenance)
+          : item;
+        state.reading = state.reading.map(update);
+        state.favorites = state.favorites.map(update);
+      }
+
+      async function remoteMetadataForBook(book) {
+        const readUrl = BookMetadata.canonicalReadUrl(book, BOOKS_API_BASE);
+        const metadataUrl = BookMetadata.metadataEndpointForReadUrl(readUrl);
+        if (metadataUrl) {
+          const response = await fetch(metadataUrl);
+          if (!response.ok) throw new Error(`metadata lookup failed (${response.status})`);
+          const payload = await response.json();
+          const metadata = payload?.book || payload?.data || payload;
+          return {
+            ...metadata,
+            title: BookMetadata.resolveTitle(metadata, readUrl, window.location.href),
+            authors: Array.isArray(metadata?.authors) ? metadata.authors.join(', ') : metadata?.authors || metadata?.author || '',
+            year: BookMetadata.yearForBook(metadata),
+            language: BookMetadata.languageForBook(metadata),
+            extension: metadata?.extension || metadata?.format || 'epub',
+            source: metadata?.source || 'gutenberg',
+            readUrl,
+          };
+        }
+        const isbn = BookMetadata.isbnForBook(book);
+        const title = BookMetadata.resolveTitle(book);
+        const query = isbn || (!BookMetadata.isPlaceholderTitle(title) ? title : '');
+        if (!query) return null;
+        const results = await searchAllBooksParty(query);
+        const exact = results.find(result => BookMetadata.sameLibraryBook(book, result));
+        if (exact) return exact;
+        const wantedTitle = title.toLocaleLowerCase();
+        const wantedAuthor = authorSearchName(book.authors || book.author).toLocaleLowerCase();
+        return results.find(result => {
+          const sameTitle = String(result.title || '').toLocaleLowerCase() === wantedTitle;
+          const resultAuthor = authorSearchName(result.authors || result.author).toLocaleLowerCase();
+          return sameTitle && wantedAuthor && resultAuthor === wantedAuthor;
+        }) || null;
+      }
+
+      async function enrichLibraryMetadata() {
+        const cache = metadataCacheRead();
+        const library = BookMetadata.mergeLibraryState(state.reading, state.favorites);
+        const pending = [];
+        for (const book of library) {
+          const key = BookMetadata.bookIdentity(book);
+          const cached = cache[key];
+          if (cached && Date.now() - Number(cached.ts || 0) < BOOK_METADATA_CACHE_TTL_MS) {
+            applyLibraryEnrichment(book, cached.book, cached.provenance || 'cache');
+          }
+          const current = BookMetadata.mergeLibraryState(state.reading, state.favorites)
+            .find(item => BookMetadata.sameLibraryBook(item, book)) || book;
+          const metadataOnly = BookMetadata.availabilitySourcesForBook(current).includes('Metadata only');
+          if (!current.year || !current.language || BookMetadata.isPlaceholderTitle(current.title) || metadataOnly) pending.push(current);
+        }
+        renderHome();
+        for (let index = 0; index < pending.length; index += 4) {
+          await Promise.all(pending.slice(index, index + 4).map(async book => {
+            const key = BookMetadata.bookIdentity(book);
+            try {
+              const metadata = await remoteMetadataForBook(book);
+              const complete = metadata || { metadataLookupComplete: true };
+              const provenance = metadata?.source || 'remote';
+              applyLibraryEnrichment(book, complete, provenance);
+              cache[key] = { book: complete, provenance, ts: Date.now() };
+            } catch {
+              applyLibraryEnrichment(book, { metadataLookupComplete: true }, 'unresolved');
+              cache[key] = { book: { metadataLookupComplete: true }, provenance: 'unresolved', ts: Date.now() };
+            }
+          }));
+          metadataCacheWrite(cache);
+          localStorage.setItem(READING_KEY, JSON.stringify(state.reading));
+          localStorage.setItem(FAVORITES_KEY, JSON.stringify(state.favorites));
+          renderHome();
+        }
       }
 
       async function openLibraryBook(book) {
@@ -2713,9 +2828,9 @@
       function renderHomeBookList(target, books, emptyText) {
         target.innerHTML = '';
         target.classList.add('home-book-table');
-        const sort = homeBookSorts[target.id] || { key: 'title', direction: 'asc' };
+        const sort = homeBookSorts[target.id] || { key: '', direction: 'asc' };
         const isCached = book => cachedBookKeys.has(bookCacheKey(book, book.readUrl || book.url));
-        const visible = BookMetadata.sortBooks(books, sort.key, sort.direction, isCached);
+        const visible = sort.key ? BookMetadata.sortBooks(books, sort.key, sort.direction, isCached) : [...books];
         if (!visible.length) {
           const item = document.createElement('li');
           item.textContent = emptyText;
@@ -2726,6 +2841,7 @@
         head.className = 'home-book-row home-book-head';
         const columns = [
           ['title', 'Title'],
+          ['', 'Status'],
           ['author', 'Author'],
           ['year', 'Year'],
           ['availability', 'Available'],
@@ -2757,6 +2873,7 @@
           const item = document.createElement('li');
           item.className = 'home-book-row';
           const titleCell = document.createElement('span');
+          titleCell.className = 'home-title-cell';
           const titleLink = document.createElement('a');
           titleLink.href = book.readUrl || book.url || book.blossomUrl
             ? `#read=${encodeURIComponent(book.readUrl || book.url || book.blossomUrl)}`
@@ -2768,10 +2885,39 @@
             void openLibraryBook(book);
           });
           titleCell.appendChild(titleLink);
+          const progress = BookMetadata.readingProgressForBook(book);
+          if (book.isReading && (progress !== null || book.cfi)) {
+            const normalizedProgress = progress ?? 0;
+            const progressWrap = document.createElement('span');
+            progressWrap.className = 'home-reading-progress';
+
+            const progressTrack = document.createElement('span');
+            progressTrack.className = 'home-reading-progress-track';
+            progressTrack.setAttribute('role', 'progressbar');
+            progressTrack.setAttribute('aria-label', 'Reading progress');
+            progressTrack.setAttribute('aria-valuemin', '0');
+            progressTrack.setAttribute('aria-valuemax', '100');
+            progressTrack.setAttribute('aria-valuenow', String(Math.round(normalizedProgress * 100)));
+
+            const progressValue = document.createElement('span');
+            progressValue.className = 'home-reading-progress-value';
+            progressValue.style.width = `${normalizedProgress * 100}%`;
+            progressTrack.appendChild(progressValue);
+
+            const progressText = document.createElement('span');
+            progressText.textContent = `${Math.floor(normalizedProgress * 100)}% read`;
+            progressWrap.append(progressTrack, progressText);
+            titleCell.appendChild(progressWrap);
+          }
           item.appendChild(titleCell);
+          const statusCell = document.createElement('span');
+          statusCell.className = 'home-book-status';
+          if (book.isReading) statusCell.insertAdjacentHTML('beforeend', '<svg viewBox="0 0 24 24" aria-label="Currently reading" role="img"><path d="M4 4.5A3.5 3.5 0 0 1 7.5 1H11v17H7.5A3.5 3.5 0 0 0 4 21.5v-17ZM13 1h3.5A3.5 3.5 0 0 1 20 4.5v17a3.5 3.5 0 0 0-3.5-3.5H13V1Z"/></svg>');
+          if (book.isFavorite) statusCell.insertAdjacentHTML('beforeend', '<svg class="favorite-status" viewBox="0 0 24 24" aria-label="Favorite" role="img"><path d="M12 21s-8-4.8-8-11a4.5 4.5 0 0 1 8-2.8A4.5 4.5 0 0 1 20 10c0 6.2-8 11-8 11Z"/></svg>');
+          item.appendChild(statusCell);
           const cells = [
             book.authors || book.author || '—',
-            book.year || '—',
+            book.year || (book.metadataLookupComplete ? '?' : ''),
           ];
           for (const value of cells) {
             const cell = document.createElement('span');
@@ -2779,17 +2925,22 @@
             cell.title = value;
             item.appendChild(cell);
           }
-          const availability = BookMetadata.availabilityForBook(book);
+          const cached = cachedBookKeys.has(bookCacheKey(book, book.readUrl || book.url));
+          const availabilitySources = BookMetadata.availabilitySourcesForBook(book, cached);
           const availabilityCell = document.createElement('span');
           availabilityCell.className = 'home-availability';
-          availabilityCell.append(document.createTextNode(availability));
-          if (cachedBookKeys.has(bookCacheKey(book, book.readUrl || book.url))) {
-            availabilityCell.insertAdjacentHTML('beforeend', '<svg class="home-cache-icon" viewBox="0 0 24 24" aria-label="Cached" role="img"><path d="M12 3a9 9 0 1 0 8.49 12H18.3A7 7 0 1 1 19 12h-3l4-4 4 4h-3a9 9 0 0 0-9-9Zm-1 5v5h5v-2h-3V8h-2Z"/></svg>');
+          for (const source of availabilitySources) {
+            if (source === 'Cached') {
+              availabilityCell.insertAdjacentHTML('beforeend', '<svg class="home-cache-icon" viewBox="0 0 24 24" aria-label="Cached" role="img"><path d="M12 3a9 9 0 1 0 8.49 12H18.3A7 7 0 1 1 19 12h-3l4-4 4 4h-3a9 9 0 0 0-9-9Zm-1 5v5h5v-2h-3V8h-2Z"/></svg>');
+            } else {
+              if (availabilityCell.childNodes.length) availabilityCell.append(document.createTextNode(' · '));
+              availabilityCell.append(document.createTextNode(source));
+            }
           }
           item.appendChild(availabilityCell);
           for (const value of [
             String(book.extension || book.format || '—').replace(/^\./, '').toUpperCase(),
-            String(book.language || '—').toUpperCase(),
+            book.language ? String(book.language).toUpperCase() : (book.metadataLookupComplete ? '?' : ''),
           ]) {
             const cell = document.createElement('span');
             cell.textContent = value;
@@ -2807,8 +2958,8 @@
           needle,
           item => cachedBookKeys.has(bookCacheKey(item, item.readUrl || item.url))
         ));
-        renderHomeBookList(homeReadingList, matchingBooks(enrichedHomeBooks(state.reading)), 'Nothing open yet.');
-        renderHomeBookList(homeFavoritesList, matchingBooks(enrichedHomeBooks(state.favorites)), 'No favorites yet.');
+        const library = BookMetadata.mergeLibraryState(state.reading, state.favorites);
+        renderHomeBookList(homeReadingList, matchingBooks(enrichedHomeBooks(library)), 'Your library is empty.');
         homeWordsList.innerHTML = '';
         const words = [...new Set([...state.words].map(word => String(word?.word || word)).filter(Boolean))].sort((a, b) => a.localeCompare(b)).slice(0, 18);
         if (!words.length) {
@@ -2846,7 +2997,6 @@
         wordsTabBtn.setAttribute('aria-selected', String(activeTab === 'words'));
         settingsBtn.setAttribute('aria-selected', String(activeTab === 'settings'));
         const showBookTitle = activeTab === 'reading' && activeReadingBook?.title;
-        appTitle.classList.toggle('hidden', Boolean(showBookTitle));
         headerBookTitle.classList.toggle('hidden', !showBookTitle);
         headerBookTitle.textContent = showBookTitle ? activeReadingBook.title : '';
         headerBookTitle.title = showBookTitle ? activeReadingBook.title : '';
@@ -3096,7 +3246,6 @@
               const readerLoad = readerFrame.contentWindow?.loadBook;
               if (typeof readerLoad !== 'function') throw new Error('EPUB reader did not load.');
               await readerLoad(base64, book.cfi || '', theme);
-              improveEpubTypography();
               status.textContent = `Opened ${book.title || 'book'}.`;
               resolve();
             } catch (error) {
@@ -3106,6 +3255,15 @@
           readerFrame.src = `reader.html#${Date.now()}`;
         });
       }
+
+      document.addEventListener('keydown', event => {
+        if (!document.body.classList.contains('book-open') || event.defaultPrevented) return;
+        if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement || event.target instanceof HTMLSelectElement) return;
+        if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+        event.preventDefault();
+        const command = event.key === 'ArrowLeft' ? 'prevPage' : 'nextPage';
+        readerFrame.contentWindow?.[command]?.();
+      });
 
       async function openBook(book, { updateHash = true, addToReading = true } = {}) {
         if (!book || (!book.readUrl && !book.url)) {
@@ -3691,6 +3849,7 @@
         : formatBuildDate(fileTime);
 
       loadState();
+      void enrichLibraryMetadata();
       applyHashRoute();
       if (activeTab === 'home') {
         homeQueryInput.focus();

@@ -64,6 +64,24 @@
     return String(raw || '').trim().toLowerCase();
   }
 
+  function yearForBook(ref) {
+    const source = ref && typeof ref === 'object' ? ref : {};
+    const metadata = metadataObject(source.metadata);
+    const raw = source.year || source.issued || source.publicationYear || source.published || source.date
+      || metadata.year || metadata.issued || metadata.publicationYear || metadata.published;
+    const match = String(raw || '').match(/\b(1[0-9]{3}|20[0-9]{2}|2100)\b/);
+    return match?.[1] || '';
+  }
+
+  function readingProgressForBook(ref) {
+    const source = ref && typeof ref === 'object' ? ref : {};
+    const locator = metadataObject(source.locator);
+    const raw = source.progression ?? source.progress ?? locator.progression ?? source.furthestProgression;
+    const progression = Number(raw);
+    if (!Number.isFinite(progression)) return null;
+    return Math.max(0, Math.min(1, progression));
+  }
+
   function normalizeFavoriteAddedAt(value) {
     const numeric = Number(value);
     if (Number.isFinite(numeric) && numeric > 0) {
@@ -144,13 +162,19 @@
     return String(book?.readUrl || book?.url || book?.blossomUrl || '');
   }
 
-  function availabilityForBook(book) {
+  function availabilitySourcesForBook(book, isCached = false) {
     const source = String(book?.source || '').toLowerCase();
     const readUrl = String(book?.readUrl || book?.url || '');
-    if (book?.blossomUrl || book?.blossomSha256 || source.includes('blossom')) return 'Blossom';
-    if (source.includes('gutenberg') || /\/api\/books\/\d+(?:\/download)?(?:\?|$)/i.test(readUrl)) return 'Gutenberg';
-    if (source.includes('libvault') || /^[a-f0-9]{32}$/i.test(String(book?.md5 || ''))) return 'LibVault';
-    return 'Other';
+    const available = [];
+    if (source.includes('gutenberg') || /^gutenberg:\d+$/i.test(String(book?.md5 || '')) || /\/api\/books\/\d+(?:\/download)?(?:\?|$)/i.test(readUrl)) available.push('Gutenberg');
+    if (source.includes('libvault') || /^[a-f0-9]{32}$/i.test(String(book?.md5 || ''))) available.push('LibVault');
+    if (book?.blossomUrl || book?.blossomSha256 || source.includes('blossom')) available.push('Blossom');
+    if (isCached) available.push('Cached');
+    return available.length ? [...new Set(available)] : ['Metadata only'];
+  }
+
+  function availabilityForBook(book, isCached = false) {
+    return availabilitySourcesForBook(book, isCached).join(' · ');
   }
 
   function sortBooks(books, key, direction = 'asc', isCached = () => false) {
@@ -221,14 +245,104 @@
       isCached(book) ? 'cached yes' : 'cached no',
       book?.extension || book?.format,
       book?.language,
+      book?.isReading ? 'reading currently reading' : '',
+      book?.isFavorite ? 'favorite favourite heart' : '',
     ].filter(Boolean).join(' ').toLocaleLowerCase();
     return terms.every(term => searchable.includes(term));
+  }
+
+  function isbnForBook(book) {
+    const direct = book?.isbn || book?.isbn13 || book?.isbn10;
+    if (direct) return String(direct).replace(/[^0-9X]/gi, '').toUpperCase();
+    const identifiers = Array.isArray(book?.identifiers) ? book.identifiers : [];
+    const isbn = identifiers.find(item => String(item?.type || '').toLowerCase() === 'isbn')?.value;
+    return String(isbn || '').replace(/[^0-9X]/gi, '').toUpperCase();
+  }
+
+  function enrichBookMetadata(book, metadata, provenance = '') {
+    const base = book && typeof book === 'object' ? book : {};
+    const incoming = metadata && typeof metadata === 'object' ? metadata : {};
+    const next = { ...base, metadataProvenance: { ...(base.metadataProvenance || {}) } };
+    const baseTitle = resolveTitle(base);
+    const incomingTitle = resolveTitle(incoming);
+    const replaceIdentity = isPlaceholderTitle(baseTitle) && !isPlaceholderTitle(incomingTitle);
+    const fields = {
+      title: incomingTitle,
+      authors: incoming.authors || incoming.author || incoming.creator || '',
+      year: yearForBook(incoming),
+      language: languageForBook(incoming),
+      readUrl: canonicalReadUrl(incoming),
+      extension: incoming.extension || incoming.format || '',
+      source: incoming.source || '',
+      isbn: isbnForBook(incoming),
+    };
+    for (const [field, value] of Object.entries(fields)) {
+      if (!value || (field === 'title' && isPlaceholderTitle(value))) continue;
+      if (replaceIdentity || !next[field] || isPlaceholderTitle(next[field])) {
+        next[field] = value;
+        if (provenance) next.metadataProvenance[field] = provenance;
+      }
+    }
+    next.metadataLookupComplete = true;
+    return next;
+  }
+
+  function sameLibraryBook(left, right) {
+    const leftId = String(left?.md5 || left?.libvaultMd5 || left?.id || '').trim().toLowerCase();
+    const rightId = String(right?.md5 || right?.libvaultMd5 || right?.id || '').trim().toLowerCase();
+    if (leftId && rightId && leftId === rightId) return true;
+    const leftUrl = left?.readUrl || left?.url || left?.blossomUrl;
+    const rightUrl = right?.readUrl || right?.url || right?.blossomUrl;
+    if (leftUrl && rightUrl && normalizeReadUrl(leftUrl) === normalizeReadUrl(rightUrl)) return true;
+    const leftIsbn = isbnForBook(left);
+    const rightIsbn = isbnForBook(right);
+    return Boolean(leftIsbn && rightIsbn && leftIsbn === rightIsbn);
+  }
+
+  function mergeLibraryState(reading, favorites) {
+    const merged = [];
+    const add = (book, status) => {
+      let entry = merged.find(item => sameLibraryBook(item, book));
+      if (!entry) {
+        entry = { ...book };
+        merged.push(entry);
+      } else {
+        const existingTitle = resolveTitle(entry);
+        const incomingTitle = resolveTitle(book);
+        const incomingHasRealTitle = !isPlaceholderTitle(incomingTitle);
+        const existingHasRealTitle = !isPlaceholderTitle(existingTitle);
+        for (const [key, value] of Object.entries(book || {})) {
+          if (value === '' || value == null) continue;
+          if ((key === 'author' || key === 'authors') && existingHasRealTitle && !incomingHasRealTitle) continue;
+          entry[key] = value;
+        }
+        entry.title = incomingHasRealTitle ? incomingTitle : existingTitle;
+      }
+      if (status === 'reading') {
+        entry.isReading = true;
+        entry.readingUpdatedAt = Math.max(Number(entry.readingUpdatedAt || 0), Number(book.updatedAt || book.lastReadAt || 0));
+      } else {
+        entry.isFavorite = true;
+        entry.favoriteAddedAt = Math.max(Number(entry.favoriteAddedAt || 0), Number(book.favoriteAddedAt || book.updatedAt || 0));
+      }
+    };
+    reading.filter(Boolean).forEach(book => add(book, 'reading'));
+    favorites.filter(Boolean).forEach(book => add(book, 'favorite'));
+    return merged.sort((left, right) => {
+      if (left.isReading !== right.isReading) return left.isReading ? -1 : 1;
+      const leftTime = left.isReading ? left.readingUpdatedAt : left.favoriteAddedAt;
+      const rightTime = right.isReading ? right.readingUpdatedAt : right.favoriteAddedAt;
+      return Number(rightTime || 0) - Number(leftTime || 0)
+        || resolveTitle(left).localeCompare(resolveTitle(right));
+    });
   }
 
   root.BookMetadata = {
     isPlaceholderTitle,
     resolveTitle,
     languageForBook,
+    yearForBook,
+    readingProgressForBook,
     normalizeFavoriteAddedAt,
     earliestFavoriteAddedAt,
     favoriteAddedTag,
@@ -238,8 +352,14 @@
     metadataEndpointForReadUrl,
     canonicalReadUrl,
     availabilityForBook,
+    availabilitySourcesForBook,
     sortBooks,
     dedupeLibraryBooks,
     matchesBookFilter,
+    sameLibraryBook,
+    mergeLibraryState,
+    isbnForBook,
+    enrichBookMetadata,
+    bookIdentity,
   };
 })(globalThis);

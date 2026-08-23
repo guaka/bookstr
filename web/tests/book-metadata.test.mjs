@@ -6,6 +6,8 @@ const {
   isPlaceholderTitle,
   resolveTitle,
   languageForBook,
+  yearForBook,
+  readingProgressForBook,
   normalizeFavoriteAddedAt,
   earliestFavoriteAddedAt,
   favoriteAddedTag,
@@ -15,9 +17,13 @@ const {
   metadataEndpointForReadUrl,
   canonicalReadUrl,
   availabilityForBook,
+  availabilitySourcesForBook,
   sortBooks,
   dedupeLibraryBooks,
   matchesBookFilter,
+  sameLibraryBook,
+  mergeLibraryState,
+  enrichBookMetadata,
 } = globalThis.BookMetadata;
 
 test('normalizes and preserves the earliest favorite addition time', () => {
@@ -41,6 +47,20 @@ test('preserves common language metadata shapes', () => {
   assert.equal(languageForBook({ languages: ['nl', 'en'] }), 'nl');
   assert.equal(languageForBook({ metadata: { language: { code: 'DE' } } }), 'de');
   assert.equal(languageForBook({ metadata: JSON.stringify({ lang: 'fr' }) }), 'fr');
+});
+
+test('extracts years from common publication metadata', () => {
+  assert.equal(yearForBook({ issued: '2009-09-30' }), '2009');
+  assert.equal(yearForBook({ metadata: { publicationYear: 1984 } }), '1984');
+  assert.equal(yearForBook({}), '');
+});
+
+test('normalizes saved reading progress', () => {
+  assert.equal(readingProgressForBook({ progression: 0.42 }), 0.42);
+  assert.equal(readingProgressForBook({ locator: { progression: 0.65 } }), 0.65);
+  assert.equal(readingProgressForBook({ progression: 3 }), 1);
+  assert.equal(readingProgressForBook({ progression: -1 }), 0);
+  assert.equal(readingProgressForBook({ progression: 'unknown' }), null);
 });
 
 test('rejects placeholders and derives a useful filename title', () => {
@@ -115,7 +135,14 @@ test('classifies supported book availability sources', () => {
   assert.equal(availabilityForBook({ blossomSha256: 'abc' }), 'Blossom');
   assert.equal(availabilityForBook({ readUrl: 'https://books-api.guaka.org/api/books/48320/download' }), 'Gutenberg');
   assert.equal(availabilityForBook({ md5: 'a'.repeat(32) }), 'LibVault');
-  assert.equal(availabilityForBook({ readUrl: 'https://example.test/book.epub' }), 'Other');
+  assert.equal(availabilityForBook({ readUrl: 'https://example.test/book.epub' }), 'Metadata only');
+});
+
+test('reports multiple availability sources including cache', () => {
+  assert.deepEqual(
+    availabilitySourcesForBook({ md5: 'a'.repeat(32), blossomUrl: 'https://blossom.test/a' }, true),
+    ['LibVault', 'Blossom', 'Cached'],
+  );
 });
 
 test('sorts books by text and year without mutating the source list', () => {
@@ -206,6 +233,65 @@ test('keeps a known read URL when a partial duplicate omits it', () => {
   assert.equal(book.language, 'en');
 });
 
-test('prefers Blossom availability when several source hints exist', () => {
-  assert.equal(availabilityForBook({ md5: 'a'.repeat(32), blossomUrl: 'https://blossom.test/a' }), 'Blossom');
+test('shows every availability source when several source hints exist', () => {
+  assert.equal(availabilityForBook({ md5: 'a'.repeat(32), blossomUrl: 'https://blossom.test/a' }), 'LibVault · Blossom');
+});
+
+test('matches library books by stable ID, then URL, then ISBN', () => {
+  assert.equal(sameLibraryBook({ md5: 'a'.repeat(32) }, { md5: 'A'.repeat(32) }), true);
+  assert.equal(sameLibraryBook({ readUrl: 'https://example.test/book.epub#one' }, { url: 'https://example.test/book.epub' }), true);
+  assert.equal(sameLibraryBook({ isbn: '978-0-00-000000-1' }, { identifiers: [{ type: 'isbn', value: '9780000000001' }] }), true);
+  assert.equal(sameLibraryBook({ md5: 'a'.repeat(32) }, { md5: 'b'.repeat(32) }), false);
+});
+
+test('merges reading and favorite status into one library row', () => {
+  const md5 = 'e'.repeat(32);
+  const library = mergeLibraryState(
+    [{ md5, title: 'Walkaway', authors: 'Cory Doctorow', updatedAt: 200 }],
+    [{ md5, title: 'Untitled book', favoriteAddedAt: 100, language: 'en' }],
+  );
+  assert.equal(library.length, 1);
+  assert.equal(library[0].title, 'Walkaway');
+  assert.equal(library[0].authors, 'Cory Doctorow');
+  assert.equal(library[0].language, 'en');
+  assert.equal(library[0].isReading, true);
+  assert.equal(library[0].isFavorite, true);
+});
+
+test('orders recently read books before favorite-only books', () => {
+  const library = mergeLibraryState(
+    [
+      { md5: '1'.repeat(32), title: 'Older read', updatedAt: 100 },
+      { md5: '2'.repeat(32), title: 'Recent read', updatedAt: 300 },
+    ],
+    [
+      { md5: '3'.repeat(32), title: 'Older favorite', favoriteAddedAt: 200 },
+      { md5: '4'.repeat(32), title: 'Recent favorite', favoriteAddedAt: 400 },
+    ],
+  );
+  assert.deepEqual(library.map(book => book.title), ['Recent read', 'Older read', 'Recent favorite', 'Older favorite']);
+});
+
+test('enriches missing fields while tracking their source', () => {
+  const enriched = enrichBookMetadata(
+    { md5: 'gutenberg:30142', title: 'Untitled book', authors: '' },
+    { title: 'Little Brother', authors: 'Cory Doctorow', issued: '2009-09-30', language: 'EN', source: 'gutenberg' },
+    'gutenberg:30142',
+  );
+  assert.equal(enriched.title, 'Little Brother');
+  assert.equal(enriched.authors, 'Cory Doctorow');
+  assert.equal(enriched.year, '2009');
+  assert.equal(enriched.language, 'en');
+  assert.equal(enriched.metadataProvenance.authors, 'gutenberg:30142');
+});
+
+test('does not overwrite established metadata with a different edition', () => {
+  const enriched = enrichBookMetadata(
+    { title: 'Little Brother', authors: 'Cory Doctorow', year: '2009', language: 'en' },
+    { title: 'Little Brother', authors: 'Someone Else', year: '2010', language: 'fr' },
+    'fallback',
+  );
+  assert.equal(enriched.authors, 'Cory Doctorow');
+  assert.equal(enriched.year, '2009');
+  assert.equal(enriched.language, 'en');
 });

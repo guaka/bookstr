@@ -11,13 +11,13 @@
       width: 100%;
       height: 100%;
       overflow: hidden;
-      background: #f4f0e6;
-      color: #1a1714;
+      background: #f7f3ea;
+      color: #1c1916;
       touch-action: manipulation;
     }
     body.white {
       background: #ffffff;
-      color: #1a1714;
+      color: #1c1916;
     }
     body.night {
       background: #121212;
@@ -27,6 +27,29 @@
       width: 100vw;
       height: 100vh;
     }
+    .reader-nav {
+      position: fixed;
+      z-index: 12;
+      top: 50%;
+      width: 3rem;
+      height: 6rem;
+      border: 0;
+      padding: 0;
+      transform: translateY(-50%);
+      background: transparent;
+      color: currentColor;
+      font: 400 2.7rem/1 Georgia, serif;
+      opacity: 0.34;
+      cursor: pointer;
+    }
+    .reader-nav:hover,
+    .reader-nav:focus-visible {
+      opacity: 0.9;
+      outline: 2px solid currentColor;
+      outline-offset: -2px;
+    }
+    #reader-prev { left: 0; }
+    #reader-next { right: 0; }
     #viewer.page-forward { animation: page-forward 180ms ease-out; }
     #viewer.page-back { animation: page-back 180ms ease-out; }
     @keyframes page-forward {
@@ -55,13 +78,13 @@
       border-radius: 0.8rem;
       padding: 0.9rem;
       box-sizing: border-box;
-      background: #f4f0e6;
-      color: #1a1714;
+      background: #f7f3ea;
+      color: #1c1916;
       box-shadow: 0 0.8rem 2.5rem rgba(0, 0, 0, 0.35);
       font-family: system-ui, sans-serif;
     }
-    body.white #dictionary-card { background: #ffffff; color: #1a1714; }
-    body.night #dictionary-card { background: #202020; color: #e8e4dc; }
+    body.white #dictionary-card { background: #ffffff; color: #1c1916; }
+    body.night #dictionary-card { background: #1b1a18; color: #e8e4dc; }
     #dictionary-card[hidden] { display: none; }
     .dictionary-heading { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
     .dictionary-heading strong { font-size: 1.25rem; }
@@ -77,16 +100,18 @@
     #dictionary-card ol { margin: 0.75rem 0 0; padding-left: 1.4rem; }
     #dictionary-card li + li { margin-top: 0.45rem; }
     #dictionary-status { margin: 0.75rem 0 0; opacity: 0.75; }
-    #dictionary-source { display: block; margin-top: 0.75rem; color: #4775a8; }
-    body.night #dictionary-source { color: #9ecbff; }
+    #dictionary-source { display: block; margin-top: 0.75rem; color: #2f5d50; }
+    body.night #dictionary-source { color: #7fb8a7; }
     #dictionary-context { margin: 0.65rem 0 0; font-size: 0.9rem; line-height: 1.4; opacity: 0.9; }
-    #dictionary-context mark { background: #ffd54f; color: #15120d; font-weight: 700; padding: 0 0.08em; }
+    #dictionary-context mark { background: #e7c766; color: #1c1916; font-weight: 700; padding: 0 0.08em; }
   </style>
   <script src="jszip.min.js"></script>
   <script src="epub.min.js"></script>
 </head>
 <body>
   <div id="viewer"></div>
+  <button id="reader-prev" class="reader-nav" type="button" aria-label="Previous page">‹</button>
+  <button id="reader-next" class="reader-nav" type="button" aria-label="Next page">›</button>
   <aside id="dictionary-card" hidden aria-live="polite">
     <div class="dictionary-heading">
       <div><strong id="dictionary-word"></strong><span id="dictionary-kind"></span></div>
@@ -144,19 +169,44 @@
         "margin-left": "auto !important",
         "margin-right": "auto !important"
       };
+      const coverPage = {
+        "width": "100% !important",
+        "height": "100% !important",
+        "max-width": "none !important",
+        "max-height": "none !important",
+        "margin": "0 !important",
+        "padding": "0 !important",
+        "overflow": "hidden !important"
+      };
+      const coverMedia = {
+        "display": "block !important",
+        "width": "100% !important",
+        "height": "100% !important",
+        "max-width": "none !important",
+        "max-height": "none !important",
+        "margin": "0 !important",
+        "object-fit": "contain !important"
+      };
+      const coverRules = {
+        "html.bookstr-cover, html.bookstr-cover body": coverPage,
+        "html.bookstr-cover body > *": coverPage,
+        "html.bookstr-cover img, html.bookstr-cover svg": coverMedia
+      };
       rendition.themes.register("white", {
-        "html, body": { background: "#ffffff !important", color: "#1a1714 !important" },
-        body: Object.assign({}, shared, { background: "#ffffff !important", color: "#1a1714 !important" }),
-        a: { color: "#175a7a !important", "text-decoration-color": "#7ea3b5 !important" },
+        "html, body": { background: "#ffffff !important", color: "#1c1916 !important" },
+        body: Object.assign({}, shared, { background: "#ffffff !important", color: "#1c1916 !important" }),
+        a: { color: "#2f5d50 !important", "text-decoration-color": "#7fb8a7 !important" },
         "a:visited": { color: "#634779 !important" },
-        "img, svg, video": media
+        "img, svg, video": media,
+        ...coverRules
       });
       rendition.themes.register("paper", {
-        "html, body": { background: "#f4f0e6 !important", color: "#1a1714 !important" },
-        body: Object.assign({}, shared, { background: "#f4f0e6 !important", color: "#1a1714 !important" }),
-        a: { color: "#8a3d24 !important", "text-decoration-color": "#c39478 !important" },
+        "html, body": { background: "#f7f3ea !important", color: "#1c1916 !important" },
+        body: Object.assign({}, shared, { background: "#f7f3ea !important", color: "#1c1916 !important" }),
+        a: { color: "#2f5d50 !important", "text-decoration-color": "#7fb8a7 !important" },
         "a:visited": { color: "#6c4c70 !important" },
-        "img, svg, video": media
+        "img, svg, video": media,
+        ...coverRules
       });
       rendition.themes.register("night", {
         "html, body": { background: "#121212 !important", color: "#e8e4dc !important" },
@@ -164,10 +214,22 @@
         "p, div, span, li, blockquote, td, th, h1, h2, h3, h4, h5, h6": {
           color: "#e8e4dc !important"
         },
-        a: { color: "#8fcaff !important", "text-decoration-color": "#537da3 !important" },
+        a: { color: "#7fb8a7 !important", "text-decoration-color": "#4f786c !important" },
         "a:visited": { color: "#d0a8e8 !important" },
-        "img, svg, video": media
+        "img, svg, video": media,
+        ...coverRules
       });
+    }
+
+    function identifyCoverPage(contents) {
+      const document = contents && contents.document;
+      if (!document || !document.documentElement || !document.body) return;
+      const explicitCover = document.querySelector(
+        '[epub\\:type~="cover"], [role~="doc-cover"], .cover, [id*="cover" i], img[src*="cover" i], img[alt*="cover" i]'
+      );
+      const images = document.querySelectorAll("img, svg");
+      const sparseImagePage = images.length === 1 && document.body.textContent.trim().length < 80;
+      if (explicitCover || sparseImagePage) document.documentElement.classList.add("bookstr-cover");
     }
 
     function openBook(source, cfi, theme, highlightCfi, bookId) {
@@ -186,6 +248,7 @@
           manager: "continuous",
           flow: "scrolled-doc"
         });
+        rendition.hooks.content.register(identifyCoverPage);
         rendition.on("rendered", function(_, view) {
           const contentDocument = view && view.contents && view.contents.document;
           if (contentDocument) installSwipeNavigation(contentDocument);
@@ -219,7 +282,9 @@
 
     function reportLocation(location) {
       const start = location && location.start;
-      if (!start || !start.cfi || !window.AndroidBridge) return;
+      if (!start || !start.cfi) return;
+      document.body.dataset.location = start.cfi;
+      if (!window.AndroidBridge) return;
       let progression = Number.isFinite(start.percentage) ? start.percentage : 0;
       try {
         const generated = book && book.locations && book.locations.length() > 0;
@@ -315,6 +380,15 @@
         if (Math.abs(dx) < 85 || Math.abs(dx) < Math.abs(dy) * 1.65) return;
         if (dx < 0) nextPage(); else prevPage();
       }, { passive: true });
+      target.addEventListener("keydown", function(event) {
+        if (event.key === "ArrowLeft") {
+          event.preventDefault();
+          prevPage();
+        } else if (event.key === "ArrowRight") {
+          event.preventDefault();
+          nextPage();
+        }
+      });
     }
 
     function touchDistance(first, second) {
@@ -358,7 +432,7 @@
       try {
         rendition.annotations.highlight(
           cfi, {}, null, "bookstr-word-highlight",
-          { fill: "#ffd54f", "fill-opacity": "0.48", "mix-blend-mode": "multiply" }
+          { fill: "#e7c766", "fill-opacity": "0.62", "mix-blend-mode": "multiply" }
         );
       } catch (error) { console.warn("Could not highlight word", error); }
     }
@@ -603,20 +677,37 @@
     function moveViewportPage(direction) {
       if (!rendition) return;
       const container = document.querySelector(".epub-container");
-      const distance = Math.max(180, (container ? container.clientHeight : window.innerHeight) * 0.88);
       const viewer = document.getElementById("viewer");
       viewer.classList.remove("page-forward", "page-back");
       void viewer.offsetWidth;
       viewer.classList.add(direction > 0 ? "page-forward" : "page-back");
       if (container && container.scrollBy) {
+        const before = container.scrollTop;
+        const distance = Math.max(180, container.clientHeight * 0.88);
         container.scrollBy({ top: direction * distance, behavior: "smooth" });
+        setTimeout(function() {
+          if (Math.abs(container.scrollTop - before) > 2) return;
+          const movement = direction > 0 ? rendition.next() : rendition.prev();
+          if (movement && typeof movement.catch === "function") movement.catch(reportReaderError);
+        }, 260);
       } else {
-        const contents = rendition.getContents();
-        const win = contents[0] && contents[0].window;
-        if (win) win.scrollBy({ top: direction * distance, behavior: "smooth" });
+        const movement = direction > 0 ? rendition.next() : rendition.prev();
+        if (movement && typeof movement.catch === "function") movement.catch(reportReaderError);
       }
       setTimeout(function() { viewer.classList.remove("page-forward", "page-back"); }, 220);
     }
+
+    document.getElementById("reader-prev").addEventListener("click", window.prevPage);
+    document.getElementById("reader-next").addEventListener("click", window.nextPage);
+    document.addEventListener("keydown", function(event) {
+      if (event.key === "ArrowLeft") {
+        event.preventDefault();
+        window.prevPage();
+      } else if (event.key === "ArrowRight") {
+        event.preventDefault();
+        window.nextPage();
+      }
+    });
 
     window.setReaderTheme = function(theme) {
       applyTheme(theme);
