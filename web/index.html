@@ -2091,7 +2091,9 @@
             latestByWord.set(payload.key, payload);
           }
         }
-        return sortByUpdatedAt(Array.from(latestByWord.values())).filter(entry => !entry.deleted);
+        // Keep tombstones in snapshots so an older local or relay cache cannot
+        // resurrect a word after another client deletes it.
+        return sortByUpdatedAt(Array.from(latestByWord.values()));
       }
 
       function mergeStateList(primary, incoming, { dedupeBy = 'md5' } = {}) {
@@ -2497,7 +2499,7 @@
 
       async function deleteVocabularyWord(entry) {
         const pubkey = state.nip7.pubkey || await window.nostr?.getPublicKey?.();
-        if (!pubkey || !window.nostr?.signEvent) {
+        if (!pubkey || !window.nostr?.signEvent || !window.nostr?.nip44?.encrypt) {
           throw new Error('Connect NIP-07 to delete this word from Nostr.');
         }
         const events = await queryNostrEvents(pubkey, { kinds: [NOSTR_PROGRESS_KIND], limit: 500 });
@@ -2511,39 +2513,73 @@
             if (sameKey || sameWord) matchingEvents.push(event);
           } catch {}
         }
+
+        const now = Date.now();
+        const tombstone = normalizeVocabularyWord({
+          ...entry,
+          syncId: entry.syncId || crypto.randomUUID?.() || `${now}-${Math.random().toString(16).slice(2)}`,
+          lastSeenAt: now,
+          updatedAt: now,
+          deleted: true,
+        });
+        const dTags = new Set(matchingEvents.map(event =>
+          event.tags?.find(tag => tag?.[0] === 'd')?.[1]
+        ).filter(Boolean));
+        if (!dTags.size) dTags.add(`${WORDS_D_PREFIX}${tombstone.syncId}`);
+        for (const dTag of dTags) {
+          const syncId = dTag.startsWith(WORDS_D_PREFIX)
+            ? dTag.slice(WORDS_D_PREFIX.length)
+            : tombstone.syncId;
+          const content = await window.nostr.nip44.encrypt(pubkey, JSON.stringify({ ...tombstone, syncId }));
+          const event = await window.nostr.signEvent({
+            kind: NOSTR_PROGRESS_KIND,
+            created_at: Math.floor(now / 1000),
+            tags: [['d', dTag]],
+            content,
+          });
+          const accepted = await Promise.all(NOSTR_RELAYS.map(relay => publishRelayEvent(relay, event)));
+          if (!accepted.some(Boolean)) throw new Error('Nostr relays did not accept the deletion tombstone.');
+        }
         if (matchingEvents.length) {
-          const tags = [];
-          for (const event of matchingEvents) {
-            tags.push(['e', event.id]);
-            const dTag = event.tags?.find(tag => tag?.[0] === 'd')?.[1];
-            if (dTag) tags.push(['a', `${event.kind}:${pubkey}:${dTag}`]);
-          }
+          const tags = matchingEvents.map(event => ['e', event.id]);
           const deletion = await window.nostr.signEvent({
             kind: 5,
             created_at: Math.floor(Date.now() / 1000),
             tags,
-            content: `Delete vocabulary word: ${entry.word}`
+            content: ''
           });
-          if (!await publishNostrDeletion(deletion)) throw new Error('Nostr relays did not accept the deletion.');
+          // NIP-09 cleanup is best-effort. The encrypted replaceable tombstone
+          // above is the durable, cross-client deletion record.
+          await publishNostrDeletion(deletion);
         }
         state.words = state.words.filter(value => {
           const saved = normalizeVocabularyWord(value);
           return saved && saved.key !== entry.key && !(saved.word === entry.word && (saved.bookId || saved.bookTitle) === (entry.bookId || entry.bookTitle));
         });
+        state.words.push(tombstone);
+        if (wordsFilter.value.trim().toLowerCase() === entry.word.trim().toLowerCase()) {
+          wordsFilter.value = '';
+        }
         localStorage.setItem(WORDS_KEY, JSON.stringify(state.words));
+        saveNostrSyncCache(pubkey, {
+          favorites: state.favorites,
+          reading: state.reading,
+          words: state.words,
+        });
         renderWords();
         renderHome();
       }
 
       function renderWords() {
         wordsList.innerHTML = '';
-        if (!state.words.length) {
+        const activeWords = state.words.map(normalizeVocabularyWord).filter(entry => entry && !entry.deleted);
+        if (!activeWords.length) {
           wordsList.textContent = 'Select a word while reading. It will be saved here even when no definition is found.';
           return;
         }
         const needle = wordsFilter.value.trim().toLowerCase();
         const uniqueWords = new Map();
-        for (const entry of state.words.map(normalizeVocabularyWord).filter(Boolean)) {
+        for (const entry of activeWords) {
           const identity = `${entry.word}\u0000${entry.bookId || entry.bookTitle}`;
           const existing = uniqueWords.get(identity);
           if (!existing || entry.language === 'pt' || entry.lastSeenAt > existing.lastSeenAt) uniqueWords.set(identity, entry);

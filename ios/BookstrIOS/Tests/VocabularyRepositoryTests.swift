@@ -75,4 +75,31 @@ final class VocabularyRepositoryTests: XCTestCase {
         XCTAssertTrue(reloaded.all().isEmpty)
         XCTAssertEqual(reloaded.word(syncId: saved.syncId)?.deleted, true)
     }
+
+    func testNewerLocalTombstoneRejectsStaleRemoteWord() {
+        let store = JSONFileStore(subdirectory: "bookstr-test-\(UUID().uuidString)")
+        let repo = VocabularyRepository(fileStore: store)
+        let saved = repo.saveSelection(
+            word: "returning", language: "en", bookId: "book", bookTitle: "Book", cfi: "", context: ""
+        )
+        let tombstone = repo.remove(key: saved.key)!
+        let stale = VocabularyWord(
+            key: saved.key, word: saved.word, language: saved.language, syncId: saved.syncId,
+            bookId: saved.bookId, bookTitle: saved.bookTitle, cfi: saved.cfi,
+            contextSentence: saved.contextSentence, partOfSpeech: saved.partOfSpeech,
+            definitions: saved.definitions, translation: saved.translation, sourceUrl: saved.sourceUrl,
+            lookupCount: saved.lookupCount, firstSeenAt: saved.firstSeenAt,
+            lastSeenAt: tombstone.lastSeenAt - 1, deleted: false
+        )
+
+        XCTAssertFalse(repo.mergeRemote(stale))
+        XCTAssertTrue(repo.all().isEmpty)
+        XCTAssertEqual(repo.word(syncId: saved.syncId)?.deleted, true)
+    }
+
+    func testWordFilterClearsOnlyForDeletedWord() {
+        XCTAssertTrue(shouldClearWordFilter("  Ephemeral ", deletedWord: "ephemeral"))
+        XCTAssertFalse(shouldClearWordFilter("ephem", deletedWord: "ephemeral"))
+        XCTAssertFalse(shouldClearWordFilter("another", deletedWord: "ephemeral"))
+    }
 }

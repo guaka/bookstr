@@ -83,6 +83,21 @@ test('settings groups Nostr controls and connection status together', () => {
   assert.match(html, /settings-section settings-nostr[\s\S]*?<h3>Nostr<\/h3>[\s\S]*?id="nip7-enabled"[\s\S]*?id="nip7-status"/);
 });
 
-test('vocabulary deletion publishes a NIP-09 event', () => {
-  assert.match(html, /kind:\s*5,[\s\S]*?Delete vocabulary word/);
+test('vocabulary deletion publishes a durable encrypted tombstone before best-effort NIP-09 cleanup', () => {
+  assert.match(html, /deleted:\s*true,[\s\S]*?nip44\.encrypt\(pubkey, JSON\.stringify/);
+  assert.match(html, /kind:\s*NOSTR_PROGRESS_KIND,[\s\S]*?tags:\s*\[\['d', dTag\]\]/);
+  assert.match(html, /kind:\s*5,[\s\S]*?content:\s*''/);
+  assert.doesNotMatch(html, /Delete vocabulary word:/);
+  assert.match(html, /state\.words\.push\(tombstone\)/);
+  assert.match(html, /saveNostrSyncCache\(pubkey/);
+});
+
+test('deleting the word used as the exact Words filter clears that filter', () => {
+  assert.match(html, /wordsFilter\.value\.trim\(\)\.toLowerCase\(\) === entry\.word\.trim\(\)\.toLowerCase\(\)/);
+  assert.match(html, /wordsFilter\.value = ''/);
+});
+
+test('deleted vocabulary remains cached but is not rendered', () => {
+  assert.match(html, /return sortByUpdatedAt\(Array\.from\(latestByWord\.values\(\)\)\);/);
+  assert.match(html, /filter\(entry => entry && !entry\.deleted\)/);
 });

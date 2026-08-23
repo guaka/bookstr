@@ -257,11 +257,23 @@ struct WordsView: View {
 
     private func deleteWords(at offsets: IndexSet) {
         let displayed = visibleWords
-        for index in offsets {
-            container.vocabularyRepository.remove(key: displayed[index].key)
+        let deleted = offsets.compactMap { index in
+            displayed.indices.contains(index)
+                ? container.vocabularyRepository.remove(key: displayed[index].key)
+                : nil
+        }
+        if deleted.contains(where: { shouldClearWordFilter(query, deletedWord: $0.word) }) {
+            query = ""
         }
         showCached()
         refreshInstalledMatches()
+        Task {
+            for tombstone in deleted {
+                if !(await container.nostrSyncService.pushVocabularyWord(tombstone)) {
+                    errorMessage = "The word was removed locally, but its Nostr tombstone could not be published."
+                }
+            }
+        }
     }
 
     private func needsDictionary(_ word: VocabularyWord) -> Bool {
@@ -329,6 +341,11 @@ struct WordsView: View {
             }
         }
     }
+}
+
+func shouldClearWordFilter(_ query: String, deletedWord: String) -> Bool {
+    query.trimmingCharacters(in: .whitespacesAndNewlines)
+        .localizedCaseInsensitiveCompare(deletedWord.trimmingCharacters(in: .whitespacesAndNewlines)) == .orderedSame
 }
 
 private enum WordSort: String, CaseIterable, Identifiable {

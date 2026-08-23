@@ -256,6 +256,7 @@ fun WordsScreen(
                 TextButton(
                     onClick = {
                         pendingDelete = null
+                        if (shouldClearWordFilter(query, word.word)) query = ""
                         onDeleteWord(word)
                     },
                 ) { Text("Remove") }
@@ -263,6 +264,9 @@ fun WordsScreen(
         )
     }
 }
+
+internal fun shouldClearWordFilter(query: String, deletedWord: String): Boolean =
+    query.trim().equals(deletedWord.trim(), ignoreCase = true)
 
 private enum class WordSort(val key: String, val label: String, val shortLabel: String) {
     Recent("recent", "Recently seen", "Recent"),

@@ -75,6 +75,28 @@ final class NostrSyncService {
         _ = await client.publishEvent(signed, relays: settings.relays)
     }
 
+    @discardableResult
+    func pushVocabularyWord(_ word: VocabularyWord) async -> Bool {
+        await ensureSignerReady()
+        guard let pubkey = settings.pubkeyHex,
+              let signer = signerStore.signer(from: settings),
+              let plaintextData = try? JSONEncoder().encode(word),
+              let plaintext = String(data: plaintextData, encoding: .utf8),
+              let content = try? await signer.nip44Encrypt(plaintext, to: pubkey)
+        else { return false }
+        let event = NostrEvent(
+            id: nil,
+            pubkey: signer.publicKeyHex,
+            createdAt: word.lastSeenAt / 1000,
+            kind: NostrKinds.progress,
+            tags: [["d", NostrKinds.vocabularyPrefix + word.syncId]],
+            content: content,
+            sig: nil
+        )
+        guard let signed = try? await signer.sign(event) else { return false }
+        return await client.publishEvent(signed, relays: settings.relays)
+    }
+
     func pullProgress(bookId: String) async {
         guard let pubkey = settings.pubkeyHex else { return }
         guard let event = await client.fetchLatestProgress(pubkey: pubkey, bookId: bookId, relays: settings.relays) else { return }
