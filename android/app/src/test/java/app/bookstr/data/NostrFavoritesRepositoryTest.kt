@@ -382,4 +382,76 @@ class NostrFavoritesRepositoryTest {
         assertEquals(2, refs.size)
         assertTrue(refs.all { it.addedAt == null })
     }
+
+    @Test
+    fun bookstrFavoritePreservesAddedAtAcrossSerialization() {
+        val original = SharedFavoriteRef(
+            bookstrId = "openlibrary:OL42M",
+            title = "Title",
+            author = "Author",
+            url = "https://example.org/read",
+            addedAt = 777L,
+        )
+
+        val parsed = NostrFavoritesRepository.parseSharedFavoriteTags(
+            NostrFavoritesRepository.serializeSharedFavoriteTags(listOf(original)),
+        ).single()
+
+        assertEquals(777L, parsed.addedAt)
+        assertEquals("Title", parsed.title)
+        assertEquals("Author", parsed.author)
+    }
+
+    @Test
+    fun isbnOnlyFavoritePreservesAddedAtAcrossSerialization() {
+        val original = SharedFavoriteRef(
+            isbn = "978-0-123456-78-9",
+            url = "https://example.org/isbn",
+            addedAt = 888L,
+        )
+
+        val parsed = NostrFavoritesRepository.parseSharedFavoriteTags(
+            NostrFavoritesRepository.serializeSharedFavoriteTags(listOf(original)),
+        ).single()
+
+        assertEquals("9780123456789", parsed.isbn)
+        assertEquals(888L, parsed.addedAt)
+        assertEquals(original.url, parsed.url)
+    }
+
+    @Test
+    fun repeatedCompactMembershipKeepsEarliestAddedAt() {
+        val refs = NostrFavoritesRepository.parseSharedFavoriteTags(
+            """[
+              ["book","bookstr","source:1","90"],
+              ["book","bookstr","source:1","40"]
+            ]""",
+        )
+
+        assertEquals(1, refs.size)
+        assertEquals(40L, refs.single().addedAt)
+    }
+
+    @Test
+    fun nonPositiveFallbackLeavesPlaintextUnchanged() {
+        val plaintext = """[["libvault","$md5"]]"""
+
+        assertEquals(plaintext, NostrFavoritesRepository.ensureFavoriteAddedAtTags(plaintext, 0))
+        assertEquals(plaintext, NostrFavoritesRepository.ensureFavoriteAddedAtTags(plaintext, -1))
+    }
+
+    @Test(expected = org.json.JSONException::class)
+    fun malformedFavoritePayloadIsRejected() {
+        NostrFavoritesRepository.parseSharedFavoriteTags("not json")
+    }
+
+    @Test
+    fun emptyFavoriteArrayMatchesNothing() {
+        val parsed = NostrFavoritesRepository.parseSharedFavoriteTags("[]")
+        val matched = NostrFavoritesRepository.matchSharedFavorites(parsed, emptyList())
+
+        assertTrue(parsed.isEmpty())
+        assertTrue(matched.bookIds.isEmpty())
+        assertTrue(matched.external.isEmpty())
+    }
 }

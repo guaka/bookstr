@@ -55,4 +55,18 @@ class Bech32Test {
     fun rejectsPayloadShorterThanChecksum() {
         Bech32.decode("npub", "npub1abc")
     }
+
+    @Test
+    fun acceptsEntirelyUppercaseEncoding() {
+        val payload = byteArrayOf(1, 2, 3, 4)
+        val encoded = Bech32.encode("data", payload).uppercase()
+
+        assertArrayEquals(payload, Bech32.decode("data", encoded))
+    }
+
+    @Test(expected = IllegalArgumentException::class)
+    fun rejectsMixedCaseEncoding() {
+        val encoded = Bech32.encode("data", byteArrayOf(1, 2, 3))
+        Bech32.decode("data", encoded.replaceFirst('d', 'D'))
+    }
 }

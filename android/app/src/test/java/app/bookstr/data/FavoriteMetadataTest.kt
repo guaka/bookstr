@@ -57,4 +57,27 @@ class FavoriteMetadataTest {
         assertEquals(BookFormat.Pdf, book.format)
         assertTrue(book.epubUrl.endsWith(sha256))
     }
+
+    @Test
+    fun acceptsCaseInsensitiveTrustedHostButRejectsSubdomains() {
+        assertEquals(
+            sha256,
+            CatalogRepository.fromBlossomFavorite(
+                favorite.copy(blossomUrl = "https://BLOSSOM.BFR.EE/$sha256"),
+            )?.id,
+        )
+        assertNull(
+            CatalogRepository.fromBlossomFavorite(
+                favorite.copy(blossomUrl = "https://evil.blossom.bfr.ee/$sha256"),
+            ),
+        )
+    }
+
+    @Test
+    fun normalizesUppercaseBlossomHashForCatalogIdentity() {
+        val book = CatalogRepository.fromBlossomFavorite(favorite.copy(blossomSha256 = sha256.uppercase()))!!
+
+        assertEquals(sha256, book.id)
+        assertEquals(sha256, book.blossomSha256)
+    }
 }

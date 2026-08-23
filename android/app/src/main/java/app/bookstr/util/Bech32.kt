@@ -6,6 +6,7 @@ object Bech32 {
 
     fun decode(hrp: String, input: String): ByteArray {
         val lower = input.lowercase()
+        require(input == lower || input == input.uppercase()) { "Invalid mixed-case bech32 string" }
         val pos = lower.lastIndexOf('1')
         require(pos >= 1) { "Invalid bech32 string" }
         require(lower.substring(0, pos) == hrp) { "Invalid HRP" }

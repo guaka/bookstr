@@ -330,14 +330,24 @@ class NostrFavoritesRepository(
                             )
                         }
                     }
-                    !ref.bookstrId.isNullOrBlank() -> tags.put(
-                        JSONArray()
-                            .put("bookstr")
-                            .put(ref.bookstrId)
-                            .put(ref.title.orEmpty())
-                            .put(ref.author.orEmpty())
-                            .put(ref.url.orEmpty()),
-                    )
+                    !ref.bookstrId.isNullOrBlank() -> {
+                        tags.put(
+                            JSONArray()
+                                .put("book")
+                                .put("bookstr")
+                                .put(ref.bookstrId)
+                                .put((ref.addedAt ?: 0L).toString())
+                                .put(ref.url.orEmpty()),
+                        )
+                        tags.put(
+                            JSONArray()
+                                .put("bookstr")
+                                .put(ref.bookstrId)
+                                .put(ref.title.orEmpty())
+                                .put(ref.author.orEmpty())
+                                .put(ref.url.orEmpty()),
+                        )
+                    }
                     !ref.blossomSha256.isNullOrBlank() && SHA256.matches(ref.blossomSha256) -> tags.put(
                         JSONArray()
                             .put("book")
@@ -356,6 +366,16 @@ class NostrFavoritesRepository(
                 }
                 val isbn = normalizeIsbn(ref.isbn)
                 if (isbn.isNotEmpty()) {
+                    if (ref.libvaultMd5.isNullOrBlank() && ref.bookstrId.isNullOrBlank()) {
+                        tags.put(
+                            JSONArray()
+                                .put("book")
+                                .put("isbn")
+                                .put(isbn)
+                                .put((ref.addedAt ?: 0L).toString())
+                                .put(ref.url.orEmpty()),
+                        )
+                    }
                     tags.put(JSONArray().put("i").put("isbn:$isbn").put(ref.url.orEmpty()))
                 }
             }

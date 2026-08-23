@@ -78,6 +78,11 @@ class ReaderAssetContractTest {
         assertTrue(html.contains("AndroidBridge.onSearchResults(JSON.stringify(results))"))
         assertTrue(html.contains("window.displaySearchResult = function(cfi)"))
         assertTrue(html.contains("window.adjustReaderFont = function(delta)"))
+        assertTrue(html.contains("needle.length < 2"))
+        assertTrue(html.contains("results.length < 100"))
+        assertTrue(html.contains("section.unload()"))
+        assertTrue(html.contains("if (media) return"))
+        assertTrue(html.contains("event.preventDefault()"))
         assertFalse(html.contains("book = ePub(base64ToArrayBuffer(base64))"))
     }
 }

@@ -185,4 +185,39 @@ class CatalogRepositoryTest {
 
         assertEquals(listOf("all.books.party:book-shape"), results.map { it.id })
     }
+
+    @Test
+    fun infersSupportedFormatFromDownloadUrlWhenFormatIsMissing() {
+        val results = CatalogRepository.parseSearchResponse(
+            """{"results":[
+              {"id":"epub","url":"https://example.org/book.EPUB?download=1"},
+              {"id":"pdf","link":"https://example.org/book.pdf#page=1"}
+            ]}""",
+        )
+
+        assertEquals(BookFormat.Epub, results.first { it.id.endsWith(":epub") }.format)
+        assertEquals(BookFormat.Pdf, results.first { it.id.endsWith(":pdf") }.format)
+        assertTrue(results.all { it.isReadable })
+    }
+
+    @Test
+    fun unsupportedFormatRemainsMetadataOnly() {
+        val result = CatalogRepository.parseSearchResponse(
+            """{"results":[{"id":"mobi","format":"mobi","url":"https://example.org/book.mobi"}]}""",
+        ).single()
+
+        assertEquals(null, result.format)
+        assertFalse(result.isReadable)
+        assertEquals(null, result.asCatalogBook())
+    }
+
+    @Test
+    fun numericSourceIdentityAndCoverAreAccepted() {
+        val result = CatalogRepository.parseSearchResponse(
+            """{"results":[{"source_native_id":123,"cover_id":456}]}""",
+        ).single()
+
+        assertEquals("all.books.party:123", result.id)
+        assertTrue(result.coverUrl.orEmpty().endsWith("/456-M.jpg"))
+    }
 }

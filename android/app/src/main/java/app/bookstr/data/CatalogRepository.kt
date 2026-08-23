@@ -415,13 +415,22 @@ class CatalogRepository(
                     val item = items.optJSONObject(index) ?: continue
                     val source = item.cleanString("source")?.lowercase() ?: "all.books.party"
                     val nativeId = item.cleanString("id") ?: item.cleanString("source_native_id") ?: continue
-                    val rawFormat = item.cleanString("extension") ?: item.cleanString("format")
-                        ?: if (source == "gutenberg") "epub" else null
-                    val format = rawFormat?.let {
-                        BookFormat.from(it, item.cleanString("url").orEmpty())
-                    }
                     val explicitUrl = item.cleanString("readUrl") ?: item.cleanString("url")
                         ?: item.cleanString("link")
+                    val rawFormat = item.cleanString("extension") ?: item.cleanString("format")
+                        ?: if (source == "gutenberg") "epub" else null
+                    val format = when (rawFormat?.trim()?.lowercase()) {
+                        "epub" -> BookFormat.Epub
+                        "pdf" -> BookFormat.Pdf
+                        null -> when {
+                            explicitUrl.orEmpty().substringBefore('?').substringBefore('#')
+                                .endsWith(".epub", ignoreCase = true) -> BookFormat.Epub
+                            explicitUrl.orEmpty().substringBefore('?').substringBefore('#')
+                                .endsWith(".pdf", ignoreCase = true) -> BookFormat.Pdf
+                            else -> null
+                        }
+                        else -> null
+                    }
                     val downloadUrl = when {
                         explicitUrl != null -> explicitUrl
                         source == "gutenberg" -> "$BOOKS_API_BASE/books/$nativeId/download"

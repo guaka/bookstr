@@ -33,5 +33,10 @@ class NarrationServiceContractTest {
         assertTrue(source.contains("markerAt(currentPlaybackIndex"))
         assertTrue(source.contains("AUDIOFOCUS_LOSS_TRANSIENT"))
         assertTrue(source.contains("MediaStyle()"))
+        assertTrue(source.contains("setWillPauseWhenDucked(true)"))
+        assertTrue(source.contains("setPlaybackToLocal(AudioManager.STREAM_MUSIC)"))
+        assertTrue(source.contains("MediaButtonReceiver.handleIntent"))
+        assertTrue(source.contains("Service.START_STICKY"))
+        assertTrue(source.contains("abandonAudioFocusRequest"))
     }
 }
