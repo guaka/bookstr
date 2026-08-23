@@ -1,0 +1,77 @@
+name: BookstrIOS
+options:
+  minimumXcodeGenVersion: 2.38.0
+packages:
+  swift-nostr:
+    url: https://github.com/yysskk/swift-nostr
+    from: 0.7.0
+targets:
+  BookstrIOS:
+    type: application
+    platform: iOS
+    deploymentTarget: "17.0"
+    sources:
+      - path: BookstrIOS/Sources
+      - path: BookstrIOS/Assets.xcassets
+    resources:
+      - path: ../android/app/src/main/assets/reader.html
+      - path: ../android/app/src/main/assets/epub.min.js
+      - path: ../android/app/src/main/assets/jszip.min.js
+    dependencies:
+      - package: swift-nostr
+        product: NostrConnect
+      - package: swift-nostr
+        product: NostrCore
+    settings:
+      ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+      ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS: YES
+      PRODUCT_BUNDLE_IDENTIFIER: app.bookstr.ios
+      PRODUCT_NAME: BookstrIOS
+      PRODUCT_MODULE_NAME: BookstrIOS
+      CURRENT_PROJECT_VERSION: 24
+      MARKETING_VERSION: 1.0.1
+      INFOPLIST_FILE: BookstrIOS/Info.plist
+      SWIFT_VERSION: 5.9
+      CODE_SIGN_STYLE: Automatic
+      DEVELOPMENT_TEAM: SUJ594N47C
+      TARGETED_DEVICE_FAMILY: "1,2"
+    info:
+      path: BookstrIOS/Info.plist
+      properties:
+        CFBundleDisplayName: Bookstr
+        CFBundleIconName: AppIcon
+        CFBundleURLTypes:
+          - CFBundleTypeRole: Editor
+            CFBundleURLName: app.bookstr.ios
+            CFBundleURLSchemes:
+              - bookstr
+        CFBundleShortVersionString: "1.0.1"
+        CFBundleVersion: "24"
+        UILaunchScreen: {}
+        UIStatusBarHidden: true
+        UIBackgroundModes:
+          - audio
+        UIViewControllerBasedStatusBarAppearance: false
+        UIApplicationSceneManifest:
+          UIApplicationSupportsMultipleScenes: false
+  BookstrIOSTests:
+    type: bundle.unit-test
+    platform: iOS
+    deploymentTarget: "17.0"
+    sources:
+      - path: BookstrIOS/Tests
+    settings:
+      GENERATE_INFOPLIST_FILE: YES
+      CODE_SIGN_STYLE: Automatic
+      DEVELOPMENT_TEAM: SUJ594N47C
+    dependencies:
+      - target: BookstrIOS
+schemes:
+  BookstrIOS:
+    build:
+      targets:
+        BookstrIOS: all
+        BookstrIOSTests: [test]
+    test:
+      targets:
+        - BookstrIOSTests

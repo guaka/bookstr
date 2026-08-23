@@ -1674,6 +1674,16 @@
           const addedAt = String(BookMetadata.normalizeFavoriteAddedAt(favorite.favoriteAddedAt) || now);
           if (isMd5(id)) {
             tags.push(['book', 'libvault', id.toLowerCase(), addedAt]);
+            tags.push([
+              'libvault-book', id.toLowerCase(), favorite.title || '', favorite.author || '',
+              favorite.format || '', String(Number(favorite.filesizeBytes || favorite.filesize_bytes) || 0),
+              favorite.year || '',
+            ]);
+            const sha256 = String(favorite.blossomSha256 || '').toLowerCase();
+            const blossomUrl = favorite.blossomUrl || '';
+            if (/^[a-f0-9]{64}$/.test(sha256) && /^https:\/\//i.test(blossomUrl)) {
+              tags.push(['blossom', id.toLowerCase(), sha256, blossomUrl, favorite.format || '']);
+            }
           } else if (/^[a-f0-9]{64}$/i.test(String(favorite.blossomSha256 || ''))) {
             tags.push(['book', 'blossom', favorite.blossomSha256.toLowerCase(), addedAt, readUrl].filter(Boolean));
           } else {
@@ -1711,7 +1721,7 @@
         }
         const pubkey = state.nip7.pubkey || await window.nostr.getPublicKey();
         const now = Math.floor(Date.now() / 1000);
-        const header = [['bookstr-collection', '2'], ['title', 'Favorites'], ['updated', String(now)]];
+        const header = [['bookstr-collection', '2'], ['bookstr-publications', '1'], ['title', 'Favorites'], ['updated', String(now)]];
         const itemTags = favoriteNostrItemTags(now);
         const publishEncrypted = async (dTag, tags) => {
           const plaintext = JSON.stringify(tags);
