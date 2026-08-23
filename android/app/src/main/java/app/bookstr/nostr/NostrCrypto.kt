@@ -8,7 +8,7 @@ import org.json.JSONObject
 import java.security.SecureRandom
 
 object NostrCrypto {
-    private val secp = Secp256k1.get()
+    private val secp by lazy { Secp256k1.get() }
 
     fun parsePrivateKey(input: String): ByteArray {
         val trimmed = input.trim()
@@ -25,8 +25,8 @@ object NostrCrypto {
     }
 
     fun publicKeyHex(privateKey: ByteArray): String {
-        val pub = secp.pubKeyCompress(privateKey)
-        return pub.joinToString("") { "%02x".format(it) }
+        val compressed = secp.pubKeyCompress(secp.pubkeyCreate(privateKey))
+        return compressed.copyOfRange(1, 33).joinToString("") { "%02x".format(it) }
     }
 
     /** Sets pubkey + id on an unsigned event template (no sig). */
@@ -51,16 +51,67 @@ object NostrCrypto {
         return event
     }
 
+    fun verifyEvent(event: JSONObject): Boolean {
+        return try {
+            val expectedId = eventId(event)
+            if (!expectedId.equals(event.getString("id"), ignoreCase = true)) return false
+            secp.verifySchnorr(
+                hexToBytes(event.getString("sig")),
+                hexToBytes(expectedId),
+                hexToBytes(event.getString("pubkey")),
+            )
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    fun eventId(event: JSONObject): String = Sha256.hash(serializeForHash(event))
+
     private fun serializeForHash(event: JSONObject): String {
         val tags = event.optJSONArray("tags") ?: JSONArray()
-        return JSONArray()
-            .put(0)
-            .put(event.getString("pubkey"))
-            .put(event.getLong("created_at"))
-            .put(event.getInt("kind"))
-            .put(tags)
-            .put(event.getString("content"))
-            .toString()
+        return buildString {
+            append("[0,")
+            appendJsonString(event.getString("pubkey"))
+            append(',')
+            append(event.getLong("created_at"))
+            append(',')
+            append(event.getInt("kind"))
+            append(',')
+            append('[')
+            for (i in 0 until tags.length()) {
+                if (i > 0) append(',')
+                val tag = tags.getJSONArray(i)
+                append('[')
+                for (j in 0 until tag.length()) {
+                    if (j > 0) append(',')
+                    appendJsonString(tag.getString(j))
+                }
+                append(']')
+            }
+            append("],")
+            appendJsonString(event.getString("content"))
+            append(']')
+        }
+    }
+
+    /** JSON.stringify-compatible string encoding: notably, '/' is not escaped. */
+    private fun StringBuilder.appendJsonString(value: String) {
+        append('"')
+        for (char in value) {
+            when (char) {
+                '"' -> append("\\\"")
+                '\\' -> append("\\\\")
+                '\b' -> append("\\b")
+                '\u000c' -> append("\\f")
+                '\n' -> append("\\n")
+                '\r' -> append("\\r")
+                '\t' -> append("\\t")
+                else -> {
+                    if (char.code < 0x20) append("\\u%04x".format(char.code)) else append(char)
+                }
+            }
+        }
+        append('"')
     }
 
     private fun hexToBytes(hex: String): ByteArray =

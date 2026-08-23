@@ -1,0 +1,73 @@
+package app.bookstr
+
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
+import org.junit.Test
+import java.io.File
+
+class ReaderAssetContractTest {
+    @Test
+    fun readerSupportsStreamedBookUrlsAndVisibleErrors() {
+        val html = File("src/main/assets/reader.html").readText()
+
+        assertTrue(File("src/main/assets/jszip.min.js").isFile)
+        assertTrue(html.indexOf("jszip.min.js") < html.indexOf("epub.min.js"))
+        assertTrue(html.contains("window.loadBookUrl"))
+        assertTrue(html.contains("response.arrayBuffer()"))
+        assertTrue(html.contains("EPUB reader timed out"))
+        assertTrue(html.contains("installSwipeNavigation"))
+        assertTrue(html.contains("manager: \"continuous\""))
+        assertTrue(html.contains("flow: \"scrolled-doc\""))
+        assertTrue(html.contains("book.locations.generate(100)"))
+        assertTrue(html.contains("book.locations.percentageFromCfi(start.cfi)"))
+        assertTrue(html.contains("sectionCount: book && book.spine"))
+        assertTrue(html.contains("reportLocation(rendition.currentLocation())"))
+        assertTrue(html.contains("rendition.themes.register(\"night\""))
+        assertTrue(html.contains("color: \"#e8e4dc !important\""))
+        assertTrue(html.contains("\"width\": \"100% !important\""))
+        assertTrue(html.contains("\"padding-left\": \"0.12rem !important\""))
+        assertTrue(html.contains("moveViewportPage(1)"))
+        assertTrue(html.contains("pageTransitioning"))
+        assertTrue(html.contains("translate3d("))
+        assertTrue(html.contains("behavior: \"auto\""))
+        assertTrue(html.contains("container.clientHeight"))
+        assertTrue(html.contains("rendition.themes.fontSize(readerFontPercent + \"%\")"))
+        assertTrue(html.contains("dampedRatio"))
+        assertTrue(html.contains("bookstr-reader-font-percent"))
+        assertTrue(html.contains("createPinchAnchor(target"))
+        assertTrue(html.contains("caretRangeAtPoint"))
+        assertTrue(html.contains("pinchAnchor.clientY = pinchClientY(target, centroid.y)"))
+        assertTrue(html.contains("anchor.offsetY = anchor.clientY - top"))
+        assertTrue(html.contains("restorePinchAnchor(pinchAnchor)"))
+        assertTrue(html.contains("top - desiredTop"))
+        assertTrue(html.contains("rendition.on(\"selected\""))
+        assertTrue(html.contains("showDictionary(selection, language"))
+        assertTrue(html.contains("AndroidBridge.onLookupDictionary"))
+        assertTrue(html.contains("window.receiveDictionaryResult"))
+        assertTrue(html.contains("bookstr-highlights:"))
+        assertTrue(html.contains("window.setKnownWords"))
+        assertTrue(html.contains("CSS.highlights.set(\"bookstr-known-word\""))
+        assertTrue(html.contains("ranges.length < 5000"))
+        assertTrue(html.contains("AndroidBridge.onKnownWordTapped"))
+        assertTrue(html.contains("AndroidBridge.onReaderInteracted"))
+        assertTrue(html.contains("stabilizeCoverPage(section, contentDocument)"))
+        assertTrue(html.contains("bookstr-cover-layout"))
+        assertTrue(html.contains("renderContext(contextNode"))
+        assertTrue(html.contains("pt.wiktionary.org"))
+        assertTrue(html.contains("max-height\": \"88vh !important\""))
+        assertTrue(html.contains("gestureAxis !== \"horizontal\""))
+        assertTrue(html.contains("Math.abs(dx) < 72"))
+        assertTrue(html.contains("installImageZoom(contentDocument)"))
+        assertTrue(html.contains("positionReferenceBelowTop()"))
+        assertTrue(html.contains("window.displaySection"))
+        assertTrue(html.contains("AndroidBridge.onReaderError"))
+        assertTrue(html.contains("AndroidBridge.onReaderReady"))
+        assertTrue(html.contains("window.requestSpeechText"))
+        assertTrue(html.contains("AndroidBridge.onSpeechText"))
+        assertTrue(html.contains("document.documentElement.lang"))
+        assertTrue(html.contains("window.showSpeechProgress"))
+        assertTrue(html.contains("bookstr-speaking"))
+        assertTrue(html.contains("reportLocation(rendition.currentLocation())"))
+        assertFalse(html.contains("book = ePub(base64ToArrayBuffer(base64))"))
+    }
+}

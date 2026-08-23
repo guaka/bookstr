@@ -6,6 +6,16 @@ import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import app.bookstr.data.ReaderTheme
 
+private val WhiteColorScheme = lightColorScheme(
+    primary = WhitePrimary,
+    onPrimary = WhiteSurface,
+    secondary = WhiteSecondary,
+    background = WhiteBackground,
+    surface = WhiteSurface,
+    onBackground = WhiteOnBackground,
+    onSurface = WhiteOnBackground,
+)
+
 private val PaperColorScheme = lightColorScheme(
     primary = PaperPrimary,
     onPrimary = PaperSurface,
@@ -32,6 +42,7 @@ fun BookstrTheme(
     content: @Composable () -> Unit,
 ) {
     val colorScheme = when (readerTheme) {
+        ReaderTheme.White -> WhiteColorScheme
         ReaderTheme.Paper -> PaperColorScheme
         ReaderTheme.Night -> NightColorScheme
     }

@@ -1,108 +1,500 @@
 package app.bookstr
 
+import android.content.Intent
 import android.os.Bundle
+import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
+import androidx.core.content.pm.ShortcutInfoCompat
+import androidx.core.content.pm.ShortcutManagerCompat
+import androidx.core.graphics.drawable.IconCompat
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Book
+import androidx.compose.material.icons.automirrored.filled.MenuBook
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Spellcheck
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.LocalMinimumInteractiveComponentSize
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import app.bookstr.data.CatalogBook
+import app.bookstr.data.BookSearchResult
+import app.bookstr.data.CatalogRepository
+import app.bookstr.data.BookFormat
 import app.bookstr.data.NostrAuthMode
 import app.bookstr.nostr.AmberIntentSession
 import app.bookstr.nostr.ExternalSigner
 import app.bookstr.nostr.Nip55
 import app.bookstr.nostr.NostrCrypto
 import app.bookstr.ui.LibraryScreen
+import app.bookstr.ui.SearchScreen
 import app.bookstr.ui.SettingsScreen
+import app.bookstr.ui.WordsScreen
 import app.bookstr.ui.theme.BookstrThemeFromSettings
 import app.bookstr.util.Bech32
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
     private lateinit var amberSession: AmberIntentSession
+    private var requestedWord by mutableStateOf<String?>(null)
+    private var wordRequestKey by mutableStateOf(0)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        WindowCompat.setDecorFitsSystemWindows(window, false)
+        hideSystemUi()
 
         amberSession = AmberIntentSession(this)
+        requestedWord = intent.getStringExtra(EXTRA_OPEN_WORD)
+
+        if (intent.getBooleanExtra(EXTRA_PIN_SHORTCUT, false)) {
+            window.decorView.post { requestHomeShortcut() }
+        }
 
         val app = application as BookstrApp
         val settings = app.settingsRepository
         val catalog = app.catalogRepository
         val nostr = app.nostrRepository
+        val favoritesRepository = app.nostrFavoritesRepository
+        val vocabularyRepository = app.vocabularyRepository
+        val dictionaryRepository = app.dictionaryRepository
+
+        if (savedInstanceState == null) {
+            settings.readerSession()?.let { session ->
+                val publication = catalog.publicationFile(session.bookId, session.format)
+                if (publication.isFile) {
+                    startActivity(
+                        if (session.format == BookFormat.Pdf) {
+                            PdfReaderActivity.intent(
+                                context = this@MainActivity,
+                                bookId = session.bookId,
+                                bookTitle = session.bookTitle,
+                                author = session.author,
+                                year = session.year,
+                                pageIndex = session.pageIndex,
+                                pageOffset = session.pageOffset,
+                            )
+                        } else {
+                            ReaderActivity.intent(
+                                context = this@MainActivity,
+                                bookId = session.bookId,
+                                bookTitle = session.bookTitle,
+                                author = session.author,
+                                year = session.year,
+                                initialCfi = session.locator,
+                                theme = settings.theme,
+                            )
+                        },
+                    )
+                } else {
+                    settings.clearReaderSession()
+                }
+            }
+        }
 
         setContent {
-            BookstrThemeFromSettings(readerTheme = settings.theme) {
-                var selectedTab by remember { mutableStateOf(0) }
+            var theme by remember { mutableStateOf(settings.theme) }
+            BookstrThemeFromSettings(readerTheme = theme) {
+                var selectedTab by remember { mutableStateOf(if (requestedWord.isNullOrBlank()) 0 else 1) }
                 var books by remember { mutableStateOf<List<CatalogBook>>(emptyList()) }
+                var favoriteIds by remember { mutableStateOf(emptySet<String>()) }
+                var externalFavorites by remember {
+                    mutableStateOf(emptyList<app.bookstr.data.ExternalFavorite>())
+                }
                 var progress by remember { mutableStateOf(emptyMap<String, app.bookstr.data.BookProgress>()) }
+                var words by remember { mutableStateOf(emptyList<app.bookstr.data.VocabularyWord>()) }
+                var backfillingWords by remember { mutableStateOf(false) }
                 var loading by remember { mutableStateOf(false) }
+                var openingBookId by remember { mutableStateOf<String?>(null) }
                 var error by remember { mutableStateOf<String?>(null) }
+                var searchQuery by remember { mutableStateOf("") }
+                var searchResults by remember { mutableStateOf<List<BookSearchResult>>(emptyList()) }
+                var searching by remember { mutableStateOf(false) }
+                var searchMessage by remember { mutableStateOf<String?>(null) }
 
-                var catalogUrl by remember { mutableStateOf(settings.catalogUrl) }
                 var authMode by remember { mutableStateOf(settings.authMode) }
                 var npubDisplay by remember { mutableStateOf(npubFromSettings(settings.pubkeyHex)) }
                 var nsec by remember { mutableStateOf(settings.nsec.orEmpty()) }
                 var showNsec by remember { mutableStateOf(authMode == NostrAuthMode.Nsec) }
                 var relays by remember { mutableStateOf(settings.relays.joinToString("\n")) }
-                var theme by remember { mutableStateOf(settings.theme) }
                 var keepOnLock by remember { mutableStateOf(settings.keepReadingOnLockScreen) }
                 var syncing by remember { mutableStateOf(false) }
                 var connectingAmber by remember { mutableStateOf(false) }
                 var syncMessage by remember { mutableStateOf<String?>(null) }
+                var dictionaryPacks by remember { mutableStateOf(dictionaryRepository.packs()) }
+                var dictionaryPackBusy by remember { mutableStateOf<String?>(null) }
+                var dictionaryPackProgress by remember { mutableStateOf<Float?>(null) }
+                var dictionarySource by remember { mutableStateOf(settings.dictionarySource) }
+                var dictionaryTarget by remember { mutableStateOf(settings.dictionaryTarget) }
+                var dictionaryMessage by remember { mutableStateOf<String?>(null) }
+                var wordSortKey by remember { mutableStateOf(settings.wordSort) }
                 val amberAvailable = remember { Nip55.isSignerAvailable(this@MainActivity) }
 
                 val scope = rememberCoroutineScope()
+                val lifecycleOwner = LocalLifecycleOwner.current
+
+                DisposableEffect(lifecycleOwner, books) {
+                    val observer = LifecycleEventObserver { _, event ->
+                        if (event == Lifecycle.Event.ON_RESUME) {
+                            scope.launch {
+                                if (books.isNotEmpty()) progress = catalog.getProgressForBooks(books)
+                                words = vocabularyRepository.all()
+                            }
+                        }
+                    }
+                    lifecycleOwner.lifecycle.addObserver(observer)
+                    onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+                }
+
+                suspend fun applyFavorites(
+                    seedBooks: List<CatalogBook>,
+                    shared: app.bookstr.data.SharedFavorites,
+                ) {
+                    val blossomBooks = shared.external
+                        .mapNotNull(CatalogRepository::fromBlossomFavorite)
+                        .associateBy { it.libvaultMd5 }
+                    val downloadedBooks = catalog.downloadedBooks(shared.external)
+                    val downloadedFavoriteIds = downloadedBooks.filter { downloaded ->
+                        shared.external.any { favorite ->
+                            (!downloaded.libvaultMd5.isNullOrBlank() &&
+                                downloaded.libvaultMd5.equals(favorite.libvaultMd5, ignoreCase = true)) ||
+                                (downloaded.title.equals(favorite.title, ignoreCase = true) &&
+                                    downloaded.format.extension.equals(favorite.format, ignoreCase = true))
+                        }
+                    }.map { it.id }.toSet()
+                    books = (seedBooks + blossomBooks.values + downloadedBooks).distinctBy { it.id }
+                    favoriteIds = shared.bookIds + blossomBooks.values.map { it.id } + downloadedFavoriteIds
+                    externalFavorites = shared.external.filter { favorite ->
+                        favorite.libvaultMd5 !in blossomBooks && downloadedBooks.none { downloaded ->
+                            (!downloaded.libvaultMd5.isNullOrBlank() &&
+                                downloaded.libvaultMd5.equals(favorite.libvaultMd5, ignoreCase = true)) ||
+                                (downloaded.title.equals(favorite.title, ignoreCase = true) &&
+                                    downloaded.format.extension.equals(favorite.format, ignoreCase = true))
+                        }
+                    }
+                    progress = catalog.getProgressForBooks(books)
+                }
+
+                suspend fun applyLocalBooks(seedBooks: List<CatalogBook>) {
+                    books = (seedBooks + catalog.downloadedBooks(emptyList())).distinctBy { it.id }
+                    progress = catalog.getProgressForBooks(books)
+                }
 
                 fun refreshLibrary() {
                     scope.launch {
                         loading = true
                         error = null
-                        try {
-                            val fetched = catalog.fetchCatalog()
-                            books = fetched
-                            progress = catalog.getProgressForBooks(fetched)
+                        val errors = mutableListOf<String>()
+                        val cachedSeedBooks = catalog.loadCachedCatalog()
+                        if (cachedSeedBooks.isNotEmpty()) {
+                            val cachedFavorites = favoritesRepository.cached(cachedSeedBooks)
+                            if (cachedFavorites != null) applyFavorites(cachedSeedBooks, cachedFavorites)
+                            else {
+                                applyLocalBooks(cachedSeedBooks)
+                            }
+                        } else {
+                            favoritesRepository.cached(emptyList())?.let { applyFavorites(emptyList(), it) }
+                                ?: applyLocalBooks(emptyList())
+                        }
+                        val fetched = try {
+                            catalog.fetchCatalog().also { seedBooks ->
+                                if (books.isEmpty()) applyLocalBooks(seedBooks)
+                                else {
+                                    books = (books + seedBooks).distinctBy { it.id }
+                                    progress = catalog.getProgressForBooks(books)
+                                }
+                            }
                         } catch (e: Exception) {
-                            error = e.message ?: "Failed to load catalog"
+                            Log.w("BookstrLibrary", "Seed catalog load failed", e)
+                            errors += "Library data: ${e.message ?: "failed to load"}"
+                            books
+                        }
+                        if (settings.hasNostrIdentity()) {
+                            try {
+                                val shared = favoritesRepository.fetch(emptyList())
+                                externalFavorites = shared.external
+                                applyFavorites(fetched, shared)
+                            } catch (e: Exception) {
+                                Log.w("BookstrLibrary", "Favorite sync failed", e)
+                                errors += "Favorites: ${e.message ?: "failed to sync"}"
+                            }
+                            try {
+                                nostr.syncAllFromRelays(books.map { it.id })
+                                progress = catalog.getProgressForBooks(books)
+                                words = vocabularyRepository.all()
+                            } catch (e: Exception) {
+                                Log.w("BookstrLibrary", "Reading and word sync failed", e)
+                                errors += "Reading sync: ${e.message ?: "failed"}"
+                            }
+                        } else {
+                            favoriteIds = emptySet()
+                            externalFavorites = emptyList()
+                            applyLocalBooks(fetched)
+                        }
+                        try {
+                            progress = catalog.getProgressForBooks(books)
+                        } catch (e: Exception) {
+                            errors += "Progress: ${e.message ?: "failed to load"}"
                         } finally {
+                            error = errors.takeIf { it.isNotEmpty() }?.joinToString("\n")
                             loading = false
                         }
                     }
                 }
 
+                fun refreshMissingWordDefinitions(sourceLanguage: String? = null) {
+                    if (backfillingWords) return
+                    scope.launch {
+                        backfillingWords = true
+                        try {
+                            val candidates = vocabularyRepository.all().filter { word ->
+                                if (sourceLanguage != null) {
+                                    word.language.substringBefore('-').equals(sourceLanguage, ignoreCase = true)
+                                } else {
+                                    word.definitions.isEmpty() ||
+                                        dictionaryRepository.hasInstalledPackFor(word.language)
+                                }
+                            }
+                            for (word in candidates) {
+                                runCatching {
+                                    val result = dictionaryRepository.lookupPreferred(word.word, word.language)
+                                    vocabularyRepository.saveDefinition(
+                                        word = word.word,
+                                        language = word.language,
+                                        partOfSpeech = result.partOfSpeech,
+                                        definitions = result.definitions,
+                                        sourceUrl = result.sourceUrl,
+                                    )?.let { nostr.publishVocabularyWord(it) }
+                                }
+                            }
+                            words = vocabularyRepository.all()
+                        } finally {
+                            backfillingWords = false
+                        }
+                    }
+                }
+
+                fun openBook(book: CatalogBook) {
+                    if (openingBookId != null) return
+                    openingBookId = book.id
+                    scope.launch {
+                        try {
+                            catalog.ensureDownloaded(book)
+                            books = (books + book).distinctBy { it.id }
+                            if (book.format == BookFormat.Pdf) {
+                                startActivity(
+                                    PdfReaderActivity.intent(
+                                        context = this@MainActivity,
+                                        bookId = book.id,
+                                        bookTitle = book.title,
+                                        author = book.author,
+                                        year = book.year,
+                                    ),
+                                )
+                            } else {
+                                val localProgress = catalog.getProgressForBooks(listOf(book))[book.id]
+                                startActivity(
+                                    ReaderActivity.intent(
+                                        context = this@MainActivity,
+                                        bookId = book.id,
+                                        bookTitle = book.title,
+                                        author = book.author,
+                                        year = book.year,
+                                        initialCfi = localProgress?.cfi,
+                                        theme = settings.theme,
+                                    ),
+                                )
+                            }
+                        } catch (e: Exception) {
+                            error = e.message ?: "Failed to open book"
+                            if (selectedTab == 3) searchMessage = "Could not open: ${e.message ?: "download failed"}"
+                        } finally {
+                            openingBookId = null
+                        }
+                    }
+                }
+
+                fun runSearch() {
+                    val query = searchQuery.trim()
+                    if (query.length < 2 || searching) {
+                        searchMessage = if (query.isNotEmpty() && query.length < 2) {
+                            "Type at least 2 characters to search."
+                        } else searchMessage
+                        return
+                    }
+                    scope.launch {
+                        searching = true
+                        searchMessage = "Searching…"
+                        try {
+                            searchResults = catalog.search(query)
+                            searchMessage = if (searchResults.isEmpty()) {
+                                "No matches. Try a shorter query."
+                            } else {
+                                "${searchResults.size} result${if (searchResults.size == 1) "" else "s"}"
+                            }
+                        } catch (e: Exception) {
+                            searchResults = emptyList()
+                            searchMessage = "Search failed: ${e.message ?: "check your connection"}"
+                        } finally {
+                            searching = false
+                        }
+                    }
+                }
+
+                fun matchingSearchFavorite(result: BookSearchResult) = externalFavorites.firstOrNull { favorite ->
+                    favorite.key == result.id ||
+                        (!result.downloadUrl.isNullOrBlank() && favorite.url == result.downloadUrl) ||
+                        (favorite.title.equals(result.title, ignoreCase = true) &&
+                            favorite.author.orEmpty().equals(result.author, ignoreCase = true))
+                }
+
+                fun matchingSearchBook(result: BookSearchResult) = books.firstOrNull { book ->
+                    book.id == result.id ||
+                        (book.title.equals(result.title, ignoreCase = true) &&
+                            book.author.equals(result.author, ignoreCase = true))
+                }
+
+                fun isSearchFavorite(result: BookSearchResult): Boolean =
+                    result.id in favoriteIds ||
+                        matchingSearchBook(result)?.id?.let { it in favoriteIds } == true ||
+                        matchingSearchFavorite(result) != null
+
                 LaunchedEffect(Unit) {
+                    words = vocabularyRepository.all()
                     refreshLibrary()
+                }
+
+                LaunchedEffect(requestedWord, wordRequestKey) {
+                    if (!requestedWord.isNullOrBlank()) {
+                        selectedTab = 1
+                        words = vocabularyRepository.all()
+                    }
                 }
 
                 Scaffold(
                     bottomBar = {
-                        NavigationBar {
-                            NavigationBarItem(
-                                selected = selectedTab == 0,
-                                onClick = { selectedTab = 0 },
-                                icon = { Icon(Icons.Default.Book, contentDescription = "Library") },
-                                label = { Text("Library") },
-                            )
-                            NavigationBarItem(
-                                selected = selectedTab == 1,
-                                onClick = { selectedTab = 1 },
-                                icon = { Icon(Icons.Default.Settings, contentDescription = "Settings") },
-                                label = { Text("Settings") },
-                            )
+                        CompositionLocalProvider(LocalMinimumInteractiveComponentSize provides 40.dp) {
+                            NavigationBar(
+                                modifier = Modifier.height(40.dp),
+                                windowInsets = WindowInsets(0, 0, 0, 0),
+                            ) {
+                                NavigationBarItem(
+                                    selected = false,
+                                    onClick = {
+                                        val session = settings.readerSession()
+                                        if (session == null) {
+                                            error = "No recent book to continue"
+                                        } else {
+                                            val publication = catalog.publicationFile(session.bookId, session.format)
+                                            if (!publication.isFile) {
+                                                error = "The recent book is no longer downloaded"
+                                            } else {
+                                                startActivity(
+                                                    if (session.format == BookFormat.Pdf) {
+                                                        PdfReaderActivity.intent(
+                                                            context = this@MainActivity,
+                                                            bookId = session.bookId,
+                                                            bookTitle = session.bookTitle,
+                                                            author = session.author,
+                                                            year = session.year,
+                                                            pageIndex = session.pageIndex,
+                                                            pageOffset = session.pageOffset,
+                                                        )
+                                                    } else {
+                                                        ReaderActivity.intent(
+                                                            context = this@MainActivity,
+                                                            bookId = session.bookId,
+                                                            bookTitle = session.bookTitle,
+                                                            author = session.author,
+                                                            year = session.year,
+                                                            initialCfi = session.locator,
+                                                            theme = settings.theme,
+                                                        )
+                                                    },
+                                                )
+                                            }
+                                        }
+                                    },
+                                    icon = {
+                                        Icon(
+                                            Icons.AutoMirrored.Filled.MenuBook,
+                                            contentDescription = "Continue reading",
+                                            modifier = Modifier.size(18.dp),
+                                        )
+                                    },
+                                )
+                                NavigationBarItem(
+                                    selected = selectedTab == 3,
+                                    onClick = { selectedTab = 3 },
+                                    icon = {
+                                        Icon(
+                                            Icons.Default.Search,
+                                            contentDescription = "Search",
+                                            modifier = Modifier.size(18.dp),
+                                        )
+                                    },
+                                )
+                                NavigationBarItem(
+                                    selected = selectedTab == 0,
+                                    onClick = { selectedTab = 0 },
+                                    icon = {
+                                        Icon(
+                                            Icons.Default.Book,
+                                            contentDescription = "Library",
+                                            modifier = Modifier.size(18.dp),
+                                        )
+                                    },
+                                )
+                                NavigationBarItem(
+                                    selected = selectedTab == 1,
+                                    onClick = {
+                                        selectedTab = 1
+                                        refreshMissingWordDefinitions()
+                                    },
+                                    icon = {
+                                        Icon(
+                                            Icons.Default.Spellcheck,
+                                            contentDescription = "Words",
+                                            modifier = Modifier.size(18.dp),
+                                        )
+                                    },
+                                )
+                                NavigationBarItem(
+                                    selected = selectedTab == 2,
+                                    onClick = { selectedTab = 2 },
+                                    icon = {
+                                        Icon(
+                                            Icons.Default.Settings,
+                                            contentDescription = "Settings",
+                                            modifier = Modifier.size(18.dp),
+                                        )
+                                    },
+                                )
+                            }
                         }
                     },
                 ) { padding ->
@@ -110,36 +502,115 @@ class MainActivity : ComponentActivity() {
                         when (selectedTab) {
                             0 -> LibraryScreen(
                                 books = books,
+                                favoriteIds = favoriteIds,
+                                externalFavorites = externalFavorites,
                                 progress = progress,
                                 loading = loading,
+                                openingBookId = openingBookId,
                                 error = error,
                                 onRefresh = { refreshLibrary() },
-                                onOpenBook = { book ->
+                                onOpenBook = ::openBook,
+                                onOpenExternal = { favorite ->
+                                    error = "This favorite has not been published to Blossom yet."
+                                },
+                                publicationSize = { book -> catalog.publicationSize(book) },
+                                onUnfavoriteBook = { book ->
                                     scope.launch {
                                         try {
-                                            loading = true
-                                            catalog.ensureDownloaded(book)
-                                            val localProgress = catalog.getProgressForBooks(listOf(book))[book.id]
-                                            startActivity(
-                                                ReaderActivity.intent(
-                                                    context = this@MainActivity,
-                                                    bookId = book.id,
-                                                    bookTitle = book.title,
-                                                    initialCfi = localProgress?.cfi,
-                                                    theme = settings.theme,
-                                                ),
-                                            )
+                                            val updated = favoritesRepository.removeFavorite(book, books)
+                                            applyFavorites(books, updated)
+                                            error = null
                                         } catch (e: Exception) {
-                                            error = e.message ?: "Failed to open book"
-                                        } finally {
-                                            loading = false
+                                            error = e.message ?: "Could not unfavorite this book"
+                                        }
+                                    }
+                                },
+                                onUnfavoriteExternal = { favorite ->
+                                    scope.launch {
+                                        try {
+                                            val updated = favoritesRepository.removeFavorite(favorite, books)
+                                            applyFavorites(books, updated)
+                                            error = null
+                                        } catch (e: Exception) {
+                                            error = e.message ?: "Could not unfavorite this book"
+                                        }
+                                    }
+                                },
+                                onDeleteBook = { book ->
+                                    scope.launch {
+                                        if (!catalog.deletePublication(book)) {
+                                            error = "Could not delete the downloaded file"
+                                        } else {
+                                            catalog.clearProgress(book.id)
+                                            nostr.publishProgress(
+                                                bookId = book.id,
+                                                progression = 0.0,
+                                                cfi = "",
+                                                title = book.title,
+                                                author = book.author,
+                                            )
+                                            progress = catalog.getProgressForBooks(books)
+                                            error = null
                                         }
                                     }
                                 },
                             )
 
-                            1 -> SettingsScreen(
-                                catalogUrl = catalogUrl,
+                            1 -> WordsScreen(
+                                words = words,
+                                error = error,
+                                sortKey = wordSortKey,
+                                focusWord = requestedWord,
+                                focusRequestKey = wordRequestKey,
+                                onSortChange = {
+                                    wordSortKey = it
+                                    settings.wordSort = it
+                                },
+                                onOpenWord = { word ->
+                                    val isPdf = word.cfi.startsWith("pdf:")
+                                    val format = if (isPdf) BookFormat.Pdf else BookFormat.Epub
+                                    val publication = catalog.publicationFile(word.bookId, format)
+                                    if (!publication.isFile) {
+                                        error = "This book is no longer downloaded. Open it from Library first."
+                                    } else {
+                                        val book = books.firstOrNull { it.id == word.bookId }
+                                        startActivity(if (isPdf) {
+                                            val parts = word.cfi.split(':')
+                                            PdfReaderActivity.intent(
+                                                context = this@MainActivity,
+                                                bookId = word.bookId,
+                                                bookTitle = word.bookTitle,
+                                                author = book?.author,
+                                                year = book?.year,
+                                                pageIndex = parts.getOrNull(1)?.toIntOrNull() ?: 0,
+                                                pageOffset = parts.getOrNull(2)?.toIntOrNull() ?: 0,
+                                                highlightWord = word.word,
+                                            )
+                                        } else {
+                                            ReaderActivity.intent(
+                                                context = this@MainActivity,
+                                                bookId = word.bookId,
+                                                bookTitle = word.bookTitle,
+                                                author = book?.author,
+                                                year = book?.year,
+                                                initialCfi = word.cfi.takeIf(String::isNotBlank),
+                                                theme = settings.theme,
+                                                highlightCfi = word.cfi.takeIf(String::isNotBlank),
+                                            )
+                                        })
+                                    }
+                                },
+                                onDeleteWord = { word ->
+                                    scope.launch {
+                                        vocabularyRepository.remove(word.key)?.let {
+                                            nostr.publishVocabularyWord(it)
+                                        }
+                                        words = vocabularyRepository.all()
+                                    }
+                                },
+                            )
+
+                            2 -> SettingsScreen(
                                 authMode = authMode,
                                 npubDisplay = npubDisplay,
                                 amberAvailable = amberAvailable,
@@ -151,9 +622,17 @@ class MainActivity : ComponentActivity() {
                                 syncing = syncing,
                                 connectingAmber = connectingAmber,
                                 syncMessage = syncMessage,
-                                onCatalogUrlChange = {
-                                    catalogUrl = it
-                                    settings.catalogUrl = it
+                                dictionaryPacks = dictionaryPacks,
+                                dictionaryPackBusy = dictionaryPackBusy,
+                                dictionaryPackProgress = dictionaryPackProgress,
+                                dictionaryMessage = dictionaryMessage,
+                                initialDictionarySource = dictionarySource,
+                                initialDictionaryTarget = dictionaryTarget,
+                                onDictionaryPairChange = { source, target ->
+                                    dictionarySource = source
+                                    dictionaryTarget = target
+                                    settings.dictionarySource = source
+                                    settings.dictionaryTarget = target
                                 },
                                 onConnectAmber = {
                                     scope.launch {
@@ -166,7 +645,8 @@ class MainActivity : ComponentActivity() {
                                             nsec = ""
                                             showNsec = false
                                             syncMessage =
-                                                "Connected via Amber. Allow “remember” for kind 30078 so progress can sync in the background."
+                                                "Connected via Amber. Allow remembered progress signing and favorite decryption."
+                                            refreshLibrary()
                                         } catch (e: Exception) {
                                             syncMessage = e.message ?: "Failed to connect Amber"
                                         } finally {
@@ -214,20 +694,113 @@ class MainActivity : ComponentActivity() {
                                     keepOnLock = it
                                     settings.keepReadingOnLockScreen = it
                                 },
+                                onInstallDictionaryPack = { pack ->
+                                    scope.launch {
+                                        dictionaryPackBusy = pack.id
+                                        dictionaryPackProgress = 0f
+                                        dictionaryMessage = "Downloading ${pack.label}…"
+                                        runCatching {
+                                            dictionaryRepository.installPack(pack.id) { downloaded, total ->
+                                                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                                                    if (total > 0L) {
+                                                        dictionaryPackProgress =
+                                                            (downloaded.toDouble() / total).toFloat().coerceIn(0f, 1f)
+                                                        dictionaryMessage =
+                                                            "Downloading ${pack.label} · ${(dictionaryPackProgress!! * 100).toInt()}%"
+                                                    } else {
+                                                        dictionaryPackProgress = null
+                                                        dictionaryMessage = "Preparing ${pack.label} for offline use…"
+                                                    }
+                                                }
+                                            }
+                                        }
+                                            .onSuccess {
+                                                dictionaryMessage = "${pack.label} is ready offline · refreshing saved words"
+                                                refreshMissingWordDefinitions(pack.sourceLanguage)
+                                            }
+                                            .onFailure { dictionaryMessage = it.message ?: "Dictionary download failed" }
+                                        dictionaryPacks = dictionaryRepository.packs()
+                                        dictionaryPackBusy = null
+                                        dictionaryPackProgress = null
+                                    }
+                                },
+                                onRemoveDictionaryPack = { pack ->
+                                    dictionaryRepository.removePack(pack.id)
+                                    dictionaryPacks = dictionaryRepository.packs()
+                                    dictionaryMessage = "Removed ${pack.label}"
+                                },
                                 onSyncNow = {
                                     scope.launch {
                                         syncing = true
                                         syncMessage = null
                                         try {
                                             nostr.syncAllFromRelays(books.map { it.id })
+                                            words = vocabularyRepository.all()
+                                            vocabularyRepository.allForSync().forEach {
+                                                nostr.publishVocabularyWord(it)
+                                            }
+                                            val seedBooks = books.filter { it.libvaultMd5 == null }
+                                            val shared = favoritesRepository.fetch(emptyList())
+                                            externalFavorites = shared.external
+                                            applyFavorites(seedBooks, shared)
                                             if (books.isNotEmpty()) {
                                                 progress = catalog.getProgressForBooks(books)
                                             }
-                                            syncMessage = "Sync complete"
+                                            val count = favoriteIds.size + externalFavorites.size
+                                            syncMessage = "Sync complete · $count LibVault favorite${if (count == 1) "" else "s"}"
                                         } catch (e: Exception) {
                                             syncMessage = e.message ?: "Sync failed"
                                         } finally {
                                             syncing = false
+                                        }
+                                    }
+                                },
+                            )
+
+                            3 -> SearchScreen(
+                                query = searchQuery,
+                                results = searchResults,
+                                searching = searching,
+                                openingBookId = openingBookId,
+                                message = searchMessage,
+                                isFavorite = ::isSearchFavorite,
+                                readingProgress = { result ->
+                                    progress[result.id] ?: matchingSearchBook(result)?.let { progress[it.id] }
+                                },
+                                onQueryChange = {
+                                    searchQuery = it
+                                    if (it.isBlank()) {
+                                        searchResults = emptyList()
+                                        searchMessage = null
+                                    }
+                                },
+                                onSearch = ::runSearch,
+                                onOpen = { result -> result.asCatalogBook()?.let(::openBook) },
+                                onToggleFavorite = { result ->
+                                    result.asCatalogBook()?.let { book ->
+                                        scope.launch {
+                                            try {
+                                                val allBooks = (books + book).distinctBy { it.id }
+                                                val externalMatch = matchingSearchFavorite(result)
+                                                val updated = when {
+                                                    externalMatch != null ->
+                                                        favoritesRepository.removeFavorite(externalMatch, allBooks)
+                                                    isSearchFavorite(result) ->
+                                                        favoritesRepository.removeFavorite(
+                                                            matchingSearchBook(result) ?: book,
+                                                            allBooks,
+                                                        )
+                                                    else -> favoritesRepository.addFavorite(book, allBooks)
+                                                }
+                                                applyFavorites(allBooks, updated)
+                                                searchMessage = if (book.id in updated.bookIds) {
+                                                    "Added to Nostr favorites"
+                                                } else {
+                                                    "Removed from Nostr favorites"
+                                                }
+                                            } catch (e: Exception) {
+                                                searchMessage = e.message ?: "Could not update favorites"
+                                            }
                                         }
                                     }
                                 },
@@ -241,9 +814,17 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
+        hideSystemUi()
         if (::amberSession.isInitialized) {
             amberSession.attach()
         }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        requestedWord = intent.getStringExtra(EXTRA_OPEN_WORD)
+        wordRequestKey += 1
     }
 
     override fun onPause() {
@@ -253,7 +834,30 @@ class MainActivity : ComponentActivity() {
         super.onPause()
     }
 
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus) hideSystemUi()
+    }
+
+    private fun hideSystemUi() {
+        WindowInsetsControllerCompat(window, window.decorView).apply {
+            hide(WindowInsetsCompat.Type.systemBars())
+            systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+        }
+    }
+
+    private fun requestHomeShortcut() {
+        val shortcut = ShortcutInfoCompat.Builder(this, "bookstr-home")
+            .setShortLabel("Bookstr")
+            .setIcon(IconCompat.createWithResource(this, R.mipmap.ic_launcher))
+            .setIntent(Intent(this, MainActivity::class.java).setAction(Intent.ACTION_MAIN))
+            .build()
+        ShortcutManagerCompat.requestPinShortcut(this, shortcut, null)
+    }
+
     companion object {
+        const val EXTRA_PIN_SHORTCUT = "pin_shortcut"
+        const val EXTRA_OPEN_WORD = "open_word"
         private fun npubFromSettings(pubkeyHex: String?): String =
             pubkeyHex?.let { npubFromHex(it) }.orEmpty()
 

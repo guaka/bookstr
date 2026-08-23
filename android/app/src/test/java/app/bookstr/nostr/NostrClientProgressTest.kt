@@ -1,5 +1,7 @@
 package app.bookstr.nostr
 
+import app.bookstr.util.Sha256
+import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -64,4 +66,18 @@ class NostrClientProgressTest {
         assertEquals(42L, NostrClient.parseUpdatedAt(withUpdated, 99L))
         assertEquals(99_000L, NostrClient.parseUpdatedAt("""{"progression":0.1}""", 99L))
     }
+
+    @Test
+    fun eventIdUsesCanonicalJsonWithoutEscapingSlashes() {
+        val event = JSONObject()
+            .put("pubkey", "00".repeat(32))
+            .put("created_at", 1L)
+            .put("kind", 30003)
+            .put("tags", JSONArray().put(JSONArray().put("d").put("libvault/favorites")))
+            .put("content", "https://example.com/a/b")
+
+        val canonical = """[0,"${"00".repeat(32)}",1,30003,[["d","libvault/favorites"]],"https://example.com/a/b"]"""
+        assertEquals(Sha256.hash(canonical), NostrCrypto.eventId(event))
+    }
+
 }

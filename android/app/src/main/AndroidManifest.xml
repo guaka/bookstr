@@ -6,6 +6,9 @@
     <!-- NIP-55 external signer discovery (Amber, Signet, …) on Android 11+ -->
     <queries>
         <intent>
+            <action android:name="android.intent.action.TTS_SERVICE" />
+        </intent>
+        <intent>
             <action android:name="android.intent.action.VIEW" />
             <category android:name="android.intent.category.BROWSABLE" />
             <data android:scheme="nostrsigner" />
@@ -17,6 +20,7 @@
         android:allowBackup="true"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
+        android:roundIcon="@mipmap/ic_launcher"
         android:supportsRtl="true"
         android:theme="@style/Theme.Bookstr">
 
@@ -37,5 +41,12 @@
             android:showWhenLocked="true"
             android:turnScreenOn="true"
             android:theme="@style/Theme.Bookstr.Reader" />
+
+        <activity
+            android:name=".PdfReaderActivity"
+            android:exported="false"
+            android:showWhenLocked="true"
+            android:turnScreenOn="true"
+            android:theme="@style/Theme.Bookstr" />
     </application>
 </manifest>

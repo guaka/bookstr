@@ -4,6 +4,7 @@ import android.app.Activity
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.database.Cursor
 import android.net.Uri
 import app.bookstr.util.Bech32
 import org.json.JSONArray
@@ -17,10 +18,13 @@ object Nip55 {
     const val SCHEME = "nostrsigner"
     const val TYPE_GET_PUBLIC_KEY = "get_public_key"
     const val TYPE_SIGN_EVENT = "sign_event"
+    const val TYPE_NIP44_DECRYPT = "nip44_decrypt"
+    const val TYPE_NIP44_ENCRYPT = "nip44_encrypt"
 
     const val EXTRA_TYPE = "type"
     const val EXTRA_PERMISSIONS = "permissions"
     const val EXTRA_CURRENT_USER = "current_user"
+    const val EXTRA_PUBKEY = "pubkey"
     const val EXTRA_ID = "id"
 
     const val RESULT = "result"
@@ -29,10 +33,14 @@ object Nip55 {
     const val RESULT_EVENT = "event"
     const val RESULT_REJECTED = "rejected"
 
-    /** Progress events only — keep Amber prompts minimal. */
-    val PROGRESS_PERMISSIONS: String =
+    /** Library decryption plus progress signing, matching the shared web behavior. */
+    val LIBRARY_PERMISSIONS: String =
         JSONArray()
             .put(JSONObject().put("type", TYPE_SIGN_EVENT).put("kind", NostrClient.KIND_PROGRESS))
+            .put(JSONObject().put("type", TYPE_SIGN_EVENT).put("kind", NostrClient.KIND_FAVORITES))
+            .put(JSONObject().put("type", TYPE_SIGN_EVENT).put("kind", BlossomAuth.KIND))
+            .put(JSONObject().put("type", TYPE_NIP44_DECRYPT))
+            .put(JSONObject().put("type", TYPE_NIP44_ENCRYPT))
             .toString()
 
     fun isSignerAvailable(context: Context): Boolean =
@@ -43,10 +51,38 @@ object Nip55 {
     fun discoveryIntent(): Intent =
         Intent(Intent.ACTION_VIEW, Uri.parse("$SCHEME:"))
 
-    fun getPublicKeyIntent(permissionsJson: String = PROGRESS_PERMISSIONS): Intent =
+    fun getPublicKeyIntent(permissionsJson: String = LIBRARY_PERMISSIONS): Intent =
         Intent(Intent.ACTION_VIEW, Uri.parse("$SCHEME:")).apply {
             putExtra(EXTRA_TYPE, TYPE_GET_PUBLIC_KEY)
             putExtra(EXTRA_PERMISSIONS, permissionsJson)
+            addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+        }
+
+    fun nip44DecryptIntent(
+        ciphertext: String,
+        otherPubkeyHex: String,
+        currentUserHex: String,
+        signerPackage: String,
+    ): Intent =
+        Intent(Intent.ACTION_VIEW, Uri.parse("$SCHEME:$ciphertext")).apply {
+            `package` = signerPackage
+            putExtra(EXTRA_TYPE, TYPE_NIP44_DECRYPT)
+            putExtra(EXTRA_PUBKEY, otherPubkeyHex)
+            putExtra(EXTRA_CURRENT_USER, currentUserHex)
+            addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+        }
+
+    fun nip44EncryptIntent(
+        plaintext: String,
+        otherPubkeyHex: String,
+        currentUserHex: String,
+        signerPackage: String,
+    ): Intent =
+        Intent(Intent.ACTION_VIEW, Uri.parse("$SCHEME:$plaintext")).apply {
+            `package` = signerPackage
+            putExtra(EXTRA_TYPE, TYPE_NIP44_ENCRYPT)
+            putExtra(EXTRA_PUBKEY, otherPubkeyHex)
+            putExtra(EXTRA_CURRENT_USER, currentUserHex)
             addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP)
         }
 
@@ -107,6 +143,26 @@ object Nip55 {
         throw Nip55Exception("No signed event in signer response")
     }
 
+    fun parseNip44DecryptResult(resultCode: Int, data: Intent?): String {
+        if (resultCode != Activity.RESULT_OK) {
+            throw Nip55Exception("Signer failed to decrypt favorites")
+        }
+        if (data?.getBooleanExtra(RESULT_REJECTED, false) == true) {
+            throw Nip55Exception("Favorite decryption was rejected")
+        }
+        return data?.getStringExtra(RESULT)
+            ?: throw Nip55Exception("No plaintext in signer response")
+    }
+
+    fun parseNip44EncryptResult(resultCode: Int, data: Intent?): String {
+        if (resultCode != Activity.RESULT_OK) throw Nip55Exception("Signer failed to encrypt favorites")
+        if (data?.getBooleanExtra(RESULT_REJECTED, false) == true) {
+            throw Nip55Exception("Favorite encryption was rejected")
+        }
+        return data?.getStringExtra(RESULT)
+            ?: throw Nip55Exception("No ciphertext in signer response")
+    }
+
     /**
      * Background signing via content provider when Amber has remembered permission for kind 30078.
      * Returns null when the provider cannot answer (no remembered permission).
@@ -119,14 +175,7 @@ object Nip55 {
     ): JSONObject? {
         val uri = Uri.parse("content://$signerPackage.SIGN_EVENT")
         // Amber/NIP-55: projection carries [payload, pubkey, current_user]
-        val cursor =
-            context.contentResolver.query(
-                uri,
-                arrayOf(eventJson, "", currentUserHex),
-                null,
-                null,
-                null,
-            ) ?: return null
+        val cursor = querySigner(context, uri, arrayOf(eventJson, "", currentUserHex)) ?: return null
 
         cursor.use {
             if (it.getColumnIndex(RESULT_REJECTED) > -1) {
@@ -154,6 +203,65 @@ object Nip55 {
             }
             unsigned.put("sig", sig)
             return unsigned
+        }
+    }
+
+    fun decryptNip44ViaContentResolver(
+        context: Context,
+        signerPackage: String,
+        ciphertext: String,
+        otherPubkeyHex: String,
+        currentUserHex: String,
+    ): String? {
+        val uri = Uri.parse("content://$signerPackage.NIP44_DECRYPT")
+        val cursor =
+            querySigner(
+                context,
+                uri,
+                arrayOf(ciphertext, otherPubkeyHex, currentUserHex),
+            ) ?: return null
+
+        cursor.use {
+            if (it.getColumnIndex(RESULT_REJECTED) > -1) {
+                throw Nip55Exception("Favorite decryption was rejected")
+            }
+            if (!it.moveToFirst()) return null
+            val resultCol = it.getColumnIndex(RESULT)
+            if (resultCol < 0) return null
+            return it.getString(resultCol)?.takeIf(String::isNotBlank)
+        }
+    }
+
+    fun encryptNip44ViaContentResolver(
+        context: Context,
+        signerPackage: String,
+        plaintext: String,
+        otherPubkeyHex: String,
+        currentUserHex: String,
+    ): String? {
+        val uri = Uri.parse("content://$signerPackage.NIP44_ENCRYPT")
+        val cursor = querySigner(
+            context,
+            uri,
+            arrayOf(plaintext, otherPubkeyHex, currentUserHex),
+        ) ?: return null
+        cursor.use {
+            if (it.getColumnIndex(RESULT_REJECTED) > -1) {
+                throw Nip55Exception("Favorite encryption was rejected")
+            }
+            if (!it.moveToFirst()) return null
+            val resultCol = it.getColumnIndex(RESULT)
+            if (resultCol < 0) return null
+            return it.getString(resultCol)?.takeIf(String::isNotBlank)
+        }
+    }
+
+    private fun querySigner(context: Context, uri: Uri, args: Array<String>): Cursor? {
+        return try {
+            // NIP-55's Android example passes payload parameters as projection values.
+            context.contentResolver.query(uri, args, null, null, null)
+        } catch (_: IllegalArgumentException) {
+            context.contentResolver.query(uri, null, null, args, null)
         }
     }
 }

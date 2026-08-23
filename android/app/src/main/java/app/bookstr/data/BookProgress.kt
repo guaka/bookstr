@@ -13,6 +13,7 @@ data class BookProgress(
     val progression: Double,
     val cfi: String,
     val updatedAt: Long,
+    val furthestProgression: Double = progression,
 )
 
 @Dao

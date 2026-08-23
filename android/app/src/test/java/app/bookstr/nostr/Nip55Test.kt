@@ -19,8 +19,11 @@ class Nip55Test {
     }
 
     @Test
-    fun progressPermissionsIncludeKind30078() {
-        assertTrue(Nip55.PROGRESS_PERMISSIONS.contains("30078"))
-        assertTrue(Nip55.PROGRESS_PERMISSIONS.contains("sign_event"))
+    fun libraryPermissionsIncludeProgressAndDecryption() {
+        assertTrue(Nip55.LIBRARY_PERMISSIONS.contains("30078"))
+        assertTrue(Nip55.LIBRARY_PERMISSIONS.contains("sign_event"))
+        assertTrue(Nip55.LIBRARY_PERMISSIONS.contains("nip44_decrypt"))
+        assertTrue(Nip55.LIBRARY_PERMISSIONS.contains("nip44_encrypt"))
+        assertTrue(Nip55.LIBRARY_PERMISSIONS.contains("30003"))
     }
 }

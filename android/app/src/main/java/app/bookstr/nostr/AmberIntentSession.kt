@@ -19,6 +19,8 @@ class AmberIntentSession(
 ) {
     private val pendingGetKey = AtomicReference<Continuation<Pair<String, String>>?>(null)
     private val pendingSign = AtomicReference<Continuation<org.json.JSONObject>?>(null)
+    private val pendingDecrypt = AtomicReference<Continuation<String>?>(null)
+    private val pendingEncrypt = AtomicReference<Continuation<String>?>(null)
 
     private val getPublicKeyLauncher: ActivityResultLauncher<Intent> =
         activity.registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
@@ -35,6 +37,26 @@ class AmberIntentSession(
             val cont = pendingSign.getAndSet(null) ?: return@registerForActivityResult
             try {
                 cont.resume(Nip55.parseSignEventResult(result.resultCode, result.data))
+            } catch (e: Exception) {
+                cont.resumeWithException(e)
+            }
+        }
+
+    private val decryptLauncher: ActivityResultLauncher<Intent> =
+        activity.registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+            val cont = pendingDecrypt.getAndSet(null) ?: return@registerForActivityResult
+            try {
+                cont.resume(Nip55.parseNip44DecryptResult(result.resultCode, result.data))
+            } catch (e: Exception) {
+                cont.resumeWithException(e)
+            }
+        }
+
+    private val encryptLauncher: ActivityResultLauncher<Intent> =
+        activity.registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+            val cont = pendingEncrypt.getAndSet(null) ?: return@registerForActivityResult
+            try {
+                cont.resume(Nip55.parseNip44EncryptResult(result.resultCode, result.data))
             } catch (e: Exception) {
                 cont.resumeWithException(e)
             }
@@ -78,6 +100,56 @@ class AmberIntentSession(
                 )
             } catch (e: Exception) {
                 pendingSign.compareAndSet(cont, null)
+                cont.resumeWithException(e)
+            }
+        }
+
+    suspend fun decryptNip44(
+        ciphertext: String,
+        otherPubkeyHex: String,
+        currentUserHex: String,
+        signerPackage: String,
+    ): String =
+        suspendCancellableCoroutine { cont ->
+            if (!pendingDecrypt.compareAndSet(null, cont)) {
+                cont.resumeWithException(Nip55Exception("Another nip44_decrypt request is in progress"))
+                return@suspendCancellableCoroutine
+            }
+            cont.invokeOnCancellation { pendingDecrypt.compareAndSet(cont, null) }
+            try {
+                decryptLauncher.launch(
+                    Nip55.nip44DecryptIntent(
+                        ciphertext,
+                        otherPubkeyHex,
+                        currentUserHex,
+                        signerPackage,
+                    ),
+                )
+            } catch (e: Exception) {
+                pendingDecrypt.compareAndSet(cont, null)
+                cont.resumeWithException(e)
+            }
+        }
+
+
+    suspend fun encryptNip44(
+        plaintext: String,
+        otherPubkeyHex: String,
+        currentUserHex: String,
+        signerPackage: String,
+    ): String =
+        suspendCancellableCoroutine { cont ->
+            if (!pendingEncrypt.compareAndSet(null, cont)) {
+                cont.resumeWithException(Nip55Exception("Another nip44_encrypt request is in progress"))
+                return@suspendCancellableCoroutine
+            }
+            cont.invokeOnCancellation { pendingEncrypt.compareAndSet(cont, null) }
+            try {
+                encryptLauncher.launch(
+                    Nip55.nip44EncryptIntent(plaintext, otherPubkeyHex, currentUserHex, signerPackage),
+                )
+            } catch (e: Exception) {
+                pendingEncrypt.compareAndSet(cont, null)
                 cont.resumeWithException(e)
             }
         }

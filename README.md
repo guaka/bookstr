@@ -1,6 +1,16 @@
 # bookstr
 
-AGPL-3.0 EPUB reader: native Android (Kotlin/Compose) + web (React/Vite). Books come from an HTTPS catalog identified by **SHA-256 of the EPUB file**. Optional Nostr progress sync. Optional Android lock-screen reading.
+AGPL-3.0 EPUB/PDF reader: native Android (Kotlin/Compose) + web (React/Vite). Publications are cached locally and identified by their content hash. Optional Nostr progress sync. Optional Android lock-screen reading.
+
+## Public file delivery
+
+Blossom is the preferred layer for resilient file delivery. A LibVault-fetched EPUB or PDF can be published to one or more Blossom servers under its SHA-256, and Bookstr can verify the bytes after downloading them. Search and server-side fetching remain LibVault responsibilities; Blossom only distributes blobs.
+
+An access-restricted Blossom deployment can require a short-lived BUD-11 `get` authorization event and allow only selected reader pubkeys. The reference server can restrict uploaders through pubkey-scoped storage rules; reader allowlisting requires an authentication gateway or server extension. This is access control, not DRM: blobs are not encrypted and an authorized reader can redistribute downloaded bytes. Server retention, file-size, acceptable-use, and copyright policies still apply.
+
+## Reader design reference
+
+[FBReader](https://fbreader.org/) is a mature, pleasantly focused ebook reader and a useful reference for Bookstr's navigation, typography, progress, and library behavior. Bookstr should learn from the way it handles reading while keeping its own implementation and respecting the licenses of any code or assets being studied.
 
 ## Layout
 
@@ -42,12 +52,11 @@ location / {
 }
 ```
 
-Seed / hash / sync for GitHub Pages:
+Hash / sync for a self-hosted catalog:
 
 ```bash
 cd catalog
-./scripts/fetch-seeds.sh   # downloads CC/PD seeds, hashes, syncs → web/public/catalog/
-# or drop private EPUBs into staging/ (do not commit those)
+# Drop private EPUBs into staging/ (do not commit those)
 ./scripts/hash-epubs.sh && ./scripts/sync-to-web.sh
 # then update catalog.json (+ web/public copy) ids to match
 ```
@@ -72,7 +81,7 @@ The web app deploys from `.github/workflows/deploy-web.yml` on pushes to `main` 
 
 1. Repo **Settings → Pages → Build and deployment → Source: GitHub Actions**
 2. After the first green run: **https://guaka.github.io/bookstr/**
-3. Default catalog is the bundled seed set at `…/catalog/catalog.json` with EPUBs under `…/catalog/books/<sha256>.epub` (synced from `catalog/` into `web/public/catalog/`). Point Settings at another HTTPS catalog if you host your own books.
+3. The web build ships without example books. Its Reading and Favorites shelves are populated from LibVault/Nostr favorites and books opened from LibVault.
 
 **Custom domain later (`books.guaka.org`):** point DNS at GitHub Pages, set the domain under Pages, change the workflow `BASE_PATH` to `/`, and commit `web/public/CNAME` with `books.guaka.org`.
 

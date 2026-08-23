@@ -1,9 +1,23 @@
+import java.time.Instant
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
     id("com.google.devtools.ksp")
 }
+
+// Keep BuildConfig stable across no-change builds so a displayed timestamp does not invalidate
+// Kotlin compilation. It advances whenever an app source or asset changes.
+val newestSourceChange = fileTree("src/main").files.maxOfOrNull(File::lastModified)
+    ?: System.currentTimeMillis()
+val sourceChangeTime = Instant.ofEpochMilli(newestSourceChange)
+    .atZone(ZoneId.systemDefault())
+val buildDate = sourceChangeTime.format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"))
+val versionTimestamp = sourceChangeTime.format(DateTimeFormatter.ofPattern("yyyyMMdd-HHmm"))
+val timestampVersionCode = (sourceChangeTime.toEpochSecond() / 60).toInt()
 
 android {
     namespace = "app.bookstr"
@@ -13,8 +27,10 @@ android {
         applicationId = "app.bookstr"
         minSdk = 27
         targetSdk = 35
-        versionCode = 1
-        versionName = "1.0.0"
+        versionCode = timestampVersionCode
+        versionName = "0.0.3-$versionTimestamp"
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        buildConfigField("String", "BUILD_DATE", "\"$buildDate\"")
     }
 
     buildTypes {
@@ -37,6 +53,7 @@ android {
     }
 
     buildFeatures {
+        buildConfig = true
         compose = true
     }
 

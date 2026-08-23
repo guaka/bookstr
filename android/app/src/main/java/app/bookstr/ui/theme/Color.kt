@@ -2,14 +2,20 @@ package app.bookstr.ui.theme
 
 import androidx.compose.ui.graphics.Color
 
-val PaperBackground = Color(0xFFF4ECD8)
-val PaperSurface = Color(0xFFFAF6EE)
-val PaperOnBackground = Color(0xFF2C2416)
-val PaperPrimary = Color(0xFF8B6914)
-val PaperSecondary = Color(0xFF5C4A2E)
+val WhiteBackground = Color(0xFFFFFFFF)
+val WhiteSurface = Color(0xFFFFFFFF)
+val WhiteOnBackground = Color(0xFF1C1916)
+val WhitePrimary = Color(0xFF2F5D50)
+val WhiteSecondary = Color(0xFF6B635A)
 
-val NightBackground = Color(0xFF1A1814)
-val NightSurface = Color(0xFF242018)
-val NightOnBackground = Color(0xFFD4CFC4)
-val NightPrimary = Color(0xFFC4A35A)
-val NightSecondary = Color(0xFF8A7A5A)
+val PaperBackground = Color(0xFFF7F3EA)
+val PaperSurface = Color(0xFFFFFAF2)
+val PaperOnBackground = Color(0xFF1C1916)
+val PaperPrimary = Color(0xFF2F5D50)
+val PaperSecondary = Color(0xFF6B635A)
+
+val NightBackground = Color(0xFF121212)
+val NightSurface = Color(0xFF1B1A18)
+val NightOnBackground = Color(0xFFE8E4DC)
+val NightPrimary = Color(0xFF7FB8A7)
+val NightSecondary = Color(0xFFAAA39A)

@@ -4,6 +4,9 @@ import android.content.Context
 import android.util.Log
 import app.bookstr.nostr.NostrClient
 import app.bookstr.nostr.NostrSignerFactory
+import app.bookstr.nostr.Nip55
+import app.bookstr.nostr.Nip55Exception
+import app.bookstr.nostr.AmberIntentSession
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
@@ -13,11 +16,13 @@ class NostrRepository(
     private val context: Context,
     private val settings: SettingsRepository,
     private val progressDao: BookProgressDao,
+    private val vocabularyRepository: VocabularyRepository,
 ) {
     suspend fun publishProgress(
         bookId: String,
         progression: Double,
         cfi: String,
+        furthestProgression: Double = progression,
         title: String? = null,
         author: String? = null,
     ): Boolean =
@@ -32,6 +37,7 @@ class NostrRepository(
                     bookId = bookId,
                     progression = progression,
                     cfi = cfi,
+                    furthestProgression = furthestProgression,
                     title = title,
                     author = author,
                     updatedAt = updatedAt,
@@ -63,6 +69,7 @@ class NostrRepository(
             val event = NostrClient(relays).fetchLatestProgress(pubkey, bookId) ?: return@withContext null
             val raw = event.getString("content")
             val parsed = NostrClient.parseProgressContent(raw, bookId) ?: return@withContext null
+            val remoteFurthest = NostrClient.parseFurthestProgression(raw, parsed.second)
             val remoteUpdatedAt = NostrClient.parseUpdatedAt(raw, event.getLong("created_at"))
             val local = progressDao.get(bookId)
             if (local != null && local.updatedAt >= remoteUpdatedAt) {
@@ -73,6 +80,10 @@ class NostrRepository(
                 progression = parsed.second,
                 cfi = parsed.third,
                 updatedAt = remoteUpdatedAt,
+                furthestProgression = maxOf(
+                    remoteFurthest,
+                    local?.furthestProgression ?: local?.progression ?: 0.0,
+                ),
             )
             progressDao.upsert(progress)
             progress
@@ -87,6 +98,107 @@ class NostrRepository(
         for (id in ids) {
             pullProgress(id)
         }
+        pullVocabulary()
+    }
+
+    suspend fun publishVocabularyWord(word: VocabularyWord): Boolean = withContext(Dispatchers.IO) {
+        val signer = NostrSignerFactory.create(context, settings) ?: return@withContext false
+        if (settings.authMode != NostrAuthMode.Amber) return@withContext false
+        val relays = settings.relays
+        if (relays.isEmpty()) return@withContext false
+        try {
+            val pubkey = signer.getPublicKey()
+            val content = encryptToSelf(pubkey, vocabularyJson(word).toString())
+            val unsigned = JSONObject()
+                .put("kind", NostrClient.KIND_PROGRESS)
+                .put("created_at", word.lastSeenAt / 1000)
+                .put(
+                    "tags",
+                    JSONArray().put(
+                        JSONArray().put("d").put(NostrClient.VOCABULARY_D_PREFIX + word.syncId),
+                    ),
+                )
+                .put("content", content)
+            NostrClient(relays).publishEvent(signer.signEvent(unsigned))
+        } catch (e: Exception) {
+            Log.w(TAG, "Could not publish private vocabulary", e)
+            false
+        }
+    }
+
+    suspend fun pullVocabulary(): Int = withContext(Dispatchers.IO) {
+        val signer = NostrSignerFactory.create(context, settings) ?: return@withContext 0
+        if (settings.authMode != NostrAuthMode.Amber) return@withContext 0
+        val relays = settings.relays
+        if (relays.isEmpty()) return@withContext 0
+        var merged = 0
+        try {
+            val pubkey = signer.getPublicKey()
+            for (event in NostrClient(relays).fetchVocabulary(pubkey)) {
+                runCatching {
+                    val parsed = parseVocabulary(JSONObject(decryptFromSelf(pubkey, event.getString("content"))))
+                    if (vocabularyRepository.mergeRemote(parsed)) merged++
+                }.onFailure { Log.w(TAG, "Skipping malformed private vocabulary event", it) }
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Could not pull private vocabulary", e)
+        }
+        merged
+    }
+
+    private suspend fun encryptToSelf(pubkey: String, plaintext: String): String {
+        val pkg = settings.signerPackage ?: throw Nip55Exception("Amber is not connected")
+        return Nip55.encryptNip44ViaContentResolver(context, pkg, plaintext, pubkey, pubkey)
+            ?: AmberIntentSession.Host.session?.encryptNip44(plaintext, pubkey, pubkey, pkg)
+            ?: throw Nip55Exception("Reconnect Amber and remember private vocabulary encryption")
+    }
+
+    private suspend fun decryptFromSelf(pubkey: String, ciphertext: String): String {
+        val pkg = settings.signerPackage ?: throw Nip55Exception("Amber is not connected")
+        return Nip55.decryptNip44ViaContentResolver(context, pkg, ciphertext, pubkey, pubkey)
+            ?: AmberIntentSession.Host.session?.decryptNip44(ciphertext, pubkey, pubkey, pkg)
+            ?: throw Nip55Exception("Reconnect Amber and remember private vocabulary decryption")
+    }
+
+    private fun vocabularyJson(word: VocabularyWord): JSONObject = JSONObject()
+        .put("key", word.key)
+        .put("word", word.word)
+        .put("language", word.language)
+        .put("syncId", word.syncId)
+        .put("bookId", word.bookId)
+        .put("bookTitle", word.bookTitle)
+        .put("cfi", word.cfi)
+        .put("contextSentence", word.contextSentence)
+        .put("partOfSpeech", word.partOfSpeech)
+        .put("definitions", JSONArray(word.definitions))
+        .put("sourceUrl", word.sourceUrl)
+        .put("lookupCount", word.lookupCount)
+        .put("firstSeenAt", word.firstSeenAt)
+        .put("lastSeenAt", word.lastSeenAt)
+        .put("updatedAt", word.lastSeenAt)
+        .put("deleted", word.deleted)
+
+    private fun parseVocabulary(json: JSONObject): VocabularyWord {
+        val word = json.getString("word").lowercase()
+        val language = json.getString("language").lowercase()
+        val definitions = json.optJSONArray("definitions") ?: JSONArray()
+        return VocabularyWord(
+            key = json.optString("key", "$language:$word"),
+            word = word,
+            language = language,
+            syncId = json.getString("syncId"),
+            bookId = json.getString("bookId"),
+            bookTitle = json.getString("bookTitle"),
+            cfi = json.optString("cfi"),
+            contextSentence = json.optString("contextSentence"),
+            partOfSpeech = json.optString("partOfSpeech"),
+            definitionsJson = definitions.toString(),
+            sourceUrl = json.optString("sourceUrl"),
+            lookupCount = json.optInt("lookupCount", 1),
+            firstSeenAt = json.optLong("firstSeenAt", json.optLong("updatedAt")),
+            lastSeenAt = json.optLong("lastSeenAt", json.optLong("updatedAt")),
+            deleted = json.optBoolean("deleted", false),
+        )
     }
 
     companion object {
