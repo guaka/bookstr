@@ -2,5 +2,6 @@ name = "bookstr-cors-proxy"
 main = "src/index.js"
 compatibility_date = "2026-08-23"
 
-# This leaves the GitHub Pages site in place and handles only its API requests.
-routes = [{ pattern = "books.guaka.org/api/*", zone_name = "guaka.org" }]
+# Use a dedicated Cloudflare-managed hostname because books.guaka.org points
+# directly to GitHub Pages and therefore cannot intercept Worker routes.
+routes = [{ pattern = "books-api.guaka.org", custom_domain = true }]

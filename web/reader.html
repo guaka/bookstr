@@ -1,0 +1,627 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>bookstr reader</title>
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: #f4f0e6;
+      color: #1a1714;
+      touch-action: manipulation;
+    }
+    body.white {
+      background: #ffffff;
+      color: #1a1714;
+    }
+    body.night {
+      background: #121212;
+      color: #e8e4dc;
+    }
+    #viewer {
+      width: 100vw;
+      height: 100vh;
+    }
+    #viewer.page-forward { animation: page-forward 180ms ease-out; }
+    #viewer.page-back { animation: page-back 180ms ease-out; }
+    @keyframes page-forward {
+      from { transform: translateX(7%); opacity: 0.82; }
+      to { transform: translateX(0); opacity: 1; }
+    }
+    @keyframes page-back {
+      from { transform: translateX(-7%); opacity: 0.82; }
+      to { transform: translateX(0); opacity: 1; }
+    }
+    .epub-container {
+      background: transparent !important;
+      overflow-x: hidden !important;
+      overflow-y: auto !important;
+      -webkit-overflow-scrolling: touch;
+    }
+    #dictionary-card {
+      position: fixed;
+      z-index: 20;
+      left: 0.65rem;
+      right: 0.65rem;
+      bottom: 0.65rem;
+      max-height: 48vh;
+      overflow-y: auto;
+      border: 1px solid rgba(128, 128, 128, 0.55);
+      border-radius: 0.8rem;
+      padding: 0.9rem;
+      box-sizing: border-box;
+      background: #f4f0e6;
+      color: #1a1714;
+      box-shadow: 0 0.8rem 2.5rem rgba(0, 0, 0, 0.35);
+      font-family: system-ui, sans-serif;
+    }
+    body.white #dictionary-card { background: #ffffff; color: #1a1714; }
+    body.night #dictionary-card { background: #202020; color: #e8e4dc; }
+    #dictionary-card[hidden] { display: none; }
+    .dictionary-heading { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
+    .dictionary-heading strong { font-size: 1.25rem; }
+    .dictionary-heading span { display: block; opacity: 0.7; font-size: 0.78rem; }
+    #dictionary-close {
+      border: 0;
+      background: transparent;
+      color: inherit;
+      font-size: 1.6rem;
+      line-height: 1;
+      padding: 0.25rem 0.4rem;
+    }
+    #dictionary-card ol { margin: 0.75rem 0 0; padding-left: 1.4rem; }
+    #dictionary-card li + li { margin-top: 0.45rem; }
+    #dictionary-status { margin: 0.75rem 0 0; opacity: 0.75; }
+    #dictionary-source { display: block; margin-top: 0.75rem; color: #4775a8; }
+    body.night #dictionary-source { color: #9ecbff; }
+    #dictionary-context { margin: 0.65rem 0 0; font-size: 0.9rem; line-height: 1.4; opacity: 0.9; }
+    #dictionary-context mark { background: #ffd54f; color: #15120d; font-weight: 700; padding: 0 0.08em; }
+  </style>
+  <script src="jszip.min.js"></script>
+  <script src="epub.min.js"></script>
+</head>
+<body>
+  <div id="viewer"></div>
+  <aside id="dictionary-card" hidden aria-live="polite">
+    <div class="dictionary-heading">
+      <div><strong id="dictionary-word"></strong><span id="dictionary-kind"></span></div>
+      <button id="dictionary-close" type="button" aria-label="Close definition">×</button>
+    </div>
+    <p id="dictionary-status"></p>
+    <p id="dictionary-context"></p>
+    <ol id="dictionary-definitions"></ol>
+    <a id="dictionary-source" target="_blank" rel="noreferrer">Wiktionary</a>
+  </aside>
+  <script>
+    let book = null;
+    let rendition = null;
+    let currentBookId = "";
+    let activeDictionary = null;
+    let readerFontPercent = Number(localStorage.getItem("bookstr-reader-font-percent")) || 100;
+
+    function base64ToArrayBuffer(base64) {
+      const binary = atob(base64);
+      const len = binary.length;
+      const bytes = new Uint8Array(len);
+      for (let i = 0; i < len; i++) {
+        bytes[i] = binary.charCodeAt(i);
+      }
+      return bytes.buffer;
+    }
+
+    function applyTheme(theme) {
+      document.body.className = theme === "night" ? "night" : (theme === "white" ? "white" : "");
+      if (rendition) {
+        rendition.themes.select(theme === "night" ? "night" : (theme === "white" ? "white" : "paper"));
+      }
+    }
+
+    function registerThemes() {
+      const shared = {
+        "font-family": "'Iowan Old Style', 'Palatino Linotype', Palatino, 'Book Antiqua', Georgia, serif !important",
+        "font-size": "1.04em !important",
+        "line-height": "1.6 !important",
+        "box-sizing": "border-box",
+        "width": "100% !important",
+        "max-width": "none !important",
+        "margin-left": "0 !important",
+        "margin-right": "0 !important",
+        "padding-left": "0.12rem !important",
+        "padding-right": "0.12rem !important"
+      };
+      const media = {
+        "max-width": "100% !important",
+        "max-height": "88vh !important",
+        "width": "auto !important",
+        "height": "auto !important",
+        "object-fit": "contain !important",
+        "display": "block",
+        "margin-left": "auto !important",
+        "margin-right": "auto !important"
+      };
+      rendition.themes.register("white", {
+        "html, body": { background: "#ffffff !important", color: "#1a1714 !important" },
+        body: Object.assign({}, shared, { background: "#ffffff !important", color: "#1a1714 !important" }),
+        a: { color: "#175a7a !important", "text-decoration-color": "#7ea3b5 !important" },
+        "a:visited": { color: "#634779 !important" },
+        "img, svg, video": media
+      });
+      rendition.themes.register("paper", {
+        "html, body": { background: "#f4f0e6 !important", color: "#1a1714 !important" },
+        body: Object.assign({}, shared, { background: "#f4f0e6 !important", color: "#1a1714 !important" }),
+        a: { color: "#8a3d24 !important", "text-decoration-color": "#c39478 !important" },
+        "a:visited": { color: "#6c4c70 !important" },
+        "img, svg, video": media
+      });
+      rendition.themes.register("night", {
+        "html, body": { background: "#121212 !important", color: "#e8e4dc !important" },
+        body: Object.assign({}, shared, { background: "#121212 !important", color: "#e8e4dc !important" }),
+        "p, div, span, li, blockquote, td, th, h1, h2, h3, h4, h5, h6": {
+          color: "#e8e4dc !important"
+        },
+        a: { color: "#8fcaff !important", "text-decoration-color": "#537da3 !important" },
+        "a:visited": { color: "#d0a8e8 !important" },
+        "img, svg, video": media
+      });
+    }
+
+    function openBook(source, cfi, theme, highlightCfi, bookId) {
+      currentBookId = String(bookId || "");
+      applyTheme(theme || "paper");
+      try {
+        book = ePub(source);
+      } catch (error) {
+        return Promise.reject(error);
+      }
+      return book.ready.then(function() {
+        rendition = book.renderTo("viewer", {
+          width: "100%",
+          height: "100%",
+          spread: "none",
+          manager: "continuous",
+          flow: "scrolled-doc"
+        });
+        rendition.on("rendered", function(_, view) {
+          const contentDocument = view && view.contents && view.contents.document;
+          if (contentDocument) installSwipeNavigation(contentDocument);
+        });
+        rendition.on("selected", function(cfi, contents) {
+          const selectedRange = contents && contents.window && contents.window.getSelection();
+          const selection = selectedRange ? selectedRange.toString() : "";
+          const language = (contents && contents.document && contents.document.documentElement.lang) ||
+            (book.packaging && book.packaging.metadata && book.packaging.metadata.language) || "en";
+          keepHighlight(cfi);
+          showDictionary(selection, language, cfi, selectionContext(selectedRange));
+        });
+        registerThemes();
+        applyTheme(theme || "paper");
+        rendition.themes.fontSize(readerFontPercent + "%");
+        rendition.on("relocated", function(location) {
+          reportLocation(location);
+        });
+        return rendition.display(cfi || undefined);
+      }).then(function() {
+        restoredHighlights(highlightCfi).forEach(applyHighlight);
+        if (window.AndroidBridge) AndroidBridge.onReaderReady();
+        reportLocation(rendition.currentLocation());
+        book.locations.generate(100).then(function() {
+          reportLocation(rendition.currentLocation());
+        }).catch(function(error) {
+          console.warn("Could not generate EPUB locations", error);
+        });
+      });
+    }
+
+    function reportLocation(location) {
+      const start = location && location.start;
+      if (!start || !start.cfi || !window.AndroidBridge) return;
+      let progression = Number.isFinite(start.percentage) ? start.percentage : 0;
+      try {
+        const generated = book && book.locations && book.locations.length() > 0;
+        if (generated) progression = book.locations.percentageFromCfi(start.cfi);
+      } catch (error) {
+        console.warn("Could not calculate EPUB progress", error);
+      }
+      if (!Number.isFinite(progression)) progression = 0;
+      AndroidBridge.onRelocated(JSON.stringify({
+        cfi: start.cfi,
+        progression: Math.max(0, Math.min(1, progression))
+      }));
+    }
+
+    function reportReaderError(error) {
+      const message = error && error.message ? error.message : String(error || "Unknown reader error");
+      if (window.AndroidBridge) AndroidBridge.onReaderError(message);
+    }
+
+    window.loadBook = function(base64, cfi, theme) {
+      return reportPromise(openBook(base64ToArrayBuffer(base64), cfi, theme, null));
+    };
+
+    window.loadBookUrl = function(url, cfi, theme, highlightCfi, bookId) {
+      const loading = fetch(url, { cache: "no-store" }).then(function(response) {
+        if (!response.ok) throw new Error("EPUB request failed: HTTP " + response.status);
+        return response.arrayBuffer();
+      }).then(function(buffer) {
+        if (!buffer.byteLength) throw new Error("Downloaded EPUB is empty");
+        return openBook(buffer, cfi, theme, highlightCfi, bookId);
+      });
+      return reportPromise(withTimeout(loading, 30000, "EPUB reader timed out"));
+    };
+
+    function withTimeout(promise, milliseconds, message) {
+      let timer;
+      const timeout = new Promise(function(_, reject) {
+        timer = setTimeout(function() { reject(new Error(message)); }, milliseconds);
+      });
+      return Promise.race([promise, timeout]).finally(function() { clearTimeout(timer); });
+    }
+
+    function reportPromise(promise) {
+      return promise.catch(function(error) {
+        reportReaderError(error);
+        throw error;
+      });
+    }
+
+    function installSwipeNavigation(target) {
+      if (target.__bookstrSwipeInstalled) return;
+      target.__bookstrSwipeInstalled = true;
+      let startX = 0;
+      let startY = 0;
+      let pinchStartDistance = 0;
+      let pinchStartFontPercent = readerFontPercent;
+      target.addEventListener("touchstart", function(event) {
+        if (event.touches.length === 1) {
+          startX = event.touches[0].clientX;
+          startY = event.touches[0].clientY;
+        } else if (event.touches.length === 2) {
+          pinchStartDistance = touchDistance(event.touches[0], event.touches[1]);
+          pinchStartFontPercent = readerFontPercent;
+        }
+      }, { passive: true });
+      target.addEventListener("touchmove", function(event) {
+        if (event.touches.length !== 2 || pinchStartDistance <= 0) return;
+        const distance = touchDistance(event.touches[0], event.touches[1]);
+        const ratio = distance / pinchStartDistance;
+        const dampedRatio = 1 + (ratio - 1) * 0.35;
+        const next = Math.max(75, Math.min(180, Math.round(pinchStartFontPercent * dampedRatio)));
+        if (next !== readerFontPercent) {
+          readerFontPercent = next;
+          rendition.themes.fontSize(readerFontPercent + "%");
+          localStorage.setItem("bookstr-reader-font-percent", String(readerFontPercent));
+        }
+        event.preventDefault();
+      }, { passive: false });
+      target.addEventListener("touchend", function(event) {
+        if (!event.changedTouches.length) return;
+        const endX = event.changedTouches[0].clientX;
+        const endY = event.changedTouches[0].clientY;
+        const dx = endX - startX;
+        const dy = endY - startY;
+        const viewportHeight = target.defaultView ? target.defaultView.innerHeight : window.innerHeight;
+        const selectedText = target.defaultView && target.defaultView.getSelection
+          ? target.defaultView.getSelection().toString().trim() : "";
+        if (selectedText) return;
+        if (Math.abs(dx) < 18 && Math.abs(dy) < 18) {
+          closeDictionary();
+          return;
+        }
+        if (Math.abs(dx) < 85 || Math.abs(dx) < Math.abs(dy) * 1.65) return;
+        if (dx < 0) nextPage(); else prevPage();
+      }, { passive: true });
+    }
+
+    function touchDistance(first, second) {
+      const dx = second.clientX - first.clientX;
+      const dy = second.clientY - first.clientY;
+      return Math.sqrt(dx * dx + dy * dy);
+    }
+
+    function normalizeSelectedWord(selection) {
+      const word = String(selection || "").normalize("NFC").trim()
+        .replace(/^\P{L}+|\P{L}+$/gu, "").toLocaleLowerCase();
+      return word && word.length <= 64 && /^\p{L}+(?:['’-]\p{L}+)*$/u.test(word) ? word : null;
+    }
+
+    function selectionContext(selection) {
+      if (!selection || !selection.anchorNode) return "";
+      let node = selection.anchorNode.nodeType === Node.ELEMENT_NODE
+        ? selection.anchorNode : selection.anchorNode.parentElement;
+      const block = node && node.closest ? node.closest("p, li, blockquote, dd, dt, figcaption") : null;
+      const text = cleanDictionaryText((block || node).textContent || "");
+      if (text.length <= 360) return text;
+      const selected = cleanDictionaryText(selection.toString());
+      const index = text.toLocaleLowerCase().indexOf(selected.toLocaleLowerCase());
+      if (index < 0) return text.slice(0, 357) + "…";
+      const start = Math.max(0, index - 150);
+      const end = Math.min(text.length, index + selected.length + 150);
+      return (start > 0 ? "…" : "") + text.slice(start, end) + (end < text.length ? "…" : "");
+    }
+
+    function cleanDictionaryText(value) {
+      return String(value || "").replace(/\s+/g, " ").replace(/\[editar\]/gi, "").trim();
+    }
+
+    function closeDictionary() {
+      document.getElementById("dictionary-card").hidden = true;
+      activeDictionary = null;
+    }
+
+    function applyHighlight(cfi) {
+      if (!cfi || !rendition || !rendition.annotations) return;
+      try {
+        rendition.annotations.highlight(
+          cfi, {}, null, "bookstr-word-highlight",
+          { fill: "#ffd54f", "fill-opacity": "0.48", "mix-blend-mode": "multiply" }
+        );
+      } catch (error) { console.warn("Could not highlight word", error); }
+    }
+
+    function highlightStorageKey() {
+      return "bookstr-highlights:" + currentBookId;
+    }
+
+    function restoredHighlights(extraCfi) {
+      let saved = [];
+      try { saved = JSON.parse(localStorage.getItem(highlightStorageKey()) || "[]"); } catch (_) {}
+      if (extraCfi && !saved.includes(extraCfi)) saved.push(extraCfi);
+      return saved.filter(Boolean).slice(-500);
+    }
+
+    function keepHighlight(cfi) {
+      if (!cfi) return;
+      const saved = restoredHighlights(cfi);
+      try { localStorage.setItem(highlightStorageKey(), JSON.stringify(saved)); } catch (_) {}
+      applyHighlight(cfi);
+    }
+
+    function renderContext(node, context, word) {
+      node.replaceChildren();
+      if (!context) { node.hidden = true; return; }
+      node.hidden = false;
+      const index = context.toLocaleLowerCase().indexOf(word.toLocaleLowerCase());
+      if (index < 0) { node.textContent = context; return; }
+      node.append(document.createTextNode(context.slice(0, index)));
+      const mark = document.createElement("mark");
+      mark.textContent = context.slice(index, index + word.length);
+      node.append(mark, document.createTextNode(context.slice(index + word.length)));
+    }
+
+    async function showDictionary(selection, language, cfi, contextSentence) {
+      const word = normalizeSelectedWord(selection);
+      if (!word) return;
+      const dictionaryLanguage = String(language).toLowerCase().startsWith("pt") ? "pt" : "en";
+      if (window.AndroidBridge) AndroidBridge.onWordSelected(JSON.stringify({
+        word: word,
+        language: dictionaryLanguage,
+        cfi: cfi || "",
+        contextSentence: contextSentence || ""
+      }));
+      const card = document.getElementById("dictionary-card");
+      const wordNode = document.getElementById("dictionary-word");
+      const kindNode = document.getElementById("dictionary-kind");
+      const statusNode = document.getElementById("dictionary-status");
+      const definitionsNode = document.getElementById("dictionary-definitions");
+      const sourceNode = document.getElementById("dictionary-source");
+      const contextNode = document.getElementById("dictionary-context");
+      card.hidden = false;
+      wordNode.textContent = word;
+      kindNode.textContent = "";
+      statusNode.textContent = "Looking up…";
+      definitionsNode.replaceChildren();
+      renderContext(contextNode, contextSentence || "", word);
+      sourceNode.hidden = true;
+      activeDictionary = { word: word, language: dictionaryLanguage };
+      if (window.AndroidBridge && AndroidBridge.onLookupDictionary) {
+        AndroidBridge.onLookupDictionary(JSON.stringify(activeDictionary));
+        return;
+      }
+      try {
+        const cacheKey = "bookstr-dictionary-" + dictionaryLanguage + ":" + word;
+        let entry = null;
+        try { entry = JSON.parse(localStorage.getItem(cacheKey) || "null"); } catch (_) {}
+        if (!entry || !Array.isArray(entry.definitions) || !entry.definitions.length) {
+          entry = await lookupDictionary(word, dictionaryLanguage);
+          try { localStorage.setItem(cacheKey, JSON.stringify(entry)); } catch (_) {}
+        }
+        if (card.hidden || wordNode.textContent !== word) return;
+        kindNode.textContent = entry.partOfSpeech || "";
+        statusNode.textContent = "";
+        entry.definitions.slice(0, 4).forEach(function(definition) {
+          const item = document.createElement("li");
+          item.textContent = definition;
+          definitionsNode.appendChild(item);
+        });
+        sourceNode.href = entry.sourceUrl;
+        sourceNode.hidden = false;
+        if (window.AndroidBridge) AndroidBridge.onDictionaryResult(JSON.stringify({
+          word: word,
+          language: dictionaryLanguage,
+          partOfSpeech: entry.partOfSpeech || "",
+          definitions: entry.definitions.slice(0, 4),
+          sourceUrl: entry.sourceUrl || ""
+        }));
+      } catch (error) {
+        console.warn("Dictionary lookup failed", error);
+        statusNode.textContent = error && error.message ? error.message : "Definition unavailable";
+      }
+    }
+
+    window.receiveDictionaryResult = function(payloadJson) {
+      let payload;
+      try { payload = JSON.parse(payloadJson); } catch (_) { return; }
+      if (!activeDictionary || payload.word !== activeDictionary.word) return;
+      const statusNode = document.getElementById("dictionary-status");
+      const kindNode = document.getElementById("dictionary-kind");
+      const definitionsNode = document.getElementById("dictionary-definitions");
+      const sourceNode = document.getElementById("dictionary-source");
+      if (payload.error) {
+        statusNode.textContent = payload.error;
+        return;
+      }
+      statusNode.textContent = "";
+      kindNode.textContent = payload.partOfSpeech || "";
+      definitionsNode.replaceChildren();
+      (payload.definitions || []).slice(0, 4).forEach(function(definition) {
+        const item = document.createElement("li");
+        item.textContent = definition;
+        definitionsNode.appendChild(item);
+      });
+      sourceNode.textContent = String(payload.partOfSpeech || "").startsWith("WikDict")
+        ? "WikDict" : "Wiktionary";
+      sourceNode.href = payload.sourceUrl || "";
+      sourceNode.hidden = !payload.sourceUrl;
+      if (window.AndroidBridge) AndroidBridge.onDictionaryResult(JSON.stringify(payload));
+    };
+
+    async function lookupDictionary(word, language) {
+      const languages = [language, language === "pt" ? "en" : "pt"];
+      for (const candidateLanguage of languages) {
+        const host = candidateLanguage === "pt" ? "pt.wiktionary.org" : "en.wiktionary.org";
+        const params = new URLSearchParams({
+          action: "query", prop: "extracts", explaintext: "1", redirects: "1",
+          titles: word, format: "json", formatversion: "2", origin: "*"
+        });
+        const response = await fetch("https://" + host + "/w/api.php?" + params.toString());
+        if (!response.ok) continue;
+        const payload = await response.json();
+        const pages = payload.query && payload.query.pages;
+        const extract = Array.isArray(pages) && pages[0] && pages[0].extract || "";
+        const parsed = parseDictionaryExtract(extract, candidateLanguage, word);
+        if (parsed.definitions.length) {
+          return {
+            partOfSpeech: parsed.partOfSpeech,
+            definitions: parsed.definitions,
+            sourceUrl: "https://" + host + "/wiki/" + encodeURIComponent(word)
+          };
+        }
+      }
+      throw new Error("No definition found for “" + word + "”");
+    }
+
+    function extractHeading(line) {
+      const match = String(line || "").match(/^(=+)\s*(.*?)\s*\1$/);
+      return match ? { level: match[1].length, text: match[2].trim() } : null;
+    }
+
+    function parseDictionaryExtract(extract, language, word) {
+      const lines = String(extract || "").split(/\r?\n/).map(function(line) { return line.trim(); });
+      const wanted = language === "pt" ? "português" : "english";
+      let languageIndex = -1;
+      let languageLevel = 0;
+      for (let index = 0; index < lines.length; index++) {
+        const heading = extractHeading(lines[index]);
+        if (heading && heading.text.toLocaleLowerCase() === wanted) {
+          languageIndex = index;
+          languageLevel = heading.level;
+          break;
+        }
+      }
+      if (languageIndex < 0) return { partOfSpeech: "", definitions: [] };
+      const ignored = /^(Etimologia|Pronúncia|Tradução|Ver também|Ligações externas|Etymology.*|Pronunciation|Translations|Related terms|Derived terms|See also|Further reading|Anagrams)$/i;
+      let accepting = false;
+      let partOfSpeech = "";
+      let skipHeadword = false;
+      const definitions = [];
+      for (let index = languageIndex + 1; index < lines.length; index++) {
+        const line = lines[index];
+        const heading = extractHeading(line);
+        if (heading && heading.level <= languageLevel) break;
+        if (heading) {
+          accepting = Boolean(heading.text) && !ignored.test(heading.text);
+          skipHeadword = accepting;
+          if (accepting && !partOfSpeech) partOfSpeech = heading.text;
+          continue;
+        }
+        if (!accepting || !line) continue;
+        const lettersOnly = line.replace(/[^\p{L}]/gu, "").toLocaleLowerCase();
+        const wordLetters = word.replace(/[^\p{L}]/gu, "").toLocaleLowerCase();
+        if (skipHeadword || lettersOnly === wordLetters) {
+          skipHeadword = false;
+          continue;
+        }
+        if (/^(IPA|Rhymes:|Hyphenation:)/i.test(line) || line.length < 3) continue;
+        if (!definitions.includes(line)) definitions.push(line);
+        if (definitions.length === 4) break;
+      }
+      return { partOfSpeech: partOfSpeech, definitions: definitions };
+    }
+
+    function parseDictionaryHtml(html, language) {
+      const parsedDocument = new DOMParser().parseFromString(html, "text/html");
+      const wanted = language === "pt" ? "português" : "english";
+      const heading = Array.from(parsedDocument.querySelectorAll("h1, h2")).find(function(node) {
+        return cleanDictionaryText(node.textContent).toLocaleLowerCase().includes(wanted);
+      });
+      const headingRow = heading && heading.parentElement;
+      if (!headingRow) return { definitions: [] };
+      const levelClass = Array.from(headingRow.classList).find(function(name) { return /^mw-heading\d$/.test(name); });
+      const nodes = [];
+      let sibling = headingRow.nextElementSibling;
+      while (sibling) {
+        if (levelClass && sibling.classList.contains(levelClass)) break;
+        nodes.push(sibling);
+        sibling = sibling.nextElementSibling;
+      }
+      let partOfSpeech = "";
+      const definitions = [];
+      nodes.forEach(function(node) {
+        const subheading = node.matches(".mw-heading") ? node.querySelector("h2, h3, h4") : null;
+        if (!partOfSpeech && subheading) {
+          const candidate = cleanDictionaryText(subheading.textContent);
+          if (!/^(Etimologia|Pronúncia|Ver também|Etymology|Pronunciation)$/i.test(candidate)) {
+            partOfSpeech = candidate;
+          }
+        }
+        node.querySelectorAll("ol > li").forEach(function(item) {
+          const definition = cleanDictionaryText(item.textContent);
+          if (definition && !definitions.includes(definition) && definitions.length < 4) definitions.push(definition);
+        });
+      });
+      return { partOfSpeech: partOfSpeech, definitions: definitions };
+    }
+
+    document.getElementById("dictionary-close").addEventListener("click", closeDictionary);
+    document.addEventListener("pointerdown", function(event) {
+      if (!document.getElementById("dictionary-card").contains(event.target)) closeDictionary();
+    });
+
+    window.nextPage = function() {
+      moveViewportPage(1);
+    };
+
+    window.prevPage = function() {
+      moveViewportPage(-1);
+    };
+
+    function moveViewportPage(direction) {
+      if (!rendition) return;
+      const container = document.querySelector(".epub-container");
+      const distance = Math.max(180, (container ? container.clientHeight : window.innerHeight) * 0.88);
+      const viewer = document.getElementById("viewer");
+      viewer.classList.remove("page-forward", "page-back");
+      void viewer.offsetWidth;
+      viewer.classList.add(direction > 0 ? "page-forward" : "page-back");
+      if (container && container.scrollBy) {
+        container.scrollBy({ top: direction * distance, behavior: "smooth" });
+      } else {
+        const contents = rendition.getContents();
+        const win = contents[0] && contents[0].window;
+        if (win) win.scrollBy({ top: direction * distance, behavior: "smooth" });
+      }
+      setTimeout(function() { viewer.classList.remove("page-forward", "page-back"); }, 220);
+    }
+
+    window.setReaderTheme = function(theme) {
+      applyTheme(theme);
+    };
+
+  </script>
+</body>
+</html>

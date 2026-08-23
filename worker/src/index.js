@@ -45,7 +45,7 @@ export default {
     try {
       const response = await fetch(upstream, {
         method: request.method,
-        redirect: 'manual',
+        redirect: 'follow',
         headers: { Accept: request.headers.get('Accept') || '*/*' },
       });
       const headers = new Headers(cors);
