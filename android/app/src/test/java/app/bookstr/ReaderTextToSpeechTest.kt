@@ -31,7 +31,7 @@ class ReaderTextToSpeechTest {
 
     @Test
     fun voiceSelectionFallsBackToAnyOfflineVoiceInTheRequestedLanguage() {
-        val source = File("src/main/java/app/bookstr/ReaderActivity.kt").readText()
+        val source = File("src/main/java/app/bookstr/NarrationService.kt").readText()
 
         assertTrue(source.contains("val sameLanguageOfflineVoices"))
         assertTrue(source.contains("val exactRegionOfflineVoices"))
@@ -40,18 +40,19 @@ class ReaderTextToSpeechTest {
 
     @Test
     fun activeNarrationUsesVolumeKeysAndNaturalVoiceConfiguration() {
-        val source = File("src/main/java/app/bookstr/ReaderActivity.kt").readText()
+        val readerSource = File("src/main/java/app/bookstr/ReaderActivity.kt").readText()
+        val serviceSource = File("src/main/java/app/bookstr/NarrationService.kt").readText()
 
-        assertTrue(source.contains("if (isSpeaking && (keyCode == KeyEvent.KEYCODE_VOLUME_UP"))
-        assertTrue(source.contains("engine.setSpeechRate(0.92f)"))
-        assertTrue(source.contains("engine.voices"))
-        assertTrue(source.contains("it.quality"))
-        assertTrue(source.contains("override fun onRangeStart"))
-        assertTrue(source.contains("showSpeechProgress("))
-        assertTrue(source.contains("enqueueNextSpeechUtterance"))
-        assertTrue(source.contains("playSilentUtterance"))
-        assertTrue(source.contains("SENTENCE_PAUSE_MILLIS = 240L"))
-        assertTrue(source.contains("matchingOfflineVoices"))
-        assertTrue(source.contains("val resolvedVoice = currentMatchingVoice"))
+        assertTrue(readerSource.contains("if (isSpeaking && (keyCode == KeyEvent.KEYCODE_VOLUME_UP"))
+        assertTrue(readerSource.contains("showSpeechProgress("))
+        assertTrue(serviceSource.contains("engine.setSpeechRate(1.0f)"))
+        assertTrue(serviceSource.contains("engine.voices"))
+        assertTrue(serviceSource.contains("it.quality"))
+        assertTrue(serviceSource.contains("synthesizeToFile"))
+        assertTrue(serviceSource.contains("MediaPlayer()"))
+        assertTrue(serviceSource.contains("player.currentPosition"))
+        assertTrue(serviceSource.contains("SENTENCE_PAUSE_MILLIS = 240L"))
+        assertTrue(serviceSource.contains("matchingOfflineVoices"))
+        assertTrue(serviceSource.contains("val resolvedVoice = currentMatchingVoice"))
     }
 }

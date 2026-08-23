@@ -67,6 +67,9 @@ class ReaderAssetContractTest {
         assertTrue(html.contains("document.documentElement.lang"))
         assertTrue(html.contains("window.showSpeechProgress"))
         assertTrue(html.contains("bookstr-speaking"))
+        assertTrue(html.contains("bookstr-speaking-word"))
+        assertTrue(html.contains("speechTextMap"))
+        assertTrue(html.contains("notifyNative !== false"))
         assertTrue(html.contains("reportLocation(rendition.currentLocation())"))
         assertFalse(html.contains("book = ePub(base64ToArrayBuffer(base64))"))
     }

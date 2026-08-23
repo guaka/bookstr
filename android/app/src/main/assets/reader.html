@@ -11,13 +11,13 @@
       width: 100%;
       height: 100%;
       overflow: hidden;
-      background: #f4f0e6;
-      color: #1a1714;
+      background: #f7f3ea;
+      color: #1c1916;
       touch-action: manipulation;
     }
     body.white {
       background: #ffffff;
-      color: #1a1714;
+      color: #1c1916;
     }
     body.night {
       background: #121212;
@@ -32,7 +32,10 @@
       overflow-x: hidden !important;
       overflow-y: auto !important;
       -webkit-overflow-scrolling: touch;
+      scrollbar-width: none;
     }
+    .epub-container::-webkit-scrollbar,
+    #dictionary-card::-webkit-scrollbar { display: none; width: 0; height: 0; }
     #dictionary-card {
       position: fixed;
       z-index: 20;
@@ -45,13 +48,13 @@
       border-radius: 0.8rem;
       padding: 0.9rem;
       box-sizing: border-box;
-      background: #f4f0e6;
-      color: #1a1714;
+      background: #f7f3ea;
+      color: #1c1916;
       box-shadow: 0 0.8rem 2.5rem rgba(0, 0, 0, 0.35);
       font-family: system-ui, sans-serif;
     }
-    body.white #dictionary-card { background: #ffffff; color: #1a1714; }
-    body.night #dictionary-card { background: #202020; color: #e8e4dc; }
+    body.white #dictionary-card { background: #ffffff; color: #1c1916; }
+    body.night #dictionary-card { background: #1b1a18; color: #e8e4dc; }
     #dictionary-card[hidden] { display: none; }
     .dictionary-heading { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
     .dictionary-heading strong { font-size: 1.25rem; }
@@ -68,9 +71,9 @@
     #dictionary-card li + li { margin-top: 0.45rem; }
     #dictionary-status { margin: 0.75rem 0 0; opacity: 0.75; }
     #dictionary-source { display: none !important; }
-    body.night #dictionary-source { color: #9ecbff; }
+    body.night #dictionary-source { color: #7fb8a7; }
     #dictionary-context { margin: 0.65rem 0 0; font-size: 0.9rem; line-height: 1.4; opacity: 0.9; }
-    #dictionary-context mark { background: #ffd54f; color: #15120d; font-weight: 700; padding: 0 0.08em; }
+    #dictionary-context mark { background: #e7c766; color: #1c1916; font-weight: 700; padding: 0 0.08em; }
     #image-zoom {
       position: fixed;
       z-index: 30;
@@ -119,6 +122,7 @@
     let readerFontPercent = Number(localStorage.getItem("bookstr-reader-font-percent")) || 100;
     let speechBlocks = [];
     let activeSpeechBlock = null;
+    let activeSpeechHighlightWindow = null;
 
     function base64ToArrayBuffer(base64) {
       const binary = atob(base64);
@@ -160,24 +164,27 @@
         "margin-right": "auto !important"
       };
       rendition.themes.register("white", {
-        "html, body": { background: "#ffffff !important", color: "#1a1714 !important" },
-        body: Object.assign({}, shared, { background: "#ffffff !important", color: "#1a1714 !important" }),
-        a: { color: "#1a1714 !important" },
+        "html, body": { background: "#ffffff !important", color: "#1c1916 !important" },
+        body: Object.assign({}, shared, { background: "#ffffff !important", color: "#1c1916 !important" }),
+        a: { color: "#2f5d50 !important" },
         "img, svg, video": media
       });
       rendition.themes.register("paper", {
-        "html, body": { background: "#f4f0e6 !important", color: "#1a1714 !important" },
-        body: Object.assign({}, shared, { background: "#f4f0e6 !important", color: "#1a1714 !important" }),
-        a: { color: "#1a1714 !important" },
+        "html, body": { background: "#f7f3ea !important", color: "#1c1916 !important" },
+        body: Object.assign({}, shared, { background: "#f7f3ea !important", color: "#1c1916 !important" }),
+        a: { color: "#2f5d50 !important" },
         "img, svg, video": media
       });
       rendition.themes.register("night", {
-        "html, body": { background: "#121212 !important", color: "#e8e4dc !important" },
+        html: { background: "#121212 !important", color: "#e8e4dc !important", "color-scheme": "dark !important" },
         body: Object.assign({}, shared, { background: "#121212 !important", color: "#e8e4dc !important" }),
         "p, div, span, li, blockquote, td, th, h1, h2, h3, h4, h5, h6": {
-          color: "#e8e4dc !important"
+          color: "#e8e4dc !important",
+          "background-color": "transparent !important",
+          "border-color": "#4a4844 !important"
         },
-        a: { color: "#9ecbff !important" },
+        "pre, code, table": { background: "#1b1a18 !important", color: "#e8e4dc !important" },
+        a: { color: "#7fb8a7 !important" },
         "img, svg, video": media
       });
     }
@@ -322,7 +329,11 @@
 
     window.loadBookUrl = function(url, cfi, theme, highlightCfi, bookId) {
       const loading = fetch(url, { cache: "no-store" }).then(function(response) {
-        if (!response.ok) throw new Error("EPUB request failed: HTTP " + response.status);
+        // WKURLSchemeHandler-backed resources can have an opaque status of 0 even
+        // when WebKit successfully delivered the complete local response.
+        if (!response.ok && response.status !== 0) {
+          throw new Error("EPUB request failed: HTTP " + response.status);
+        }
         return response.arrayBuffer();
       }).then(function(buffer) {
         if (!buffer.byteLength) throw new Error("Downloaded EPUB is empty");
@@ -430,6 +441,10 @@
           return;
         }
         if (event.cancelable) event.preventDefault();
+        if (window.bookstrNativeSwipeNavigation) {
+          gestureAxis = null;
+          return;
+        }
         if (dx < 0) nextPage(); else prevPage();
         gestureAxis = null;
       }, { passive: false });
@@ -628,7 +643,7 @@
       try {
         rendition.annotations.highlight(
           cfi, {}, null, "bookstr-word-highlight",
-          { fill: "#ffd54f", "fill-opacity": "0.48", "mix-blend-mode": "multiply" }
+          { fill: "#e7c766", "fill-opacity": "0.62", "mix-blend-mode": "multiply" }
         );
       } catch (error) { console.warn("Could not highlight word", error); }
     }
@@ -674,7 +689,7 @@
       if (!style) {
         style = contentDocument.createElement("style");
         style.id = "bookstr-known-word-style";
-        style.textContent = "::highlight(bookstr-known-word){background:#ffd966;color:#1a1714;text-decoration:none}";
+        style.textContent = "::highlight(bookstr-known-word){background:#e7c766;color:#1c1916;text-decoration:none}";
         (contentDocument.head || contentDocument.documentElement).appendChild(style);
       }
       contentWindow.CSS.highlights.set("bookstr-known-word", new contentWindow.Highlight(...ranges));
@@ -980,8 +995,8 @@
       if (!document.getElementById("dictionary-card").contains(event.target)) closeDictionary();
     });
 
-    window.requestSpeechText = function() {
-      if (!window.AndroidBridge || !AndroidBridge.onSpeechText || !rendition) return;
+    window.requestSpeechText = function(notifyNative) {
+      if (!rendition) return;
       const contentsList = rendition.getContents ? rendition.getContents() : [];
       const parts = [];
       let language = "";
@@ -1015,41 +1030,109 @@
       if (!language && book && book.packaging && book.packaging.metadata) {
         language = metadataText(book.packaging.metadata.language);
       }
-      AndroidBridge.onSpeechText(JSON.stringify({
-        text: parts.join("\n").slice(0, 100000),
-        language: language || "en"
-      }));
+      if (notifyNative !== false && window.AndroidBridge && AndroidBridge.onSpeechText) {
+        AndroidBridge.onSpeechText(JSON.stringify({
+          text: parts.join("\n").slice(0, 100000),
+          language: language || "en"
+        }));
+      }
     };
+
+    function clearSpeechWordHighlight() {
+      if (activeSpeechHighlightWindow && activeSpeechHighlightWindow.CSS &&
+          activeSpeechHighlightWindow.CSS.highlights) {
+        activeSpeechHighlightWindow.CSS.highlights.delete("bookstr-speaking-word");
+      }
+      activeSpeechHighlightWindow = null;
+    }
+
+    function speechTextMap(element) {
+      const document = element.ownerDocument;
+      const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
+      const characters = [];
+      const positions = [];
+      let node;
+      while ((node = walker.nextNode())) {
+        const parent = node.parentElement;
+        if (parent && parent.closest("script, style, noscript")) continue;
+        const raw = node.nodeValue || "";
+        for (let index = 0; index < raw.length; index += 1) {
+          if (/\s/.test(raw[index])) {
+            if (characters.length && characters[characters.length - 1] !== " ") {
+              characters.push(" ");
+              positions.push({ node: node, start: index, end: index + 1 });
+            }
+          } else {
+            characters.push(raw[index]);
+            positions.push({ node: node, start: index, end: index + 1 });
+          }
+        }
+      }
+      while (characters[characters.length - 1] === " ") {
+        characters.pop();
+        positions.pop();
+      }
+      return { text: characters.join(""), positions: positions };
+    }
+
+    function showSpeechWord(block, start, end) {
+      clearSpeechWordHighlight();
+      const contentWindow = block.element.ownerDocument.defaultView;
+      if (!contentWindow || !contentWindow.CSS || !contentWindow.CSS.highlights ||
+          typeof contentWindow.Highlight !== "function") return;
+      const mapped = speechTextMap(block.element);
+      if (!mapped.positions.length) return;
+      let first = Math.max(0, Math.min(mapped.text.length - 1, start - block.start));
+      let last = Math.max(first + 1, Math.min(mapped.text.length, end - block.start));
+      while (first < mapped.text.length && /\s/.test(mapped.text[first])) first += 1;
+      while (first > 0 && !/\s/.test(mapped.text[first - 1])) first -= 1;
+      while (last < mapped.text.length && !/\s/.test(mapped.text[last])) last += 1;
+      if (first >= mapped.positions.length) return;
+      const range = block.element.ownerDocument.createRange();
+      range.setStart(mapped.positions[first].node, mapped.positions[first].start);
+      const finalPosition = mapped.positions[Math.max(first, last - 1)];
+      range.setEnd(finalPosition.node, finalPosition.end);
+      contentWindow.CSS.highlights.set("bookstr-speaking-word", new contentWindow.Highlight(range));
+      activeSpeechHighlightWindow = contentWindow;
+    }
 
     window.showSpeechProgress = function(start, end) {
       const block = speechBlocks.find(function(candidate) {
         return candidate.end > start && candidate.start < end;
       });
-      if (!block || block === activeSpeechBlock) return;
-      if (activeSpeechBlock && activeSpeechBlock.element) {
-        activeSpeechBlock.element.classList.remove("bookstr-speaking");
-      }
-      activeSpeechBlock = block;
+      if (!block) return "";
+      const paragraph = String(block.element.innerText || block.element.textContent || "")
+        .replace(/\s+/g, " ").trim();
       let style = block.element.ownerDocument.getElementById("bookstr-speech-style");
       if (!style) {
         style = block.element.ownerDocument.createElement("style");
         style.id = "bookstr-speech-style";
         style.textContent = ".bookstr-speaking{background:rgba(255,213,79,.38)!important;" +
-          "box-shadow:0 0 0 .16em rgba(255,213,79,.38)!important;border-radius:.12em!important}";
+          "box-shadow:0 0 0 .16em rgba(255,213,79,.38)!important;border-radius:.12em!important}" +
+          "::highlight(bookstr-speaking-word){background:#e7c766;color:#1c1916}";
         (block.element.ownerDocument.head || block.element.ownerDocument.documentElement).appendChild(style);
       }
-      block.element.classList.add("bookstr-speaking");
-      block.element.scrollIntoView({ block: "center", behavior: "smooth" });
-      reportReaderInteraction();
-      setTimeout(function() {
-        if (rendition) reportLocation(rendition.currentLocation());
-      }, 350);
+      showSpeechWord(block, start, end);
+      if (block !== activeSpeechBlock) {
+        if (activeSpeechBlock && activeSpeechBlock.element) {
+          activeSpeechBlock.element.classList.remove("bookstr-speaking");
+        }
+        activeSpeechBlock = block;
+        block.element.classList.add("bookstr-speaking");
+        block.element.scrollIntoView({ block: "center", behavior: "smooth" });
+        reportReaderInteraction();
+        setTimeout(function() {
+          if (rendition) reportLocation(rendition.currentLocation());
+        }, 350);
+      }
+      return paragraph;
     };
 
     window.clearSpeechProgress = function() {
       if (activeSpeechBlock && activeSpeechBlock.element) {
         activeSpeechBlock.element.classList.remove("bookstr-speaking");
       }
+      clearSpeechWordHighlight();
       activeSpeechBlock = null;
       speechBlocks = [];
     };
@@ -1060,6 +1143,66 @@
 
     window.prevPage = function() {
       moveViewportPage(-1);
+    };
+
+    let nativeSwipeX = 0;
+
+    window.beginNativePageSwipe = function() {
+      if (pageTransitioning) return false;
+      const viewer = document.getElementById("viewer");
+      nativeSwipeX = 0;
+      viewer.style.willChange = "transform";
+      viewer.style.transform = "translate3d(0,0,0)";
+      return true;
+    };
+
+    window.updateNativePageSwipe = function(offset) {
+      if (pageTransitioning) return;
+      nativeSwipeX = Number(offset) || 0;
+      const viewer = document.getElementById("viewer");
+      viewer.style.transform = "translate3d(" + nativeSwipeX + "px,0,0)";
+    };
+
+    window.endNativePageSwipe = function(direction) {
+      const viewer = document.getElementById("viewer");
+      const chosenDirection = Number(direction) || 0;
+      if (!chosenDirection) {
+        viewer.animate(
+          [{ transform: "translate3d(" + nativeSwipeX + "px,0,0)" }, { transform: "translate3d(0,0,0)" }],
+          { duration: 170, easing: "cubic-bezier(.2,.8,.2,1)", fill: "forwards" }
+        ).finished.catch(function() {}).finally(function() {
+          viewer.style.transform = "translate3d(0,0,0)";
+          viewer.style.willChange = "auto";
+          nativeSwipeX = 0;
+        });
+        return;
+      }
+      const container = document.querySelector(".epub-container");
+      if (chosenDirection < 0 && container && container.scrollTop <= 2) {
+        window.endNativePageSwipe(0);
+        return;
+      }
+      pageTransitioning = true;
+      reportReaderInteraction();
+      const width = Math.max(320, viewer.clientWidth || window.innerWidth);
+      const outgoing = chosenDirection > 0 ? -width : width;
+      const incoming = chosenDirection > 0 ? width : -width;
+      viewer.animate(
+        [{ transform: "translate3d(" + nativeSwipeX + "px,0,0)" },
+         { transform: "translate3d(" + outgoing + "px,0,0)" }],
+        { duration: 150, easing: "cubic-bezier(.3,.7,.4,1)", fill: "forwards" }
+      ).finished.catch(function() {}).then(function() {
+        jumpViewportPage(chosenDirection);
+        return viewer.animate(
+          [{ transform: "translate3d(" + incoming + "px,0,0)" }, { transform: "translate3d(0,0,0)" }],
+          { duration: 175, easing: "cubic-bezier(.1,.8,.2,1)", fill: "forwards" }
+        ).finished;
+      }).catch(function() {}).finally(function() {
+        viewer.style.transform = "translate3d(0,0,0)";
+        viewer.style.willChange = "auto";
+        nativeSwipeX = 0;
+        pageTransitioning = false;
+      });
     };
 
     window.displaySection = function(href) {
@@ -1080,15 +1223,7 @@
       const distance = Math.max(180, (container ? container.clientHeight : window.innerHeight) * 0.88);
       const viewer = document.getElementById("viewer");
       viewer.style.willChange = "transform";
-      const jump = function() {
-        if (container && container.scrollBy) {
-          container.scrollBy({ top: direction * distance, behavior: "auto" });
-          return;
-        }
-        const contents = rendition.getContents();
-        const win = contents[0] && contents[0].window;
-        if (win) win.scrollBy({ top: direction * distance, behavior: "auto" });
-      };
+      const jump = function() { jumpViewportPage(direction); };
       if (!viewer.animate) {
         jump();
         return;
@@ -1109,6 +1244,18 @@
         viewer.style.willChange = "auto";
         pageTransitioning = false;
       });
+    }
+
+    function jumpViewportPage(direction) {
+      const container = document.querySelector(".epub-container");
+      const distance = Math.max(180, (container ? container.clientHeight : window.innerHeight) * 0.88);
+      if (container && container.scrollBy) {
+        container.scrollBy({ top: direction * distance, behavior: "auto" });
+        return;
+      }
+      const contents = rendition.getContents();
+      const win = contents[0] && contents[0].window;
+      if (win) win.scrollBy({ top: direction * distance, behavior: "auto" });
     }
 
     window.setReaderTheme = function(theme) {

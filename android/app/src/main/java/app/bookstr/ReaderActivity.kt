@@ -1,12 +1,13 @@
 package app.bookstr
 
 import android.annotation.SuppressLint
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.os.Build
 import android.os.Bundle
 import android.speech.tts.TextToSpeech
-import android.speech.tts.UtteranceProgressListener
 import android.util.Log
 import android.view.KeyEvent
 import android.view.ActionMode
@@ -35,7 +36,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.Stop
+import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
@@ -60,6 +61,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import androidx.webkit.WebViewAssetLoader
 import app.bookstr.data.ReaderTheme
@@ -76,7 +78,6 @@ import android.webkit.WebResourceResponse
 import java.time.LocalTime
 import java.time.format.DateTimeFormatter
 import java.util.Locale
-import java.util.concurrent.ConcurrentHashMap
 
 class ReaderActivity : ComponentActivity() {
     private var webView: WebView? = null
@@ -93,6 +94,7 @@ class ReaderActivity : ComponentActivity() {
     private var bookTitle by mutableStateOf("")
     private var bookAuthor by mutableStateOf<String?>(null)
     private var bookYear by mutableStateOf<String?>(null)
+    private var bookCoverUrl: String? = null
     private var initialCfi: String? = null
     private var highlightCfi: String? = null
     private var lastCfi: String? = null
@@ -105,12 +107,11 @@ class ReaderActivity : ComponentActivity() {
     private var speechMessage by mutableStateOf<String?>(null)
     private var readerTheme: ReaderTheme = ReaderTheme.Paper
     private lateinit var amberSession: AmberIntentSession
-    private var textToSpeech: TextToSpeech? = null
-    private var textToSpeechReady = false
-    private val utteranceOffsets = ConcurrentHashMap<String, Int>()
-    private val utteranceLengths = ConcurrentHashMap<String, Int>()
-    private var speechQueue: List<SpeechUtterance> = emptyList()
-    private var nextSpeechQueueIndex = 0
+    private val narrationReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            if (intent?.action == NarrationService.ACTION_EVENT) handleNarrationEvent(intent)
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -122,6 +123,7 @@ class ReaderActivity : ComponentActivity() {
         bookTitle = intent.getStringExtra(EXTRA_BOOK_TITLE) ?: "bookstr"
         bookAuthor = intent.getStringExtra(EXTRA_BOOK_AUTHOR)
         bookYear = intent.getStringExtra(EXTRA_BOOK_YEAR)
+        bookCoverUrl = intent.getStringExtra(EXTRA_BOOK_COVER_URL)
         initialCfi = intent.getStringExtra(EXTRA_INITIAL_CFI)
         highlightCfi = intent.getStringExtra(EXTRA_HIGHLIGHT_CFI)
         referenceJump = !highlightCfi.isNullOrBlank()
@@ -141,7 +143,12 @@ class ReaderActivity : ComponentActivity() {
         )
         applyLockScreenPolicy(app.settingsRepository.keepReadingOnLockScreen)
         amberSession = AmberIntentSession(this)
-        initializeTextToSpeech()
+        ContextCompat.registerReceiver(
+            this,
+            narrationReceiver,
+            IntentFilter(NarrationService.ACTION_EVENT),
+            ContextCompat.RECEIVER_NOT_EXPORTED,
+        )
         lifecycleScope.launch {
             app.catalogRepository.getProgress(bookId)?.let {
                 readerFurthestProgress = maxOf(it.progression, it.furthestProgression).toFloat()
@@ -165,7 +172,11 @@ class ReaderActivity : ComponentActivity() {
                         highlightCfi = highlightCfi,
                         knownWords = knownWords,
                         theme = readerTheme,
-                        onReaderReady = { readerLoading = false },
+                        onReaderReady = {
+                            readerLoading = false
+                            webView?.evaluateJavascript("requestSpeechText(false);", null)
+                            NarrationService.sync(this@ReaderActivity)
+                        },
                         onMetadata = { title, author, year ->
                             title?.takeIf(String::isNotBlank)?.let { bookTitle = it }
                             author?.takeIf(String::isNotBlank)?.let { bookAuthor = it }
@@ -452,101 +463,61 @@ class ReaderActivity : ComponentActivity() {
     }
 
     private fun closeReader() {
-        textToSpeech?.stop()
+        NarrationService.stop(this)
         closingReader = true
         finish()
     }
 
-    private fun initializeTextToSpeech() {
-        textToSpeech = TextToSpeech(this) { status ->
-            textToSpeechReady = status == TextToSpeech.SUCCESS
-            if (!textToSpeechReady) {
-                speechMessage = "Text-to-speech is not available on this device."
+    private fun handleNarrationEvent(intent: Intent) {
+        isSpeaking = intent.getBooleanExtra(NarrationService.EXTRA_IS_PLAYING, false)
+        speechMessage = intent.getStringExtra(NarrationService.EXTRA_MESSAGE)
+
+        if (intent.getBooleanExtra(NarrationService.EXTRA_CLEAR_PROGRESS, false)) {
+            clearSpeechProgress()
+        }
+
+        val pageDirection = intent.getIntExtra(NarrationService.EXTRA_PAGE_DIRECTION, 0)
+        if (pageDirection != 0) {
+            val move = if (pageDirection > 0) "nextPage();" else "prevPage();"
+            webView?.evaluateJavascript(
+                "$move setTimeout(function(){ requestSpeechText(); }, 340);",
+                null,
+            )
+            return
+        }
+
+        if (intent.getBooleanExtra(NarrationService.EXTRA_REQUEST_TEXT, false)) {
+            speechMessage = "Preparing text…"
+            webView?.evaluateJavascript("requestSpeechText();", null)
+        }
+
+        val offset = intent.getIntExtra(NarrationService.EXTRA_OFFSET, -1)
+        val length = intent.getIntExtra(NarrationService.EXTRA_LENGTH, 0)
+        if (offset >= 0 && length > 0) {
+            webView?.evaluateJavascript(
+                "showSpeechProgress($offset, ${offset + length});",
+            ) { encodedParagraph ->
+                val paragraph = runCatching {
+                    JSONArray("[$encodedParagraph]").optString(0)
+                }.getOrDefault("")
+                if (paragraph.isNotBlank()) {
+                    NarrationService.updateParagraph(this, paragraph)
+                }
             }
-        }.also { engine ->
-            engine.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
-                override fun onStart(utteranceId: String?) {
-                    if (utteranceId?.startsWith(PAUSE_UTTERANCE_PREFIX) == true) return
-                    enqueueNextSpeechUtterance()
-                    runOnUiThread {
-                        isSpeaking = true
-                        speechMessage = null
-                        val utteranceStart = utteranceId?.let(utteranceOffsets::get)
-                        val utteranceLength = utteranceId?.let(utteranceLengths::get)
-                        if (utteranceStart != null && utteranceLength != null) {
-                            webView?.evaluateJavascript(
-                                "showSpeechProgress($utteranceStart, ${utteranceStart + utteranceLength});",
-                                null,
-                            )
-                        }
-                    }
-                }
-
-                override fun onDone(utteranceId: String?) {
-                    if (utteranceId?.startsWith(PAUSE_UTTERANCE_PREFIX) == true) return
-                    if (utteranceId == FINAL_UTTERANCE_ID) {
-                        runOnUiThread {
-                            isSpeaking = false
-                            clearSpeechProgress()
-                        }
-                    }
-                }
-
-                override fun onRangeStart(utteranceId: String?, start: Int, end: Int, frame: Int) {
-                    val utteranceStart = utteranceId?.let(utteranceOffsets::get) ?: return
-                    runOnUiThread {
-                        webView?.evaluateJavascript(
-                            "showSpeechProgress(${utteranceStart + start}, ${utteranceStart + end});",
-                            null,
-                        )
-                    }
-                }
-
-                @Deprecated("Required by UtteranceProgressListener")
-                override fun onError(utteranceId: String?) = onSpeechError()
-
-                override fun onError(utteranceId: String?, errorCode: Int) {
-                    Log.e("BookstrTts", "Speech failed with error code $errorCode")
-                    onSpeechError(
-                        if (errorCode == TextToSpeech.ERROR_NETWORK ||
-                            errorCode == TextToSpeech.ERROR_NETWORK_TIMEOUT
-                        ) {
-                            "This voice could not connect. Choose an installed offline voice."
-                        } else {
-                            "The selected speech voice could not read this text."
-                        },
-                    )
-                }
-
-                private fun onSpeechError(message: String = "The speech engine could not read this text.") {
-                    runOnUiThread {
-                        isSpeaking = false
-                        clearSpeechProgress()
-                        speechMessage = message
-                    }
-                }
-            })
         }
     }
 
     private fun toggleTextToSpeech() {
-        if (isSpeaking) {
-            textToSpeech?.stop()
-            isSpeaking = false
-            clearSpeechProgress()
-            return
-        }
-        if (!textToSpeechReady) {
-            speechMessage = "Text-to-speech is still starting."
-            return
-        }
-        isSpeaking = true
-        speechMessage = "Preparing text…"
-        webView?.evaluateJavascript("requestSpeechText();", null)
+        NarrationService.toggle(
+            context = this,
+            bookId = bookId,
+            title = bookTitle,
+            author = bookAuthor,
+            coverUrl = bookCoverUrl,
+        )
     }
 
     private fun speakText(text: String, languageTag: String) {
-        val engine = textToSpeech ?: return
         val cleanText = text.lines()
             .map { line -> line.replace(Regex("\\s+"), " ").trim() }
             .filter(String::isNotBlank)
@@ -556,85 +527,24 @@ class ReaderActivity : ComponentActivity() {
             speechMessage = "No readable text is visible here."
             return
         }
-
-        val requestedLocale = preferredSpeechLocale(languageTag)
-        val sameLanguageOfflineVoices = engine.voices.orEmpty().filter { voice ->
-            !voice.isNetworkConnectionRequired &&
-                voice.locale.language.equals(requestedLocale.language, ignoreCase = true)
-        }
-        val exactRegionOfflineVoices = sameLanguageOfflineVoices.filter { voice ->
-            requestedLocale.country.isNotBlank() &&
-                voice.locale.country.equals(requestedLocale.country, ignoreCase = true)
-        }
-        val matchingOfflineVoices = exactRegionOfflineVoices.ifEmpty { sameLanguageOfflineVoices }
-        val currentMatchingVoice = engine.voice?.takeIf { current ->
-            matchingOfflineVoices.any { it.name == current.name }
-        }
-        val resolvedVoice = currentMatchingVoice ?: matchingOfflineVoices.maxByOrNull { it.quality }
-        if (resolvedVoice != null) {
-            engine.voice = resolvedVoice
-            speechMessage = null
-        } else {
-            val languageResult = engine.setLanguage(requestedLocale)
-            if (languageResult == TextToSpeech.LANG_MISSING_DATA ||
-                languageResult == TextToSpeech.LANG_NOT_SUPPORTED
-            ) {
-                engine.language = Locale.getDefault()
-                speechMessage = "No ${requestedLocale.displayLanguage} voice is installed; using the default voice."
-            } else {
-                speechMessage = null
-            }
-        }
-        engine.setSpeechRate(0.92f)
-        engine.setPitch(1.0f)
-
-        val chunks = speechChunks(cleanText)
-        utteranceOffsets.clear()
-        utteranceLengths.clear()
-        var searchFrom = 0
-        speechQueue = chunks.mapIndexed { index, chunk ->
-            val utteranceId = if (index == chunks.lastIndex) {
-                FINAL_UTTERANCE_ID
-            } else {
-                "bookstr-tts-$index"
-            }
-            val chunkStart = cleanText.indexOf(chunk, searchFrom).takeIf { it >= 0 } ?: searchFrom
-            utteranceOffsets[utteranceId] = chunkStart
-            utteranceLengths[utteranceId] = chunk.length
-            searchFrom = chunkStart + chunk.length
-            SpeechUtterance(utteranceId, chunk)
-        }
-        nextSpeechQueueIndex = 0
-        enqueueNextSpeechUtterance(TextToSpeech.QUEUE_FLUSH)
-    }
-
-    @Synchronized
-    private fun enqueueNextSpeechUtterance(queueMode: Int = TextToSpeech.QUEUE_ADD) {
-        if (!isSpeaking || nextSpeechQueueIndex >= speechQueue.size) return
-        val utterance = speechQueue[nextSpeechQueueIndex++]
-        val engine = textToSpeech ?: return
-        engine.speak(utterance.text, queueMode, null, utterance.id)
-        if (utterance.id != FINAL_UTTERANCE_ID) {
-            engine.playSilentUtterance(
-                SENTENCE_PAUSE_MILLIS,
-                TextToSpeech.QUEUE_ADD,
-                "$PAUSE_UTTERANCE_PREFIX${utterance.id}",
-            )
-        }
+        speechMessage = null
+        NarrationService.speak(
+            context = this,
+            text = cleanText,
+            language = languageTag,
+            bookId = bookId,
+            title = bookTitle,
+            author = bookAuthor,
+            coverUrl = bookCoverUrl,
+        )
     }
 
     private fun clearSpeechProgress() {
-        utteranceOffsets.clear()
-        utteranceLengths.clear()
-        speechQueue = emptyList()
-        nextSpeechQueueIndex = 0
         webView?.evaluateJavascript("clearSpeechProgress();", null)
     }
 
     override fun onDestroy() {
-        textToSpeech?.stop()
-        textToSpeech?.shutdown()
-        textToSpeech = null
+        runCatching { unregisterReceiver(narrationReceiver) }
         super.onDestroy()
     }
 
@@ -692,12 +602,10 @@ class ReaderActivity : ComponentActivity() {
         private const val EXTRA_BOOK_TITLE = "book_title"
         private const val EXTRA_BOOK_AUTHOR = "book_author"
         private const val EXTRA_BOOK_YEAR = "book_year"
+        private const val EXTRA_BOOK_COVER_URL = "book_cover_url"
         private const val EXTRA_INITIAL_CFI = "initial_cfi"
         private const val EXTRA_HIGHLIGHT_CFI = "highlight_cfi"
         private const val EXTRA_THEME = "theme"
-        private const val FINAL_UTTERANCE_ID = "bookstr-tts-final"
-        private const val PAUSE_UTTERANCE_PREFIX = "bookstr-tts-pause-"
-        private const val SENTENCE_PAUSE_MILLIS = 240L
 
         internal fun speechChunks(text: String): List<String> {
             val engineLimit = (TextToSpeech.getMaxSpeechInputLength() - 256).coerceAtLeast(1_000)
@@ -743,12 +651,14 @@ class ReaderActivity : ComponentActivity() {
             initialCfi: String?,
             theme: ReaderTheme,
             highlightCfi: String? = null,
+            coverUrl: String? = null,
         ): Intent =
             Intent(context, ReaderActivity::class.java).apply {
                 putExtra(EXTRA_BOOK_ID, bookId)
                 putExtra(EXTRA_BOOK_TITLE, bookTitle)
                 putExtra(EXTRA_BOOK_AUTHOR, author)
                 putExtra(EXTRA_BOOK_YEAR, year)
+                putExtra(EXTRA_BOOK_COVER_URL, coverUrl)
                 putExtra(EXTRA_INITIAL_CFI, initialCfi)
                 putExtra(EXTRA_HIGHLIGHT_CFI, highlightCfi)
                 putExtra(EXTRA_THEME, theme.key)
@@ -779,7 +689,7 @@ private fun ReaderChrome(
         modifier = modifier
             .fillMaxWidth()
             .height(24.dp)
-            .background(androidx.compose.material3.MaterialTheme.colorScheme.surface.copy(alpha = 0.98f)),
+            .background(androidx.compose.material3.MaterialTheme.colorScheme.primary.copy(alpha = 0.98f)),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(
@@ -791,14 +701,14 @@ private fun ReaderChrome(
             Icon(
                 Icons.AutoMirrored.Filled.ArrowBack,
                 contentDescription = "Back",
-                tint = androidx.compose.material3.MaterialTheme.colorScheme.primary,
+                tint = androidx.compose.material3.MaterialTheme.colorScheme.onPrimary,
                 modifier = Modifier.size(18.dp),
             )
         }
         Text(
             if (detail.isBlank()) title else "$title — $detail",
             fontSize = 11.sp,
-            color = androidx.compose.material3.MaterialTheme.colorScheme.onSurface,
+            color = androidx.compose.material3.MaterialTheme.colorScheme.onPrimary,
             maxLines = 1,
             modifier = Modifier.weight(1f),
         )
@@ -809,16 +719,16 @@ private fun ReaderChrome(
             contentAlignment = Alignment.Center,
         ) {
             Icon(
-                if (isSpeaking) Icons.Filled.Stop else Icons.Filled.PlayArrow,
-                contentDescription = if (isSpeaking) "Stop reading aloud" else "Read aloud",
-                tint = androidx.compose.material3.MaterialTheme.colorScheme.primary,
+                if (isSpeaking) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+                contentDescription = if (isSpeaking) "Pause reading aloud" else "Read aloud",
+                tint = androidx.compose.material3.MaterialTheme.colorScheme.onPrimary,
                 modifier = Modifier.size(18.dp),
             )
         }
         Text(
             "$clock  EPUB",
             fontSize = 9.sp,
-            color = androidx.compose.material3.MaterialTheme.colorScheme.secondary,
+            color = androidx.compose.material3.MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.78f),
             modifier = Modifier.padding(horizontal = 8.dp),
         )
     }
@@ -827,8 +737,6 @@ private fun ReaderChrome(
 private val TIME_FORMAT: DateTimeFormatter = DateTimeFormatter.ofPattern("HH:mm")
 
 private data class ReaderSection(val index: Int, val label: String, val href: String)
-
-private data class SpeechUtterance(val id: String, val text: String)
 
 @Composable
 private fun SegmentedReadingProgress(

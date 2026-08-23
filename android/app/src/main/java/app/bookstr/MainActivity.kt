@@ -304,6 +304,7 @@ class MainActivity : ComponentActivity() {
                                         year = book.year,
                                         initialCfi = localProgress?.cfi,
                                         theme = settings.theme,
+                                        coverUrl = book.coverUrl,
                                     ),
                                 )
                             }
@@ -574,6 +575,7 @@ class MainActivity : ComponentActivity() {
                                                 initialCfi = word.cfi.takeIf(String::isNotBlank),
                                                 theme = settings.theme,
                                                 highlightCfi = word.cfi.takeIf(String::isNotBlank),
+                                                coverUrl = book?.coverUrl,
                                             )
                                         })
                                     }
