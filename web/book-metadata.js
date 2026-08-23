@@ -73,6 +73,13 @@
     return match?.[1] || '';
   }
 
+  function authorSearchName(value) {
+    return String(value || '')
+      .replace(/\s*\((?:c\.?\s*)?\d{3,4}\??\s*[-–—]\s*(?:\d{0,4}\??|present)?\)\s*$/i, '')
+      .replace(/,\s*(?:born\s+|b\.?\s*)?\d{3,4}\??\s*[-–—]\s*(?:\d{0,4}\??|present)?\s*$/i, '')
+      .trim();
+  }
+
   function readingProgressForBook(ref) {
     const source = ref && typeof ref === 'object' ? ref : {};
     const locator = metadataObject(source.locator);
@@ -159,7 +166,27 @@
         ? String(book.sourceNativeId)
         : '');
     if (gutenbergId) return `${String(apiBase).replace(/\/$/, '')}/books/${gutenbergId}/download`;
-    return String(book?.readUrl || book?.url || book?.blossomUrl || '');
+    const direct = String(book?.blossomUrl || book?.readUrl || book?.url || '');
+    if (!direct) return '';
+    try {
+      const url = new URL(direct);
+      if (url.hostname === 'lib.b.bfr.ee' || /^\/api\/read\/[a-f0-9]{32}\/?$/i.test(url.pathname)) return '';
+    } catch {}
+    return direct;
+  }
+
+  function canonicalCatalogUrl(book) {
+    const source = String(book?.source || '').trim().toLowerCase();
+    if (source !== 'openlibrary') return '';
+    const rawId = String(book?.sourceNativeId || book?.source_native_id || '').trim();
+    if (!rawId) return '';
+    const olid = /^OL\d+[WM]$/i.test(rawId)
+      ? rawId.toUpperCase()
+      : /^\d+$/.test(rawId)
+        ? `OL${rawId}W`
+        : '';
+    if (!olid) return '';
+    return `https://openlibrary.org/${olid.endsWith('M') ? 'books' : 'works'}/${olid}`;
   }
 
   function availabilitySourcesForBook(book, isCached = false) {
@@ -167,7 +194,6 @@
     const readUrl = String(book?.readUrl || book?.url || '');
     const available = [];
     if (source.includes('gutenberg') || /^gutenberg:\d+$/i.test(String(book?.md5 || '')) || /\/api\/books\/\d+(?:\/download)?(?:\?|$)/i.test(readUrl)) available.push('Gutenberg');
-    if (source.includes('libvault') || /^[a-f0-9]{32}$/i.test(String(book?.md5 || ''))) available.push('LibVault');
     if (book?.blossomUrl || book?.blossomSha256 || source.includes('blossom')) available.push('Blossom');
     if (isCached) available.push('Cached');
     return available.length ? [...new Set(available)] : ['Metadata only'];
@@ -200,8 +226,18 @@
   function bookIdentity(book) {
     const md5 = String(book?.md5 || '').trim().toLowerCase();
     if (md5) return `id:${md5}`;
+    const source = String(book?.source || '').trim().toLowerCase();
+    const sourceId = String(book?.sourceNativeId || book?.source_native_id || book?.id || '').trim().toLowerCase();
+    if (sourceId) return `source:${source || 'book'}:${sourceId}`;
+    const blossomSha256 = String(book?.blossomSha256 || book?.blossom_sha256 || book?.sha256 || '').trim().toLowerCase();
+    if (blossomSha256) return `sha256:${blossomSha256}`;
+    const isbn = isbnForBook(book);
+    if (isbn) return `isbn:${isbn}`;
     const readUrl = book?.readUrl || book?.url || book?.blossomUrl;
-    return readUrl ? `url:${normalizeReadUrl(readUrl)}` : `title:${resolveTitle(book)}:${book?.authors || book?.author || ''}`;
+    if (readUrl) return `url:${normalizeReadUrl(readUrl)}`;
+    return ['title', resolveTitle(book), book?.authors || book?.author || '', yearForBook(book), languageForBook(book)]
+      .map(value => String(value || '').trim().toLowerCase())
+      .join(':');
   }
 
   function dedupeLibraryBooks(books) {
@@ -275,6 +311,12 @@
       extension: incoming.extension || incoming.format || '',
       source: incoming.source || '',
       isbn: isbnForBook(incoming),
+      coverId: incoming.coverId || incoming.cover_id || '',
+      coverUrl: incoming.coverUrl || incoming.cover_url || incoming.thumbnail || incoming.image || '',
+      coverSha256: incoming.coverSha256 || incoming.cover_sha256 || '',
+      publisher: incoming.publisher || incoming.publishers?.[0] || '',
+      blossomUrl: incoming.blossomUrl || incoming.blossom_url || '',
+      blossomSha256: incoming.blossomSha256 || incoming.blossom_sha256 || incoming.sha256 || '',
     };
     for (const [field, value] of Object.entries(fields)) {
       if (!value || (field === 'title' && isPlaceholderTitle(value))) continue;
@@ -342,6 +384,7 @@
     resolveTitle,
     languageForBook,
     yearForBook,
+    authorSearchName,
     readingProgressForBook,
     normalizeFavoriteAddedAt,
     earliestFavoriteAddedAt,
@@ -351,6 +394,7 @@
     findBookByReadUrl,
     metadataEndpointForReadUrl,
     canonicalReadUrl,
+    canonicalCatalogUrl,
     availabilityForBook,
     availabilitySourcesForBook,
     sortBooks,

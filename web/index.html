@@ -293,8 +293,16 @@
         gap: 0.45rem;
       }
       .row-3 {
-        grid-template-columns: minmax(0, 1fr) minmax(130px, 220px);
+        display: flex;
         gap: 0.45rem;
+        align-items: stretch;
+        flex-wrap: wrap;
+      }
+      .row-3 > #query-input {
+        flex: 1 1 18rem;
+      }
+      .row-3 > #search-type {
+        flex: 0 1 13.75rem;
       }
       .results {
         display: grid;
@@ -322,14 +330,50 @@
         opacity: 1;
         transform: translate(-50%, 0);
       }
-      .result-item {
+      #results {
+        overflow-x: auto;
+      }
+      .book-table {
+        min-width: 760px;
+      }
+      .book-table-head,
+      .book-table-row {
+        display: grid;
+        grid-template-columns: 42px minmax(13rem, 2fr) minmax(10rem, 1.25fr) 5rem 7.5rem 5rem 5rem 7.5rem;
+        align-items: center;
+        column-gap: 0.55rem;
+      }
+      .book-table-head {
+        position: sticky;
+        top: 0;
+        z-index: 4;
+        border-bottom: 2px solid var(--reading-progress);
+        background: var(--card-bg, #fff);
+      }
+      .book-table-head button {
+        width: 100%;
+        border: 0;
+        padding: 0.45rem 0;
+        background: transparent;
+        color: var(--reading-progress);
+        font-size: 0.72rem;
+        font-weight: 750;
+        text-align: left;
+        text-transform: uppercase;
+        letter-spacing: 0.055em;
+      }
+      .book-table-head button:hover,
+      .book-table-head button:focus-visible {
+        color: var(--page-text, #222);
+      }
+      .book-table-row {
         border: 0;
         border-bottom: 1px solid var(--card-border, #ddd);
         border-radius: 0;
         padding: 0.45rem 0.1rem;
-        display: flex;
-        align-items: center;
-        gap: 0.55rem;
+      }
+      .book-table-row:hover {
+        background: color-mix(in srgb, var(--reading-progress) 8%, transparent);
       }
       .result-main {
         min-width: 0;
@@ -342,8 +386,9 @@
         width: 100%;
         height: 100%;
         object-fit: cover;
+        pointer-events: none;
         background: var(--badge-bg, #eee);
-        transition: transform 160ms ease, box-shadow 160ms ease;
+        transition: transform 160ms ease 180ms, box-shadow 160ms ease 180ms;
       }
       .result-cover-slot {
         position: relative;
@@ -356,32 +401,96 @@
         z-index: 30;
       }
       .result-cover-slot:hover .result-cover {
-        transform: scale(4);
+        transform: scale(6);
         transform-origin: left center;
         box-shadow: 0 5px 20px rgba(0, 0, 0, 0.38);
+        transition-delay: 0ms;
       }
       .result-copy {
         min-width: 0;
+      }
+      .result-cell {
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .result-cell small {
+        display: block;
+        margin-top: 0.08rem;
+        overflow: hidden;
+        color: var(--muted-text, #666);
+        font-size: 0.7rem;
+        text-overflow: ellipsis;
+        white-space: nowrap;
       }
       .result-title {
         display: inline;
         font-size: 0.96rem;
         font-weight: 650;
-        color: var(--result-title, #111827);
         text-decoration: none;
+      }
+      .result-title.readable,
+      .result-title.readable:visited {
+        color: var(--reading-progress);
+      }
+      .result-title.unavailable,
+      .result-title.unavailable:visited {
+        color: var(--link-hover);
       }
       a.result-title:hover,
       .result-author:hover {
         text-decoration: underline;
+      }
+      .result-title.readable:hover,
+      .result-title.readable:focus-visible,
+      .result-author:hover,
+      .result-author:focus-visible {
+        color: var(--reading-progress);
+      }
+      .result-title.unavailable:hover,
+      .result-title.unavailable:focus-visible {
+        color: var(--link-hover);
       }
       .result-meta {
         margin: 0.08rem 0 0;
         color: var(--muted-text, #5f6368);
         font-size: 0.82rem;
       }
-      .result-author {
-        color: var(--link);
+      .result-author,
+      .result-author:visited,
+      body a.result-author:any-link,
+      body a.result-author:visited,
+      body a.result-author:hover,
+      body a.result-author:focus-visible {
+        color: var(--reading-progress);
         text-decoration: none;
+      }
+      .result-availability {
+        color: var(--reading-progress);
+        font-weight: 650;
+      }
+      .availability-primary {
+        display: inline-flex;
+        gap: 0.35rem;
+        align-items: center;
+      }
+      .result-availability small {
+        display: flex;
+        gap: 0.28rem;
+        align-items: baseline;
+        overflow: hidden;
+        text-overflow: clip;
+        overflow-wrap: normal;
+        word-break: normal;
+        white-space: normal;
+      }
+      .availability-detail {
+        flex: 0 0 auto;
+        white-space: nowrap;
+      }
+      .availability-separator {
+        flex: 0 0 auto;
+        opacity: 0.65;
       }
       .result-tags {
         display: flex;
@@ -402,7 +511,7 @@
         margin-right: 0.3rem;
         opacity: 0.6;
       }
-      .result-item .row-actions button {
+      .book-table-row .row-actions button {
         min-width: 2rem;
         min-height: 2rem;
         padding: 0.25rem;
@@ -410,6 +519,30 @@
         color: var(--page-text, #222);
         border: 0;
         font-size: 1.2rem;
+      }
+      .favorite-fetch-progress {
+        display: inline-flex;
+        width: 0.85rem;
+        height: 0.85rem;
+        flex: 0 0 auto;
+        align-items: center;
+        justify-content: center;
+        color: var(--reading-progress);
+        font-size: 0.72rem;
+        font-weight: 800;
+      }
+      .favorite-fetch-progress.pending::before {
+        width: 0.6rem;
+        height: 0.6rem;
+        background: color-mix(in srgb, var(--reading-progress) 70%, transparent);
+        border-radius: 50%;
+        content: '';
+      }
+      .favorite-fetch-progress.failed { color: #b42318; }
+      #search-form input:focus,
+      #search-form select:focus {
+        outline: 2px solid var(--reading-progress);
+        outline-offset: -2px;
       }
       input,
       select,
@@ -471,7 +604,30 @@
         gap: 0.85rem;
       }
       .home-search {
+        display: flex;
+        gap: 0.45rem;
+        align-items: stretch;
         margin-bottom: 0.55rem;
+      }
+      .home-search input {
+        min-width: 12rem;
+        flex: 1 1 auto;
+      }
+      .home-search input:focus {
+        outline: 2px solid var(--reading-progress);
+        outline-offset: -2px;
+      }
+      .home-result-filters {
+        display: flex;
+        gap: 0.45rem;
+        align-items: stretch;
+      }
+      .home-result-filter {
+        display: inline-flex;
+        margin: 0;
+      }
+      .home-result-filter select {
+        min-width: 6rem;
       }
       .home-grid {
         display: grid;
@@ -483,12 +639,15 @@
         padding-top: 0.65rem;
       }
       .home-column h3 {
+        display: flex;
+        align-items: baseline;
         margin: 0 0 0.3rem;
       }
       .library-book-count {
-        margin: -0.12rem 0 0.42rem;
+        margin-left: 0.45rem;
         color: var(--muted-text, #666);
-        font-size: 0.78rem;
+        font-size: 0.68rem;
+        font-weight: 400;
       }
       .home-book-table {
         display: grid;
@@ -539,7 +698,7 @@
         width: 0.9rem;
         height: 0.9rem;
         flex: 0 0 auto;
-        fill: #d7352a;
+        fill: var(--reading-progress);
       }
       .home-book-status {
         display: inline-flex;
@@ -550,9 +709,31 @@
         width: 1rem;
         height: 1rem;
         fill: currentColor;
+        color: var(--reading-progress);
       }
       .home-book-status .favorite-status {
         color: #d7352a;
+      }
+      .home-book-status .library-refresh,
+      .home-book-status .library-delete {
+        width: 1.75rem;
+        min-width: 1.75rem;
+        height: 1.75rem;
+        min-height: 1.75rem;
+        color: var(--link-hover);
+      }
+      .home-book-status .library-refresh {
+        color: var(--reading-progress);
+      }
+      .home-book-status .library-refresh svg,
+      .home-book-status .library-delete svg {
+        width: 0.95rem;
+        height: 0.95rem;
+        fill: none;
+        stroke: currentColor;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+        stroke-width: 1.8;
       }
       .home-title-cell {
         min-width: 0;
@@ -777,6 +958,9 @@
         border: 0;
       }
       @media (max-width: 700px) {
+        .home-search { flex-wrap: wrap; }
+        .home-search input { flex-basis: 100%; }
+        .home-result-filters { margin-left: auto; }
         .home-grid {
           grid-template-columns: 1fr;
           gap: 0.55rem;
@@ -1063,6 +1247,12 @@
         margin-top: -0.15rem;
       }
       .footer a { color: var(--reading-progress); font-weight: 600; }
+      body .footer a.footer-icon-link:any-link,
+      body .footer a.footer-icon-link:visited,
+      body .footer a.footer-icon-link:hover,
+      body .footer a.footer-icon-link:focus-visible {
+        color: var(--reading-progress);
+      }
       .footer-note { margin: 0; }
       .footer-icon-link {
         display: inline-flex;
@@ -1081,12 +1271,104 @@
         align-items: center;
         flex-wrap: wrap;
       }
+      .search-result-filters {
+        display: flex;
+        gap: 0.5rem;
+        align-items: center;
+        margin: 0;
+        flex-wrap: nowrap;
+      }
+      .search-result-count {
+        margin: 0.35rem 0 0;
+        color: var(--muted-text);
+        font-size: 0.75rem;
+        text-align: right;
+      }
+      .search-result-filter {
+        display: inline-flex;
+        gap: 0.3rem;
+        align-items: center;
+        color: var(--muted-text);
+        font-size: 0.78rem;
+      }
+      .search-result-filter select {
+        min-width: 6rem;
+      }
+      .search-pagination {
+        display: flex;
+        gap: 0.5rem;
+        align-items: center;
+        justify-content: center;
+        margin: 0.8rem 0 0.2rem;
+      }
+      .search-pagination.hidden {
+        display: none;
+      }
+      .search-pagination span {
+        min-width: 8rem;
+        color: var(--muted-text);
+        font-size: 0.75rem;
+        text-align: center;
+      }
+      .search-pagination button {
+        display: inline-flex;
+        width: 2.25rem;
+        height: 2.25rem;
+        padding: 0;
+        align-items: center;
+        justify-content: center;
+      }
+      .search-pagination button svg {
+        width: 1rem;
+        height: 1rem;
+        fill: none;
+        stroke: currentColor;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+        stroke-width: 2;
+      }
+      .nip17-exchange {
+        margin: 0.75rem 0 0;
+        border: 1px solid var(--card-border);
+        background: var(--settings-bg);
+      }
+      .nip17-exchange summary {
+        padding: 0.45rem 0.6rem;
+        color: var(--reading-progress);
+        cursor: pointer;
+        font-weight: 650;
+      }
+      .nip17-exchange-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 0.5rem;
+        padding: 0 0.6rem 0.6rem;
+      }
+      .nip17-exchange h4 {
+        margin: 0 0 0.25rem;
+        font-size: 0.78rem;
+      }
+      .nip17-exchange pre {
+        max-height: 18rem;
+        margin: 0;
+        padding: 0.45rem;
+        overflow: auto;
+        background: var(--page-bg);
+        color: var(--page-text);
+        font-size: 0.68rem;
+        line-height: 1.35;
+        overflow-wrap: anywhere;
+        white-space: pre-wrap;
+      }
+      @media (max-width: 700px) {
+        .nip17-exchange-grid { grid-template-columns: 1fr; }
+      }
     </style>
   </head>
     <body class="theme-white">
     <main class="wrap">
       <header class="app-header">
-        <a class="app-header-left app-home" href="#" aria-label="Bookstr home">
+        <a class="app-header-left app-home" href="#home" aria-label="Bookstr home">
           <img class="brand-mark" src="public/favicon.svg" alt="" />
           <span id="header-book-title" class="header-book-title hidden"></span>
         </a>
@@ -1103,11 +1385,19 @@
       <section id="home-tab" class="card" data-tab-panel="home">
         <form id="home-search-form" class="home-search" autocomplete="off">
           <input id="home-query-input" placeholder="Filter your library" aria-label="Filter currently reading and favorites" autofocus />
+          <div id="home-result-filters" class="home-result-filters hidden" aria-label="Filter library">
+            <label id="home-language-filter-wrap" class="home-result-filter hidden">
+              <select id="home-language-filter" aria-label="Filter library by language" title="Language"></select>
+            </label>
+            <label id="home-format-filter-wrap" class="home-result-filter hidden">
+              <select id="home-format-filter" aria-label="Filter library by format" title="Format"></select>
+            </label>
+          </div>
         </form>
         <div class="home-grid">
           <div class="home-column">
             <h3>Currently reading</h3>
-            <ul id="home-reading-list" class="sublist"></ul>
+            <div id="home-reading-list" class="sublist"></div>
           </div>
           <div class="home-column">
             <h3>Favorites</h3>
@@ -1135,8 +1425,35 @@
             <option value="isbn">ISBN</option>
             <option value="publisher">Publisher</option>
           </select>
+          <div id="search-result-filters" class="search-result-filters hidden" aria-label="Filter search results">
+            <label id="search-language-filter-wrap" class="search-result-filter hidden">
+              <select id="search-language-filter" aria-label="Filter by language" title="Language"></select>
+            </label>
+            <label id="search-format-filter-wrap" class="search-result-filter hidden">
+              <select id="search-format-filter" aria-label="Filter by format" title="Format"></select>
+            </label>
+          </div>
         </form>
+        <p id="search-result-count" class="search-result-count" aria-live="polite">0 results</p>
         <div id="results" class="results" aria-live="polite"></div>
+        <nav id="search-pagination" class="search-pagination hidden" aria-label="Search result pages">
+          <button id="search-page-prev" type="button" aria-label="Previous page" title="Previous page"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg></button>
+          <span id="search-page-label" aria-live="polite"></span>
+          <button id="search-page-next" type="button" aria-label="Next page" title="Next page"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button>
+        </nav>
+        <details id="nip17-exchange" class="nip17-exchange hidden">
+          <summary>NIP-17 exchange</summary>
+          <div class="nip17-exchange-grid">
+            <section>
+              <h4>Sent</h4>
+              <pre id="nip17-sent">Waiting to send…</pre>
+            </section>
+            <section>
+              <h4>Received</h4>
+              <pre id="nip17-received">Waiting for a response…</pre>
+            </section>
+          </div>
+        </details>
       </section>
 
       <section id="reading-library-tab" class="card hidden" data-tab-panel="reading">
@@ -1253,6 +1570,8 @@
       const NOSTR_SYNC_CACHE_TTL_MS = 30 * 60 * 1000;
       const NIP7_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
       const BOOKS_API_BASE = 'https://books-api.guaka.org/api';
+      const LIBVAULT_API_BASE = 'https://lib.b.bfr.ee/api';
+      const LIBVAULT_COVER_BASE = 'https://lib.b.bfr.ee/api/covers';
       const WIKDICT_BASE = `${BOOKS_API_BASE}/dictionaries`;
       const DICTIONARY_DB_NAME = 'bookstr_dictionaries_v1';
       const DICTIONARY_STORAGE_LIMIT = 250 * 1024 * 1024;
@@ -1268,6 +1587,10 @@
         tr: 'Turkish', zh: 'Chinese'
       };
       const NOSTR_QUERY_TIMEOUT_MS = 5000;
+      const NOSTR_SEARCH_READY_TIMEOUT_MS = 8000;
+      const NOSTR_SEARCH_RESPONSE_TIMEOUT_MS = 20000;
+      const SEARCH_RESULT_LIMIT = 200;
+      const SEARCH_RESULT_PAGE_SIZE = 50;
 
       const status = document.getElementById('status');
       let statusFadeTimer;
@@ -1286,6 +1609,11 @@
       const homeTab = document.getElementById('home-tab');
       const homeSearchForm = document.getElementById('home-search-form');
       const homeQueryInput = document.getElementById('home-query-input');
+      const homeResultFilters = document.getElementById('home-result-filters');
+      const homeLanguageFilterWrap = document.getElementById('home-language-filter-wrap');
+      const homeLanguageFilter = document.getElementById('home-language-filter');
+      const homeFormatFilterWrap = document.getElementById('home-format-filter-wrap');
+      const homeFormatFilter = document.getElementById('home-format-filter');
       homeQueryInput.placeholder = 'Filter here · press Enter to search all books';
       const homeReadingList = document.getElementById('home-reading-list');
       const homeFavoritesList = document.getElementById('home-favorites-list');
@@ -1293,16 +1621,30 @@
       const homeFavoritesSection = homeFavoritesList.closest('.home-column');
       const homeLibraryHeading = homeReadingSection?.querySelector('h3');
       if (homeLibraryHeading) homeLibraryHeading.textContent = 'Library';
-      const homeLibraryCount = document.createElement('p');
+      const homeLibraryCount = document.createElement('span');
       homeLibraryCount.className = 'library-book-count';
       homeLibraryCount.setAttribute('aria-live', 'polite');
-      homeLibraryHeading?.after(homeLibraryCount);
+      homeLibraryHeading?.append(homeLibraryCount);
       homeFavoritesSection?.remove();
       const homeWordsList = document.getElementById('home-words-list');
       const homeBookSorts = Object.create(null);
+      const homeLibraryFilter = { language: '', format: '' };
       const searchType = document.getElementById('search-type');
       const searchForm = document.getElementById('search-form');
       const resultsEl = document.getElementById('results');
+      const searchResultFilters = document.getElementById('search-result-filters');
+      const searchResultCount = document.getElementById('search-result-count');
+      const searchLanguageFilterWrap = document.getElementById('search-language-filter-wrap');
+      const searchLanguageFilter = document.getElementById('search-language-filter');
+      const searchFormatFilterWrap = document.getElementById('search-format-filter-wrap');
+      const searchFormatFilter = document.getElementById('search-format-filter');
+      const searchPagination = document.getElementById('search-pagination');
+      const searchPagePrev = document.getElementById('search-page-prev');
+      const searchPageNext = document.getElementById('search-page-next');
+      const searchPageLabel = document.getElementById('search-page-label');
+      const nip17Exchange = document.getElementById('nip17-exchange');
+      const nip17Sent = document.getElementById('nip17-sent');
+      const nip17Received = document.getElementById('nip17-received');
       const favoritesList = document.getElementById('favorites-list');
       const readingList = document.getElementById('reading-list');
       const wordsList = document.getElementById('words-list');
@@ -1330,6 +1672,7 @@
       headerBookMeta.className = 'header-book-meta hidden';
       document.querySelector('.app-header-right').after(headerBookTitle, readingFavoriteBtn, headerBookMeta);
       let activeReadingBook = null;
+      let pendingReadBookId = '';
       let activeTab = 'home';
       const settingsBtn = document.getElementById('settings-btn');
       document.querySelector('.app-header').append(settingsBtn);
@@ -1363,6 +1706,11 @@
           npub: ''
         }
       };
+
+      let searchResultBooks = [];
+      const searchResultSort = { key: '', direction: 'asc' };
+      const searchResultFilter = { language: '', format: '' };
+      let searchResultPage = 1;
 
       let dictionaryDbPromise;
       let sqlRuntimePromise;
@@ -1675,9 +2023,10 @@
           if (isMd5(id)) {
             tags.push(['book', 'libvault', id.toLowerCase(), addedAt]);
             tags.push([
-              'libvault-book', id.toLowerCase(), favorite.title || '', favorite.author || '',
+              'libvault-book', id.toLowerCase(), favorite.title || '', favorite.authors || favorite.author || '',
               favorite.format || '', String(Number(favorite.filesizeBytes || favorite.filesize_bytes) || 0),
-              favorite.year || '',
+              favorite.year || '', favorite.language || '', favorite.source || '',
+              favorite.coverUrl || '', favorite.coverSha256 || '',
             ]);
             const sha256 = String(favorite.blossomSha256 || '').toLowerCase();
             const blossomUrl = favorite.blossomUrl || '';
@@ -1769,6 +2118,140 @@
         }, 250);
       }
 
+      let nip17FetchModule;
+      const favoriteFetchProgress = new Map();
+      const favoriteFetchMonitors = new Map();
+
+      function favoriteFetchLabel(progress) {
+        if (!progress) return '';
+        const title = progress.title || 'Book';
+        if (progress.status === 'requesting') return `Requesting ${title} from LibVault…`;
+        if (progress.status === 'waiting') return `LibVault accepted ${title}; waiting for the download to start…`;
+        if (progress.status === 'publishing') return `Downloaded ${title}; publishing it to Blossom…`;
+        if (progress.status === 'ready') return `${title} is ready on Blossom.`;
+        if (progress.status === 'failed') return `LibVault could not fetch ${title}: ${progress.error || 'unknown error'}`;
+        if (progress.total > 0) {
+          const percent = Math.min(100, Math.floor(progress.bytes / progress.total * 100));
+          return `Fetching ${title}: ${percent}% · ${bytesLabel(progress.bytes)} / ${bytesLabel(progress.total)}`;
+        }
+        return progress.source === 'torrent'
+          ? `Fetching ${title}: finding torrent peers…`
+          : `Fetching ${title}: contacting book sources…`;
+      }
+
+      function favoriteFetchStatusMarkup(md5) {
+        const progress = favoriteFetchProgress.get(String(md5 || '').toLowerCase());
+        if (!progress) return `<span class="favorite-fetch-progress hidden" data-favorite-fetch="${escapeHtml(md5 || '')}"></span>`;
+        const label = favoriteFetchLabel(progress);
+        const complete = progress.status === 'ready';
+        const failed = progress.status === 'failed';
+        return `<span class="favorite-fetch-progress ${complete ? 'ready' : failed ? 'failed' : 'pending'}" data-favorite-fetch="${escapeHtml(md5 || '')}" role="status" aria-label="${escapeHtml(label)}" title="${escapeHtml(label)}">${complete ? '✓' : failed ? '!' : ''}</span>`;
+      }
+
+      function setFavoriteFetchProgress(book, update) {
+        const md5 = String(book?.md5 || '').toLowerCase();
+        if (!isMd5(md5)) return;
+        const progress = { ...update, title: book.title || 'Book' };
+        favoriteFetchProgress.set(md5, progress);
+        const label = favoriteFetchLabel(progress);
+        if (status.textContent !== label) status.textContent = label;
+        document.querySelectorAll(`[data-favorite-fetch="${md5}"]`).forEach(node => {
+          node.outerHTML = favoriteFetchStatusMarkup(md5);
+        });
+      }
+
+      function saveReadyFavorite(book, blossom) {
+        const favorite = state.favorites.find(item => item.md5 === book.md5);
+        if (!favorite) return;
+        favorite.blossomSha256 = blossom.sha256;
+        favorite.blossomUrl = blossom.url;
+        favorite.readUrl = blossom.url;
+        favorite.extension = blossom.format || favorite.extension;
+        localStorage.setItem(FAVORITES_KEY, JSON.stringify(state.favorites));
+        renderFavorites();
+        renderHome();
+        queueFavoriteSync();
+      }
+
+      let favoriteBlossomRefreshTask;
+      function refreshFavoriteBlossomCopies() {
+        if (favoriteBlossomRefreshTask) return favoriteBlossomRefreshTask;
+        const pending = BookMetadata.dedupeLibraryBooks([...state.favorites, ...state.reading])
+          .filter(book => isMd5(book.md5)
+            && (!/^[a-f0-9]{64}$/i.test(String(book.blossomSha256 || ''))
+              || !/^https:\/\//i.test(String(book.blossomUrl || ''))));
+        if (!pending.length) return Promise.resolve(0);
+        nip17FetchModule ||= import('./nip17-fetch.js');
+        favoriteBlossomRefreshTask = nip17FetchModule.then(async module => {
+          let found = 0;
+          const queue = pending.slice();
+          const worker = async () => {
+            while (queue.length) {
+              const book = queue.shift();
+              const blossom = await module.lookupLibVaultBlossom(book.md5).catch(() => null);
+              if (!blossom) continue;
+              const update = item => BookMetadata.sameLibraryBook(item, book) ? {
+                ...item,
+                blossomSha256: blossom.sha256,
+                blossomUrl: blossom.url,
+                readUrl: blossom.url,
+                extension: blossom.format || item.extension,
+              } : item;
+              state.favorites = state.favorites.map(update);
+              state.reading = state.reading.map(update);
+              found += 1;
+            }
+          };
+          await Promise.all(Array.from({ length: Math.min(4, queue.length) }, worker));
+          if (found) {
+            localStorage.setItem(FAVORITES_KEY, JSON.stringify(state.favorites));
+            localStorage.setItem(READING_KEY, JSON.stringify(state.reading));
+            renderFavorites();
+            renderReading();
+            renderHome();
+            status.textContent = `Found ${found} newly readable library book${found === 1 ? '' : 's'} on Blossom.`;
+            queueFavoriteSync();
+          }
+          return found;
+        }).finally(() => { favoriteBlossomRefreshTask = null; });
+        return favoriteBlossomRefreshTask;
+      }
+
+      function requestFavoriteFromLibVault(book) {
+        if (!state.settings.useNip7 || !window.nostr?.nip44?.encrypt) return Promise.resolve();
+        favoriteFetchMonitors.get(book.md5)?.abort();
+        const controller = new AbortController();
+        favoriteFetchMonitors.set(book.md5, controller);
+        setFavoriteFetchProgress(book, { status: 'requesting' });
+        nip17FetchModule ||= import('./nip17-fetch.js');
+        return nip17FetchModule
+          .then(module => module.sendLibVaultFetchRequest({
+            ...book,
+            catalogUrl: BookMetadata.canonicalCatalogUrl(book),
+          }, {
+            signer: window.nostr,
+            publish: publishRelayEvent,
+          }))
+          .then((result) => {
+            setFavoriteFetchProgress(book, { status: 'waiting' });
+            if (!isMd5(book.md5)) return result;
+            void nip17FetchModule.then(module => module.monitorLibVaultFetch(book.md5, {
+              signal: controller.signal,
+              onProgress: progress => {
+                setFavoriteFetchProgress(book, progress);
+                if (progress.status === 'ready') saveReadyFavorite(book, progress.blossom);
+              },
+            })).finally(() => {
+              if (favoriteFetchMonitors.get(book.md5) === controller) favoriteFetchMonitors.delete(book.md5);
+            });
+            return result;
+          })
+          .catch(error => {
+            if (favoriteFetchMonitors.get(book.md5) === controller) favoriteFetchMonitors.delete(book.md5);
+            setFavoriteFetchProgress(book, { status: 'failed', error: error?.message || String(error) });
+          });
+      }
+
       function sortByUpdatedAt(items) {
         return [...items].sort((a, b) => Number(b.updatedAt || 0) - Number(a.updatedAt || 0));
       }
@@ -1855,6 +2338,8 @@
             entry.year = tag[6] || entry.year || '';
             entry.language = tag[7] || entry.language || '';
             entry.source = tag[8] || entry.source || '';
+            entry.coverUrl = tag[9] || entry.coverUrl || '';
+            entry.coverSha256 = tag[10] || entry.coverSha256 || '';
             entry.url ||= contextUrl || '';
             continue;
           }
@@ -1920,6 +2405,10 @@
           sourceUrl,
           favoriteAddedAt,
           updatedAt: Number(ref.updatedAt || favoriteAddedAt || 0),
+          coverId: ref.coverId || ref.cover_id || '',
+          coverUrl: ref.coverUrl || ref.cover_url || ref.thumbnail || ref.image || '',
+          coverSha256: ref.coverSha256 || ref.cover_sha256 || '',
+          publisher: ref.publisher || '',
           progression: BookMetadata.readingProgressForBook(ref),
           furthestProgression: Number(ref.furthestProgression || 0) || 0,
           cfi: String(ref.cfi || ref.locator?.locations?.cfi || ref.locator?.href || ''),
@@ -1977,6 +2466,9 @@
           const bookId = String(payload.bookId || '').trim();
           const updatedAt = Number(payload.updatedAt) || created;
           if (!bookId) return null;
+          if (payload.deleted === true) {
+            return { md5: bookId.toLowerCase(), updatedAt, deleted: true };
+          }
           const locator = payload.locator && typeof payload.locator === 'object'
             ? payload.locator
             : null;
@@ -1991,11 +2483,17 @@
             authors: String(payload.author || payload.authors || payload.creator || ''),
             language: BookMetadata.languageForBook(payload),
             year: BookMetadata.yearForBook(payload),
+            publisher: String(payload.publisher || ''),
+            coverUrl: String(payload.coverUrl || payload.cover_url || ''),
+            blossomUrl: String(payload.blossomUrl || payload.blossom_url || ''),
+            blossomSha256: String(payload.blossomSha256 || payload.blossom_sha256 || ''),
+            source: String(payload.source || ''),
+            sourceNativeId: String(payload.sourceNativeId || payload.source_native_id || ''),
             updatedAt,
             progression: BookMetadata.readingProgressForBook(payload),
             furthestProgression: Number(payload.furthestProgression ?? locator?.furthestProgression ?? 0) || 0,
             cfi: String(payload.cfi || locator?.locations?.cfi || locator?.href || ''),
-            extension: 'epub',
+            extension: String(payload.extension || payload.format || 'epub').toLowerCase(),
             readUrl: payload.readUrl || '',
           };
         } catch {
@@ -2020,6 +2518,8 @@
             latestByBook.set(parsed.md5, parsed);
           }
         }
+        // Keep deletion markers until merge time so stale local state cannot
+        // resurrect reading progress removed by another client.
         return sortByUpdatedAt(Array.from(latestByBook.values())).slice();
       }
 
@@ -2163,6 +2663,7 @@
         const enriched = BookMetadata.enrichBookMetadata(remote, known, 'local-cache');
         enriched.blossomSha256 ||= known.blossomSha256 || '';
         enriched.blossomUrl ||= known.blossomUrl || '';
+        enriched.coverSha256 ||= known.coverSha256 || '';
         enriched.sourceUrl ||= known.sourceUrl || known.url || '';
         enriched.favoriteAddedAt = BookMetadata.earliestFavoriteAddedAt(
           remote.favoriteAddedAt,
@@ -2184,7 +2685,12 @@
             .slice();
         }
         if (Array.isArray(next.reading)) {
-          state.reading = BookMetadata.dedupeLibraryBooks(mergeStateList(state.reading, next.reading.map(normalizeFavoriteFromRemote)))
+          const deletedBookIds = new Set(next.reading.filter(item => item?.deleted).map(item => String(item.md5 || '').toLowerCase()));
+          const activeReading = next.reading.filter(item => !item?.deleted).map(normalizeFavoriteFromRemote);
+          state.reading = BookMetadata.dedupeLibraryBooks(mergeStateList(
+            state.reading.filter(item => !deletedBookIds.has(String(item.md5 || '').toLowerCase())),
+            activeReading
+          ))
             .sort((a, b) => Number(b.updatedAt || 0) - Number(a.updatedAt || 0))
             .slice();
         }
@@ -2204,6 +2710,11 @@
           renderReading();
           renderWords();
           renderHome();
+        }
+        if (pendingReadBookId) {
+          const pending = pendingReadBookId;
+          pendingReadBookId = '';
+          void openResolvedReadRoute(pending);
         }
       }
 
@@ -2243,6 +2754,7 @@
               reading: state.reading,
               words: state.words,
             });
+            await refreshFavoriteBlossomCopies();
             if (document.activeElement !== null) {
               status.textContent = 'Synced latest Nostr library data.';
             }
@@ -2278,9 +2790,7 @@
       }
 
       function authorSearchName(value) {
-        return String(value || '')
-          .replace(/,\s*\d{3,4}\??\s*-\s*\d{0,4}\??\s*$/g, '')
-          .trim();
+        return BookMetadata.authorSearchName(value);
       }
 
       function normalizeSearchBooks(payload, source) {
@@ -2292,6 +2802,8 @@
 
         return results.map(item => {
           const rawId = String(item.md5 || item.id || item.sha256 || item.libvaultMd5 || '').trim().toLowerCase();
+          const blossom = payload?.blossoms?.[rawId] || {};
+          const cover = payload?.covers?.[rawId] || {};
           const authors = Array.isArray(item.authors)
             ? item.authors.join(', ')
             : String(item.author || item.authors || 'Unknown author');
@@ -2301,20 +2813,26 @@
           const ext = String(item.extension || item.format || item.media_type || item.type || (provider === 'gutenberg' ? 'epub' : '')).replace(/^\./, '').toLowerCase();
           const directReadUrl = provider === 'gutenberg' && item.id
             ? `${BOOKS_API_BASE}/books/${encodeURIComponent(item.id)}/download`
-            : item.readUrl || item.url || item.link || '';
+            : item.readUrl || item.url || item.link || blossom.url || '';
           return {
             md5,
             title: item.title || 'Untitled',
             authors,
             year,
             publisher: item.publisher || '',
+            isbn: item.isbn || item.isbn13 || item.isbn10 || '',
             extension: ext,
             filesize: Number(item.filesize_bytes || item.filesize || 0),
-            language: item.language || '',
+            language: item.language || item.languages || '',
             rating: Number(item.avg_rating || item.rating || 0),
             editionCount: Number(item.edition_count || 0),
             coverId: item.cover_id || '',
+            coverUrl: item.cover_url || item.coverUrl || item.thumbnail || cover.url || '',
+            coverSha256: item.cover_sha256 || item.coverSha256 || cover.sha256 || '',
+            blossomUrl: item.blossom_url || item.blossomUrl || blossom.url || '',
+            blossomSha256: item.blossom_sha256 || item.blossomSha256 || blossom.sha256 || item.sha256 || '',
             source: item.source || source,
+            sourceNativeId: item.source_native_id || item.sourceNativeId || '',
             readUrl: directReadUrl,
             fallback: Boolean(directReadUrl)
           };
@@ -2495,6 +3013,109 @@
           });
           socket.addEventListener('error', () => finish(false));
         }))).then(results => results.some(Boolean));
+      }
+
+      async function publishReadingDeletion(book) {
+        const bookId = String(book?.md5 || '').toLowerCase();
+        if (!bookId) return;
+        const pubkey = state.nip7.pubkey || await window.nostr?.getPublicKey?.();
+        if (!pubkey || !window.nostr?.signEvent) {
+          throw new Error('Connect NIP-07 to delete reading progress across apps.');
+        }
+        const dTag = `${READING_D_PREFIX}${bookId}`;
+        const priorEvents = await queryNostrEvents(pubkey, {
+          kinds: [NOSTR_PROGRESS_KIND], '#d': [dTag], limit: 50,
+        });
+        const now = Math.max(
+          Math.floor(Date.now() / 1000),
+          ...priorEvents.map(event => Number(event.created_at || 0) + 1)
+        );
+        const tombstone = await window.nostr.signEvent({
+          kind: NOSTR_PROGRESS_KIND,
+          created_at: now,
+          tags: [['d', dTag]],
+          content: JSON.stringify({ bookId, deleted: true, updatedAt: now * 1000 }),
+        });
+        const accepted = await Promise.all(NOSTR_RELAYS.map(relay => publishRelayEvent(relay, tombstone)));
+        if (!accepted.some(Boolean)) throw new Error('Nostr relays did not accept the reading deletion.');
+        if (priorEvents.length) {
+          const deletion = await window.nostr.signEvent({
+            kind: 5,
+            created_at: now,
+            tags: priorEvents.map(event => ['e', event.id]),
+            content: '',
+          });
+          await publishNostrDeletion(deletion);
+        }
+      }
+
+      async function publishReadingMetadata(book) {
+        const bookId = String(book?.md5 || '').toLowerCase();
+        if (!bookId) return;
+        const pubkey = state.nip7.pubkey || await window.nostr?.getPublicKey?.();
+        if (!pubkey || !window.nostr?.signEvent) {
+          throw new Error('Connect NIP-07 to sync refreshed reading metadata.');
+        }
+        const now = Math.floor(Date.now() / 1000);
+        const event = await window.nostr.signEvent({
+          kind: NOSTR_PROGRESS_KIND,
+          created_at: now,
+          tags: [['d', `${READING_D_PREFIX}${bookId}`]],
+          content: JSON.stringify({
+            bookId,
+            title: book.title || '',
+            authors: book.authors || book.author || '',
+            year: book.year || '',
+            language: book.language || '',
+            publisher: book.publisher || '',
+            coverUrl: book.coverUrl || '',
+            blossomUrl: book.blossomUrl || '',
+            blossomSha256: book.blossomSha256 || '',
+            extension: book.extension || book.format || '',
+            source: book.source || '',
+            sourceNativeId: book.sourceNativeId || '',
+            progression: BookMetadata.readingProgressForBook(book),
+            furthestProgression: Number(book.furthestProgression || 0) || 0,
+            cfi: book.cfi || '',
+            readUrl: book.readUrl || book.url || '',
+            updatedAt: now * 1000,
+          }),
+        });
+        const accepted = await Promise.all(NOSTR_RELAYS.map(relay => publishRelayEvent(relay, event)));
+        if (!accepted.some(Boolean)) throw new Error('Nostr relays did not accept refreshed reading metadata.');
+      }
+
+      async function deleteLibraryBook(book) {
+        const title = book?.title || 'this book';
+        if (!window.confirm(`Delete ${title} from your library across apps?`)) return;
+        const wasFavorite = state.favorites.some(item => BookMetadata.sameLibraryBook(item, book));
+        const wasReading = state.reading.some(item => BookMetadata.sameLibraryBook(item, book));
+        state.favorites = state.favorites.filter(item => !BookMetadata.sameLibraryBook(item, book));
+        state.reading = state.reading.filter(item => !BookMetadata.sameLibraryBook(item, book));
+        const md5 = String(book?.md5 || '').toLowerCase();
+        favoriteFetchMonitors.get(md5)?.abort();
+        favoriteFetchMonitors.delete(md5);
+        favoriteFetchProgress.delete(md5);
+        localStorage.setItem(FAVORITES_KEY, JSON.stringify(state.favorites));
+        localStorage.setItem(READING_KEY, JSON.stringify(state.reading));
+        if (state.nip7.pubkey) {
+          saveNostrSyncCache(state.nip7.pubkey, {
+            favorites: state.favorites, reading: state.reading, words: state.words,
+          });
+        }
+        renderFavorites();
+        renderReading();
+        renderHome();
+        status.textContent = `Removed ${title} locally; syncing deletion…`;
+        try {
+          const tasks = [];
+          if (wasFavorite) tasks.push(syncFavoritesToNostr());
+          if (wasReading) tasks.push(publishReadingDeletion(book));
+          if (tasks.length) await Promise.all(tasks);
+          status.textContent = `Deleted ${title} from your library across apps.`;
+        } catch (error) {
+          status.textContent = `Deleted ${title} locally; cross-app sync failed: ${error?.message || error}`;
+        }
       }
 
       async function deleteVocabularyWord(entry) {
@@ -2736,54 +3357,220 @@
         }
       }
 
-      function renderResults(books) {
-        resultsEl.innerHTML = '';
+      function bookCoverUrl(book) {
+        const direct = book.coverUrl || book.cover_url || book.thumbnail || book.image || book.metadata?.coverUrl || '';
+        if (typeof direct === 'string' && direct.trim()) return direct.trim();
+        const coverId = book.coverId || book.cover_id || '';
+        if (coverId) return `https://covers.openlibrary.org/b/id/${encodeURIComponent(coverId)}-M.jpg`;
+        const md5 = String(book.md5 || '').toLowerCase();
+        return isMd5(md5) ? `${LIBVAULT_COVER_BASE}/${md5}` : '';
+      }
+
+      function searchForAuthor(book) {
+        const authorQuery = authorSearchName(book.authors || book.author);
+        if (!authorQuery) return;
+        queryInput.value = authorQuery;
+        searchType.value = 'author';
+        activateTab('search');
+        void startSearch();
+      }
+
+      function renderBookTable(target, books, options = {}) {
+        const sort = options.sort || { key: '', direction: 'asc' };
+        const isCached = book => cachedBookKeys.has(bookCacheKey(book, book.readUrl || book.url));
+        const visible = sort.key ? BookMetadata.sortBooks(books, sort.key, sort.direction, isCached) : books.slice();
+        target.innerHTML = '';
         if (!books.length) {
-          resultsEl.innerHTML = '<p class="note">No matches. Try a shorter query.</p>';
+          target.innerHTML = `<p class="note">${escapeHtml(options.emptyText || 'No matches. Try a shorter query.')}</p>`;
           return;
         }
-        for (const book of books) {
-          const canRead = Boolean(book.readUrl || book.url);
+        const table = document.createElement('div');
+        table.className = 'book-table';
+        table.setAttribute('role', 'table');
+        table.setAttribute('aria-label', options.label || 'Books');
+        const head = document.createElement('div');
+        head.className = 'book-table-head';
+        head.setAttribute('role', 'row');
+        const columns = [
+          ['', ''], ['Title', 'title'], ['Author', 'author'], ['Year', 'year'],
+          ['Available', 'availability'], ['Format', 'format'], ['Language', 'language'], ['', ''],
+        ];
+        for (const [label, key] of columns) {
+          const cell = document.createElement('span');
+          cell.setAttribute('role', 'columnheader');
+          if (key) {
+            const button = document.createElement('button');
+            button.type = 'button';
+            const selected = sort.key === key;
+            button.textContent = `${label}${selected ? (sort.direction === 'asc' ? ' ↑' : ' ↓') : ''}`;
+            button.addEventListener('click', () => {
+              options.onSort?.(key, selected && sort.direction === 'asc' ? 'desc' : 'asc');
+            });
+            cell.setAttribute('aria-sort', selected ? (sort.direction === 'asc' ? 'ascending' : 'descending') : 'none');
+            cell.appendChild(button);
+          }
+          head.appendChild(cell);
+        }
+        table.appendChild(head);
+        for (const book of visible) {
+          const canOpen = options.routeOnly || (options.canOpen ? options.canOpen(book) : Boolean(options.onOpen));
           const readUrl = book.readUrl || book.url || '';
-          const title = `${book.title}${book.year ? ` (${book.year})` : ''}`;
           const authorQuery = authorSearchName(book.authors);
+          const availabilitySources = BookMetadata.availabilitySourcesForBook(book, isCached(book));
+          const availability = availabilitySources.join(' · ');
+          const readableNow = isCached(book)
+            || /^https:\/\//i.test(String(book.blossomUrl || ''))
+            || availabilitySources.includes('Gutenberg');
+          const titleAvailabilityClass = readableNow ? 'readable' : 'unavailable';
+          const rawLanguage = BookMetadata.languageForBook(book);
+          const languageCode = Object.entries(DICTIONARY_LANGUAGES)
+            .find(([, name]) => name.toLowerCase() === rawLanguage)?.[0]
+            || ({ eng: 'en', por: 'pt' })[rawLanguage]
+            || rawLanguage.split('-', 1)[0];
+          const catalogUrl = BookMetadata.canonicalCatalogUrl(book);
+          const sourceMarkup = catalogUrl
+            ? `<a class="result-source" href="${escapeHtml(catalogUrl)}" target="_blank" rel="noopener noreferrer">${escapeHtml(book.source)}</a>`
+            : escapeHtml(book.source || '');
+          const secondaryAvailability = [
+            sourceMarkup,
+            book.rating > 0 ? `★ ${book.rating.toFixed(1)}` : '',
+            book.editionCount > 0 ? `${book.editionCount} editions` : '',
+          ].filter(Boolean).map(detail => `<span class="availability-detail">${detail}</span>`)
+            .join('<span class="availability-separator" aria-hidden="true">·</span>');
+          const coverUrl = bookCoverUrl(book);
+          const statusMarkup = options.library
+            ? `${book.isReading ? '<svg viewBox="0 0 24 24" aria-label="Currently reading" role="img"><path d="M4 4.5A3.5 3.5 0 0 1 7.5 1H11v17H7.5A3.5 3.5 0 0 0 4 21.5v-17ZM13 1h3.5A3.5 3.5 0 0 1 20 4.5v17a3.5 3.5 0 0 0-3.5-3.5H13V1Z"/></svg>' : ''}${book.isFavorite ? '<svg class="favorite-status" viewBox="0 0 24 24" aria-label="Favorite" role="img"><path d="M12 21s-8-4.8-8-11a4.5 4.5 0 0 1 8-2.8A4.5 4.5 0 0 1 20 10c0 6.2-8 11-8 11Z"/></svg>' : ''}${favoriteFetchStatusMarkup(book.md5)}<button type="button" class="library-refresh" data-action="refresh-library" aria-label="Refresh metadata for ${escapeHtml(book.title || 'book')}" title="Refresh metadata"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 6v5h-5"/><path d="M19 11a8 8 0 1 0 1 4"/></svg></button><button type="button" class="library-delete" data-action="delete-library" aria-label="Delete ${escapeHtml(book.title || 'book')} from library" title="Delete from library"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3m3 0-1 13H7L6 7m4 4v5m4-5v5"/></svg></button>`
+            : `${favoriteFetchStatusMarkup(book.md5)}<button type="button" class="chip-btn" data-action="favorite" data-md5="${escapeHtml(book.md5)}" aria-label="${isFavoriteMd5(book.md5) ? 'Remove from favorites' : 'Add to favorites'}" title="${isFavoriteMd5(book.md5) ? 'Remove from favorites' : 'Add to favorites'}">${isFavoriteMd5(book.md5) ? '♥' : '♡'}</button>`;
           const row = document.createElement('article');
-          row.className = 'result-item';
+          row.className = 'book-table-row';
+          row.setAttribute('role', 'row');
           row.innerHTML = `
-            <div class="result-main">
-              <span class="result-cover-slot">${book.coverId ? `<img class="result-cover" src="https://covers.openlibrary.org/b/id/${encodeURIComponent(book.coverId)}-M.jpg" alt="" loading="lazy">` : ''}</span>
-              <div class="result-copy">
-                ${canRead ? `<a class="result-title" data-action="open" href="#read=${encodeURIComponent(readUrl)}">${escapeHtml(title)}</a>` : `<span class="result-title">${escapeHtml(title)}</span>`}
-                <p class="result-meta"><a class="result-author" data-action="author-search" href="#search=${encodeURIComponent(authorQuery)}">${escapeHtml(book.authors)}</a>${book.publisher ? ` · ${escapeHtml(book.publisher)}` : ''}</p>
-                <div class="result-tags">
-                  <span class="badge">${escapeHtml(book.source)}</span>
-                  ${book.language ? `<span class="badge">${escapeHtml(String(book.language).toUpperCase())}</span>` : ''}
-                  ${book.rating > 0 ? `<span class="badge">★ ${escapeHtml(book.rating.toFixed(1))}</span>` : ''}
-                  ${book.editionCount > 0 ? `<span class="badge">${escapeHtml(book.editionCount)} editions</span>` : ''}
-                  ${book.extension ? `<span class="badge">${escapeHtml(book.extension.toUpperCase())}</span>` : ''}
-                  ${Number(book.filesize) > 0 ? `<span class="badge">${escapeHtml(bytesLabel(book.filesize))}</span>` : ''}
-                </div>
-              </div>
-            </div>
-            <div class="row-actions">
-              <button type="button" class="chip-btn" data-action="favorite" data-md5="${escapeHtml(book.md5)}" aria-label="${isFavoriteMd5(book.md5) ? 'Remove from favorites' : 'Add to favorites'}" title="${isFavoriteMd5(book.md5) ? 'Remove from favorites' : 'Add to favorites'}">${isFavoriteMd5(book.md5) ? '♥' : '♡'}</button>
-            </div>
+            <span class="result-cover-slot" role="cell">${coverUrl ? `<img class="result-cover" src="${escapeHtml(coverUrl)}" alt="" loading="lazy">` : ''}</span>
+            <span class="result-cell" role="cell">${canOpen ? `<a class="result-title ${titleAvailabilityClass}" data-action="open" href="#read=${encodeURIComponent(readRouteValue(book, readUrl))}">${escapeHtml(book.title)}</a>` : `<span class="result-title ${titleAvailabilityClass}">${escapeHtml(book.title)}</span>`}${book.publisher ? `<small>${escapeHtml(book.publisher)}</small>` : ''}</span>
+            <span class="result-cell" role="cell">${authorQuery ? `<a class="result-author" data-action="author-search" href="#search=${encodeURIComponent(authorQuery)}">${escapeHtml(book.authors)}</a>` : `<span class="result-author">${escapeHtml(book.authors || '')}</span>`}</span>
+            <span class="result-cell" role="cell">${escapeHtml(book.year || '—')}</span>
+            <span class="result-cell result-availability" role="cell"><span class="availability-primary">${escapeHtml(availability)}${isCached(book) ? '<svg class="home-cache-icon" viewBox="0 0 24 24" aria-label="Cached" role="img"><path d="M12 3a9 9 0 1 0 8.49 12H18.3A7 7 0 1 1 19 12h-3l4-4 4 4h-3a9 9 0 0 0-9-9Zm-1 5v5h5v-2h-3V8h-2Z"/></svg>' : ''}</span>${secondaryAvailability ? `<small>${secondaryAvailability}</small>` : ''}</span>
+            <span class="result-cell" role="cell">${escapeHtml(String(book.extension || book.format || '—').toLowerCase())}${Number(book.filesize) > 0 ? `<small>${escapeHtml(bytesLabel(book.filesize))}</small>` : ''}</span>
+            <span class="result-cell" role="cell">${escapeHtml(languageCode ? languageCode.toUpperCase() : '—')}</span>
+            <span class="row-actions home-book-status" role="cell">${statusMarkup}</span>
           `;
           row.querySelector('[data-action="open"]')?.addEventListener('click', (event) => {
+            if (options.routeOnly) return;
             event.preventDefault();
-            openBook(book);
+            options.onOpen?.(book);
           });
           row.querySelector('[data-action="author-search"]')?.addEventListener('click', (event) => {
             event.preventDefault();
-            queryInput.value = authorQuery;
-            searchType.value = 'author';
-            startSearch();
+            searchForAuthor(book);
           });
-          row.querySelector('[data-action="favorite"]').addEventListener('click', (event) => {
+          row.querySelector('[data-action="favorite"]')?.addEventListener('click', (event) => {
             toggleFavorite(book, event.currentTarget);
           });
-          resultsEl.appendChild(row);
+          row.querySelector('[data-action="refresh-library"]')?.addEventListener('click', () => {
+            void refreshLibraryBookMetadata(book);
+          });
+          row.querySelector('[data-action="delete-library"]')?.addEventListener('click', () => {
+            void deleteLibraryBook(book);
+          });
+          table.appendChild(row);
         }
+        target.appendChild(table);
+      }
+
+      function resultLanguage(book) {
+        return String(BookMetadata.languageForBook(book) || '').toLowerCase();
+      }
+
+      function resultFormat(book) {
+        return String(book.extension || book.format || '').replace(/^\./, '').toLowerCase();
+      }
+
+      function exactSearchTokens(value) {
+        return String(value || '').toLocaleLowerCase().match(/[\p{L}\p{N}]+/gu) || [];
+      }
+
+      function matchesExactSearchTokens(book, query, type = 'all') {
+        const fields = {
+          title: book.title,
+          author: book.authors || book.author,
+          publisher: book.publisher,
+          isbn: book.isbn,
+        };
+        const selected = type === 'all' ? Object.values(fields) : [fields[type]];
+        const available = new Set(exactSearchTokens(selected.filter(Boolean).join(' ')));
+        return exactSearchTokens(query).every(term => available.has(term));
+      }
+
+      function configureSearchResultFilter(select, wrap, values, allLabel, selected) {
+        const visible = values.length > 1;
+        wrap.classList.toggle('hidden', !visible);
+        if (!visible) return '';
+        select.replaceChildren();
+        for (const [value, label] of [['', allLabel], ...values.map(value => [value, value.toUpperCase()])]) {
+          const option = document.createElement('option');
+          option.value = value;
+          option.textContent = label;
+          select.appendChild(option);
+        }
+        select.value = values.includes(selected) ? selected : '';
+        return select.value;
+      }
+
+      function filteredSearchResultBooks() {
+        return searchResultBooks.filter(book => (
+          (!searchResultFilter.language || resultLanguage(book) === searchResultFilter.language)
+          && (!searchResultFilter.format || resultFormat(book) === searchResultFilter.format)
+        ));
+      }
+
+      function renderResults(books, { preserveResults = false, routeState = null } = {}) {
+        if (!preserveResults) {
+          searchResultBooks = books.slice();
+          searchResultFilter.language = routeState?.language || '';
+          searchResultFilter.format = routeState?.format || '';
+          searchResultPage = Math.max(1, Number(routeState?.page) || 1);
+        }
+        const languages = [...new Set(searchResultBooks.map(resultLanguage).filter(Boolean))].sort();
+        const formats = [...new Set(searchResultBooks.map(resultFormat).filter(Boolean))].sort();
+        searchResultFilter.language = configureSearchResultFilter(
+          searchLanguageFilter, searchLanguageFilterWrap, languages, 'All languages', searchResultFilter.language
+        );
+        searchResultFilter.format = configureSearchResultFilter(
+          searchFormatFilter, searchFormatFilterWrap, formats, 'All formats', searchResultFilter.format
+        );
+        searchResultFilters.classList.toggle('hidden', languages.length <= 1 && formats.length <= 1);
+        const filteredBooks = filteredSearchResultBooks();
+        const sortedBooks = searchResultSort.key
+          ? BookMetadata.sortBooks(
+            filteredBooks, searchResultSort.key, searchResultSort.direction,
+            book => cachedBookKeys.has(bookCacheKey(book, book.readUrl || book.url))
+          )
+          : filteredBooks.slice();
+        const totalPages = Math.max(1, Math.ceil(sortedBooks.length / SEARCH_RESULT_PAGE_SIZE));
+        searchResultPage = Math.min(Math.max(1, searchResultPage), totalPages);
+        const start = (searchResultPage - 1) * SEARCH_RESULT_PAGE_SIZE;
+        const pageBooks = sortedBooks.slice(start, start + SEARCH_RESULT_PAGE_SIZE);
+        searchPagination.classList.toggle('hidden', totalPages <= 1);
+        searchPagePrev.disabled = searchResultPage <= 1;
+        searchPageNext.disabled = searchResultPage >= totalPages;
+        searchPagePrev.dataset.page = String(Math.max(1, searchResultPage - 1));
+        searchPageNext.dataset.page = String(Math.min(totalPages, searchResultPage + 1));
+        searchPageLabel.textContent = `Page ${searchResultPage} of ${totalPages} · ${sortedBooks.length} results`;
+        searchResultCount.textContent = sortedBooks.length === searchResultBooks.length
+          ? `${sortedBooks.length} result${sortedBooks.length === 1 ? '' : 's'}`
+          : `${sortedBooks.length} of ${searchResultBooks.length} results`;
+        renderBookTable(resultsEl, pageBooks, {
+          sort: searchResultSort,
+          label: 'Book search results',
+          routeOnly: true,
+          onSort: (key, direction) => {
+            searchResultSort.key = key;
+            searchResultSort.direction = direction;
+            searchResultPage = 1;
+            renderResults(searchResultBooks, { preserveResults: true });
+          },
+        });
+        return { shown: pageBooks.length, total: sortedBooks.length, page: searchResultPage, totalPages };
       }
 
       function isFavoriteMd5(md5) {
@@ -2797,7 +3584,14 @@
           return;
         }
         const exists = state.favorites.findIndex(item => item.md5 === book.md5);
+        const added = exists < 0;
         if (exists >= 0) {
+          favoriteFetchMonitors.get(book.md5)?.abort();
+          favoriteFetchMonitors.delete(book.md5);
+          favoriteFetchProgress.delete(book.md5);
+          document.querySelectorAll(`[data-favorite-fetch="${book.md5}"]`).forEach(node => {
+            node.outerHTML = favoriteFetchStatusMarkup(book.md5);
+          });
           removeById(state.favorites, book.md5);
           if (button) {
             button.textContent = '♡';
@@ -2830,7 +3624,8 @@
         renderFavorites();
         renderButtonsState();
         updateReadingFavoriteButton();
-        queueFavoriteSync();
+        if (added) requestFavoriteFromLibVault(book).finally(queueFavoriteSync);
+        else queueFavoriteSync();
       }
 
       function updateReadingFavoriteButton() {
@@ -2870,7 +3665,84 @@
         history.pushState(null, '', `${window.location.pathname}${window.location.search}${nextHash}`);
       }
 
+      function homeHashRoute() {
+        const params = new URLSearchParams();
+        if (homeLibraryFilter.language) params.set('language', homeLibraryFilter.language);
+        if (homeLibraryFilter.format) params.set('format', homeLibraryFilter.format);
+        const query = params.toString();
+        return query ? `home?${query}` : 'home';
+      }
+
+      function replaceHomeHash() {
+        if (activeTab !== 'home') return;
+        history.replaceState(null, '', `${window.location.pathname}${window.location.search}#${homeHashRoute()}`);
+      }
+
+      function searchHashRoute({
+        query = queryInput.value.trim(),
+        type = searchType.value || 'all',
+        language = searchResultFilter.language,
+        format = searchResultFilter.format,
+        page = searchResultPage,
+      } = {}) {
+        const params = new URLSearchParams();
+        params.set('search', query);
+        if (type !== 'all') params.set('type', type);
+        if (language) params.set('language', language);
+        if (format) params.set('format', format);
+        if (page > 1) params.set('page', String(page));
+        return params.toString();
+      }
+
+      function replaceSearchHash() {
+        const nextHash = `#${searchHashRoute()}`;
+        history.replaceState(null, '', `${window.location.pathname}${window.location.search}${nextHash}`);
+      }
+
+      function readRouteValue(book, readUrl = '') {
+        const md5 = String(book?.md5 || '').toLowerCase();
+        if (isMd5(md5)) return md5;
+        const direct = readUrl || BookMetadata.canonicalReadUrl(book, BOOKS_API_BASE);
+        return direct || `book:${BookMetadata.bookIdentity(book)}`;
+      }
+
       async function resolveReadRouteBook(readUrl) {
+        const routeReference = String(readUrl || '');
+        const bookId = routeReference.toLowerCase();
+        if (bookId.startsWith('book:')) {
+          const identity = routeReference.slice(5);
+          const savedBooks = BookMetadata.mergeLibraryState(state.reading, state.favorites);
+          const metadataBooks = Object.values(metadataCacheRead()).map(entry => entry?.book).filter(Boolean);
+          const known = [...searchResultBooks, ...savedBooks, ...metadataBooks]
+            .find(book => BookMetadata.bookIdentity(book) === identity);
+          if (known) return known;
+          try {
+            const cached = (await bookCacheRecords()).find(book => BookMetadata.bookIdentity(book) === identity);
+            if (cached) return cached;
+          } catch {}
+          return { title: 'Book metadata unavailable', routeIdentity: identity };
+        }
+        if (isMd5(bookId)) {
+          const searchBook = searchResultBooks.find(book => String(book?.md5 || '').toLowerCase() === bookId);
+          if (searchBook) return searchBook;
+          const saved = BookMetadata.mergeLibraryState(state.reading, state.favorites)
+            .find(book => String(book?.md5 || '').toLowerCase() === bookId);
+          if (saved) return saved;
+          try {
+            const cached = (await bookCacheRecords()).find(book =>
+              String(book?.md5 || '').toLowerCase() === bookId
+              || String(book?.key || '').toLowerCase() === bookId
+              || String(book?.key || '').toLowerCase().includes(bookId)
+              || String(book?.readUrl || '').toLowerCase().includes(bookId)
+            );
+            if (cached) return { ...cached, md5: bookId, extension: cached.extension || 'epub' };
+          } catch {}
+          const cachedMetadata = Object.values(metadataCacheRead())
+            .map(entry => entry?.book)
+            .find(book => String(book?.md5 || '').toLowerCase() === bookId);
+          if (cachedMetadata) return { ...cachedMetadata, md5: bookId };
+          return { md5: bookId, title: 'Untitled book', extension: 'epub' };
+        }
         const saved = BookMetadata.findBookByReadUrl(readUrl, state.reading, state.favorites);
         if (saved) return saved;
         try {
@@ -2902,6 +3774,98 @@
           } catch {}
         }
         return { title: 'Untitled book', readUrl, extension: 'epub' };
+      }
+
+      function showReadMetadataFallback(book) {
+        const frame = document.getElementById('reader-frame');
+        if (!frame?.parentElement) return;
+        let panel = document.getElementById('read-metadata-fallback');
+        if (!panel) {
+          panel = document.createElement('article');
+          panel.id = 'read-metadata-fallback';
+          panel.style.cssText = 'max-width:72rem;margin:clamp(1rem,4vw,4rem) auto;padding:clamp(1rem,3vw,3rem);display:grid;grid-template-columns:minmax(0,14rem) minmax(0,1fr);gap:clamp(1rem,3vw,3rem);align-items:start';
+          frame.parentElement.insertBefore(panel, frame);
+        }
+        panel.replaceChildren();
+        const coverUrl = book.coverUrl || (book.coverId ? `https://covers.openlibrary.org/b/id/${book.coverId}-L.jpg` : '');
+        if (coverUrl) {
+          const cover = document.createElement('img');
+          cover.src = coverUrl;
+          cover.alt = '';
+          cover.style.cssText = 'display:block;width:100%;max-height:65vh;object-fit:contain;box-shadow:0 1rem 3rem rgb(0 0 0 / .22)';
+          panel.append(cover);
+        }
+        const details = document.createElement('div');
+        const title = document.createElement('h1');
+        title.textContent = book.title || 'Book';
+        title.style.cssText = 'margin:0 0 .35rem;font-size:clamp(1.8rem,4vw,4rem);line-height:1.02';
+        details.append(title);
+        for (const [label, value] of [
+          ['Author', book.author || book.authors],
+          ['Published', book.year],
+          ['Language', book.language],
+          ['Format', book.extension || book.format],
+          ['Publisher', book.publisher],
+          ['MD5', book.md5],
+        ]) {
+          if (!value || value === '--') continue;
+          const row = document.createElement('p');
+          row.style.cssText = 'margin:.45rem 0;color:var(--muted)';
+          const strong = document.createElement('strong');
+          strong.textContent = `${label}: `;
+          strong.style.color = 'var(--ink, currentColor)';
+          row.append(strong, document.createTextNode(String(value)));
+          details.append(row);
+        }
+        const note = document.createElement('p');
+        note.textContent = 'Book details are available, but the book file could not be loaded.';
+        note.style.cssText = 'margin:1.5rem 0 0;color:var(--muted)';
+        details.append(note);
+        panel.append(details);
+        panel.hidden = false;
+        panel.style.display = 'grid';
+        frame.hidden = false;
+        const hideWhenReadable = () => {
+          let epubReady = false;
+          try {
+            epubReady = Boolean(frame.contentDocument?.body?.dataset?.location);
+          } catch {}
+          const source = frame.getAttribute('src') || '';
+          const embeddedDocumentReady = source && !/reader\.html(?:\?|$)/.test(source);
+          if (epubReady || embeddedDocumentReady) {
+            panel.hidden = true;
+            panel.style.display = 'none';
+            return true;
+          }
+          return false;
+        };
+        frame.addEventListener('load', hideWhenReadable, { once: true });
+        let checks = 0;
+        const waitForReadableBook = () => {
+          if (hideWhenReadable() || checks++ > 450) return;
+          setTimeout(waitForReadableBook, 100);
+        };
+        waitForReadableBook();
+      }
+
+      async function openResolvedReadRoute(bookRef) {
+        let book = await resolveReadRouteBook(bookRef);
+        showReadMetadataFallback(book);
+        const readPath = BookMetadata.canonicalReadUrl(book, BOOKS_API_BASE);
+        const cached = await cachedBookBlob(book, readPath).catch(() => null);
+        const cachedFormat = await bookFormatForBlob(cached);
+        if (cachedFormat) book = { ...book, extension: cachedFormat, format: cachedFormat };
+        if (!readPath && !cached) {
+          if (isMd5(bookRef) && state.settings.useNip7 && window.nostr) {
+            pendingReadBookId = String(bookRef).toLowerCase();
+            status.textContent = 'Looking for this book in your Nostr library…';
+          } else {
+            status.textContent = 'No cached or Blossom copy was found for this book.';
+          }
+          return;
+        }
+        pendingReadBookId = '';
+        await openBook(book, { updateHash: false, addToReading: false });
       }
 
       function enrichedHomeBooks(books) {
@@ -2939,36 +3903,95 @@
         state.favorites = state.favorites.map(update);
       }
 
-      async function remoteMetadataForBook(book) {
-        const libvaultMd5 = String(book?.md5 || '').trim().toLowerCase();
-        if (isMd5(libvaultMd5)) {
-          const endpoints = [
-            new URL(`/api/books/${libvaultMd5}`, window.location.origin).href,
-            `https://lib.b.bfr.ee/api/books/${libvaultMd5}`,
-          ].filter((value, index, values) => values.indexOf(value) === index);
-          for (const endpoint of endpoints) {
-            try {
-              const response = await fetch(endpoint);
-              if (!response.ok) continue;
-              const metadata = await response.json();
-              const origin = new URL(endpoint).origin;
-              return {
-                ...metadata,
-                md5: libvaultMd5,
-                title: BookMetadata.resolveTitle(metadata),
-                authors: metadata?.authors || metadata?.author || '',
-                year: BookMetadata.yearForBook(metadata),
-                language: BookMetadata.languageForBook(metadata),
-                extension: metadata?.extension || metadata?.format || 'epub',
-                source: metadata?.source || 'libvault',
-                isbn: metadata?.isbn || '',
-                readUrl: `${origin}/api/read/${libvaultMd5}`,
-              };
-            } catch {
-              // Try the canonical public LibVault endpoint next.
-            }
-          }
+      async function libVaultMetadataForBook(book) {
+        const md5 = String(book?.md5 || '').toLowerCase();
+        if (!isMd5(md5)) return null;
+        const response = await fetch(`${LIBVAULT_API_BASE}/books/${md5}`, { cache: 'no-store' });
+        if (response.status === 404) return null;
+        if (!response.ok) throw new Error(`LibVault metadata lookup failed (${response.status})`);
+        const metadata = await response.json();
+        return {
+          ...metadata,
+          source: book.source || metadata.source || 'libvault',
+          sourceNativeId: book.sourceNativeId || book.source_native_id || '',
+          coverUrl: `${LIBVAULT_COVER_BASE}/${md5}`,
+        };
+      }
+
+      function openLibraryRecordId(book) {
+        const direct = String(book?.sourceNativeId || book?.source_native_id || '').trim();
+        if (/^OL\d+[WM]$/i.test(direct)) return direct.toUpperCase();
+        return BookMetadata.canonicalCatalogUrl(book).match(/\/(?:works|books)\/(OL\d+[WM])(?:[/?#]|$)/i)?.[1]?.toUpperCase() || '';
+      }
+
+      async function openLibraryMetadataForBook(book) {
+        const recordId = openLibraryRecordId(book);
+        if (!recordId) return null;
+        const getJSON = async url => {
+          const response = await fetch(url, { cache: 'no-store' });
+          if (!response.ok) throw new Error(`Open Library metadata lookup failed (${response.status})`);
+          return response.json();
+        };
+        const edition = recordId.endsWith('M')
+          ? await getJSON(`https://openlibrary.org/books/${recordId}.json`)
+          : null;
+        const workId = recordId.endsWith('W')
+          ? recordId
+          : String(edition?.works?.[0]?.key || '').match(/OL\d+W/i)?.[0]?.toUpperCase() || '';
+        const work = workId ? await getJSON(`https://openlibrary.org/works/${workId}.json`) : null;
+        const source = { ...(work || {}), ...(edition || {}) };
+        const authorRefs = [...(edition?.authors || []), ...(work?.authors || [])]
+          .map(item => item?.author?.key || item?.key || '')
+          .filter(Boolean);
+        const authors = (await Promise.all([...new Set(authorRefs)].slice(0, 8).map(async key => {
+          try { return String((await getJSON(`https://openlibrary.org${key}.json`))?.name || ''); } catch { return ''; }
+        }))).filter(Boolean).join(', ');
+        let editionCount = Number(book.editionCount || 0);
+        if (workId) {
+          try {
+            editionCount = Number((await getJSON(`https://openlibrary.org/works/${workId}/editions.json?limit=1`))?.size || editionCount);
+          } catch {}
         }
+        const language = String(source.languages?.[0]?.key || '').split('/').pop();
+        const coverId = Number(source.covers?.[0] || 0) || '';
+        return {
+          title: source.title || '',
+          authors: authors || book.authors || book.author || '',
+          year: BookMetadata.yearForBook({ year: source.first_publish_date || source.publish_date || work?.first_publish_date || '' }),
+          language,
+          publisher: Array.isArray(source.publishers) ? source.publishers.join(', ') : source.publishers || '',
+          isbn: source.isbn_13?.[0] || source.isbn_10?.[0] || '',
+          coverId,
+          coverUrl: coverId ? `https://covers.openlibrary.org/b/id/${coverId}-M.jpg` : '',
+          editionCount,
+          source: 'openlibrary',
+          sourceNativeId: workId || recordId,
+          sourceUrl: `https://openlibrary.org/${workId ? 'works' : 'books'}/${workId || recordId}`,
+        };
+      }
+
+      async function remoteMetadataForBook(book) {
+        let combined = null;
+        const merge = (metadata, provenance) => {
+          if (!metadata) return;
+          const normalized = BookMetadata.enrichBookMetadata({}, metadata, provenance);
+          combined ||= {
+            md5: book.md5,
+            readUrl: book.readUrl || book.url || '',
+            source: book.source || '',
+            sourceNativeId: book.sourceNativeId || book.source_native_id || '',
+          };
+          for (const field of ['title', 'authors', 'year', 'language', 'publisher', 'isbn', 'coverId', 'coverUrl', 'extension', 'readUrl', 'source']) {
+            if (normalized[field] !== '' && normalized[field] != null) combined[field] = normalized[field];
+          }
+          combined.metadataLookupComplete = true;
+          combined.metadataProvenance = { ...(combined.metadataProvenance || {}), ...(normalized.metadataProvenance || {}) };
+          for (const field of ['editionCount', 'sourceNativeId', 'sourceUrl', 'filesizeBytes', 'pages', 'series', 'topic']) {
+            if (metadata[field] !== '' && metadata[field] != null) combined[field] = metadata[field];
+          }
+        };
+        try { merge(await libVaultMetadataForBook(book), 'libvault'); } catch {}
+        try { merge(await openLibraryMetadataForBook(combined || book), 'openlibrary'); } catch {}
         const readUrl = BookMetadata.canonicalReadUrl(book, BOOKS_API_BASE);
         const metadataUrl = BookMetadata.metadataEndpointForReadUrl(readUrl);
         if (metadataUrl) {
@@ -2976,7 +3999,7 @@
           if (!response.ok) throw new Error(`metadata lookup failed (${response.status})`);
           const payload = await response.json();
           const metadata = payload?.book || payload?.data || payload;
-          return {
+          merge({
             ...metadata,
             title: BookMetadata.resolveTitle(metadata, readUrl, window.location.href),
             authors: Array.isArray(metadata?.authors) ? metadata.authors.join(', ') : metadata?.authors || metadata?.author || '',
@@ -2985,22 +4008,67 @@
             extension: metadata?.extension || metadata?.format || 'epub',
             source: metadata?.source || 'gutenberg',
             readUrl,
-          };
+          }, 'gutenberg');
+          return combined;
         }
         const isbn = BookMetadata.isbnForBook(book);
         const title = BookMetadata.resolveTitle(book);
         const query = isbn || (!BookMetadata.isPlaceholderTitle(title) ? title : '');
-        if (!query) return null;
+        if (!query) return combined;
         const results = await searchAllBooksParty(query);
         const exact = results.find(result => BookMetadata.sameLibraryBook(book, result));
-        if (exact) return exact;
+        if (exact) {
+          merge(exact, exact.source || 'remote');
+          return combined;
+        }
         const wantedTitle = title.toLocaleLowerCase();
         const wantedAuthor = authorSearchName(book.authors || book.author).toLocaleLowerCase();
-        return results.find(result => {
+        const matched = results.find(result => {
           const sameTitle = String(result.title || '').toLocaleLowerCase() === wantedTitle;
           const resultAuthor = authorSearchName(result.authors || result.author).toLocaleLowerCase();
           return sameTitle && wantedAuthor && resultAuthor === wantedAuthor;
         }) || null;
+        merge(matched, matched?.source || 'remote');
+        return combined;
+      }
+
+      async function refreshLibraryBookMetadata(book) {
+        const title = book?.title || 'book';
+        status.textContent = `Refreshing metadata for ${title} from LibVault and Open Library…`;
+        try {
+          const metadata = await remoteMetadataForBook(book);
+          if (!metadata) throw new Error('No newer metadata was found.');
+          const update = item => {
+            if (!BookMetadata.sameLibraryBook(item, book)) return item;
+            const next = { ...item };
+            for (const [field, value] of Object.entries(metadata)) {
+              if (value === '' || value == null) continue;
+              next[field] = value;
+            }
+            next.md5 = item.md5;
+            next.updatedAt = Date.now();
+            return next;
+          };
+          state.reading = state.reading.map(update);
+          state.favorites = state.favorites.map(update);
+          const refreshed = BookMetadata.mergeLibraryState(state.reading, state.favorites)
+            .find(item => BookMetadata.sameLibraryBook(item, book)) || { ...book, ...metadata };
+          const cache = metadataCacheRead();
+          cache[BookMetadata.bookIdentity(book)] = { book: metadata, provenance: 'manual-refresh', ts: Date.now() };
+          metadataCacheWrite(cache);
+          localStorage.setItem(READING_KEY, JSON.stringify(state.reading));
+          localStorage.setItem(FAVORITES_KEY, JSON.stringify(state.favorites));
+          renderFavorites();
+          renderReading();
+          renderHome();
+          const syncTasks = [];
+          if (refreshed.isFavorite) syncTasks.push(syncFavoritesToNostr());
+          if (refreshed.isReading) syncTasks.push(publishReadingMetadata(refreshed));
+          if (syncTasks.length) await Promise.all(syncTasks);
+          status.textContent = `Updated ${refreshed.title || title} from LibVault and Open Library across apps.`;
+        } catch (error) {
+          status.textContent = `Could not refresh ${title}: ${error?.message || error}`;
+        }
       }
 
       async function enrichLibraryMetadata() {
@@ -3067,141 +4135,59 @@
       }
 
       function renderHomeBookList(target, books, emptyText) {
-        target.innerHTML = '';
-        target.classList.add('home-book-table');
         const sort = homeBookSorts[target.id] || { key: '', direction: 'asc' };
-        const isCached = book => cachedBookKeys.has(bookCacheKey(book, book.readUrl || book.url));
-        const visible = sort.key ? BookMetadata.sortBooks(books, sort.key, sort.direction, isCached) : [...books];
-        if (!visible.length) {
-          const item = document.createElement('li');
-          item.textContent = emptyText;
-          target.appendChild(item);
-          return;
-        }
-        const head = document.createElement('li');
-        head.className = 'home-book-row home-book-head';
-        const columns = [
-          ['title', 'Title'],
-          ['', 'Status'],
-          ['author', 'Author'],
-          ['year', 'Year'],
-          ['availability', 'Available'],
-          ['format', 'Format'],
-          ['language', 'Language'],
-        ];
-        for (const [key, label] of columns) {
-          const cell = document.createElement('span');
-          if (key) {
-            const button = document.createElement('button');
-            button.type = 'button';
-            button.textContent = `${label}${sort.key === key ? (sort.direction === 'asc' ? ' ↑' : ' ↓') : ''}`;
-            button.addEventListener('click', () => {
-              homeBookSorts[target.id] = {
-                key,
-                direction: sort.key === key && sort.direction === 'asc' ? 'desc' : 'asc',
-              };
-              renderHome();
-            });
-            cell.setAttribute('aria-sort', sort.key === key ? (sort.direction === 'asc' ? 'ascending' : 'descending') : 'none');
-            cell.appendChild(button);
-          } else {
-            cell.textContent = label;
-          }
-          head.appendChild(cell);
-        }
-        target.appendChild(head);
-        for (const book of visible) {
-          const item = document.createElement('li');
-          item.className = 'home-book-row';
-          const titleCell = document.createElement('span');
-          titleCell.className = 'home-title-cell';
-          const titleLink = document.createElement('a');
-          titleLink.href = book.readUrl || book.url || book.blossomUrl
-            ? `#read=${encodeURIComponent(book.readUrl || book.url || book.blossomUrl)}`
-            : `#search=${encodeURIComponent(book.title || book.md5 || '')}`;
-          titleLink.textContent = book.title || 'Untitled book';
-          titleLink.title = `Open ${book.title || 'book'}`;
-          titleLink.addEventListener('click', event => {
-            event.preventDefault();
-            void openLibraryBook(book);
-          });
-          titleCell.appendChild(titleLink);
-          const progress = BookMetadata.readingProgressForBook(book);
-          if (book.isReading && (progress !== null || book.cfi)) {
-            const normalizedProgress = progress ?? 0;
-            const progressWrap = document.createElement('span');
-            progressWrap.className = 'home-reading-progress';
+        renderBookTable(target, books, {
+          sort,
+          label: 'Library',
+          library: true,
+          routeOnly: true,
+          emptyText,
+          onSort: (key, direction) => {
+            homeBookSorts[target.id] = { key, direction };
+            renderHome();
+          },
+        });
+      }
 
-            const progressTrack = document.createElement('span');
-            progressTrack.className = 'home-reading-progress-track';
-            progressTrack.setAttribute('role', 'progressbar');
-            progressTrack.setAttribute('aria-label', 'Reading progress');
-            progressTrack.setAttribute('aria-valuemin', '0');
-            progressTrack.setAttribute('aria-valuemax', '100');
-            progressTrack.setAttribute('aria-valuenow', String(Math.round(normalizedProgress * 100)));
-
-            const progressValue = document.createElement('span');
-            progressValue.className = 'home-reading-progress-value';
-            progressValue.style.width = `${normalizedProgress * 100}%`;
-            progressTrack.appendChild(progressValue);
-
-            const progressText = document.createElement('span');
-            progressText.textContent = `${Math.floor(normalizedProgress * 100)}% read`;
-            progressWrap.append(progressTrack, progressText);
-            titleCell.appendChild(progressWrap);
-          }
-          item.appendChild(titleCell);
-          const statusCell = document.createElement('span');
-          statusCell.className = 'home-book-status';
-          if (book.isReading) statusCell.insertAdjacentHTML('beforeend', '<svg viewBox="0 0 24 24" aria-label="Currently reading" role="img"><path d="M4 4.5A3.5 3.5 0 0 1 7.5 1H11v17H7.5A3.5 3.5 0 0 0 4 21.5v-17ZM13 1h3.5A3.5 3.5 0 0 1 20 4.5v17a3.5 3.5 0 0 0-3.5-3.5H13V1Z"/></svg>');
-          if (book.isFavorite) statusCell.insertAdjacentHTML('beforeend', '<svg class="favorite-status" viewBox="0 0 24 24" aria-label="Favorite" role="img"><path d="M12 21s-8-4.8-8-11a4.5 4.5 0 0 1 8-2.8A4.5 4.5 0 0 1 20 10c0 6.2-8 11-8 11Z"/></svg>');
-          item.appendChild(statusCell);
-          const cells = [
-            book.authors || book.author || '—',
-            book.year || (book.metadataLookupComplete ? '?' : ''),
-          ];
-          for (const value of cells) {
-            const cell = document.createElement('span');
-            cell.textContent = value;
-            cell.title = value;
-            item.appendChild(cell);
-          }
-          const cached = cachedBookKeys.has(bookCacheKey(book, book.readUrl || book.url));
-          const availabilitySources = BookMetadata.availabilitySourcesForBook(book, cached);
-          const availabilityCell = document.createElement('span');
-          availabilityCell.className = 'home-availability';
-          for (const source of availabilitySources) {
-            if (source === 'Cached') {
-              availabilityCell.insertAdjacentHTML('beforeend', '<svg class="home-cache-icon" viewBox="0 0 24 24" aria-label="Cached" role="img"><path d="M12 3a9 9 0 1 0 8.49 12H18.3A7 7 0 1 1 19 12h-3l4-4 4 4h-3a9 9 0 0 0-9-9Zm-1 5v5h5v-2h-3V8h-2Z"/></svg>');
-            } else {
-              if (availabilityCell.childNodes.length) availabilityCell.append(document.createTextNode(' · '));
-              availabilityCell.append(document.createTextNode(source));
-            }
-          }
-          item.appendChild(availabilityCell);
-          for (const value of [
-            String(book.extension || book.format || '—').replace(/^\./, '').toUpperCase(),
-            book.language ? String(book.language).toUpperCase() : (book.metadataLookupComplete ? '?' : ''),
-          ]) {
-            const cell = document.createElement('span');
-            cell.textContent = value;
-            cell.title = value;
-            item.appendChild(cell);
-          }
-          target.appendChild(item);
+      function configureHomeLibraryFilter(select, wrap, values, allLabel, selected, labelForValue) {
+        const visible = values.length > 1;
+        wrap.classList.toggle('hidden', !visible);
+        if (!visible) return '';
+        select.replaceChildren();
+        for (const [value, label] of [['', allLabel], ...values.map(value => [value, labelForValue(value)])]) {
+          select.add(new Option(label, value));
         }
+        select.value = values.includes(selected) ? selected : '';
+        return select.value;
       }
 
       function renderHome() {
         const needle = homeQueryInput.value.trim().toLocaleLowerCase();
-        const matchingBooks = books => books.filter(book => BookMetadata.matchesBookFilter(
-          book,
-          needle,
-          item => cachedBookKeys.has(bookCacheKey(item, item.readUrl || item.url))
-        ));
         const library = BookMetadata.mergeLibraryState(state.reading, state.favorites);
-        homeLibraryCount.textContent = `${library.length} ${library.length === 1 ? 'book' : 'books'}`;
-        renderHomeBookList(homeReadingList, matchingBooks(enrichedHomeBooks(library)), 'Your library is empty.');
+        const enrichedLibrary = enrichedHomeBooks(library);
+        const languages = [...new Set(enrichedLibrary.map(resultLanguage).filter(Boolean))].sort();
+        const formats = [...new Set(enrichedLibrary.map(resultFormat).filter(Boolean))].sort();
+        homeLibraryFilter.language = configureHomeLibraryFilter(
+          homeLanguageFilter, homeLanguageFilterWrap, languages, 'All languages',
+          homeLibraryFilter.language, value => value.toUpperCase()
+        );
+        homeLibraryFilter.format = configureHomeLibraryFilter(
+          homeFormatFilter, homeFormatFilterWrap, formats, 'All formats',
+          homeLibraryFilter.format, value => value.toLowerCase()
+        );
+        homeResultFilters.classList.toggle('hidden', languages.length <= 1 && formats.length <= 1);
+        const matchingBooks = enrichedLibrary.filter(book => (
+          (!homeLibraryFilter.language || resultLanguage(book) === homeLibraryFilter.language)
+          && (!homeLibraryFilter.format || resultFormat(book) === homeLibraryFilter.format)
+          && BookMetadata.matchesBookFilter(
+            book, needle,
+            item => cachedBookKeys.has(bookCacheKey(item, item.readUrl || item.url))
+          )
+        ));
+        homeLibraryCount.textContent = matchingBooks.length === library.length
+          ? `${library.length} ${library.length === 1 ? 'book' : 'books'}`
+          : `${matchingBooks.length} of ${library.length} books`;
+        renderHomeBookList(homeReadingList, matchingBooks, 'No books match these filters.');
         homeWordsList.innerHTML = '';
         const words = [...new Set([...state.words].map(word => String(word?.word || word)).filter(Boolean))].sort((a, b) => a.localeCompare(b)).slice(0, 18);
         if (!words.length) {
@@ -3253,15 +4239,16 @@
         if (activeTab === 'words') requestAnimationFrame(() => wordsFilter.focus());
         if (!updateHash) return;
         if (activeTab === 'home') {
-          setHashRoute('');
+          setHashRoute(homeHashRoute());
           homeQueryInput.focus();
         } else if (activeTab === 'search') {
           const query = queryInput.value.trim();
-          setHashRoute(query.length >= 2 ? `search=${encodeURIComponent(query)}` : '');
+          setHashRoute(query.length >= 2 ? searchHashRoute({ query }) : 'search');
           queryInput.focus();
         } else if (activeTab === 'reading') {
           const readUrl = activeReadingBook?.readUrl || activeReadingBook?.url || '';
-          setHashRoute(readUrl ? `read=${encodeURIComponent(readUrl)}` : 'reading');
+          const routeValue = readRouteValue(activeReadingBook, readUrl);
+          setHashRoute(routeValue ? `read=${encodeURIComponent(routeValue)}` : 'reading');
         } else if (activeTab === 'words') {
           setHashRoute('words');
         } else {
@@ -3282,7 +4269,9 @@
         if (!window.nostr?.signEvent) {
           throw new Error('Connect NIP-07 to authorize this Blossom download.');
         }
-        const server = new URL(readPath).hostname;
+        const blossomUrl = String(book.blossomUrl || readPath || '');
+        if (!/^https:\/\//i.test(blossomUrl)) throw new Error('No Blossom download URL is available.');
+        const server = new URL(blossomUrl).hostname;
         const now = Math.floor(Date.now() / 1000);
         const event = await window.nostr.signEvent({
           kind: 24242,
@@ -3295,7 +4284,7 @@
           ],
           content: 'Download a Bookstr book'
         });
-        const response = await fetch(readPath, {
+        const response = await fetch(blossomUrl, {
           headers: { Authorization: `Nostr ${encodeBase64Utf8(JSON.stringify(event))}` }
         });
         if (!response.ok) throw new Error(`Blossom download failed (${response.status}).`);
@@ -3309,6 +4298,19 @@
           reader.onload = () => resolve(String(reader.result || '').split(',', 2)[1] || '');
           reader.readAsDataURL(blob);
         });
+      }
+
+      async function bookFormatForBlob(blob) {
+        if (!(blob instanceof Blob)) return '';
+        const type = String(blob.type || '').toLowerCase();
+        if (type.includes('pdf')) return 'pdf';
+        if (type.includes('epub') || type.includes('zip')) return 'epub';
+        try {
+          const bytes = new Uint8Array(await blob.slice(0, 5).arrayBuffer());
+          if (String.fromCharCode(...bytes) === '%PDF-') return 'pdf';
+          if (bytes[0] === 0x50 && bytes[1] === 0x4b) return 'epub';
+        } catch {}
+        return '';
       }
 
       let bookCacheDatabase;
@@ -3353,24 +4355,73 @@
       }
 
       function bookCacheKey(book, readUrl) {
-        return String(readUrl || book?.md5 || '').trim();
+        const md5 = String(book?.md5 || '').trim().toLowerCase();
+        return isMd5(md5) ? md5 : String(readUrl || book?.readUrl || book?.url || book?.blossomUrl || '').trim();
+      }
+
+      function cacheIdentity(value) {
+        const identity = String(value || '').trim();
+        if (!identity) return '';
+        if (isMd5(identity)) return identity.toLowerCase();
+        try {
+          const url = new URL(identity, window.location.href);
+          url.hash = '';
+          return url.href;
+        } catch {
+          return identity;
+        }
+      }
+
+      function cacheIdentities(book, readUrl) {
+        return new Set([
+          bookCacheKey(book, readUrl),
+          book?.md5,
+          readUrl,
+          book?.readUrl,
+          book?.url,
+          book?.blossomUrl,
+        ].map(cacheIdentity).filter(Boolean));
+      }
+
+      function cacheRecordMatches(record, book, readUrl) {
+        const wanted = cacheIdentities(book, readUrl);
+        const stored = cacheIdentities(record, record?.readUrl);
+        if ([...wanted].some(identity => stored.has(identity))) return true;
+        const md5 = String(book?.md5 || '').toLowerCase();
+        return isMd5(md5) && [record?.key, record?.readUrl, record?.blossomUrl]
+          .some(value => String(value || '').toLowerCase().includes(md5));
+      }
+
+      function rememberCachedRecord(record) {
+        for (const identity of cacheIdentities(record, record?.readUrl)) cachedBookKeys.add(identity);
       }
 
       async function cachedBookBlob(book, readUrl) {
         const key = bookCacheKey(book, readUrl);
         if (!key) return null;
-        const record = (await bookCacheRecords()).find(item => item.key === key);
+        const record = (await bookCacheRecords()).find(item => cacheRecordMatches(item, book, readUrl));
         if (!(record?.blob instanceof Blob)) return null;
-        record.lastUsed = Date.now();
-        void bookCachePut(record).catch(() => {});
-        return record.blob;
+        const migrated = {
+          ...record,
+          key,
+          md5: book?.md5 || record.md5 || '',
+          readUrl: readUrl || record.readUrl || '',
+          lastUsed: Date.now(),
+        };
+        await bookCachePut(migrated);
+        if (record.key !== key) await bookCacheDelete(record.key);
+        cachedBookKeys.delete(cacheIdentity(record.key));
+        rememberCachedRecord(migrated);
+        return migrated.blob;
       }
 
       async function cacheBookBlob(book, readUrl, blob) {
         if (!(blob instanceof Blob) || !blob.size) return;
         const key = bookCacheKey(book, readUrl);
         if (!key || blob.size > BOOK_CACHE_STORAGE_LIMIT) return;
-        const records = (await bookCacheRecords()).filter(item => item.key !== key).sort((a, b) => a.lastUsed - b.lastUsed);
+        const allRecords = await bookCacheRecords();
+        const replaced = allRecords.filter(item => cacheRecordMatches(item, book, readUrl));
+        const records = allRecords.filter(item => !replaced.includes(item)).sort((a, b) => a.lastUsed - b.lastUsed);
         let total = records.reduce((sum, item) => sum + Number(item.size || item.blob?.size || 0), 0) + blob.size;
         while (total > BOOK_CACHE_STORAGE_LIMIT && records.length) {
           const oldest = records.shift();
@@ -3378,19 +4429,28 @@
           cachedBookKeys.delete(oldest.key);
           total -= Number(oldest.size || oldest.blob?.size || 0);
         }
-        await bookCachePut({
+        const record = {
           key,
           blob,
           size: blob.size,
           title: book?.title || '',
+          md5: book?.md5 || '',
           authors: book?.authors || '',
           year: book?.year || '',
           language: book?.language || '',
           source: book?.source || '',
+          extension: book?.extension || book?.format || '',
+          blossomUrl: book?.blossomUrl || '',
+          blossomSha256: book?.blossomSha256 || '',
           readUrl,
           lastUsed: Date.now()
-        });
-        cachedBookKeys.add(key);
+        };
+        await bookCachePut(record);
+        for (const old of replaced) {
+          if (old.key !== key) await bookCacheDelete(old.key);
+          cachedBookKeys.delete(cacheIdentity(old.key));
+        }
+        rememberCachedRecord(record);
       }
 
       let epubTypographyObserver;
@@ -3498,6 +4558,18 @@
         });
       }
 
+      let activeReaderObjectUrl = '';
+
+      function displayPdf(blob, book) {
+        if (activeReaderObjectUrl) URL.revokeObjectURL(activeReaderObjectUrl);
+        const pdfBlob = blob.type === 'application/pdf'
+          ? blob
+          : new Blob([blob], { type: 'application/pdf' });
+        activeReaderObjectUrl = URL.createObjectURL(pdfBlob);
+        readerFrame.src = activeReaderObjectUrl;
+        status.textContent = `Opened ${book.title || 'PDF'}.`;
+      }
+
       document.addEventListener('keydown', event => {
         if (!document.body.classList.contains('book-open') || event.defaultPrevented) return;
         if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement || event.target instanceof HTMLSelectElement) return;
@@ -3508,7 +4580,7 @@
       });
 
       async function openBook(book, { updateHash = true, addToReading = true } = {}) {
-        if (!book || (!book.readUrl && !book.url)) {
+        if (!book) {
           status.textContent = `${book?.title || 'This book'} has metadata only; no readable copy is available.`;
           return;
         }
@@ -3523,7 +4595,7 @@
         activateTab('reading');
         requestAnimationFrame(() => readerSection.scrollIntoView({ behavior: 'smooth', block: 'start' }));
         if (updateHash) {
-          setHashRoute(`read=${encodeURIComponent(readPath)}`);
+          setHashRoute(`read=${encodeURIComponent(readRouteValue(book, readPath))}`);
         }
 
         try {
@@ -3533,18 +4605,27 @@
           const blossomBlob = await fetchBlossomCopy(book, readPath);
           if (blossomBlob) {
             if (String(book.extension || '').toLowerCase() === 'pdf') {
-              const objectUrl = URL.createObjectURL(blossomBlob);
-              readerFrame.src = objectUrl;
-              status.textContent = `Opened ${book.title || 'book'}.`;
+              displayPdf(blossomBlob, book);
             } else {
               status.textContent = `Opening ${book.title || 'book'}…`;
               await displayEpub(blossomBlob, book);
             }
-          } else if (String(book.extension || '').toLowerCase() === 'epub' || /\/download(?:\?|$)/i.test(readPath)) {
+          } else if (String(book.extension || '').toLowerCase() === 'pdf' || /\.pdf(?:\?|$)/i.test(readPath)) {
+            let blob = await cachedBookBlob(book, readPath).catch(() => null);
+            if (!blob) {
+              status.textContent = `Loading ${book.title || 'PDF'}…`;
+              const response = await fetch(readPath);
+              if (!response.ok) throw new Error(`PDF download failed (${response.status}).`);
+              blob = await response.blob();
+              void cacheBookBlob(book, readPath, blob).catch(() => {});
+            }
+            displayPdf(blob, book);
+          } else if (String(book.extension || '').toLowerCase() === 'epub' || /\/download(?:\?|$)/i.test(readPath) || (!readPath && isMd5(book.md5))) {
             let blob = await cachedBookBlob(book, readPath).catch(() => null);
             if (blob) {
               status.textContent = `Opening cached ${book.title || 'book'}…`;
             } else {
+              if (!readPath) throw new Error('No cached or Blossom copy was found.');
               status.textContent = `Loading ${book.title || 'book'}…`;
               const response = await fetch(readPath);
               if (!response.ok) throw new Error(`EPUB download failed (${response.status}).`);
@@ -3579,7 +4660,7 @@
       }
 
       async function searchAllBooksParty(query) {
-        const resp = await fetch(`${BOOKS_API_BASE}/search?q=${encodeURIComponent(query)}&limit=20`);
+        const resp = await fetch(`${BOOKS_API_BASE}/search?q=${encodeURIComponent(query)}&limit=${SEARCH_RESULT_LIMIT}`);
         const payload = await resp.json().catch(() => ({}));
         if (!resp.ok) {
           const msg = payload?.error || `search failed (${resp.status})`;
@@ -3588,10 +4669,63 @@
         return normalizeSearchBooks(payload, 'all.books.party');
       }
 
-      async function startSearch({ updateHash = true } = {}) {
+      function resetNip17Exchange() {
+        nip17Exchange.classList.remove('hidden');
+        nip17Exchange.open = false;
+        nip17Sent.textContent = 'Preparing encrypted request…';
+        nip17Received.textContent = 'Waiting for a response…';
+      }
+
+      function showNip17Trace(trace) {
+        nip17Exchange.classList.remove('hidden');
+        if (trace?.direction === 'sent') {
+          nip17Sent.textContent = JSON.stringify({
+            recipient: trace.recipient,
+            recipient_nip05: trace.recipientNip05,
+            relays: trace.relays,
+            decrypted_payload: trace.payload,
+            gift_wrap_event: trace.event,
+          }, null, 2);
+        } else if (trace?.direction === 'received') {
+          nip17Received.textContent = JSON.stringify({
+            relay: trace.relay || '',
+            decrypted_payload: trace.payload,
+            gift_wrap_event: trace.event || null,
+          }, null, 2);
+        } else if (trace?.direction === 'error') {
+          const reason = trace.error || 'Unknown Nostr error';
+          if (nip17Received.textContent === 'Waiting for a response…') {
+            nip17Received.textContent = `No private response received.\n\n${reason}`;
+          } else {
+            nip17Received.textContent += `\n\nFallback reason: ${reason}`;
+          }
+        }
+      }
+
+      async function searchViaNostr(query) {
+        if (!state.settings.useNip7 || !window.nostr?.signEvent || !window.nostr?.nip44?.encrypt || !window.nostr?.nip44?.decrypt) {
+          throw new Error('Nostr search is not connected');
+        }
+        nip17FetchModule ||= import('./nip17-fetch.js');
+        const module = await nip17FetchModule;
+        const response = await module.searchLibVault(query, searchType.value || 'all', {
+          signer: window.nostr,
+          publish: publishRelayEvent,
+          limit: SEARCH_RESULT_LIMIT,
+          readyTimeoutMs: NOSTR_SEARCH_READY_TIMEOUT_MS,
+          responseTimeoutMs: NOSTR_SEARCH_RESPONSE_TIMEOUT_MS,
+          onTrace: showNip17Trace,
+        });
+        return normalizeSearchBooks(response, 'libvault');
+      }
+
+      async function startSearch({ updateHash = true, routeState = null } = {}) {
         const query = queryInput.value.trim();
         if (!query) {
           resultsEl.innerHTML = '';
+          searchResultFilters.classList.add('hidden');
+          searchResultCount.textContent = '0 results';
+          searchPagination.classList.add('hidden');
           status.textContent = '';
           return;
         }
@@ -3601,14 +4735,30 @@
           return;
         }
         if (updateHash) {
-          setHashRoute(`search=${encodeURIComponent(query)}`);
+          setHashRoute(searchHashRoute({ query, language: '', format: '', page: 1 }));
         }
         resultsEl.innerHTML = '';
-        status.textContent = 'Searching…';
+        searchResultFilters.classList.add('hidden');
+        searchResultCount.textContent = '0 results';
+        searchPagination.classList.add('hidden');
+        resetNip17Exchange();
+        status.textContent = 'Searching privately through LibVault…';
         try {
-          const books = await searchAllBooksParty(query);
-          status.textContent = `all.books.party returned ${books.length} result(s).`;
-          renderResults(books);
+          let books;
+          let source;
+          try {
+            books = await searchViaNostr(query);
+            source = 'LibVault over Nostr';
+          } catch (nostrError) {
+            showNip17Trace({ direction: 'error', error: nostrError?.message || String(nostrError) });
+            status.textContent = 'Private search unavailable; trying the HTTP catalog…';
+            books = await searchAllBooksParty(query);
+            source = 'HTTP fallback';
+          }
+          books = books.filter(book => matchesExactSearchTokens(book, query, searchType.value || 'all'));
+          status.textContent = `${source} returned ${books.length} result(s).`;
+          renderResults(books, { routeState });
+          replaceSearchHash();
           renderButtonsState();
           if (!books.length) {
             status.textContent += ' No matches found.';
@@ -3616,6 +4766,8 @@
         } catch (error) {
           status.textContent = `Search failed: ${error.message || error}`;
           resultsEl.innerHTML = '<p class="note">Search failed. Check your network connection and try again.</p>';
+          searchResultCount.textContent = '0 results';
+          searchPagination.classList.add('hidden');
         }
       }
 
@@ -3628,6 +4780,16 @@
         void startSearch();
       });
       homeQueryInput.addEventListener('input', renderHome);
+      homeLanguageFilter.addEventListener('change', () => {
+        homeLibraryFilter.language = homeLanguageFilter.value;
+        renderHome();
+        replaceHomeHash();
+      });
+      homeFormatFilter.addEventListener('change', () => {
+        homeLibraryFilter.format = homeFormatFilter.value;
+        renderHome();
+        replaceHomeHash();
+      });
 
       function loadState() {
         const favorites = safeJSONRead(localStorage.getItem(FAVORITES_KEY), []);
@@ -3976,16 +5138,41 @@
 
       function applyHashRoute() {
         const route = window.location.hash.slice(1);
+        if (route === 'home' || route.startsWith('home?')) {
+          const params = new URLSearchParams(route.startsWith('home?') ? route.slice(5) : '');
+          homeLibraryFilter.language = params.get('language') || '';
+          homeLibraryFilter.format = params.get('format') || '';
+          activateTab('home');
+          renderHome();
+          replaceHomeHash();
+          requestAnimationFrame(() => homeQueryInput.focus());
+          return;
+        }
         if (route === 'settings') {
           activateTab('settings');
           return;
         }
+        if (route === 'search') {
+          activateTab('search');
+          requestAnimationFrame(() => queryInput.focus());
+          return;
+        }
         if (route.startsWith('search=')) {
           activateTab('search');
-          const query = decodeURIComponent(route.slice('search='.length));
+          const params = new URLSearchParams(route);
+          const query = params.get('search') || '';
           if (query.length >= 2) {
             queryInput.value = query;
-            void startSearch({ updateHash: false });
+            const requestedType = params.get('type') || 'all';
+            searchType.value = [...searchType.options].some(option => option.value === requestedType) ? requestedType : 'all';
+            void startSearch({
+              updateHash: false,
+              routeState: {
+                language: params.get('language') || '',
+                format: params.get('format') || '',
+                page: Math.max(1, Number(params.get('page')) || 1),
+              },
+            });
           }
           return;
         }
@@ -4002,19 +5189,26 @@
         }
         if (route === 'reading') {
           activateTab('home');
-          setHashRoute('');
+          setHashRoute('home');
           return;
         }
         if (route.startsWith('read=')) {
-          const readUrl = decodeURIComponent(route.slice('read='.length));
-          if (/^(https?:|blob:)/i.test(readUrl)) {
-            void resolveReadRouteBook(readUrl).then(book =>
-              openBook(book, { updateHash: false, addToReading: false })
-            );
+          const routeValue = decodeURIComponent(route.slice('read='.length));
+          const legacyMd5 = routeValue.match(/\/api\/read\/([a-f0-9]{32})(?:[/?#]|$)/i)?.[1]?.toLowerCase() || '';
+          const bookRef = legacyMd5 || routeValue;
+          if (legacyMd5) {
+            history.replaceState(null, '', `${window.location.pathname}${window.location.search}#read=${legacyMd5}`);
+          }
+          if (isMd5(bookRef) || /^(https?:|blob:)/i.test(bookRef)) {
+            void openResolvedReadRoute(bookRef);
           }
           return;
         }
         activateTab('home');
+        requestAnimationFrame(() => homeQueryInput.focus());
+        if (route !== 'home') {
+          history.replaceState(null, '', `${window.location.pathname}${window.location.search}#home`);
+        }
       }
 
       searchTabBtn.addEventListener('click', () => activateTab('search', { updateHash: true }));
@@ -4053,9 +5247,43 @@
         startSearch();
       });
 
+      searchLanguageFilter.addEventListener('change', () => {
+        searchResultFilter.language = searchLanguageFilter.value;
+        searchResultPage = 1;
+        const view = renderResults(searchResultBooks, { preserveResults: true });
+        replaceSearchHash();
+        status.textContent = `Showing ${view.total} of ${searchResultBooks.length} result(s).`;
+      });
+
+      searchFormatFilter.addEventListener('change', () => {
+        searchResultFilter.format = searchFormatFilter.value;
+        searchResultPage = 1;
+        const view = renderResults(searchResultBooks, { preserveResults: true });
+        replaceSearchHash();
+        status.textContent = `Showing ${view.total} of ${searchResultBooks.length} result(s).`;
+      });
+
+      function openSearchResultPage(event) {
+        event.preventDefault();
+        const requestedPage = Number(event.currentTarget.dataset.page);
+        if (!Number.isInteger(requestedPage) || requestedPage === searchResultPage) return;
+        searchResultPage = requestedPage;
+        const view = renderResults(searchResultBooks, { preserveResults: true });
+        replaceSearchHash();
+        status.textContent = `Page ${view.page} of ${view.totalPages} · ${view.total} result(s).`;
+        resultsEl.scrollIntoView({ block: 'start', behavior: 'auto' });
+      }
+
+      searchPagePrev.addEventListener('click', openSearchResultPage);
+      searchPageNext.addEventListener('click', openSearchResultPage);
+
       queryInput.addEventListener('input', () => {
         if (!queryInput.value.trim()) {
           resultsEl.innerHTML = '';
+          searchResultFilters.classList.add('hidden');
+          searchResultCount.textContent = '0 results';
+          searchPagination.classList.add('hidden');
+          nip17Exchange.classList.add('hidden');
           status.textContent = '';
         }
         renderFavorites();
@@ -4078,7 +5306,7 @@
       void renderDictionaryPacks();
       void bookCacheRecords().then(records => {
         cachedBookKeys.clear();
-        records.forEach(record => cachedBookKeys.add(record.key));
+        records.forEach(rememberCachedRecord);
         if (activeTab === 'home') renderHome();
       }).catch(() => {});
 
@@ -4091,6 +5319,7 @@
         : formatBuildDate(fileTime);
 
       loadState();
+      void refreshFavoriteBlossomCopies();
       void enrichLibraryMetadata();
       applyHashRoute();
       if (activeTab === 'home') {

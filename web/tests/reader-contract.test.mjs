@@ -35,6 +35,14 @@ test('reader exposes its current EPUB location for browser progress and E2E chec
   assert.match(reader, /if \(!window\.AndroidBridge\) return/);
 });
 
+test('reader shows live progress in its footer and hides scrollbars', () => {
+  assert.match(reader, /id="reader-footer"/);
+  assert.match(reader, /id="reader-progress-track" role="progressbar"/);
+  assert.match(reader, /function updateReaderProgress\(progression\)/);
+  assert.match(reader, /scrollbar-width: none/);
+  assert.match(reader, /::-webkit-scrollbar/);
+});
+
 test('reader uses the shared sage and gold reading colors', () => {
   assert.match(reader, /#2f5d50/);
   assert.match(reader, /#7fb8a7/);

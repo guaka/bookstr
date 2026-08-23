@@ -14,6 +14,8 @@
       background: #f7f3ea;
       color: #1c1916;
       touch-action: manipulation;
+      --reader-progress: #2f5d50;
+      --reader-progress-track: rgba(47, 93, 80, 0.22);
     }
     body.white {
       background: #ffffff;
@@ -22,6 +24,8 @@
     body.night {
       background: #121212;
       color: #e8e4dc;
+      --reader-progress: #7fb8a7;
+      --reader-progress-track: rgba(127, 184, 167, 0.24);
     }
     #viewer {
       width: 100vw;
@@ -65,7 +69,38 @@
       overflow-x: hidden !important;
       overflow-y: auto !important;
       -webkit-overflow-scrolling: touch;
+      scrollbar-width: none;
     }
+    .epub-container::-webkit-scrollbar { display: none; }
+    #reader-footer {
+      position: fixed;
+      z-index: 14;
+      right: 0;
+      bottom: 0;
+      left: 0;
+      height: 1.15rem;
+      background: color-mix(in srgb, currentColor 5%, transparent);
+      color: currentColor;
+      font: 600 0.65rem/1.15rem system-ui, sans-serif;
+      text-align: right;
+      pointer-events: none;
+    }
+    #reader-progress-track {
+      position: absolute;
+      top: 0;
+      right: 0;
+      left: 0;
+      height: 3px;
+      background: var(--reader-progress-track);
+    }
+    #reader-progress-value {
+      display: block;
+      width: 0;
+      height: 100%;
+      background: var(--reader-progress);
+      transition: width 160ms ease-out;
+    }
+    #reader-progress-text { padding-right: 0.45rem; opacity: 0.72; }
     #dictionary-card {
       position: fixed;
       z-index: 20;
@@ -112,6 +147,10 @@
   <div id="viewer"></div>
   <button id="reader-prev" class="reader-nav" type="button" aria-label="Previous page">‹</button>
   <button id="reader-next" class="reader-nav" type="button" aria-label="Next page">›</button>
+  <footer id="reader-footer" aria-label="Reading progress">
+    <span id="reader-progress-track" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><span id="reader-progress-value"></span></span>
+    <span id="reader-progress-text">0% read</span>
+  </footer>
   <aside id="dictionary-card" hidden aria-live="polite">
     <div class="dictionary-heading">
       <div><strong id="dictionary-word"></strong><span id="dictionary-kind"></span></div>
@@ -230,6 +269,9 @@
       const images = document.querySelectorAll("img, svg");
       const sparseImagePage = images.length === 1 && document.body.textContent.trim().length < 80;
       if (explicitCover || sparseImagePage) document.documentElement.classList.add("bookstr-cover");
+      const scrollbarStyle = document.createElement("style");
+      scrollbarStyle.textContent = "html, body { scrollbar-width: none !important; } html::-webkit-scrollbar, body::-webkit-scrollbar { display: none !important; }";
+      document.head.appendChild(scrollbarStyle);
     }
 
     function openBook(source, cfi, theme, highlightCfi, bookId) {
@@ -284,7 +326,6 @@
       const start = location && location.start;
       if (!start || !start.cfi) return;
       document.body.dataset.location = start.cfi;
-      if (!window.AndroidBridge) return;
       let progression = Number.isFinite(start.percentage) ? start.percentage : 0;
       try {
         const generated = book && book.locations && book.locations.length() > 0;
@@ -293,10 +334,20 @@
         console.warn("Could not calculate EPUB progress", error);
       }
       if (!Number.isFinite(progression)) progression = 0;
+      updateReaderProgress(progression);
+      if (!window.AndroidBridge) return;
       AndroidBridge.onRelocated(JSON.stringify({
         cfi: start.cfi,
         progression: Math.max(0, Math.min(1, progression))
       }));
+    }
+
+    function updateReaderProgress(progression) {
+      const normalized = Math.max(0, Math.min(1, Number(progression) || 0));
+      const percent = Math.floor(normalized * 100);
+      document.getElementById("reader-progress-value").style.width = (normalized * 100) + "%";
+      document.getElementById("reader-progress-track").setAttribute("aria-valuenow", String(percent));
+      document.getElementById("reader-progress-text").textContent = percent + "% read";
     }
 
     function reportReaderError(error) {

@@ -7,6 +7,7 @@ const {
   resolveTitle,
   languageForBook,
   yearForBook,
+  authorSearchName,
   readingProgressForBook,
   normalizeFavoriteAddedAt,
   earliestFavoriteAddedAt,
@@ -16,6 +17,8 @@ const {
   findBookByReadUrl,
   metadataEndpointForReadUrl,
   canonicalReadUrl,
+  canonicalCatalogUrl,
+  bookIdentity,
   availabilityForBook,
   availabilitySourcesForBook,
   sortBooks,
@@ -53,6 +56,13 @@ test('extracts years from common publication metadata', () => {
   assert.equal(yearForBook({ issued: '2009-09-30' }), '2009');
   assert.equal(yearForBook({ metadata: { publicationYear: 1984 } }), '1984');
   assert.equal(yearForBook({}), '');
+});
+
+test('author searches exclude birth and death years', () => {
+  assert.equal(authorSearchName('Doyle, Arthur Conan, 1859-1930'), 'Doyle, Arthur Conan');
+  assert.equal(authorSearchName('Taleb, Nassim Nicholas, 1960-'), 'Taleb, Nassim Nicholas');
+  assert.equal(authorSearchName('Ursula K. Le Guin (1929–2018)'), 'Ursula K. Le Guin');
+  assert.equal(authorSearchName('Author, Example, born 1970-'), 'Author, Example');
 });
 
 test('normalizes saved reading progress', () => {
@@ -127,6 +137,44 @@ test('leaves non-Gutenberg Blossom URLs unchanged', () => {
   );
 });
 
+test('prefers Blossom over a LibVault read endpoint', () => {
+  assert.equal(canonicalReadUrl({
+    md5: 'a'.repeat(32),
+    readUrl: 'https://lib.b.bfr.ee/api/read/' + 'a'.repeat(32),
+    blossomUrl: 'https://blossom.example/' + 'b'.repeat(64),
+  }), 'https://blossom.example/' + 'b'.repeat(64));
+});
+
+test('never uses a legacy LibVault read endpoint as a book source', () => {
+  assert.equal(canonicalReadUrl({
+    md5: 'a'.repeat(32),
+    readUrl: 'https://lib.b.bfr.ee/api/read/' + 'a'.repeat(32),
+  }), '');
+  assert.equal(availabilityForBook({ md5: 'a'.repeat(32), source: 'libvault' }), 'Metadata only');
+});
+
+test('builds stable identities for books without MD5 hashes', () => {
+  assert.equal(bookIdentity({ source: 'gutenberg', sourceNativeId: 34527 }), 'source:gutenberg:34527');
+  assert.equal(bookIdentity({ blossomSha256: 'A'.repeat(64) }), `sha256:${'a'.repeat(64)}`);
+  assert.equal(bookIdentity({ isbn: '978-1-2345-6789-0' }), 'isbn:9781234567890');
+  assert.equal(
+    bookIdentity({ title: 'A Book', authors: 'An Author', year: 2024, language: 'pt' }),
+    'title:a book:an author:2024:pt',
+  );
+});
+
+test('builds canonical Open Library work and edition links', () => {
+  assert.equal(
+    canonicalCatalogUrl({ source: 'openlibrary', sourceNativeId: '16795887' }),
+    'https://openlibrary.org/works/OL16795887W',
+  );
+  assert.equal(
+    canonicalCatalogUrl({ source: 'openlibrary', sourceNativeId: 'OL123M' }),
+    'https://openlibrary.org/books/OL123M',
+  );
+  assert.equal(canonicalCatalogUrl({ source: 'gutenberg', sourceNativeId: '34527' }), '');
+});
+
 test('does not invent metadata endpoints for arbitrary EPUB URLs', () => {
   assert.equal(metadataEndpointForReadUrl('https://example.test/books/scale.epub'), '');
 });
@@ -134,14 +182,14 @@ test('does not invent metadata endpoints for arbitrary EPUB URLs', () => {
 test('classifies supported book availability sources', () => {
   assert.equal(availabilityForBook({ blossomSha256: 'abc' }), 'Blossom');
   assert.equal(availabilityForBook({ readUrl: 'https://books-api.guaka.org/api/books/48320/download' }), 'Gutenberg');
-  assert.equal(availabilityForBook({ md5: 'a'.repeat(32) }), 'LibVault');
+  assert.equal(availabilityForBook({ md5: 'a'.repeat(32) }), 'Metadata only');
   assert.equal(availabilityForBook({ readUrl: 'https://example.test/book.epub' }), 'Metadata only');
 });
 
 test('reports multiple availability sources including cache', () => {
   assert.deepEqual(
     availabilitySourcesForBook({ md5: 'a'.repeat(32), blossomUrl: 'https://blossom.test/a' }, true),
-    ['LibVault', 'Blossom', 'Cached'],
+    ['Blossom', 'Cached'],
   );
 });
 
@@ -243,7 +291,7 @@ test('keeps a known read URL when a partial duplicate omits it', () => {
 });
 
 test('shows every availability source when several source hints exist', () => {
-  assert.equal(availabilityForBook({ md5: 'a'.repeat(32), blossomUrl: 'https://blossom.test/a' }), 'LibVault · Blossom');
+  assert.equal(availabilityForBook({ md5: 'a'.repeat(32), blossomUrl: 'https://blossom.test/a' }), 'Blossom');
 });
 
 test('matches library books by stable ID, then URL, then ISBN', () => {
@@ -284,13 +332,18 @@ test('orders recently read books before favorite-only books', () => {
 test('enriches missing fields while tracking their source', () => {
   const enriched = enrichBookMetadata(
     { md5: 'gutenberg:30142', title: 'Untitled book', authors: '' },
-    { title: 'Little Brother', authors: 'Cory Doctorow', issued: '2009-09-30', language: 'EN', source: 'gutenberg' },
+    {
+      title: 'Little Brother', authors: 'Cory Doctorow', issued: '2009-09-30', language: 'EN', source: 'gutenberg',
+      coverUrl: 'https://blossom.example/cover.jpg', coverSha256: 'c'.repeat(64),
+    },
     'gutenberg:30142',
   );
   assert.equal(enriched.title, 'Little Brother');
   assert.equal(enriched.authors, 'Cory Doctorow');
   assert.equal(enriched.year, '2009');
   assert.equal(enriched.language, 'en');
+  assert.equal(enriched.coverUrl, 'https://blossom.example/cover.jpg');
+  assert.equal(enriched.coverSha256, 'c'.repeat(64));
   assert.equal(enriched.metadataProvenance.authors, 'gutenberg:30142');
 });
 

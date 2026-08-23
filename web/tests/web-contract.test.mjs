@@ -19,8 +19,119 @@ test('browser traffic uses the Cloudflare books API', () => {
   assert.doesNotMatch(html, /localhost:11111\/api|books\.guaka\.org\/api\/search/);
 });
 
+test('search tries private LibVault NIP-17 before the HTTP catalog fallback', () => {
+  assert.match(html, /async function searchViaNostr\(query\)/);
+  assert.match(html, /module\.searchLibVault\(query, searchType\.value \|\| 'all'/);
+  assert.match(html, /books = await searchViaNostr\(query\)/);
+  assert.match(html, /Private search unavailable; trying the HTTP catalog/);
+  assert.match(html, /books = await searchAllBooksParty\(query\)/);
+  assert.match(html, /source = 'HTTP fallback'/);
+  assert.match(html, /const NOSTR_SEARCH_READY_TIMEOUT_MS = 8000/);
+  assert.match(html, /const NOSTR_SEARCH_RESPONSE_TIMEOUT_MS = 20000/);
+  assert.match(html, /responseTimeoutMs: NOSTR_SEARCH_RESPONSE_TIMEOUT_MS/);
+  assert.match(html, /const SEARCH_RESULT_LIMIT = 200/);
+  assert.match(html, /limit: SEARCH_RESULT_LIMIT/);
+  assert.match(html, /limit=\$\{SEARCH_RESULT_LIMIT\}/);
+  assert.doesNotMatch(html, /search\?q=\$\{encodeURIComponent\(query\)\}&limit=20/);
+});
+
+test('authors stay green on Home and Search even when links are globally red', () => {
+  assert.match(html, /body a\.result-author:any-link[\s\S]*?color: var\(--reading-progress\)/);
+  assert.match(html, /body a\.result-author:visited/);
+  assert.match(html, /body a\.result-author:hover/);
+  assert.match(html, /body a\.result-author:focus-visible/);
+});
+
+test('Search visibly shows the sent and received NIP-17 exchange', () => {
+  assert.match(html, /id="nip17-exchange"/);
+  assert.match(html, /id="nip17-sent"/);
+  assert.match(html, /id="nip17-received"/);
+  assert.match(html, /decrypted_payload: trace\.payload/);
+  assert.match(html, /gift_wrap_event: trace\.event/);
+  assert.match(html, /recipient_nip05: trace\.recipientNip05/);
+  assert.match(html, /onTrace: showNip17Trace/);
+  assert.match(html, /id="results"[\s\S]*?id="nip17-exchange"/);
+});
+
+test('Search offers result-driven language and format filters', () => {
+  assert.match(html, /id="search-language-filter"/);
+  assert.match(html, /id="search-format-filter"/);
+  assert.match(html, /const visible = values\.length > 1/);
+  assert.match(html, /searchResultBooks\.map\(resultLanguage\)/);
+  assert.match(html, /searchResultBooks\.map\(resultFormat\)/);
+  assert.match(html, /resultLanguage\(book\) === searchResultFilter\.language/);
+  assert.match(html, /resultFormat\(book\) === searchResultFilter\.format/);
+  assert.match(html, /<form id="search-form"[\s\S]*?id="query-input"[\s\S]*?id="search-result-filters"[\s\S]*?<\/form>/);
+  assert.doesNotMatch(html, /id="search-language-filter-wrap"[^>]*>\s*Language/);
+  assert.doesNotMatch(html, /id="search-format-filter-wrap"[^>]*>\s*Format/);
+});
+
+test('Search paginates the fully filtered and sorted result set', () => {
+  assert.match(html, /const SEARCH_RESULT_PAGE_SIZE = 50/);
+  assert.match(html, /id="results"[\s\S]*?id="search-pagination"[\s\S]*?id="nip17-exchange"/);
+  assert.match(html, /const filteredBooks = filteredSearchResultBooks\(\)[\s\S]*?const sortedBooks = searchResultSort\.key[\s\S]*?const pageBooks = sortedBooks\.slice\(start, start \+ SEARCH_RESULT_PAGE_SIZE\)/);
+  assert.match(html, /searchPagination\.classList\.toggle\('hidden', totalPages <= 1\)/);
+  assert.match(html, /\.search-pagination\.hidden\s*\{[\s\S]*?display: none/);
+  assert.match(html, /searchPageLabel\.textContent = `Page \$\{searchResultPage\} of \$\{totalPages\} · \$\{sortedBooks\.length\} results`/);
+  assert.match(html, /searchPagePrev\.addEventListener\('click', openSearchResultPage\)/);
+  assert.match(html, /searchPageNext\.addEventListener\('click', openSearchResultPage\)/);
+  assert.match(html, /searchResultPage = requestedPage[\s\S]*?renderResults\(searchResultBooks, \{ preserveResults: true \}\)/);
+  assert.match(html, /id="search-page-prev"[^>]*aria-label="Previous page"[\s\S]*?<svg/);
+  assert.match(html, /id="search-page-next"[^>]*aria-label="Next page"[\s\S]*?<svg/);
+});
+
+test('Search keeps a persistent result count beside the paged results', () => {
+  assert.match(html, /id="search-result-count"[^>]*>0 results<\/p>/);
+  assert.match(html, /searchResultCount\.textContent = sortedBooks\.length === searchResultBooks\.length/);
+  assert.match(html, /`\$\{sortedBooks\.length\} of \$\{searchResultBooks\.length\} results`/);
+  assert.doesNotMatch(html, /searchResultCount\.classList\.add\('hidden'\)/);
+});
+
+test('Search stores result filters and paging in bookmarkable hash parameters', () => {
+  assert.match(html, /function searchHashRoute\(/);
+  assert.match(html, /params\.set\('language', language\)/);
+  assert.match(html, /params\.set\('format', format\)/);
+  assert.match(html, /params\.set\('page', String\(page\)\)/);
+  assert.match(html, /const params = new URLSearchParams\(route\)/);
+  assert.match(html, /language: params\.get\('language'\) \|\| ''/);
+  assert.match(html, /format: params\.get\('format'\) \|\| ''/);
+  assert.match(html, /page: Math\.max\(1, Number\(params\.get\('page'\)\) \|\| 1\)/);
+  assert.match(html, /replaceSearchHash\(\)/);
+});
+
+test('favorite fetch progress uses a calm static marker', () => {
+  assert.match(html, /\.favorite-fetch-progress\.pending::before[\s\S]*?background:/);
+  assert.doesNotMatch(html, /favorite-fetch-spin/);
+});
+
+test('Search requires whole query tokens instead of prefix matches', () => {
+  assert.match(html, /function matchesExactSearchTokens\(book, query, type = 'all'\)/);
+  assert.match(html, /new Set\(exactSearchTokens\(selected\.filter\(Boolean\)\.join\(' '\)\)\)/);
+  assert.match(html, /every\(term => available\.has\(term\)\)/);
+  assert.match(html, /books = books\.filter\(book => matchesExactSearchTokens\(book, query, searchType\.value \|\| 'all'\)\)/);
+});
+
+test('availability source names are shown in full instead of ellipsized', () => {
+  assert.match(html, /\.result-availability small\s*\{[^}]*text-overflow: clip/);
+  assert.match(html, /\.result-availability small\s*\{[^}]*white-space: normal/);
+  assert.match(html, /\.availability-detail[\s\S]*?white-space: nowrap/);
+  assert.match(html, /class="availability-primary"/);
+  assert.match(html, /class="availability-detail"/);
+  assert.doesNotMatch(html, /\.result-availability small\s*\{[^}]*overflow-wrap: anywhere/);
+});
+
 test('book opening canonicalizes stable Gutenberg IDs', () => {
   assert.match(html, /const readPath = BookMetadata\.canonicalReadUrl\(book, BOOKS_API_BASE\)/);
+});
+
+test('LibVault books use MD5 hash routes and resolve through Blossom', () => {
+  assert.match(html, /return isMd5\(md5\) \? md5/);
+  assert.match(html, /legacyMd5 = routeValue\.match/);
+  assert.match(html, /const blossomUrl = String\(book\.blossomUrl \|\| readPath/);
+  assert.match(html, /fetch\(blossomUrl/);
+  assert.match(html, /BookMetadata\.mergeLibraryState\(state\.reading, state\.favorites\)/);
+  assert.match(html, /pendingReadBookId = String\(bookRef\)\.toLowerCase\(\)/);
+  assert.match(html, /function bookCacheKey\(book, readUrl\)[\s\S]*?isMd5\(md5\) \? md5/);
 });
 
 test('reading mode forwards global Left and Right keys to the EPUB reader', () => {
@@ -28,21 +139,141 @@ test('reading mode forwards global Left and Right keys to the EPUB reader', () =
   assert.match(html, /readerFrame\.contentWindow\?\.\[command\]\?\.\(\)/);
 });
 
+test('Home and empty Search use distinct hash routes', () => {
+  assert.match(html, /class="app-header-left app-home" href="#home"/);
+  assert.match(html, /setHashRoute\('home'\)/);
+  assert.match(html, /setHashRoute\(query\.length >= 2 \? searchHashRoute\(\{ query \}\) : 'search'\)/);
+  assert.match(html, /if \(route === 'search'\)/);
+});
+
+test('search results expose publication year in a sortable table', () => {
+  assert.match(html, /className = 'book-table'/);
+  assert.match(html, /\['Year', 'year'\]/);
+  assert.match(html, /function renderBookTable\(target, books, options = \{\}\)/);
+  assert.match(html, /escapeHtml\(book\.year \|\| '—'\)/);
+});
+
+test('Open Library result metadata links to its canonical record', () => {
+  assert.match(html, /sourceNativeId: item\.source_native_id \|\| item\.sourceNativeId/);
+  assert.match(html, /class="result-source"[\s\S]*?target="_blank"/);
+  assert.match(html, /BookMetadata\.canonicalCatalogUrl\(book\)/);
+});
+
+test('every search result title links through the read hash route', () => {
+  assert.match(html, /const canOpen = options\.routeOnly/);
+  assert.match(html, /const searchBook = searchResultBooks\.find/);
+  assert.match(html, /label: 'Book search results',[\s\S]*?routeOnly: true/);
+});
+
+test('read links remain addressable when a book has no MD5', () => {
+  assert.match(html, /return direct \|\| `book:\$\{BookMetadata\.bookIdentity\(book\)\}`/);
+  assert.match(html, /if \(bookId\.startsWith\('book:'\)\)/);
+  assert.match(html, /BookMetadata\.bookIdentity\(book\) === identity/);
+});
+
+test('Home titles use the same read hash resolver as Search titles', () => {
+  assert.match(html, /label: 'Library',[\s\S]*?routeOnly: true/);
+  assert.doesNotMatch(html, /label: 'Library',[\s\S]*?onOpen: book => void openLibraryBook/);
+});
+
+test('Home and Search share tables with covers and author search links', () => {
+  assert.match(html, /renderBookTable\(target, books/);
+  assert.match(html, /bookCoverUrl\(book\)/);
+  assert.match(html, /const LIBVAULT_COVER_BASE = 'https:\/\/lib\.b\.bfr\.ee\/api\/covers'/);
+  assert.match(html, /return isMd5\(md5\) \? `\$\{LIBVAULT_COVER_BASE\}\/\$\{md5\}` : ''/);
+  assert.match(html, /const cover = payload\?\.covers\?\.\[rawId\] \|\| \{\}/);
+  assert.match(html, /coverUrl: item\.cover_url \|\| item\.coverUrl \|\| item\.thumbnail \|\| cover\.url/);
+  assert.match(html, /data-action="author-search"/);
+  assert.match(html, /requestAnimationFrame\(\(\) => homeQueryInput\.focus\(\)\)/);
+});
+
+test('cover hover previews are substantially enlarged', () => {
+  assert.match(html, /\.result-cover-slot:hover \.result-cover[\s\S]*?transform: scale\(6\)/);
+  assert.match(html, /\.result-cover[\s\S]*?pointer-events: none/);
+  assert.match(html, /transition: transform 160ms ease 180ms/);
+});
+
+test('table authors are green and only unavailable titles are red', () => {
+  assert.match(html, /\.result-author:visited[\s\S]*?color: var\(--reading-progress\)/);
+  assert.match(html, /\.result-title\.readable:visited[\s\S]*?color: var\(--reading-progress\)/);
+  assert.match(html, /\.result-title\.unavailable:visited[\s\S]*?color: var\(--link-hover\)/);
+  assert.match(html, /availabilitySources\.includes\('Gutenberg'\)/);
+  assert.match(html, /titleAvailabilityClass = readableNow \? 'readable' : 'unavailable'/);
+  assert.match(html, /<span class="result-author">\$\{escapeHtml\(book\.authors \|\| ''\)\}<\/span>/);
+  assert.match(html, /\.result-author:focus-visible[\s\S]*?color: var\(--reading-progress\)/);
+});
+
+test('table languages use short codes instead of full names', () => {
+  assert.match(html, /nl: 'Dutch'/);
+  assert.match(html, /name\.toLowerCase\(\) === rawLanguage/);
+  assert.match(html, /\{ eng: 'en', por: 'pt' \}/);
+  assert.match(html, /languageCode\.toUpperCase\(\)/);
+  assert.doesNotMatch(html, /String\(book\.language\)\.toUpperCase\(\)/);
+});
+
+test('table formats use lowercase names', () => {
+  assert.match(html, /String\(book\.extension \|\| book\.format \|\| '—'\)\.toLowerCase\(\)/);
+  assert.doesNotMatch(html, /String\(book\.extension \|\| book\.format \|\| '—'\)\.toUpperCase\(\)/);
+});
+
+test('the complete merged library refreshes newly available Blossom copies', () => {
+  assert.match(html, /function refreshFavoriteBlossomCopies\(\)/);
+  assert.match(html, /BookMetadata\.dedupeLibraryBooks\(\[\.\.\.state\.favorites, \.\.\.state\.reading\]\)/);
+  assert.match(html, /lookupLibVaultBlossom\(book\.md5\)/);
+  assert.match(html, /state\.favorites = state\.favorites\.map\(update\)/);
+  assert.match(html, /state\.reading = state\.reading\.map\(update\)/);
+  assert.match(html, /Found \$\{found\} newly readable library book/);
+  assert.match(html, /await refreshFavoriteBlossomCopies\(\)/);
+  assert.match(html, /void refreshFavoriteBlossomCopies\(\)/);
+});
+
 test('EPUBs use persistent IndexedDB caching', () => {
   assert.match(html, /indexedDB\.open\(BOOK_CACHE_DB_NAME/);
   assert.match(html, /cachedBookBlob\(book, readPath\)/);
   assert.match(html, /cacheBookBlob\(book, readPath, blob\)/);
+  assert.match(html, /function cacheRecordMatches\(record, book, readUrl\)/);
+  assert.match(html, /if \(record\.key !== key\) await bookCacheDelete\(record\.key\)/);
+  assert.match(html, /records\.forEach\(rememberCachedRecord\)/);
+});
+
+test('PDFs are fetched and displayed inside the Bookstr reader pane', () => {
+  assert.match(html, /function displayPdf\(blob, book\)/);
+  assert.match(html, /new Blob\(\[blob\], \{ type: 'application\/pdf' \}\)/);
+  assert.match(html, /PDF download failed/);
+  assert.match(html, /displayPdf\(blob, book\)/);
+  assert.match(html, /String\.fromCharCode\(\.\.\.bytes\) === '%PDF-'/);
+  assert.match(html, /const cachedFormat = await bookFormatForBlob\(cached\)/);
 });
 
 test('favorites are not truncated to fifty items', () => {
   assert.doesNotMatch(html, /state\.favorites[^;]*slice\(0,\s*50\)/s);
 });
 
+test('favoriting requests the book privately from LibVault over NIP-17', () => {
+  assert.match(html, /import\('\.\/nip17-fetch\.js'\)/);
+  assert.match(html, /requestFavoriteFromLibVault\(book\)/);
+  assert.match(html, /publish: publishRelayEvent/);
+});
+
+test('favorite fetch progress stays visible through download and Blossom publication', () => {
+  assert.match(html, /monitorLibVaultFetch\(book\.md5/);
+  assert.match(html, /favorite-fetch-progress/);
+  assert.match(html, /Fetching \$\{title\}: \$\{percent\}%/);
+  assert.match(html, /publishing it to Blossom/);
+  assert.match(html, /saveReadyFavorite\(book, progress\.blossom\)/);
+});
+
 test('compact favorites retain cached metadata and resolve LibVault IDs', () => {
   assert.match(html, /function preserveFavoriteMetadata\(remote\)/);
   assert.match(html, /\.map\(preserveFavoriteMetadata\)/);
-  assert.match(html, /https:\/\/lib\.b\.bfr\.ee\/api\/books\/\$\{libvaultMd5\}/);
-  assert.match(html, /api\/read\/\$\{libvaultMd5\}/);
+  assert.doesNotMatch(html, /fetch\([^)]*lib\.b\.bfr\.ee\/api\/books/);
+  assert.doesNotMatch(html, /new URL\(`\/api\/books\/\$\{/);
+});
+
+test('compact favorites retain Blossom cover descriptors', () => {
+  assert.match(html, /favorite\.coverUrl \|\| '', favorite\.coverSha256 \|\| ''/);
+  assert.match(html, /entry\.coverUrl = tag\[9\]/);
+  assert.match(html, /entry\.coverSha256 = tag\[10\]/);
 });
 
 test('an incomplete new favorites generation falls back to an older root', () => {
@@ -54,20 +285,67 @@ test('legacy LibVault URL tags restore their embedded favorite ID', () => {
   assert.match(html, /new URLSearchParams\(url\.hash\.split\('\?'\)\[1\] \|\| ''\)\.get\('md5'\)/);
 });
 
-test('Home title links invoke the library book resolver', () => {
-  assert.match(html, /titleLink\.addEventListener\('click',[\s\S]*?openLibraryBook\(book\)/);
+test('Home title links do not use the catalog-search workaround', () => {
+  assert.match(html, /label: 'Library',[\s\S]*?routeOnly: true/);
+  assert.doesNotMatch(html, /onOpen: book => void openLibraryBook\(book\)/);
 });
 
-test('Home shows the deduplicated library book count below its heading', () => {
-  assert.match(html, /homeLibraryHeading\?\.after\(homeLibraryCount\)/);
-  assert.match(html, /homeLibraryCount\.textContent = `\$\{library\.length\} \$\{library\.length === 1 \? 'book' : 'books'\}`/);
+test('Home shows the deduplicated library book count inline after its heading', () => {
+  assert.match(html, /homeLibraryHeading\?\.append\(homeLibraryCount\)/);
+  assert.match(html, /\.library-book-count[\s\S]*?font-size: 0\.68rem/);
+  assert.match(html, /homeLibraryCount\.textContent = matchingBooks\.length === library\.length/);
+  assert.match(html, /`\$\{library\.length\} \$\{library\.length === 1 \? 'book' : 'books'\}`/);
+  assert.match(html, /`\$\{matchingBooks\.length\} of \$\{library\.length\} books`/);
 });
 
-test('Home shows accessible APK-style reading progress', () => {
-  assert.match(html, /home-reading-progress-track/);
-  assert.match(html, /setAttribute\('role', 'progressbar'\)/);
-  assert.match(html, /BookMetadata\.readingProgressForBook\(book\)/);
-  assert.match(html, /% read/);
+test('Home can delete a book locally and across synced clients', () => {
+  assert.match(html, /data-action="delete-library"/);
+  assert.match(html, /aria-label="Delete \$\{escapeHtml\(book\.title \|\| 'book'\)\} from library"/);
+  assert.match(html, /async function deleteLibraryBook\(book\)/);
+  assert.match(html, /state\.favorites = state\.favorites\.filter\(item => !BookMetadata\.sameLibraryBook\(item, book\)\)/);
+  assert.match(html, /state\.reading = state\.reading\.filter\(item => !BookMetadata\.sameLibraryBook\(item, book\)\)/);
+  assert.match(html, /if \(wasFavorite\) tasks\.push\(syncFavoritesToNostr\(\)\)/);
+  assert.match(html, /if \(wasReading\) tasks\.push\(publishReadingDeletion\(book\)\)/);
+  assert.match(html, /content: JSON\.stringify\(\{ bookId, deleted: true, updatedAt: now \* 1000 \}\)/);
+  assert.match(html, /if \(payload\.deleted === true\)/);
+});
+
+test('Home can refresh and sync merged LibVault and Open Library metadata', () => {
+  assert.match(html, /data-action="refresh-library"/);
+  assert.match(html, /async function refreshLibraryBookMetadata\(book\)/);
+  assert.match(html, /async function libVaultMetadataForBook\(book\)/);
+  assert.match(html, /`\$\{LIBVAULT_API_BASE\}\/books\/\$\{md5\}`/);
+  assert.match(html, /async function openLibraryMetadataForBook\(book\)/);
+  assert.match(html, /openlibrary\.org\/works\/\$\{workId\}\.json/);
+  assert.match(html, /if \(refreshed\.isFavorite\) syncTasks\.push\(syncFavoritesToNostr\(\)\)/);
+  assert.match(html, /if \(refreshed\.isReading\) syncTasks\.push\(publishReadingMetadata\(refreshed\)\)/);
+});
+
+test('Home offers result-driven language and format filters', () => {
+  assert.match(html, /id="home-language-filter"/);
+  assert.match(html, /id="home-format-filter"/);
+  assert.match(html, /const languages = \[\.\.\.new Set\(enrichedLibrary\.map\(resultLanguage\)\.filter\(Boolean\)\)\]/);
+  assert.match(html, /const formats = \[\.\.\.new Set\(enrichedLibrary\.map\(resultFormat\)\.filter\(Boolean\)\)\]/);
+  assert.match(html, /const visible = values\.length > 1/);
+  assert.match(html, /resultLanguage\(book\) === homeLibraryFilter\.language/);
+  assert.match(html, /resultFormat\(book\) === homeLibraryFilter\.format/);
+  assert.match(html, /value => value\.toUpperCase\(\)/);
+  assert.match(html, /value => value\.toLowerCase\(\)/);
+  assert.match(html, /`\$\{matchingBooks\.length\} of \$\{library\.length\} books`/);
+});
+
+test('Home filter choices are bookmarkable hash parameters', () => {
+  assert.match(html, /function homeHashRoute\(\)/);
+  assert.match(html, /params\.set\('language', homeLibraryFilter\.language\)/);
+  assert.match(html, /params\.set\('format', homeLibraryFilter\.format\)/);
+  assert.match(html, /route === 'home' \|\| route\.startsWith\('home\?'\)/);
+  assert.match(html, /homeLibraryFilter\.language = params\.get\('language'\) \|\| ''/);
+  assert.match(html, /homeLibraryFilter\.format = params\.get\('format'\) \|\| ''/);
+  assert.match(html, /replaceHomeHash\(\)/);
+});
+
+test('Home leaves reading progress to the EPUB reader footer', () => {
+  assert.doesNotMatch(html, /function readingProgressMarkup\(book\)/);
 });
 
 test('web chrome uses the shared Bookstr identity', () => {
@@ -77,6 +355,12 @@ test('web chrome uses the shared Bookstr identity', () => {
   assert.match(html, /public\/apple-touch-icon\.png/);
   assert.match(html, /--reading-progress:\s*#2f5d50/);
   assert.match(html, /background:\s*#e7c766/);
+});
+
+test('footer APK and GitHub icons stay green', () => {
+  assert.match(html, /body \.footer a\.footer-icon-link:any-link[\s\S]*?color: var\(--reading-progress\)/);
+  assert.match(html, /body \.footer a\.footer-icon-link:visited/);
+  assert.match(html, /body \.footer a\.footer-icon-link:hover/);
 });
 
 test('settings groups Nostr controls and connection status together', () => {
