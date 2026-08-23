@@ -2,16 +2,20 @@ package app.bookstr.ui.theme
 
 import androidx.compose.ui.graphics.Color
 
+val BrandSage = Color(0xFF2F5D50)
+val BrandTerracotta = Color(0xFFC74B32)
+val BrandHighlightGold = Color(0xFFE7C766)
+
 val WhiteBackground = Color(0xFFFFFFFF)
 val WhiteSurface = Color(0xFFFFFFFF)
 val WhiteOnBackground = Color(0xFF1C1916)
-val WhitePrimary = Color(0xFF2F5D50)
+val WhitePrimary = BrandSage
 val WhiteSecondary = Color(0xFF6B635A)
 
 val PaperBackground = Color(0xFFF7F3EA)
 val PaperSurface = Color(0xFFFFFAF2)
 val PaperOnBackground = Color(0xFF1C1916)
-val PaperPrimary = Color(0xFF2F5D50)
+val PaperPrimary = BrandSage
 val PaperSecondary = Color(0xFF6B635A)
 
 val NightBackground = Color(0xFF121212)
