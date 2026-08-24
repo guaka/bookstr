@@ -3291,7 +3291,10 @@ test('searchLibVault ignores malformed events and resolves from a healthy relay'
     }
 
     emitResponse(subscription) {
-      if (!this.live) return;
+      if (!this.live) {
+        if (!this.url.includes('malformed')) setTimeout(() => this.emitResponse(subscription), 1);
+        return;
+      }
       const wrappedEvent = {
         kind: 1059,
         created_at: Math.floor(Date.now() / 1000),

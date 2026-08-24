@@ -164,6 +164,7 @@ async function record(options) {
     recorded: options.recorded || new Date().toISOString(),
     runUrl: options['run-url'] || '',
     commit: options.commit || '',
+    knownTests: Math.max(0, Math.trunc(number(options['known-tests']))),
     results,
     coverage: coverage.filter(item => Number.isFinite(item.value)),
   };
@@ -183,6 +184,7 @@ function duration(milliseconds) {
 
 function suiteRow(suite) {
   const result = suite.results || {};
+  const testTotal = result.tests || number(suite.knownTests);
   const coverage = new Map((suite.coverage || []).map(item => [item.label, item]));
   const coverageValue = (...labels) => {
     const item = labels.map(label => coverage.get(label)).find(Boolean);
@@ -200,7 +202,7 @@ function suiteRow(suite) {
     <th scope="row">${suiteName}</th>
     <td><span class="status ${suite.status}"><span aria-hidden="true"></span>${status}</span></td>
     <td>${recorded}</td>
-    <td class="value">${result.tests ? `<strong>${result.passed}/${result.tests}</strong>${result.skipped ? `<small>${result.skipped} skipped</small>` : ''}` : ''}</td>
+    <td class="value">${testTotal ? `<strong>${result.passed || 0}/${testTotal}</strong>${result.skipped ? `<small>${result.skipped} skipped</small>` : ''}` : 'Not recorded'}</td>
     <td class="value">${result.tests ? `<strong>${percent(result.passed, result.tests)}%</strong>` : ''}</td>
     <td class="value">${result.durationMs ? `<strong>${duration(result.durationMs)}</strong>` : ''}</td>
     <td class="value"><strong>${coverageValue('Statements', 'Instructions')}</strong></td>
@@ -211,13 +213,14 @@ function suiteRow(suite) {
 }
 
 export function renderDashboard(suites) {
-  const order = ['web', 'web-e2e', 'android', 'android-ui', 'ios'];
-  const names = { web: 'Web', 'web-e2e': 'Web e2e', android: 'Android', 'android-ui': 'Android UI', ios: 'iOS' };
+  const order = ['web', 'web-e2e', 'android', 'android-ui', 'ios', 'ios-e2e'];
+  const names = { web: 'Web', 'web-e2e': 'Web e2e', android: 'Android', 'android-ui': 'Android e2e', ios: 'iOS', 'ios-e2e': 'iOS e2e' };
   const byId = new Map(suites.map(suite => [suite.id, suite]));
   const complete = order.map(id => byId.get(id) || { id, suite: names[id], status: 'missing', results: {}, coverage: [] });
   const passing = complete.filter(suite => suite.status === 'passing').length;
   const failing = complete.filter(suite => suite.status === 'failing').length;
   const summary = failing ? `${failing} suite${failing === 1 ? '' : 's'} failing` : `${passing} of ${complete.length} suites passing`;
+  const generated = new Date().toISOString().slice(0, 16).replace('T', ' ');
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -256,6 +259,9 @@ export function renderDashboard(suites) {
     .status.missing { color:var(--muted); }
     .value { color:#168573; }
     .value small { display:block; color:var(--muted); font-size:.72rem; font-weight:400; }
+    footer { display:flex; align-items:center; justify-content:flex-end; gap:.65rem; padding:.65rem .1rem 0; color:var(--muted); font-size:.78rem; }
+    footer a { display:inline-flex; color:var(--sage); }
+    footer svg { width:1.2rem; height:1.2rem; fill:currentColor; }
     @media (max-width:720px) { main { width:100%; padding:.5rem 0; } header { align-items:flex-start; padding:0 .5rem; } .back { margin-top:.25rem; } th,td { padding:.55rem .25rem; font-size:.68rem; } thead th { font-size:.58rem; letter-spacing:.03em; } tbody th { font-size:.75rem; } .status { font-size:.62rem; gap:.25rem; } .logo { width:3.5rem; height:3.5rem; } }
     @media (prefers-color-scheme:dark) { :root { color-scheme:dark; --paper:#121212; --surface:#1b1a18; --ink:#e8e4dc; --muted:#aaa39a; --sage:#7fb8a7; --sage-soft:#18382f; --line:#3b3833; --red:#f09a87; --red-soft:#40221d; } }
   </style>
@@ -264,6 +270,7 @@ export function renderDashboard(suites) {
   <main>
     <header><div class="heading"><img class="logo" src="../public/favicon.svg" alt="Bookstr"><div><h1>Test overview</h1><p>${escapeHTML(summary)} · latest completed run per suite</p></div></div><a class="back" href="../">Back to Bookstr</a></header>
     <div class="table-wrap"><table><thead><tr><th>Suite</th><th>Status</th><th>Recorded (UTC)</th><th>Tests</th><th>Pass rate</th><th>Duration</th><th>Statements / instructions</th><th>Branches</th><th>Functions / methods</th><th>Lines</th></tr></thead><tbody>${complete.map(suiteRow).join('')}</tbody></table></div>
+    <footer><time datetime="${generated}Z">${generated} UTC</time><a href="https://github.com/guaka/bookstr" aria-label="Bookstr on GitHub"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 .7a11.5 11.5 0 0 0-3.64 22.41c.58.1.79-.25.79-.56v-2.23c-3.22.7-3.9-1.37-3.9-1.37-.53-1.34-1.29-1.7-1.29-1.7-1.05-.72.08-.71.08-.71 1.16.08 1.78 1.2 1.78 1.2 1.04 1.77 2.72 1.26 3.38.96.1-.75.4-1.26.74-1.55-2.57-.29-5.27-1.28-5.27-5.69 0-1.26.45-2.29 1.19-3.09-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.16 1.18a10.95 10.95 0 0 1 5.76 0c2.2-1.49 3.16-1.18 3.16-1.18.63 1.59.23 2.76.11 3.05.74.8 1.19 1.83 1.19 3.09 0 4.42-2.71 5.39-5.29 5.68.42.36.79 1.07.79 2.16v3.2c0 .31.21.67.8.56A11.5 11.5 0 0 0 12 .7Z"/></svg></a></footer>
   </main>
 </body>
 </html>`;

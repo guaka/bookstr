@@ -64,9 +64,9 @@ jobs:
           TEST_STATUS: ${{ steps.unit_tests.outcome == 'success' && steps.unit_coverage.outcome == 'success' && steps.assemble.outcome == 'success' && 'passing' || 'failing' }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
-          coverage_xml="$(find android/app/build/reports/jacoco -name '*.xml' -print -quit)"
-          test -n "$coverage_xml"
-          node scripts/test-overview.mjs record --id android --suite Android --status "$TEST_STATUS" --results-format junit --results android/app/build/test-results/testDebugUnitTest --coverage-format jacoco --coverage "$coverage_xml" --output test-overview/android.json --recorded "$(date -u +%FT%TZ)" --run-url "$RUN_URL" --commit "$GITHUB_SHA"
+          coverage_xml="$(find android/app/build/reports/jacoco -name '*.xml' -print -quit 2>/dev/null || true)"
+          KNOWN_TESTS=$(grep -R -h -E '^[[:space:]]*@Test' android/app/src/test --include='*.kt' | wc -l | tr -d ' ')
+          node scripts/test-overview.mjs record --id android --suite Android --status "$TEST_STATUS" --results-format junit --results android/app/build/test-results/testDebugUnitTest --coverage-format jacoco --coverage "$coverage_xml" --known-tests "$KNOWN_TESTS" --output test-overview/android.json --recorded "$(date -u +%FT%TZ)" --run-url "$RUN_URL" --commit "$GITHUB_SHA"
       - name: Upload Android test overview
         if: always()
         uses: actions/upload-artifact@v4
@@ -113,7 +113,9 @@ jobs:
         env:
           TEST_STATUS: ${{ steps.ui_tests.outcome == 'success' && 'passing' || 'failing' }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-        run: node scripts/test-overview.mjs record --id android-ui --suite "Android UI" --status "$TEST_STATUS" --results-format junit --results android/app/build/outputs/androidTest-results --output test-overview/android-ui.json --recorded "$(date -u +%FT%TZ)" --run-url "$RUN_URL" --commit "$GITHUB_SHA"
+        run: |
+          KNOWN_TESTS=$(grep -R -h -E '^[[:space:]]*@Test' android/app/src/androidTest --include='*.kt' | wc -l | tr -d ' ')
+          node scripts/test-overview.mjs record --id android-ui --suite "Android e2e" --status "$TEST_STATUS" --results-format junit --results android/app/build/outputs/androidTest-results --known-tests "$KNOWN_TESTS" --output test-overview/android-ui.json --recorded "$(date -u +%FT%TZ)" --run-url "$RUN_URL" --commit "$GITHUB_SHA"
       - name: Upload Android UI test overview
         if: always()
         uses: actions/upload-artifact@v4

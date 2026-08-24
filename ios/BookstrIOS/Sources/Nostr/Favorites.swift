@@ -25,6 +25,7 @@ struct ExternalFavorite: Identifiable, Equatable {
     let format: String?
     let blossomSha256: String?
     let blossomUrl: String?
+    var addedAt: Int64? = nil
 
     var id: String { key }
 }
@@ -445,7 +446,8 @@ enum FavoritesParser {
                 libvaultMd5: ref.libvaultMd5,
                 format: ref.format,
                 blossomSha256: ref.blossomSha256,
-                blossomUrl: ref.blossomUrl
+                blossomUrl: ref.blossomUrl,
+                addedAt: ref.addedAt
             )
         }
         return SharedFavorites(bookIds: matched, external: Array(external.values))

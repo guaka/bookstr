@@ -1,9 +1,9 @@
 package app.bookstr.ui
 
 import androidx.compose.ui.test.assertIsDisplayed
-import androidx.compose.ui.test.assertDoesNotExist
 import androidx.compose.ui.test.assertCountEquals
-import androidx.compose.ui.test.hasProgressBarRangeInfo
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
@@ -271,7 +271,7 @@ class LibraryScreenTest {
 
         composeRule.onNodeWithText("Search favorites").performTextInput("pdf")
         composeRule.onNodeWithText("The Blue Book").assertIsDisplayed()
-        composeRule.onNodeWithText("The Green Book").assertDoesNotExist()
+        composeRule.onAllNodesWithText("The Green Book").assertCountEquals(0)
     }
 
     @Test
@@ -358,7 +358,7 @@ class LibraryScreenTest {
             )
         }
 
-        composeRule.onNode(hasProgressBarRangeInfo()).assertIsDisplayed()
-        composeRule.onNodeWithText("Heart a book in LibVault to keep it here.").assertDoesNotExist()
+        composeRule.onNode(SemanticsMatcher.keyIsDefined(SemanticsProperties.ProgressBarRangeInfo)).assertIsDisplayed()
+        composeRule.onAllNodesWithText("Heart a book in LibVault to keep it here.").assertCountEquals(0)
     }
 }

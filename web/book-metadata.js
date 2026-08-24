@@ -145,9 +145,18 @@
   }
 
   function findBookByReadUrl(readUrl, ...collections) {
-    const wanted = normalizeReadUrl(readUrl);
+    const comparable = value => {
+      const normalized = normalizeReadUrl(value);
+      try {
+        const url = new URL(normalized);
+        url.search = '';
+        url.hash = '';
+        return url.href;
+      } catch { return normalized; }
+    };
+    const wanted = comparable(readUrl);
     return collections.flat().find(book => [book?.readUrl, book?.url, book?.blossomUrl]
-      .some(value => value && normalizeReadUrl(value) === wanted)) || null;
+      .some(value => value && comparable(value) === wanted)) || null;
   }
 
   function metadataEndpointForReadUrl(readUrl) {
@@ -198,12 +207,16 @@
     const available = [];
     if (source.includes('gutenberg') || /^gutenberg:\d+$/i.test(String(book?.md5 || '')) || /\/api\/books\/\d+(?:\/download)?(?:\?|$)/i.test(readUrl)) available.push('Gutenberg');
     if (book?.blossomUrl || book?.blossomSha256 || source.includes('blossom')) available.push('Blossom');
+    if (!available.length) available.push('Metadata only');
     if (isCached) available.push('Cached');
-    return available.length ? [...new Set(available)] : ['Metadata only'];
+    return [...new Set(available)];
   }
 
   function availabilityForBook(book, isCached = false) {
-    return availabilitySourcesForBook(book, isCached).join(' · ');
+    const sources = availabilitySourcesForBook(book, isCached);
+    return sources.includes('Cached') && sources.includes('Metadata only')
+      ? 'Cached'
+      : sources.join(' · ');
   }
 
   function sortBooks(books, key, direction = 'asc', isCached = () => false) {
@@ -340,9 +353,15 @@
   }
 
   function sameLibraryBook(left, right) {
-    const leftId = String(left?.md5 || left?.libvaultMd5 || left?.id || '').trim().toLowerCase();
-    const rightId = String(right?.md5 || right?.libvaultMd5 || right?.id || '').trim().toLowerCase();
-    if (leftId && rightId) return leftId === rightId;
+    const stableIds = book => new Set([book?.md5, book?.libvaultMd5, book?.id]
+      .map(value => String(value || '').trim().toLowerCase())
+      .filter(Boolean));
+    const leftIds = stableIds(left);
+    const rightIds = stableIds(right);
+    if (leftIds.size && rightIds.size) return [...leftIds].some(id => rightIds.has(id));
+    const leftBlossom = String(left?.blossomSha256 || left?.blossom_sha256 || '').trim().toLowerCase();
+    const rightBlossom = String(right?.blossomSha256 || right?.blossom_sha256 || '').trim().toLowerCase();
+    if (leftBlossom && rightBlossom) return leftBlossom === rightBlossom;
     const leftUrl = left?.readUrl || left?.url || left?.blossomUrl;
     const rightUrl = right?.readUrl || right?.url || right?.blossomUrl;
     if (leftUrl && rightUrl && normalizeReadUrl(leftUrl) === normalizeReadUrl(rightUrl)) return true;

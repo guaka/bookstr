@@ -45,3 +45,8 @@ test('renders an accessible dashboard with links and missing suites', () => {
   assert.match(html, /<th>Tests<\/th><th>Pass rate<\/th><th>Duration<\/th>/);
   assert.doesNotMatch(html, /border-radius:999px/);
 });
+
+test('renders declared test counts when a suite fails before execution', () => {
+  const html = renderDashboard([{ id: 'ios', suite: 'iOS', status: 'failing', knownTests: 42, results: {}, coverage: [] }]);
+  assert.match(html, /<strong>0\/42<\/strong>/);
+});

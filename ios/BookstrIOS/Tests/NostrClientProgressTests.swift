@@ -66,7 +66,7 @@ final class NostrClientProgressTests: XCTestCase {
         let parsed = NostrClient.parseProgressContent(content, fallbackBookId: "fallback")
         XCTAssertEqual(parsed?.bookId, "fallback")
         XCTAssertEqual(parsed?.cfi, "")
-        XCTAssertEqual(parsed?.progression, 0.15, accuracy: 0.0001)
+        XCTAssertEqual(parsed?.progression ?? -1, 0.15, accuracy: 0.0001)
     }
 
     func testLocatorProgressionStringValueIsParsed() {
@@ -74,7 +74,7 @@ final class NostrClientProgressTests: XCTestCase {
         let parsed = NostrClient.parseProgressContent(content, fallbackBookId: "fallback")
         XCTAssertEqual(parsed?.bookId, "fallback")
         XCTAssertEqual(parsed?.cfi, "epubcfi(/6/4)")
-        XCTAssertEqual(parsed?.progression, 0.77, accuracy: 0.0001)
+        XCTAssertEqual(parsed?.progression ?? -1, 0.77, accuracy: 0.0001)
     }
 
     func testLocatorWithNonStringCfiFallsBackToEmptyCfi() {
@@ -82,7 +82,7 @@ final class NostrClientProgressTests: XCTestCase {
         let parsed = NostrClient.parseProgressContent(content, fallbackBookId: "fallback")
         XCTAssertEqual(parsed?.bookId, "fallback")
         XCTAssertEqual(parsed?.cfi, "")
-        XCTAssertEqual(parsed?.progression, 0.15, accuracy: 0.0001)
+        XCTAssertEqual(parsed?.progression ?? -1, 0.15, accuracy: 0.0001)
     }
 
     func testLocatorParsesUpdatedAtAsString() {
@@ -91,7 +91,7 @@ final class NostrClientProgressTests: XCTestCase {
 
         XCTAssertEqual(parsed?.bookId, "fallback")
         XCTAssertEqual(parsed?.cfi, "epubcfi(/6/4)")
-        XCTAssertEqual(parsed?.progression, 0.77, accuracy: 0.0001)
+        XCTAssertEqual(parsed?.progression ?? -1, 0.77, accuracy: 0.0001)
         XCTAssertEqual(parsed?.title, "Example")
         XCTAssertEqual(parsed?.updatedAt, 1_700_000_000_000)
     }
@@ -102,7 +102,7 @@ final class NostrClientProgressTests: XCTestCase {
 
         XCTAssertEqual(parsed?.bookId, "fallback")
         XCTAssertEqual(parsed?.cfi, "")
-        XCTAssertEqual(parsed?.progression, 0.2, accuracy: 0.0001)
+        XCTAssertEqual(parsed?.progression ?? -1, 0.2, accuracy: 0.0001)
     }
 
     func testLocatorMustBeAnObject() {
@@ -127,6 +127,15 @@ final class NostrClientProgressTests: XCTestCase {
         XCTAssertNil(NostrClient.parseProgressContent("not-json", fallbackBookId: "fallback"))
     }
 
+    func testLegacyProgressPreservesTitle() {
+        let content = #"{"bookId":"book-legacy","progression":0.9,"cfi":"epubcfi(/6/2)","title":"Legacy title"}"#
+        let parsed = NostrClient.parseProgressContent(content, fallbackBookId: "fallback")
+
+        XCTAssertEqual(parsed?.title, "Legacy title")
+        XCTAssertEqual(parsed?.cfi, "epubcfi(/6/2)")
+        XCTAssertEqual(parsed?.progression ?? -1, 0.9, accuracy: 0.0001)
+    }
+
     func testUsesAuthorsFallbackWhenAuthorFieldMissing() {
         let content = #"{"locator":{"progression":0.12,"cfi":"epubcfi"}}"#
         let parsed = NostrClient.parseProgressContent(content, fallbackBookId: "fallback")
@@ -138,5 +147,19 @@ final class NostrClientProgressTests: XCTestCase {
         let content = #"{"locator":{"progression":0.12,"cfi":"epubcfi"},"authors":"Alias Author"}"#
         let parsed = NostrClient.parseProgressContent(content, fallbackBookId: "fallback")
         XCTAssertEqual(parsed?.author, "Alias Author")
+    }
+
+    func testProgressAcceptsUpdatedAtAsNumber() {
+        let content = #"{"locator":{"progression":0.34,"cfi":"epubcfi"},"updatedAt":1700000000000}"#
+        let parsed = NostrClient.parseProgressContent(content, fallbackBookId: "fallback")
+
+        XCTAssertEqual(parsed?.updatedAt, 1_700_000_000_000)
+    }
+
+    func testLegacyAuthorFieldWinsOverAuthorsAlias() {
+        let content = #"{"progression":0.55,"cfi":"epubcfi","author":"Primary Author","authors":"Alias Author"}"#
+        let parsed = NostrClient.parseProgressContent(content, fallbackBookId: "fallback")
+
+        XCTAssertEqual(parsed?.author, "Primary Author")
     }
 }

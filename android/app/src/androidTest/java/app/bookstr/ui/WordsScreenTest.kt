@@ -1,10 +1,11 @@
 package app.bookstr.ui
 
 import androidx.compose.ui.test.assertIsDisplayed
-import androidx.compose.ui.test.assertDoesNotExist
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextInput
@@ -53,7 +54,7 @@ class WordsScreenTest {
 
         composeRule.onNode(hasSetTextAction()).performTextInput("fruit")
         composeRule.onNodeWithText("apple").assertIsDisplayed()
-        composeRule.onNodeWithText("zebra").assertDoesNotExist()
+        composeRule.onAllNodesWithText("zebra").assertCountEquals(0)
 
         composeRule.onNodeWithContentDescription("Clear filter").performClick()
         composeRule.onNodeWithText("zebra").assertIsDisplayed()

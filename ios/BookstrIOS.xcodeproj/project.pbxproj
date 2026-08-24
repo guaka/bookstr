@@ -10,6 +10,7 @@
 		06A573B5278C4256361ADD02 /* Favorites.swift in Sources */ = {isa = PBXBuildFile; fileRef = C5D2047C5FEB6AC49E9AA4E3 /* Favorites.swift */; };
 		0C0E91F7C3119FAB5C128CB7 /* AppContainer.swift in Sources */ = {isa = PBXBuildFile; fileRef = D92A1F44EF6DBC86327645B5 /* AppContainer.swift */; };
 		13D8078FE0DC6E1D200CED98 /* LibraryReaderUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C98C5936529AA8D4AB76BAA9 /* LibraryReaderUITests.swift */; };
+		A8C4D6E1B2F3907C5D8E1A24 /* AppShellUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B7D2F5A8C1E9463D0F7B2A19 /* AppShellUITests.swift */; };
 		293BA6273B450613E6F76A53 /* CatalogRepository.swift in Sources */ = {isa = PBXBuildFile; fileRef = 87B9B26B320EF361E399E7BD /* CatalogRepository.swift */; };
 		3285ADECD2163ADDA0E6B768 /* NostrIdentity.swift in Sources */ = {isa = PBXBuildFile; fileRef = 900C0EBA29A56B2A85821807 /* NostrIdentity.swift */; };
 		3293AEF36AE06143583E5FD1 /* DictionaryRepositoryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4232605E9E8A0830608191B3 /* DictionaryRepositoryTests.swift */; };
@@ -108,6 +109,7 @@
 		BF7571C63411B7A9A8988ABD /* ReaderHostView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReaderHostView.swift; sourceTree = "<group>"; };
 		C5D2047C5FEB6AC49E9AA4E3 /* Favorites.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Favorites.swift; sourceTree = "<group>"; };
 		C98C5936529AA8D4AB76BAA9 /* LibraryReaderUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryReaderUITests.swift; sourceTree = "<group>"; };
+		B7D2F5A8C1E9463D0F7B2A19 /* AppShellUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppShellUITests.swift; sourceTree = "<group>"; };
 		CB16A31ED46BFAD72E7F9860 /* LibraryUITestFixtures.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryUITestFixtures.swift; sourceTree = "<group>"; };
 		CBC8C1E2AA5F7475E90DE61A /* NostrSigner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NostrSigner.swift; sourceTree = "<group>"; };
 		D59156E29F9A2B48916FA733 /* ProgressRepositoryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProgressRepositoryTests.swift; sourceTree = "<group>"; };
@@ -193,6 +195,7 @@
 		4BF061CE0C23395A8063A1FE /* UITests */ = {
 			isa = PBXGroup;
 			children = (
+				B7D2F5A8C1E9463D0F7B2A19 /* AppShellUITests.swift */,
 				C98C5936529AA8D4AB76BAA9 /* LibraryReaderUITests.swift */,
 			);
 			name = UITests;
@@ -447,6 +450,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A8C4D6E1B2F3907C5D8E1A24 /* AppShellUITests.swift in Sources */,
 				13D8078FE0DC6E1D200CED98 /* LibraryReaderUITests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

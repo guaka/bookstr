@@ -45,7 +45,7 @@ jobs:
             workflow="$1"
             artifact_prefix="$2"
             for run_id in $(gh api "repos/$GH_REPO/actions/workflows/$workflow/runs?branch=main&status=completed&per_page=30" --jq '.workflow_runs[].id'); do
-              if gh api "repos/$GH_REPO/actions/runs/$run_id/artifacts" --jq '.artifacts[].name' | grep -q "^${artifact_prefix}"; then
+              if gh api "repos/$GH_REPO/actions/runs/$run_id/artifacts" --jq '.artifacts[].name' | grep -q "^${artifact_prefix}[0-9][0-9]*$"; then
                 echo "$run_id"
                 return
               fi
@@ -72,7 +72,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           run-id: ${{ steps.runs.outputs.android }}
-          pattern: bookstr-test-overview-android-*
+          name: bookstr-test-overview-android-${{ steps.runs.outputs.android }}
           path: test-overview-data
           merge-multiple: true
           github-token: ${{ github.token }}
@@ -82,7 +82,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           run-id: ${{ steps.runs.outputs.android_ui }}
-          pattern: bookstr-test-overview-android-ui-*
+          name: bookstr-test-overview-android-ui-${{ steps.runs.outputs.android_ui }}
           path: test-overview-data
           merge-multiple: true
           github-token: ${{ github.token }}
