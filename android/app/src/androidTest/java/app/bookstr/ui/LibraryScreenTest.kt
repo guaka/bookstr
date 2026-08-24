@@ -1,7 +1,9 @@
 package app.bookstr.ui
 
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertDoesNotExist
 import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
@@ -232,5 +234,110 @@ class LibraryScreenTest {
         composeRule.onNodeWithText("Delete download").assertIsDisplayed()
         composeRule.onNodeWithText("Unfavorite").performClick()
         assertEquals(book, unfavorited)
+    }
+
+    @Test
+    fun searchesFavoritesByTitleAndFormat() {
+        val epub = CatalogBook(
+            id = "epub",
+            title = "The Green Book",
+            author = "Author",
+            epubUrl = "https://example.org/green.epub",
+            coverUrl = null,
+            format = BookFormat.Epub,
+        )
+        val pdf = CatalogBook(
+            id = "pdf",
+            title = "The Blue Book",
+            author = "Author",
+            epubUrl = "https://example.org/blue.pdf",
+            coverUrl = null,
+            format = BookFormat.Pdf,
+        )
+        composeRule.setContent {
+            LibraryScreen(
+                books = listOf(epub, pdf),
+                favoriteIds = setOf(epub.id, pdf.id),
+                externalFavorites = emptyList(),
+                progress = emptyMap(),
+                loading = false,
+                error = null,
+                onRefresh = {},
+                onOpenBook = {},
+                onOpenExternal = {},
+            )
+        }
+
+        composeRule.onNodeWithText("Search favorites").performTextInput("pdf")
+        composeRule.onNodeWithText("The Blue Book").assertIsDisplayed()
+        composeRule.onNodeWithText("The Green Book").assertDoesNotExist()
+    }
+
+    @Test
+    fun externalFavoriteDetailsCanOpenItsBlossomCopy() {
+        val favorite = ExternalFavorite(
+            key = "external-book",
+            title = "Remote Book",
+            author = "Remote Author",
+            year = "2024",
+            url = "https://publisher.example/remote-book",
+            isbn = "9780000000000",
+            libvaultMd5 = "d".repeat(32),
+            format = "epub",
+            blossomSha256 = "e".repeat(64),
+            blossomUrl = "https://blossom.example/remote-book.epub",
+        )
+        var opened: ExternalFavorite? = null
+        composeRule.setContent {
+            LibraryScreen(
+                books = emptyList(),
+                favoriteIds = emptySet(),
+                externalFavorites = listOf(favorite),
+                progress = emptyMap(),
+                loading = false,
+                error = null,
+                onRefresh = {},
+                onOpenBook = {},
+                onOpenExternal = { opened = it },
+            )
+        }
+
+        composeRule.onNodeWithText("Remote Book").performTouchInput { longClick() }
+        composeRule.onNodeWithText("Book details").assertIsDisplayed()
+        composeRule.onNodeWithText("9780000000000").assertIsDisplayed()
+        composeRule.onNodeWithText("Available").assertIsDisplayed()
+        composeRule.onNodeWithText("Open book").performClick()
+        assertEquals(favorite, opened)
+    }
+
+    @Test
+    fun bookDetailsDeleteActionReportsTheSelectedBook() {
+        val book = CatalogBook(
+            id = "delete-me",
+            title = "Downloaded Book",
+            author = "Author",
+            epubUrl = "https://example.org/downloaded.epub",
+            coverUrl = null,
+        )
+        var deleted: CatalogBook? = null
+        composeRule.setContent {
+            LibraryScreen(
+                books = listOf(book),
+                favoriteIds = setOf(book.id),
+                externalFavorites = emptyList(),
+                progress = emptyMap(),
+                loading = false,
+                error = null,
+                onRefresh = {},
+                onOpenBook = {},
+                onOpenExternal = {},
+                publicationSize = { 512L * 1024 },
+                onDeleteBook = { deleted = it },
+            )
+        }
+
+        composeRule.onNodeWithText("Downloaded Book").performTouchInput { longClick() }
+        composeRule.onNodeWithText("Delete download").performClick()
+        assertEquals(book, deleted)
     }
 }

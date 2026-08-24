@@ -473,3 +473,165 @@ test('Open Library search results expose canonical work links', async ({ page })
   await expect(link).toHaveAttribute('target', '_blank');
   await expect(link).toHaveAttribute('href', /^https:\/\/openlibrary\.org\/works\/OL\d+W$/);
 });
+
+test('the home library filters mixed favorites by metadata and keeps the count honest', async ({ page }) => {
+  await page.addInitScript(() => {
+    localStorage.setItem('bookstr_nostr_favorites_v1', JSON.stringify([
+      {
+        md5: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+        title: 'The Paper Garden',
+        authors: 'A. Reader',
+        language: 'en',
+        extension: 'epub',
+        readUrl: 'https://files.test/paper.epub',
+      },
+      {
+        md5: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+        title: 'O Livro Azul',
+        authors: 'B. Leitor',
+        language: 'pt',
+        extension: 'pdf',
+        readUrl: 'https://files.test/blue.pdf',
+      },
+    ]));
+  });
+
+  await page.goto('/#home');
+  await expect(page.locator('.library-book-count')).toContainText('2 books');
+  await expect(page.locator('#home-reading-list')).toContainText('The Paper Garden');
+  await expect(page.locator('#home-reading-list')).toContainText('O Livro Azul');
+
+  await page.locator('#home-query-input').fill('paper');
+  await expect(page.locator('#home-reading-list')).toContainText('The Paper Garden');
+  await expect(page.locator('#home-reading-list')).not.toContainText('O Livro Azul');
+  await expect(page.locator('.library-book-count')).toContainText('1 of 2 books');
+
+  await page.locator('#home-query-input').fill('');
+  await page.locator('#home-language-filter').selectOption('pt');
+  await expect(page.locator('#home-reading-list')).toContainText('O Livro Azul');
+  await expect(page.locator('#home-reading-list')).not.toContainText('The Paper Garden');
+});
+
+test('saved words can be filtered by context and sorted alphabetically', async ({ page }) => {
+  await page.addInitScript(() => {
+    localStorage.setItem('bookstr_words_v1', JSON.stringify([
+      {
+        key: 'en:zebra', word: 'zebra', language: 'en', bookTitle: 'Field Notes',
+        contextSentence: 'A zebra crossed the road.', definitions: ['A striped animal.'],
+        lookupCount: 1, lastSeenAt: 1, firstSeenAt: 1,
+      },
+      {
+        key: 'en:apple', word: 'apple', language: 'en', bookTitle: 'Kitchen Notes',
+        contextSentence: 'An apple rested on the table.', definitions: ['A fruit.'],
+        lookupCount: 3, lastSeenAt: 2, firstSeenAt: 2,
+      },
+    ]));
+  });
+
+  await page.goto('/#words');
+  await expect(page.locator('#words-list')).toContainText('zebra');
+  await expect(page.locator('#words-list')).toContainText('apple');
+
+  await page.locator('#words-filter').fill('table');
+  await expect(page.locator('#words-list')).toContainText('apple');
+  await expect(page.locator('#words-list')).not.toContainText('zebra');
+
+  await page.locator('#words-filter').fill('');
+  await page.locator('#words-sort').selectOption('alphabetical');
+  const headings = page.locator('#words-list .word-heading a');
+  await expect(headings).toHaveText(['apple', 'zebra']);
+});
+
+test('the reading favorite button toggles a known book without leaving the reader', async ({ page }) => {
+  const md5 = '77777777777777777777777777777777';
+  const downloadUrl = 'https://files.test/favorite-reader.epub';
+  await page.addInitScript(({ md5, downloadUrl }) => {
+    localStorage.setItem('bookstr_reading_library_v1', JSON.stringify([{
+      md5,
+      title: 'Favorite from Reader',
+      authors: 'Reader Author',
+      extension: 'epub',
+      readUrl: downloadUrl,
+    }]));
+  }, { md5, downloadUrl });
+  await page.route(downloadUrl, async route => route.fulfill({
+    status: 200,
+    contentType: 'application/epub+zip',
+    body: await minimalEpub('Favorite from Reader'),
+  }));
+
+  await page.goto(`/#read=${md5}`);
+  const favoriteButton = page.locator('#reading-favorite-btn');
+  await expect(favoriteButton).toBeVisible();
+  await expect(favoriteButton).toHaveAttribute('aria-pressed', 'false');
+
+  await favoriteButton.click();
+  await expect(favoriteButton).toHaveAttribute('aria-pressed', 'true');
+  await expect.poll(async () => page.evaluate(() => JSON.parse(
+    localStorage.getItem('bookstr_nostr_favorites_v1') || '[]',
+  ).map(item => item.title))).toContain('Favorite from Reader');
+
+  await favoriteButton.click();
+  await expect(favoriteButton).toHaveAttribute('aria-pressed', 'false');
+  await expect.poll(async () => page.evaluate(() => JSON.parse(
+    localStorage.getItem('bookstr_nostr_favorites_v1') || '[]',
+  ).length)).toBe(0);
+});
+
+test('settings persist the selected reading theme after reopening the app', async ({ page }) => {
+  await page.goto('/#home');
+  await page.locator('#settings-btn').click();
+  await expect(page.locator('#settings-title')).toBeVisible();
+
+  await page.locator('#theme-mode').selectOption('dark');
+  await expect(page.locator('body')).toHaveClass(/theme-dark/);
+  await expect.poll(async () => page.evaluate(() => JSON.parse(
+    localStorage.getItem('bookstr_reader_settings_v1') || '{}',
+  ).theme)).toBe('dark');
+
+  await page.goto('/#home');
+  await page.reload();
+  await page.locator('#settings-btn').click();
+  await expect(page.locator('#theme-mode')).toHaveValue('dark');
+  await expect(page.locator('body')).toHaveClass(/theme-dark/);
+});
+
+test('deleting a home-library book removes it from local reading and favorite state', async ({ page }) => {
+  const book = {
+    md5: '88888888888888888888888888888888',
+    title: 'Delete Me From Library',
+    authors: 'Test Author',
+    extension: 'epub',
+    readUrl: 'https://files.test/delete-me.epub',
+  };
+  await page.addInitScript(book => {
+    window.confirm = () => true;
+    localStorage.setItem('bookstr_reading_library_v1', JSON.stringify([book]));
+    localStorage.setItem('bookstr_nostr_favorites_v1', JSON.stringify([book]));
+  }, book);
+
+  await page.goto('/#home');
+  await expect(page.locator('#home-reading-list')).toContainText(book.title);
+  await page.locator(`button[aria-label="Delete ${book.title} from library"]`).click();
+
+  await expect(page.locator('#home-reading-list')).not.toContainText(book.title);
+  await expect.poll(async () => page.evaluate(() => ({
+    reading: JSON.parse(localStorage.getItem('bookstr_reading_library_v1') || '[]').length,
+    favorites: JSON.parse(localStorage.getItem('bookstr_nostr_favorites_v1') || '[]').length,
+  }))).toEqual({ reading: 0, favorites: 0 });
+});
+
+test('saved-word deletion reports the missing signer without losing the local word', async ({ page }) => {
+  await page.addInitScript(() => {
+    localStorage.setItem('bookstr_words_v1', JSON.stringify([{
+      key: 'en:offline', word: 'offline', language: 'en', bookTitle: 'Test book',
+      contextSentence: 'The reader stayed offline.', definitions: ['Not connected.'],
+      lookupCount: 1, lastSeenAt: 1, firstSeenAt: 1,
+    }]));
+  });
+
+  await page.goto('/#words');
+  await page.locator('button[aria-label="Delete offline"]').click();
+  await expect(page.locator('#status')).toContainText('Could not delete offline: Connect NIP-07');
+  await expect(page.locator('#words-list')).toContainText('offline');
+});
