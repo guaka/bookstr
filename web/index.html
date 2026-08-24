@@ -1573,6 +1573,7 @@
       const NOSTR_RELAYS = ['wss://relay.nomadwiki.org'];
       const NOSTR_FAVORITES_KIND = 30003;
       const NOSTR_PROGRESS_KIND = 30078;
+      const FEATURED_PUBLIC_LIST_D_TAGS = ['abundance-in-commons', 'hitchwiki-books'];
       const FAVORITES_D_TAG = 'libvault-favorites';
       const FAVORITES_CHUNK_PREFIX = 'libvault-favorites-chunk';
       const FAVORITES_CHUNK_LIMIT = 6000;
@@ -1986,17 +1987,22 @@
         });
       }
 
-      async function queryNostrEvents(pubkey, filters) {
-        if (!Array.isArray(NOSTR_RELAYS) || !NOSTR_RELAYS.length || !pubkey) {
+      async function queryPublicNostrEvents(filters) {
+        if (!Array.isArray(NOSTR_RELAYS) || !NOSTR_RELAYS.length) {
           return [];
         }
         const queryFilter = {
           ...((Array.isArray(filters) ? filters[0] : filters) || {}),
-          authors: [pubkey],
           limit: ((Array.isArray(filters) ? filters[0] : filters)?.limit) || 200,
         };
         const events = await Promise.all(NOSTR_RELAYS.map((relay) => readRelayEvents(relay, queryFilter)));
         return events.flat().filter(Boolean).sort((a, b) => Number(b.created_at || 0) - Number(a.created_at || 0));
+      }
+
+      async function queryNostrEvents(pubkey, filters) {
+        if (!pubkey) return [];
+        const filter = (Array.isArray(filters) ? filters[0] : filters) || {};
+        return queryPublicNostrEvents({ ...filter, authors: [pubkey] });
       }
 
       function publishRelayEvent(relayUrl, event) {
@@ -2643,13 +2649,17 @@
         return sortByUpdatedAt(Array.from(latestByWord.values()));
       }
 
-      async function pullNostrPublicLists(pubkey) {
-        if (!pubkey) return [];
-        const events = await queryNostrEvents(pubkey, {
+      async function pullNostrPublicLists(pubkey = '') {
+        const featured = queryPublicNostrEvents({
           kinds: [NOSTR_FAVORITES_KIND],
-          limit: 200,
+          '#d': FEATURED_PUBLIC_LIST_D_TAGS,
+          limit: 40,
         });
-        return BookstrPublicLists.parseEvents(events);
+        const own = pubkey
+          ? queryNostrEvents(pubkey, { kinds: [NOSTR_FAVORITES_KIND], limit: 200 })
+          : Promise.resolve([]);
+        const [featuredEvents, ownEvents] = await Promise.all([featured, own]);
+        return BookstrPublicLists.parseEvents([...featuredEvents, ...ownEvents]);
       }
 
       function mergeStateList(primary, incoming, { dedupeBy = 'md5' } = {}) {
@@ -2786,6 +2796,28 @@
       }
 
       let nostrSyncTask = null;
+      let publicListSyncVersion = 0;
+
+      async function syncNostrPublicLists(pubkey = '') {
+        const version = ++publicListSyncVersion;
+        try {
+          const publicLists = await pullNostrPublicLists(pubkey);
+          if (version !== publicListSyncVersion) return false;
+          state.publicLists = publicLists;
+          renderPublicLists();
+          if (pubkey) {
+            saveNostrSyncCache(pubkey, {
+              favorites: state.favorites,
+              reading: state.reading,
+              words: state.words,
+              publicLists,
+            });
+          }
+          return true;
+        } catch {
+          return false;
+        }
+      }
 
       async function syncNostrLibraryFromNip7() {
         const pubkey = state.nip7.pubkey;
@@ -2795,23 +2827,22 @@
         if (nostrSyncTask) {
           return nostrSyncTask;
         }
+        void syncNostrPublicLists(pubkey);
         const task = (async () => {
           const cached = readNostrSyncCache(pubkey);
           if (cached && isNostrCacheFresh(cached)) {
             applyNostrSnapshot(cached);
           }
           try {
-            const [favorites, reading, words, publicLists] = await Promise.all([
+            const [favorites, reading, words] = await Promise.all([
               pullNostrFavorites(pubkey),
               pullNostrReading(pubkey),
               pullNostrWords(pubkey),
-              pullNostrPublicLists(pubkey),
             ]);
             applyNostrSnapshot({
               favorites,
               reading,
               words,
-              publicLists,
             }, { authoritativeFavorites: Array.isArray(favorites) });
             saveNostrSyncCache(pubkey, {
               favorites: state.favorites,
@@ -5102,6 +5133,7 @@
         renderWords();
         renderPublicLists();
         updateNip7Status();
+        void syncNostrPublicLists(state.nip7.pubkey || '');
         if (state.settings.useNip7) {
           const cached = readNostrSyncCache(state.nip7.pubkey || '');
           if (cached) {

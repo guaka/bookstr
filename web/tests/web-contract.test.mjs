@@ -12,11 +12,16 @@ test('served web app remains React- and bundle-free', () => {
   assert.doesNotMatch(html, /node_modules|bookstr-dist/i);
 });
 
-test('Home discovers and renders the connected user public NIP-51 reading lists', () => {
+test('Home independently discovers featured and connected-user public NIP-51 reading lists', () => {
   assert.match(html, /<script src="public-lists\.js"><\/script>/);
   assert.match(html, /id="public-lists-section"[\s\S]*?<h3>Reading lists<\/h3>[\s\S]*?id="public-lists"/);
-  assert.match(html, /async function pullNostrPublicLists\(pubkey\)[\s\S]*?kinds: \[NOSTR_FAVORITES_KIND\][\s\S]*?BookstrPublicLists\.parseEvents\(events\)/);
-  assert.match(html, /const \[favorites, reading, words, publicLists\] = await Promise\.all/);
+  assert.match(html, /const FEATURED_PUBLIC_LIST_D_TAGS = \['abundance-in-commons', 'hitchwiki-books'\]/);
+  assert.match(html, /async function queryPublicNostrEvents\(filters\)/);
+  assert.match(html, /async function pullNostrPublicLists\(pubkey = ''\)[\s\S]*?'#d': FEATURED_PUBLIC_LIST_D_TAGS[\s\S]*?BookstrPublicLists\.parseEvents/);
+  assert.match(html, /async function syncNostrPublicLists\(pubkey = ''\)/);
+  assert.match(html, /void syncNostrPublicLists\(state\.nip7\.pubkey \|\| ''\);/);
+  assert.match(html, /const \[favorites, reading, words\] = await Promise\.all/);
+  assert.doesNotMatch(html, /const \[favorites, reading, words, publicLists\] = await Promise\.all/);
   assert.match(html, /function renderPublicLists\(\)[\s\S]*?state\.publicLists[\s\S]*?className = 'public-list'/);
   assert.match(html, /void openBook\(book, \{ addToReading: false \}\)/);
 });
