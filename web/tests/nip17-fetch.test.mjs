@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import {
   LIBVAULT_FETCH_TYPE,
   LIBVAULT_NIP05,
+  LIBVAULT_SEARCH_RESPONSE_TYPE,
   libvaultBookRef,
   lookupLibVaultBlossom,
   lookupLibVaultBlossomState,
@@ -291,4 +292,408 @@ test('unwraps a signed private search response from the LibVault service', async
   const response = await unwrapLibVaultResponse(wrap, { pubkey: recipientPubkey }, clientPubkey, signer, nostrTools);
   assert.equal(response.type, 'libvault.search.result');
   assert.equal(response.request_id, 'search-1');
+});
+
+test('resolves a default relay when only non-wss relays are advertised', async () => {
+  const service = await resolveLibVaultService(async () => ({
+    ok: true,
+    json: async () => ({
+      names: { books: servicePubkey },
+      relays: {
+        [servicePubkey]: ['https://relay.example', 'http://relay.example'],
+      },
+    }),
+  }));
+
+  assert.deepEqual(service.relays, ['wss://relay.nomadwiki.org']);
+});
+
+test('unwrapLibVaultResponse ignores a response with an invalid rumor hash', async () => {
+  const senderSecret = nostrTools.generateSecretKey();
+  const recipientSecret = nostrTools.generateSecretKey();
+  const recipientPubkey = nostrTools.getPublicKey(recipientSecret);
+  const clientPubkey = nostrTools.getPublicKey(senderSecret);
+  const rumor = {
+    pubkey: recipientPubkey,
+    created_at: Math.floor(Date.now() / 1000),
+    kind: 14,
+    tags: [['p', clientPubkey]],
+    content: JSON.stringify({ type: 'libvault.search.result', request_id: 'search-1', status: 'ready', books: [] }),
+    id: 'not-the-event-hash',
+  };
+  const seal = nostrTools.finalizeEvent({
+    kind: 13,
+    created_at: rumor.created_at,
+    tags: [],
+    content: nostrTools.nip44.v2.encrypt(
+      JSON.stringify(rumor),
+      nostrTools.nip44.v2.utils.getConversationKey(recipientSecret, clientPubkey),
+    ),
+  }, recipientSecret);
+  const ephemeral = nostrTools.generateSecretKey();
+  const wrap = nostrTools.finalizeEvent({
+    kind: 1059,
+    created_at: rumor.created_at,
+    tags: [['p', clientPubkey]],
+    content: nostrTools.nip44.v2.encrypt(
+      JSON.stringify(seal),
+      nostrTools.nip44.v2.utils.getConversationKey(ephemeral, clientPubkey),
+    ),
+  }, ephemeral);
+  const signer = { nip44: { decrypt: async (peer, ciphertext) => nostrTools.nip44.v2.decrypt(
+    ciphertext,
+    nostrTools.nip44.v2.utils.getConversationKey(senderSecret, peer),
+  ) } };
+
+  const response = await unwrapLibVaultResponse(wrap, { pubkey: recipientPubkey }, clientPubkey, signer, nostrTools);
+  assert.equal(response, null);
+});
+
+test('monitorLibVaultFetch exits as cancelled when the signal is already aborted', async () => {
+  const controller = new AbortController();
+  controller.abort();
+  const result = await monitorLibVaultFetch('a'.repeat(32), {
+    signal: controller.signal,
+    intervalMs: 0,
+    timeoutMs: 10,
+    fetchImpl: async () => {
+      assert.fail('monitor should not call fetch after signal is already aborted');
+    },
+  });
+
+  assert.equal(result.status, 'cancelled');
+});
+
+test('lookupLibVaultBlossom filters out non-ready states', async () => {
+  const blossom = await lookupLibVaultBlossom('a'.repeat(32), async () => ({
+    ok: true,
+    json: async () => ({ status: 'publishing' }),
+  }));
+
+  assert.equal(blossom, null);
+});
+
+test('searchLibVault surfaces relay readiness failures', async () => {
+  const signer = {
+    getPublicKey: async () => senderPubkey,
+    nip44: {
+      encrypt: async (_recipient, plaintext) => JSON.stringify(JSON.parse(plaintext)),
+      decrypt: async () => '',
+    },
+    signEvent: async event => ({ ...event, id: 'ready', pubkey: senderPubkey, sig: 'ready' }),
+  };
+
+  await assert.rejects(
+    () => searchLibVault('books', 'title', {
+      signer,
+      fetchImpl: async () => ({
+        ok: true,
+        json: async () => ({
+          names: { books: servicePubkey },
+          relays: { [servicePubkey]: ['wss://relay.example'] },
+        }),
+      }),
+      listen: () => ({
+        ready: Promise.reject(new Error('Could not subscribe for a private LibVault response')),
+        result: new Promise(() => {}),
+        arm: () => {},
+        close: () => {},
+      }),
+      loadTools: async () => ({
+        generateSecretKey: () => new Uint8Array(32).fill(1),
+        finalizeEvent: event => ({ ...event, id: 'wrap', pubkey: '5'.repeat(64), sig: 'wrapped' }),
+        nip19: { npubEncode: pubkey => `npub:${pubkey}` },
+        nip44: { v2: { utils: { getConversationKey: () => new Uint8Array(32).fill(2) }, encrypt: plaintext => `wrapped:${plaintext}` } },
+        verifyEvent: () => true,
+      }),
+      publish: async () => true,
+      onTrace: () => {},
+      limit: 100,
+    }),
+    /private LibVault response/,
+  );
+});
+
+test('sendLibVaultFetchRequest reports relay rejection when no relay accepts it', async () => {
+  const signer = {
+    getPublicKey: async () => senderPubkey,
+    nip44: {
+      encrypt: async () => 'sealed',
+    },
+    signEvent: async event => ({ ...event, id: 'seal', pubkey: senderPubkey, sig: 'signed' }),
+  };
+
+  await assert.rejects(
+    () => sendLibVaultFetchRequest({ md5: 'a'.repeat(32), title: 'Blocked example' }, {
+      signer,
+      fetchImpl: async () => ({
+        ok: true,
+        json: async () => ({
+          names: { books: servicePubkey },
+          relays: { [servicePubkey]: ['wss://relay.example', 'wss://relay.backup'] },
+        }),
+      }),
+      loadTools: async () => ({
+        generateSecretKey: () => new Uint8Array(32).fill(3),
+        finalizeEvent: event => ({ ...event, id: 'wrap', pubkey: '6'.repeat(64), sig: 'wrapped' }),
+        nip44: { v2: { utils: { getConversationKey: () => new Uint8Array(32).fill(4) }, encrypt: plaintext => `wrapped:${plaintext}` } },
+      }),
+      publish: async () => false,
+    }),
+    /No relay accepted the private LibVault fetch request/,
+  );
+});
+
+test('monitorLibVaultFetch treats non-ok jobs endpoint response as waiting then timed out', async () => {
+  const start = Date.now();
+  const result = await monitorLibVaultFetch('a'.repeat(32), {
+    intervalMs: 0,
+    timeoutMs: 5,
+    fetchImpl: async () => ({ ok: false, status: 503 }),
+  });
+
+  assert.equal(result.status, 'failed');
+  assert.equal(result.error, 'Timed out waiting for LibVault');
+  assert.ok(Date.now() - start >= 0);
+});
+
+
+test('resolveLibVaultService rejects invalid NIP-05 pubkeys', async () => {
+  await assert.rejects(
+    () => resolveLibVaultService(async () => ({
+      ok: true,
+      json: async () => ({
+        names: { books: 'not-a-key' },
+        relays: { books: ['wss://relay.example'] },
+      }),
+    })),
+    /books@blossom\.bfr\.ee has an invalid Nostr key/,
+  );
+});
+
+test('libvaultBookRef trims and ignores invalid identifiers', () => {
+  const ref = libvaultBookRef({
+    md5: 'A'.repeat(32),
+    isbn: 'not-an-isbn',
+    title: '  Example Title  ',
+    authors: 'Ada Author',
+    source: 'openlibrary',
+    sourceNativeId: 'OL1W',
+    catalogUrl: 'https://openlibrary.org/works/OL1W',
+  });
+
+  assert.equal(ref.md5, 'a'.repeat(32));
+  assert.equal(ref.isbn, undefined);
+  assert.equal(ref.title, 'Example Title');
+  assert.equal(ref.author, 'Ada Author');
+  assert.equal(ref.source_id, 'OL1W');
+});
+
+test('searchLibVault normalizes searchType and returns an empty result set when status is ready', async () => {
+  const signer = {
+    getPublicKey: async () => senderPubkey,
+    nip44: {
+      encrypt: async (_recipient, plaintext) => JSON.parse(plaintext),
+      decrypt: async () => '',
+    },
+    signEvent: async event => ({ ...event, id: 'seal', pubkey: senderPubkey, sig: 'signed' }),
+  };
+  const response = await searchLibVault('Books', undefined, {
+    signer,
+    fetchImpl: async () => ({
+      ok: true,
+      json: async () => ({
+        names: { books: servicePubkey },
+        relays: { [servicePubkey]: ['wss://relay.example'] },
+      }),
+    }),
+    loadTools: async () => ({
+      generateSecretKey: () => new Uint8Array(32).fill(5),
+      finalizeEvent: event => ({ ...event, id: 'wrap', pubkey: '9'.repeat(64), sig: 'wrapped' }),
+      nip19: { npubEncode: pubkey => `npub:${pubkey}` },
+      nip44: { v2: {
+        utils: { getConversationKey: () => new Uint8Array(32).fill(6) },
+        encrypt: plaintext => `wrapped:${plaintext}`,
+      } },
+      verifyEvent: () => true,
+    }),
+    publish: async () => true,
+    listen: () => {
+      const request = {
+        type: LIBVAULT_SEARCH_RESPONSE_TYPE,
+        request_id: '',
+        status: 'ready',
+        books: [],
+      };
+      return {
+        ready: Promise.resolve(),
+        result: Promise.resolve(request),
+        arm: () => {},
+        close: () => {},
+      };
+    },
+    limit: 400,
+  });
+
+  assert.equal(response.status, 'ready');
+  assert.equal(response.books.length, 0);
+});
+
+test('sendLibVaultFetchRequest rejects an invalid signer public key', async () => {
+  const signer = {
+    getPublicKey: async () => 'not-a-key',
+    nip44: {
+      encrypt: async () => 'sealed',
+    },
+    signEvent: async event => ({ ...event, id: 'seal', pubkey: 'not-a-key', sig: 'signed' }),
+  };
+
+  await assert.rejects(
+    () => sendLibVaultFetchRequest({ md5: 'a'.repeat(32), title: 'Example' }, {
+      signer,
+      fetchImpl: async () => ({
+        ok: true,
+        json: async () => ({
+          names: { books: servicePubkey },
+          relays: { [servicePubkey]: ['wss://relay.example'] },
+        }),
+      }),
+      loadTools: async () => ({
+        generateSecretKey: () => new Uint8Array(32).fill(1),
+        finalizeEvent: event => ({ ...event, id: 'wrap', pubkey: '6'.repeat(64), sig: 'wrapped' }),
+        nip44: { v2: {
+          utils: { getConversationKey: () => new Uint8Array(32).fill(2) },
+          encrypt: plaintext => `wrapped:${plaintext}`,
+        } },
+      }),
+      publish: async () => true,
+    }),
+    /invalid public key/,
+  );
+});
+
+test('monitorLibVaultFetch reports failed status from jobs response', async () => {
+  const result = await monitorLibVaultFetch('a'.repeat(32), {
+    intervalMs: 0,
+    timeoutMs: 20,
+    fetchImpl: async () => ({
+      ok: true,
+      json: async () => ({ status: 'failed', error: 'indexer is temporarily unavailable' }),
+    }),
+  });
+
+  assert.equal(result.status, 'failed');
+  assert.equal(result.error, 'indexer is temporarily unavailable');
+});
+
+
+test('resolveLibVaultService deduplicates duplicate relays', async () => {
+  const service = await resolveLibVaultService(async () => ({
+    ok: true,
+    json: async () => ({
+      names: { books: servicePubkey },
+      relays: { [servicePubkey]: ['wss://relay.example', 'wss://relay.example'] },
+    }),
+  }));
+
+  assert.deepEqual(service.relays, ['wss://relay.example']);
+});
+
+test('searchLibVault fails when no relay accepts the subscription', async () => {
+  const signer = {
+    getPublicKey: async () => senderPubkey,
+    nip44: {
+      encrypt: async () => 'encrypted',
+      decrypt: async () => '',
+    },
+    signEvent: async event => ({ ...event, id: 'seed', pubkey: senderPubkey, sig: 'signed' }),
+  };
+
+  await assert.rejects(
+    () => searchLibVault('books', 'title', {
+      signer,
+      fetchImpl: async () => ({
+        ok: true,
+        json: async () => ({
+          names: { books: servicePubkey },
+          relays: { [servicePubkey]: ['wss://relay.example'] },
+        }),
+      }),
+      loadTools: async () => ({
+        generateSecretKey: () => new Uint8Array(32).fill(7),
+        finalizeEvent: event => ({ ...event, id: 'wrap', pubkey: '7'.repeat(64), sig: 'wrapped' }),
+        nip19: { npubEncode: pubkey => `npub:${pubkey}` },
+        nip44: { v2: { utils: { getConversationKey: () => new Uint8Array(32).fill(8) }, encrypt: plaintext => `wrapped:${plaintext}` } },
+        verifyEvent: () => true,
+      }),
+      publish: async () => false,
+      listen: () => ({
+        ready: Promise.resolve(),
+        result: new Promise(() => {}),
+        arm: () => {},
+        close: () => {},
+      }),
+      onTrace: () => {},
+    }),
+    /No relay accepted the private LibVault search/,
+  );
+});
+
+test('sendLibVaultFetchRequest requires a NIP-44 signer', async () => {
+  const signer = {
+    getPublicKey: async () => senderPubkey,
+    signEvent: async event => ({ ...event, id: 'seed', pubkey: senderPubkey, sig: 'signed' }),
+  };
+
+  await assert.rejects(
+    () => sendLibVaultFetchRequest({ md5: 'a'.repeat(32), title: 'Example' }, {
+      signer,
+      fetchImpl: async () => ({
+        ok: true,
+        json: async () => ({
+          names: { books: servicePubkey },
+          relays: { [servicePubkey]: ['wss://relay.example'] },
+        }),
+      }),
+      loadTools: async () => ({
+        generateSecretKey: () => new Uint8Array(32).fill(9),
+        finalizeEvent: event => ({ ...event, id: 'wrap', pubkey: '9'.repeat(64), sig: 'wrapped' }),
+        nip44: { v2: {
+          utils: { getConversationKey: () => new Uint8Array(32).fill(10) },
+          encrypt: plaintext => `wrapped:${plaintext}`,
+        } },
+      }),
+      publish: async () => true,
+    }),
+    /NIP-07 with NIP-44 support is required/,
+  );
+});
+
+test('lookupLibVaultBlossomState refuses invalid MD5 input', async () => {
+  const state = await lookupLibVaultBlossomState('not-an-md5', async () => ({
+    ok: true,
+    json: async () => ({ status: 'ready' }),
+  }));
+
+  assert.equal(state, null);
+});
+
+test('monitorLibVaultFetch keeps waiting when job endpoint is temporarily unavailable', async () => {
+  const calls = [];
+  const result = await monitorLibVaultFetch('a'.repeat(32), {
+    intervalMs: 0,
+    timeoutMs: 5,
+    fetchImpl: async () => {
+      calls.push(Date.now());
+      return {
+        ok: false,
+        status: 503,
+        json: async () => ({}),
+      };
+    },
+  });
+
+  assert.equal(result.status, 'failed');
+  assert.equal(result.error, 'Timed out waiting for LibVault');
+  assert.ok(calls.length >= 1);
 });

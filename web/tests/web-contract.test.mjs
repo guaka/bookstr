@@ -472,3 +472,34 @@ test('Words stay off Home and the header link only appears for active synced wor
   assert.match(html, /if \(tab === 'words' && !hasActiveWords\(\)\) tab = 'home'/);
   assert.match(html, /if \(!hasActiveWords\(\)\) \{[\s\S]*?#home/);
 });
+
+test('hash route parsing restores filters and tab selection for Home and Settings', () => {
+  assert.match(html, /window\.addEventListener\('hashchange', applyHashRoute\)/);
+  assert.match(html, /function applyHashRoute\(/);
+  assert.match(html, /route === 'home' \|\| route\.startsWith\('home\?'\)/);
+  assert.match(html, /route === 'settings'/);
+  assert.match(html, /homeLibraryFilter\.language = params\.get\('language'\) \|\| ''/);
+  assert.match(html, /homeLibraryFilter\.format = params\.get\('format'\) \|\| ''/);
+  assert.match(html, /activateTab\('home'\);/);
+});
+
+test('home search submit updates the route and triggers search pagination state', () => {
+  assert.match(html, /homeSearchForm\.addEventListener\('submit', \(event\) => \{/);
+  assert.match(html, /const query = homeQueryInput\.value\.trim\(\);/);
+  assert.match(html, /setHashRoute\(searchHashRoute\(\{ query, language: '', format: '', page: 1 \}\)\);/);
+  assert.match(html, /searchPageLabel\.textContent = `Page \$\{searchResultPage\} of \$\{totalPages\} · \$\{sortedBooks\.length\} results`;/);
+});
+
+test('tabs persist selection in route hash transitions', () => {
+  assert.match(html, /function activateTab\(tab, \{ updateHash = false \} = \{\}\) {/);
+  assert.match(html, /activeTab = \['home', 'search', 'reading', 'words', 'settings'\]\.includes\(tab\) \? tab : 'home';/);
+  assert.match(html, /setHashRoute\(routeValue \? `read=\$\{encodeURIComponent\(routeValue\)\}` : 'reading'\);/);
+  assert.match(html, /setHashRoute\('words'\);/);
+  assert.match(html, /setHashRoute\('settings'\);/);
+});
+
+test('reader-open route always updates hash with encoded book identity', () => {
+  assert.match(html, /setHashRoute\(`read=\$\{encodeURIComponent\(readRouteValue\(book, readPath\)\)\}`\);/);
+  assert.match(html, /const readPath = BookMetadata\.canonicalReadUrl\(book, BOOKS_API_BASE\);/);
+  assert.match(html, /readRouteValue\(book, readPath\);/);
+});

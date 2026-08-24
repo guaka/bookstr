@@ -362,3 +362,127 @@ test('does not overwrite established metadata with a different edition', () => {
   assert.equal(enriched.year, '2009');
   assert.equal(enriched.language, 'en');
 });
+
+test('enriches placeholder metadata with remote values and tracks provenance', () => {
+  const merged = enrichBookMetadata(
+    { title: 'Untitled book', readUrl: 'https://books.guaka.org/books/123' },
+    {
+      title: 'Remote title',
+      authors: 'Remote Author',
+      language: 'en',
+      year: 2024,
+      extension: 'epub',
+      source: 'gutenberg',
+      sourceNativeId: '30142',
+    },
+    'private-search',
+  );
+
+  assert.equal(merged.title, 'Remote title');
+  assert.equal(merged.authors, 'Remote Author');
+  assert.equal(merged.year, '2024');
+  assert.equal(merged.language, 'en');
+  assert.equal(merged.extension, 'epub');
+  assert.equal(merged.readUrl, 'https://books.guaka.org/books/123');
+  assert.equal(merged.metadataLookupComplete, true);
+  assert.equal(merged.metadataProvenance.title, 'private-search');
+  assert.equal(merged.metadataProvenance.readUrl, undefined);
+});
+
+test('matches books by normalized URLs and ISBN', () => {
+  assert.equal(sameLibraryBook(
+    { readUrl: 'https://example.test/book.epub#chapter-2' },
+    { url: 'https://example.test/book.epub' },
+  ), true);
+  assert.equal(sameLibraryBook(
+    { isbn13: '978-1-2345-6789-0' },
+    { isbn: '9781234567890' },
+  ), true);
+  assert.equal(sameLibraryBook(
+    { md5: 'a'.repeat(32) },
+    { md5: 'A'.repeat(32) },
+  ), true);
+});
+
+test('merges reading and favorites into one row while preserving reading title', () => {
+  const merged = mergeLibraryState(
+    [{ md5: 'a'.repeat(32), title: 'Reading title', updatedAt: 111 }],
+    [{ md5: 'a'.repeat(32), title: 'Untitled book', favoriteAddedAt: 222 }],
+  );
+
+  assert.equal(merged.length, 1);
+  assert.equal(merged[0].title, 'Reading title');
+  assert.equal(merged[0].isReading, true);
+  assert.equal(merged[0].isFavorite, true);
+  assert.equal(merged[0].readingUpdatedAt, 111);
+  assert.equal(merged[0].favoriteAddedAt, 222);
+});
+
+test('bookIdentity prefers readUrl fallback only when no canonical IDs exist', () => {
+  const baseBook = { readUrl: 'https://example.test/book.epub#v=2' };
+  assert.equal(bookIdentity(baseBook), 'url:https://example.test/book.epub');
+
+  const md5Book = { md5: 'B'.repeat(32), readUrl: 'https://example.test/b.md5' };
+  assert.equal(bookIdentity(md5Book), `id:${'b'.repeat(32)}`);
+});
+
+test('enrichBookMetadata does not replace a real title with a placeholder payload title', () => {
+  const merged = enrichBookMetadata(
+    { title: 'Real Title', readUrl: 'https://books-api.guaka.org/api/books/123' },
+    { title: 'Untitled book', authors: 'Remote Author' },
+    'search-response',
+  );
+
+  assert.equal(merged.title, 'Real Title');
+  assert.equal(merged.authors, 'Remote Author');
+  assert.equal(merged.metadataProvenance?.title, undefined);
+});
+
+test('sortBooks handles non-numeric years deterministically', () => {
+  const books = [
+    { title: 'A', year: 'not-a-year' },
+    { title: 'B', year: '2021' },
+    { title: 'C', year: '' },
+  ];
+  const sorted = sortBooks(books, 'year');
+  assert.equal(sorted[0].title, 'A');
+  assert.equal(sorted[1].title, 'C');
+  assert.equal(sorted[2].title, 'B');
+});
+
+test('bookIdentity prioritizes canonical source IDs before URL fallback', () => {
+  const bySha = { blossomSha256: 'A'.repeat(64), readUrl: 'https://example.test/fallback' };
+  assert.equal(bookIdentity(bySha), `sha256:${'a'.repeat(64)}`);
+
+  const byIsbn = { isbn: '978-3-16-148410-0', source: 'gutenberg', sourceNativeId: '123' };
+  assert.equal(bookIdentity(byIsbn), 'source:gutenberg:123');
+});
+
+test('metadataEndpointForReadUrl preserves only canonical Gutenberg download URLs', () => {
+  assert.equal(
+    metadataEndpointForReadUrl('https://books-api.guaka.org/api/books/48320/download?download=1#page=2'),
+    'https://books-api.guaka.org/api/books/48320',
+  );
+  assert.equal(metadataEndpointForReadUrl('https://books-api.guaka.org/api/books/abc/download'), '');
+});
+
+test('availabilitySourcesForBook deduplicates repeated sources', () => {
+  assert.deepEqual(
+    availabilitySourcesForBook({ source: 'gutenberg', readUrl: 'https://books-api.guaka.org/api/books/48320/download', blossomUrl: 'https://blossom.example/file.epub' }, true),
+    ['Gutenberg', 'Blossom', 'Cached'],
+  );
+  assert.deepEqual(
+    availabilitySourcesForBook({ source: 'gutenberg', md5: 'gutenberg:48320' }, false),
+    ['Gutenberg'],
+  );
+});
+
+test('sortBooks places cached entries after non-cached when sorting cached ascending', () => {
+  const books = [
+    { title: 'Local', md5: 'a'.repeat(32) },
+    { title: 'Remote' },
+  ];
+  const sorted = sortBooks(books, 'cached', 'asc', book => book.md5 === 'a'.repeat(32));
+  assert.equal(sorted[0].title, 'Remote');
+  assert.equal(sorted[1].title, 'Local');
+});
