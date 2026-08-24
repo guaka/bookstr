@@ -18,6 +18,8 @@ At a glance, Bookstr uses:
   NIP-44-encrypted saved words;
 - kind `30003` with `d=libvault-favorites` and optional chunk events for
   NIP-44-encrypted favorites shared with LibVault;
+- public kind `30003` reading lists carrying compact `book` references and
+  `bookstr-book` display metadata are discoverable by the web client;
 - encrypted kind `30078` tombstones for durable vocabulary deletion, plus
   best-effort kind `5` cleanup requests on the web;
 - kind `24242` as short-lived HTTP authorization for private Blossom downloads;

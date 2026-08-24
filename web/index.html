@@ -974,6 +974,35 @@
         font-size: 0.93rem;
         word-break: break-word;
       }
+      .public-lists-section {
+        margin-top: 1rem;
+        padding-top: 0.8rem;
+        border-top: 1px solid var(--card-border, #ddd);
+      }
+      .public-lists-section h3 { margin: 0 0 0.45rem; }
+      .public-list {
+        border-top: 1px solid var(--card-border, #ddd);
+      }
+      .public-list:last-child { border-bottom: 1px solid var(--card-border, #ddd); }
+      .public-list summary {
+        display: flex;
+        gap: 0.5rem;
+        padding: 0.55rem 0;
+        align-items: baseline;
+        cursor: pointer;
+        font-weight: 650;
+      }
+      .public-list-count {
+        color: var(--muted-text, #666);
+        font-size: 0.72rem;
+        font-weight: 400;
+      }
+      .public-list-books {
+        margin: 0 0 0.65rem;
+        padding-left: 1.4rem;
+      }
+      .public-list-books li { margin: 0.28rem 0; }
+      .public-list-books small { margin-left: 0.35rem; color: var(--muted-text, #666); }
       .meta-list {
         display: flex;
         flex-wrap: wrap;
@@ -1386,6 +1415,10 @@
             <ul id="home-favorites-list" class="sublist"></ul>
           </div>
         </div>
+        <section id="public-lists-section" class="public-lists-section hidden">
+          <h3>Reading lists</h3>
+          <div id="public-lists"></div>
+        </section>
       </section>
 
       <section id="reader-section" class="card viewer hidden" data-tab-panel="reading">
@@ -1528,6 +1561,7 @@
     </main>
 
     <script src="book-metadata.js"></script>
+    <script src="public-lists.js"></script>
     <script src="vendor/sql-wasm.js"></script>
     <script>
       const FAVORITES_KEY = 'bookstr_nostr_favorites_v1';
@@ -1595,6 +1629,8 @@
       homeQueryInput.placeholder = 'Filter here · press Enter to search all books';
       const homeReadingList = document.getElementById('home-reading-list');
       const homeFavoritesList = document.getElementById('home-favorites-list');
+      const publicListsSection = document.getElementById('public-lists-section');
+      const publicListsEl = document.getElementById('public-lists');
       const homeReadingSection = homeReadingList.closest('.home-column');
       const homeFavoritesSection = homeFavoritesList.closest('.home-column');
       const homeLibraryHeading = homeReadingSection?.querySelector('h3');
@@ -1672,6 +1708,7 @@
       const state = {
         favorites: [],
         reading: [],
+        publicLists: [],
         words: [],
         settings: {
           autoReading: true,
@@ -2606,6 +2643,15 @@
         return sortByUpdatedAt(Array.from(latestByWord.values()));
       }
 
+      async function pullNostrPublicLists(pubkey) {
+        if (!pubkey) return [];
+        const events = await queryNostrEvents(pubkey, {
+          kinds: [NOSTR_FAVORITES_KIND],
+          limit: 200,
+        });
+        return BookstrPublicLists.parseEvents(events);
+      }
+
       function mergeStateList(primary, incoming, { dedupeBy = 'md5' } = {}) {
         const next = [...primary];
         for (const item of incoming) {
@@ -2642,6 +2688,7 @@
         return {
           favorites: payload.favorites.filter(item => item && typeof item.md5 === 'string'),
           reading: payload.reading.filter(item => item && typeof item.md5 === 'string'),
+          publicLists: Array.isArray(payload.publicLists) ? payload.publicLists : [],
           words: payload.words.map(normalizeVocabularyWord).filter(Boolean),
           ts,
           version: Number(payload.version || 0) || 0,
@@ -2655,6 +2702,7 @@
         const next = {
           favorites: Array.isArray(payload.favorites) ? payload.favorites : [],
           reading: Array.isArray(payload.reading) ? payload.reading : [],
+          publicLists: Array.isArray(payload.publicLists) ? payload.publicLists : state.publicLists,
           words: Array.isArray(payload.words) ? payload.words : [],
           ts: Date.now(),
           version: 1,
@@ -2704,6 +2752,9 @@
             .sort((a, b) => Number(b.updatedAt || 0) - Number(a.updatedAt || 0))
             .slice();
         }
+        if (Array.isArray(next.publicLists)) {
+          state.publicLists = next.publicLists;
+        }
         if (Array.isArray(next.words)) {
           const merged = new Map();
           [...state.words, ...next.words].map(normalizeVocabularyWord).filter(Boolean).forEach((word) => {
@@ -2720,6 +2771,7 @@
           renderReading();
           renderWords();
           renderHome();
+          renderPublicLists();
         }
         if (pendingReadBookId) {
           const pending = pendingReadBookId;
@@ -2749,20 +2801,23 @@
             applyNostrSnapshot(cached);
           }
           try {
-            const [favorites, reading, words] = await Promise.all([
+            const [favorites, reading, words, publicLists] = await Promise.all([
               pullNostrFavorites(pubkey),
               pullNostrReading(pubkey),
               pullNostrWords(pubkey),
+              pullNostrPublicLists(pubkey),
             ]);
             applyNostrSnapshot({
               favorites,
               reading,
               words,
+              publicLists,
             }, { authoritativeFavorites: Array.isArray(favorites) });
             saveNostrSyncCache(pubkey, {
               favorites: state.favorites,
               reading: state.reading,
               words: state.words,
+              publicLists: state.publicLists,
             });
             await refreshFavoriteBlossomCopies();
             if (document.activeElement !== null) {
@@ -4275,6 +4330,55 @@
         renderHomeBookList(homeReadingList, matchingBooks, 'No books match these filters.');
       }
 
+      function renderPublicLists() {
+        publicListsEl.replaceChildren();
+        publicListsSection.classList.toggle('hidden', !state.publicLists.length);
+        for (const list of state.publicLists) {
+          const details = document.createElement('details');
+          details.className = 'public-list';
+          const summary = document.createElement('summary');
+          const title = document.createElement('span');
+          title.textContent = list.title;
+          const count = document.createElement('span');
+          count.className = 'public-list-count';
+          count.textContent = `${list.books.length} ${list.books.length === 1 ? 'book' : 'books'}`;
+          summary.append(title, count);
+          const books = document.createElement('ol');
+          books.className = 'public-list-books';
+          for (const book of list.books) {
+            const item = document.createElement('li');
+            const url = String(book.readUrl || '');
+            const readable = /^https:\/\//i.test(url) && ['epub', 'pdf'].includes(String(book.extension || '').toLowerCase());
+            if (url) {
+              const link = document.createElement('a');
+              link.textContent = book.title;
+              if (readable) {
+                link.href = `#read=${encodeURIComponent(url)}`;
+                link.addEventListener('click', event => {
+                  event.preventDefault();
+                  void openBook(book, { addToReading: false });
+                });
+              } else {
+                link.href = url;
+                link.target = '_blank';
+                link.rel = 'noopener noreferrer';
+              }
+              item.appendChild(link);
+            } else {
+              item.append(book.title);
+            }
+            if (book.authors) {
+              const author = document.createElement('small');
+              author.textContent = book.authors;
+              item.appendChild(author);
+            }
+            books.appendChild(item);
+          }
+          details.append(summary, books);
+          publicListsEl.appendChild(details);
+        }
+      }
+
       function activateTab(tab, { updateHash = false } = {}) {
         if (tab === 'words' && !hasActiveWords()) tab = 'home';
         activeTab = ['home', 'search', 'reading', 'words', 'settings'].includes(tab) ? tab : 'home';
@@ -4996,6 +5100,7 @@
         renderFavorites();
         renderReading();
         renderWords();
+        renderPublicLists();
         updateNip7Status();
         if (state.settings.useNip7) {
           const cached = readNostrSyncCache(state.nip7.pubkey || '');

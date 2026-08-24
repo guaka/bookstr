@@ -12,6 +12,15 @@ test('served web app remains React- and bundle-free', () => {
   assert.doesNotMatch(html, /node_modules|bookstr-dist/i);
 });
 
+test('Home discovers and renders the connected user public NIP-51 reading lists', () => {
+  assert.match(html, /<script src="public-lists\.js"><\/script>/);
+  assert.match(html, /id="public-lists-section"[\s\S]*?<h3>Reading lists<\/h3>[\s\S]*?id="public-lists"/);
+  assert.match(html, /async function pullNostrPublicLists\(pubkey\)[\s\S]*?kinds: \[NOSTR_FAVORITES_KIND\][\s\S]*?BookstrPublicLists\.parseEvents\(events\)/);
+  assert.match(html, /const \[favorites, reading, words, publicLists\] = await Promise\.all/);
+  assert.match(html, /function renderPublicLists\(\)[\s\S]*?state\.publicLists[\s\S]*?className = 'public-list'/);
+  assert.match(html, /void openBook\(book, \{ addToReading: false \}\)/);
+});
+
 test('footer links to the latest released Android APK', () => {
   assert.match(html, /github\.com\/guaka\/bookstr\/releases\/latest/);
   assert.match(html, /Download the latest Bookstr Android APK/);
