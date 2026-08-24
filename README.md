@@ -1,8 +1,10 @@
-# Bookstr
+<p align="center">
+  <img src="./brand/bookstr-logo.svg" width="490" alt="Bookstr" />
+</p>
 
 **A calm, open-source EPUB and PDF reader for the web, Android, and iOS.**
 
-[Read on the web](https://books.guaka.org) · [Download the Android APK](./android/releases/bookstr-0.0.3-20260823-1538.apk) · [View the source](https://github.com/guaka/bookstr)
+[Read on the web](https://books.guaka.org) · [Download the Android APK](https://github.com/guaka/bookstr/releases/latest) · [View the source](https://github.com/guaka/bookstr)
 
 > [!IMPORTANT]
 > Bookstr is early-stage software and is approaching its first broadly usable release. Expect rough edges, incomplete platform parity, and occasional data-format changes. Keep copies of books you care about.
@@ -31,7 +33,7 @@ Feature details vary by platform while Bookstr moves toward parity.
 | Platform | Status | Start here |
 | --- | --- | --- |
 | Web | Live early preview; no installation required | [Open books.guaka.org](https://books.guaka.org) |
-| Android | Early-access APK for Android 8.1 and newer | [Download the latest APK](./android/releases/bookstr-0.0.3-20260823-1538.apk) |
+| Android | Early-access APK for Android 8.1 and newer | [Download the latest APK](https://github.com/guaka/bookstr/releases/latest) |
 | iPhone and iPad | Native SwiftUI app available from source; no App Store or TestFlight release yet | [Build the iOS app](./ios/README.md) |
 
 ### Install on Android
@@ -40,7 +42,7 @@ Feature details vary by platform while Bookstr moves toward parity.
 2. If prompted, allow your browser or file manager to install apps from this source.
 3. Open the downloaded file and choose **Install**.
 
-The early-access APK is distributed directly from this repository and does not update automatically. Android's “unknown app” warning is expected for an app installed outside an app store.
+The early-access APK is distributed through GitHub Releases and does not update automatically. Android's “unknown app” warning is expected for an app installed outside an app store.
 
 ## How the pieces fit together
 
@@ -51,6 +53,18 @@ Bookstr can work on its own or with content delivery and sync services:
 - **Nostr** optionally carries portable reading progress, favorites, and vocabulary.
 
 Nostr is never required for reading. Bookstr prefers external signers—NIP-07 in the browser, Amber or another NIP-55 signer on Android, and NIP-46 on iOS—so private keys can remain outside the app. A locally stored `nsec` is available only as an advanced fallback. See [NOSTR.md](./NOSTR.md) for the implemented event formats and privacy model.
+
+## Visual identity
+
+Bookstr uses one identity across the web, Android, iOS, social profiles, and
+print: a book-shaped lightning mark paired with a calm editorial wordmark. The
+interface is built on deep sage (`#2F5D50`), paper (`#F7F3EA`), warm white
+(`#FFFAF2`), ink (`#1C1916`), and muted stone (`#6B635A`). Terracotta
+(`#C74B32`) supplies restrained accents, while warm gold (`#E7C766`) is
+reserved for highlighted words and bookmark cues.
+
+Use **Bookstr** in prose and store listings; the lowercase **bookstr** treatment
+belongs to the logo. Reusable vector assets live in [`brand/`](./brand/).
 
 Blossom access controls are not DRM. An authorized reader receives the original bytes and can redistribute them. Anyone hosting books remains responsible for retention, file-size, acceptable-use, and copyright policies.
 
