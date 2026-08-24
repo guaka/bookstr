@@ -2649,6 +2649,27 @@
         return sortByUpdatedAt(Array.from(latestByWord.values()));
       }
 
+      async function revealPrivateNostrList(pubkey, event) {
+        if (!pubkey || !event?.content || typeof window.nostr?.nip44?.decrypt !== 'function') {
+          return event;
+        }
+        const dTag = event.tags?.find(tag => Array.isArray(tag) && tag[0] === 'd')?.[1] || '';
+        if (dTag === FAVORITES_D_TAG
+          || dTag.startsWith(FAVORITES_CHUNK_PREFIX)
+          || dTag.startsWith('bookstr-collection-')
+          || dTag.startsWith('bookstr-chunk-')) {
+          return event;
+        }
+        try {
+          const plaintext = await window.nostr.nip44.decrypt(pubkey, event.content);
+          const privateTags = JSON.parse(plaintext);
+          if (!Array.isArray(privateTags) || !privateTags.every(Array.isArray)) return event;
+          return { ...event, tags: [...(event.tags || []), ...privateTags] };
+        } catch {
+          return event;
+        }
+      }
+
       async function pullNostrPublicLists(pubkey = '') {
         const featured = queryPublicNostrEvents({
           kinds: [NOSTR_FAVORITES_KIND],
@@ -2659,7 +2680,8 @@
           ? queryNostrEvents(pubkey, { kinds: [NOSTR_FAVORITES_KIND], limit: 200 })
           : Promise.resolve([]);
         const [featuredEvents, ownEvents] = await Promise.all([featured, own]);
-        return BookstrPublicLists.parseEvents([...featuredEvents, ...ownEvents]);
+        const revealedOwnEvents = await Promise.all(ownEvents.map(event => revealPrivateNostrList(pubkey, event)));
+        return BookstrPublicLists.parseEvents([...featuredEvents, ...revealedOwnEvents]);
       }
 
       function mergeStateList(primary, incoming, { dedupeBy = 'md5' } = {}) {

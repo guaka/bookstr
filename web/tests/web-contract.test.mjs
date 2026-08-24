@@ -18,6 +18,8 @@ test('Home independently discovers featured and connected-user public NIP-51 rea
   assert.match(html, /const FEATURED_PUBLIC_LIST_D_TAGS = \['abundance-in-commons', 'hitchwiki-books'\]/);
   assert.match(html, /async function queryPublicNostrEvents\(filters\)/);
   assert.match(html, /async function pullNostrPublicLists\(pubkey = ''\)[\s\S]*?'#d': FEATURED_PUBLIC_LIST_D_TAGS[\s\S]*?BookstrPublicLists\.parseEvents/);
+  assert.match(html, /async function revealPrivateNostrList\(pubkey, event\)[\s\S]*?window\.nostr\.nip44\.decrypt\(pubkey, event\.content\)[\s\S]*?privateTags/);
+  assert.match(html, /ownEvents\.map\(event => revealPrivateNostrList\(pubkey, event\)\)/);
   assert.match(html, /async function syncNostrPublicLists\(pubkey = ''\)/);
   assert.match(html, /void syncNostrPublicLists\(state\.nip7\.pubkey \|\| ''\);/);
   assert.match(html, /const \[favorites, reading, words\] = await Promise\.all/);
