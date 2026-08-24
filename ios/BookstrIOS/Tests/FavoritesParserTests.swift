@@ -41,7 +41,7 @@ final class FavoritesParserTests: XCTestCase {
     func testSplitItemTagsKeepsSingleOversizedItemTagAsSingleChunk() {
         let tag = [["book", "url", "https://example.com/\(String(repeating: "x", count: 500))", "1700000000"]]
 
-        XCTAssertEqual(FavoritesParser.splitItemTags(tag, limit: 10), tag)
+        XCTAssertEqual(FavoritesParser.splitItemTags(tag, limit: 10), [tag])
     }
 
     func testSplitItemTagsHonorsBoundaryWhenSerializedLengthEqualsLimit() {
@@ -2476,7 +2476,7 @@ final class FavoritesParserTests: XCTestCase {
         ])
 
         XCTAssertEqual(refs.count, 1)
-        XCTAssertEqual(refs.single().url, "https://example.org/valid")
-        XCTAssertEqual(refs.single().addedAt, 1_700_000_001)
+        XCTAssertEqual(refs[0].url, "https://example.org/valid")
+        XCTAssertEqual(refs[0].addedAt, 1_700_000_001)
     }
 }

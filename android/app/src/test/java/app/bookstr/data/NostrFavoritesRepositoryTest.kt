@@ -2257,7 +2257,7 @@ class NostrFavoritesRepositoryTest {
                     isbn = null,
                     sourceUrl = sourceUrl,
                     libvaultMd5 = md5,
-                    format = "epub",
+                    format = BookFormat.Epub,
                     blossomSha256 = null,
                     year = null,
                 ),
