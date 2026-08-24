@@ -2,7 +2,7 @@
 
 ## Goal
 
-Make LibVault's reading voice sound genuinely natural in European Portuguese,
+Make Bookstr's reading voice sound genuinely natural in European Portuguese,
 while keeping the text preparation shared across iOS and Android.
 
 The quality of the final experience comes from:

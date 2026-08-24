@@ -203,7 +203,7 @@ final class WordNavigationStateTests: XCTestCase {
     func testMatchingWordMatchesUnicodeAndPunctuationInsensitive() {
         let words = WordNavigationState()
         let catalog = [VocabularyWord(
-            key: "en:caf\u00e9",
+            key: "en:caf\u{00e9}",
             word: "Café",
             language: "fr",
             syncId: "f:cafe",

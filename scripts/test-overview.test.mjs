@@ -42,4 +42,6 @@ test('renders an accessible dashboard with links and missing suites', () => {
   assert.match(html, /2026-08-24 10:00/);
   assert.match(html, /status missing/);
   assert.match(html, /class="logo"[^>]+alt="Bookstr"/);
+  assert.match(html, /<th>Tests<\/th><th>Pass rate<\/th><th>Duration<\/th>/);
+  assert.doesNotMatch(html, /border-radius/);
 });

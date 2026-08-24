@@ -84,7 +84,13 @@ final class EPUBReaderController: NSObject, ObservableObject, AVSpeechSynthesize
         }
     }
 
-    fileprivate func speak(text: String, language: String, voiceIdentifier: String, rate: Double) {
+    fileprivate func speak(
+        text: String,
+        language: String,
+        voiceIdentifier: String,
+        rate: Double,
+        chunks: [(text: String, offset: Int, pauseSeconds: Double)]? = nil,
+    ) {
         guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             errorMessage = "No readable text is visible here."
             return
@@ -106,13 +112,16 @@ final class EPUBReaderController: NSObject, ObservableObject, AVSpeechSynthesize
         pendingUtterances.removeAll()
         isSpeaking = true
         updateNowPlaying(isPlaying: true)
+        let preparedChunks = chunks?.isEmpty == false ? chunks! : speechChunks(text).map {
+            (text: $0.text, offset: $0.offset, pauseSeconds: 0.035)
+        }
         let selectedVoice = bestVoice(language: language, identifier: voiceIdentifier)
-        for chunk in speechChunks(text) {
+        for (index, chunk) in preparedChunks.enumerated() {
             let utterance = AVSpeechUtterance(string: chunk.text)
             utterance.voice = selectedVoice
             utterance.rate = Float(min(max(rate, 0.35), 0.60))
             utterance.volume = 1
-            utterance.preUtteranceDelay = chunk.offset == 0 ? 0 : 0.035
+            utterance.preUtteranceDelay = index == 0 ? 0 : chunk.pauseSeconds
             let identifier = ObjectIdentifier(utterance)
             utteranceOffsets[identifier] = chunk.offset
             pendingUtterances.insert(identifier)
@@ -196,6 +205,35 @@ final class EPUBReaderController: NSObject, ObservableObject, AVSpeechSynthesize
         }
         if end > start { appendRange(NSRange(location: start, length: end - start)) }
         return result.filter { !$0.0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+    }
+
+    fileprivate func parseSpeechChunks(_ value: Any?) -> [(text: String, offset: Int, pauseSeconds: Double)] {
+        let chunks = (value as? [[String: Any]]) ?? (value as? [Any] ?? [])
+            .compactMap { $0 as? [String: Any] }
+        var parsed: [(text: String, offset: Int, pauseSeconds: Double)] = []
+        for chunk in chunks {
+            guard let text = chunk["text"] as? String else { continue }
+            let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else { continue }
+            let pauseMilliseconds = if let value = chunk["pauseMs"] as? NSNumber {
+                value.intValue
+            } else if let value = chunk["pauseMs"] as? Double {
+                Int(value)
+            } else {
+                0
+            }
+            let pauseSeconds = Double(max(0, pauseMilliseconds)) / 1000.0
+            let offset = (chunk["offset"] as? NSNumber)?.intValue
+                ?? (chunk["start"] as? NSNumber)?.intValue
+                ?? (chunk["offset"] as? Int)
+                ?? (chunk["start"] as? Int)
+                ?? 0
+            parsed.append((text: trimmed, offset: max(0, offset), pauseSeconds: pauseSeconds))
+        }
+        if !parsed.isEmpty {
+            return parsed
+        }
+        return []
     }
 
     private func deactivateAudioSession() {
@@ -645,7 +683,7 @@ struct EPUBReaderView: UIViewRepresentable {
         }
 
         private func requestKnownWord(_ json: String?) {
-            container.wordNavigation.request(json ?? "")
+            container.wordNavigation.request(word: json ?? "")
         }
 
         private func lookupDictionary(_ json: String?) {
@@ -690,9 +728,11 @@ struct EPUBReaderView: UIViewRepresentable {
 
         private func handleSpeech(_ json: String?) {
             guard let item = object(from: json), let text = item["text"] as? String else { return }
+            let chunks = controller.parseSpeechChunks(item["chunks"])
             controller.speak(text: text, language: item["language"] as? String ?? "en",
                              voiceIdentifier: container.settingsRepository.speechVoiceIdentifier,
-                             rate: container.settingsRepository.speechRate)
+                             rate: container.settingsRepository.speechRate,
+                             chunks: chunks.isEmpty ? nil : chunks)
         }
     }
 }

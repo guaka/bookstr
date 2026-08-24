@@ -23,6 +23,14 @@ val buildDate = sourceChangeTime.format(DateTimeFormatter.ofPattern("yyyy-MM-dd 
 val versionTimestamp = sourceChangeTime.format(DateTimeFormatter.ofPattern("yyyyMMdd-HHmm"))
 val timestampVersionCode = (sourceChangeTime.toEpochSecond() / 60).toInt()
 
+// Release-signing secrets stay outside the repository. Set these environment variables before
+// building a distributable APK: BOOKSTR_KEYSTORE_FILE, BOOKSTR_KEYSTORE_PASSWORD,
+// BOOKSTR_KEY_ALIAS, and BOOKSTR_KEY_PASSWORD.
+val releaseKeystoreFile = providers.environmentVariable("BOOKSTR_KEYSTORE_FILE").orNull
+val releaseKeystorePassword = providers.environmentVariable("BOOKSTR_KEYSTORE_PASSWORD").orNull
+val releaseKeyAlias = providers.environmentVariable("BOOKSTR_KEY_ALIAS").orNull
+val releaseKeyPassword = providers.environmentVariable("BOOKSTR_KEY_PASSWORD").orNull
+
 android {
     namespace = "app.bookstr"
     compileSdk = 35
@@ -37,12 +45,22 @@ android {
         buildConfigField("String", "BUILD_DATE", "\"$buildDate\"")
     }
 
+    signingConfigs {
+        create("release") {
+            releaseKeystoreFile?.let { storeFile = file(it) }
+            storePassword = releaseKeystorePassword
+            keyAlias = releaseKeyAlias
+            keyPassword = releaseKeyPassword
+        }
+    }
+
     buildTypes {
         debug {
             isTestCoverageEnabled = true
         }
         release {
             isMinifyEnabled = false
+            signingConfig = signingConfigs.getByName("release")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",
@@ -72,6 +90,23 @@ android {
 
     testOptions {
         unitTests.isReturnDefaultValues = true
+    }
+}
+
+tasks.matching { it.name == "packageRelease" }.configureEach {
+    doFirst {
+        val missing = buildList {
+            if (releaseKeystoreFile.isNullOrBlank()) add("BOOKSTR_KEYSTORE_FILE")
+            if (releaseKeystorePassword.isNullOrBlank()) add("BOOKSTR_KEYSTORE_PASSWORD")
+            if (releaseKeyAlias.isNullOrBlank()) add("BOOKSTR_KEY_ALIAS")
+            if (releaseKeyPassword.isNullOrBlank()) add("BOOKSTR_KEY_PASSWORD")
+        }
+        check(missing.isEmpty()) {
+            "Release signing requires environment variables: ${missing.joinToString(", ")}."
+        }
+        check(file(releaseKeystoreFile!!).isFile) {
+            "Release keystore not found: $releaseKeystoreFile"
+        }
     }
 }
 

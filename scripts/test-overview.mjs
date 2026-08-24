@@ -181,18 +181,13 @@ function duration(milliseconds) {
   return `${Math.floor(seconds / 60)}m ${String(seconds % 60).padStart(2, '0')}s`;
 }
 
-function metric(label, value, suffix = '') {
-  return `<span class="metric"><span>${escapeHTML(label)}</span> <strong>${escapeHTML(value)}${escapeHTML(suffix)}</strong></span>`;
-}
-
 function suiteRow(suite) {
   const result = suite.results || {};
-  const testMetrics = result.tests
-    ? [metric('Tests', `${result.passed}/${result.tests}`), metric('Pass rate', percent(result.passed, result.tests), '%')]
-    : [];
-  if (result.skipped) testMetrics.push(metric('Skipped', result.skipped));
-  if (result.durationMs) testMetrics.push(metric('Duration', duration(result.durationMs)));
-  const coverage = (suite.coverage || []).map(item => metric(item.label, item.value.toFixed(2), item.suffix));
+  const coverage = new Map((suite.coverage || []).map(item => [item.label, item]));
+  const coverageValue = (...labels) => {
+    const item = labels.map(label => coverage.get(label)).find(Boolean);
+    return item ? `${item.value.toFixed(2)}${item.suffix}` : '';
+  };
   const status = suite.status === 'passing' ? 'Passing' : suite.status === 'failing' ? 'Failing' : 'Not recorded';
   const date = suite.recorded ? new Date(suite.recorded) : null;
   const recorded = date && !Number.isNaN(date.valueOf())
@@ -205,7 +200,13 @@ function suiteRow(suite) {
     <th scope="row">${suiteName}</th>
     <td><span class="status ${suite.status}"><span aria-hidden="true"></span>${status}</span></td>
     <td>${recorded}</td>
-    <td><div class="metrics">${[...testMetrics, ...coverage].join('')}</div></td>
+    <td class="value">${result.tests ? `<strong>${result.passed}/${result.tests}</strong>${result.skipped ? `<small>${result.skipped} skipped</small>` : ''}` : ''}</td>
+    <td class="value">${result.tests ? `<strong>${percent(result.passed, result.tests)}%</strong>` : ''}</td>
+    <td class="value">${result.durationMs ? `<strong>${duration(result.durationMs)}</strong>` : ''}</td>
+    <td class="value"><strong>${coverageValue('Statements', 'Instructions')}</strong></td>
+    <td class="value"><strong>${coverageValue('Branches')}</strong></td>
+    <td class="value"><strong>${coverageValue('Functions', 'Methods')}</strong></td>
+    <td class="value"><strong>${coverageValue('Lines')}</strong></td>
   </tr>`;
 }
 
@@ -229,38 +230,38 @@ export function renderDashboard(suites) {
     :root { color-scheme: light; --paper:#f7f3ea; --surface:#fffaf2; --ink:#1c1916; --muted:#6b635a; --sage:#2f5d50; --sage-soft:#e5f1eb; --line:#d8cfc3; --red:#a33a2c; --red-soft:#f7e5e1; }
     * { box-sizing: border-box; }
     body { margin:0; min-height:100vh; background:var(--paper); color:var(--ink); font:15px/1.45 ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
-    main { width:min(100% - 2rem, 1180px); margin:0 auto; padding:clamp(2rem,6vw,5rem) 0; }
-    header { display:flex; align-items:flex-end; justify-content:space-between; gap:1rem; margin-bottom:1.25rem; }
+    main { width:min(100% - 2rem, 1180px); margin:0 auto; padding:clamp(.75rem,2vw,1.5rem) 0; }
+    header { display:flex; align-items:flex-end; justify-content:space-between; gap:1rem; margin-bottom:.75rem; }
     .heading { display:flex; align-items:center; gap:.8rem; }
-    .logo { width:2.7rem; height:2.7rem; border-radius:.65rem; }
+    .logo { width:4.5rem; height:4.5rem; }
     h1 { margin:0; font:700 clamp(1.65rem,4vw,2.4rem)/1.1 "Iowan Old Style",Palatino,Georgia,serif; color:var(--sage); }
     header p { margin:.4rem 0 0; color:var(--muted); }
     .back { color:var(--sage); font-weight:650; text-decoration-thickness:1px; text-underline-offset:.2em; white-space:nowrap; }
-    .table-wrap { overflow-x:auto; background:var(--surface); border:1px solid var(--line); border-radius:1rem; box-shadow:0 14px 40px rgba(67,55,43,.07); }
-    table { width:100%; border-collapse:collapse; min-width:840px; }
-    th,td { padding:1rem 1.1rem; text-align:left; border-bottom:1px solid var(--line); vertical-align:middle; }
+    .table-wrap { overflow-x:auto; background:var(--surface); border:1px solid var(--line); box-shadow:0 14px 40px rgba(67,55,43,.07); }
+    table { width:100%; border-collapse:collapse; min-width:1180px; }
+    th,td { padding:1rem .85rem; text-align:left; border-right:1px solid var(--line); border-bottom:1px solid var(--line); vertical-align:middle; }
+    tr > :last-child { border-right:0; }
     thead th { padding-top:.8rem; padding-bottom:.8rem; color:var(--muted); font-size:.72rem; letter-spacing:.09em; text-transform:uppercase; }
-    tbody th { width:180px; font-size:1rem; }
+    tbody th { width:150px; font-size:1rem; }
     tbody th a { color:var(--ink); text-decoration-color:color-mix(in srgb,var(--sage) 40%,transparent); text-underline-offset:.2em; }
     tbody tr:last-child > * { border-bottom:0; }
     time { white-space:nowrap; }
-    .status { display:inline-flex; align-items:center; gap:.45rem; border:1px solid var(--line); border-radius:999px; padding:.28rem .68rem; font-size:.75rem; font-weight:750; letter-spacing:.05em; text-transform:uppercase; }
+    .status { display:inline-flex; align-items:center; gap:.45rem; font-size:.75rem; font-weight:750; letter-spacing:.05em; text-transform:uppercase; }
     .status span { width:.45rem; height:.45rem; border-radius:50%; background:currentColor; }
-    .status.passing { color:#167b67; background:var(--sage-soft); border-color:#b6dacb; }
-    .status.failing { color:var(--red); background:var(--red-soft); border-color:#e8beb5; }
-    .status.missing { color:var(--muted); background:transparent; }
-    .metrics { display:flex; flex-wrap:wrap; gap:.45rem; min-width:350px; }
-    .metric { display:inline-flex; gap:.35rem; border:1px solid var(--line); border-radius:999px; padding:.32rem .68rem; background:color-mix(in srgb,var(--surface) 75%,white); color:var(--muted); white-space:nowrap; }
-    .metric strong { color:#168573; }
+    .status.passing { color:#167b67; }
+    .status.failing { color:var(--red); }
+    .status.missing { color:var(--muted); }
+    .value { color:#168573; white-space:nowrap; }
+    .value small { display:block; color:var(--muted); font-size:.72rem; font-weight:400; }
     footer { margin-top:1rem; color:var(--muted); font-size:.82rem; }
     @media (max-width:640px) { main { width:min(100% - 1rem,1180px); padding:1rem 0; } header { align-items:flex-start; } .back { margin-top:.25rem; } }
-    @media (prefers-color-scheme:dark) { :root { color-scheme:dark; --paper:#121212; --surface:#1b1a18; --ink:#e8e4dc; --muted:#aaa39a; --sage:#7fb8a7; --sage-soft:#18382f; --line:#3b3833; --red:#f09a87; --red-soft:#40221d; } .metric { background:#24211e; } }
+    @media (prefers-color-scheme:dark) { :root { color-scheme:dark; --paper:#121212; --surface:#1b1a18; --ink:#e8e4dc; --muted:#aaa39a; --sage:#7fb8a7; --sage-soft:#18382f; --line:#3b3833; --red:#f09a87; --red-soft:#40221d; } }
   </style>
 </head>
 <body>
   <main>
     <header><div class="heading"><img class="logo" src="../public/favicon.svg" alt="Bookstr"><div><h1>Test overview</h1><p>${escapeHTML(summary)} · latest completed run per suite</p></div></div><a class="back" href="../">Back to Bookstr</a></header>
-    <div class="table-wrap"><table><thead><tr><th>Suite</th><th>Status</th><th>Recorded (UTC)</th><th>Result</th></tr></thead><tbody>${complete.map(suiteRow).join('')}</tbody></table></div>
+    <div class="table-wrap"><table><thead><tr><th>Suite</th><th>Status</th><th>Recorded (UTC)</th><th>Tests</th><th>Pass rate</th><th>Duration</th><th>Statements / instructions</th><th>Branches</th><th>Functions / methods</th><th>Lines</th></tr></thead><tbody>${complete.map(suiteRow).join('')}</tbody></table></div>
     <footer>Generated automatically by GitHub Actions. Select a suite to inspect its run.</footer>
   </main>
 </body>

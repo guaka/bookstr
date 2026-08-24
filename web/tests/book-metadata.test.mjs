@@ -97,6 +97,29 @@ test('merges repeated favorite tags without losing the real title', () => {
   assert.equal(entries[0].favoriteAddedAt, 1_700_000_000);
 });
 
+test('mergeFavoriteEntry keeps the established title and URL when incoming metadata is placeholder-only', () => {
+  const entries = [];
+  mergeFavoriteEntry(entries, {
+    md5: 'A'.repeat(32),
+    title: 'A Casa',
+    url: 'https://books-api.guaka.org/api/books/48320/download',
+    favoriteAddedAt: 1_700_000_000,
+  });
+  mergeFavoriteEntry(entries, {
+    md5: 'a'.repeat(32),
+    title: 'Untitled book',
+    url: '',
+    format: 'pdf',
+    favoriteAddedAt: 1_700_000_100,
+  });
+
+  assert.equal(entries.length, 1);
+  assert.equal(entries[0].title, 'A Casa');
+  assert.equal(entries[0].url, 'https://books-api.guaka.org/api/books/48320/download');
+  assert.equal(entries[0].format, 'pdf');
+  assert.equal(entries[0].favoriteAddedAt, 1_700_000_000);
+});
+
 test('favoriteAddedTag rejects invalid ids and timestamps', () => {
   assert.equal(favoriteAddedTag('not-an-md5', 1_700_000_000), null);
   assert.equal(favoriteAddedTag('a'.repeat(32), 0), null);
@@ -205,7 +228,7 @@ test('classifies supported book availability sources', () => {
 
 test('availabilityForBook marks cached availability on top of source tags', () => {
   assert.equal(availabilityForBook({ readUrl: 'https://books-api.guaka.org/api/books/48320/download' }, true), 'Gutenberg · Cached');
-  assert.equal(availabilityForBook({ title: 'Local-only cached copy', md5: 'a'.repeat(32) }, true), 'Metadata only · Cached');
+  assert.equal(availabilityForBook({ title: 'Local-only cached copy', md5: 'a'.repeat(32) }, true), 'Cached');
 });
 
 test('normalizeReadUrl keeps invalid values as empty normalized strings', () => {
@@ -525,7 +548,7 @@ test('title derivation decodes encoded URL paths', () => {
 
 test('resolveTitle uses a base URL when only a relative read path is provided', () => {
   assert.equal(
-    resolveTitle({ readUrl: '/books/A%20Great%20Book.epub' }, 'https://books-api.guaka.org/shelf/index.html'),
+    resolveTitle({ readUrl: '/books/A%20Great%20Book.epub' }, '', 'https://books-api.guaka.org/shelf/index.html'),
     'A Great Book',
   );
 });
@@ -564,7 +587,7 @@ test('matches identical books by normalized URL plus cached flag in sort', () =>
 });
 
 test('canonical catalog ids only accept openlibrary sources', () => {
-  assert.equal(canonicalCatalogUrl({ source: 'openlibrary', sourceNativeId: 'OL123W' }), 'https://openlibrary.org/books/OL123W');
+  assert.equal(canonicalCatalogUrl({ source: 'openlibrary', sourceNativeId: 'OL123W' }), 'https://openlibrary.org/works/OL123W');
   assert.equal(canonicalCatalogUrl({ source: 'OpenLibrary', sourceNativeId: '123' }), 'https://openlibrary.org/works/OL123W');
   assert.equal(canonicalCatalogUrl({ source: 'gutenberg', sourceNativeId: '123' }), '');
 });
@@ -654,7 +677,7 @@ test('keeps tracked read URL when incoming read URL is merely a placeholder titl
   assert.equal(enriched.readUrl, 'https://legacy.example/book.epub');
   assert.equal(enriched.readUrlSource, 'existing');
   assert.equal(enriched.language, 'en');
-  assert.equal(enriched.year, 2024);
+  assert.equal(enriched.year, '2024');
   assert.equal(enriched.metadataProvenance.language, 'private-search');
   assert.equal(enriched.metadataProvenance.readUrl, undefined);
 });

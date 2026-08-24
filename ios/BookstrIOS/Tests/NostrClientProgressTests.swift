@@ -128,7 +128,7 @@ final class NostrClientProgressTests: XCTestCase {
     }
 
     func testUsesAuthorsFallbackWhenAuthorFieldMissing() {
-        let content = #"{"locator":{"progression":0.12,"cfi":"epubcfi"}}"
+        let content = #"{"locator":{"progression":0.12,"cfi":"epubcfi"}}"#
         let parsed = NostrClient.parseProgressContent(content, fallbackBookId: "fallback")
         XCTAssertNil(parsed?.title)
         XCTAssertNil(parsed?.author)

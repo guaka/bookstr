@@ -52,13 +52,20 @@ export function libvaultBookRef(book) {
 }
 
 export async function resolveLibVaultService(fetchImpl = fetch) {
-  const response = await fetchImpl(LIBVAULT_NIP05_URL, { headers: { Accept: 'application/json' } });
+  let response;
+  try {
+    response = await fetchImpl(LIBVAULT_NIP05_URL, { headers: { Accept: 'application/json' } });
+  } catch (error) {
+    throw new Error(`Could not resolve ${LIBVAULT_NIP05}: ${error?.message || error}`, { cause: error });
+  }
   if (!response.ok) throw new Error(`Could not resolve ${LIBVAULT_NIP05} (${response.status})`);
   const document = await response.json();
   const pubkey = String(document?.names?.books || '').toLowerCase();
   if (!validHex(pubkey, 64)) throw new Error(`${LIBVAULT_NIP05} has an invalid Nostr key`);
   const advertised = Array.isArray(document?.relays?.[pubkey]) ? document.relays[pubkey] : [];
-  const relays = [...new Set(advertised.filter(relay => /^wss:\/\//i.test(String(relay))))];
+  const relays = [...new Set(advertised
+    .map(relay => String(relay).replace(/^wss:/i, 'wss:'))
+    .filter(relay => /^wss:\/\//.test(relay)))];
   return { nip05: LIBVAULT_NIP05, pubkey, relays: relays.length ? relays : [DEFAULT_RELAY] };
 }
 
@@ -129,7 +136,7 @@ export async function unwrapLibVaultResponse(wrapped, service, senderPubkey, sig
 }
 
 function listenForSearchResponse(requestID, service, senderPubkey, signer, tools, options = {}) {
-  const WebSocketImpl = options.WebSocketImpl || globalThis.WebSocket;
+  const WebSocketImpl = options.WebSocketImpl !== undefined ? options.WebSocketImpl : globalThis.WebSocket;
   if (typeof WebSocketImpl !== 'function') throw new Error('WebSocket support is required for private search');
   const sockets = [];
   let armed = false;
@@ -206,6 +213,8 @@ export async function searchLibVault(query, searchType = 'all', options = {}) {
   if (!signer?.getPublicKey || !signer?.signEvent || !signer?.nip44?.encrypt || !signer?.nip44?.decrypt) {
     throw new Error('NIP-07 with NIP-44 support is required');
   }
+  const publish = options.publish;
+  if (typeof publish !== 'function' && !options.listen) throw new Error('No Nostr relay publisher is available');
   const service = await resolveLibVaultService(options.fetchImpl || fetch);
   const senderPubkey = String(await signer.getPublicKey()).toLowerCase();
   if (!validHex(senderPubkey, 64)) throw new Error('The NIP-07 signer returned an invalid public key');
@@ -219,24 +228,30 @@ export async function searchLibVault(query, searchType = 'all', options = {}) {
   const listener = options.listen
     ? options.listen({ requestID: id, service, senderPubkey, signer, tools, onTrace: trace })
     : listenForSearchResponse(id, service, senderPubkey, signer, tools, { ...options, onTrace: trace });
+  const resultPromise = Promise.resolve(listener.result);
+  resultPromise.catch(() => {});
   try {
     await listener.ready;
+    if (typeof publish !== 'function') throw new Error('No Nostr relay publisher is available');
     const payload = {
       type: LIBVAULT_SEARCH_TYPE,
       request_id: id,
       query: String(query || '').trim(),
       search_type: String(searchType || 'all').toLowerCase(),
-      limit: Math.min(200, Math.max(1, Number(options.limit) || 200)),
+      limit: Number.isFinite(Number(options.limit)) && options.limit !== '' && options.limit != null
+        ? Math.min(200, Math.max(1, Number(options.limit)))
+        : 200,
     };
     const wrap = await createPrivateRequestWrap(payload, id, service, senderPubkey, signer, tools);
     const recipient = tools.nip19?.npubEncode?.(service.pubkey) || service.pubkey;
     trace({ direction: 'sent', recipient, recipientNip05: service.nip05, relays: service.relays, event: wrap, payload });
     listener.arm();
-    const publish = options.publish;
-    if (typeof publish !== 'function') throw new Error('No Nostr relay publisher is available');
     const accepted = await Promise.all(service.relays.map(relay => publish(relay, wrap)));
     if (!accepted.some(Boolean)) throw new Error('No relay accepted the private LibVault search');
-    const response = await listener.result;
+    const response = await resultPromise;
+    if (response?.type !== LIBVAULT_SEARCH_RESPONSE_TYPE || (response?.request_id && response.request_id !== id)) {
+      throw new Error('Private LibVault search response timed out');
+    }
     if (!receivedTraced) trace({ direction: 'received', payload: response });
     if (response.status !== 'ready') throw new Error(response.error || 'Private LibVault search failed');
     return response;

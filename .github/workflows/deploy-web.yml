@@ -5,6 +5,8 @@ on:
     branches: [main]
     paths:
       - 'web/**'
+      - 'docs/**'
+      - 'README.md'
       - 'scripts/test-overview.mjs'
       - '.github/workflows/deploy-web.yml'
   workflow_run:
@@ -74,6 +76,11 @@ jobs:
           github-token: ${{ github.token }}
       - name: Generate test overview
         run: node scripts/test-overview.mjs render --input test-overview-data --output web/tests/index.html
+      - name: Add documentation
+        run: |
+          mkdir -p web/docs
+          cp -R docs/. web/docs/
+          cp README.md web/docs/README.md
       - uses: actions/upload-pages-artifact@v3
         with:
           path: web

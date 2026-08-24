@@ -91,8 +91,8 @@
 
   function normalizeFavoriteAddedAt(value) {
     const numeric = Number(value);
-    if (Number.isFinite(numeric) && numeric > 0) {
-      return Math.floor(numeric > 10_000_000_000 ? numeric / 1000 : numeric);
+    if (Number.isFinite(numeric) && String(value ?? '').trim() !== '') {
+      return numeric > 0 ? Math.floor(numeric > 10_000_000_000 ? numeric / 1000 : numeric) : 0;
     }
     const milliseconds = Date.parse(value || '');
     return Number.isFinite(milliseconds) && milliseconds > 0 ? Math.floor(milliseconds / 1000) : 0;
@@ -132,12 +132,15 @@
   }
 
   function normalizeReadUrl(value, baseUrl) {
+    const raw = String(value || '').trim();
+    if (!raw) return '';
+    if (!baseUrl && !/^[a-z][a-z0-9+.-]*:/i.test(raw)) return raw;
     try {
-      const url = new URL(String(value || ''), baseUrl || 'https://books.guaka.org/');
+      const url = new URL(raw, baseUrl);
       url.hash = '';
       return url.href;
     } catch {
-      return String(value || '').trim();
+      return raw;
     }
   }
 
@@ -288,11 +291,10 @@
   }
 
   function isbnForBook(book) {
-    const direct = book?.isbn || book?.isbn13 || book?.isbn10;
-    if (direct) return String(direct).replace(/[^0-9X]/gi, '').toUpperCase();
     const identifiers = Array.isArray(book?.identifiers) ? book.identifiers : [];
     const isbn = identifiers.find(item => String(item?.type || '').toLowerCase() === 'isbn')?.value;
-    return String(isbn || '').replace(/[^0-9X]/gi, '').toUpperCase();
+    const direct = book?.isbn || book?.isbn13 || book?.isbn10;
+    return String(isbn || direct || '').replace(/[^0-9X]/gi, '').toUpperCase();
   }
 
   function enrichBookMetadata(book, metadata, provenance = '') {

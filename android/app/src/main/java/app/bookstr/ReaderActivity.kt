@@ -281,7 +281,7 @@ class ReaderActivity : ComponentActivity() {
                                 readerInteracted = true
                             }
                         },
-                        onSpeechText = { text, language -> speakText(text, language) },
+                        onSpeechText = { text, language, chunks -> speakText(text, language, chunks) },
                         onProgress = { progression, cfi, sectionIndex, sectionCount ->
                             readerProgress = progression.coerceIn(0.0, 1.0).toFloat()
                             readerSectionIndex = sectionIndex.coerceAtLeast(0)
@@ -633,11 +633,8 @@ class ReaderActivity : ComponentActivity() {
         )
     }
 
-    private fun speakText(text: String, languageTag: String) {
-        val cleanText = text.lines()
-            .map { line -> line.replace(Regex("\\s+"), " ").trim() }
-            .filter(String::isNotBlank)
-            .joinToString("\n")
+    private fun speakText(text: String, languageTag: String, chunks: String) {
+        val cleanText = text.trim()
         if (cleanText.isBlank()) {
             isSpeaking = false
             speechMessage = "No readable text is visible here."
@@ -648,6 +645,7 @@ class ReaderActivity : ComponentActivity() {
             context = this,
             text = cleanText,
             language = languageTag,
+            chunks = chunks,
             bookId = bookId,
             title = bookTitle,
             author = bookAuthor,
@@ -916,7 +914,7 @@ private fun ReaderWebView(
     onDictionaryLookup: (String, String) -> Unit,
     onKnownWordTapped: (String) -> Unit,
     onReaderInteracted: () -> Unit,
-    onSpeechText: (String, String) -> Unit,
+    onSpeechText: (String, String, String) -> Unit,
     onProgress: (Double, String, Int, Int) -> Unit,
 ) {
     val context = LocalContext.current
@@ -1174,10 +1172,12 @@ private fun ReaderWebView(
                         fun onSpeechText(json: String) {
                             runCatching {
                                 val obj = JSONObject(json)
+                                val chunks = obj.optJSONArray("chunks")?.toString().orEmpty()
                                 (ctx as? ComponentActivity)?.runOnUiThread {
                                     onSpeechText(
                                         obj.optString("text"),
                                         obj.optString("language", "en"),
+                                        chunks,
                                     )
                                 }
                             }

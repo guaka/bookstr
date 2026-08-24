@@ -1077,6 +1077,96 @@
 
     document.getElementById("dictionary-close").addEventListener("click", closeDictionary);
     document.getElementById("image-zoom").addEventListener("click", closeImageZoom);
+    function readabilityNormalizeText(text) {
+      return String(text || "")
+        .replace(/\u00A0/g, " ")
+        .replace(/\u200B/g, "")
+        .replace(/\r/g, " ")
+        .replace(/\s+/g, " ")
+        .replace(/([.,;:!?…])\s*/g, "$1 ")
+        .trim();
+    }
+
+    function sentencePauseMs(sentence) {
+      const trimmed = String(sentence || "").trim();
+      if (!trimmed) return 180;
+      if (/[!?…]$/.test(trimmed)) return 320;
+      if (/\.\.\.$/.test(trimmed)) return 280;
+      if (/:$/.test(trimmed) || /;$/.test(trimmed)) return 250;
+      if (trimmed.length > 220) return 250;
+      if (trimmed.length > 260) return 320;
+      return 180;
+    }
+
+    function splitSentencesForSpeech(text) {
+      if (typeof Intl !== "undefined" && Intl.Segmenter) {
+        try {
+          const segmenter = new Intl.Segmenter(undefined, { granularity: "sentence" });
+          const sentenceList = [];
+          for (const entry of segmenter.segment(text)) {
+            const sentence = readabilityNormalizeText(entry.segment);
+            if (sentence) sentenceList.push(sentence);
+          }
+          if (sentenceList.length) return sentenceList;
+        } catch (error) {
+          console.warn("Sentence segmenter failed; using regex fallback.", error);
+        }
+      }
+      const fallback = text.match(/[^.!?…]+[.!?…]+(?:\s+|$)|[^.!?…]+$/g) || [];
+      return fallback.map(function(sentence) { return readabilityNormalizeText(sentence); }).filter(Boolean);
+    }
+
+    function buildSpeechChunks(text) {
+      const normalizedText = readabilityNormalizeText(text);
+      const sentences = splitSentencesForSpeech(normalizedText);
+      const chunks = [];
+      const targetLength = 180;
+      let activeText = "";
+      let activePause = 180;
+      function flushActive() {
+        const clean = readabilityNormalizeText(activeText);
+        if (!clean) return;
+        const start = chunks.reduce(function(total, chunk) {
+          return total + (chunk.text ? chunk.text.length : 0) + 1;
+        }, 0);
+        chunks.push({ text: clean, start: start, pauseMs: activePause });
+        activeText = "";
+      }
+      sentences.forEach(function(rawSentence) {
+        const sentence = readabilityNormalizeText(rawSentence);
+        if (!sentence) return;
+        const sentencePause = sentencePauseMs(sentence);
+        const joined = activeText ? (activeText + " " + sentence) : sentence;
+        if (joined.length <= targetLength) {
+          activeText = joined;
+          activePause = sentencePause;
+          return;
+        }
+        if (!activeText) {
+          let cursor = 0;
+          while (cursor < sentence.length) {
+            const piece = readabilityNormalizeText(sentence.slice(cursor, cursor + targetLength));
+            cursor += targetLength;
+            if (!piece) continue;
+            const start = chunks.reduce(function(total, chunk) {
+              return total + (chunk.text ? chunk.text.length : 0) + 1;
+            }, 0);
+            chunks.push({ text: piece, start: start, pauseMs: sentencePause });
+          }
+          activeText = "";
+          return;
+        }
+        flushActive();
+        activeText = sentence;
+        activePause = sentencePause;
+      });
+      flushActive();
+      if (!chunks.length && normalizedText) {
+        chunks.push({ text: normalizedText, start: 0, pauseMs: 180 });
+      }
+      return chunks;
+    }
+
     document.addEventListener("pointerdown", function(event) {
       if (!document.getElementById("dictionary-card").contains(event.target)) closeDictionary();
     });
@@ -1116,10 +1206,13 @@
       if (!language && book && book.packaging && book.packaging.metadata) {
         language = metadataText(book.packaging.metadata.language);
       }
+      const text = readabilityNormalizeText(parts.join("\n")).slice(0, 100000);
+      const chunks = buildSpeechChunks(text);
       if (notifyNative !== false && window.AndroidBridge && AndroidBridge.onSpeechText) {
         AndroidBridge.onSpeechText(JSON.stringify({
-          text: parts.join("\n").slice(0, 100000),
-          language: language || "en"
+          text: text,
+          language: language || "en",
+          chunks: chunks,
         }));
       }
     };

@@ -37,6 +37,8 @@ import java.io.File
 import java.util.Collections
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
+import org.json.JSONArray
+import org.json.JSONObject
 
 /**
  * Owns spoken-book playback independently from ReaderActivity. The media session makes narration
@@ -56,6 +58,7 @@ class NarrationService : MediaBrowserServiceCompat(), TextToSpeech.OnInitListene
     private var generation = 0
     private var speechText = ""
     private var speechLanguage = "en"
+    private var speechChunkInputs: List<IncomingNarrationChunk> = emptyList()
     private var resumeOffset = 0
     private var currentRangeStart = 0
     private var speechQueue: List<NarrationChunk> = emptyList()
@@ -225,6 +228,7 @@ class NarrationService : MediaBrowserServiceCompat(), TextToSpeech.OnInitListene
                 readBookMetadata(intent)
                 speechText = intent.getStringExtra(EXTRA_TEXT).orEmpty()
                 speechLanguage = intent.getStringExtra(EXTRA_LANGUAGE).orEmpty().ifBlank { "en" }
+                speechChunkInputs = parseIncomingSpeechChunks(intent.getStringExtra(EXTRA_CHUNKS).orEmpty())
                 resumeOffset = 0
                 currentRangeStart = 0
                 currentParagraph = ""
@@ -235,6 +239,7 @@ class NarrationService : MediaBrowserServiceCompat(), TextToSpeech.OnInitListene
             }
             ACTION_TOGGLE -> {
                 readBookMetadata(intent)
+                speechChunkInputs = emptyList()
                 ensureForeground()
                 if (isPlaying) pauseNarration() else playOrRequestText()
             }
@@ -308,23 +313,80 @@ class NarrationService : MediaBrowserServiceCompat(), TextToSpeech.OnInitListene
         val activeGeneration = generation
         resetAudioPipeline(cancelSynthesis = true)
         val startOffset = offset.coerceIn(0, speechText.length)
-        val remaining = speechText.substring(startOffset)
-        var searchFrom = startOffset
-        val chunkTexts = ReaderActivity.speechChunks(remaining)
-        val chunks = chunkTexts.mapIndexed { index, text ->
-            val chunkOffset = speechText.indexOf(text, searchFrom).takeIf { it >= 0 } ?: searchFrom
-            searchFrom = chunkOffset + text.length
-            NarrationChunk(
-                id = synthesisId(activeGeneration, index),
-                text = text,
-                offset = chunkOffset,
-                generation = activeGeneration,
-                isFinal = index == chunkTexts.lastIndex,
-            )
+        val chunkInputs = speechChunkInputs.takeIf { it.isNotEmpty() }?.map { it.text to it.pauseMillis }?.let { values ->
+            if (values.any { it.first.isBlank() }) null else values
+        } ?: emptyList()
+        speechQueue = if (chunkInputs.isNotEmpty()) {
+            val chunks = mutableListOf<NarrationChunk>()
+            var searchFrom = startOffset
+            var allMatched = true
+            for (entry in speechChunkInputs) {
+                val chunkText = entry.text.trim()
+                if (chunkText.isBlank()) continue
+                var chunkOffset = if (entry.start >= 0) {
+                    val expectedOffset = entry.start
+                    if (expectedOffset >= searchFrom &&
+                        expectedOffset + chunkText.length <= speechText.length &&
+                        speechText.regionMatches(expectedOffset, chunkText, 0, chunkText.length)
+                    ) {
+                        expectedOffset
+                    } else {
+                        -1
+                    }
+                } else {
+                    -1
+                }
+                if (chunkOffset < 0) {
+                    chunkOffset = speechText.indexOf(chunkText, searchFrom).takeIf { it >= 0 }
+                        ?: speechText.indexOf(chunkText).takeIf { it >= 0 }
+                        ?: -1
+                }
+                if (chunkOffset < 0) {
+                    allMatched = false
+                    break
+                }
+                chunks += NarrationChunk(
+                    id = synthesisId(activeGeneration, chunks.size),
+                    text = chunkText,
+                    offset = chunkOffset,
+                    generation = activeGeneration,
+                    isFinal = false,
+                    pauseMillis = entry.pauseMillis.coerceAtLeast(0L),
+                )
+                searchFrom = chunkOffset + chunkText.length
+            }
+            if (allMatched) {
+                chunks.mapIndexed { index, chunk ->
+                    chunk.copy(isFinal = index == chunks.lastIndex)
+                }
+            } else {
+                emptyList()
+            }
+        } else {
+            emptyList()
         }
-        speechQueue = chunks
-        currentPlaybackIndex = 0
-        if (chunks.isEmpty()) {
+        if (speechQueue.isEmpty()) {
+            val remaining = speechText.substring(startOffset)
+            var searchFrom = startOffset
+            val chunkTexts = ReaderActivity.speechChunks(remaining)
+            speechQueue = chunkTexts.mapIndexed { index, text ->
+                val chunkOffset = speechText.indexOf(text, searchFrom).takeIf { it >= 0 } ?: searchFrom
+                searchFrom = chunkOffset + text.length
+                NarrationChunk(
+                    id = synthesisId(activeGeneration, index),
+                    text = text,
+                    offset = chunkOffset,
+                    generation = activeGeneration,
+                    isFinal = index == chunkTexts.lastIndex,
+                    pauseMillis = SENTENCE_PAUSE_MILLIS,
+                )
+            }
+            speechChunkInputs = emptyList()
+        } else {
+            speechChunkInputs = emptyList()
+        }
+        currentPlaybackIndex = speechQueue.indexOfFirst { it.offset + it.text.length > startOffset }.takeIf { it >= 0 } ?: 0
+        if (speechQueue.isEmpty()) {
             finishNaturally()
             return
         }
@@ -359,6 +421,20 @@ class NarrationService : MediaBrowserServiceCompat(), TextToSpeech.OnInitListene
         readyAudio += index
         if (index == currentPlaybackIndex && mediaPlayer == null) playChunk(index)
         synthesizeChunk(index + 1)
+    }
+
+    private fun parseIncomingSpeechChunks(json: String): List<IncomingNarrationChunk> {
+        val payload = runCatching { JSONArray(json) }.getOrNull() ?: return emptyList()
+        val chunks = mutableListOf<IncomingNarrationChunk>()
+        for (index in 0 until payload.length()) {
+            val chunk = payload.optJSONObject(index) ?: continue
+            val text = chunk.optString("text")
+            if (text.isBlank()) continue
+            val pause = chunk.optLong("pauseMs", SENTENCE_PAUSE_MILLIS)
+            val start = chunk.optInt("start", -1)
+            chunks += IncomingNarrationChunk(text = text, pauseMillis = pause, start = start)
+        }
+        return chunks
     }
 
     private fun playChunk(index: Int) {
@@ -414,7 +490,7 @@ class NarrationService : MediaBrowserServiceCompat(), TextToSpeech.OnInitListene
                 if (readyAudio.contains(currentPlaybackIndex)) playChunk(currentPlaybackIndex)
                 else synthesizeChunk(currentPlaybackIndex)
             },
-            SENTENCE_PAUSE_MILLIS,
+            speechQueue.getOrNull(currentPlaybackIndex)?.pauseMillis ?: SENTENCE_PAUSE_MILLIS,
         )
     }
 
@@ -786,6 +862,7 @@ class NarrationService : MediaBrowserServiceCompat(), TextToSpeech.OnInitListene
         private const val EXTRA_BOOK_AUTHOR = "book_author"
         private const val EXTRA_COVER_URL = "cover_url"
         private const val EXTRA_PARAGRAPH = "paragraph"
+        private const val EXTRA_CHUNKS = "chunks"
         private const val CHANNEL_ID = "bookstr-narration"
         private const val NOTIFICATION_ID = 4107
         private const val SESSION_TAG = "BookstrNarration"
@@ -799,6 +876,7 @@ class NarrationService : MediaBrowserServiceCompat(), TextToSpeech.OnInitListene
             context: Context,
             text: String,
             language: String,
+            chunks: String = "",
             bookId: String,
             title: String,
             author: String?,
@@ -810,6 +888,7 @@ class NarrationService : MediaBrowserServiceCompat(), TextToSpeech.OnInitListene
                     .setAction(ACTION_SPEAK)
                     .putExtra(EXTRA_TEXT, text)
                     .putExtra(EXTRA_LANGUAGE, language)
+                    .putExtra(EXTRA_CHUNKS, chunks)
                     .putExtra(EXTRA_BOOK_ID, bookId)
                     .putExtra(EXTRA_BOOK_TITLE, title)
                     .putExtra(EXTRA_BOOK_AUTHOR, author)
@@ -863,8 +942,15 @@ private data class NarrationChunk(
     val id: String,
     val text: String,
     val offset: Int,
+    val pauseMillis: Long,
     val generation: Int,
     val isFinal: Boolean,
+)
+
+private data class IncomingNarrationChunk(
+    val text: String,
+    val pauseMillis: Long,
+    val start: Int,
 )
 
 private data class SpeechMarker(val start: Int, val end: Int, val frame: Int)

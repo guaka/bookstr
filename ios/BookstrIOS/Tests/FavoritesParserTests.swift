@@ -260,6 +260,40 @@ final class FavoritesParserTests: XCTestCase {
         XCTAssertEqual(refs[0].addedAt, 2)
     }
 
+    func testParseSharedFavoriteTagsSkipsLegacyBookstrTagWithNoIdentifier() {
+        let refs = FavoritesParser.parseSharedFavoriteTags([
+            ["bookstr", "", "Legacy title", "Legacy author", "https://example.org/book"]
+        ])
+
+        XCTAssertEqual(refs.count, 0)
+    }
+
+    func testPendingUrlIsPreservedAcrossInvalidLegacyBookstrIdentifier() {
+        let url = "https://example.org/books/track?source=openlibrary:OL9M"
+        let refs = FavoritesParser.parseSharedFavoriteTags([
+            ["r", url],
+            ["bookstr", "", "", "", ""],
+            ["bookstr", "openlibrary:OL9M", "", "", ""],
+        ])
+
+        XCTAssertEqual(refs.count, 1)
+        XCTAssertEqual(refs[0].bookstrId, "openlibrary:OL9M")
+        XCTAssertEqual(refs[0].url, url)
+    }
+
+    func testStandaloneIstagUsesPendingUrlAfterInvalidLeadingIstag() {
+        let url = "https://lib.b.bfr.ee/books/track?isbn=978-0-123456-78-9"
+        let refs = FavoritesParser.parseSharedFavoriteTags([
+            ["r", url],
+            ["i", "isbn:not-an-isbn"],
+            ["i", "isbn:978-0-123456-78-9", ""],
+        ])
+
+        XCTAssertEqual(refs.count, 1)
+        XCTAssertEqual(refs[0].isbn, "9780123456789")
+        XCTAssertEqual(refs[0].url, url)
+    }
+
     func testInvalidCompactUrlIsSkipped() {
         let refs = FavoritesParser.parseSharedFavoriteTags([
             ["book", "url", "not-a-url", "1700000000"],
@@ -329,6 +363,149 @@ final class FavoritesParserTests: XCTestCase {
         XCTAssertEqual(refs[0].blossomSha256, sha)
         XCTAssertEqual(refs[0].addedAt, 1_700_000_001)
         XCTAssertEqual(refs[0].blossomUrl, "https://blossom.bfr.ee/\(sha)")
+    }
+
+    func testCompactBlossomUnsupportedFormatIsIgnored() {
+        let sha = String(repeating: "d", count: 64)
+        let refs = FavoritesParser.parseSharedFavoriteTags([
+            ["book", "blossom", sha, "1700000000", "https://blossom.bfr.ee/\(sha)", "mp3"],
+        ])
+
+        XCTAssertEqual(refs.count, 1)
+        XCTAssertEqual(refs[0].blossomSha256, sha)
+        XCTAssertEqual(refs[0].format, nil)
+        XCTAssertEqual(refs[0].blossomUrl, "https://blossom.bfr.ee/\(sha)")
+    }
+
+    func testLegacyBookstrMetadataEmptyFieldsDoNotOverwriteExisting() {
+        let md5 = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        let refs = FavoritesParser.parseSharedFavoriteTags([
+            ["bookstr-book", md5, "Existing title", "Existing author", "epub", "11", "2024"],
+            ["bookstr-book", md5, "", "", "", "", ""],
+        ])
+
+        XCTAssertEqual(refs.count, 1)
+        XCTAssertEqual(refs[0].libvaultMd5, md5)
+        XCTAssertEqual(refs[0].title, "Existing title")
+        XCTAssertEqual(refs[0].author, "Existing author")
+        XCTAssertEqual(refs[0].format, "epub")
+        XCTAssertEqual(refs[0].year, "2024")
+    }
+
+    func testLegacyBookstrMetadataWithUppercaseIdentifierIsLowercased() {
+        let md5 = "A".repeating(32)
+        let refs = FavoritesParser.parseSharedFavoriteTags([
+            ["bookstr-book", md5, "Recovered title", "Author", "epub", "11", "2026"],
+        ])
+
+        XCTAssertEqual(refs.count, 1)
+        XCTAssertEqual(refs[0].libvaultMd5, "a".repeating(32))
+        XCTAssertEqual(refs[0].title, "Recovered title")
+        XCTAssertEqual(refs[0].author, "Author")
+        XCTAssertEqual(refs[0].format, "epub")
+    }
+
+    func testLegacyBookstrMetadataPartialFieldsOverwriteExisting() {
+        let md5 = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        let refs = FavoritesParser.parseSharedFavoriteTags([
+            ["bookstr-book", md5, "Existing title", "Existing author", "epub", "11", "2024"],
+            ["bookstr-book", md5, "Updated title", "", "", "", "2025"],
+        ])
+
+        XCTAssertEqual(refs.count, 1)
+        XCTAssertEqual(refs[0].libvaultMd5, md5)
+        XCTAssertEqual(refs[0].title, "Updated title")
+        XCTAssertEqual(refs[0].author, "Existing author")
+        XCTAssertEqual(refs[0].format, "epub")
+        XCTAssertEqual(refs[0].year, "2025")
+    }
+
+    func testLegacyBookstrMetadataUnsupportedFormatThenSupported() {
+        let md5 = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        let refs = FavoritesParser.parseSharedFavoriteTags([
+            ["bookstr-book", md5, "Recovered title", "Author", "txt", "11", "2024"],
+            ["bookstr-book", md5, "Recovered title", "Author", "epub", "11", "2026"],
+        ])
+
+        XCTAssertEqual(refs.count, 1)
+        XCTAssertEqual(refs[0].libvaultMd5, md5)
+        XCTAssertEqual(refs[0].title, "Recovered title")
+        XCTAssertEqual(refs[0].author, "Author")
+        XCTAssertEqual(refs[0].format, "epub")
+        XCTAssertEqual(refs[0].year, "2026")
+    }
+
+    func testLegacyBookstrMetadataExistingFormatAndUnsupportedUpdate() {
+        let md5 = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        let refs = FavoritesParser.parseSharedFavoriteTags([
+            ["bookstr-book", md5, "Existing title", "Existing author", "epub", "11", "2024"],
+            ["bookstr-book", md5, "New title", "", "txt", "", "2027"],
+        ])
+
+        XCTAssertEqual(refs.count, 1)
+        XCTAssertEqual(refs[0].libvaultMd5, md5)
+        XCTAssertEqual(refs[0].title, "New title")
+        XCTAssertEqual(refs[0].author, "Existing author")
+        XCTAssertEqual(refs[0].format, "epub")
+        XCTAssertEqual(refs[0].year, "2027")
+    }
+
+    func testLegacyBookstrMetadataExistingFormatNotOverwrittenByUnsupportedFormat() {
+        let md5 = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        let refs = FavoritesParser.parseSharedFavoriteTags([
+            ["bookstr-book", md5, "Recovered title", "Author", "epub", "11", "2024"],
+            ["bookstr-book", md5, "Recovered title", "Author", "txt", "11", "2026"],
+        ])
+
+        XCTAssertEqual(refs.count, 1)
+        XCTAssertEqual(refs[0].libvaultMd5, md5)
+        XCTAssertEqual(refs[0].title, "Recovered title")
+        XCTAssertEqual(refs[0].author, "Author")
+        XCTAssertEqual(refs[0].format, "epub")
+        XCTAssertEqual(refs[0].year, "2026")
+    }
+
+    func testLegacyBookstrMetadataWithUnsupportedFormatIsIgnored() {
+        let md5 = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        let refs = FavoritesParser.parseSharedFavoriteTags([
+            ["bookstr-book", md5, "Recovered title", "Author", "txt", "11", "2024"],
+        ])
+
+        XCTAssertEqual(refs.count, 1)
+        XCTAssertEqual(refs[0].libvaultMd5, md5)
+        XCTAssertEqual(refs[0].title, "Recovered title")
+        XCTAssertEqual(refs[0].author, "Author")
+        XCTAssertEqual(refs[0].year, "2024")
+        XCTAssertNil(refs[0].format)
+    }
+
+    func testLegacyBookstrMetadataInvalidIdentifierIsIgnored() {
+        let md5 = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        let refs = FavoritesParser.parseSharedFavoriteTags([
+            ["bookstr-book", "not-an-md5", "Should be ignored", "No one", "epub", "11", "2024"],
+            ["bookstr-book", md5, "Recovered title", "Author", "epub", "11", "2026"],
+        ])
+
+        XCTAssertEqual(refs.count, 1)
+        XCTAssertEqual(refs[0].libvaultMd5, md5)
+        XCTAssertEqual(refs[0].title, "Recovered title")
+        XCTAssertEqual(refs[0].author, "Author")
+        XCTAssertEqual(refs[0].format, "epub")
+        XCTAssertEqual(refs[0].year, "2026")
+    }
+
+    func testLegacyBlossomUnsupportedFormatIsIgnored() {
+        let md5 = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        let sha = String(repeating: "e", count: 64)
+        let refs = FavoritesParser.parseSharedFavoriteTags([
+            ["blossom", md5, sha, "https://blossom.example/\(sha)", "txt", "extra"],
+        ])
+
+        XCTAssertEqual(refs.count, 1)
+        XCTAssertEqual(refs[0].libvaultMd5, md5)
+        XCTAssertEqual(refs[0].blossomSha256, sha)
+        XCTAssertEqual(refs[0].format, nil)
+        XCTAssertEqual(refs[0].blossomUrl, "https://blossom.example/\(sha)")
     }
 
     func testLibvaultAddedWithUppercaseIdentifierMatchesExistingFavorite() {
@@ -441,6 +618,19 @@ final class FavoritesParserTests: XCTestCase {
         XCTAssertEqual(refs[0].isbn, "9780123456789")
         XCTAssertEqual(refs[0].url, url)
         XCTAssertNil(refs[0].bookstrId)
+    }
+
+    func testCurrentFavoriteKeepsProvidedIstagLocatorWhenUrlAlreadyPresent() {
+        let existingUrl = "https://example.org/book.epub"
+        let refs = FavoritesParser.parseSharedFavoriteTags([
+            ["book", "libvault", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "1700000000", existingUrl],
+            ["i", "isbn:978-0-123456-78-9", "https://example.org/other-location"],
+        ])
+
+        XCTAssertEqual(refs.count, 1)
+        XCTAssertEqual(refs[0].libvaultMd5, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+        XCTAssertEqual(refs[0].url, existingUrl)
+        XCTAssertEqual(refs[0].isbn, "9780123456789")
     }
 
     func testMatchSharedFavoritesMatchesBlossomHashCaseInsensitive() {
@@ -596,6 +786,21 @@ final class FavoritesParserTests: XCTestCase {
         XCTAssertEqual(refs[0].blossomSha256, sha)
         XCTAssertEqual(refs[0].blossomUrl, "https://blossom.bfr.ee/\(sha)")
         XCTAssertEqual(refs[0].format, "epub")
+    }
+
+    func testParseSharedFavoriteTagsSkipsLegacyBlossomInvalidIdentifierAndParsesNext() {
+        let md5 = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        let sha = String(repeating: "c", count: 64)
+        let refs = FavoritesParser.parseSharedFavoriteTags([
+            ["blossom", "not-an-md5", sha, "https://blossom.invalid/ignored", "epub"],
+            ["blossom", md5, sha, "https://blossom.bfr.ee/\(sha)", "txt"],
+        ])
+
+        XCTAssertEqual(refs.count, 1)
+        XCTAssertEqual(refs[0].libvaultMd5, md5)
+        XCTAssertEqual(refs[0].blossomSha256, sha)
+        XCTAssertEqual(refs[0].blossomUrl, "https://blossom.bfr.ee/\(sha)")
+        XCTAssertNil(refs[0].format)
     }
 
     func testMixedTypeCompactTagsSkipInvalidEntriesAndParseValidOne() {
@@ -987,6 +1192,20 @@ final class FavoritesParserTests: XCTestCase {
         XCTAssertEqual(refs[0].url, url)
     }
 
+    func testPendingUrlIsAppliedToLegacyBookstrTagWithMissingMetadata() {
+        let url = "https://example.org/books/track?source=openlibrary:OL9M"
+        let refs = FavoritesParser.parseSharedFavoriteTags([
+            ["r", url],
+            ["bookstr", "openlibrary:OL9M", "", "", ""],
+        ])
+
+        XCTAssertEqual(refs.count, 1)
+        XCTAssertEqual(refs[0].bookstrId, "openlibrary:OL9M")
+        XCTAssertEqual(refs[0].url, url)
+        XCTAssertNil(refs[0].title)
+        XCTAssertNil(refs[0].author)
+    }
+
     func testCompactItemTagsAvoidsUntrustedBlossomURL() {
         let md5 = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
         let sha = String(repeating: "e", count: 64)
@@ -1034,6 +1253,17 @@ final class FavoritesParserTests: XCTestCase {
         XCTAssertEqual(snapshot.entries.count, 0)
         XCTAssertEqual(snapshot.tombstones.count, 1)
         XCTAssertEqual(snapshot.tombstones[0].id, "bookstr-collection-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+    }
+
+    func testParseCollectionIndexDefaultsEmptyTitlesToUntitledList() {
+        let snapshot = FavoritesParser.parseCollectionIndex(from: #"""
+            [["collection","bookstr-collection-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","","1700000010"]]
+            """#)
+
+        XCTAssertEqual(snapshot.entries.count, 1)
+        XCTAssertEqual(snapshot.entries[0].0, "bookstr-collection-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+        XCTAssertEqual(snapshot.entries[0].1, "Untitled list")
+        XCTAssertEqual(snapshot.entries[0].2, 1_700_000_010)
     }
 
     func testCollectionTagsDropEmptyDescription() {
@@ -1411,6 +1641,24 @@ final class FavoritesParserTests: XCTestCase {
         XCTAssertEqual(refs[0].libvaultMd5, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
     }
 
+    func testParseSharedFavoriteTagsSkipsObjectPayloadWithoutTags() {
+        let refs = FavoritesParser.parseSharedFavoriteTags(#"{"payload":"unsupported"}"#)
+        XCTAssertEqual(refs.count, 0)
+    }
+
+    func testParseSharedFavoriteTagsUsesObjectPayloadTagsArray() {
+        let url = "https://example.org/booktrack/978-0-1234-5678-9"
+        let refs = FavoritesParser.parseSharedFavoriteTags("""
+            {"tags":[
+              ["r","\(url)"],
+              ["bookstr","source:7","","",""]
+            ]}
+        """)
+        XCTAssertEqual(refs.count, 1)
+        XCTAssertEqual(refs[0].bookstrId, "source:7")
+        XCTAssertEqual(refs[0].url, url)
+    }
+
     func testParseSharedFavoriteTagsLowercasesCompactLibvaultIdentifier() {
         let md5 = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
         let refs = FavoritesParser.parseSharedFavoriteTags([
@@ -1433,6 +1681,23 @@ final class FavoritesParserTests: XCTestCase {
         XCTAssertEqual(refs[0].addedAt, 1_700_000_001)
         XCTAssertEqual(refs[0].title, "Favorite title")
         XCTAssertEqual(refs[0].url, "https://example.org/first")
+    }
+
+    func testParseSharedFavoriteTagsHandlesLibvaultAddedBeforeMembership() {
+        let md5 = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        let refs = FavoritesParser.parseSharedFavoriteTags([
+            ["libvault-added", md5, "1700000003"],
+            ["book", "libvault", md5, "1700000005", "https://example.org/book"],
+            ["libvault-book", md5, "Recovered", "Author", "epub", "11", "2026"],
+        ])
+
+        XCTAssertEqual(refs.count, 1)
+        XCTAssertEqual(refs[0].libvaultMd5, md5)
+        XCTAssertEqual(refs[0].addedAt, 1_700_000_003)
+        XCTAssertEqual(refs[0].title, "Recovered")
+        XCTAssertEqual(refs[0].author, "Author")
+        XCTAssertEqual(refs[0].url, "https://example.org/book")
+        XCTAssertEqual(refs[0].format, "epub")
     }
 
     func testParseSharedFavoriteTagsDeduplicatesUrlMembershipAndLaterLibvaultMetadata() {
