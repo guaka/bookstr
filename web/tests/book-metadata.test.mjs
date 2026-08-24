@@ -27,6 +27,7 @@ const {
   sameLibraryBook,
   mergeLibraryState,
   enrichBookMetadata,
+  isbnForBook,
 } = globalThis.BookMetadata;
 
 test('normalizes and preserves the earliest favorite addition time', () => {
@@ -485,4 +486,133 @@ test('sortBooks places cached entries after non-cached when sorting cached ascen
   const sorted = sortBooks(books, 'cached', 'asc', book => book.md5 === 'a'.repeat(32));
   assert.equal(sorted[0].title, 'Remote');
   assert.equal(sorted[1].title, 'Local');
+});
+
+test('title derivation decodes encoded URL paths', () => {
+  assert.equal(
+    resolveTitle({ readUrl: 'https://books-api.guaka.org/api/download/O%20Senhor%20dos%20An%C3%A9is.epub' }),
+    'O Senhor dos Anéis',
+  );
+});
+
+test('metadataEndpointForReadUrl ignores malformed ids and non-download endpoints', () => {
+  assert.equal(metadataEndpointForReadUrl('https://books-api.guaka.org/api/books/48320'), '');
+  assert.equal(metadataEndpointForReadUrl('https://books-api.guaka.org/api/books/abc/download?download=1'), '');
+});
+
+test('reading favorites from mixed metadata and ISBN keys are deduplicated', () => {
+  const books = [
+    { md5: 'a'.repeat(32), title: 'Known', authors: 'Primary' },
+    { isbn13: '978-3-16-148410-0', title: 'Fallback', year: 2024 },
+    { isbn10: '0-201-53082-1', title: 'Fallback Alt', authors: 'Another' },
+  ];
+  const merged = dedupeLibraryBooks(books);
+  assert.equal(merged.length, 3);
+});
+
+test('matches identical books by normalized URL plus cached flag in sort', () => {
+  const sameUrl = 'https://books-api.guaka.org/api/books/48320/download#section-2';
+  assert.equal(
+    sameLibraryBook(
+      { readUrl: sameUrl, title: 'A' },
+      { url: 'https://books-api.guaka.org/api/books/48320/download#section-8', title: 'B' },
+    ),
+    true,
+  );
+
+  const books = [
+    { title: 'Cached one', md5: 'a'.repeat(32), updatedAt: 100 },
+    { title: 'Remote one', readUrl: sameUrl },
+  ];
+  const sorted = sortBooks(books, 'cached', 'desc', book => book.md5 === 'a'.repeat(32));
+  assert.equal(sorted[0].title, 'Cached one');
+});
+
+test('canonical catalog ids only accept openlibrary sources', () => {
+  assert.equal(canonicalCatalogUrl({ source: 'openlibrary', sourceNativeId: 'OL123W' }), 'https://openlibrary.org/books/OL123W');
+  assert.equal(canonicalCatalogUrl({ source: 'OpenLibrary', sourceNativeId: '123' }), 'https://openlibrary.org/works/OL123W');
+  assert.equal(canonicalCatalogUrl({ source: 'gutenberg', sourceNativeId: '123' }), '');
+});
+
+test('normalizeFavoriteAddedAt keeps second precision for 10-digit unix values', () => {
+  assert.equal(normalizeFavoriteAddedAt(1_700_000_000), 1700000000);
+});
+
+test('normalizeFavoriteAddedAt converts millisecond timestamps to seconds', () => {
+  const millis = 1_700_000_000_123;
+  assert.equal(normalizeFavoriteAddedAt(millis), 1_700_000_000);
+});
+
+test('sameLibraryBook does not merge by title when ISBNs differ', () => {
+  assert.equal(
+    sameLibraryBook(
+      { isbn: '978-0-00-000000-1', title: 'Same title' },
+      { isbn: '978-0-00-000000-2', title: 'Same title' },
+    ),
+    false,
+  );
+});
+
+test('matchesBookFilter supports multi-term language and availability matching', () => {
+  const book = {
+    title: 'Deep Learning',
+    authors: 'Aurélio',
+    language: 'PT',
+    extension: 'epub',
+    source: 'gutenberg',
+    readUrl: 'https://books-api.guaka.org/api/books/48320/download',
+  };
+  assert.equal(matchesBookFilter(book, 'pt epub gutenberg'), true);
+  assert.equal(matchesBookFilter(book, 'pt notthere'), false);
+});
+
+test('canonicalReadUrl keeps direct non-legacy URLs', () => {
+  assert.equal(
+    canonicalReadUrl({ readUrl: 'https://example.test/book.epub' }),
+    'https://example.test/book.epub',
+  );
+});
+
+test('merges library rows across reading and favorite sources using normalized ISBN', () => {
+  const sharedIsbn = '978-3-16-148410-0';
+  const library = mergeLibraryState(
+    [{ isbn: sharedIsbn, title: 'Read by ISBN', authors: 'Canonical Author', updatedAt: 200 }],
+    [{ isbn: sharedIsbn, readUrl: 'https://example.test/book.epub', title: 'Untitled book', language: 'pt' }],
+  );
+  assert.equal(library.length, 1);
+  assert.equal(library[0].title, 'Read by ISBN');
+  assert.equal(library[0].authors, 'Canonical Author');
+  assert.equal(library[0].isReading, true);
+  assert.equal(library[0].isFavorite, true);
+  assert.equal(library[0].language, 'pt');
+});
+
+test('extracts ISBN metadata from identifier arrays and normalizes it', () => {
+  assert.equal(
+    isbnForBook({ identifiers: [{ type: 'isbn', value: '978-3-16-148410-0' }] }),
+    '9783161484100',
+  );
+  assert.equal(
+    isbnForBook({ identifiers: [{ type: 'ISBN', value: '0-553-10953-7' }], isbn10: '9999999999' }),
+    '0553109537',
+  );
+});
+
+test('keeps tracked read URL when incoming read URL is merely a placeholder title', () => {
+  const enriched = enrichBookMetadata(
+    { title: 'Known title', readUrl: 'https://legacy.example/book.epub', readUrlSource: 'existing' },
+    {
+      title: 'Untitled book',
+      readUrl: 'https://new.example/book.epub',
+      language: 'en',
+      year: 2024,
+    },
+    'private-search',
+  );
+  assert.equal(enriched.readUrl, 'https://legacy.example/book.epub');
+  assert.equal(enriched.readUrlSource, 'existing');
+  assert.equal(enriched.language, 'en');
+  assert.equal(enriched.year, 2024);
+  assert.equal(enriched.metadataProvenance.language, 'private-search');
+  assert.equal(enriched.metadataProvenance.readUrl, undefined);
 });

@@ -349,6 +349,188 @@ test('unwrapLibVaultResponse ignores a response with an invalid rumor hash', asy
   assert.equal(response, null);
 });
 
+test('unwrapLibVaultResponse ignores messages that were not wrapped for this sender', async () => {
+  const senderSecret = nostrTools.generateSecretKey();
+  const recipientSecret = nostrTools.generateSecretKey();
+  const maliciousPubkey = '9'.repeat(64);
+  const recipientPubkey = nostrTools.getPublicKey(recipientSecret);
+  const clientPubkey = nostrTools.getPublicKey(senderSecret);
+  const rumor = {
+    pubkey: recipientPubkey,
+    created_at: Math.floor(Date.now() / 1000),
+    kind: 14,
+    tags: [['p', maliciousPubkey]],
+    content: JSON.stringify({ type: 'libvault.search.result', request_id: 'search-2', status: 'ready', books: [] }),
+  };
+  rumor.id = nostrTools.getEventHash(rumor);
+  const seal = nostrTools.finalizeEvent({
+    kind: 13,
+    created_at: rumor.created_at,
+    tags: [],
+    content: nostrTools.nip44.v2.encrypt(
+      JSON.stringify(rumor),
+      nostrTools.nip44.v2.utils.getConversationKey(recipientSecret, clientPubkey),
+    ),
+  }, recipientSecret);
+  const ephemeral = nostrTools.generateSecretKey();
+  const wrap = nostrTools.finalizeEvent({
+    kind: 1059,
+    created_at: rumor.created_at,
+    tags: [['p', clientPubkey]],
+    content: nostrTools.nip44.v2.encrypt(
+      JSON.stringify(seal),
+      nostrTools.nip44.v2.utils.getConversationKey(ephemeral, clientPubkey),
+    ),
+  }, ephemeral);
+  const signer = { nip44: { decrypt: async (peer, ciphertext) => nostrTools.nip44.v2.decrypt(
+    ciphertext,
+    nostrTools.nip44.v2.utils.getConversationKey(senderSecret, peer),
+  ) } };
+
+  const response = await unwrapLibVaultResponse(wrap, { pubkey: recipientPubkey }, clientPubkey, signer, nostrTools);
+  assert.equal(response, null);
+});
+
+test('unwrapLibVaultResponse rejects responses signed by unknown service keys', async () => {
+  const senderSecret = nostrTools.generateSecretKey();
+  const recipientSecret = nostrTools.generateSecretKey();
+  const servicePubkey = nostrTools.getPublicKey(recipientSecret);
+  const clientPubkey = nostrTools.getPublicKey(senderSecret);
+  const rumor = {
+    pubkey: servicePubkey,
+    created_at: Math.floor(Date.now() / 1000),
+    kind: 14,
+    tags: [['p', clientPubkey]],
+    content: JSON.stringify({ type: 'libvault.search.result', request_id: 'search-3', status: 'ready', books: [] }),
+  };
+  rumor.id = nostrTools.getEventHash(rumor);
+  const seal = nostrTools.finalizeEvent({
+    kind: 13,
+    created_at: rumor.created_at,
+    tags: [],
+    content: nostrTools.nip44.v2.encrypt(
+      JSON.stringify(rumor),
+      nostrTools.nip44.v2.utils.getConversationKey(recipientSecret, clientPubkey),
+    ),
+  }, recipientSecret);
+  const otherSecret = nostrTools.generateSecretKey();
+  const wrap = nostrTools.finalizeEvent({
+    kind: 1059,
+    created_at: rumor.created_at,
+    tags: [['p', clientPubkey]],
+    content: nostrTools.nip44.v2.encrypt(
+      JSON.stringify(seal),
+      nostrTools.nip44.v2.utils.getConversationKey(otherSecret, clientPubkey),
+    ),
+  }, otherSecret);
+  const signer = { nip44: { decrypt: async (peer, ciphertext) => nostrTools.nip44.v2.decrypt(
+    ciphertext,
+    nostrTools.nip44.v2.utils.getConversationKey(senderSecret, peer),
+  ) } };
+
+  const response = await unwrapLibVaultResponse(wrap, { pubkey: '0'.repeat(64) }, clientPubkey, signer, nostrTools);
+  assert.equal(response, null);
+});
+
+test('searchLibVault requires a decrypt-capable NIP-44 signer', async () => {
+  const signer = {
+    getPublicKey: async () => senderPubkey,
+    nip44: {
+      encrypt: async () => 'sealed',
+    },
+    signEvent: async event => ({ ...event, id: 'seed', pubkey: senderPubkey, sig: 'signed' }),
+  };
+
+  await assert.rejects(
+    () => searchLibVault('books', 'title', {
+      signer,
+      fetchImpl: async () => ({
+        ok: true,
+        json: async () => ({
+          names: { books: servicePubkey },
+          relays: { [servicePubkey]: ['wss://relay.example'] },
+        }),
+      }),
+      publish: async () => true,
+    }),
+    /NIP-07 with NIP-44 support is required/,
+  );
+});
+
+test('searchLibVault rejects non-ready private search responses', async () => {
+  const signer = {
+    getPublicKey: async () => senderPubkey,
+    nip44: {
+      encrypt: async () => 'sealed',
+      decrypt: async () => '',
+    },
+    signEvent: async event => ({ ...event, id: 'seed', pubkey: senderPubkey, sig: 'signed' }),
+  };
+  await assert.rejects(
+    () => searchLibVault('Books', 'all', {
+      signer,
+      fetchImpl: async () => ({
+        ok: true,
+        json: async () => ({
+          names: { books: servicePubkey },
+          relays: { [servicePubkey]: ['wss://relay.example'] },
+        }),
+      }),
+      loadTools: async () => ({
+        generateSecretKey: () => new Uint8Array(32).fill(11),
+        finalizeEvent: event => ({ ...event, id: 'wrap', pubkey: 'a'.repeat(64), sig: 'wrapped' }),
+        nip19: { npubEncode: pubkey => `npub:${pubkey}` },
+        nip44: { v2: {
+          utils: { getConversationKey: () => new Uint8Array(32).fill(12) },
+          encrypt: plaintext => `wrapped:${plaintext}`,
+        } },
+        verifyEvent: () => true,
+      }),
+      publish: async () => true,
+      listen: () => ({
+        ready: Promise.resolve(),
+        result: Promise.resolve({ type: LIBVAULT_SEARCH_RESPONSE_TYPE, request_id: '', status: 'error', books: [] }),
+        arm: () => {},
+        close: () => {},
+      }),
+    }),
+    /Private LibVault search failed/,
+  );
+});
+
+test('lookupLibVaultBlossom ignores non-https blossom URLs', async () => {
+  const blossom = await lookupLibVaultBlossom('a'.repeat(32), async () => ({
+    ok: true,
+    json: async () => ({ status: 'ready', sha256: 'b'.repeat(64), url: 'http://blossom.example/file.epub' }),
+  }));
+  assert.equal(blossom, null);
+});
+
+test('lookupLibVaultBlossom rejects a ready response with invalid sha256', async () => {
+  const blossom = await lookupLibVaultBlossom('a'.repeat(32), async () => ({
+    ok: true,
+    json: async () => ({ status: 'ready', sha256: 'too-short', url: 'https://blossom.example/file.epub' }),
+  }));
+  assert.equal(blossom, null);
+});
+
+test('monitorLibVaultFetch reports publishing when blossom is not yet ready', async () => {
+  const progress = [];
+  const result = await monitorLibVaultFetch('a'.repeat(32), {
+    intervalMs: 0,
+    timeoutMs: 20,
+    onProgress: update => progress.push(update),
+    fetchImpl: async () => ({
+      ok: true,
+      json: async () => ({ status: 'ready', bytes: 10, total: 10 }),
+    }),
+  });
+
+  assert.equal(result.status, 'failed');
+  assert.equal(progress.some(update => update.status === 'publishing'), true);
+  assert.equal(progress.at(-1)?.status, 'failed');
+});
+
 test('monitorLibVaultFetch exits as cancelled when the signal is already aborted', async () => {
   const controller = new AbortController();
   controller.abort();
@@ -696,4 +878,44 @@ test('monitorLibVaultFetch keeps waiting when job endpoint is temporarily unavai
   assert.equal(result.status, 'failed');
   assert.equal(result.error, 'Timed out waiting for LibVault');
   assert.ok(calls.length >= 1);
+});
+
+test('monitorLibVaultFetch rejects invalid MD5 input', async () => {
+  await assert.rejects(
+    () => monitorLibVaultFetch('not-a-md5', { intervalMs: 0 }),
+    /A LibVault MD5 is required/,
+  );
+});
+
+test('sendLibVaultFetchRequest passes through signer public key case normalization', async () => {
+  const signer = {
+    getPublicKey: async () => senderPubkey.toUpperCase(),
+    nip44: {
+      encrypt: async () => 'sealed',
+    },
+    signEvent: async event => ({ ...event, id: 'seed', pubkey: senderPubkey.toUpperCase(), sig: 'signed' }),
+  };
+  let wrapped;
+  await sendLibVaultFetchRequest({ md5: 'a'.repeat(32), title: 'Example' }, {
+    signer,
+    fetchImpl: async () => ({
+      ok: true,
+      json: async () => ({
+        names: { books: servicePubkey },
+        relays: { [servicePubkey]: ['wss://relay.example'] },
+      }),
+    }),
+    loadTools: async () => ({
+      generateSecretKey: () => new Uint8Array(32).fill(13),
+      finalizeEvent: event => ({ ...event, id: 'wrap', pubkey: 'f'.repeat(64), sig: 'wrapped' }),
+      nip44: { v2: {
+        utils: { getConversationKey: () => new Uint8Array(32).fill(14) },
+        encrypt: plaintext => `wrapped:${plaintext}`,
+      } },
+    }),
+    publish: async () => true,
+  }).then(result => {
+    wrapped = result;
+  });
+  assert.ok(wrapped?.wrap?.pubkey);
 });
