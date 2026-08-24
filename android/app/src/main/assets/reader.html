@@ -392,8 +392,6 @@
       let pinchStartFontPercent = readerFontPercent;
       let pinchAnchor = null;
       let gestureAxis = null;
-      target.documentElement.style.touchAction = "pan-y";
-      if (target.body) target.body.style.touchAction = "pan-y";
       target.addEventListener("touchstart", function(event) {
         if (event.touches.length === 1) {
           startX = event.touches[0].clientX;
