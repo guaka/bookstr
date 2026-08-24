@@ -138,4 +138,30 @@ final class DictionaryRepositoryTests: XCTestCase {
         XCTAssertEqual(merged.translation, "harvest")
         XCTAssertEqual(merged.definitions, ["plural de colheita", "o ato de colher (produtos agrícolas)"])
     }
+
+    func testHyphenatedWordFallsBackToFirstPart() {
+        XCTAssertEqual(DictionaryRepository().lookupCandidates(for: "dou-lhe"), ["dou-lhe", "dou"])
+    }
+
+    func testMultipleCliticsStillUseFirstPart() {
+        XCTAssertEqual(DictionaryRepository().lookupCandidates(for: "dar-lhe-ei"), ["dar-lhe-ei", "dar"])
+    }
+
+    func testTypographicHyphensFromEpubAreRecognized() {
+        let repository = DictionaryRepository()
+        XCTAssertEqual(repository.lookupCandidates(for: "dou‐lhe"), ["dou‐lhe", "dou"])
+        XCTAssertEqual(repository.lookupCandidates(for: "dou‑lhe"), ["dou‑lhe", "dou"])
+    }
+
+    func testExactUnhyphenatedWordHasNoFallback() {
+        XCTAssertEqual(DictionaryRepository().lookupCandidates(for: "dou"), ["dou"])
+    }
+
+    func testLeadingHyphenDoesNotCreateEmptyLookup() {
+        XCTAssertEqual(DictionaryRepository().lookupCandidates(for: "-lhe"), ["-lhe"])
+    }
+
+    func testLookupCandidatesTrimAndLowercaseWithoutLosingExactForm() {
+        XCTAssertEqual(DictionaryRepository().lookupCandidates(for: "  Dou-Lhe  "), ["dou-lhe", "dou"])
+    }
 }

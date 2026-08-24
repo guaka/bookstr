@@ -151,17 +151,21 @@ final class NostrClient {
         return String(data: data, encoding: .utf8) ?? "{}"
     }
 
-    static func parseProgressContent(_ content: String, fallbackBookId: String) -> (bookId: String, progression: Double, cfi: String)? {
+    static func parseProgressContent(_ content: String, fallbackBookId: String) -> (bookId: String, progression: Double, cfi: String, title: String?, author: String?, updatedAt: Int64?)? {
         guard
             let data = content.data(using: .utf8),
             let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
         else { return nil }
         if let locator = obj["locator"] as? [String: Any] {
             let bookId = (obj["bookId"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? fallbackBookId
-            return (bookId, jsonNumber(locator["progression"]) ?? 0, locator["cfi"] as? String ?? "")
+            return (bookId, jsonNumber(locator["progression"]) ?? 0, locator["cfi"] as? String ?? "",
+                    obj["title"] as? String, (obj["author"] as? String) ?? (obj["authors"] as? String),
+                    jsonInt64(obj["updatedAt"]))
         }
         if obj["progression"] != nil {
-            return (fallbackBookId, jsonNumber(obj["progression"]) ?? 0, obj["cfi"] as? String ?? "")
+            return (fallbackBookId, jsonNumber(obj["progression"]) ?? 0, obj["cfi"] as? String ?? "",
+                    obj["title"] as? String, (obj["author"] as? String) ?? (obj["authors"] as? String),
+                    jsonInt64(obj["updatedAt"]))
         }
         return nil
     }
@@ -172,6 +176,11 @@ final class NostrClient {
         if let value = value as? NSNumber { return value.doubleValue }
         if let value = value as? String { return Double(value) }
         return nil
+    }
+
+    private static func jsonInt64(_ value: Any?) -> Int64? {
+        guard let number = jsonNumber(value) else { return nil }
+        return Int64(number)
     }
 
     private func queryEvents(relayURL: String, subscriptionId: String, filter: [String: Any]) async -> RelayQueryReport {

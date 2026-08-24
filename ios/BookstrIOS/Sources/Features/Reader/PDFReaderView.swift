@@ -14,6 +14,10 @@ struct PDFReaderView: UIViewRepresentable {
         pdfView.displaysPageBreaks = false
         pdfView.backgroundColor = container.settingsRepository.theme.uiBackground
         pdfView.document = PDFDocument(url: fileURL)
+        pdfView.accessibilityIdentifier = "pdf-reader"
+        pdfView.accessibilityLabel = "PDF reader: \(book.title)"
+        pdfView.accessibilityValue = "\(pdfView.document?.pageCount ?? 0) rendered pages"
+        pdfView.isAccessibilityElement = true
         let progress = container.progressRepository.get(bookId: book.id)
         if progress.cfi.hasPrefix("page:"),
            let pageIndex = Int(progress.cfi.dropFirst("page:".count)),

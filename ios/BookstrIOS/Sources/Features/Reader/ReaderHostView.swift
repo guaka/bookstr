@@ -4,10 +4,14 @@ struct ReaderHostView: View {
     @EnvironmentObject private var container: AppContainer
     @Environment(\.dismiss) private var dismiss
     let book: CatalogBook
+    var preparedURL: URL? = nil
     var initialLocator: String? = nil
     var highlightLocator: String? = nil
     @State private var localURL: URL?
-    @State private var loading = false
+    // The host must render a concrete view on its first frame. Starting with
+    // an empty conditional Group can prevent SwiftUI from mounting this view,
+    // so its opening task never runs and a full-screen cover stays black.
+    @State private var loading = true
     @State private var error: String?
     @State private var showSections = false
     @StateObject private var epubController = EPUBReaderController()
@@ -27,11 +31,12 @@ struct ReaderHostView: View {
                 } else {
                     EPUBReaderView(book: book, fileURL: localURL, controller: epubController,
                                    initialCFI: initialLocator, highlightCFI: highlightLocator)
-                        .padding(.top, 24)
+                        .padding(.top, 40)
                         .padding(.bottom, 5)
                 }
             }
         }
+        .background(container.settingsRepository.theme.background)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .toolbar(.hidden, for: .navigationBar)
         .toolbar(.hidden, for: .tabBar)
@@ -46,6 +51,13 @@ struct ReaderHostView: View {
                 .padding(24)
                 .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
                 .padding()
+            }
+        }
+        .overlay {
+            if book.format == .epub, localURL != nil, !epubController.ready, epubController.errorMessage == nil {
+                ProgressView(epubController.loadingStage + "…")
+                    .padding(16)
+                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
             }
         }
         .overlay(alignment: .top) { readerTopBar }
@@ -102,9 +114,10 @@ struct ReaderHostView: View {
                 Button { dismiss() } label: {
                     Image(systemName: "arrow.left")
                         .font(.system(size: 18, weight: .medium))
-                        .frame(width: 24, height: 24)
+                        .frame(width: 40, height: 40)
                 }
                 .accessibilityLabel("Back")
+                .accessibilityIdentifier("reader-back")
 
                 Text(readerTitle)
                     .font(.system(size: 11))
@@ -126,7 +139,8 @@ struct ReaderHostView: View {
                 }
             }
             .foregroundStyle(container.settingsRepository.theme.background)
-            .frame(height: 24)
+            .padding(.leading, 6)
+            .frame(height: 40)
             .background(container.settingsRepository.theme.primary.opacity(0.98))
         } else {
             HStack {
@@ -136,6 +150,7 @@ struct ReaderHostView: View {
                         .padding(10)
                         .background(.ultraThinMaterial, in: Circle())
                 }
+                .accessibilityIdentifier("reader-back")
                 Spacer()
             }
             .padding(.horizontal, 12)
@@ -169,7 +184,11 @@ struct ReaderHostView: View {
         loading = true
         error = nil
         do {
-            localURL = try await container.catalogRepository.ensureDownloaded(book: book)
+            if let preparedURL {
+                localURL = preparedURL
+            } else {
+                localURL = try await container.catalogRepository.ensureDownloaded(book: book)
+            }
             epubController.furthestProgression = container.progressRepository.get(bookId: book.id).progression
         } catch {
             self.error = error.localizedDescription

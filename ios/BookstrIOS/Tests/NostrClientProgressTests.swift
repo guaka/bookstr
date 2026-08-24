@@ -16,6 +16,9 @@ final class NostrClientProgressTests: XCTestCase {
         XCTAssertEqual(parsed?.bookId, "book-1")
         XCTAssertEqual(parsed?.cfi, "epubcfi(/6/2)")
         XCTAssertEqual(parsed!.progression, 0.42, accuracy: 0.0001)
+        XCTAssertEqual(parsed?.title, "Example")
+        XCTAssertEqual(parsed?.author, "Author")
+        XCTAssertEqual(parsed?.updatedAt, 1_700_000_000_000)
     }
 
     func testLegacyProgressFormatParses() {

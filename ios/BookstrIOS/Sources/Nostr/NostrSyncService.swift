@@ -21,6 +21,7 @@ final class NostrSyncService {
     private let settings: SettingsRepository
     private let progress: ProgressRepository
     private let vocabulary: VocabularyRepository
+    private let favoriteMetadata: FavoriteMetadataRepository
     private let client: NostrClient
     private let signerStore: SignerStore
     private let nip46Service: Nip46Service
@@ -30,6 +31,7 @@ final class NostrSyncService {
         settings: SettingsRepository,
         progress: ProgressRepository,
         vocabulary: VocabularyRepository,
+        favoriteMetadata: FavoriteMetadataRepository,
         client: NostrClient,
         signerStore: SignerStore,
         nip46Service: Nip46Service
@@ -37,6 +39,7 @@ final class NostrSyncService {
         self.settings = settings
         self.progress = progress
         self.vocabulary = vocabulary
+        self.favoriteMetadata = favoriteMetadata
         self.client = client
         self.signerStore = signerStore
         self.nip46Service = nip46Service
@@ -49,6 +52,7 @@ final class NostrSyncService {
     }
 
     func pushProgress(book: CatalogBook, progression: Double, cfi: String) async {
+        favoriteMetadata.remember(book: book)
         await ensureSignerReady()
         guard let signer = signerStore.signer(from: settings) else { return }
         let now = Int64(Date().timeIntervalSince1970 * 1000)
@@ -102,6 +106,29 @@ final class NostrSyncService {
         guard let event = await client.fetchLatestProgress(pubkey: pubkey, bookId: bookId, relays: settings.relays) else { return }
         guard let parsed = NostrClient.parseProgressContent(event.content, fallbackBookId: bookId) else { return }
         progress.save(bookId: parsed.bookId, progression: parsed.progression, cfi: parsed.cfi)
+        favoriteMetadata.rememberProgress(bookId: parsed.bookId, title: parsed.title, author: parsed.author,
+                                          updatedAt: parsed.updatedAt ?? event.createdAt * 1000)
+    }
+
+    /// Refreshes the same descriptive cache the web app builds from reading
+    /// events, without decrypting vocabulary records or contacting LibVault.
+    @discardableResult
+    func pullReadingMetadata() async -> Int {
+        guard let pubkey = settings.pubkeyHex, settings.hasNostrIdentity else { return 0 }
+        let events = await client.fetchApplicationData(pubkey: pubkey, relays: settings.relays)
+        var merged = 0
+        for event in events {
+            guard let dTag = event.dTag, dTag.hasPrefix("app.bookstr.progress.") else { continue }
+            let fallback = String(dTag.dropFirst("app.bookstr.progress.".count))
+            guard let parsed = NostrClient.parseProgressContent(event.content, fallbackBookId: fallback) else { continue }
+            progress.save(bookId: parsed.bookId, progression: parsed.progression, cfi: parsed.cfi)
+            favoriteMetadata.rememberProgress(
+                bookId: parsed.bookId, title: parsed.title, author: parsed.author,
+                updatedAt: parsed.updatedAt ?? event.createdAt * 1000
+            )
+            if parsed.title?.isEmpty == false { merged += 1 }
+        }
+        return merged
     }
 
     func cachedFavorites(seedBooks: [CatalogBook] = []) -> SharedFavorites {
@@ -109,12 +136,13 @@ final class NostrSyncService {
               let cached = settings.cachedNostrFavorites(pubkey: pubkey)
         else { return SharedFavorites() }
         return FavoritesParser.matchSharedFavorites(
-            refs: FavoritesParser.parseSharedFavoriteTags(cached),
+            refs: favoriteMetadata.enrich(FavoritesParser.parseSharedFavoriteTags(cached)),
             books: seedBooks
         )
     }
 
     func setFavorite(book: CatalogBook, favorite: Bool, books: [CatalogBook]) async throws -> SharedFavorites {
+        favoriteMetadata.remember(book: book)
         await ensureSignerReady()
         guard let pubkey = settings.pubkeyHex, let signer = signerStore.signer(from: settings) else {
             throw NSError(domain: "NostrFavorites", code: 1,
@@ -125,7 +153,7 @@ final class NostrSyncService {
             _ = await pullFavorites(seedBooks: books)
             plaintext = settings.cachedNostrFavorites(pubkey: pubkey)
         }
-        var refs = FavoritesParser.parseSharedFavoriteTags(plaintext ?? "[]")
+        var refs = favoriteMetadata.enrich(FavoritesParser.parseSharedFavoriteTags(plaintext ?? "[]"))
         let present = refs.contains { FavoritesParser.matches($0, book: book) }
         if favorite, !present {
             refs.append(
@@ -426,7 +454,7 @@ final class NostrSyncService {
         }
 
         if let cached = settings.cachedNostrFavorites(pubkey: pubkey) {
-            let refs = FavoritesParser.parseSharedFavoriteTags(cached)
+            let refs = favoriteMetadata.enrich(FavoritesParser.parseSharedFavoriteTags(cached))
             line("cached plaintext: \(cached.count) chars, \(refs.count) refs")
         } else {
             line("cached plaintext: none")
@@ -450,7 +478,7 @@ final class NostrSyncService {
             line("event: none")
             if let cached = settings.cachedNostrFavorites(pubkey: pubkey) {
                 let parsed = FavoritesParser.matchSharedFavorites(
-                    refs: FavoritesParser.parseSharedFavoriteTags(cached),
+                    refs: favoriteMetadata.enrich(FavoritesParser.parseSharedFavoriteTags(cached)),
                     books: seedBooks
                 )
                 line("using cache: matched=\(parsed.bookIds.count) external=\(parsed.external.count)")
@@ -468,7 +496,7 @@ final class NostrSyncService {
         line("event content: \(event.content.count) chars")
         if let eventId = event.id, eventId == settings.cachedFavoritesEventId(pubkey: pubkey),
            let cached = settings.cachedNostrFavorites(pubkey: pubkey) {
-            let refs = FavoritesParser.parseSharedFavoriteTags(cached)
+            let refs = favoriteMetadata.enrich(FavoritesParser.parseSharedFavoriteTags(cached))
             line("decrypt: skipped, cached event \(eventId)")
             line("cached refs: \(refs.count)")
             let matched = FavoritesParser.matchSharedFavorites(refs: refs, books: seedBooks)
@@ -488,7 +516,9 @@ final class NostrSyncService {
         do {
             let plaintext = try await decryptFavoritesContent(event: event, pubkey: pubkey, line: line)
             settings.cacheNostrFavorites(pubkey: pubkey, plaintext: plaintext, eventId: event.id)
-            let refs = FavoritesParser.parseSharedFavoriteTags(plaintext)
+            let rawRefs = FavoritesParser.parseSharedFavoriteTags(plaintext)
+            rawRefs.forEach { favoriteMetadata.remember($0, updatedAt: event.createdAt * 1000) }
+            let refs = favoriteMetadata.enrich(rawRefs)
             line("decrypt: \(lastDecryptNote)")
             line("decrypt: ok, \(plaintext.count) chars, \(refs.count) refs")
             line("plaintext: \(Self.preview(plaintext))")
@@ -514,7 +544,7 @@ final class NostrSyncService {
             }
             if let cached = settings.cachedNostrFavorites(pubkey: pubkey) {
                 let parsed = FavoritesParser.matchSharedFavorites(
-                    refs: FavoritesParser.parseSharedFavoriteTags(cached),
+                    refs: favoriteMetadata.enrich(FavoritesParser.parseSharedFavoriteTags(cached)),
                     books: seedBooks
                 )
                 line("using cache after decrypt fail: matched=\(parsed.bookIds.count) external=\(parsed.external.count)")
@@ -622,6 +652,10 @@ final class NostrSyncService {
             } else if dTag.hasPrefix("app.bookstr.progress.") {
                 let bookId = String(dTag.dropFirst("app.bookstr.progress.".count))
                 guard let parsed = NostrClient.parseProgressContent(event.content, fallbackBookId: bookId) else { continue }
+                favoriteMetadata.rememberProgress(
+                    bookId: parsed.bookId, title: parsed.title, author: parsed.author,
+                    updatedAt: parsed.updatedAt ?? event.createdAt * 1000
+                )
                 let local = progress.get(bookId: parsed.bookId)
                 if parsed.cfi != local.cfi || parsed.progression != local.progression || local.updatedAt == 0 {
                     progress.save(bookId: parsed.bookId, progression: parsed.progression, cfi: parsed.cfi)

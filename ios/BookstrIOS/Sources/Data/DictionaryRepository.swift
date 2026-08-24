@@ -138,37 +138,53 @@ final class DictionaryRepository {
     }
 
     func lookup(word: String, language: String, context: String) async throws -> DictionaryLookup {
-        let normalized = word.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        guard !normalized.isEmpty else {
+        let candidates = lookupCandidates(for: word)
+        guard !candidates.isEmpty else {
             throw URLError(.badURL)
         }
         let preferred = language.lowercased().hasPrefix("pt") ? "pt" : languageFor(context: context)
-        for candidate in [preferred, "en", "pt"] where !candidate.isEmpty {
-            if let offline = lookupOffline(word: normalized, language: candidate) { return offline }
-        }
-        if let first = try await lookupLanguage(word: normalized, language: preferred, followLemma: true) {
-            return first
-        }
-        let fallback = preferred == "pt" ? "en" : "pt"
-        if let second = try await lookupLanguage(word: normalized, language: fallback, followLemma: true) {
-            return second
+        for wordCandidate in candidates {
+            for languageCandidate in [preferred, "en", "pt"] where !languageCandidate.isEmpty {
+                if let offline = lookupOffline(word: wordCandidate, language: languageCandidate) { return offline }
+            }
+            if let first = try await lookupLanguage(word: wordCandidate, language: preferred, followLemma: true) {
+                return first
+            }
+            let fallback = preferred == "pt" ? "en" : "pt"
+            if let second = try await lookupLanguage(word: wordCandidate, language: fallback, followLemma: true) {
+                return second
+            }
         }
         throw URLError(.fileDoesNotExist)
+    }
+
+    /// EPUB text can use either an ASCII hyphen or one of the typographic
+    /// hyphens. Keep the exact form first and only try the stem if it fails.
+    func lookupCandidates(for word: String) -> [String] {
+        let normalized = word.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !normalized.isEmpty else { return [] }
+        guard let dash = normalized.firstIndex(where: { $0 == "-" || $0 == "‐" || $0 == "‑" }),
+              dash != normalized.startIndex else { return [normalized] }
+        let stem = String(normalized[..<dash]).trimmingCharacters(in: .whitespacesAndNewlines)
+        return stem.isEmpty || stem == normalized ? [normalized] : [normalized, stem]
     }
 
     /// Returns every exact match from every installed WikDict source language.
     /// This is intentionally separate from `lookup`, which still prefers the
     /// language of the book for the reader's inline dictionary.
     func lookupAllInstalled(word: String) -> [DictionaryLookup] {
-        let normalized = word.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        guard !normalized.isEmpty else { return [] }
+        let candidates = lookupCandidates(for: word)
+        guard !candidates.isEmpty else { return [] }
         let sourceLanguages: Set<String> = Set(Self.packSpecs.compactMap { spec -> String? in
             guard FileManager.default.fileExists(atPath: packURL(spec.id).path) else { return nil }
             return spec.source
         })
-        return sourceLanguages
-            .sorted { (Self.languages[$0] ?? $0) < (Self.languages[$1] ?? $1) }
-            .compactMap { lookupOffline(word: normalized, language: $0) }
+        let languages = sourceLanguages.sorted { (Self.languages[$0] ?? $0) < (Self.languages[$1] ?? $1) }
+        for candidate in candidates {
+            let matches = languages.compactMap { lookupOffline(word: candidate, language: $0) }
+            if !matches.isEmpty { return matches }
+        }
+        return []
     }
 
     private func lookupOffline(word: String, language: String) -> DictionaryLookup? {

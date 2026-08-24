@@ -9,14 +9,10 @@ final class LibraryViewModel: ObservableObject {
     @Published var errorMessage: String?
     @Published var hasNostrIdentity = false
     @Published var debugText = "Library debug will appear here after load."
-    @Published var resolvingFavoriteKeys = Set<String>()
 
     private var container: AppContainer?
     private var isLoading = false
     private var pendingReload = false
-    private var currentShared = SharedFavorites()
-    private var currentSeed: [CatalogBook] = []
-    private var hydratedBooks: [CatalogBook] = []
 
     func attach(_ container: AppContainer) {
         self.container = container
@@ -42,27 +38,24 @@ final class LibraryViewModel: ObservableObject {
         debugText = "Fetching favorites… Open Amber if it asks to decrypt."
         var debug: [String] = ["=== library load ==="]
 
-        let localBooks = container.catalogRepository.downloadedBooks()
-        currentSeed = localBooks
+        var localBooks = container.catalogRepository.downloadedBooks()
+        localBooks.forEach { container.favoriteMetadataRepository.remember(book: $0) }
         debug.append("downloaded books: \(localBooks.count)")
         debug.append("words cached: \(container.vocabularyRepository.all().count)")
 
         var shared = container.nostrSyncService.cachedFavorites(seedBooks: localBooks)
-        currentShared = shared
+        localBooks = container.catalogRepository.downloadedBooks(externalFavorites: shared.external)
         apply(shared: shared, seed: localBooks, container: container)
-        var hydrated = await container.catalogRepository.resolveLibVaultFavorites(shared.external)
-        hydratedBooks = hydrated
-        apply(shared: shared, seed: localBooks, hydrated: hydrated, container: container)
 
         if container.settingsRepository.hasNostrIdentity {
+            let readingMetadata = await container.nostrSyncService.pullReadingMetadata()
+            debug.append("reading metadata cached: \(readingMetadata)")
             let pulled = await container.nostrSyncService.pullFavorites(seedBooks: localBooks)
             shared = pulled.favorites
-            currentShared = shared
+            localBooks = container.catalogRepository.downloadedBooks(externalFavorites: shared.external)
             debug.append("=== favorites pull ===")
             debug.append(pulled.debug)
-            hydrated = await container.catalogRepository.resolveLibVaultFavorites(shared.external)
-            hydratedBooks = hydrated
-            apply(shared: shared, seed: localBooks, hydrated: hydrated, container: container)
+            apply(shared: shared, seed: localBooks, container: container)
             if let pullError = pulled.error {
                 errorMessage = pullError
             } else if favorites.isEmpty && externalFavorites.isEmpty {
@@ -75,36 +68,20 @@ final class LibraryViewModel: ObservableObject {
         debug.append("=== shown ===")
         debug.append("favorites: \(favorites.count)")
         debug.append("external leftover: \(externalFavorites.count)")
-        debug.append("metadata hydrated: \(hydrated.count)")
         debug.append("reading: \(reading.count)")
         debugText = debug.joined(separator: "\n")
-    }
-
-    func resolveMetadata(for favorite: ExternalFavorite) async {
-        guard let container, !resolvingFavoriteKeys.contains(favorite.key) else { return }
-        resolvingFavoriteKeys.insert(favorite.key)
-        defer { resolvingFavoriteKeys.remove(favorite.key) }
-        errorMessage = nil
-        guard let book = await container.catalogRepository.resolveLibVaultFavorite(favorite) else {
-            errorMessage = "No LibVault metadata was found for \(favorite.libvaultMd5 ?? favorite.key). Tap to try again."
-            return
-        }
-        hydratedBooks = uniqued(hydratedBooks + [book], by: \.id)
-        apply(shared: currentShared, seed: currentSeed, hydrated: hydratedBooks, container: container)
     }
 
     private func apply(
         shared: SharedFavorites,
         seed: [CatalogBook],
-        hydrated: [CatalogBook] = [],
         container: AppContainer
     ) {
         let downloadableFavorites = shared.external.compactMap(CatalogRepository.fromExternalFavorite)
-        let books = uniqued(seed + downloadableFavorites + hydrated, by: \.id)
+        let books = uniqued(seed + downloadableFavorites, by: \.id)
         let favoriteIDs = shared.bookIds
             .union(Set(downloadableFavorites.map(\.id)))
-            .union(Set(hydrated.map(\.id)))
-        let representedMD5s = Set((downloadableFavorites + hydrated).compactMap(\.libvaultMd5))
+        let representedMD5s = Set(downloadableFavorites.compactMap(\.libvaultMd5))
         let downloadableKeys = Set(shared.external.compactMap { favorite in
             CatalogRepository.fromExternalFavorite(favorite) == nil ? nil : favorite.key
         })

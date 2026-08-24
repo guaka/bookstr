@@ -13,10 +13,12 @@ targets:
     sources:
       - path: BookstrIOS/Sources
       - path: BookstrIOS/Assets.xcassets
-    resources:
-      - path: ../android/app/src/main/assets/reader.html
-      - path: ../android/app/src/main/assets/epub.min.js
-      - path: ../android/app/src/main/assets/jszip.min.js
+      - path: BookstrIOS/ReaderAssets/reader.html
+        buildPhase: resources
+      - path: BookstrIOS/ReaderAssets/epub.min.js
+        buildPhase: resources
+      - path: BookstrIOS/ReaderAssets/jszip.min.js
+        buildPhase: resources
     dependencies:
       - package: swift-nostr
         product: NostrConnect
@@ -66,12 +68,27 @@ targets:
       DEVELOPMENT_TEAM: SUJ594N47C
     dependencies:
       - target: BookstrIOS
+  BookstrIOSUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    deploymentTarget: "17.0"
+    sources:
+      - path: BookstrIOS/UITests
+    settings:
+      GENERATE_INFOPLIST_FILE: YES
+      CODE_SIGN_STYLE: Automatic
+      DEVELOPMENT_TEAM: SUJ594N47C
+      TEST_TARGET_NAME: BookstrIOS
+    dependencies:
+      - target: BookstrIOS
 schemes:
   BookstrIOS:
     build:
       targets:
         BookstrIOS: all
         BookstrIOSTests: [test]
+        BookstrIOSUITests: [test]
     test:
       targets:
         - BookstrIOSTests
+        - BookstrIOSUITests

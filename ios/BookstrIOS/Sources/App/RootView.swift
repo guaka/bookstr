@@ -72,13 +72,10 @@ struct RootView: View {
         .task {
             guard !attemptedInitialContinuation else { return }
             attemptedInitialContinuation = true
-            Task(priority: .utility) {
-                let downloaded = container.catalogRepository.downloadedBooks()
-                let favorites = container.nostrSyncService.cachedFavorites(seedBooks: downloaded)
-                _ = await container.catalogRepository.resolveLibVaultFavorites(favorites.external)
-                NotificationCenter.default.post(name: .bookstrFavoriteMetadataDidChange, object: nil)
-            }
             openContinuation(reportMissing: false)
+        }
+        .onReceive(container.wordNavigation.$requestToken) { _ in
+            selectedTab = 3
         }
         .fullScreenCover(item: $continuation) { book in
             ReaderHostView(book: book)

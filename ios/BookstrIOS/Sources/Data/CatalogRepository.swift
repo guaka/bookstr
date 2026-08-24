@@ -1,15 +1,132 @@
 import Foundation
 import CryptoKit
+import PDFKit
 
-final class CatalogRepository {
-    static let booksAPIBase = "https://books-api.guaka.org/api"
-    static let libVaultBase = "https://lib.b.bfr.ee/api"
+/// The web app keeps descriptive book data independently from the favorite
+/// locator. Do the same on iOS: Blossom decides whether a publication can be
+/// opened, while this cache lets compact MD5 favorites retain their labels.
+final class FavoriteMetadataRepository {
+    private struct Entry: Codable {
+        var bookstrId: String?
+        var libvaultMd5: String?
+        var isbn: String?
+        var title: String
+        var author: String?
+        var year: String?
+        var format: String?
+        var updatedAt: Int64
+    }
 
-    private struct CachedFavoriteMetadata: Codable {
+    // Compatibility with the earlier LibVault-backed cache on existing installs.
+    private struct LegacyEntry: Codable {
         let book: CatalogBook
         let fetchedAt: Date
     }
 
+    private let fileStore: JSONFileStore
+    private var entries: [String: Entry]
+
+    init(fileStore: JSONFileStore) {
+        self.fileStore = fileStore
+        let current = fileStore.load("favorite-metadata.json", as: [String: Entry].self, fallback: [:])
+        if !current.isEmpty {
+            entries = current
+        } else {
+            let legacy = fileStore.load("favorite-metadata.json", as: [String: LegacyEntry].self, fallback: [:])
+            entries = legacy.reduce(into: [:]) { result, pair in
+                let book = pair.value.book
+                result[pair.key.lowercased()] = Entry(
+                    bookstrId: book.id, libvaultMd5: book.libvaultMd5, isbn: book.isbn,
+                    title: book.title, author: book.author, year: book.year,
+                    format: book.format.rawValue,
+                    updatedAt: Int64(pair.value.fetchedAt.timeIntervalSince1970 * 1000)
+                )
+            }
+        }
+    }
+
+    func remember(book: CatalogBook, updatedAt: Int64 = Int64(Date().timeIntervalSince1970 * 1000)) {
+        remember(SharedFavoriteRef(
+            bookstrId: book.id, libvaultMd5: book.libvaultMd5, isbn: book.isbn,
+            url: book.sourceUrl ?? book.epubUrl, title: book.title, author: book.author,
+            year: book.year, format: book.format.rawValue, blossomSha256: book.blossomSha256,
+            blossomUrl: book.blossomSha256 == nil ? nil : book.epubUrl
+        ), updatedAt: updatedAt)
+    }
+
+    func remember(_ ref: SharedFavoriteRef, updatedAt: Int64 = Int64(Date().timeIntervalSince1970 * 1000)) {
+        guard let title = useful(ref.title) else { return }
+        let entry = Entry(
+            bookstrId: ref.bookstrId, libvaultMd5: ref.libvaultMd5?.lowercased(), isbn: ref.isbn,
+            title: title, author: useful(ref.author), year: useful(ref.year), format: useful(ref.format),
+            updatedAt: updatedAt
+        )
+        let keys = identityKeys(ref)
+        guard !keys.isEmpty else { return }
+        for key in keys where entries[key]?.updatedAt ?? 0 <= updatedAt {
+            entries[key] = entry
+        }
+        persist()
+    }
+
+    func rememberProgress(bookId: String, title: String?, author: String?, updatedAt: Int64) {
+        let normalized = bookId.lowercased()
+        remember(SharedFavoriteRef(
+            bookstrId: bookId,
+            libvaultMd5: Self.isMD5(normalized) ? normalized : nil,
+            title: title,
+            author: author
+        ), updatedAt: updatedAt)
+    }
+
+    func enrich(_ refs: [SharedFavoriteRef]) -> [SharedFavoriteRef] {
+        refs.map { ref in
+            guard let cached = identityKeys(ref).compactMap({ entries[$0] }).max(by: { $0.updatedAt < $1.updatedAt }) else {
+                return ref
+            }
+            var result = ref
+            if useful(result.title) == nil { result.title = cached.title }
+            if useful(result.author) == nil { result.author = cached.author }
+            if useful(result.year) == nil { result.year = cached.year }
+            if useful(result.format) == nil { result.format = cached.format }
+            if result.isbn == nil { result.isbn = cached.isbn }
+            if result.bookstrId == nil { result.bookstrId = cached.bookstrId }
+            return result
+        }
+    }
+
+    private func identityKeys(_ ref: SharedFavoriteRef) -> [String] {
+        [
+            ref.libvaultMd5.map { "md5:\($0.lowercased())" },
+            ref.bookstrId.map { "id:\($0.lowercased())" },
+            ref.isbn.map { "isbn:\($0)" }
+        ].compactMap { $0 }
+    }
+
+    private func useful(_ value: String?) -> String? {
+        guard let value = value?.trimmingCharacters(in: .whitespacesAndNewlines), !value.isEmpty,
+              value.localizedCaseInsensitiveCompare("Book favorite") != .orderedSame else { return nil }
+        return value
+    }
+
+    private func persist() {
+        fileStore.save("favorite-metadata.json", value: entries)
+    }
+
+    private static func isMD5(_ value: String) -> Bool {
+        value.count == 32 && value.allSatisfy(\.isHexDigit)
+    }
+}
+
+final class CatalogRepository {
+    static let booksAPIBase = "https://books-api.guaka.org/api"
+    private static let downloadSession: URLSession = {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.waitsForConnectivity = false
+        configuration.timeoutIntervalForRequest = 30
+        configuration.timeoutIntervalForResource = 180
+        return URLSession(configuration: configuration)
+    }()
     private let fileStore: JSONFileStore
     private let settings: SettingsRepository
     private let signerStore: SignerStore
@@ -23,113 +140,46 @@ final class CatalogRepository {
         fileStore.ensureBooksDirectory()
     }
 
-    func downloadedBooks() -> [CatalogBook] {
-        rememberedBooks()
-            .filter { FileManager.default.fileExists(atPath: publicationFile(book: $0).path) }
+    func downloadedBooks(externalFavorites: [ExternalFavorite] = []) -> [CatalogBook] {
+        var byID = Dictionary(uniqueKeysWithValues: rememberedBooks().map { ($0.id.lowercased(), $0) })
+        let favoritesBySHA = Dictionary(externalFavorites.compactMap { favorite -> (String, ExternalFavorite)? in
+            guard let sha = favorite.blossomSha256?.lowercased(), sha.count == 64,
+                  sha.allSatisfy(\.isHexDigit) else { return nil }
+            return (sha, favorite)
+        }, uniquingKeysWith: { first, _ in first })
+        for file in fileStore.publicationFiles() {
+            let ext = file.pathExtension.lowercased()
+            guard ext == "epub" || ext == "pdf" else { continue }
+            let id = file.deletingPathExtension().lastPathComponent.lowercased()
+            guard id.count == 64, id.allSatisfy(\.isHexDigit) else { continue }
+            if let remembered = byID[id], remembered.format.rawValue != ext {
+                byID[id] = replacingFormat(of: remembered, with: ext == "pdf" ? .pdf : .epub)
+            } else if byID[id] == nil, let favorite = favoritesBySHA[id] {
+                byID[id] = CatalogBook(
+                    id: id, title: favorite.title, author: favorite.author ?? "Unknown",
+                    epubUrl: "https://\(Self.blossomHost)/\(id)", coverUrl: nil,
+                    sourceUrl: favorite.blossomUrl, isbn: favorite.isbn,
+                    libvaultMd5: favorite.libvaultMd5,
+                    format: ext == "pdf" ? .pdf : .epub, blossomSha256: id, year: favorite.year
+                )
+            } else if byID[id] == nil {
+                byID[id] = CatalogBook(
+                    id: id, title: "Downloaded \(ext.uppercased())", author: "Unknown",
+                    epubUrl: "https://\(Self.blossomHost)/\(id)", coverUrl: nil,
+                    sourceUrl: nil, isbn: nil, libvaultMd5: nil,
+                    format: ext == "pdf" ? .pdf : .epub, blossomSha256: id, year: nil
+                )
+            }
+        }
+        let downloaded = byID.values.filter {
+            FileManager.default.fileExists(atPath: publicationFile(book: $0).path)
+        }
+        downloaded.forEach(rememberDownloaded)
+        return downloaded.sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
     }
 
     func rememberedBooks() -> [CatalogBook] {
         fileStore.load("downloaded-books.json", as: [CatalogBook].self, fallback: [])
-    }
-
-    /// Resolves compact Nostr favorites without adding descriptive metadata
-    /// back to the shared event. Successful responses are retained on-device.
-    func resolveLibVaultFavorites(_ favorites: [ExternalFavorite]) async -> [CatalogBook] {
-        let md5s = Array(Set(favorites.compactMap { favorite -> String? in
-            let candidate = favorite.libvaultMd5 ?? favorite.key
-            let md5 = candidate.lowercased()
-            guard Self.isMD5(md5) else { return nil }
-            return md5
-        })).sorted()
-        guard !md5s.isEmpty else { return [] }
-
-        var cache = fileStore.load(
-            "favorite-metadata.json",
-            as: [String: CachedFavoriteMetadata].self,
-            fallback: [:]
-        )
-        let refreshBefore = Date().addingTimeInterval(-30 * 24 * 60 * 60)
-        var resolved = Dictionary(uniqueKeysWithValues: md5s.compactMap { md5 in
-            cache[md5].map { (md5, $0.book) }
-        })
-        let toRefresh = md5s.filter { md5 in
-            guard let cached = cache[md5] else { return true }
-            return cached.fetchedAt <= refreshBefore
-        }
-
-        // A large Nostr collection can contain hundreds of compact MD5 refs.
-        // Keep pressure on both URLSession and LibVault bounded so one slow
-        // wave does not make every title disappear together.
-        for start in stride(from: 0, to: toRefresh.count, by: 6) {
-            let batch = Array(toRefresh[start..<min(start + 6, toRefresh.count)])
-            await withTaskGroup(of: CatalogBook?.self) { group in
-                for md5 in batch {
-                    group.addTask { await Self.fetchLibVaultMetadataWithRetry(md5: md5) }
-                }
-                for await book in group {
-                    guard let book, let md5 = book.libvaultMd5 else { continue }
-                    cache[md5] = CachedFavoriteMetadata(book: book, fetchedAt: Date())
-                    resolved[md5] = book
-                }
-            }
-            fileStore.save("favorite-metadata.json", value: cache)
-        }
-        return resolved.values.sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
-    }
-
-    /// Performs a fresh, user-requested metadata lookup for one compact favorite.
-    /// Unlike the bulk hydration pass, this deliberately bypasses the cache.
-    func resolveLibVaultFavorite(_ favorite: ExternalFavorite) async -> CatalogBook? {
-        let md5 = (favorite.libvaultMd5 ?? favorite.key).lowercased()
-        guard Self.isMD5(md5), let book = await Self.fetchLibVaultMetadata(md5: md5) else { return nil }
-        var cache = fileStore.load(
-            "favorite-metadata.json",
-            as: [String: CachedFavoriteMetadata].self,
-            fallback: [:]
-        )
-        cache[md5] = CachedFavoriteMetadata(book: book, fetchedAt: Date())
-        fileStore.save("favorite-metadata.json", value: cache)
-        return book
-    }
-
-    private static func fetchLibVaultMetadata(md5: String) async -> CatalogBook? {
-        guard let url = URL(string: "\(libVaultBase)/books/\(md5)") else { return nil }
-        do {
-            var request = URLRequest(url: url)
-            request.timeoutInterval = 12
-            let (data, response) = try await URLSession.shared.data(for: request)
-            guard let http = response as? HTTPURLResponse, http.statusCode == 200,
-                  let metadata = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                  let responseMD5 = string(metadata["md5"]) else {
-                return nil
-            }
-            let resolvedMD5 = responseMD5.lowercased()
-            guard isMD5(resolvedMD5) else { return nil }
-            let rawFormat = string(metadata["extension"]) ?? string(metadata["format"])
-            let title = string(metadata["title"]) ?? "Book favorite"
-            let authors = string(metadata["authors"]) ?? string(metadata["author"]) ?? "Unknown author"
-            return CatalogBook(
-                id: resolvedMD5,
-                title: title,
-                author: authors,
-                epubUrl: "\(libVaultBase)/files/\(resolvedMD5)",
-                coverUrl: "\(libVaultBase)/covers/\(resolvedMD5)",
-                sourceUrl: "https://lib.b.bfr.ee/#book?md5=\(resolvedMD5)",
-                isbn: string(metadata["isbn"]),
-                libvaultMd5: resolvedMD5,
-                format: BookFormat.from(format: rawFormat),
-                blossomSha256: nil,
-                year: string(metadata["year"])
-            )
-        } catch {
-            return nil
-        }
-    }
-
-    private static func fetchLibVaultMetadataWithRetry(md5: String) async -> CatalogBook? {
-        if let book = await fetchLibVaultMetadata(md5: md5) { return book }
-        try? await Task.sleep(for: .milliseconds(350))
-        return await fetchLibVaultMetadata(md5: md5)
     }
 
     private static func isMD5(_ value: String) -> Bool {
@@ -187,17 +237,26 @@ final class CatalogRepository {
     }
 
     func ensureDownloaded(book: CatalogBook) async throws -> URL {
+        if let local = localPublication(for: book) {
+            rememberDownloaded(local.book)
+            return local.url
+        }
+
         let target = fileStore.bookFileURL(bookId: book.id, format: book.format)
-        if FileManager.default.fileExists(atPath: target.path), isValidCachedFile(book: book, fileURL: target) {
-            rememberDownloaded(book)
-            return target
+        if FileManager.default.fileExists(atPath: target.path), let actual = Self.detectedFormat(fileURL: target) {
+            let corrected = replacingFormat(of: book, with: actual)
+            if isValidCachedFile(book: corrected, fileURL: target, verifyBlossomHash: false) {
+                let correctedTarget = fileStore.bookFileURL(bookId: corrected.id, format: actual)
+                if correctedTarget != target {
+                    if FileManager.default.fileExists(atPath: correctedTarget.path) { try? FileManager.default.removeItem(at: correctedTarget) }
+                    try FileManager.default.moveItem(at: target, to: correctedTarget)
+                }
+                rememberDownloaded(corrected)
+                return correctedTarget
+            }
         }
-        guard var remoteURL = URL(string: book.epubUrl) else {
+        guard let remoteURL = URL(string: book.epubUrl) else {
             throw URLError(.badURL)
-        }
-        if let md5 = book.libvaultMd5?.lowercased(),
-           Self.isMD5(md5), remoteURL.host?.lowercased() == "lib.b.bfr.ee" {
-            remoteURL = try await prepareLibVaultDownload(md5: md5)
         }
         var request = URLRequest(url: remoteURL)
         let blossomHash = book.blossomSha256?.lowercased()
@@ -214,26 +273,75 @@ final class CatalogRepository {
             request.setValue(try await BlossomAuthorization.get(signer: signer, hash: blossomHash, server: host),
                              forHTTPHeaderField: "Authorization")
         }
-        let (tempURL, response) = try await URLSession.shared.download(for: request)
+        let (tempURL, response) = try await Self.downloadSession.download(for: request)
         guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
             let status = (response as? HTTPURLResponse)?.statusCode ?? 0
             throw NSError(domain: "CatalogRepository", code: status,
                           userInfo: [NSLocalizedDescriptionKey: "\(book.format.rawValue.uppercased()) download failed: HTTP \(status)"])
         }
-        if FileManager.default.fileExists(atPath: target.path) {
-            try? FileManager.default.removeItem(at: target)
+        guard let actual = Self.detectedFormat(fileURL: tempURL) else {
+            throw NSError(domain: "CatalogRepository", code: 2,
+                          userInfo: [NSLocalizedDescriptionKey: "The downloaded file is neither a valid PDF nor EPUB"])
         }
-        try FileManager.default.moveItem(at: tempURL, to: target)
-        guard isValidCachedFile(book: book, fileURL: target) else {
-            try? FileManager.default.removeItem(at: target)
-            throw NSError(domain: "CatalogRepository", code: 2, userInfo: [NSLocalizedDescriptionKey: "Downloaded file failed validation"])
+        let corrected = replacingFormat(of: book, with: actual)
+        guard isValidCachedFile(book: corrected, fileURL: tempURL, verifyBlossomHash: true) else {
+            throw NSError(domain: "CatalogRepository", code: 2,
+                          userInfo: [NSLocalizedDescriptionKey: "Downloaded \(actual.rawValue.uppercased()) failed verification"])
         }
-        rememberDownloaded(book)
-        return target
+        let correctedTarget = fileStore.bookFileURL(bookId: corrected.id, format: actual)
+        if FileManager.default.fileExists(atPath: correctedTarget.path) { try? FileManager.default.removeItem(at: correctedTarget) }
+        try FileManager.default.moveItem(at: tempURL, to: correctedTarget)
+        rememberDownloaded(corrected)
+        return correctedTarget
+    }
+
+    func prepareForOpening(book: CatalogBook) async throws -> CatalogBook {
+        if let local = localPublication(for: book) {
+            rememberDownloaded(local.book)
+            return local.book
+        }
+
+        let fileURL = try await ensureDownloaded(book: book)
+        guard let actual = Self.detectedFormat(fileURL: fileURL) else {
+            throw NSError(domain: "CatalogRepository", code: 10,
+                          userInfo: [NSLocalizedDescriptionKey: "This publication is not a readable PDF or EPUB"])
+        }
+        let corrected = replacingFormat(of: book, with: actual)
+        guard isValidCachedFile(book: corrected, fileURL: fileURL, verifyBlossomHash: false) else {
+            throw NSError(domain: "CatalogRepository", code: 11,
+                          userInfo: [NSLocalizedDescriptionKey: "This \(actual.rawValue.uppercased()) is damaged or unsupported"])
+        }
+        rememberDownloaded(corrected)
+        return corrected
     }
 
     func publicationFile(book: CatalogBook) -> URL {
         fileStore.bookFileURL(bookId: book.id, format: book.format)
+    }
+
+    /// Favorites and reading progress have historically used either a LibVault
+    /// MD5 or a Blossom SHA-256 as the book id. Resolve all of those aliases to
+    /// the file that is already on disk before trying the network again.
+    func localPublication(for book: CatalogBook) -> (book: CatalogBook, url: URL)? {
+        for id in Self.publicationIdentityCandidates(for: book) {
+            for format in [book.format, book.format == .epub ? .pdf : .epub] {
+                let url = fileStore.bookFileURL(bookId: id, format: format)
+                guard FileManager.default.fileExists(atPath: url.path),
+                      let actual = Self.detectedFormat(fileURL: url),
+                      Self.isStructurallyValidPublication(fileURL: url, format: actual)
+                else { continue }
+
+                return (replacingIdentity(of: book, with: id, format: actual), url)
+            }
+        }
+        return nil
+    }
+
+    static func publicationIdentityCandidates(for book: CatalogBook) -> [String] {
+        var seen = Set<String>()
+        return [book.id, book.blossomSha256, book.libvaultMd5]
+            .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }
+            .filter { !$0.isEmpty && seen.insert($0).inserted }
     }
 
     static let blossomHost = "blossom.bfr.ee"
@@ -244,30 +352,18 @@ final class CatalogRepository {
             ? sha256 : nil
         let md5 = favorite.libvaultMd5?.lowercased()
             ?? (Self.isMD5(favorite.key.lowercased()) ? favorite.key.lowercased() : nil)
-        let usefulTitle = !favorite.title.isEmpty
-            && favorite.title.localizedCaseInsensitiveCompare("Book favorite") != .orderedSame
-        let knownFormat = favorite.format?.lowercased()
-        if validSha256 == nil, let md5, usefulTitle, knownFormat == "epub" || knownFormat == "pdf" {
-            return CatalogBook(
-                id: md5,
-                title: favorite.title,
-                author: favorite.author ?? "Unknown author",
-                epubUrl: "\(libVaultBase)/files/\(md5)",
-                coverUrl: "\(libVaultBase)/covers/\(md5)",
-                sourceUrl: "https://lib.b.bfr.ee/#book?md5=\(md5)",
-                isbn: favorite.isbn,
-                libvaultMd5: md5,
-                format: BookFormat.from(format: knownFormat),
-                blossomSha256: nil,
-                year: favorite.year
-            )
-        }
         if validSha256 == nil, md5 != nil {
             return nil
         }
-        let urlString = favorite.blossomUrl
+        let explicitBlossomURL = favorite.blossomUrl.flatMap { value -> String? in
+            guard let parsed = URL(string: value), parsed.scheme?.lowercased() == "https",
+                  parsed.host?.lowercased() == blossomHost else { return nil }
+            return parsed.absoluteString
+        }
+        // An old LibVault page/file locator is metadata, never an iOS download
+        // fallback. A publication hash always resolves through Blossom on ip2.
+        let urlString = validSha256.map { explicitBlossomURL ?? "https://\(blossomHost)/\($0)" }
             ?? favorite.url
-            ?? validSha256.map { "https://\(blossomHost)/\($0)" }
         guard let urlString,
               let parsed = URL(string: urlString),
               ["http", "https"].contains(parsed.scheme?.lowercased() ?? "") else {
@@ -279,7 +375,7 @@ final class CatalogRepository {
             author: favorite.author ?? "Unknown",
             epubUrl: parsed.absoluteString,
             coverUrl: nil,
-            sourceUrl: favorite.url,
+            sourceUrl: validSha256 == nil ? favorite.url : urlString,
             isbn: favorite.isbn,
             libvaultMd5: favorite.libvaultMd5,
             format: BookFormat.from(format: favorite.format, url: parsed.absoluteString),
@@ -300,71 +396,85 @@ final class CatalogRepository {
         fileStore.save("downloaded-books.json", value: books)
     }
 
-    private func isValidCachedFile(book: CatalogBook, fileURL: URL) -> Bool {
-        guard let data = try? Data(contentsOf: fileURL), !data.isEmpty else { return false }
-        let prefix = data.prefix(5)
-        switch book.format {
-        case .pdf:
-            return String(data: prefix, encoding: .ascii)?.hasPrefix("%PDF-") == true
-        case .epub:
-            let isZip = prefix.starts(with: [0x50, 0x4b])
-            if !isZip { return false }
-        }
-        if book.id.count == 64 {
-            let digest = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
-            return digest == book.id.lowercased()
+    private func replacingIdentity(of book: CatalogBook, with id: String, format: BookFormat) -> CatalogBook {
+        CatalogBook(
+            id: id, title: book.title, author: book.author, epubUrl: book.epubUrl,
+            coverUrl: book.coverUrl, sourceUrl: book.sourceUrl, isbn: book.isbn,
+            libvaultMd5: book.libvaultMd5, format: format,
+            blossomSha256: book.blossomSha256, year: book.year
+        )
+    }
+
+    private func isValidCachedFile(book: CatalogBook, fileURL: URL, verifyBlossomHash: Bool) -> Bool {
+        guard Self.isStructurallyValidPublication(fileURL: fileURL, format: book.format) else { return false }
+        if verifyBlossomHash, let expected = book.blossomSha256?.lowercased() {
+            guard let digest = Self.sha256(fileURL: fileURL) else { return false }
+            return digest == expected
         }
         return true
     }
 
-    private func prepareLibVaultDownload(md5: String) async throws -> URL {
-        guard let fetchURL = URL(string: "\(Self.libVaultBase)/fetch/\(md5)") else {
-            throw URLError(.badURL)
-        }
-        let (initialData, initialResponse) = try await URLSession.shared.data(from: fetchURL)
-        guard let initialHTTP = initialResponse as? HTTPURLResponse,
-              (200...299).contains(initialHTTP.statusCode),
-              let initial = try? JSONSerialization.jsonObject(with: initialData) as? [String: Any] else {
-            throw NSError(domain: "CatalogRepository", code: 6,
-                          userInfo: [NSLocalizedDescriptionKey: "Could not start the book download from LibVault"])
-        }
-        if initial["status"] as? String == "ready" {
-            return try libVaultFileURL(md5: md5)
-        }
-        guard let jobID = initial["job_id"] as? String, !jobID.isEmpty else {
-            throw NSError(domain: "CatalogRepository", code: 7,
-                          userInfo: [NSLocalizedDescriptionKey: "LibVault did not return a download job"])
-        }
-
-        for _ in 0..<180 {
-            try await Task.sleep(for: .seconds(1))
-            guard let jobURL = URL(string: "\(Self.libVaultBase)/jobs/\(jobID)") else {
-                throw URLError(.badURL)
+    /// Hash downloads incrementally. Large publications must never be loaded into
+    /// one giant Data value on the UI task just to verify their Blossom address.
+    static func sha256(fileURL: URL, chunkSize: Int = 1_048_576) -> String? {
+        guard chunkSize > 0, let handle = try? FileHandle(forReadingFrom: fileURL) else { return nil }
+        defer { try? handle.close() }
+        var hasher = SHA256()
+        do {
+            while let data = try handle.read(upToCount: chunkSize), !data.isEmpty {
+                hasher.update(data: data)
             }
-            let (data, response) = try await URLSession.shared.data(from: jobURL)
-            guard let http = response as? HTTPURLResponse, http.statusCode == 200,
-                  let job = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-                continue
-            }
-            switch job["status"] as? String {
-            case "ready":
-                return try libVaultFileURL(md5: md5)
-            case "failed":
-                let detail = job["error"] as? String
-                throw NSError(domain: "CatalogRepository", code: 8,
-                              userInfo: [NSLocalizedDescriptionKey: detail ?? "LibVault could not fetch this book"])
-            default:
-                continue
-            }
+            return hasher.finalize().map { String(format: "%02x", $0) }.joined()
+        } catch {
+            return nil
         }
-        throw NSError(domain: "CatalogRepository", code: 9,
-                      userInfo: [NSLocalizedDescriptionKey: "LibVault is still fetching this book. Please try again shortly."])
     }
 
-    private func libVaultFileURL(md5: String) throws -> URL {
-        guard let url = URL(string: "\(Self.libVaultBase)/files/\(md5)") else {
-            throw URLError(.badURL)
-        }
-        return url
+    static func detectedFormat(fileURL: URL) -> BookFormat? {
+        guard let handle = try? FileHandle(forReadingFrom: fileURL) else { return nil }
+        defer { try? handle.close() }
+        let prefix = try? handle.read(upToCount: 5)
+        guard let prefix else { return nil }
+        if String(data: prefix, encoding: .ascii)?.hasPrefix("%PDF-") == true { return .pdf }
+        if prefix.starts(with: [0x50, 0x4b]) { return .epub }
+        return nil
     }
+
+    static func isStructurallyValidPublication(fileURL: URL, format: BookFormat) -> Bool {
+        switch format {
+        case .pdf:
+            return detectedFormat(fileURL: fileURL) == .pdf && (PDFDocument(url: fileURL)?.pageCount ?? 0) > 0
+        case .epub:
+            return detectedFormat(fileURL: fileURL) == .epub
+                && fileContains(fileURL, needle: Data("META-INF/container.xml".utf8))
+        }
+    }
+
+    private static func fileContains(_ url: URL, needle: Data, chunkSize: Int = 64 * 1024) -> Bool {
+        guard !needle.isEmpty, let handle = try? FileHandle(forReadingFrom: url) else { return false }
+        defer { try? handle.close() }
+        var carry = Data()
+        do {
+            while let chunk = try handle.read(upToCount: chunkSize), !chunk.isEmpty {
+                var window = carry
+                window.append(chunk)
+                if window.range(of: needle) != nil { return true }
+                carry = Data(window.suffix(max(needle.count - 1, 0)))
+            }
+        } catch {
+            return false
+        }
+        return false
+    }
+
+    private func replacingFormat(of book: CatalogBook, with format: BookFormat) -> CatalogBook {
+        guard book.format != format else { return book }
+        return CatalogBook(
+            id: book.id, title: book.title, author: book.author, epubUrl: book.epubUrl,
+            coverUrl: book.coverUrl, sourceUrl: book.sourceUrl, isbn: book.isbn,
+            libvaultMd5: book.libvaultMd5, format: format,
+            blossomSha256: book.blossomSha256, year: book.year
+        )
+    }
+
 }

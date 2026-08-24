@@ -21,6 +21,7 @@ final class EPUBReaderController: NSObject, ObservableObject, AVSpeechSynthesize
     @Published var errorMessage: String?
     @Published var ready = false
     @Published var isSpeaking = false
+    @Published var loadingStage = "Starting reader"
 
     fileprivate weak var webView: WKWebView?
     private let speech = AVSpeechSynthesizer()
@@ -362,7 +363,9 @@ struct EPUBReaderView: UIViewRepresentable {
             WKUserScript(source: Self.bridgeScript, injectionTime: .atDocumentStart, forMainFrameOnly: true)
         )
 
-        let webView = WKWebView(frame: .zero, configuration: configuration)
+        // The bundled custom-scheme page can finish before SwiftUI's first layout.
+        // EPUB.js cannot complete rendition.display() against a 0x0 viewport.
+        let webView = WKWebView(frame: UIScreen.main.bounds, configuration: configuration)
         webView.navigationDelegate = context.coordinator
         webView.scrollView.contentInsetAdjustmentBehavior = .never
         webView.scrollView.contentInset = .zero
@@ -371,6 +374,8 @@ struct EPUBReaderView: UIViewRepresentable {
         webView.scrollView.showsHorizontalScrollIndicator = false
         webView.backgroundColor = container.settingsRepository.theme.uiBackground
         webView.isOpaque = false
+        webView.accessibilityIdentifier = "epub-reader-webview"
+        webView.accessibilityLabel = "EPUB reader"
         webView.allowsBackForwardNavigationGestures = false
         let gesture = UIPanGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handlePagePan(_:)))
         gesture.cancelsTouchesInView = false
@@ -408,6 +413,7 @@ struct EPUBReaderView: UIViewRepresentable {
         onKnownWordTapped: value => send('onKnownWordTapped', value),
         onReaderInteracted: () => send('onReaderInteracted', null),
         onSpeechText: value => send('onSpeechText', value)
+        ,onReaderStage: value => send('onReaderStage', value)
       };
     })();
     """
@@ -471,15 +477,33 @@ struct EPUBReaderView: UIViewRepresentable {
             let highlight = highlightCFI?.isEmpty == false ? EPUBReaderController.js(highlightCFI!) : "null"
             let theme = EPUBReaderController.js(container.settingsRepository.theme.rawValue)
             let bookID = EPUBReaderController.js(book.id)
-            let publicationURL = EPUBReaderController.js("bookstr-reader://app/books/current.epub")
+            guard let publicationData = try? Data(contentsOf: fileURL, options: .mappedIfSafe),
+                  !publicationData.isEmpty else {
+                controller.errorMessage = "Could not read the downloaded EPUB."
+                return
+            }
+            let publication = EPUBReaderController.js(publicationData.base64EncodedString())
             let knownWords = container.vocabularyRepository.all().map(\.word)
             let knownData = (try? JSONSerialization.data(withJSONObject: knownWords)) ?? Data("[]".utf8)
             let knownJSON = String(data: knownData, encoding: .utf8) ?? "[]"
             let knownArgument = EPUBReaderController.js(knownJSON)
-            webView.evaluateJavaScript(
-                "setReaderTheme(\(theme)); setKnownWords(\(knownArgument)); " +
-                "loadBookUrl(\(publicationURL), \(cfi), \(theme), \(highlight), \(bookID));"
-            )
+            let loadScript = "setReaderTheme(\(theme)); setKnownWords(\(knownArgument)); " +
+                "loadBook(\(publication), \(cfi), \(theme), \(highlight), \(bookID)); null;"
+            webView.evaluateJavaScript("[typeof window.loadBook, typeof window.ePub, typeof window.JSZip].join('|')") {
+                [weak controller, weak webView] value, error in
+                if let error {
+                    controller?.errorMessage = "Could not initialize the EPUB reader: \(error.localizedDescription)"
+                    return
+                }
+                guard value as? String == "function|function|function" else {
+                    controller?.errorMessage = "The EPUB reader resources did not load (\(value as? String ?? "unknown"))."
+                    return
+                }
+                webView?.evaluateJavaScript(loadScript) { [weak controller] _, error in
+                    guard let error else { return }
+                    controller?.errorMessage = "Could not start the EPUB reader: \(error.localizedDescription)"
+                }
+            }
         }
 
         func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
@@ -554,11 +578,17 @@ struct EPUBReaderView: UIViewRepresentable {
             case "onReaderReady":
                 controller.ready = true
                 controller.errorMessage = nil
+            case "onReaderStage":
+                controller.loadingStage = value as? String ?? "Preparing EPUB"
             case "onReaderError":
-                controller.errorMessage = (value as? String).map { "Could not open this book: \($0)" }
+                let detail = (value as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+                controller.errorMessage = detail?.isEmpty == false
+                    ? "Could not open this book: \(detail!)"
+                    : "Could not open this EPUB. The file may be damaged or unsupported."
             case "onRelocated": handleRelocation(value as? String)
             case "onSections": handleSections(value as? String)
             case "onWordSelected": handleWordSelection(value as? String)
+            case "onKnownWordTapped": requestKnownWord(value as? String)
             case "onLookupDictionary": lookupDictionary(value as? String)
             case "onDictionaryResult": saveDictionaryResult(value as? String)
             case "onSpeechText": handleSpeech(value as? String)
@@ -609,6 +639,10 @@ struct EPUBReaderView: UIViewRepresentable {
                 context: item["contextSentence"] as? String ?? ""
             )
             NotificationCenter.default.post(name: .bookstrVocabularyDidChange, object: nil)
+        }
+
+        private func requestKnownWord(_ json: String?) {
+            container.wordNavigation.request(json ?? "")
         }
 
         private func lookupDictionary(_ json: String?) {

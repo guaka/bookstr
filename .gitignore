@@ -16,6 +16,8 @@ web/playwright-report/
 web/test-results/
 ios/.*Derived*/
 ios/.deviceDerived/
+ios/.device-current/
+ios/.device-diagnostic/
 ios/**/xcuserdata/
 
 # Editor / local agent tooling

@@ -82,6 +82,14 @@ struct WordsView: View {
             await refreshFromInstalledDictionaries()
             refreshInstalledMatches()
         }
+        .onReceive(container.wordNavigation.$requestToken) { _ in
+            guard let requestedWord = container.wordNavigation.requestedWord else { return }
+            guard let target = container.wordNavigation.matchingWord(for: requestedWord, in: words) else {
+                errorMessage = "Could not find “\(requestedWord)” in your saved words."
+                return
+            }
+            Task { await open(target) }
+        }
         .refreshable {
             await refreshFromNetwork(force: true)
             await backfillDictionary()
@@ -203,22 +211,20 @@ struct WordsView: View {
                 .first(where: { $0.id == entry.bookId || $0.title.caseInsensitiveCompare(entry.bookTitle) == .orderedSame })?
                 .asCatalogBook()
         }
-        guard let book else {
+        guard let candidate = book else {
             errorMessage = "Could not find a downloadable copy of this book."
             return
         }
-        let file = container.catalogRepository.publicationFile(book: book)
-        if !FileManager.default.fileExists(atPath: file.path) {
-            openingWordKey = entry.key
-            defer { openingWordKey = nil }
-            do {
-                _ = try await container.catalogRepository.ensureDownloaded(book: book)
-            } catch {
-                errorMessage = "Book download failed: \(error.localizedDescription)"
-                return
-            }
+        openingWordKey = entry.key
+        defer { openingWordKey = nil }
+        let openedBook: CatalogBook
+        do {
+            openedBook = try await container.catalogRepository.prepareForOpening(book: candidate)
+        } catch {
+            errorMessage = "Book open failed: \(error.localizedDescription)"
+            return
         }
-        destination = WordDestination(book: book, locator: entry.cfi)
+        destination = WordDestination(book: openedBook, locator: entry.cfi)
     }
 
     private func highlightedContext(_ context: String, word: String) -> AttributedString {

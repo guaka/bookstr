@@ -3,6 +3,11 @@ import UIKit
 import AVFoundation
 import NostrCore
 
+private enum SettingsField: Hashable {
+    case nsec
+    case relays
+}
+
 struct SettingsView: View {
     @EnvironmentObject private var container: AppContainer
     @EnvironmentObject private var settings: SettingsRepository
@@ -18,6 +23,7 @@ struct SettingsView: View {
     @State private var dictionaryPacks: [DictionaryPack] = []
     @State private var dictionarySelection = DictionaryPairSelection()
     @State private var dictionaryBusy = false
+    @FocusState private var focusedField: SettingsField?
 
     var body: some View {
         Form {
@@ -52,6 +58,8 @@ struct SettingsView: View {
                     .foregroundStyle(.secondary)
                 }
             }
+
+            nostrSection
 
             Section("Offline dictionaries") {
                 let installed = dictionaryPacks.filter(\.installed)
@@ -122,89 +130,6 @@ struct SettingsView: View {
                 }
             }
 
-            Section("Nostr") {
-                if !npub.isEmpty {
-                    Text(npub)
-                        .font(.footnote.monospaced())
-                        .textSelection(.enabled)
-                    Text(modeLabel)
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                }
-
-                if activeMode == .nip46 {
-                    if settings.hasNip46SessionCredentials {
-                        Text("Connected via Amber / NIP-46. Your nsec never enters this app.")
-                    } else {
-                        Text("Amber looks connected, but the session key is missing. Scan the QR again.")
-                            .foregroundStyle(.red)
-                    }
-                    Button(awaitingNip46 ? "Waiting for signer…" : "Reconnect NIP-46 signer") {
-                        beginNip46QrFlow()
-                    }
-                    .disabled(awaitingNip46)
-                    if let qrImage {
-                        Image(uiImage: qrImage)
-                            .interpolation(.none)
-                            .resizable()
-                            .scaledToFit()
-                            .frame(maxWidth: 240, maxHeight: 240)
-                            .listRowInsets(EdgeInsets())
-                            .padding(.vertical, 8)
-                    }
-                    if awaitingNip46 {
-                        Text("Approve in Signstr, or scan this QR with another NIP-46 signer.")
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
-                        Button("Open Signstr") { openSignstr() }
-                        Button("Copy connection link") { copyNip46Link() }
-                        Button("Cancel") {
-                            cancelNip46()
-                        }
-                    }
-                    Button("Disconnect", role: .destructive) {
-                        disconnect()
-                    }
-                } else {
-                    SecureField("nsec1…", text: $nsec)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                    Button("Connect nsec") {
-                        connectNsec()
-                    }
-
-                    Button(awaitingNip46 ? "Waiting for signer…" : "Connect NIP-46 signer") {
-                        beginNip46QrFlow()
-                    }
-                    .disabled(awaitingNip46)
-
-                    if let qrImage {
-                        Image(uiImage: qrImage)
-                            .interpolation(.none)
-                            .resizable()
-                            .scaledToFit()
-                            .frame(maxWidth: 240, maxHeight: 240)
-                            .listRowInsets(EdgeInsets())
-                            .padding(.vertical, 8)
-                    }
-                    if awaitingNip46 {
-                        Text("Approve in Signstr, or scan this QR with another NIP-46 signer.")
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
-                        Button("Open Signstr") { openSignstr() }
-                        Button("Copy connection link") { copyNip46Link() }
-                        Button("Cancel") {
-                            cancelNip46()
-                        }
-                    }
-                    if let nip46URI, !awaitingNip46, activeMode != .nip46 {
-                        Text(nip46URI)
-                            .font(.caption.monospaced())
-                            .textSelection(.enabled)
-                    }
-                }
-            }
-
             if !status.isEmpty {
                 Section("Status") { Text(status) }
             }
@@ -212,6 +137,7 @@ struct SettingsView: View {
             Section("Relays") {
                 TextEditor(text: $relaysRaw)
                     .frame(minHeight: 80)
+                    .focused($focusedField, equals: .relays)
                 Button("Save relays") {
                     container.settingsRepository.relays = relaysRaw
                         .split(whereSeparator: \.isNewline)
@@ -238,6 +164,13 @@ struct SettingsView: View {
                 .foregroundStyle(.secondary)
             }
         }
+        .scrollDismissesKeyboard(.interactively)
+        .toolbar {
+            ToolbarItemGroup(placement: .keyboard) {
+                Spacer()
+                Button("Done") { focusedField = nil }
+            }
+        }
         .bookstrScreenTitle("Settings")
         .task {
             relaysRaw = container.settingsRepository.relays.joined(separator: "\n")
@@ -249,6 +182,81 @@ struct SettingsView: View {
             await container.nip46Service.restore(from: container.settingsRepository)
             npub = NostrIdentity.npub(fromHex: container.settingsRepository.pubkeyHex ?? "") ?? ""
             activeMode = container.settingsRepository.authMode
+        }
+    }
+
+    @ViewBuilder
+    private var nostrSection: some View {
+        Section("Nostr") {
+            if !npub.isEmpty {
+                Text(npub)
+                    .font(.footnote.monospaced())
+                    .textSelection(.enabled)
+                Text(modeLabel)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+
+            if activeMode == .nip46 {
+                if settings.hasNip46SessionCredentials {
+                    Text("Connected via Amber / NIP-46. Your nsec never enters this app.")
+                } else {
+                    Text("Amber looks connected, but the session key is missing. Scan the QR again.")
+                        .foregroundStyle(.red)
+                }
+                Button(awaitingNip46 ? "Waiting for signer…" : "Reconnect NIP-46 signer") {
+                    beginNip46QrFlow()
+                }
+                .disabled(awaitingNip46)
+                nip46PairingContent
+                Button("Disconnect", role: .destructive) {
+                    disconnect()
+                }
+            } else {
+                SecureField("nsec1…", text: $nsec)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .submitLabel(.done)
+                    .focused($focusedField, equals: .nsec)
+                    .onSubmit { focusedField = nil }
+                Button("Connect nsec") {
+                    focusedField = nil
+                    connectNsec()
+                }
+
+                Button(awaitingNip46 ? "Waiting for signer…" : "Connect NIP-46 signer") {
+                    focusedField = nil
+                    beginNip46QrFlow()
+                }
+                .disabled(awaitingNip46)
+                nip46PairingContent
+                if let nip46URI, !awaitingNip46 {
+                    Text(nip46URI)
+                        .font(.caption.monospaced())
+                        .textSelection(.enabled)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var nip46PairingContent: some View {
+        if let qrImage {
+            Image(uiImage: qrImage)
+                .interpolation(.none)
+                .resizable()
+                .scaledToFit()
+                .frame(maxWidth: 240, maxHeight: 240)
+                .listRowInsets(EdgeInsets())
+                .padding(.vertical, 8)
+        }
+        if awaitingNip46 {
+            Text("Approve in Signstr, or scan this QR with another NIP-46 signer.")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+            Button("Open Signstr") { openSignstr() }
+            Button("Copy connection link") { copyNip46Link() }
+            Button("Cancel") { cancelNip46() }
         }
     }
 

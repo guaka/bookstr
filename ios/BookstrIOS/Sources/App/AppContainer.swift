@@ -4,7 +4,9 @@ final class AppContainer: ObservableObject {
     let settingsRepository: SettingsRepository
     let progressRepository: ProgressRepository
     let vocabularyRepository: VocabularyRepository
+    let wordNavigation: WordNavigationState
     let dictionaryRepository: DictionaryRepository
+    let favoriteMetadataRepository: FavoriteMetadataRepository
     let catalogRepository: CatalogRepository
     let nostrClient: NostrClient
     let signerStore: SignerStore
@@ -15,7 +17,9 @@ final class AppContainer: ObservableObject {
         settingsRepository: SettingsRepository,
         progressRepository: ProgressRepository,
         vocabularyRepository: VocabularyRepository,
+        wordNavigation: WordNavigationState = WordNavigationState(),
         dictionaryRepository: DictionaryRepository,
+        favoriteMetadataRepository: FavoriteMetadataRepository,
         catalogRepository: CatalogRepository,
         nostrClient: NostrClient,
         signerStore: SignerStore,
@@ -25,7 +29,9 @@ final class AppContainer: ObservableObject {
         self.settingsRepository = settingsRepository
         self.progressRepository = progressRepository
         self.vocabularyRepository = vocabularyRepository
+        self.wordNavigation = wordNavigation
         self.dictionaryRepository = dictionaryRepository
+        self.favoriteMetadataRepository = favoriteMetadataRepository
         self.catalogRepository = catalogRepository
         self.nostrClient = nostrClient
         self.signerStore = signerStore
@@ -36,9 +42,15 @@ final class AppContainer: ObservableObject {
     static func bootstrap() -> AppContainer {
         let fileStore = JSONFileStore(subdirectory: "bookstr")
         let settings = SettingsRepository()
+#if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("--ui-testing-library-fixtures") {
+            LibraryUITestFixtures.install(fileStore: fileStore, settings: settings)
+        }
+#endif
         let progress = ProgressRepository(fileStore: fileStore)
         let words = VocabularyRepository(fileStore: fileStore)
         let dictionary = DictionaryRepository()
+        let favoriteMetadata = FavoriteMetadataRepository(fileStore: fileStore)
         let nostr = NostrClient()
         let nip46 = Nip46Service()
         let signerStore = SignerStore(nip46Service: nip46)
@@ -47,6 +59,7 @@ final class AppContainer: ObservableObject {
             settings: settings,
             progress: progress,
             vocabulary: words,
+            favoriteMetadata: favoriteMetadata,
             client: nostr,
             signerStore: signerStore,
             nip46Service: nip46
@@ -56,6 +69,7 @@ final class AppContainer: ObservableObject {
             progressRepository: progress,
             vocabularyRepository: words,
             dictionaryRepository: dictionary,
+            favoriteMetadataRepository: favoriteMetadata,
             catalogRepository: catalog,
             nostrClient: nostr,
             signerStore: signerStore,

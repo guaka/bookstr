@@ -20,7 +20,7 @@ struct Nip46HandshakeResult {
 actor Nip46Service {
     private static let handshakeTimeout: TimeInterval = 300
     /// Favorites ciphertext is tens of KB; Amber also needs time to prompt.
-    nonisolated static let requestTimeout: TimeInterval = 90
+    nonisolated static let requestTimeout: TimeInterval = 30
     nonisolated static let authChallengeTimeout: TimeInterval = 300
 
     private static let relaySession: URLSession = {
@@ -34,6 +34,7 @@ actor Nip46Service {
     private var signer: RemoteSigner?
     private var handshakeTask: Task<String, Error>?
     private var authTask: Task<Void, Never>?
+    private var handshakeBackgroundActivity: UIBackgroundTaskIdentifier = .invalid
     private var lastRestoreStatus = "not attempted"
 
     func startQrSession(relays: [String], appURL: String = "https://guaka.github.io/bookstr/") async throws -> Nip46Session {
@@ -45,7 +46,7 @@ actor Nip46Service {
         }
 
         let keyPair = try KeyPair()
-        let displayName = "bookstr"
+        let displayName = "Bookstr iOS+\(String(keyPair.publicKeyHex.prefix(6)))"
         let invitation = try NostrConnectURI.invitation(
             clientKeyPair: keyPair,
             relays: relayURLs,
@@ -70,6 +71,7 @@ actor Nip46Service {
         handshakeTask = Task {
             try await signer.awaitConnection()
         }
+        handshakeBackgroundActivity = await Self.beginBackgroundActivity(name: "Bookstr NIP-46 pairing")
         authTask = Task {
             for await challenge in await signer.authChallenges() {
                 await MainActor.run {
@@ -89,6 +91,7 @@ actor Nip46Service {
     }
 
     func awaitConnection() async throws -> Nip46HandshakeResult {
+        defer { endHandshakeBackgroundActivity() }
         guard let handshakeTask else {
             throw Nip46Error.sessionNotStarted
         }
@@ -168,18 +171,24 @@ actor Nip46Service {
     }
 
     func userPublicKey() async throws -> String {
-        let signer = try await connectedSigner()
-        return try await signer.userPublicKey()
+        try await withSignerBackgroundActivity(name: "Bookstr public key") {
+            let signer = try await self.connectedSigner()
+            return try await signer.userPublicKey()
+        }
     }
 
     func nip44Decrypt(_ ciphertext: String, from senderPubkey: String) async throws -> String {
-        let signer = try await connectedSigner()
-        return try await signer.nip44Decrypt(ciphertext, from: senderPubkey)
+        try await withSignerBackgroundActivity(name: "Bookstr decrypt") {
+            let signer = try await self.connectedSigner()
+            return try await signer.nip44Decrypt(ciphertext, from: senderPubkey)
+        }
     }
 
     func nip44Encrypt(_ plaintext: String, to recipientPubkey: String) async throws -> String {
-        let signer = try await connectedSigner()
-        return try await signer.nip44Encrypt(plaintext, to: recipientPubkey)
+        try await withSignerBackgroundActivity(name: "Bookstr encrypt") {
+            let signer = try await self.connectedSigner()
+            return try await signer.nip44Encrypt(plaintext, to: recipientPubkey)
+        }
     }
 
     /// Completes the NIP-46 `connect` handshake on a small request so the first
@@ -194,6 +203,7 @@ actor Nip46Service {
     }
 
     func disconnect() async {
+        endHandshakeBackgroundActivity()
         handshakeTask?.cancel()
         handshakeTask = nil
         authTask?.cancel()
@@ -205,24 +215,58 @@ actor Nip46Service {
     }
 
     func signEvent(_ event: NostrEvent) async throws -> NostrEvent {
-        let signer = try await connectedSigner()
-        let unsigned = UnsignedEvent(
-            pubkey: event.pubkey ?? "",
-            createdAt: event.createdAt,
-            kind: Event.Kind(rawValue: event.kind),
-            rawTags: event.tags,
-            content: event.content
-        )
-        let signed = try await signer.sign(unsigned)
-        return NostrEvent(
-            id: signed.id,
-            pubkey: signed.pubkey,
-            createdAt: signed.createdAt,
-            kind: signed.kind.rawValue,
-            tags: signed.tags,
-            content: signed.content,
-            sig: signed.sig
-        )
+        try await withSignerBackgroundActivity(name: "Bookstr sign") {
+            let signer = try await self.connectedSigner()
+            let unsigned = UnsignedEvent(
+                pubkey: event.pubkey ?? "",
+                createdAt: event.createdAt,
+                kind: Event.Kind(rawValue: event.kind),
+                rawTags: event.tags,
+                content: event.content
+            )
+            let signed = try await signer.sign(unsigned)
+            return NostrEvent(
+                id: signed.id,
+                pubkey: signed.pubkey,
+                createdAt: signed.createdAt,
+                kind: signed.kind.rawValue,
+                tags: signed.tags,
+                content: signed.content,
+                sig: signed.sig
+            )
+        }
+    }
+
+    private func withSignerBackgroundActivity<T>(
+        name: String,
+        operation: () async throws -> T
+    ) async throws -> T {
+        let identifier = await Self.beginBackgroundActivity(name: name)
+        do {
+            let value = try await operation()
+            await Self.endBackgroundActivity(identifier)
+            return value
+        } catch {
+            await Self.endBackgroundActivity(identifier)
+            throw error
+        }
+    }
+
+    private func endHandshakeBackgroundActivity() {
+        let identifier = handshakeBackgroundActivity
+        handshakeBackgroundActivity = .invalid
+        Task { await Self.endBackgroundActivity(identifier) }
+    }
+
+    private nonisolated static func beginBackgroundActivity(name: String) async -> UIBackgroundTaskIdentifier {
+        await MainActor.run {
+            UIApplication.shared.beginBackgroundTask(withName: name)
+        }
+    }
+
+    private nonisolated static func endBackgroundActivity(_ identifier: UIBackgroundTaskIdentifier) async {
+        guard identifier != .invalid else { return }
+        await MainActor.run { UIApplication.shared.endBackgroundTask(identifier) }
     }
 
     func bunkerURL(remoteSignerPubkey: String, relays: [URL]) throws -> String {

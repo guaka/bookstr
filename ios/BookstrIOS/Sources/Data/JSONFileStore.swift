@@ -34,4 +34,13 @@ final class JSONFileStore {
         let dir = root.appendingPathComponent("books", isDirectory: true)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
     }
+
+    func publicationFiles() -> [URL] {
+        let dir = root.appendingPathComponent("books", isDirectory: true)
+        return (try? FileManager.default.contentsOfDirectory(
+            at: dir,
+            includingPropertiesForKeys: [.isRegularFileKey],
+            options: [.skipsHiddenFiles]
+        )) ?? []
+    }
 }
