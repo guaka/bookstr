@@ -2,11 +2,15 @@ import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 
+import org.gradle.testing.jacoco.tasks.JacocoReport
+import org.gradle.api.tasks.testing.Test
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
     id("com.google.devtools.ksp")
+    id("jacoco")
 }
 
 // Keep BuildConfig stable across no-change builds so a displayed timestamp does not invalidate
@@ -34,6 +38,9 @@ android {
     }
 
     buildTypes {
+        debug {
+            isTestCoverageEnabled = true
+        }
         release {
             isMinifyEnabled = false
             proguardFiles(
@@ -66,6 +73,56 @@ android {
     testOptions {
         unitTests.isReturnDefaultValues = true
     }
+}
+
+jacoco {
+    toolVersion = "0.8.12"
+}
+
+tasks.withType<Test>().configureEach {
+    finalizedBy("jacocoDebugUnitTestReport")
+}
+
+tasks.register<JacocoReport>("jacocoDebugUnitTestReport") {
+    dependsOn("testDebugUnitTest")
+    group = "verification"
+    description = "Generate JaCoCo coverage report for debug unit tests"
+
+    reports {
+        xml.required.set(true)
+        html.required.set(true)
+        csv.required.set(false)
+    }
+
+    val mainKotlin = fileTree("$buildDir/tmp/kotlin-classes/debug")
+    val mainJava = fileTree("$buildDir/intermediates/javac/debug/classes")
+
+    classDirectories.setFrom(
+        files(mainKotlin, mainJava).asFileTree.matching {
+            exclude(
+                "**/R.class",
+                "**/R$*.class",
+                "**/BuildConfig.*",
+                "**/*\$Lambda$*.*",
+                "**/*Companion*",
+                "**/*\$inlined$*",
+            )
+        },
+    )
+
+    sourceDirectories.setFrom(
+        fileTree("src/main/kotlin"),
+        fileTree("src/main/java"),
+    )
+
+    executionData.setFrom(
+        fileTree(layout.buildDirectory).include(
+            "jacoco/testDebugUnitTest.exec",
+            "jacoco/testDebugUnitTest/**",
+            "**/coverage.exec",
+            "**/*.ec",
+        ),
+    )
 }
 
 dependencies {

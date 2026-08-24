@@ -90,6 +90,18 @@ The development server opens Bookstr at `http://localhost:11111`. Run the depend
 node --test web/tests/*.test.mjs
 ```
 
+For coverage reports, run the same tests with coverage collection:
+
+```bash
+npx -y c8 --report-dir web/coverage/web-tests --reporter=html --reporter=lcov --reporter=text -- node --test web/tests/*.test.mjs
+```
+
+GitHub Actions uploads `web/coverage/web-tests/` as an artifact on every CI run, including:
+
+- `coverage-final.json` and LCOV payload
+- browsable HTML report
+- plain summary output
+
 ### Android
 
 The Android project targets SDK 35, supports API 27 and newer, and requires a JDK plus the Android SDK. On a fresh Linux build host, `scripts/bootstrap-android-toolchain.sh` can install the expected toolchain.

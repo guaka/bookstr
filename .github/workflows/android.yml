@@ -35,6 +35,13 @@ jobs:
         run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
       - name: Unit tests
         run: ./gradlew --no-daemon testDebugUnitTest
+      - name: Generate unit coverage
+        run: ./gradlew --no-daemon jacocoDebugUnitTestReport
+      - name: Upload unit test coverage
+        uses: actions/upload-artifact@v4
+        with:
+          name: bookstr-android-unit-coverage-${{ github.sha }}
+          path: app/build/reports/jacoco/jacocoDebugUnitTestReport/
       - name: Assemble debug
         run: ./gradlew --no-daemon assembleDebug
 

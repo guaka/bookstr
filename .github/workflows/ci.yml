@@ -36,6 +36,19 @@ jobs:
           node-version: 22
       - name: Run static web tests
         run: node --test web/tests/*.test.mjs
+      - name: Generate web test coverage
+        run: |
+          npx -y c8 \
+            --report-dir web/coverage/web-tests \
+            --reporter=html \
+            --reporter=lcov \
+            --reporter=text \
+            node --test web/tests/*.test.mjs
+      - name: Archive web coverage artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: bookstr-web-coverage-${{ github.sha }}
+          path: web/coverage/web-tests/
       - name: Install browser test runner
         run: npm install --no-save --no-package-lock @playwright/test@1.62.1 && npx playwright install --with-deps chromium
       - name: Test real EPUB reading
