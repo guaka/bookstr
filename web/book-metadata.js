@@ -42,6 +42,7 @@
       source.publicationTitle,
       source.displayTitle,
       source.name,
+      source.source?.book?.title,
       source.book?.title,
       source.publication?.title,
       metadata.title,
@@ -313,7 +314,7 @@
 
   function isbnForBook(book) {
     const identifiers = Array.isArray(book?.identifiers) ? book.identifiers : [];
-    const isbn = identifiers.find(item => String(item?.type || '').toLowerCase() === 'isbn')?.value;
+    const isbn = identifiers.find(item => /^isbn(?:10|13)?$/i.test(String(item?.type || '').replace(/[^a-z0-9]/gi, '')))?.value;
     const direct = book?.isbn || book?.isbn13 || book?.isbn10;
     return String(isbn || direct || '').replace(/[^0-9X]/gi, '').toUpperCase();
   }
