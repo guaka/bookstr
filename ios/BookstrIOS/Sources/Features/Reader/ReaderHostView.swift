@@ -130,6 +130,20 @@ struct ReaderHostView: View {
                         .frame(width: 24, height: 24)
                 }
                 .accessibilityLabel(epubController.isSpeaking ? "Stop reading aloud" : "Read aloud")
+                Button { epubController.adjustReaderFont(by: 10) } label: {
+                    Image(systemName: "plus")
+                        .font(.system(size: 12, weight: .bold))
+                        .frame(width: 24, height: 24)
+                }
+                .accessibilityIdentifier("reader-font-larger")
+                .accessibilityLabel("Zoom in")
+                Button { epubController.adjustReaderFont(by: -10) } label: {
+                    Image(systemName: "minus")
+                        .font(.system(size: 16, weight: .bold))
+                        .frame(width: 24, height: 24)
+                }
+                .accessibilityIdentifier("reader-font-smaller")
+                .accessibilityLabel("Zoom out")
 
                 TimelineView(.periodic(from: .now, by: 30)) { context in
                     Text("\(context.date.formatted(.dateTime.hour(.twoDigits(amPM: .omitted)).minute(.twoDigits)))  EPUB")

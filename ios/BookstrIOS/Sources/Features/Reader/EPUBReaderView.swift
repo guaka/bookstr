@@ -11,7 +11,7 @@ struct EPUBSection: Identifiable, Equatable {
     var id: String { "\(index):\(href)" }
 }
 
-@MainActor
+    @MainActor
 final class EPUBReaderController: NSObject, ObservableObject, AVSpeechSynthesizerDelegate {
     @Published var progression = 0.0
     @Published var furthestProgression = 0.0
@@ -41,6 +41,9 @@ final class EPUBReaderController: NSObject, ObservableObject, AVSpeechSynthesize
 
     func nextPage() { evaluate("window.nextPage && window.nextPage()") }
     func previousPage() { evaluate("window.prevPage && window.prevPage()") }
+    func adjustReaderFont(by delta: Int) {
+        evaluate("window.adjustReaderFont && window.adjustReaderFont(\(delta));")
+    }
 
     func configureNowPlaying(book: CatalogBook) {
         nowPlayingTitle = book.title

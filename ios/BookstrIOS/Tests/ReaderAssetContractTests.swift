@@ -98,6 +98,14 @@ final class ReaderAssetContractTests: XCTestCase {
         XCTAssertTrue(html.contains("target.addEventListener(\"touchend\", function(event)"))
     }
 
+    func testReaderZoomAPICapsFontPercentRange() throws {
+        let html = try bundledReaderHTML()
+
+        XCTAssertTrue(html.contains("window.adjustReaderFont = function(delta) {"))
+        XCTAssertTrue(html.contains("readerFontPercent = Math.max(75, Math.min(180, readerFontPercent + Number(delta || 0)));"))
+        XCTAssertTrue(html.contains("localStorage.setItem(\"bookstr-reader-font-percent\", String(readerFontPercent));"))
+    }
+
     func testKnownWordSetIsBuiltFromInputJSON() throws {
         let html = try bundledReaderHTML()
 

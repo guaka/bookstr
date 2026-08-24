@@ -259,6 +259,46 @@ final class FavoritesParserTests: XCTestCase {
         XCTAssertTrue(result.external.isEmpty)
     }
 
+    func testParseSharedFavoriteTagsRejectsNonJsonInput() {
+        XCTAssertTrue(FavoritesParser.parseSharedFavoriteTags("null").isEmpty)
+        XCTAssertTrue(FavoritesParser.parseSharedFavoriteTags("not-json").isEmpty)
+        XCTAssertTrue(FavoritesParser.parseSharedFavoriteTags("{}").isEmpty)
+    }
+
+    func testCollectionIndexFiltersDeletedCollections() {
+        let snapshot = FavoritesParser.parseCollectionIndex(from: #"""
+            [["collection","bookstr-collection-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","Keep","10"],
+             ["deleted","bookstr-collection-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","20"],
+             ["collection","bookstr-collection-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","Show","30"]]
+            """#)
+
+        XCTAssertEqual(snapshot.entries.count, 1)
+        XCTAssertEqual(snapshot.entries[0].0, "bookstr-collection-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")
+        XCTAssertEqual(snapshot.entries[0].1, "Show")
+    }
+
+    func testMatchSharedFavoritesUsesNormalizedISBNAcrossFormats() {
+        let result = FavoritesParser.matchSharedFavorites(
+            refs: [SharedFavoriteRef(isbn: "978-1-2345-6789-0")],
+            books: [CatalogBook(
+                id: "book-1",
+                title: "Matched",
+                author: "Author",
+                epubUrl: "https://example.com/book.epub",
+                coverUrl: nil,
+                sourceUrl: nil,
+                isbn: "9781234567890",
+                libvaultMd5: nil,
+                format: .epub,
+                blossomSha256: nil,
+                year: nil
+            )]
+        )
+
+        XCTAssertEqual(result.bookIds, ["book-1"])
+        XCTAssertTrue(result.external.isEmpty)
+    }
+
     func testInvalidPdfHeaderIsRejectedInsteadOfOpeningBlackReader() throws {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".pdf")
         defer { try? FileManager.default.removeItem(at: url) }
@@ -413,6 +453,88 @@ final class FavoritesParserTests: XCTestCase {
         let snapshot = try await webView.takeSnapshot(configuration: nil)
         XCTAssertGreaterThan(snapshot.size.width, 100)
         XCTAssertGreaterThan(snapshot.size.height, 100)
+    }
+
+    @MainActor
+    func testEPUBReaderCanAdjustFontPercentViaReaderAPI() async throws {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".epub")
+        defer { try? FileManager.default.removeItem(at: url) }
+        try makeAliceEpub().write(to: url)
+        let book = CatalogBook(
+            id: "test-alice", title: "Alice's Adventures in Wonderland", author: "Lewis Carroll",
+            epubUrl: url.absoluteString, coverUrl: nil, sourceUrl: nil, isbn: nil, libvaultMd5: nil,
+            format: .epub, blossomSha256: nil, year: "1865"
+        )
+        let controller = EPUBReaderController()
+        let container = AppContainer.bootstrap()
+        let view = EPUBReaderView(
+            book: book, fileURL: url, controller: controller, initialCFI: nil, highlightCFI: nil
+        ).frame(width: 390, height: 844).environmentObject(container)
+        let host = UIHostingController(rootView: view)
+        guard let scene = UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene }).first else {
+            throw XCTSkip("The hosted EPUB reader needs a UIWindowScene")
+        }
+        let window = UIWindow(windowScene: scene)
+        window.frame = CGRect(x: 0, y: 0, width: 390, height: 844)
+        window.rootViewController = host
+        window.makeKeyAndVisible()
+        host.view.setNeedsLayout()
+        host.view.layoutIfNeeded()
+        defer { window.isHidden = true }
+
+        let finished = XCTNSPredicateExpectation(
+            predicate: NSPredicate { _, _ in controller.ready || controller.errorMessage != nil },
+            object: nil
+        )
+        await fulfillment(of: [finished], timeout: 10)
+        XCTAssertNil(controller.errorMessage, "stage: \(controller.loadingStage)")
+        XCTAssertTrue(controller.ready, "stalled at stage: \(controller.loadingStage)")
+
+        guard let webView = findSubview(WKWebView.self, in: host.view) else {
+            return XCTFail("The mounted reader did not contain a WKWebView")
+        }
+        let adjustAvailable = try await webView.callAsyncJavaScript(
+            "return typeof window.adjustReaderFont;",
+            arguments: [:], in: nil, contentWorld: .page
+        ) as? String
+        XCTAssertEqual(adjustAvailable, "function")
+
+        let fontPercentBefore = try await webView.callAsyncJavaScript(
+            "return window.readerFontPercent;",
+            arguments: [:], in: nil, contentWorld: .page
+        ) as? NSNumber
+        XCTAssertNotNil(fontPercentBefore)
+        let before = fontPercentBefore?.intValue ?? 100
+
+        await webView.callAsyncJavaScript(
+            "window.adjustReaderFont(10);",
+            arguments: [:], in: nil, contentWorld: .page
+        )
+        let fontPercentAfterIncrease = try await webView.callAsyncJavaScript(
+            "return window.readerFontPercent;",
+            arguments: [:], in: nil, contentWorld: .page
+        ) as? NSNumber
+        XCTAssertEqual(fontPercentAfterIncrease?.intValue, min(before + 10, 180))
+
+        await webView.callAsyncJavaScript(
+            "window.adjustReaderFont(-1000);",
+            arguments: [:], in: nil, contentWorld: .page
+        )
+        let fontPercentAfterDecrease = try await webView.callAsyncJavaScript(
+            "return window.readerFontPercent;",
+            arguments: [:], in: nil, contentWorld: .page
+        ) as? NSNumber
+        XCTAssertEqual(fontPercentAfterDecrease?.intValue, 75)
+
+        await webView.callAsyncJavaScript(
+            "window.adjustReaderFont(1000);",
+            arguments: [:], in: nil, contentWorld: .page
+        )
+        let fontPercentAfterClamp = try await webView.callAsyncJavaScript(
+            "return window.readerFontPercent;",
+            arguments: [:], in: nil, contentWorld: .page
+        ) as? NSNumber
+        XCTAssertEqual(fontPercentAfterClamp?.intValue, 180)
     }
 
     private func findSubview<T: UIView>(_ type: T.Type, in root: UIView) -> T? {

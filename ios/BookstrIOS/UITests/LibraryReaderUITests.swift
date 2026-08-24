@@ -88,6 +88,22 @@ final class LibraryReaderUITests: XCTestCase {
         )
     }
 
+    func testEPUBReaderHasFontZoomControls() throws {
+        let (back, _) = openEPUB()
+
+        let zoomIn = app.buttons["reader-font-larger"]
+        let zoomOut = app.buttons["reader-font-smaller"]
+        XCTAssertTrue(zoomIn.waitForExistence(timeout: 4), "EPUB reader did not expose zoom-in button")
+        XCTAssertTrue(zoomOut.waitForExistence(timeout: 4), "EPUB reader did not expose zoom-out button")
+        XCTAssertTrue(zoomIn.isHittable, "zoom-in should be tappable")
+        XCTAssertTrue(zoomOut.isHittable, "zoom-out should be tappable")
+        zoomIn.tap()
+        zoomOut.tap()
+
+        back.tap()
+        XCTAssertTrue(app.navigationBars["Library"].waitForExistence(timeout: 5))
+    }
+
     private func openEPUB() -> (back: XCUIElement, chapter: XCUIElement) {
         let epub = app.buttons["library-book-ui-test-alice-epub"]
         XCTAssertTrue(epub.waitForExistence(timeout: 5))
