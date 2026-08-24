@@ -214,15 +214,23 @@
       if (key === 'availability') return availabilityForBook(book);
       if (key === 'cached') return isCached(book) ? 1 : 0;
       if (key === 'format') return book?.extension || book?.format || '';
-      if (key === 'language') return book?.language || '';
+      if (key === 'language') {
+        const language = String(book?.language || '').trim();
+        if (!language || typeof Intl?.DisplayNames !== 'function') return language;
+        try { return new Intl.DisplayNames(['en'], { type: 'language' }).of(language) || language; }
+        catch { return language; }
+      }
       return '';
     };
     const multiplier = direction === 'desc' ? -1 : 1;
     return [...books].sort((left, right) => {
       const leftValue = value(left);
       const rightValue = value(right);
-      if (typeof leftValue === 'number' && typeof rightValue === 'number') return (leftValue - rightValue) * multiplier;
-      return String(leftValue).localeCompare(String(rightValue), undefined, { numeric: true, sensitivity: 'base' }) * multiplier;
+      const comparison = typeof leftValue === 'number' && typeof rightValue === 'number'
+        ? (leftValue - rightValue) * multiplier
+        : String(leftValue).localeCompare(String(rightValue), undefined, { numeric: true, sensitivity: 'base' }) * multiplier;
+      if (comparison) return comparison;
+      return String(left?.title || '').localeCompare(String(right?.title || ''), undefined, { numeric: true, sensitivity: 'base' });
     });
   }
 

@@ -139,6 +139,7 @@ function listenForSearchResponse(requestID, service, senderPubkey, signer, tools
   const WebSocketImpl = options.WebSocketImpl !== undefined ? options.WebSocketImpl : globalThis.WebSocket;
   if (typeof WebSocketImpl !== 'function') throw new Error('WebSocket support is required for private search');
   const sockets = [];
+  const pendingPackets = [];
   let armed = false;
   let settled = false;
   let readyResolved = false;
@@ -147,6 +148,21 @@ function listenForSearchResponse(requestID, service, senderPubkey, signer, tools
   const result = new Promise((resolve, reject) => { resultResolve = resolve; resultReject = reject; });
   const subscription = `bookstr-search-${requestID.slice(0, 16)}`;
   let unavailable = service.relays.length;
+
+  const handlePacket = (packet, relay) => {
+    if (settled) return;
+    void unwrapLibVaultResponse(packet[2], service, senderPubkey, signer, tools).then(response => {
+      if (!response || response.type !== LIBVAULT_SEARCH_RESPONSE_TYPE || response.request_id !== requestID || settled) return;
+      settled = true;
+      options.onTrace?.({ direction: 'received', relay, event: packet[2], payload: response });
+      resultResolve(response);
+      close();
+    }).catch(() => {});
+  };
+  const flushPending = () => {
+    if (!armed || !readyResolved) return;
+    for (const [packet, relay] of pendingPackets.splice(0)) handlePacket(packet, relay);
+  };
 
   const close = () => {
     clearTimeout(resultTimer);
@@ -175,16 +191,12 @@ function listenForSearchResponse(requestID, service, senderPubkey, signer, tools
           readyResolved = true;
           readyResolve();
         }
+        flushPending();
         return;
       }
-      if (!armed || !live || settled || packet?.[0] !== 'EVENT' || packet[1] !== subscription) return;
-      void unwrapLibVaultResponse(packet[2], service, senderPubkey, signer, tools).then(response => {
-        if (!response || response.type !== LIBVAULT_SEARCH_RESPONSE_TYPE || response.request_id !== requestID || settled) return;
-        settled = true;
-        options.onTrace?.({ direction: 'received', relay, event: packet[2], payload: response });
-        resultResolve(response);
-        close();
-      }).catch(() => {});
+      if (settled || packet?.[0] !== 'EVENT' || packet[1] !== subscription) return;
+      if (!armed || !live) pendingPackets.push([packet, relay]);
+      else handlePacket(packet, relay);
     });
     socket.addEventListener('error', failReady, { once: true });
   }
@@ -197,6 +209,7 @@ function listenForSearchResponse(requestID, service, senderPubkey, signer, tools
     result,
     arm() {
       armed = true;
+      flushPending();
       resultTimer = setTimeout(() => {
         if (settled) return;
         settled = true;
@@ -248,7 +261,16 @@ export async function searchLibVault(query, searchType = 'all', options = {}) {
     listener.arm();
     const accepted = await Promise.all(service.relays.map(relay => publish(relay, wrap)));
     if (!accepted.some(Boolean)) throw new Error('No relay accepted the private LibVault search');
-    const response = await resultPromise;
+    let responseTimer;
+    const response = await Promise.race([
+      resultPromise,
+      new Promise((_, reject) => {
+        responseTimer = setTimeout(
+          () => reject(new Error('Private LibVault search response timed out')),
+          options.responseTimeoutMs || 20000,
+        );
+      }),
+    ]).finally(() => clearTimeout(responseTimer));
     if (response?.type !== LIBVAULT_SEARCH_RESPONSE_TYPE || (response?.request_id && response.request_id !== id)) {
       throw new Error('Private LibVault search response timed out');
     }

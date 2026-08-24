@@ -230,19 +230,22 @@ export function renderDashboard(suites) {
     :root { color-scheme: light; --paper:#f7f3ea; --surface:#fffaf2; --ink:#1c1916; --muted:#6b635a; --sage:#2f5d50; --sage-soft:#e5f1eb; --line:#d8cfc3; --red:#a33a2c; --red-soft:#f7e5e1; }
     * { box-sizing: border-box; }
     body { margin:0; min-height:100vh; background:var(--paper); color:var(--ink); font:15px/1.45 ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
-    main { width:min(100% - 2rem, 1180px); margin:0 auto; padding:clamp(.75rem,2vw,1.5rem) 0; }
+    main { width:min(100% - 1rem, 1600px); margin:0 auto; padding:clamp(.75rem,2vw,1.5rem) 0; }
     header { display:flex; align-items:flex-end; justify-content:space-between; gap:1rem; margin-bottom:.75rem; }
     .heading { display:flex; align-items:center; gap:.8rem; }
     .logo { width:4.5rem; height:4.5rem; }
     h1 { margin:0; font:700 clamp(1.65rem,4vw,2.4rem)/1.1 "Iowan Old Style",Palatino,Georgia,serif; color:var(--sage); }
     header p { margin:.4rem 0 0; color:var(--muted); }
     .back { color:var(--sage); font-weight:650; text-decoration-thickness:1px; text-underline-offset:.2em; white-space:nowrap; }
-    .table-wrap { overflow-x:auto; background:var(--surface); border:1px solid var(--line); box-shadow:0 14px 40px rgba(67,55,43,.07); }
-    table { width:100%; border-collapse:collapse; min-width:1180px; }
-    th,td { padding:1rem .85rem; text-align:left; border-right:1px solid var(--line); border-bottom:1px solid var(--line); vertical-align:middle; }
+    .table-wrap { background:var(--surface); border:1px solid var(--line); box-shadow:0 14px 40px rgba(67,55,43,.07); }
+    table { width:100%; border-collapse:collapse; table-layout:fixed; }
+    th,td { padding:.85rem .55rem; text-align:left; border-right:1px solid var(--line); border-bottom:1px solid var(--line); vertical-align:middle; overflow-wrap:anywhere; }
     tr > :last-child { border-right:0; }
     thead th { padding-top:.8rem; padding-bottom:.8rem; color:var(--muted); font-size:.72rem; letter-spacing:.09em; text-transform:uppercase; }
-    tbody th { width:150px; font-size:1rem; }
+    thead th:nth-child(1) { width:10%; }
+    thead th:nth-child(2) { width:10%; }
+    thead th:nth-child(3) { width:13%; }
+    tbody th { font-size:1rem; }
     tbody th a { color:var(--ink); text-decoration-color:color-mix(in srgb,var(--sage) 40%,transparent); text-underline-offset:.2em; }
     tbody tr:last-child > * { border-bottom:0; }
     time { white-space:nowrap; }
@@ -251,10 +254,9 @@ export function renderDashboard(suites) {
     .status.passing { color:#167b67; }
     .status.failing { color:var(--red); }
     .status.missing { color:var(--muted); }
-    .value { color:#168573; white-space:nowrap; }
+    .value { color:#168573; }
     .value small { display:block; color:var(--muted); font-size:.72rem; font-weight:400; }
-    footer { margin-top:1rem; color:var(--muted); font-size:.82rem; }
-    @media (max-width:640px) { main { width:min(100% - 1rem,1180px); padding:1rem 0; } header { align-items:flex-start; } .back { margin-top:.25rem; } }
+    @media (max-width:720px) { main { width:100%; padding:.5rem 0; } header { align-items:flex-start; padding:0 .5rem; } .back { margin-top:.25rem; } th,td { padding:.55rem .25rem; font-size:.68rem; } thead th { font-size:.58rem; letter-spacing:.03em; } tbody th { font-size:.75rem; } .status { font-size:.62rem; gap:.25rem; } .logo { width:3.5rem; height:3.5rem; } }
     @media (prefers-color-scheme:dark) { :root { color-scheme:dark; --paper:#121212; --surface:#1b1a18; --ink:#e8e4dc; --muted:#aaa39a; --sage:#7fb8a7; --sage-soft:#18382f; --line:#3b3833; --red:#f09a87; --red-soft:#40221d; } }
   </style>
 </head>
@@ -262,7 +264,6 @@ export function renderDashboard(suites) {
   <main>
     <header><div class="heading"><img class="logo" src="../public/favicon.svg" alt="Bookstr"><div><h1>Test overview</h1><p>${escapeHTML(summary)} · latest completed run per suite</p></div></div><a class="back" href="../">Back to Bookstr</a></header>
     <div class="table-wrap"><table><thead><tr><th>Suite</th><th>Status</th><th>Recorded (UTC)</th><th>Tests</th><th>Pass rate</th><th>Duration</th><th>Statements / instructions</th><th>Branches</th><th>Functions / methods</th><th>Lines</th></tr></thead><tbody>${complete.map(suiteRow).join('')}</tbody></table></div>
-    <footer>Generated automatically by GitHub Actions. Select a suite to inspect its run.</footer>
   </main>
 </body>
 </html>`;

@@ -133,6 +133,13 @@ test('finds reading metadata by readUrl, url, or Blossom URL', () => {
   assert.equal(findBookByReadUrl('https://blossom.example/abc.epub', reading, favorites)?.title, 'Other');
 });
 
+test('returns null when findBookByReadUrl cannot match any book', () => {
+  assert.equal(
+    findBookByReadUrl('https://example.test/missing.epub', [{ title: 'One', readUrl: 'https://example.test/one.epub' }]),
+    null,
+  );
+});
+
 test('normalizes away URL fragments when matching cached books', () => {
   assert.equal(
     normalizeReadUrl('https://example.test/book.epub#chapter-2'),
@@ -270,6 +277,11 @@ test('sorts availability and cached state', () => {
   assert.deepEqual(sortBooks(books, 'cached', 'desc', book => book.title === 'Remote').map(book => book.title), ['Remote', 'Local']);
 });
 
+test('sorts books by language', () => {
+  const books = [{ title: 'Z', language: 'pt' }, { title: 'A', language: 'en' }, { title: 'M', language: 'de' }];
+  assert.deepEqual(sortBooks(books, 'language').map(book => book.title), ['A', 'M', 'Z']);
+});
+
 test('sorts case-insensitively and handles missing metadata', () => {
   const books = [{ title: 'zebra' }, { title: 'Árvore' }, { title: 'Alpha' }, {}];
   const sorted = sortBooks(books, 'title').map(book => book.title || '');
@@ -337,6 +349,17 @@ test('different stable IDs never merge through a shared URL or ISBN', () => {
   assert.equal(books.length, 2);
 });
 
+test('dedupeLibraryBooks merges records without IDs when ISBN matches', () => {
+  const sharedIsbn = '978-3-16-148410-0';
+  const books = dedupeLibraryBooks([
+    { isbn: sharedIsbn, title: 'Edition A', authors: 'Author A', readUrl: 'https://example.test/book-a.epub' },
+    { isbn: '9783161484100', title: 'Untitled book', language: 'en' },
+    { isbn13: sharedIsbn, title: 'LibVault favorite', year: '2024' },
+  ]);
+  assert.equal(books.length, 1);
+  assert.equal(books[0].title, 'Edition A');
+});
+
 test('keeps a known read URL when a partial duplicate omits it', () => {
   const md5 = 'd'.repeat(32);
   const [book] = dedupeLibraryBooks([
@@ -355,6 +378,7 @@ test('matches library books by stable ID, then URL, then ISBN', () => {
   assert.equal(sameLibraryBook({ md5: 'a'.repeat(32) }, { md5: 'A'.repeat(32) }), true);
   assert.equal(sameLibraryBook({ readUrl: 'https://example.test/book.epub#one' }, { url: 'https://example.test/book.epub' }), true);
   assert.equal(sameLibraryBook({ isbn: '978-0-00-000000-1' }, { identifiers: [{ type: 'isbn', value: '9780000000001' }] }), true);
+  assert.equal(sameLibraryBook({ libvaultMd5: 'B'.repeat(32) }, { id: 'b'.repeat(32) }), true);
   assert.equal(sameLibraryBook({ md5: 'a'.repeat(32) }, { md5: 'b'.repeat(32) }), false);
 });
 
@@ -553,9 +577,29 @@ test('resolveTitle uses a base URL when only a relative read path is provided', 
   );
 });
 
+test('resolveTitle ignores malformed metadata JSON and falls back to filename', () => {
+  assert.equal(
+    resolveTitle({ readUrl: 'https://books-api.guaka.org/api/download/A%20Malformed%20Book.epub', metadata: '{"title":' }),
+    'A Malformed Book',
+  );
+});
+
+test('normalizeReadUrl keeps raw relative paths when no base URL is provided', () => {
+  assert.equal(normalizeReadUrl('/books/relative.epub'), '/books/relative.epub');
+});
+
 test('metadataEndpointForReadUrl ignores malformed ids and non-download endpoints', () => {
   assert.equal(metadataEndpointForReadUrl('https://books-api.guaka.org/api/books/48320'), '');
   assert.equal(metadataEndpointForReadUrl('https://books-api.guaka.org/api/books/abc/download?download=1'), '');
+});
+
+test('sorts by format and supports uncached flags without crashing', () => {
+  const books = [
+    { title: 'Second', extension: 'epub' },
+    { title: 'First', extension: 'pdf' },
+  ];
+  assert.equal(sortBooks(books, 'format')[0].title, 'Second');
+  assert.equal(sortBooks(books, 'cached', 'asc', () => false)[1].title, 'Second');
 });
 
 test('reading favorites from mixed metadata and ISBN keys are deduplicated', () => {
@@ -590,6 +634,20 @@ test('canonical catalog ids only accept openlibrary sources', () => {
   assert.equal(canonicalCatalogUrl({ source: 'openlibrary', sourceNativeId: 'OL123W' }), 'https://openlibrary.org/works/OL123W');
   assert.equal(canonicalCatalogUrl({ source: 'OpenLibrary', sourceNativeId: '123' }), 'https://openlibrary.org/works/OL123W');
   assert.equal(canonicalCatalogUrl({ source: 'gutenberg', sourceNativeId: '123' }), '');
+});
+
+test('canonicalCatalogUrl accepts source_native_id aliases from alternate payload shapes', () => {
+  assert.equal(
+    canonicalCatalogUrl({ source: 'openlibrary', source_native_id: 'OL999M' }),
+    'https://openlibrary.org/books/OL999M',
+  );
+});
+
+test('bookIdentity normalizes read URLs by stripping fragments', () => {
+  assert.equal(
+    bookIdentity({ readUrl: 'https://example.test/book.epub#chapter-2' }),
+    'url:https://example.test/book.epub',
+  );
 });
 
 test('normalizeFavoriteAddedAt keeps second precision for 10-digit unix values', () => {
@@ -661,6 +719,7 @@ test('extracts ISBN metadata from identifier arrays and normalizes it', () => {
     isbnForBook({ identifiers: [{ type: 'ISBN', value: '0-553-10953-7' }], isbn10: '9999999999' }),
     '0553109537',
   );
+  assert.equal(isbnForBook({ isbn: 'not-an-isbn' }), '');
 });
 
 test('keeps tracked read URL when incoming read URL is merely a placeholder title', () => {
@@ -680,4 +739,500 @@ test('keeps tracked read URL when incoming read URL is merely a placeholder titl
   assert.equal(enriched.year, '2024');
   assert.equal(enriched.metadataProvenance.language, 'private-search');
   assert.equal(enriched.metadataProvenance.readUrl, undefined);
+});
+
+test('normalizeFavoriteAddedAt handles empty and malformed inputs', () => {
+  assert.equal(normalizeFavoriteAddedAt(''), 0);
+  assert.equal(normalizeFavoriteAddedAt(undefined), 0);
+  assert.equal(normalizeFavoriteAddedAt('not-a-date'), 0);
+  assert.equal(earliestFavoriteAddedAt('', null, '2024-99-99'), 0);
+});
+
+test('favoriteAddedTag parses millisecond timestamps', () => {
+  assert.equal(
+    favoriteAddedTag('A'.repeat(32), '1700000000123'),
+    ['libvault-added', 'a'.repeat(32), '1700000000'],
+  );
+});
+
+test('sameLibraryBook detects equality by ISBN regardless of placeholder title', () => {
+  assert.equal(
+    sameLibraryBook(
+      { md5: 'a'.repeat(32), title: 'LibVault favorite', isbn: null },
+      { md5: '', isbn: '978-0-123456-78-9', title: 'Actual title' },
+    ),
+    false,
+  );
+  assert.equal(
+    sameLibraryBook(
+      { isbn: '978-0-123456-78-9', title: 'LibVault favorite' },
+      { isbn: '9780123456789', title: 'Untitled book', readUrl: 'https://example.test/book.epub' },
+    ),
+    true,
+  );
+});
+
+test('sameLibraryBook is insensitive to MD5 casing', () => {
+  assert.equal(
+    sameLibraryBook(
+      { md5: 'A'.repeat(32), title: 'Stored title' },
+      { md5: 'a'.repeat(32), title: 'Incoming title' },
+    ),
+    true,
+  );
+});
+
+test('matchesBookFilter returns true for an empty query', () => {
+  assert.equal(matchesBookFilter({ title: 'Any title' }, '   '), true);
+  assert.equal(matchesBookFilter({ title: 'Any title' }, ''), true);
+  assert.equal(matchesBookFilter({ title: 'Any title' }, null), true);
+});
+
+test('sortBooks supports descending cached ordering', () => {
+  const books = [
+    { title: 'Cached old', readUrl: 'https://example.test/cached-old', isCached: true },
+    { title: 'Fresh favorite', readUrl: 'https://example.test/fresh', isFavorite: true },
+  ];
+
+  const ordered = sortBooks(books, 'cached', 'desc', book => book?.isCached === true);
+  assert.equal(ordered[0].title, 'Cached old');
+  assert.equal(ordered[1].title, 'Fresh favorite');
+});
+
+test('bookIdentity strips URL fragments when using URL fallback', () => {
+  assert.equal(
+    bookIdentity({
+      title: 'LibVault favorite',
+      readUrl: 'https://example.test/#section-2',
+    }),
+    `url:https://example.test/`,
+  );
+});
+
+test('metadataEndpointForReadUrl returns empty for non-download endpoint paths', () => {
+  assert.equal(metadataEndpointForReadUrl('https://books-api.guaka.org/api/books/abc/download'), '');
+  assert.equal(metadataEndpointForReadUrl('https://books-api.guaka.org/api/read/123'), '');
+  assert.equal(metadataEndpointForReadUrl('https://example.test/books/123'), '');
+  assert.equal(metadataEndpointForReadUrl('https://books-api.guaka.org/api/books/123/download/extra'), '');
+});
+
+test('bookIdentity uses source_native_id when source is present without md5', () => {
+  assert.equal(
+    bookIdentity({
+      source: 'gutenberg',
+      sourceNativeId: '54321',
+      md5: '',
+    }),
+    'source:gutenberg:54321',
+  );
+});
+
+test('bookIdentity prefers explicit md5 over source-native hints', () => {
+  assert.equal(
+    bookIdentity({
+      md5: 'A'.repeat(32),
+      source: 'gutenberg',
+      sourceNativeId: 54321,
+      readUrl: 'https://example.test/book.epub',
+    }),
+    `id:${'a'.repeat(32)}`,
+  );
+});
+
+test('matchesBookFilter includes reading and favorite status keywords', () => {
+  const book = {
+    title: 'Signals',
+    authors: 'Terry Gilliam',
+    isReading: true,
+    isFavorite: true,
+    year: '2024',
+  };
+
+  assert.equal(matchesBookFilter(book, 'currently'), true);
+  assert.equal(matchesBookFilter(book, 'favourite'), true);
+  assert.equal(matchesBookFilter(book, 'notthere'), false);
+});
+
+test('dedupeLibraryBooks keeps a real author when duplicate has placeholder title', () => {
+  const deduped = dedupeLibraryBooks([
+    { md5: 'a'.repeat(32), title: 'Real title', author: 'Real Author' },
+    { md5: 'a'.repeat(32), title: 'Untitled book', author: 'Placeholder Author' },
+  ]);
+
+  assert.equal(deduped.length, 1);
+  assert.equal(deduped[0].title, 'Real title');
+  assert.equal(deduped[0].author, 'Real Author');
+});
+
+test('findBookByReadUrl matches blossom URL entries with URL normalization', () => {
+  const book = findBookByReadUrl(
+    'https://example.test/book.epub#reader',
+    [
+      { blossomUrl: 'https://example.test/book.epub', title: 'Normalized by hash' },
+      { readUrl: 'https://example.test/other-book.epub', title: 'Other' },
+    ],
+    [{ readUrl: 'https://books-api.guaka.org/api/read/123', title: 'Legacy ignored' }],
+  );
+
+  assert.equal(book?.title, 'Normalized by hash');
+});
+
+test('findBookByReadUrl matches url field entries with normalized fragments', () => {
+  const book = findBookByReadUrl(
+    'https://example.test/book?download#page=1',
+    [],
+    [{ url: 'https://example.test/book?download', title: 'Alternate key' }],
+  );
+
+  assert.equal(book?.title, 'Alternate key');
+});
+
+test('availabilitySourcesForBook returns metadata-only plus cached when needed', () => {
+  const book = {
+    title: 'Not available yet',
+    readUrl: 'https://example.test/book.epub',
+  };
+
+  assert.deepEqual(
+    availabilitySourcesForBook(book, true),
+    ['Metadata only', 'Cached'],
+  );
+  assert.deepEqual(
+    availabilityForBook(book, false),
+    'Metadata only',
+  );
+});
+
+test('sameLibraryBook matches md5 and libvaultMd5 across different key fields', () => {
+  const md5 = 'a'.repeat(32);
+  const fromShared = { libvaultMd5: md5 };
+  const fromCatalog = { md5: md5.toUpperCase() };
+
+  assert.equal(sameLibraryBook(fromShared, fromCatalog), true);
+});
+
+test('sameLibraryBook does not fall back to URL when both sides have distinct stable IDs', () => {
+  assert.equal(
+    sameLibraryBook(
+      { md5: 'a'.repeat(32), readUrl: 'https://example.test/book.epub' },
+      { id: 'b'.repeat(32), url: 'https://example.test/book.epub' },
+    ),
+    false,
+  );
+});
+
+test('bookIdentity uses explicit id when source-native id is absent', () => {
+  assert.equal(
+    bookIdentity({ id: 'catalog:123' }),
+    'source:book:catalog:123',
+  );
+});
+
+test('sameLibraryBook prioritizes stable IDs before URL matches', () => {
+  assert.equal(
+    sameLibraryBook(
+      { md5: 'a'.repeat(32), url: 'https://example.test/book.epub' },
+      { id: 'b'.repeat(32), readUrl: 'https://example.test/book.epub' },
+    ),
+    false,
+  );
+  assert.equal(
+    sameLibraryBook(
+      { md5: 'a'.repeat(32), id: 'source-1', url: 'https://example.test/book.epub' },
+      { id: 'a'.repeat(32), md5: 'b'.repeat(32), url: 'https://example.test/book.epub' },
+    ),
+    true,
+  );
+});
+
+test('isbnForBook keeps ISBN-10 check digit X normalization', () => {
+  assert.equal(
+    isbnForBook({ isbn10: '0-7475-3269-X' }),
+    '074753269X',
+  );
+});
+
+test('bookIdentity preserves md5 fallback ordering over URL and source', () => {
+  assert.equal(
+    bookIdentity({
+      md5: 'a'.repeat(32),
+      id: 'source:catalog:1',
+      readUrl: 'https://example.test/book.epub',
+      source: 'gutenberg',
+      sourceNativeId: '54321',
+    }),
+    `id:${'a'.repeat(32)}`,
+  );
+});
+
+test('bookIdentity defaults source label to book when source is absent but source-native id exists', () => {
+  assert.equal(
+    bookIdentity({ sourceNativeId: '54321' }),
+    'source:book:54321',
+  );
+});
+
+test('sortBooks keeps stable ordering for unknown key using title tiebreaker', () => {
+  const books = [
+    { title: 'B', year: '2020' },
+    { title: 'A', year: '2022' },
+  ];
+  const sorted = sortBooks(books, 'non-existent');
+  assert.deepEqual(sorted.map(book => book.title), ['A', 'B']);
+});
+
+test('isbnForBook prefers identifiers list over direct isbn fields', () => {
+  assert.equal(
+    isbnForBook({
+      isbn: '1111111111111',
+      identifiers: [{ type: 'isbn', value: '978-3-16-148410-0' }],
+    }),
+    '9783161484100',
+  );
+});
+
+test('sameLibraryBook can match by legacy id field when md5 is absent', () => {
+  assert.equal(
+    sameLibraryBook(
+      { id: 'source:book:54321' },
+      { id: 'source:book:54321', readUrl: 'https://example.test/book.epub' },
+    ),
+    true,
+  );
+  assert.equal(
+    sameLibraryBook(
+      { id: 'source:book:54321' },
+      { id: 'source:book:54322', readUrl: 'https://example.test/book.epub' },
+    ),
+    false,
+  );
+});
+
+test('availabilitySourcesForBook treats /api/read urls as metadata-only', () => {
+  assert.deepEqual(
+    availabilitySourcesForBook({
+      source: 'libvault',
+      readUrl: 'https://books-api.guaka.org/api/read/' + 'a'.repeat(32),
+    }),
+    ['Metadata only'],
+  );
+});
+
+test('availabilitySourcesForBook respects explicit blossom source hints', () => {
+  assert.deepEqual(
+    availabilitySourcesForBook({ source: 'blossom-cdn', blossomSha256: 'abc' }),
+    ['Blossom'],
+  );
+  assert.deepEqual(
+    availabilitySourcesForBook({ source: 'blossom-cdn', blossomSha256: 'abc' }, true),
+    ['Blossom', 'Cached'],
+  );
+});
+
+test('enrichBookMetadata resolves Gutenberg read URL from source-native metadata', () => {
+  const merged = enrichBookMetadata(
+    {},
+    { source: 'gutenberg', sourceNativeId: '30142', title: 'Remote metadata' },
+    'gutenberg-search',
+  );
+
+  assert.equal(merged.readUrl, 'https://books-api.guaka.org/api/books/30142/download');
+  assert.equal(merged.source, 'gutenberg');
+  assert.equal(merged.metadataProvenance.readUrl, 'gutenberg-search');
+});
+
+test('bookIdentity supports source_native_id alias when source is present', () => {
+  assert.equal(
+    bookIdentity({ source: 'gutenberg', source_native_id: '54321' }),
+    'source:gutenberg:54321',
+  );
+});
+
+test('sameLibraryBook matches stable IDs even when URL differs', () => {
+  assert.equal(
+    sameLibraryBook(
+      { id: 'source:book:54321', readUrl: 'https://example.test/book-a.epub' },
+      { id: 'source:book:54321', readUrl: 'https://example.test/book-b.epub' },
+    ),
+    true,
+  );
+});
+
+test('isbnForBook normalizes direct ISBN13 values and keeps checksum', () => {
+  assert.equal(
+    isbnForBook({ isbn13: '978 0 12 345 678 9 0' }),
+    '97801234567890',
+  );
+});
+
+test('availabilitySourcesForBook exposes blossom-only favorites as source list', () => {
+  assert.deepEqual(
+    availabilitySourcesForBook({
+      blossomSha256: 'b'.repeat(64),
+      title: 'Remote',
+    }),
+    ['Blossom'],
+  );
+});
+
+test('sameLibraryBook uses id when both records supply identifiers, ignoring URL conflicts', () => {
+  assert.equal(
+    sameLibraryBook(
+      { id: 'source:book:54321', url: 'https://example.test/book-a.epub' },
+      { id: 'source:book:54321', md5: 'a'.repeat(32), url: 'https://example.test/book-b.epub' },
+    ),
+    true,
+  );
+});
+
+test('availabilitySourcesForBook keeps Cached among metadata-only favorites', () => {
+  assert.deepEqual(
+    availabilitySourcesForBook({ title: 'Offline only', source: 'libvault' }, true),
+    ['Metadata only', 'Cached'],
+  );
+});
+
+test('sameLibraryBook normalizes and compares stable IDs with mixed casing', () => {
+  assert.equal(
+    sameLibraryBook(
+      { md5: 'A'.repeat(32) },
+      { libvaultMd5: 'a'.repeat(32) },
+    ),
+    true,
+  );
+});
+
+test('availabilitySourcesForBook detects Gutenberg access via download query URLs', () => {
+  assert.deepEqual(
+    availabilitySourcesForBook({
+      readUrl: 'https://books-api.guaka.org/api/books/48320/download?download=1',
+      source: 'other',
+    }),
+    ['Gutenberg'],
+  );
+});
+
+test('mergeLibraryState uses lastReadAt when updatedAt is not present', () => {
+  const [entry] = mergeLibraryState(
+    [
+      {
+        md5: 'a'.repeat(32),
+        title: 'Last read only',
+        lastReadAt: 777,
+      },
+    ],
+    [],
+  );
+
+  assert.equal(entry.title, 'Last read only');
+  assert.equal(entry.isReading, true);
+  assert.equal(entry.readingUpdatedAt, 777);
+});
+
+test('findBookByReadUrl resolves from the first matching collection', () => {
+  const reading = [{ md5: 'a'.repeat(32), readUrl: 'https://example.test/reading.epub', title: 'Reading' }];
+  const favorites = [{ md5: 'a'.repeat(32), url: 'https://example.test/reading.epub', title: 'Favorite' }];
+
+  const found = findBookByReadUrl('https://example.test/reading.epub', reading, favorites);
+  assert.equal(found?.title, 'Reading');
+});
+
+test('resolveTitle treats placeholder filenames as missing metadata', () => {
+  assert.equal(
+    resolveTitle({ readUrl: 'https://example.test/download' }),
+    'Untitled book',
+  );
+});
+
+test('sameLibraryBook returns false when only titles overlap and no stable key exists', () => {
+  assert.equal(
+    sameLibraryBook(
+      { title: 'Shared title', readUrl: 'https://example.test/book-a.epub' },
+      { title: 'Shared title', readUrl: 'https://example.test/book-b.epub' },
+    ),
+    false,
+  );
+});
+
+test('mergeLibraryState preserves a real author when incoming favorite title is placeholder', () => {
+  const merged = mergeLibraryState(
+    [
+      {
+        md5: 'a'.repeat(32),
+        title: 'Real title',
+        authors: 'Real Author',
+        updatedAt: 100,
+      },
+    ],
+    [
+      {
+        md5: 'a'.repeat(32),
+        title: 'Untitled book',
+        author: 'Placeholder Author',
+        favoriteAddedAt: 150,
+      },
+    ],
+  );
+
+  assert.equal(merged.length, 1);
+  assert.equal(merged[0].title, 'Real title');
+  assert.equal(merged[0].authors, 'Real Author');
+});
+
+test('metadataEndpointForReadUrl returns empty on parse errors', () => {
+  assert.equal(metadataEndpointForReadUrl('://not-a-url'), '');
+});
+
+test('canonicalReadUrl preserves direct blossom URLs', () => {
+  assert.equal(
+    canonicalReadUrl({ blossomUrl: 'https://example.test/download' }),
+    'https://example.test/download',
+  );
+});
+
+test('canonicalReadUrl preserves unparseable fallback URLs', () => {
+  assert.equal(
+    canonicalReadUrl({ blossomUrl: '::://bad-url' }),
+    '::://bad-url',
+  );
+});
+
+test('metadataEndpointForReadUrl rejects non-canonical upload suffix casing', () => {
+  assert.equal(
+    metadataEndpointForReadUrl('https://books-api.guaka.org/api/books/48320/DOWNLOAD?download=1'),
+    '',
+  );
+});
+
+test('normalizeReadUrl keeps malformed URLs unchanged when no base is present', () => {
+  assert.equal(normalizeReadUrl('/books/relative.epub'), '/books/relative.epub');
+  assert.equal(normalizeReadUrl('not a valid url'), 'not a valid url');
+});
+
+test('normalizeReadUrl clears fragments and resolves relative URLs with a base', () => {
+  assert.equal(
+    normalizeReadUrl('/local/reader.epub#chapter', 'https://books-api.guaka.org/library/index.html'),
+    'https://books-api.guaka.org/local/reader.epub',
+  );
+});
+
+test('sortBooks leaves unknown key sorting to title order fallback', () => {
+  const books = [
+    { title: 'Zulu', year: '2020' },
+    { title: 'Alpha', year: '2024' },
+    { title: 'Bravo', year: '2023' },
+  ];
+
+  const sorted = sortBooks(books, 'non-existent');
+  assert.deepEqual(sorted.map(item => item.title), ['Alpha', 'Bravo', 'Zulu']);
+});
+
+test('sameLibraryBook normalizes URLs for equality regardless of hash fragments', () => {
+  assert.equal(
+    sameLibraryBook(
+      { readUrl: 'https://example.test/book.epub#chapter-2' },
+      { url: 'https://example.test/book.epub#section-5' },
+    ),
+    true,
+  );
 });

@@ -43,5 +43,5 @@ test('renders an accessible dashboard with links and missing suites', () => {
   assert.match(html, /status missing/);
   assert.match(html, /class="logo"[^>]+alt="Bookstr"/);
   assert.match(html, /<th>Tests<\/th><th>Pass rate<\/th><th>Duration<\/th>/);
-  assert.doesNotMatch(html, /border-radius/);
+  assert.doesNotMatch(html, /border-radius:999px/);
 });

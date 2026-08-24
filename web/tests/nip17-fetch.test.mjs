@@ -406,6 +406,27 @@ test('monitorLibVaultFetch normalizes string progress counters to numbers', asyn
   assert.equal(result.blossom.sha256, 'c'.repeat(64));
 });
 
+test('monitorLibVaultFetch reports unknown job states as queued and eventually times out', async () => {
+  const progress = [];
+  const result = await monitorLibVaultFetch('a'.repeat(32), {
+    intervalMs: 0,
+    timeoutMs: 12,
+    onProgress: update => progress.push(update),
+    fetchImpl: async () => ({
+      ok: true,
+      json: async () => ({ status: 'queued', bytes: '12', total: '100' }),
+    }),
+  });
+
+  assert.equal(progress[0]?.status, 'waiting');
+  assert.equal(progress[1]?.status, 'queued');
+  assert.equal(progress[1]?.bytes, 12);
+  assert.equal(progress[1]?.total, 100);
+  assert.equal(progress.at(-1)?.status, 'failed');
+  assert.equal(result.status, 'failed');
+  assert.equal(result.error, 'Timed out waiting for LibVault');
+});
+
 test('monitorLibVaultFetch reports a failed blossom lookup as publishing when invalid payload is returned', async () => {
   const progress = [];
   const result = await monitorLibVaultFetch('a'.repeat(32), {
@@ -1516,6 +1537,26 @@ test('monitorLibVaultFetch keeps waiting when fetch throws', async () => {
   assert.equal(progress.at(-1).status, 'failed');
 });
 
+
+test('monitorLibVaultFetch treats malformed job payloads as waiting until timeout', async () => {
+  const progress = [];
+  const result = await monitorLibVaultFetch('a'.repeat(32), {
+    intervalMs: 0,
+    timeoutMs: 10,
+    onProgress: update => progress.push(update),
+    fetchImpl: async () => ({
+      ok: true,
+      json: async () => {
+        throw new Error('malformed job response');
+      },
+    }),
+  });
+
+  assert.equal(result.status, 'failed');
+  assert.equal(result.error, 'Timed out waiting for LibVault');
+  assert.equal(progress[0]?.status, 'waiting');
+  assert.equal(progress.some(update => update.status === 'waiting'), true);
+});
 
 test('resolveLibVaultService rejects invalid NIP-05 pubkeys', async () => {
   await assert.rejects(
@@ -2871,6 +2912,7 @@ test('searchLibVault ignores an unmatched default listener response and resolves
       nip44: {
         encrypt: async () => '{}',
         decrypt: async (_peer, ciphertext) => {
+          if (ciphertext.startsWith('{')) return ciphertext;
           const requestID = sentPayload?.request_id || '';
           const rumor = {
             pubkey: service,
@@ -3516,15 +3558,18 @@ test('searchLibVault ignores non-object EVENT payload and resolves from a valid 
         const subscription = packet[1];
         this.subscriptions.add(subscription);
         setTimeout(() => this._emit('message', { data: JSON.stringify(['EVENT', subscription, 'not-an-object']) }), 0);
-        setTimeout(() => this._emit('message', { data: JSON.stringify(['EVENT', subscription, {
-          kind: 1059,
-          pubkey: service,
-          created_at: Math.floor(Date.now() / 1000),
-          tags: [['p', sender]],
-          content: `sealed:${sentPayload?.request_id ?? ''}`,
-        }]) }), 1);
-        setTimeout(() => this._emit('message', { data: JSON.stringify(['EOSE', subscription]) }), 2);
+        setTimeout(() => this._emit('message', { data: JSON.stringify(['EOSE', subscription]) }), 1);
       }
+    }
+
+    emitResponse(subscription, requestID) {
+      this._emit('message', { data: JSON.stringify(['EVENT', subscription, {
+        kind: 1059,
+        pubkey: service,
+        created_at: Math.floor(Date.now() / 1000),
+        tags: [['p', sender]],
+        content: `sealed:${requestID}`,
+      }]) });
     }
 
     close() {
@@ -3550,18 +3595,22 @@ test('searchLibVault ignores non-object EVENT payload and resolves from a valid 
             tags: [['p', sender]],
             content: `rumor:${rest.join(':')}`,
           });
-          if (kind === 'rumor') return JSON.stringify({
-            kind: 14,
-            created_at: Math.floor(Date.now() / 1000),
-            pubkey: service,
-            tags: [['p', sender]],
-            content: JSON.stringify({
+          if (kind === 'rumor') {
+            const rumor = {
+              kind: 14,
+              created_at: Math.floor(Date.now() / 1000),
+              pubkey: service,
+              tags: [['p', sender]],
+              content: JSON.stringify({
               type: LIBVAULT_SEARCH_RESPONSE_TYPE,
               request_id: rest.join(':'),
               status: 'ready',
               books: [{ title: 'Non-object payload ignored reply' }],
-            }),
-          });
+              }),
+            };
+            rumor.id = nostrTools.getEventHash(rumor);
+            return JSON.stringify(rumor);
+          }
           return '{}';
         },
       },
@@ -3581,7 +3630,14 @@ test('searchLibVault ignores non-object EVENT payload and resolves from a valid 
       nip44: { v2: { utils: { getConversationKey: () => new Uint8Array(32).fill(8) }, encrypt: plaintext => `wrapped:${plaintext}` } },
       verifyEvent: () => true,
     }),
-    publish: async () => true,
+    publish: async () => {
+      for (const socket of sockets) {
+        for (const subscription of socket.subscriptions) {
+          socket.emitResponse(subscription, sentPayload?.request_id ?? '');
+        }
+      }
+      return true;
+    },
     onTrace: trace => {
       if (trace.direction === 'sent') sentPayload = trace.payload;
     },
@@ -3592,4 +3648,74 @@ test('searchLibVault ignores non-object EVENT payload and resolves from a valid 
   assert.ok(sentPayload?.request_id);
   assert.equal(response.status, 'ready');
   assert.equal(response.books?.[0]?.title, 'Non-object payload ignored reply');
+});
+
+test('lookupLibVaultBlossomState rejects malformed md5 identifiers', async () => {
+  const blossom = await lookupLibVaultBlossomState('not-an-md5', async () => ({
+    ok: true,
+    json: async () => ({ status: 'ready', sha256: 'a'.repeat(64), url: 'https://blossom.example/file.epub' }),
+  }));
+
+  assert.equal(blossom, null);
+});
+
+test('monitorLibVaultFetch rejects invalid identifiers before polling', async () => {
+  await assert.rejects(
+    () => monitorLibVaultFetch('not-an-md5', { intervalMs: 0, timeoutMs: 20 }),
+    /A LibVault MD5 is required to monitor a fetch/,
+  );
+});
+
+test('searchLibVault clamps oversized limits to the maximum', async () => {
+  const sender = senderPubkey;
+  let capturedLimit;
+  let sentPayload;
+  const response = await searchLibVault('books', 'title', {
+    signer: {
+      getPublicKey: async () => sender,
+      nip44: {
+        encrypt: async () => '{}',
+        decrypt: async () => '',
+      },
+      signEvent: async event => ({ ...event, id: 'seed', pubkey: sender, sig: 'signed' }),
+    },
+    fetchImpl: async () => ({
+      ok: true,
+      json: async () => ({
+        names: { books: servicePubkey },
+        relays: { [servicePubkey]: ['wss://relay.example'] },
+      }),
+    }),
+    loadTools: async () => ({
+      generateSecretKey: () => new Uint8Array(32).fill(7),
+      finalizeEvent: event => ({ ...event, id: 'wrap', pubkey: 'f'.repeat(64), sig: 'wrapped' }),
+      nip19: { npubEncode: pubkey => `npub:${pubkey}` },
+      nip44: { v2: { utils: { getConversationKey: () => new Uint8Array(32).fill(8) }, encrypt: plaintext => `wrapped:${plaintext}` } },
+      verifyEvent: () => true,
+    }),
+    publish: async () => true,
+    onTrace: trace => {
+      if (trace.direction === 'sent') {
+        sentPayload = trace.payload;
+        capturedLimit = trace.payload.limit;
+      }
+    },
+    listen: ({ requestID }) => ({
+      ready: Promise.resolve(),
+      arm: () => {},
+      close: () => {},
+      result: Promise.resolve({
+        type: LIBVAULT_SEARCH_RESPONSE_TYPE,
+        request_id: requestID,
+        status: 'ready',
+        books: [{ title: 'Limited Search' }],
+      }),
+    }),
+    limit: 500,
+  });
+
+  assert.equal(capturedLimit, 200);
+  assert.equal(sentPayload?.request_id?.length > 0, true);
+  assert.equal(response.status, 'ready');
+  assert.equal(response.books[0]?.title, 'Limited Search');
 });

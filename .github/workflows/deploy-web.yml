@@ -41,9 +41,21 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
         run: |
-          echo "ci=$(gh api "repos/$GH_REPO/actions/workflows/ci.yml/runs?branch=main&status=completed&per_page=1" --jq '.workflow_runs[0].id // 0')" >> "$GITHUB_OUTPUT"
-          echo "android=$(gh api "repos/$GH_REPO/actions/workflows/android.yml/runs?branch=main&status=completed&per_page=1" --jq '.workflow_runs[0].id // 0')" >> "$GITHUB_OUTPUT"
-          echo "ios=$(gh api "repos/$GH_REPO/actions/workflows/ios.yml/runs?branch=main&status=completed&per_page=1" --jq '.workflow_runs[0].id // 0')" >> "$GITHUB_OUTPUT"
+          latest_run_with_artifact() {
+            workflow="$1"
+            artifact_prefix="$2"
+            for run_id in $(gh api "repos/$GH_REPO/actions/workflows/$workflow/runs?branch=main&status=completed&per_page=30" --jq '.workflow_runs[].id'); do
+              if gh api "repos/$GH_REPO/actions/runs/$run_id/artifacts" --jq '.artifacts[].name' | grep -q "^${artifact_prefix}"; then
+                echo "$run_id"
+                return
+              fi
+            done
+            echo 0
+          }
+          echo "ci=$(latest_run_with_artifact ci.yml bookstr-test-overview-web-)" >> "$GITHUB_OUTPUT"
+          echo "android=$(latest_run_with_artifact android.yml bookstr-test-overview-android-)" >> "$GITHUB_OUTPUT"
+          echo "android_ui=$(latest_run_with_artifact android.yml bookstr-test-overview-android-ui-)" >> "$GITHUB_OUTPUT"
+          echo "ios=$(latest_run_with_artifact ios.yml bookstr-test-overview-ios-)" >> "$GITHUB_OUTPUT"
       - name: Download latest web results
         if: steps.runs.outputs.ci != '0'
         continue-on-error: true
@@ -60,7 +72,17 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           run-id: ${{ steps.runs.outputs.android }}
-          pattern: bookstr-test-overview-android*
+          pattern: bookstr-test-overview-android-*
+          path: test-overview-data
+          merge-multiple: true
+          github-token: ${{ github.token }}
+      - name: Download latest Android UI results
+        if: steps.runs.outputs.android_ui != '0'
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          run-id: ${{ steps.runs.outputs.android_ui }}
+          pattern: bookstr-test-overview-android-ui-*
           path: test-overview-data
           merge-multiple: true
           github-token: ${{ github.token }}
