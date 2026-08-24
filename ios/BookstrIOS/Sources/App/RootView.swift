@@ -72,6 +72,7 @@ struct RootView: View {
         .task {
             guard !attemptedInitialContinuation else { return }
             attemptedInitialContinuation = true
+            guard !ProcessInfo.processInfo.arguments.contains("--ui-testing-library-fixtures") else { return }
             openContinuation(reportMissing: false)
         }
         .onReceive(container.wordNavigation.$requestToken) { _ in
