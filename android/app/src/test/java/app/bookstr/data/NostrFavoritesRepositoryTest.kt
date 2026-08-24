@@ -237,7 +237,6 @@ class NostrFavoritesRepositoryTest {
         assertNull(NostrFavoritesRepository.chunkManifest("""[["bookstr-chunks",null,"bookstr-chunk-generation"]]"""))
     }
 
-    @Test
     @Test(expected = org.json.JSONException::class)
     fun parseSharedFavoriteTagsRejectsInvalidJsonPayload() {
         NostrFavoritesRepository.parseSharedFavoriteTags("not-json")
