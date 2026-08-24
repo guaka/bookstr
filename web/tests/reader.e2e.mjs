@@ -26,6 +26,43 @@ async function minimalEpub(title, body = title) {
   return zip.generateAsync({ type: 'nodebuffer', mimeType: 'application/epub+zip' });
 }
 
+async function readerFixtureEpub(title) {
+  const zip = new JSZip();
+  const paragraphs = Array.from({ length: 90 }, (_, index) => (
+    `<p>${title} reading fixture paragraph ${index + 1}. This text keeps the continuous reader tall enough to exercise wheel and keyboard navigation.</p>`
+  )).join('');
+  zip.file('mimetype', 'application/epub+zip', { compression: 'STORE' });
+  zip.file('META-INF/container.xml', `<?xml version="1.0"?>
+    <container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
+      <rootfiles><rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/></rootfiles>
+    </container>`);
+  zip.file('OEBPS/content.opf', `<?xml version="1.0" encoding="UTF-8"?>
+    <package version="3.0" xmlns="http://www.idpf.org/2007/opf" unique-identifier="book-id">
+      <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
+        <dc:identifier id="book-id">urn:bookstr:reader-fixture:${title}</dc:identifier>
+        <dc:title>${title}</dc:title><dc:language>en</dc:language>
+      </metadata>
+      <manifest>
+        <item id="cover-image" href="cover.svg" media-type="image/svg+xml" properties="cover-image"/>
+        <item id="cover" href="cover.xhtml" media-type="application/xhtml+xml"/>
+        <item id="chapter" href="chapter.xhtml" media-type="application/xhtml+xml"/>
+      </manifest>
+      <spine><itemref idref="cover"/><itemref idref="chapter"/></spine>
+    </package>`);
+  zip.file('OEBPS/cover.svg', `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 900">
+    <rect width="600" height="900" fill="#2f5d50"/><rect x="55" y="55" width="490" height="790" fill="#f7f3ea"/>
+    <text x="300" y="450" text-anchor="middle" font-size="42" fill="#1c1916">${title}</text>
+  </svg>`);
+  zip.file('OEBPS/cover.xhtml', `<?xml version="1.0" encoding="UTF-8"?>
+    <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops">
+      <head><title>${title} cover</title></head><body epub:type="cover"><img src="cover.svg" alt="${title} cover"/></body>
+    </html>`);
+  zip.file('OEBPS/chapter.xhtml', `<?xml version="1.0" encoding="UTF-8"?>
+    <html xmlns="http://www.w3.org/1999/xhtml"><head><title>${title}</title></head>
+      <body><h1>${title}</h1>${paragraphs}</body></html>`);
+  return zip.generateAsync({ type: 'nodebuffer', mimeType: 'application/epub+zip' });
+}
+
 function minimalPdf(text) {
   const escaped = String(text).replace(/([\\()])/g, '\\$1');
   const stream = `BT /F1 24 Tf 72 720 Td (${escaped}) Tj ET`;
@@ -58,6 +95,12 @@ const books = [
 for (const book of books) {
   test(`${book.title} keeps a large cover and advances`, async ({ page }) => {
     const readUrl = `https://books-api.guaka.org/api/books/${book.id}/download`;
+    const epub = await readerFixtureEpub(book.title);
+    await page.route(readUrl, route => route.fulfill({
+      status: 200,
+      contentType: 'application/epub+zip',
+      body: epub,
+    }));
     await page.goto(`/#read=${encodeURIComponent(readUrl)}`);
 
     await expect(page.locator('#reader-frame')).toHaveAttribute('src', /reader\.html/);
@@ -95,6 +138,12 @@ test('legacy LibVault links become MD5 routes and open the Blossom copy', async 
   const md5 = 'f5277d56f3ecec3912e1b2b60cbd0eed';
   const legacyUrl = `https://lib.b.bfr.ee/api/read/${md5}`;
   const blossomUrl = 'https://books-api.guaka.org/api/books/30142/download';
+  const epub = await minimalEpub('Little Brother');
+  await page.route(blossomUrl, route => route.fulfill({
+    status: 200,
+    contentType: 'application/epub+zip',
+    body: epub,
+  }));
 
   await page.addInitScript(({ md5, legacyUrl, blossomUrl }) => {
     localStorage.setItem('bookstr_nostr_favorites_v1', JSON.stringify([{
@@ -145,7 +194,7 @@ test('an MD5 route reopens a legacy URL-keyed EPUB cache while offline', async (
   const downloadUrl = 'https://books-api.guaka.org/api/books/30142/download';
   const legacyKey = `https://lib.b.bfr.ee/api/read/${md5}`;
   await page.goto('/#home');
-  const bytes = await page.evaluate(async url => [...new Uint8Array(await (await fetch(url)).arrayBuffer())], downloadUrl);
+  const bytes = [...await minimalEpub('Cached Little Brother')];
   await page.evaluate(async ({ legacyKey, bytes }) => {
     const database = await new Promise((resolve, reject) => {
       const request = indexedDB.open('bookstr_epub_cache_v1', 1);
