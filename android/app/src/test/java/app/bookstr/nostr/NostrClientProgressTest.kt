@@ -51,9 +51,24 @@ class NostrClientProgressTest {
     }
 
     @Test
+    fun parseLegacyFlatPayloadAcceptsStringProgression() {
+        val legacy = """{"progression":"0.55","cfi":"epubcfi(/6/8)"}"""
+        val parsed = NostrClient.parseProgressContent(legacy, bookId)!!
+        assertEquals(bookId, parsed.first)
+        assertEquals(0.55, parsed.second, 1e-9)
+        assertEquals("epubcfi(/6/8)", parsed.third)
+    }
+
+    @Test
     fun rejectGarbage() {
         assertNull(NostrClient.parseProgressContent("""{"hello":"world"}""", bookId))
         assertNull(NostrClient.parseProgressContent("{}", bookId))
+    }
+
+    @Test
+    fun rejectMissingLocatorAndLegacyProgression() {
+        assertNull(NostrClient.parseProgressContent("""{"bookId":"$bookId","foo":1}""", bookId))
+        assertNull(NostrClient.parseProgressContent("""null""", bookId))
     }
 
     @Test
@@ -66,6 +81,12 @@ class NostrClientProgressTest {
         )
         assertEquals(42L, NostrClient.parseUpdatedAt(withUpdated, 99L))
         assertEquals(99_000L, NostrClient.parseUpdatedAt("""{"progression":0.1}""", 99L))
+    }
+
+    @Test
+    fun parseUpdatedAtFallsBackForNonnumericInput() {
+        assertEquals(7_000L, NostrClient.parseUpdatedAt("""{"updatedAt":"not-a-number"}""", 7L))
+        assertEquals(8_000L, NostrClient.parseUpdatedAt("""{"updatedAt":null}""", 8L))
     }
 
     @Test
