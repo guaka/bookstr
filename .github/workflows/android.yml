@@ -51,7 +51,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: bookstr-android-unit-coverage-${{ github.sha }}
-          path: app/build/reports/jacoco/jacocoDebugUnitTestReport/
+          path: android/app/build/reports/jacoco/
       - name: Assemble debug
         id: assemble
         if: always()
@@ -63,7 +63,10 @@ jobs:
         env:
           TEST_STATUS: ${{ steps.unit_tests.outcome == 'success' && steps.unit_coverage.outcome == 'success' && steps.assemble.outcome == 'success' && 'passing' || 'failing' }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-        run: node scripts/test-overview.mjs record --id android --suite Android --status "$TEST_STATUS" --results-format junit --results android/app/build/test-results/testDebugUnitTest --coverage-format jacoco --coverage android/app/build/reports/jacoco/jacocoDebugUnitTestReport/jacocoDebugUnitTestReport.xml --output test-overview/android.json --recorded "$(date -u +%FT%TZ)" --run-url "$RUN_URL" --commit "$GITHUB_SHA"
+        run: |
+          coverage_xml="$(find android/app/build/reports/jacoco -name '*.xml' -print -quit)"
+          test -n "$coverage_xml"
+          node scripts/test-overview.mjs record --id android --suite Android --status "$TEST_STATUS" --results-format junit --results android/app/build/test-results/testDebugUnitTest --coverage-format jacoco --coverage "$coverage_xml" --output test-overview/android.json --recorded "$(date -u +%FT%TZ)" --run-url "$RUN_URL" --commit "$GITHUB_SHA"
       - name: Upload Android test overview
         if: always()
         uses: actions/upload-artifact@v4
