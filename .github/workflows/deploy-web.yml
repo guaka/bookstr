@@ -5,11 +5,16 @@ on:
     branches: [main]
     paths:
       - 'web/**'
+      - 'scripts/test-overview.mjs'
       - '.github/workflows/deploy-web.yml'
+  workflow_run:
+    workflows: [CI, Android CI, iOS CI]
+    types: [completed]
   workflow_dispatch:
 
 permissions:
   contents: read
+  actions: read
   pages: write
   id-token: write
 
@@ -19,16 +24,62 @@ concurrency:
 
 jobs:
   build:
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.head_branch == 'main'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
       - name: Check static web entrypoint
         run: test -f web/index.html
+      - name: Find latest completed test runs
+        id: runs
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          echo "ci=$(gh api "repos/$GH_REPO/actions/workflows/ci.yml/runs?branch=main&status=completed&per_page=1" --jq '.workflow_runs[0].id // 0')" >> "$GITHUB_OUTPUT"
+          echo "android=$(gh api "repos/$GH_REPO/actions/workflows/android.yml/runs?branch=main&status=completed&per_page=1" --jq '.workflow_runs[0].id // 0')" >> "$GITHUB_OUTPUT"
+          echo "ios=$(gh api "repos/$GH_REPO/actions/workflows/ios.yml/runs?branch=main&status=completed&per_page=1" --jq '.workflow_runs[0].id // 0')" >> "$GITHUB_OUTPUT"
+      - name: Download latest web results
+        if: steps.runs.outputs.ci != '0'
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          run-id: ${{ steps.runs.outputs.ci }}
+          pattern: bookstr-test-overview-web-*
+          path: test-overview-data
+          merge-multiple: true
+          github-token: ${{ github.token }}
+      - name: Download latest Android results
+        if: steps.runs.outputs.android != '0'
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          run-id: ${{ steps.runs.outputs.android }}
+          pattern: bookstr-test-overview-android*
+          path: test-overview-data
+          merge-multiple: true
+          github-token: ${{ github.token }}
+      - name: Download latest iOS results
+        if: steps.runs.outputs.ios != '0'
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          run-id: ${{ steps.runs.outputs.ios }}
+          pattern: bookstr-test-overview-ios-*
+          path: test-overview-data
+          merge-multiple: true
+          github-token: ${{ github.token }}
+      - name: Generate test overview
+        run: node scripts/test-overview.mjs render --input test-overview-data --output web/tests/index.html
       - uses: actions/upload-pages-artifact@v3
         with:
           path: web
 
   deploy:
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.head_branch == 'main'
     needs: build
     runs-on: ubuntu-latest
     environment:

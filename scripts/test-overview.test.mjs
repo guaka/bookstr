@@ -1,0 +1,36 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+
+import {
+  parseIstanbul,
+  parseJacoco,
+  parseJUnit,
+  parsePlaywright,
+  parseTap,
+  parseXCResult,
+  renderDashboard,
+} from './test-overview.mjs';
+
+test('normalizes platform test reports', () => {
+  assert.deepEqual(parseTap('# tests 4\n# pass 3\n# fail 1\n# skipped 0\n# duration_ms 125.5'), {
+    tests: 4, passed: 3, failed: 1, skipped: 0, durationMs: 125.5,
+  });
+  assert.deepEqual(parseJUnit(['<testsuite tests="5" failures="1" errors="1" skipped="1" time="2.5"></testsuite>']), {
+    tests: 5, passed: 2, failed: 2, skipped: 1, durationMs: 2500,
+  });
+  assert.equal(parsePlaywright({ stats: { expected: 6, unexpected: 1, skipped: 2, duration: 900 } }).tests, 9);
+  assert.equal(parseXCResult({ totalTestCount: 8, failedTests: 1, skippedTests: 1 }).passed, 6);
+});
+
+test('normalizes Istanbul and JaCoCo coverage', () => {
+  assert.equal(parseIstanbul({ total: { statements: { pct: 90 }, branches: { pct: 80 }, functions: { pct: 70 }, lines: { pct: 60 } } })[0].value, 90);
+  const metrics = parseJacoco('<report><counter type="LINE" missed="2" covered="8"/><counter type="METHOD" missed="1" covered="9"/><counter type="BRANCH" missed="3" covered="7"/><counter type="INSTRUCTION" missed="4" covered="6"/></report>');
+  assert.deepEqual(metrics.map(metric => metric.value), [60, 70, 90, 80]);
+});
+
+test('renders an accessible dashboard with links and missing suites', () => {
+  const html = renderDashboard([{ id: 'web', suite: 'Web', status: 'passing', recorded: '2026-08-24T10:00:00Z', runUrl: 'https://example.com/run', results: { tests: 10, passed: 10 }, coverage: [] }]);
+  assert.match(html, /<th scope="row"><a href="https:\/\/example\.com\/run">Web<\/a><\/th>/);
+  assert.match(html, /10\/10/);
+  assert.match(html, /status missing/);
+});

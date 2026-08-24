@@ -5,10 +5,12 @@ on:
     branches: [main]
     paths:
       - 'android/**'
+      - 'scripts/test-overview.mjs'
       - '.github/workflows/android.yml'
   pull_request:
     paths:
       - 'android/**'
+      - 'scripts/test-overview.mjs'
       - '.github/workflows/android.yml'
   workflow_dispatch:
 
@@ -25,6 +27,9 @@ jobs:
         working-directory: android
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -34,8 +39,13 @@ jobs:
       - name: Install SDK packages
         run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
       - name: Unit tests
+        id: unit_tests
+        continue-on-error: true
         run: ./gradlew --no-daemon testDebugUnitTest
       - name: Generate unit coverage
+        id: unit_coverage
+        if: always()
+        continue-on-error: true
         run: ./gradlew --no-daemon jacocoDebugUnitTestReport
       - name: Upload unit test coverage
         uses: actions/upload-artifact@v4
@@ -43,7 +53,26 @@ jobs:
           name: bookstr-android-unit-coverage-${{ github.sha }}
           path: app/build/reports/jacoco/jacocoDebugUnitTestReport/
       - name: Assemble debug
+        id: assemble
+        if: always()
+        continue-on-error: true
         run: ./gradlew --no-daemon assembleDebug
+      - name: Record Android test overview
+        if: always()
+        working-directory: .
+        env:
+          TEST_STATUS: ${{ steps.unit_tests.outcome == 'success' && steps.unit_coverage.outcome == 'success' && steps.assemble.outcome == 'success' && 'passing' || 'failing' }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: node scripts/test-overview.mjs record --id android --suite Android --status "$TEST_STATUS" --results-format junit --results android/app/build/test-results/testDebugUnitTest --coverage-format jacoco --coverage android/app/build/reports/jacoco/jacocoDebugUnitTestReport/jacocoDebugUnitTestReport.xml --output test-overview/android.json --recorded "$(date -u +%FT%TZ)" --run-url "$RUN_URL" --commit "$GITHUB_SHA"
+      - name: Upload Android test overview
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bookstr-test-overview-android-${{ github.run_id }}
+          path: test-overview/android.json
+      - name: Fail unsuccessful Android checks
+        if: always() && (steps.unit_tests.outcome != 'success' || steps.unit_coverage.outcome != 'success' || steps.assemble.outcome != 'success')
+        run: exit 1
 
   android-instrumented:
     name: Android UI
@@ -51,6 +80,9 @@ jobs:
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -65,9 +97,26 @@ jobs:
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
       - name: Compose UI tests
+        id: ui_tests
+        continue-on-error: true
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 30
           arch: x86_64
           target: google_apis
           script: cd android && ./gradlew --no-daemon connectedDebugAndroidTest
+      - name: Record Android UI test overview
+        if: always()
+        env:
+          TEST_STATUS: ${{ steps.ui_tests.outcome == 'success' && 'passing' || 'failing' }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: node scripts/test-overview.mjs record --id android-ui --suite "Android UI" --status "$TEST_STATUS" --results-format junit --results android/app/build/outputs/androidTest-results --output test-overview/android-ui.json --recorded "$(date -u +%FT%TZ)" --run-url "$RUN_URL" --commit "$GITHUB_SHA"
+      - name: Upload Android UI test overview
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bookstr-test-overview-android-ui-${{ github.run_id }}
+          path: test-overview/android-ui.json
+      - name: Fail unsuccessful Android UI checks
+        if: always() && steps.ui_tests.outcome != 'success'
+        run: exit 1

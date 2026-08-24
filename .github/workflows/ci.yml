@@ -35,13 +35,19 @@ jobs:
         with:
           node-version: 22
       - name: Run static web tests
-        run: node --test web/tests/*.test.mjs
+        id: web_tests
+        continue-on-error: true
+        run: node --test --test-reporter=tap web/tests/*.test.mjs scripts/*.test.mjs | tee web-tests.tap
       - name: Generate web test coverage
+        id: web_coverage
+        if: always()
+        continue-on-error: true
         run: |
           npx -y c8 \
             --report-dir web/coverage/web-tests \
             --reporter=html \
             --reporter=lcov \
+            --reporter=json-summary \
             --reporter=text \
             node --test web/tests/*.test.mjs
       - name: Archive web coverage artifacts
@@ -50,6 +56,28 @@ jobs:
           name: bookstr-web-coverage-${{ github.sha }}
           path: web/coverage/web-tests/
       - name: Install browser test runner
+        if: always()
         run: npm install --no-save --no-package-lock @playwright/test@1.62.1 && npx playwright install --with-deps chromium
       - name: Test real EPUB reading
-        run: npx playwright test --config web/playwright.config.mjs
+        id: web_e2e
+        if: always()
+        continue-on-error: true
+        run: npx playwright test --config web/playwright.config.mjs --reporter=json > web-playwright.json
+      - name: Record web test overview
+        if: always()
+        env:
+          UNIT_STATUS: ${{ steps.web_tests.outcome == 'success' && steps.web_coverage.outcome == 'success' && 'passing' || 'failing' }}
+          E2E_STATUS: ${{ steps.web_e2e.outcome == 'success' && 'passing' || 'failing' }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          node scripts/test-overview.mjs record --id web --suite Web --status "$UNIT_STATUS" --results-format tap --results web-tests.tap --coverage-format istanbul --coverage web/coverage/web-tests/coverage-summary.json --output test-overview/web.json --recorded "$(date -u +%FT%TZ)" --run-url "$RUN_URL" --commit "$GITHUB_SHA"
+          node scripts/test-overview.mjs record --id web-e2e --suite "Web end-to-end" --status "$E2E_STATUS" --results-format playwright --results web-playwright.json --output test-overview/web-e2e.json --recorded "$(date -u +%FT%TZ)" --run-url "$RUN_URL" --commit "$GITHUB_SHA"
+      - name: Upload web test overview
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bookstr-test-overview-web-${{ github.run_id }}
+          path: test-overview/*.json
+      - name: Fail unsuccessful web checks
+        if: always() && (steps.web_tests.outcome != 'success' || steps.web_coverage.outcome != 'success' || steps.web_e2e.outcome != 'success')
+        run: exit 1
