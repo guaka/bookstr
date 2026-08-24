@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#173b36" />
+    <title>LibVault Documentation</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/docsify@4/lib/themes/vue.css" />
+    <style>
+      :root {
+        --theme-color: #b85c38;
+        --link-color: #9c4327;
+      }
+
+      body {
+        color: #1f2926;
+        background: #f7f2e9;
+      }
+
+      .sidebar {
+        background: #173b36;
+        color: #f7f2e9;
+      }
+
+      .sidebar a,
+      .sidebar li.collapse .app-sub-sidebar a {
+        color: #e7ddc9;
+      }
+
+      .sidebar li.active > a,
+      .sidebar a:hover {
+        color: #ffbf69;
+      }
+
+      .app-name-link,
+      .app-name-link:visited {
+        color: #ffffff;
+      }
+
+      .markdown-section {
+        max-width: 900px;
+      }
+
+      .markdown-section h1,
+      .markdown-section h2,
+      .markdown-section h3 {
+        color: #173b36;
+      }
+
+      .markdown-section code {
+        color: #9c4327;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app">Loading documentation...</div>
+    <script>
+      window.$docsify = {
+        name: "LibVault",
+        repo: "https://github.com/guaka/bookstr",
+        homepage: "README.md",
+        loadSidebar: true,
+        relativePath: true,
+        auto2top: true,
+        subMaxLevel: 2
+      };
+    </script>
+    <script src="https://cdn.jsdelivr.net/npm/docsify@4"></script>
+  </body>
+</html>
