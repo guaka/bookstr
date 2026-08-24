@@ -635,3 +635,48 @@ test('saved-word deletion reports the missing signer without losing the local wo
   await expect(page.locator('#status')).toContainText('Could not delete offline: Connect NIP-07');
   await expect(page.locator('#words-list')).toContainText('offline');
 });
+
+test('HTTP search results expose format filters and can be favorited in place', async ({ page }) => {
+  await page.route('https://books-api.guaka.org/api/search**', route => route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify({
+      books: [
+        {
+          md5: '99999999999999999999999999999999',
+          title: 'Paper Boats',
+          authors: ['A. Reader'],
+          language: 'en',
+          extension: 'epub',
+          readUrl: 'https://files.test/paper-boats.epub',
+        },
+        {
+          md5: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+          title: 'Paper Walls',
+          authors: ['B. Leitor'],
+          language: 'pt',
+          extension: 'pdf',
+          readUrl: 'https://files.test/paper-walls.pdf',
+        },
+      ],
+    }),
+  }));
+
+  await page.goto('/#search=paper');
+  await expect(page.locator('#search-result-count')).toHaveText('2 results');
+  await expect(page.locator('#results')).toContainText('Paper Boats');
+  await expect(page.locator('#results')).toContainText('Paper Walls');
+  await expect(page.locator('#search-format-filter')).toBeVisible();
+
+  await page.locator('#search-format-filter').selectOption('pdf');
+  await expect(page.locator('#search-result-count')).toHaveText('1 of 2 results');
+  await expect(page.locator('#results')).toContainText('Paper Walls');
+  await expect(page.locator('#results')).not.toContainText('Paper Boats');
+
+  const favorite = page.locator('#results button[data-action="favorite"]').first();
+  await favorite.click();
+  await expect(favorite).toHaveAttribute('aria-label', 'Remove from favorites');
+  await expect.poll(async () => page.evaluate(() => JSON.parse(
+    localStorage.getItem('bookstr_nostr_favorites_v1') || '[]',
+  )[0]?.title)).toBe('Paper Walls');
+});

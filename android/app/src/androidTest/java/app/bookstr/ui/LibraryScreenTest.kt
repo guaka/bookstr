@@ -3,6 +3,7 @@ package app.bookstr.ui
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertDoesNotExist
 import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.hasProgressBarRangeInfo
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
@@ -339,5 +340,25 @@ class LibraryScreenTest {
         composeRule.onNodeWithText("Downloaded Book").performTouchInput { longClick() }
         composeRule.onNodeWithText("Delete download").performClick()
         assertEquals(book, deleted)
+    }
+
+    @Test
+    fun loadingAnEmptyLibraryShowsProgressInsteadOfEmptyShelves() {
+        composeRule.setContent {
+            LibraryScreen(
+                books = emptyList(),
+                favoriteIds = emptySet(),
+                externalFavorites = emptyList(),
+                progress = emptyMap(),
+                loading = true,
+                error = null,
+                onRefresh = {},
+                onOpenBook = {},
+                onOpenExternal = {},
+            )
+        }
+
+        composeRule.onNode(hasProgressBarRangeInfo()).assertIsDisplayed()
+        composeRule.onNodeWithText("Heart a book in LibVault to keep it here.").assertDoesNotExist()
     }
 }

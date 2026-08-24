@@ -128,6 +128,27 @@ class WordsScreenTest {
         assertEquals(saved, opened)
     }
 
+    @Test
+    fun emptyWordsStateAndErrorAreBothVisible() {
+        composeRule.setContent {
+            WordsScreen(
+                words = emptyList(),
+                error = "Could not sync words",
+                sortKey = "recent",
+                focusWord = null,
+                focusRequestKey = 0,
+                onSortChange = {},
+                onOpenWord = {},
+                onDeleteWord = {},
+            )
+        }
+
+        composeRule.onNodeWithText("Could not sync words").assertIsDisplayed()
+        composeRule.onNodeWithText(
+            "Select a word while reading. It will be saved here even when no definition is found.",
+        ).assertIsDisplayed()
+    }
+
     private fun word(
         key: String,
         text: String,
