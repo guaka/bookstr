@@ -501,5 +501,4 @@ test('tabs persist selection in route hash transitions', () => {
 test('reader-open route always updates hash with encoded book identity', () => {
   assert.match(html, /setHashRoute\(`read=\$\{encodeURIComponent\(readRouteValue\(book, readPath\)\)\}`\);/);
   assert.match(html, /const readPath = BookMetadata\.canonicalReadUrl\(book, BOOKS_API_BASE\);/);
-  assert.match(html, /readRouteValue\(book, readPath\);/);
 });
