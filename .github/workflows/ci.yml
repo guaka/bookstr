@@ -71,7 +71,7 @@ jobs:
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           node scripts/test-overview.mjs record --id web --suite Web --status "$UNIT_STATUS" --results-format tap --results web-tests.tap --coverage-format istanbul --coverage web/coverage/web-tests/coverage-summary.json --output test-overview/web.json --recorded "$(date -u +%FT%TZ)" --run-url "$RUN_URL" --commit "$GITHUB_SHA"
-          node scripts/test-overview.mjs record --id web-e2e --suite "Web e2e" --status "$E2E_STATUS" --results-format playwright --results web-playwright.json --output test-overview/web-e2e.json --recorded "$(date -u +%FT%TZ)" --run-url "$RUN_URL" --commit "$GITHUB_SHA"
+          node scripts/test-overview.mjs record --id web-e2e --suite "Web end-to-end" --status "$E2E_STATUS" --results-format playwright --results web-playwright.json --output test-overview/web-e2e.json --recorded "$(date -u +%FT%TZ)" --run-url "$RUN_URL" --commit "$GITHUB_SHA"
       - name: Upload web test overview
         if: always()
         uses: actions/upload-artifact@v4

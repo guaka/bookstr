@@ -13,7 +13,7 @@ function argumentsMap(values) {
 }
 
 function number(value) {
-  const parsed = Number(value?._value ?? value?.value ?? value);
+  const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
@@ -78,25 +78,16 @@ export function parsePlaywright(report) {
 }
 
 export function parseXCResult(summary) {
-  const configurations = Array.isArray(summary?.devicesAndConfigurations) ? summary.devicesAndConfigurations : [];
-  const count = key => {
-    const direct = Array.isArray(summary?.[key]) ? summary[key].length : number(summary?.[key]);
-    return direct || configurations.reduce((sum, item) => sum + (Array.isArray(item?.[key]) ? item[key].length : number(item?.[key])), 0);
-  };
   const total = number(summary?.totalTestCount ?? summary?.statistics?.find(item => item.title === 'Tests')?.value);
-  const failed = count('failedTests');
-  const skipped = count('skippedTests');
-  const explicitPassed = count('passedTests');
-  const timestamp = value => {
-    if (typeof value === 'number') return value < 10_000_000_000 ? value * 1000 : value;
-    return new Date(value || 0).valueOf();
-  };
+  const failed = Array.isArray(summary?.failedTests) ? summary.failedTests.length : number(summary?.failedTests);
+  const skipped = Array.isArray(summary?.skippedTests) ? summary.skippedTests.length : number(summary?.skippedTests);
+  const explicitPassed = Array.isArray(summary?.passedTests) ? summary.passedTests.length : number(summary?.passedTests);
   return {
     tests: total || explicitPassed + failed + skipped,
     passed: explicitPassed || Math.max(0, total - failed - skipped),
     failed,
     skipped,
-    durationMs: Math.max(0, timestamp(summary?.finishTime) - timestamp(summary?.startTime)),
+    durationMs: Math.max(0, new Date(summary?.finishTime || 0) - new Date(summary?.startTime || 0)),
   };
 }
 
@@ -111,25 +102,18 @@ export function parseIstanbul(summary) {
 
 export function parseJacoco(xml) {
   const labels = { INSTRUCTION: 'Instructions', BRANCH: 'Branches', METHOD: 'Methods', LINE: 'Lines' };
-  const counters = [...xml.matchAll(/<counter\s+([^>]+)\/?>/g)].map(match => {
-    const attributes = Object.fromEntries([...match[1].matchAll(/(\w+)="([^"]*)"/g)].map(attribute => [attribute[1], attribute[2]]));
-    return attributes;
-  });
-  const last = new Map(counters.filter(counter => labels[counter.type]).map(counter => [counter.type, counter]));
-  return Object.entries(labels).flatMap(([type, label]) => {
-    const counter = last.get(type);
-    if (!counter) return [];
-    const missed = number(counter.missed);
-    const covered = number(counter.covered);
+  const counters = [...xml.matchAll(/<counter type="(INSTRUCTION|BRANCH|METHOD|LINE)" missed="(\d+)" covered="(\d+)"\s*\/?>/g)];
+  const last = new Map(counters.map(match => [match[1], match]));
+  return Object.entries(labels).map(([type, label]) => {
+    const match = last.get(type);
+    const missed = number(match?.[2]);
+    const covered = number(match?.[3]);
     return { label, value: percent(covered, covered + missed), suffix: '%' };
   });
 }
 
 export function parseXCCov(report) {
-  const targets = Array.isArray(report?.targets) ? report.targets : [];
-  const executable = number(report?.executableLines) || targets.reduce((sum, target) => sum + number(target?.executableLines), 0);
-  const covered = number(report?.coveredLines) || targets.reduce((sum, target) => sum + number(target?.coveredLines), 0);
-  const coverage = executable ? percent(covered, executable) : number(report?.lineCoverage) * 100;
+  const coverage = number(report?.lineCoverage) * 100;
   return [{ label: 'Lines', value: Number(coverage.toFixed(2)), suffix: '%' }];
 }
 
@@ -196,7 +180,7 @@ function suiteRow(suite) {
   const status = suite.status === 'passing' ? 'Passing' : suite.status === 'failing' ? 'Failing' : 'Not recorded';
   const date = suite.recorded ? new Date(suite.recorded) : null;
   const recorded = date && !Number.isNaN(date.valueOf())
-    ? `<time datetime="${escapeHTML(suite.recorded)}" title="UTC">${escapeHTML(date.toISOString().slice(0, 16).replace('T', ' '))}</time>`
+    ? `<time datetime="${escapeHTML(suite.recorded)}">${escapeHTML(date.toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'UTC' }))} UTC</time>`
     : 'Not recorded';
   const suiteName = suite.runUrl
     ? `<a href="${escapeHTML(suite.runUrl)}">${escapeHTML(suite.suite)}</a>`
@@ -211,7 +195,7 @@ function suiteRow(suite) {
 
 export function renderDashboard(suites) {
   const order = ['web', 'web-e2e', 'android', 'android-ui', 'ios'];
-  const names = { web: 'Web', 'web-e2e': 'Web e2e', android: 'Android', 'android-ui': 'Android UI', ios: 'iOS' };
+  const names = { web: 'Web', 'web-e2e': 'Web end-to-end', android: 'Android', 'android-ui': 'Android UI', ios: 'iOS' };
   const byId = new Map(suites.map(suite => [suite.id, suite]));
   const complete = order.map(id => byId.get(id) || { id, suite: names[id], status: 'missing', results: {}, coverage: [] });
   const passing = complete.filter(suite => suite.status === 'passing').length;
@@ -231,8 +215,6 @@ export function renderDashboard(suites) {
     body { margin:0; min-height:100vh; background:var(--paper); color:var(--ink); font:15px/1.45 ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
     main { width:min(100% - 2rem, 1180px); margin:0 auto; padding:clamp(2rem,6vw,5rem) 0; }
     header { display:flex; align-items:flex-end; justify-content:space-between; gap:1rem; margin-bottom:1.25rem; }
-    .heading { display:flex; align-items:center; gap:.8rem; }
-    .logo { width:2.7rem; height:2.7rem; border-radius:.65rem; }
     h1 { margin:0; font:700 clamp(1.65rem,4vw,2.4rem)/1.1 "Iowan Old Style",Palatino,Georgia,serif; color:var(--sage); }
     header p { margin:.4rem 0 0; color:var(--muted); }
     .back { color:var(--sage); font-weight:650; text-decoration-thickness:1px; text-underline-offset:.2em; white-space:nowrap; }
@@ -259,8 +241,8 @@ export function renderDashboard(suites) {
 </head>
 <body>
   <main>
-    <header><div class="heading"><img class="logo" src="../public/favicon.svg" alt="Bookstr"><div><h1>Test overview</h1><p>${escapeHTML(summary)} · latest completed run per suite</p></div></div><a class="back" href="../">Back to Bookstr</a></header>
-    <div class="table-wrap"><table><thead><tr><th>Suite</th><th>Status</th><th>Recorded (UTC)</th><th>Result</th></tr></thead><tbody>${complete.map(suiteRow).join('')}</tbody></table></div>
+    <header><div><h1>Test overview</h1><p>${escapeHTML(summary)} · latest completed run per suite</p></div><a class="back" href="../">Back to Bookstr</a></header>
+    <div class="table-wrap"><table><thead><tr><th>Suite</th><th>Status</th><th>Recorded</th><th>Result</th></tr></thead><tbody>${complete.map(suiteRow).join('')}</tbody></table></div>
     <footer>Generated automatically by GitHub Actions. Select a suite to inspect its run.</footer>
   </main>
 </body>

@@ -59,10 +59,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: bookstr-test-overview-ios-${{ github.run_id }}
-          path: |
-            test-overview/ios.json
-            ios/test-summary.json
-            ios/coverage.json
+          path: test-overview/ios.json
       - name: Fail unsuccessful iOS checks
         if: always() && (steps.ios_tests.outcome != 'success' || steps.ios_results.outcome != 'success')
         run: exit 1
