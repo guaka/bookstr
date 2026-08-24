@@ -1359,7 +1359,7 @@
           <button id="npub-button" type="button" class="npub-info hidden" aria-label="Open settings" aria-pressed="false" title="Settings"><span id="npub-display" class="npub-pill">not connected</span></button>
           <button id="search-tab-btn" class="header-tab" type="button" aria-label="Search" aria-selected="true" title="Search"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m15.5 15.5 5 5"/></svg></button>
           <button id="reading-tab-btn" class="header-tab" type="button" aria-label="Reading" aria-selected="false" title="Reading"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5.5c3.2-.8 5.9-.2 8 1.6v12c-2.1-1.8-4.8-2.4-8-1.6z"/><path d="M20 5.5c-3.2-.8-5.9-.2-8 1.6v12c2.1-1.8 4.8-2.4 8-1.6z"/></svg></button>
-          <button id="words-tab-btn" class="header-tab words-tab-icon" type="button" aria-label="Words" aria-selected="false" title="Words">Aᵥ</button>
+          <button id="words-tab-btn" class="header-tab words-tab-icon hidden" type="button" aria-label="Words" aria-selected="false" title="Words">Aᵥ</button>
           <button id="settings-btn" class="header-tab icon-btn" aria-label="Settings" aria-selected="false" aria-pressed="false" title="Settings"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15.25A3.25 3.25 0 1 0 12 8.75a3.25 3.25 0 0 0 0 6.5Z"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06-1.87 1.87-.06-.06A1.7 1.7 0 0 0 16 18.4a1.7 1.7 0 0 0-1 .6 1.7 1.7 0 0 0-.4 1.1V20h-2.65v-.09A1.7 1.7 0 0 0 10.9 18.4a1.7 1.7 0 0 0-1.87.34l-.06.06-1.87-1.87.06-.06A1.7 1.7 0 0 0 7.5 15a1.7 1.7 0 0 0-.6-1 1.7 1.7 0 0 0-1.1-.4H5.7v-2.65h.09A1.7 1.7 0 0 0 7.5 9.9a1.7 1.7 0 0 0-.34-1.87l-.06-.06L8.97 6.1l.06.06A1.7 1.7 0 0 0 10.9 6.5a1.7 1.7 0 0 0 1-.6 1.7 1.7 0 0 0 .4-1.1V4.7h2.65v.09A1.7 1.7 0 0 0 16 6.5a1.7 1.7 0 0 0 1.87-.34l.06-.06 1.87 1.87-.06.06A1.7 1.7 0 0 0 19.4 9.9a1.7 1.7 0 0 0 .6 1 1.7 1.7 0 0 0 1.1.4h.09v2.65h-.09A1.7 1.7 0 0 0 19.4 15Z"/></svg></button>
         </div>
       </header>
@@ -1384,10 +1384,6 @@
           <div class="home-column">
             <h3>Favorites</h3>
             <ul id="home-favorites-list" class="sublist"></ul>
-          </div>
-          <div class="home-column">
-            <h3>Words</h3>
-            <div id="home-words-list" class="meta-list"></div>
           </div>
         </div>
       </section>
@@ -1608,7 +1604,6 @@
       homeLibraryCount.setAttribute('aria-live', 'polite');
       homeLibraryHeading?.append(homeLibraryCount);
       homeFavoritesSection?.remove();
-      const homeWordsList = document.getElementById('home-words-list');
       const homeBookSorts = Object.create(null);
       const homeLibraryFilter = { language: '', format: '' };
       const searchType = document.getElementById('search-type');
@@ -2416,6 +2411,7 @@
           blossomSha256: ref.blossomSha256 || '',
           readUrl,
           source: ref.source || 'nostr',
+          sourceNativeId: ref.sourceNativeId || ref.source_native_id || '',
           sourceUrl,
           favoriteAddedAt,
           updatedAt: Number(ref.updatedAt || favoriteAddedAt || 0),
@@ -3218,9 +3214,14 @@
         renderHome();
       }
 
+      function hasActiveWords() {
+        return state.words.map(normalizeVocabularyWord).some(entry => entry && !entry.deleted);
+      }
+
       function renderWords() {
         wordsList.innerHTML = '';
         const activeWords = state.words.map(normalizeVocabularyWord).filter(entry => entry && !entry.deleted);
+        wordsTabBtn.classList.toggle('hidden', activeWords.length === 0);
         if (!activeWords.length) {
           wordsList.textContent = 'Select a word while reading. It will be saved here even when no definition is found.';
           return;
@@ -3895,12 +3896,18 @@
         waitForReadableBook();
       }
 
+      let readRouteGeneration = 0;
+
       async function openResolvedReadRoute(bookRef) {
+        const routeGeneration = ++readRouteGeneration;
         let book = await resolveReadRouteBook(bookRef);
+        if (routeGeneration !== readRouteGeneration) return;
         showReadMetadataFallback(book);
         const readPath = BookMetadata.canonicalReadUrl(book, BOOKS_API_BASE);
         const cached = await cachedBookBlob(book, readPath).catch(() => null);
+        if (routeGeneration !== readRouteGeneration) return;
         const cachedFormat = await bookFormatForBlob(cached);
+        if (routeGeneration !== readRouteGeneration) return;
         if (cachedFormat) book = { ...book, extension: cachedFormat, format: cachedFormat };
         if (!readPath && !cached) {
           if (isMd5(bookRef) && state.settings.useNip7 && window.nostr) {
@@ -4266,28 +4273,10 @@
         const readableCount = matchingBooks.filter(isBookReadableNow).length;
         homeLibraryCount.textContent = `${visibleCount} · ${readableCount} readable now`;
         renderHomeBookList(homeReadingList, matchingBooks, 'No books match these filters.');
-        homeWordsList.innerHTML = '';
-        const words = [...new Set([...state.words].map(word => String(word?.word || word)).filter(Boolean))].sort((a, b) => a.localeCompare(b)).slice(0, 18);
-        if (!words.length) {
-          homeWordsList.textContent = 'No saved words yet.';
-          return;
-        }
-        for (const word of words) {
-          const link = document.createElement('a');
-          link.href = `#words=${encodeURIComponent(word)}`;
-          link.textContent = word;
-          link.addEventListener('click', event => {
-            event.preventDefault();
-            wordsFilter.value = word;
-            activateTab('words');
-            renderWords();
-            setHashRoute(`words=${encodeURIComponent(word)}`);
-          });
-          homeWordsList.appendChild(link);
-        }
       }
 
       function activateTab(tab, { updateHash = false } = {}) {
+        if (tab === 'words' && !hasActiveWords()) tab = 'home';
         activeTab = ['home', 'search', 'reading', 'words', 'settings'].includes(tab) ? tab : 'home';
         homeTab.classList.toggle('hidden', activeTab !== 'home');
         searchTab.classList.toggle('hidden', activeTab !== 'search');
@@ -4617,29 +4606,71 @@
       }
 
       let readerOpenGeneration = 0;
+      let readerFrameKind = '';
+      let readerFrameNavigation = null;
+      let readerFrameNavigationId = 0;
+
+      async function readerFrameLoader(kind, openGeneration) {
+        const loaderName = kind === 'pdf' ? 'loadPdf' : 'loadBook';
+        const readerPath = kind === 'pdf' ? 'pdf-reader.html' : 'reader.html';
+        const existingLoader = readerFrame.contentWindow?.[loaderName];
+        if (!readerFrameNavigation && readerFrameKind === kind && typeof existingLoader === 'function') {
+          return existingLoader;
+        }
+
+        if (!readerFrameNavigation || readerFrameNavigation.kind !== kind) {
+          readerFrameNavigation?.cancel();
+          const navigationId = ++readerFrameNavigationId;
+          let cancelNavigation;
+          const navigation = {
+            kind,
+            cancel: () => cancelNavigation?.(),
+          };
+          navigation.promise = new Promise((resolve, reject) => {
+            let settled = false;
+            const settle = callback => value => {
+              if (settled) return;
+              settled = true;
+              clearTimeout(timeout);
+              callback(value);
+            };
+            const resolveOnce = settle(resolve);
+            const rejectOnce = settle(reject);
+            cancelNavigation = () => resolveOnce(false);
+            const timeout = setTimeout(() => {
+              rejectOnce(new Error(`${kind === 'pdf' ? 'PDF' : 'EPUB'} reader timed out while loading.`));
+            }, 15_000);
+            readerFrame.onload = () => {
+              if (readerFrameNavigation !== navigation) return;
+              const loader = readerFrame.contentWindow?.[loaderName];
+              // A newly inserted iframe can still emit its initial about:blank
+              // load after navigation starts. Ignore it and wait for the
+              // document that exposes the requested reader API.
+              if (typeof loader !== 'function') return;
+              readerFrameKind = kind;
+              resolveOnce(true);
+            };
+            readerFrame.src = `${readerPath}?load=${navigationId}`;
+          }).finally(() => {
+            if (readerFrameNavigation === navigation) readerFrameNavigation = null;
+          });
+          readerFrameNavigation = navigation;
+        }
+
+        const ready = await readerFrameNavigation.promise;
+        if (!ready || openGeneration !== readerOpenGeneration || readerFrameKind !== kind) return null;
+        const loader = readerFrame.contentWindow?.[loaderName];
+        return typeof loader === 'function' ? loader : null;
+      }
 
       async function displayEpub(blob, book, openGeneration) {
         const theme = state.settings.theme === 'dark' ? 'night' : state.settings.theme;
         const base64 = await blobToBase64(blob);
         if (openGeneration !== readerOpenGeneration) return;
-        return new Promise((resolve, reject) => {
-          readerFrame.onload = async () => {
-            if (openGeneration !== readerOpenGeneration) {
-              resolve();
-              return;
-            }
-            try {
-              const readerLoad = readerFrame.contentWindow?.loadBook;
-              if (typeof readerLoad !== 'function') throw new Error('EPUB reader did not load.');
-              await readerLoad(base64, book.cfi || '', theme, book.md5 || BookMetadata.bookIdentity(book));
-              status.textContent = `Opened ${book.title || 'book'}.`;
-              resolve();
-            } catch (error) {
-              reject(error);
-            }
-          };
-          readerFrame.src = `reader.html#${Date.now()}`;
-        });
+        const readerLoad = await readerFrameLoader('epub', openGeneration);
+        if (!readerLoad) return;
+        await readerLoad(base64, book.cfi || '', theme, book.md5 || BookMetadata.bookIdentity(book));
+        if (openGeneration === readerOpenGeneration) status.textContent = `Opened ${book.title || 'book'}.`;
       }
 
       function pdfDownloadFilename(book) {
@@ -4656,29 +4687,16 @@
           : new Blob([blob], { type: 'application/pdf' });
         const base64 = await blobToBase64(pdfBlob);
         if (openGeneration !== readerOpenGeneration) return;
-        return new Promise((resolve, reject) => {
-          readerFrame.onload = async () => {
-            if (openGeneration !== readerOpenGeneration) {
-              resolve();
-              return;
-            }
-            try {
-              const readerLoad = readerFrame.contentWindow?.loadPdf;
-              if (typeof readerLoad !== 'function') throw new Error('PDF reader did not load.');
-              await readerLoad({
-                base64,
-                bookTitle: BookMetadata.resolveTitle(book),
-                filename: pdfDownloadFilename(book),
-                theme: state.settings.theme === 'dark' ? 'night' : state.settings.theme,
-              });
-              status.textContent = `Opened ${book.title || 'PDF'}.`;
-              resolve();
-            } catch (error) {
-              reject(error);
-            }
-          };
-          readerFrame.src = `pdf-reader.html#${Date.now()}`;
-        });
+        const options = {
+          base64,
+          bookTitle: BookMetadata.resolveTitle(book),
+          filename: pdfDownloadFilename(book),
+          theme: state.settings.theme === 'dark' ? 'night' : state.settings.theme,
+        };
+        const readerLoad = await readerFrameLoader('pdf', openGeneration);
+        if (!readerLoad) return;
+        await readerLoad(options);
+        if (openGeneration === readerOpenGeneration) status.textContent = `Opened ${book.title || 'PDF'}.`;
       }
 
       document.addEventListener('keydown', event => {
@@ -5309,12 +5327,22 @@
           return;
         }
         if (route.startsWith('words=')) {
+          if (!hasActiveWords()) {
+            activateTab('home');
+            history.replaceState(null, '', `${window.location.pathname}${window.location.search}#home`);
+            return;
+          }
           wordsFilter.value = decodeURIComponent(route.slice('words='.length));
           activateTab('words');
           renderWords();
           return;
         }
         if (route === 'words') {
+          if (!hasActiveWords()) {
+            activateTab('home');
+            history.replaceState(null, '', `${window.location.pathname}${window.location.search}#home`);
+            return;
+          }
           activateTab('words');
           return;
         }

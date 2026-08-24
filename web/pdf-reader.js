@@ -69,6 +69,9 @@ async function renderPages() {
 
 window.loadPdf = async ({ base64, bookTitle, filename, theme = 'white' }) => {
   try {
+    renderGeneration += 1;
+    if (pdf) await pdf.destroy();
+    pages.replaceChildren();
     document.body.dataset.theme = theme;
     title.textContent = bookTitle || 'PDF';
     pdfBytes = bytesFromBase64(base64);

@@ -4,6 +4,8 @@ import { readFile } from 'node:fs/promises';
 
 const html = await readFile(new URL('../index.html', import.meta.url), 'utf8');
 const readerHtml = await readFile(new URL('../reader.html', import.meta.url), 'utf8');
+const pdfReaderHtml = await readFile(new URL('../pdf-reader.html', import.meta.url), 'utf8');
+const pdfReaderJs = await readFile(new URL('../pdf-reader.js', import.meta.url), 'utf8');
 
 test('served web app remains React- and bundle-free', () => {
   assert.doesNotMatch(html, /react(?:-dom)?(?:\.production)?/i);
@@ -244,6 +246,12 @@ test('EPUBs use persistent IndexedDB caching', () => {
   assert.match(html, /records\.forEach\(rememberCachedRecord\)/);
   assert.match(html, /const openGeneration = \+\+readerOpenGeneration/);
   assert.match(html, /if \(openGeneration !== readerOpenGeneration\) return/);
+  assert.match(html, /async function readerFrameLoader\(kind, openGeneration\)/);
+  assert.match(html, /readerFrameNavigation\?\.cancel\(\)/);
+  assert.match(html, /readerFrame\.src = `\$\{readerPath\}\?load=\$\{navigationId\}`/);
+  assert.match(html, /const readerLoad = await readerFrameLoader\('epub', openGeneration\)/);
+  assert.match(html, /const routeGeneration = \+\+readRouteGeneration/);
+  assert.match(html, /if \(routeGeneration !== readRouteGeneration\) return/);
 });
 
 test('PDFs are fetched and displayed inside the Bookstr reader pane', () => {
@@ -251,7 +259,8 @@ test('PDFs are fetched and displayed inside the Bookstr reader pane', () => {
   assert.match(html, /new Blob\(\[blob\], \{ type: 'application\/pdf' \}\)/);
   assert.match(html, /PDF download failed/);
   assert.match(html, /await displayPdf\(blob, book, openGeneration\)/);
-  assert.match(html, /readerFrame\.src = `pdf-reader\.html#/);
+  assert.match(html, /const readerPath = kind === 'pdf' \? 'pdf-reader\.html' : 'reader\.html'/);
+  assert.match(html, /const readerLoad = await readerFrameLoader\('pdf', openGeneration\)/);
   assert.match(html, /filename: pdfDownloadFilename\(book\)/);
   assert.match(html, /return `\$\{safeTitle \|\| 'Bookstr book'\}\.pdf`/);
   assert.match(html, /String\.fromCharCode\(\.\.\.bytes\) === '%PDF-'/);
@@ -268,6 +277,15 @@ test('EPUB reader destroys the previous rendition without transform flicker', ()
   assert.match(readerHtml, /document\.getElementById\("viewer"\)\.replaceChildren\(\)/);
   assert.doesNotMatch(readerHtml, /#viewer\.page-forward/);
   assert.doesNotMatch(readerHtml, /viewer\.offsetWidth/);
+});
+
+test('PDF reader uses local PDF.js, lazy page rendering, and an explicit download name', () => {
+  assert.match(pdfReaderHtml, /<main id="pages" aria-label="PDF pages">/);
+  assert.match(pdfReaderJs, /from '\.\/vendor\/pdfjs\/pdf\.mjs'/);
+  assert.match(pdfReaderJs, /GlobalWorkerOptions\.workerSrc = '\.\/vendor\/pdfjs\/pdf\.worker\.mjs'/);
+  assert.match(pdfReaderJs, /new IntersectionObserver/);
+  assert.match(pdfReaderJs, /download\.download = filename/);
+  assert.match(pdfReaderJs, /pdf\?\.destroy\(\)/);
 });
 
 test('favorites are not truncated to fifty items', () => {
@@ -291,6 +309,7 @@ test('favorite fetch progress stays visible through download and Blossom publica
 test('compact favorites retain cached metadata and resolve LibVault IDs', () => {
   assert.match(html, /function preserveFavoriteMetadata\(remote\)/);
   assert.match(html, /\.map\(preserveFavoriteMetadata\)/);
+  assert.match(html, /sourceNativeId: ref\.sourceNativeId \|\| ref\.source_native_id \|\| ''/);
   assert.doesNotMatch(html, /fetch\([^)]*lib\.b\.bfr\.ee\/api\/books/);
   assert.doesNotMatch(html, /new URL\(`\/api\/books\/\$\{/);
 });
@@ -442,4 +461,14 @@ test('Words definitions are expanded by default', () => {
   assert.doesNotMatch(html, /<div class="word-lookup hidden"/);
   assert.match(html, /if \(!entry\.definitions\.length\) \{[\s\S]*?row\.querySelector\('\.word-definition'\)\.click\(\)/);
   assert.doesNotMatch(html, /requestAnimationFrame\(\(\) => wordsList\.querySelector\('\.word-definition'\)\?\.click\(\)\)/);
+});
+
+test('Words stay off Home and the header link only appears for active synced words', () => {
+  assert.doesNotMatch(html, /id="home-words-list"/);
+  assert.match(html, /id="words-tab-btn" class="header-tab words-tab-icon hidden"/);
+  assert.match(html, /const activeWords = state\.words\.map\(normalizeVocabularyWord\)\.filter\(entry => entry && !entry\.deleted\)/);
+  assert.match(html, /wordsTabBtn\.classList\.toggle\('hidden', activeWords\.length === 0\)/);
+  assert.match(html, /function hasActiveWords\(\)/);
+  assert.match(html, /if \(tab === 'words' && !hasActiveWords\(\)\) tab = 'home'/);
+  assert.match(html, /if \(!hasActiveWords\(\)\) \{[\s\S]*?#home/);
 });

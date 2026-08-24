@@ -1,4 +1,30 @@
 import { test, expect } from '@playwright/test';
+import { createRequire } from 'node:module';
+
+const require = createRequire(import.meta.url);
+const JSZip = require('../jszip.min.js');
+
+async function minimalEpub(title, body = title) {
+  const zip = new JSZip();
+  zip.file('mimetype', 'application/epub+zip', { compression: 'STORE' });
+  zip.file('META-INF/container.xml', `<?xml version="1.0"?>
+    <container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
+      <rootfiles><rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/></rootfiles>
+    </container>`);
+  zip.file('OEBPS/content.opf', `<?xml version="1.0" encoding="UTF-8"?>
+    <package version="3.0" xmlns="http://www.idpf.org/2007/opf" unique-identifier="book-id">
+      <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
+        <dc:identifier id="book-id">urn:bookstr:test:${title}</dc:identifier>
+        <dc:title>${title}</dc:title><dc:language>en</dc:language>
+      </metadata>
+      <manifest><item id="chapter" href="chapter.xhtml" media-type="application/xhtml+xml"/></manifest>
+      <spine><itemref idref="chapter"/></spine>
+    </package>`);
+  zip.file('OEBPS/chapter.xhtml', `<?xml version="1.0" encoding="UTF-8"?>
+    <html xmlns="http://www.w3.org/1999/xhtml"><head><title>${title}</title></head>
+    <body><h1>${title}</h1><p>${body}</p></body></html>`);
+  return zip.generateAsync({ type: 'nodebuffer', mimeType: 'application/epub+zip' });
+}
 
 function minimalPdf(text) {
   const escaped = String(text).replace(/([\\()])/g, '\\$1');
@@ -200,18 +226,195 @@ test('PDFs render inside Bookstr and download with the book title', async ({ pag
   await expect(page.locator('#reader-frame')).toHaveAttribute('src', /pdf-reader\.html/);
   const pdfReader = page.frameLocator('#reader-frame');
   await expect(pdfReader.locator('.pdf-page canvas')).toHaveAttribute('data-rendered', 'true');
+  await expect(pdfReader.locator('#page-count')).toHaveText('1 page');
   await expect(pdfReader.locator('#download')).toHaveAttribute('download', 'Readable PDF Test.pdf');
+  await expect(pdfReader.locator('#download')).toHaveAttribute('href', /^blob:/);
+  await pdfReader.locator('#zoom-in').click();
+  await expect(pdfReader.locator('#zoom-label')).toHaveText('115%');
+});
+
+test('a LibVault PDF without format metadata is sniffed and gets a useful fallback filename', async ({ page }) => {
+  const md5 = '44444444444444444444444444444444';
+  const pdfUrl = `https://lib.b.bfr.ee/api/files/${md5}`;
+  await page.addInitScript(({ md5, pdfUrl }) => {
+    localStorage.setItem('bookstr_nostr_favorites_v1', JSON.stringify([{
+      md5,
+      title: 'Untitled book',
+      authors: '',
+      source: 'openlibrary',
+      sourceNativeId: 'OL987654W',
+      readUrl: pdfUrl,
+    }]));
+  }, { md5, pdfUrl });
+  await page.route(pdfUrl, route => route.fulfill({
+    status: 200,
+    contentType: 'application/octet-stream',
+    body: minimalPdf('Metadata-free PDF'),
+  }));
+
+  await page.goto(`/#read=${md5}`);
+
+  const pdfReader = page.frameLocator('#reader-frame');
+  await expect(pdfReader.locator('.pdf-page canvas')).toHaveAttribute('data-rendered', 'true');
+  await expect(pdfReader.locator('#download')).toHaveAttribute('download', 'Bookstr book OL987654W.pdf');
+});
+
+test('switching PDFs reuses the in-app reader without retaining the previous document', async ({ page }) => {
+  const books = [
+    { md5: '55555555555555555555555555555555', title: 'First PDF', url: 'https://files.test/first.pdf' },
+    { md5: '66666666666666666666666666666666', title: 'Second / PDF: Test?', url: 'https://files.test/second.pdf' },
+  ];
+  await page.addInitScript(entries => {
+    localStorage.setItem('bookstr_nostr_favorites_v1', JSON.stringify(entries.map(entry => ({
+      md5: entry.md5,
+      title: entry.title,
+      extension: 'pdf',
+      readUrl: entry.url,
+    }))));
+  }, books);
+  for (const book of books) {
+    await page.route(book.url, route => route.fulfill({
+      status: 200,
+      contentType: 'application/pdf',
+      body: minimalPdf(book.title),
+    }));
+  }
+
+  await page.goto(`/#read=${books[0].md5}`);
+  const pdfReader = page.frameLocator('#reader-frame');
+  await expect(pdfReader.locator('#title')).toHaveText(books[0].title);
+  await expect(pdfReader.locator('.pdf-page')).toHaveCount(1);
+
+  await page.evaluate(md5 => { window.location.hash = `read=${md5}`; }, books[1].md5);
+  await expect(pdfReader.locator('#title')).toHaveText(books[1].title);
+  await expect(pdfReader.locator('#download')).toHaveAttribute('download', 'Second PDF Test.pdf');
+  await expect(pdfReader.locator('.pdf-page')).toHaveCount(1);
+  await expect(pdfReader.locator('.pdf-page canvas')).toHaveAttribute('data-rendered', 'true');
 });
 
 test('switching EPUBs quickly leaves only the newest book in the reader', async ({ page }) => {
-  const first = 'https://books-api.guaka.org/api/books/30142/download';
-  const second = 'https://books-api.guaka.org/api/books/34527/download';
-  await page.goto(`/#read=${encodeURIComponent(first)}`);
-  await page.goto(`/#read=${encodeURIComponent(second)}`);
+  const first = 'https://files.test/slow-first.epub';
+  const second = 'https://files.test/newest-second.epub';
+  const [firstEpub, secondEpub] = await Promise.all([
+    minimalEpub('Slow first book'),
+    minimalEpub('Newest second book'),
+  ]);
+  await page.route(first, async route => {
+    await new Promise(resolve => setTimeout(resolve, 1200));
+    await route.fulfill({ status: 200, contentType: 'application/epub+zip', body: firstEpub });
+  });
+  await page.route(second, route => route.fulfill({
+    status: 200,
+    contentType: 'application/epub+zip',
+    body: secondEpub,
+  }));
+  await page.goto('/#home');
+  await page.evaluate(url => { window.location.hash = `read=${encodeURIComponent(url)}`; }, first);
+  await page.waitForTimeout(100);
+  await page.evaluate(url => { window.location.hash = `read=${encodeURIComponent(url)}`; }, second);
 
   const reader = page.frameLocator('#reader-frame');
-  await expect(reader.locator('body')).toHaveAttribute('data-book-id', 'gutenberg:34527', { timeout: 45_000 });
+  await expect(reader.locator('body')).toHaveAttribute('data-book-id', `url:${second}`, { timeout: 45_000 });
   await expect(reader.locator('#viewer > .epub-container')).toHaveCount(1);
+});
+
+test('two cached EPUBs remain isolated while switching without a page refresh', async ({ page }) => {
+  const books = [
+    { id: 'first', url: 'https://files.test/cached-first.epub', title: 'Cached first' },
+    { id: 'second', url: 'https://files.test/cached-second.epub', title: 'Cached second' },
+  ];
+  const encodedEpubs = await Promise.all(books.map(async book => (
+    await minimalEpub(book.title, `Only ${book.id} content.`)
+  ).toString('base64')));
+  await page.goto('/#home');
+  await page.evaluate(async ({ entries, encodedEpubs }) => {
+    const blobs = encodedEpubs.map(encoded => {
+      const binary = atob(encoded);
+      const bytes = Uint8Array.from(binary, character => character.charCodeAt(0));
+      return new Blob([bytes], { type: 'application/epub+zip' });
+    });
+    const database = await new Promise((resolve, reject) => {
+      const request = indexedDB.open('bookstr_epub_cache_v1', 1);
+      request.onupgradeneeded = () => request.result.createObjectStore('books', { keyPath: 'key' });
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+    await Promise.all(entries.map((entry, index) => new Promise((resolve, reject) => {
+      const request = database.transaction('books', 'readwrite').objectStore('books').put({
+        key: entry.url,
+        readUrl: entry.url,
+        blob: blobs[index],
+        extension: 'epub',
+        title: entry.title,
+        lastUsed: Date.now() + index,
+      });
+      request.onsuccess = resolve;
+      request.onerror = () => reject(request.error);
+    })));
+  }, { entries: books, encodedEpubs });
+  for (const book of books) await page.route(book.url, route => route.abort());
+
+  await page.evaluate(url => { window.location.hash = `read=${encodeURIComponent(url)}`; }, books[0].url);
+  const reader = page.frameLocator('#reader-frame');
+  await expect(reader.locator('body')).toHaveAttribute('data-book-id', books[0].url, { timeout: 45_000 });
+  await page.evaluate(url => { window.location.hash = `read=${encodeURIComponent(url)}`; }, books[1].url);
+  await expect(page).toHaveURL(new RegExp(`#read=${encodeURIComponent(books[1].url)}$`));
+  await expect(page.locator('#status')).toContainText(books[1].title, { timeout: 45_000 });
+  await expect(reader.locator('body')).toHaveAttribute('data-book-id', books[1].url, { timeout: 45_000 });
+  await expect(reader.locator('#viewer > .epub-container')).toHaveCount(1);
+  await page.evaluate(url => { window.location.hash = `read=${encodeURIComponent(url)}`; }, books[0].url);
+  await expect(reader.locator('body')).toHaveAttribute('data-book-id', books[0].url, { timeout: 45_000 });
+});
+
+test('Home never shows Words and the header link follows active synced words', async ({ page }) => {
+  await page.goto('/#home');
+  await expect(page.locator('#home-words-list')).toHaveCount(0);
+  await expect(page.locator('#words-tab-btn')).toBeHidden();
+
+  await page.evaluate(() => {
+    localStorage.setItem('bookstr_words_v1', JSON.stringify([{
+      key: 'en:reader',
+      word: 'reader',
+      language: 'en',
+      definitions: ['Someone who reads.'],
+      updatedAt: Date.now(),
+    }]));
+  });
+  await page.reload();
+  await expect(page.locator('#words-tab-btn')).toBeVisible();
+
+  await page.evaluate(() => {
+    localStorage.setItem('bookstr_words_v1', JSON.stringify([{
+      key: 'en:reader',
+      word: 'reader',
+      language: 'en',
+      deleted: true,
+      updatedAt: Date.now(),
+    }]));
+  });
+  await page.reload();
+  await expect(page.locator('#words-tab-btn')).toBeHidden();
+});
+
+test('direct Words routes require an active synced word', async ({ page }) => {
+  await page.goto('/?direct-words=1#words');
+  await expect(page).toHaveURL(/#home$/);
+  await expect(page.locator('#home-tab')).toBeVisible();
+  await expect(page.locator('#words-tab')).toBeHidden();
+
+  await page.addInitScript(() => {
+    localStorage.setItem('bookstr_words_v1', JSON.stringify([{
+      key: 'en:book',
+      word: 'book',
+      language: 'en',
+      definitions: ['A written work.'],
+      updatedAt: Date.now(),
+    }]));
+  });
+  await page.goto('/#words');
+  await expect(page.locator('#words-tab')).toBeVisible();
+  await expect(page.locator('.word-heading')).toContainText('book');
+  await expect(page.locator('.word-lookup')).toContainText('A written work.');
 });
 
 test('Open Library search results expose canonical work links', async ({ page }) => {
