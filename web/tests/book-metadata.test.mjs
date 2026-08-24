@@ -53,9 +53,14 @@ test('preserves common language metadata shapes', () => {
   assert.equal(languageForBook({ metadata: JSON.stringify({ lang: 'fr' }) }), 'fr');
 });
 
+test('extracts language from object-based metadata language lists', () => {
+  assert.equal(languageForBook({ metadata: { languages: [{ code: 'ES' }, { code: 'PT' }] } }), 'es');
+});
+
 test('extracts years from common publication metadata', () => {
   assert.equal(yearForBook({ issued: '2009-09-30' }), '2009');
   assert.equal(yearForBook({ metadata: { publicationYear: 1984 } }), '1984');
+  assert.equal(yearForBook({ publicationYear: 2100 }), '2100');
   assert.equal(yearForBook({}), '');
 });
 
@@ -90,6 +95,12 @@ test('merges repeated favorite tags without losing the real title', () => {
   assert.equal(entries[0].author, 'José Saramago');
   assert.equal(entries[0].format, 'epub');
   assert.equal(entries[0].favoriteAddedAt, 1_700_000_000);
+});
+
+test('favoriteAddedTag rejects invalid ids and timestamps', () => {
+  assert.equal(favoriteAddedTag('not-an-md5', 1_700_000_000), null);
+  assert.equal(favoriteAddedTag('a'.repeat(32), 0), null);
+  assert.equal(favoriteAddedTag('a'.repeat(32), -1), null);
 });
 
 test('finds reading metadata by readUrl, url, or Blossom URL', () => {
@@ -190,6 +201,23 @@ test('classifies supported book availability sources', () => {
   assert.equal(availabilityForBook({ readUrl: 'https://books-api.guaka.org/api/books/48320/download' }), 'Gutenberg');
   assert.equal(availabilityForBook({ md5: 'a'.repeat(32) }), 'Metadata only');
   assert.equal(availabilityForBook({ readUrl: 'https://example.test/book.epub' }), 'Metadata only');
+});
+
+test('availabilityForBook marks cached availability on top of source tags', () => {
+  assert.equal(availabilityForBook({ readUrl: 'https://books-api.guaka.org/api/books/48320/download' }, true), 'Gutenberg · Cached');
+  assert.equal(availabilityForBook({ title: 'Local-only cached copy', md5: 'a'.repeat(32) }, true), 'Metadata only · Cached');
+});
+
+test('normalizeReadUrl keeps invalid values as empty normalized strings', () => {
+  assert.equal(normalizeReadUrl('not a url'), 'not a url');
+  assert.equal(normalizeReadUrl(''), '');
+});
+
+test('normalizeReadUrl resolves relative URLs using the provided base', () => {
+  assert.equal(
+    normalizeReadUrl('/local/book.epub#chapter', 'https://books-api.guaka.org/library/index.html'),
+    'https://books-api.guaka.org/local/book.epub',
+  );
 });
 
 test('reports multiple availability sources including cache', () => {
@@ -495,6 +523,13 @@ test('title derivation decodes encoded URL paths', () => {
   );
 });
 
+test('resolveTitle uses a base URL when only a relative read path is provided', () => {
+  assert.equal(
+    resolveTitle({ readUrl: '/books/A%20Great%20Book.epub' }, 'https://books-api.guaka.org/shelf/index.html'),
+    'A Great Book',
+  );
+});
+
 test('metadataEndpointForReadUrl ignores malformed ids and non-download endpoints', () => {
   assert.equal(metadataEndpointForReadUrl('https://books-api.guaka.org/api/books/48320'), '');
   assert.equal(metadataEndpointForReadUrl('https://books-api.guaka.org/api/books/abc/download?download=1'), '');
@@ -570,6 +605,13 @@ test('canonicalReadUrl keeps direct non-legacy URLs', () => {
   assert.equal(
     canonicalReadUrl({ readUrl: 'https://example.test/book.epub' }),
     'https://example.test/book.epub',
+  );
+});
+
+test('canonicalReadUrl ignores legacy /api/read/ blob paths', () => {
+  assert.equal(
+    canonicalReadUrl({ readUrl: 'https://books-api.guaka.org/api/read/' + 'a'.repeat(32) }),
+    '',
   );
 });
 

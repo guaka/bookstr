@@ -87,6 +87,46 @@ class NostrClientProgressTest {
     fun parseUpdatedAtFallsBackForNonnumericInput() {
         assertEquals(7_000L, NostrClient.parseUpdatedAt("""{"updatedAt":"not-a-number"}""", 7L))
         assertEquals(8_000L, NostrClient.parseUpdatedAt("""{"updatedAt":null}""", 8L))
+        assertEquals(9_000L, NostrClient.parseUpdatedAt("""{"updatedAt":"1200"}""", 9L))
+    }
+
+    @Test
+    fun parseLegacyPayloadWithoutCfiDefaultsEmptyLocatorCfi() {
+        val legacy = """{"progression":0.33}"""
+        val parsed = NostrClient.parseProgressContent(legacy, bookId)!!
+        assertEquals(bookId, parsed.first)
+        assertEquals(0.33, parsed.second, 1e-9)
+        assertEquals("", parsed.third)
+    }
+
+    @Test
+    fun parseLegacyPayloadWithInvalidProgressionFallsBackToZero() {
+        val legacy = """{"progression":"not-a-number","cfi":"epubcfi(/6/99)"}"""
+        val parsed = NostrClient.parseProgressContent(legacy, bookId)!!
+        assertEquals(0.0, parsed.second, 1e-9)
+        assertEquals("epubcfi(/6/99)", parsed.third)
+    }
+
+    @Test
+    fun parseProgressPayloadWithNonStringCfiDefaultsToEmpty() {
+        val locator = """{"locator":{"progression":0.22,"cfi":123}}"""
+        val parsed = NostrClient.parseProgressContent(locator, bookId)!!
+        assertEquals(0.22, parsed.second, 1e-9)
+        assertEquals("", parsed.third)
+    }
+
+    @Test
+    fun parseLegacyPayloadMissingProgressionDefaultsToZero() {
+        val legacy = """{"locator":{"cfi":"epubcfi(/6/1)"}}"""
+        val parsed = NostrClient.parseProgressContent(legacy, bookId)!!
+        assertEquals(0.0, parsed.second, 1e-9)
+        assertEquals("epubcfi(/6/1)", parsed.third)
+    }
+
+    @Test
+    fun parseFurthestProgressionFallsBackToFallbackForNonNumericField() {
+        assertEquals(0.5, NostrClient.parseFurthestProgression("""{"locator":{"furthestProgression":"bad"}}""", 0.5), 1e-9)
+        assertEquals(0.5, NostrClient.parseFurthestProgression("""{"locator":{}}""", 0.5), 1e-9)
     }
 
     @Test
