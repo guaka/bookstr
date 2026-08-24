@@ -20,11 +20,14 @@
       .sidebar {
         background: #173b36;
         color: #f7f2e9;
+        padding-top: 1.5rem;
       }
 
       .sidebar a,
       .sidebar li.collapse .app-sub-sidebar a {
         color: #e7ddc9;
+        font-size: 0.95rem;
+        line-height: 1.35;
       }
 
       .sidebar li.active > a,
@@ -32,9 +35,29 @@
         color: #ffbf69;
       }
 
+      .sidebar li.active > a {
+        background: rgba(255, 191, 105, 0.13);
+        border-left: 3px solid #ffbf69;
+        font-weight: 700;
+        margin-left: -1rem;
+        padding-left: calc(1rem - 3px);
+      }
+
+      .sidebar-nav > ul > li {
+        margin: 0.25rem 0;
+      }
+
+      .sidebar-nav > ul > li > a {
+        display: block;
+        padding: 0.55rem 1rem;
+      }
+
       .app-name-link,
       .app-name-link:visited {
         color: #ffffff;
+        font-size: 1.35rem;
+        font-weight: 800;
+        letter-spacing: 0.01em;
       }
 
       .markdown-section {
