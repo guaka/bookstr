@@ -10,6 +10,20 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  repository-hygiene:
+    name: Repository hygiene
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Reject tracked APK binaries
+        run: |
+          tracked_apks="$(git ls-files '*.apk')"
+          if [ -n "$tracked_apks" ]; then
+            echo "APK binaries must be published as GitHub Release assets, not committed:"
+            echo "$tracked_apks"
+            exit 1
+          fi
+
   web:
     name: Static web
     runs-on: ubuntu-latest
