@@ -131,23 +131,23 @@ tasks.register<JacocoReport>("jacocoDebugUnitTestReport") {
 
     val mainKotlin = fileTree("$buildDir/tmp/kotlin-classes/debug")
     val mainJava = fileTree("$buildDir/intermediates/javac/debug/classes")
+    val coverageExclusions = arrayOf(
+        "**/R.class",
+        "**/R$*.class",
+        "**/BuildConfig.*",
+        "**/*\$Lambda$*.*",
+        "**/*\$inlined$*",
+        // These are exercised by the separate Android e2e suite, not JVM unit tests.
+        "**/ui/**",
+        "**/*Activity*",
+        "**/*Service*",
+        "**/BookstrApp*",
+        "**/ComposableSingletons*",
+    )
 
     classDirectories.setFrom(
-        files(mainKotlin, mainJava).asFileTree.matching {
-            exclude(
-                "**/R.class",
-                "**/R$*.class",
-                "**/BuildConfig.*",
-                "**/*\$Lambda$*.*",
-                "**/*\$inlined$*",
-                // These are exercised by the separate Android e2e suite, not JVM unit tests.
-                "**/ui/**",
-                "**/*Activity*",
-                "**/*Service*",
-                "**/BookstrApp*",
-                "**/ComposableSingletons*",
-            )
-        },
+        mainKotlin.matching { exclude(*coverageExclusions) },
+        mainJava.matching { exclude(*coverageExclusions) },
     )
 
     sourceDirectories.setFrom(
@@ -156,12 +156,8 @@ tasks.register<JacocoReport>("jacocoDebugUnitTestReport") {
     )
 
     executionData.setFrom(
-        fileTree(layout.buildDirectory).include(
-            "jacoco/testDebugUnitTest.exec",
-            "jacoco/testDebugUnitTest/**",
-            "outputs/unit_test_code_coverage/**/*.exec",
-            "**/coverage.exec",
-            "**/*.ec",
+        layout.buildDirectory.file(
+            "outputs/unit_test_code_coverage/debugUnitTest/testDebugUnitTest.exec",
         ),
     )
 }
