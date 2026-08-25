@@ -1,6 +1,71 @@
 import XCTest
+@testable import BookstrIOS
 
 final class ReaderAssetContractTests: XCTestCase {
+    func testSpeechPlaybackQueueYieldsEveryChunkOnceInOrder() {
+        var queue = SpeechPlaybackQueue()
+        let chunks = [
+            SpeechQueueChunk(text: "First.", offset: 0, pauseSeconds: 0),
+            SpeechQueueChunk(text: "Second.", offset: 7, pauseSeconds: 0.18),
+            SpeechQueueChunk(text: "Third.", offset: 15, pauseSeconds: 0.32),
+        ]
+
+        queue.beginRequest(id: "current")
+        XCTAssertTrue(queue.accept(requestID: "current", chunks: chunks))
+        XCTAssertFalse(queue.hasPendingRequest)
+        XCTAssertEqual(queue.next(), chunks[0])
+        XCTAssertEqual(queue.next(), chunks[1])
+        XCTAssertEqual(queue.next(), chunks[2])
+        XCTAssertNil(queue.next(), "A completed narration must not restart from the first chunk")
+        XCTAssertTrue(queue.isEmpty)
+    }
+
+    func testSpeechPlaybackQueueRejectsStaleWebViewResponse() {
+        var queue = SpeechPlaybackQueue()
+        let stale = [SpeechQueueChunk(text: "Old narration", offset: 0, pauseSeconds: 0)]
+        let current = [SpeechQueueChunk(text: "Current narration", offset: 20, pauseSeconds: 0)]
+
+        queue.beginRequest(id: "old")
+        queue.beginRequest(id: "current")
+
+        XCTAssertFalse(queue.accept(requestID: "old", chunks: stale))
+        XCTAssertTrue(queue.hasPendingRequest)
+        XCTAssertTrue(queue.accept(requestID: "current", chunks: current))
+        XCTAssertEqual(queue.next(), current[0])
+        XCTAssertNil(queue.next())
+    }
+
+    func testSpeechPlaybackQueueRejectsDuplicateResponse() {
+        var queue = SpeechPlaybackQueue()
+        let chunks = [SpeechQueueChunk(text: "Only once", offset: 0, pauseSeconds: 0)]
+
+        queue.beginRequest(id: "request")
+        XCTAssertTrue(queue.accept(requestID: "request", chunks: chunks))
+        XCTAssertFalse(queue.accept(requestID: "request", chunks: chunks))
+        XCTAssertEqual(queue.next(), chunks[0])
+        XCTAssertNil(queue.next())
+    }
+
+    func testSpeechPlaybackQueueCancellationRejectsDelayedResponseAndClearsAudio() {
+        var queue = SpeechPlaybackQueue()
+        let chunks = [SpeechQueueChunk(text: "Do not play", offset: 0, pauseSeconds: 0)]
+
+        queue.beginRequest(id: "request")
+        queue.cancel()
+
+        XCTAssertFalse(queue.hasPendingRequest)
+        XCTAssertTrue(queue.isEmpty)
+        XCTAssertFalse(queue.accept(requestID: "request", chunks: chunks))
+        XCTAssertNil(queue.next())
+    }
+
+    func testSpeechBridgeCarriesRequestIdentityBackToNativeCode() throws {
+        let html = try bundledReaderHTML()
+
+        XCTAssertTrue(html.contains("window.requestSpeechText = function(notifyNative, requestID)"))
+        XCTAssertTrue(html.contains("requestID: requestID || null"))
+    }
+
     func testAllEPUBRuntimeAssetsAreBundledInTheApplication() throws {
         let reader = try bundledAsset(named: "reader", extension: "html")
         let epub = try bundledAsset(named: "epub.min", extension: "js")

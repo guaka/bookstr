@@ -1171,7 +1171,7 @@
       if (!document.getElementById("dictionary-card").contains(event.target)) closeDictionary();
     });
 
-    window.requestSpeechText = function(notifyNative) {
+    window.requestSpeechText = function(notifyNative, requestID) {
       if (!rendition) return;
       const contentsList = rendition.getContents ? rendition.getContents() : [];
       const parts = [];
@@ -1213,6 +1213,7 @@
           text: text,
           language: language || "en",
           chunks: chunks,
+          requestID: requestID || null,
         }));
       }
     };

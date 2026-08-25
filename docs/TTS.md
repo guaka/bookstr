@@ -54,6 +54,7 @@ a suitable primary `pt-PT` option.
 | Azure Speech | Green | Green. Dedicated `pt-PT` voices. | Green. SSML, pauses, phonemes, lexicons, styles. | Best quality/control/value default. |
 | Amazon Polly | Yellow | Yellow. `pt-PT` voices exist, but high-end engines are less compelling for this locale. | Yellow. SSML, pauses, phonemes, substitutions, rate and pitch. | Cheap fallback; audition before choosing as primary. |
 | OpenAI `gpt-4o-mini-tts` | Green | Yellow. Portuguese works, but a dedicated `pt-PT` locale/voice selector is not confirmed in the API docs. | Green. Delivery instructions, speed, streaming. | Worth a native-speaker listening test. |
+| Deepgram Aura-2 | Yellow | Red. The current TTS catalog covers seven languages, but not Portuguese. | Yellow. Streaming, speed, and interruption controls; no SSML or pronunciation controls documented. | Do not use for Bookstr's `pt-PT` narration unless Deepgram adds and documents a Portugal voice. |
 | iOS / Android system TTS | Yellow | Yellow. Depends on installed device voice. | Yellow. Basic rate and pitch. | Offline fallback only. |
 
 ## Cost baseline
@@ -79,6 +80,7 @@ provider plan, region, and actual rendered output.
 | Amazon Polly Neural | Yellow | $0.015 | $0.90 | $8 |
 | Amazon Polly Generative | Red for `pt-PT` | $0.028 | $1.68 | $15 |
 | OpenAI `gpt-4o-mini-tts` | Yellow | about $0.015 | about $0.90 | about $8 |
+| Deepgram Aura-2 | Red for `pt-PT` | about $0.028 | about $1.69 | about $15 |
 | Native iOS / Android | Yellow | $0 | $0 | $0 |
 
 Notes:
@@ -92,6 +94,10 @@ Notes:
 - OpenAI bills `gpt-4o-mini-tts` by input text and output audio tokens. The
   per-minute and per-book values above are estimates, so measure a real sample
   before committing.
+- Deepgram Aura-2 is $0.030 per 1,000 characters on pay-as-you-go pricing. It
+  supports low-latency REST and WebSocket audio streaming, but its documented
+  TTS languages currently exclude Portuguese. Deepgram's Portuguese support in
+  speech-to-text is a separate product and does not imply Portuguese TTS.
 
 ## Recommendation
 
@@ -114,3 +120,6 @@ Notes:
 - [Amazon Polly voice availability](https://docs.aws.amazon.com/polly/latest/dg/available-voices.html)
 - [Amazon Polly pricing](https://aws.amazon.com/polly/pricing/)
 - [OpenAI `gpt-4o-mini-tts` model](https://developers.openai.com/api/docs/models/gpt-4o-mini-tts)
+- [Deepgram TTS models and languages](https://developers.deepgram.com/docs/tts-models-languages-overview)
+- [Deepgram TTS streaming API](https://developers.deepgram.com/reference/text-to-speech/speak-streaming)
+- [Deepgram pricing](https://deepgram.com/pricing)
