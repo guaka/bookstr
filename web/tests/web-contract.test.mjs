@@ -169,7 +169,9 @@ test('book opening canonicalizes stable Gutenberg IDs', () => {
 test('LibVault books use MD5 hash routes and resolve through Blossom', () => {
   assert.match(html, /return isMd5\(md5\) \? md5/);
   assert.match(html, /legacyMd5 = routeValue\.match/);
-  assert.match(html, /const blossomUrl = String\(book\.blossomUrl \|\| readPath/);
+  assert.match(html, /const suppliedUrl = String\(book\.blossomUrl \|\| readPath \|\| ''\)/);
+  assert.match(html, /candidate\.protocol === 'https:' && candidate\.hostname\.toLowerCase\(\) === 'blossom\.bfr\.ee'/);
+  assert.match(html, /blossomUrl \|\|= `https:\/\/blossom\.bfr\.ee\/\$\{sha256\}`/);
   assert.match(html, /fetch\(blossomUrl/);
   assert.match(html, /BookMetadata\.mergeLibraryState\(state\.reading, state\.favorites\)/);
   assert.match(html, /pendingReadBookId = String\(bookRef\)\.toLowerCase\(\)/);
