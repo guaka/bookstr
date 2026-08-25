@@ -4348,6 +4348,9 @@
       async function libVaultMetadataForBook(book) {
         const md5 = String(book?.md5 || '').toLowerCase();
         if (!isMd5(md5)) return null;
+        // The LibVault HTTP API is authenticated and is not a cross-origin
+        // metadata service. Bookstr uses its Nostr flow when hosted elsewhere.
+        if (window.location.origin !== new URL(LIBVAULT_API_BASE).origin) return null;
         const response = await fetch(`${LIBVAULT_API_BASE}/books/${md5}`, { cache: 'no-store' });
         if (response.status === 404) return null;
         if (!response.ok) throw new Error(`LibVault metadata lookup failed (${response.status})`);

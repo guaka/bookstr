@@ -422,6 +422,7 @@ test('Home can refresh and sync merged LibVault and Open Library metadata', () =
   assert.match(html, /data-action="refresh-library"/);
   assert.match(html, /async function refreshLibraryBookMetadata\(book\)/);
   assert.match(html, /async function libVaultMetadataForBook\(book\)/);
+  assert.match(html, /window\.location\.origin !== new URL\(LIBVAULT_API_BASE\)\.origin/);
   assert.match(html, /`\$\{LIBVAULT_API_BASE\}\/books\/\$\{md5\}`/);
   assert.match(html, /async function openLibraryMetadataForBook\(book\)/);
   assert.match(html, /Refreshing metadata for \$\{title\} from LibVault, Open Library, and all\.books/);
