@@ -274,6 +274,11 @@ test('Home retries LibVault books that are still publishing to Blossom', () => {
   assert.match(html, /}, 5000\)/);
 });
 
+test('reader recovers legacy LibVault lookup URLs to the canonical Blossom server', () => {
+  assert.match(html, /candidate\.hostname\.toLowerCase\(\) === 'blossom\.bfr\.ee'/);
+  assert.match(html, /blossomUrl \|\|= `https:\/\/blossom\.bfr\.ee\/\$\{sha256\}`/);
+});
+
 test('EPUBs use persistent IndexedDB caching', () => {
   assert.match(html, /indexedDB\.open\(BOOK_CACHE_DB_NAME/);
   assert.match(html, /cachedBookBlob\(book, readPath\)/);

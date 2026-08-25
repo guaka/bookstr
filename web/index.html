@@ -4733,8 +4733,18 @@
         if (!window.nostr?.signEvent) {
           throw new Error('Connect NIP-07 to authorize this Blossom download.');
         }
-        const blossomUrl = String(book.blossomUrl || readPath || '');
-        if (!/^https:\/\//i.test(blossomUrl)) throw new Error('No Blossom download URL is available.');
+        const suppliedUrl = String(book.blossomUrl || readPath || '');
+        let blossomUrl = '';
+        try {
+          const candidate = new URL(suppliedUrl);
+          if (candidate.protocol === 'https:' && candidate.hostname.toLowerCase() === 'blossom.bfr.ee') {
+            blossomUrl = candidate.toString();
+          }
+        } catch {}
+        // Old LibVault notes could contain the MD5 -> SHA-256 lookup URL as a
+        // Blossom URL. The SHA-256 tag is authoritative, so recover it to the
+        // canonical Blossom blob location instead of fetching lib.b.bfr.ee.
+        blossomUrl ||= `https://blossom.bfr.ee/${sha256}`;
         const server = new URL(blossomUrl).hostname;
         const now = Math.floor(Date.now() / 1000);
         const event = await window.nostr.signEvent({
