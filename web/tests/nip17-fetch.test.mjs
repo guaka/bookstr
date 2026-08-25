@@ -476,6 +476,17 @@ test('preserves publishing state so the library can retry availability', async (
   assert.equal(blossom.status, 'publishing');
 });
 
+test('stops repeated Blossom state requests after the LibVault API first fails', async () => {
+  let requests = 0;
+  const failingFetch = async () => {
+    requests += 1;
+    throw new TypeError('Failed to fetch');
+  };
+  assert.equal(await lookupLibVaultBlossomState('a'.repeat(32), failingFetch), null);
+  assert.equal(await lookupLibVaultBlossomState('b'.repeat(32), failingFetch), null);
+  assert.equal(requests, 1);
+});
+
 test('sends a private search and returns its matching response', async () => {
   let request;
   let armed = false;

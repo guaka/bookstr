@@ -12,6 +12,7 @@ const {
   nip42AuthTemplate,
   hasPublicBookReference,
   publicBookLists,
+  publicNip51Lists,
 } = globalThis.NostrSocial;
 
 const owner = 'a'.repeat(64);
@@ -128,4 +129,17 @@ test('keeps the newest public book list per author and address', () => {
     { id: 'other', kind: 30003, pubkey: bob, created_at: 30, tags: [['d', 'articles'], ['e', 'f'.repeat(64)]] },
   ], [alice, bob]);
   assert.deepEqual(lists, [{ pubkey: alice, title: 'Reading', createdAt: 20, eventId: 'new' }]);
+});
+
+test('keeps arbitrary public NIP-51 lists from followed people', () => {
+  const lists = publicNip51Lists([
+    { id: 'old', kind: 30001, pubkey: alice, created_at: 10, tags: [['d', 'links'], ['title', 'Old links']] },
+    { id: 'new', kind: 30001, pubkey: alice, created_at: 20, tags: [['d', 'links'], ['title', 'Interesting links']] },
+    { id: 'bookmark', kind: 30003, pubkey: bob, created_at: 30, tags: [['d', 'bookmarks'], ['title', 'Bookmarks']] },
+    { id: 'other', kind: 30001, pubkey: owner, created_at: 40, tags: [['d', 'private'], ['title', 'Ignore']] },
+  ], [alice, bob]);
+  assert.deepEqual(lists, [
+    { pubkey: bob, title: 'Bookmarks', kind: 30003, createdAt: 30, eventId: 'bookmark' },
+    { pubkey: alice, title: 'Interesting links', kind: 30001, createdAt: 20, eventId: 'new' },
+  ]);
 });

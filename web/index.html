@@ -1619,6 +1619,7 @@
       const NOSTR_TRUSTROOTS_PROFILE_RELAY = 'wss://nip42.trustroots.org';
       const TRUSTROOTS_IMPORT_PUBKEY = 'faf5d2e8ffb56fa201bc04cd8bf74a3e38de7d0439ada7fb15310d3d374ed5b1';
       const NOSTR_FAVORITES_KIND = 30003;
+      const NOSTR_NIP51_LIST_KINDS = [30000, 30001, 30002, 30003, 30004, 30005, 30006, 30007, 30008, 30009];
       const NOSTR_FOLLOW_KIND = 3;
       const NOSTR_PROGRESS_KIND = 30078;
       const FEATURED_PUBLIC_LIST_D_TAGS = ['abundance-in-commons', 'hitchwiki-books'];
@@ -2119,7 +2120,7 @@
         return NostrSocial.followsFromEvent(NostrSocial.latestFollowEvent(verified, pubkey));
       }
 
-      async function pullFollowedPublicBookLists(follows) {
+      async function pullFollowedPublicLists(follows) {
         const pubkeys = (Array.isArray(follows) ? follows : []).map(follow => follow.pubkey).filter(Boolean);
         if (!pubkeys.length) return [];
         const batches = [];
@@ -2128,7 +2129,7 @@
         }
         const socialRelays = Array.from(new Set([...NOSTR_RELAYS, ...NOSTR_SOCIAL_RELAYS]));
         const requests = batches.flatMap(authors => socialRelays.map(relay => readRelayEvents(relay, {
-          kinds: [NOSTR_FAVORITES_KIND],
+          kinds: NOSTR_NIP51_LIST_KINDS,
           authors,
           limit: 500,
         })));
@@ -2141,11 +2142,11 @@
         }
         for (const [relay, authorSet] of hintedAuthorsByRelay) {
           const authors = Array.from(authorSet);
-          requests.push(readRelayEvents(relay, { kinds: [NOSTR_FAVORITES_KIND], authors, limit: 500 }));
+          requests.push(readRelayEvents(relay, { kinds: NOSTR_NIP51_LIST_KINDS, authors, limit: 500 }));
         }
         const responses = await Promise.all(requests);
         const verified = await verifiedNostrEvents(responses.flat());
-        return NostrSocial.publicBookLists(verified, pubkeys);
+        return NostrSocial.publicNip51Lists(verified, pubkeys);
       }
 
       async function verifyProfileNip05(profile) {
@@ -2271,7 +2272,7 @@
           state.followingLoaded = true;
           renderPeople();
           const [publicBookLists, followedProfiles] = await Promise.all([
-            pullFollowedPublicBookLists(following),
+            pullFollowedPublicLists(following),
             pullFollowedProfiles(following),
           ]);
           state.publicBookLists = publicBookLists;

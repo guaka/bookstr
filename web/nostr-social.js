@@ -219,6 +219,37 @@
     }).sort((left, right) => right.createdAt - left.createdAt);
   }
 
+  const NIP51_LIST_KINDS = new Set([30000, 30001, 30002, 30003, 30004, 30005, 30006, 30007, 30008, 30009]);
+
+  function publicNip51Lists(events, followedPubkeys) {
+    const followed = new Set((Array.isArray(followedPubkeys) ? followedPubkeys : [])
+      .map(normalizedPubkey).filter(Boolean));
+    const newestByAddress = new Map();
+    for (const event of Array.isArray(events) ? events : []) {
+      const author = normalizedPubkey(event?.pubkey);
+      if (!NIP51_LIST_KINDS.has(event?.kind) || !followed.has(author)) continue;
+      const tags = Array.isArray(event.tags) ? event.tags : [];
+      const d = tags.find(tag => Array.isArray(tag) && tag[0] === 'd')?.[1] || '';
+      const key = `${author}:${event.kind}:${d}`;
+      const current = newestByAddress.get(key);
+      if (!current || Number(event.created_at || 0) > Number(current.created_at || 0)) {
+        newestByAddress.set(key, event);
+      }
+    }
+    return Array.from(newestByAddress.values()).map(event => {
+      const tags = Array.isArray(event.tags) ? event.tags : [];
+      const title = tags.find(tag => Array.isArray(tag) && tag[0] === 'title')?.[1];
+      const d = tags.find(tag => Array.isArray(tag) && tag[0] === 'd')?.[1];
+      return {
+        pubkey: normalizedPubkey(event.pubkey),
+        title: String(title || d || 'NIP-51 list').trim() || 'NIP-51 list',
+        kind: Number(event.kind),
+        createdAt: Number(event.created_at || 0),
+        eventId: String(event.id || ''),
+      };
+    }).sort((left, right) => right.createdAt - left.createdAt);
+  }
+
   root.NostrSocial = {
     normalizedPubkey,
     latestFollowEvent,
@@ -232,5 +263,6 @@
     nip42AuthTemplate,
     hasPublicBookReference,
     publicBookLists,
+    publicNip51Lists,
   };
 })(globalThis);
