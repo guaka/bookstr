@@ -23,6 +23,10 @@ test('People loads the connected user follow list and public book lists', () => 
   assert.match(html, /NostrSocial\.nip05Matches\(document, parts\.name, profile\.pubkey\)/);
   assert.match(html, /profile\?\.verifiedNip05/);
   assert.match(html, /const NOSTR_SOCIAL_RELAYS = \['wss:\/\/relay\.trustroots\.org'\]/);
+  assert.match(html, /const NOSTR_TRUSTROOTS_PROFILE_RELAY = 'wss:\/\/nip42\.trustroots\.org'/);
+  assert.match(html, /NostrSocial\.nip42AuthTemplate\(relayUrl, id\)/);
+  assert.match(html, /socket\.send\(JSON\.stringify\(\['AUTH', signed\]\)\);[\s\S]*?authenticatedRequestSent = true;[\s\S]*?sendRequest\(\)/);
+  assert.match(html, /readRelayEvents\(NOSTR_TRUSTROOTS_PROFILE_RELAY,[\s\S]*?kinds: \[0\],[\s\S]*?\{ authenticate: true \}/);
   assert.match(html, /new Set\(\[\.\.\.NOSTR_RELAYS, \.\.\.NOSTR_SOCIAL_RELAYS\]\)/);
   assert.match(html, /tools\.verifyEvent\(event\)/);
   assert.match(html, /setHashRoute\('people'\)/);

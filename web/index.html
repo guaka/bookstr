@@ -1616,6 +1616,7 @@
       const NIP7_STATUS_KEY = 'bookstr_nip7_pubkey_v1';
       const NOSTR_RELAYS = ['wss://relay.nomadwiki.org'];
       const NOSTR_SOCIAL_RELAYS = ['wss://relay.trustroots.org'];
+      const NOSTR_TRUSTROOTS_PROFILE_RELAY = 'wss://nip42.trustroots.org';
       const NOSTR_FAVORITES_KIND = 30003;
       const NOSTR_FOLLOW_KIND = 3;
       const NOSTR_PROGRESS_KIND = 30078;
@@ -1646,6 +1647,7 @@
         tr: 'Turkish', zh: 'Chinese'
       };
       const NOSTR_QUERY_TIMEOUT_MS = 5000;
+      const NOSTR_AUTH_QUERY_TIMEOUT_MS = 30000;
       const NOSTR_SEARCH_READY_TIMEOUT_MS = 8000;
       const NOSTR_SEARCH_RESPONSE_TIMEOUT_MS = 20000;
       const SEARCH_RESULT_LIMIT = 200;
@@ -1975,11 +1977,23 @@
         return `x${Math.abs(hash).toString(16).padStart(8, '0')}`;
       }
 
-      function readRelayEvents(relayUrl, filters) {
+      function readRelayEvents(relayUrl, filters, { authenticate = false } = {}) {
         return new Promise((resolve) => {
           const events = [];
           let socket;
+          let settled = false;
+          let authEventId = '';
+          let authInFlight = false;
+          let authenticatedRequestSent = false;
+          const subscription = makeSubId('bookstr-sync');
+          const sendRequest = () => {
+            if (socket?.readyState !== WebSocket.OPEN) return;
+            socket.send(JSON.stringify(['REQ', subscription, filters]));
+          };
           const done = (next) => {
+            if (settled) return;
+            settled = true;
+            clearTimeout(timer);
             try {
               if (socket?.readyState === WebSocket.OPEN) {
                 socket.send(JSON.stringify(['CLOSE', subscription]));
@@ -1995,9 +2009,11 @@
             resolve(next);
           };
 
-          const subscription = makeSubId('bookstr-sync');
-          const timer = setTimeout(() => done(events), NOSTR_QUERY_TIMEOUT_MS);
-          const onMessage = (event) => {
+          const timer = setTimeout(
+            () => done(events),
+            authenticate ? NOSTR_AUTH_QUERY_TIMEOUT_MS : NOSTR_QUERY_TIMEOUT_MS
+          );
+          const onMessage = async (event) => {
             try {
               const packet = JSON.parse(event.data);
               if (!Array.isArray(packet) || packet.length < 2) {
@@ -2005,13 +2021,40 @@
               }
               const type = packet[0];
               const id = packet[1];
+              if (type === 'AUTH' && authenticate && !authInFlight) {
+                if (!window.nostr?.signEvent || !String(id || '')) {
+                  done(events);
+                  return;
+                }
+                authInFlight = true;
+                try {
+                  const signed = await window.nostr.signEvent(
+                    NostrSocial.nip42AuthTemplate(relayUrl, id)
+                  );
+                  authEventId = String(signed?.id || '');
+                  if (!authEventId || socket?.readyState !== WebSocket.OPEN) {
+                    done(events);
+                    return;
+                  }
+                  socket.send(JSON.stringify(['AUTH', signed]));
+                  authenticatedRequestSent = true;
+                  sendRequest();
+                } catch {
+                  done(events);
+                }
+                return;
+              }
+              if (type === 'OK' && authenticate && id === authEventId) {
+                if (packet[2] !== true) done(events);
+                return;
+              }
               if (type === 'EVENT' && id === subscription && packet[2]?.pubkey) {
                 const payload = packet[2];
                 events.push(payload);
                 return;
               }
               if (type === 'EOSE' && id === subscription) {
-                clearTimeout(timer);
+                if (authenticate && !authenticatedRequestSent) return;
                 done(events);
               }
             } catch {
@@ -2022,20 +2065,17 @@
           try {
             socket = new WebSocket(relayUrl);
             socket.addEventListener('open', () => {
-              socket.send(JSON.stringify(['REQ', subscription, filters]));
+              sendRequest();
             });
             socket.addEventListener('message', onMessage);
             socket.addEventListener('error', () => {
-              clearTimeout(timer);
               done(events);
             });
             socket.addEventListener('close', () => {
-              clearTimeout(timer);
-              resolve(events);
+              done(events);
             });
           } catch {
-            clearTimeout(timer);
-            resolve([]);
+            done([]);
           }
         });
       }
@@ -2144,6 +2184,13 @@
           authors,
           limit: authors.length * 2,
         })));
+        for (const authors of batches) {
+          requests.push(readRelayEvents(NOSTR_TRUSTROOTS_PROFILE_RELAY, {
+            kinds: [0],
+            authors,
+            limit: authors.length * 2,
+          }, { authenticate: true }));
+        }
         const hintedAuthorsByRelay = new Map();
         for (const follow of follows) {
           if (!follow.relay || socialRelays.includes(follow.relay)) continue;

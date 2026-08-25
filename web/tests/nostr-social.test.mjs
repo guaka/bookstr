@@ -8,6 +8,7 @@ const {
   latestProfiles,
   nip05Parts,
   nip05Matches,
+  nip42AuthTemplate,
   hasPublicBookReference,
   publicBookLists,
 } = globalThis.NostrSocial;
@@ -58,9 +59,26 @@ test('builds NIP-05 lookup URLs and verifies the returned pubkey', () => {
     name: 'alice',
     url: 'https://example.com/.well-known/nostr.json?name=alice',
   });
+  assert.deepEqual(nip05Parts('Alice@trustroots.org'), {
+    address: 'alice@trustroots.org',
+    name: 'alice',
+    url: 'https://www.trustroots.org/.well-known/nostr.json?name=alice',
+  });
   assert.equal(nip05Parts('not-an-address'), null);
   assert.equal(nip05Matches({ names: { ALICE: alice.toUpperCase() } }, 'alice', alice), true);
   assert.equal(nip05Matches({ names: { alice: bob } }, 'alice', alice), false);
+});
+
+test('builds a NIP-42 authentication event for the challenged relay', () => {
+  assert.deepEqual(nip42AuthTemplate('wss://nip42.trustroots.org', 'challenge-value', 123), {
+    kind: 22242,
+    created_at: 123,
+    tags: [
+      ['relay', 'wss://nip42.trustroots.org'],
+      ['challenge', 'challenge-value'],
+    ],
+    content: '',
+  });
 });
 
 test('recognizes public book references without treating generic bookmarks as books', () => {
