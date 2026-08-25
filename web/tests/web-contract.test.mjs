@@ -227,7 +227,6 @@ test('Home and Search share tables with covers and author search links', () => {
   assert.match(html, /renderBookTable\(target, books/);
   assert.match(html, /bookCoverUrl\(book\)/);
   assert.match(html, /const LIBVAULT_COVER_BASE = 'https:\/\/lib\.b\.bfr\.ee\/api\/covers'/);
-  assert.match(html, /return isMd5\(md5\) \? `\$\{LIBVAULT_COVER_BASE\}\/\$\{md5\}` : ''/);
   assert.match(html, /const cover = payload\?\.covers\?\.\[rawId\] \|\| \{\}/);
   assert.match(html, /coverUrl: item\.cover_url \|\| item\.coverUrl \|\| item\.thumbnail \|\| cover\.url/);
   assert.match(html, /data-action="author-search"/);

@@ -1531,7 +1531,7 @@ test('searchLibVault normalizes query, search type, and limit', async () => {
   assert.equal(sent.tags[0]?.[1], servicePubkey);
 });
 
-test('monitorLibVaultFetch keeps waiting when fetch throws', async () => {
+test('monitorLibVaultFetch stops polling when the LibVault API is unavailable', async () => {
   const progress = [];
   const result = await monitorLibVaultFetch('a'.repeat(32), {
     intervalMs: 0,
@@ -1543,13 +1543,13 @@ test('monitorLibVaultFetch keeps waiting when fetch throws', async () => {
   });
 
   assert.equal(result.status, 'failed');
-  assert.equal(result.error, 'Timed out waiting for LibVault');
+  assert.equal(result.error, 'LibVault HTTP API is unavailable');
   assert.equal(progress[0].status, 'waiting');
   assert.equal(progress.at(-1).status, 'failed');
 });
 
 
-test('monitorLibVaultFetch treats malformed job payloads as waiting until timeout', async () => {
+test('monitorLibVaultFetch treats malformed job payloads as an unavailable API', async () => {
   const progress = [];
   const result = await monitorLibVaultFetch('a'.repeat(32), {
     intervalMs: 0,
@@ -1564,9 +1564,9 @@ test('monitorLibVaultFetch treats malformed job payloads as waiting until timeou
   });
 
   assert.equal(result.status, 'failed');
-  assert.equal(result.error, 'Timed out waiting for LibVault');
+  assert.equal(result.error, 'LibVault HTTP API is unavailable');
   assert.equal(progress[0]?.status, 'waiting');
-  assert.equal(progress.some(update => update.status === 'waiting'), true);
+  assert.equal(progress.at(-1)?.status, 'failed');
 });
 
 test('resolveLibVaultService rejects invalid NIP-05 pubkeys', async () => {
