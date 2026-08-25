@@ -22,6 +22,8 @@ test('People loads the connected user follow list and public book lists', () => 
   assert.match(html, /hintedAuthorsByRelay\.get\(follow\.relay\)/);
   assert.match(html, /NostrSocial\.nip05Matches\(document, parts\.name, profile\.pubkey\)/);
   assert.match(html, /profile\?\.verifiedNip05/);
+  assert.match(html, /const NOSTR_SOCIAL_RELAYS = \['wss:\/\/relay\.trustroots\.org'\]/);
+  assert.match(html, /new Set\(\[\.\.\.NOSTR_RELAYS, \.\.\.NOSTR_SOCIAL_RELAYS\]\)/);
   assert.match(html, /tools\.verifyEvent\(event\)/);
   assert.match(html, /setHashRoute\('people'\)/);
 });

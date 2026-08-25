@@ -1615,6 +1615,7 @@
       const SETTINGS_KEY = 'bookstr_reader_settings_v1';
       const NIP7_STATUS_KEY = 'bookstr_nip7_pubkey_v1';
       const NOSTR_RELAYS = ['wss://relay.nomadwiki.org'];
+      const NOSTR_SOCIAL_RELAYS = ['wss://relay.trustroots.org'];
       const NOSTR_FAVORITES_KIND = 30003;
       const NOSTR_FOLLOW_KIND = 3;
       const NOSTR_PROGRESS_KIND = 30078;
@@ -2083,11 +2084,24 @@
         for (let index = 0; index < pubkeys.length; index += 50) {
           batches.push(pubkeys.slice(index, index + 50));
         }
-        const responses = await Promise.all(batches.flatMap(authors => NOSTR_RELAYS.map(relay => readRelayEvents(relay, {
+        const socialRelays = Array.from(new Set([...NOSTR_RELAYS, ...NOSTR_SOCIAL_RELAYS]));
+        const requests = batches.flatMap(authors => socialRelays.map(relay => readRelayEvents(relay, {
           kinds: [NOSTR_FAVORITES_KIND],
           authors,
           limit: 500,
-        }))));
+        })));
+        const hintedAuthorsByRelay = new Map();
+        for (const follow of follows) {
+          if (!follow.relay || socialRelays.includes(follow.relay)) continue;
+          const authors = hintedAuthorsByRelay.get(follow.relay) || new Set();
+          authors.add(follow.pubkey);
+          hintedAuthorsByRelay.set(follow.relay, authors);
+        }
+        for (const [relay, authorSet] of hintedAuthorsByRelay) {
+          const authors = Array.from(authorSet);
+          requests.push(readRelayEvents(relay, { kinds: [NOSTR_FAVORITES_KIND], authors, limit: 500 }));
+        }
+        const responses = await Promise.all(requests);
         const verified = await verifiedNostrEvents(responses.flat());
         return NostrSocial.publicBookLists(verified, pubkeys);
       }
@@ -2124,14 +2138,15 @@
         for (let index = 0; index < pubkeys.length; index += 50) {
           batches.push(pubkeys.slice(index, index + 50));
         }
-        const requests = batches.flatMap(authors => NOSTR_RELAYS.map(relay => readRelayEvents(relay, {
+        const socialRelays = Array.from(new Set([...NOSTR_RELAYS, ...NOSTR_SOCIAL_RELAYS]));
+        const requests = batches.flatMap(authors => socialRelays.map(relay => readRelayEvents(relay, {
           kinds: [0],
           authors,
           limit: authors.length * 2,
         })));
         const hintedAuthorsByRelay = new Map();
         for (const follow of follows) {
-          if (!follow.relay || NOSTR_RELAYS.includes(follow.relay)) continue;
+          if (!follow.relay || socialRelays.includes(follow.relay)) continue;
           const authors = hintedAuthorsByRelay.get(follow.relay) || new Set();
           authors.add(follow.pubkey);
           hintedAuthorsByRelay.set(follow.relay, authors);
