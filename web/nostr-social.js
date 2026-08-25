@@ -36,6 +36,69 @@
     return follows;
   }
 
+  function profileFromEvent(event) {
+    let content = {};
+    try {
+      const parsed = JSON.parse(String(event?.content || '{}'));
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) content = parsed;
+    } catch { /* keep an empty profile for malformed content */ }
+    const picture = String(content.picture || '').trim();
+    return {
+      pubkey: normalizedPubkey(event?.pubkey),
+      name: String(content.display_name || content.name || '').trim(),
+      about: String(content.about || '').trim(),
+      picture: /^https?:\/\//i.test(picture) ? picture : '',
+      nip05: String(content.nip05 || '').trim(),
+      createdAt: Number(event?.created_at || 0),
+    };
+  }
+
+  function latestProfiles(events, followedPubkeys) {
+    const followed = new Set((Array.isArray(followedPubkeys) ? followedPubkeys : [])
+      .map(normalizedPubkey).filter(Boolean));
+    const newest = new Map();
+    for (const event of Array.isArray(events) ? events : []) {
+      const pubkey = normalizedPubkey(event?.pubkey);
+      if (event?.kind !== 0 || !followed.has(pubkey)) continue;
+      const current = newest.get(pubkey);
+      if (!current || Number(event.created_at || 0) > Number(current.created_at || 0)
+        || (Number(event.created_at || 0) === Number(current.created_at || 0)
+          && String(event.id || '').localeCompare(String(current.id || '')) > 0)) {
+        newest.set(pubkey, event);
+      }
+    }
+    return Array.from(newest.values()).map(profileFromEvent);
+  }
+
+  function nip05Parts(identifier) {
+    const value = String(identifier || '').trim();
+    const match = /^([^@\s]+)@([^@\s]+)$/.exec(value);
+    if (!match) return null;
+    const name = match[1].toLowerCase();
+    let domain;
+    try {
+      const url = new URL(`https://${match[2]}/.well-known/nostr.json`);
+      if (!url.hostname || url.username || url.password || url.port
+        || url.host.toLowerCase() !== match[2].toLowerCase()) return null;
+      domain = url.hostname.toLowerCase();
+    } catch {
+      return null;
+    }
+    return {
+      address: `${name}@${domain}`,
+      name,
+      url: `https://${domain}/.well-known/nostr.json?name=${encodeURIComponent(name)}`,
+    };
+  }
+
+  function nip05Matches(document, name, pubkey) {
+    const expected = normalizedPubkey(pubkey);
+    if (!expected || !document?.names || typeof document.names !== 'object') return false;
+    const names = Object.entries(document.names);
+    const match = names.find(([candidate]) => String(candidate).toLowerCase() === String(name).toLowerCase());
+    return normalizedPubkey(match?.[1]) === expected;
+  }
+
   function hasPublicBookReference(tags) {
     return (Array.isArray(tags) ? tags : []).some(tag => {
       if (!Array.isArray(tag) || typeof tag[0] !== 'string') return false;
@@ -79,6 +142,10 @@
     normalizedPubkey,
     latestFollowEvent,
     followsFromEvent,
+    profileFromEvent,
+    latestProfiles,
+    nip05Parts,
+    nip05Matches,
     hasPublicBookReference,
     publicBookLists,
   };
