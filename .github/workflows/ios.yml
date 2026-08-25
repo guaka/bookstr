@@ -28,6 +28,21 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+      - name: Prepare iOS simulator
+        id: simulator
+        run: |
+          for attempt in {1..12}; do
+            DEVICE_ID=$(xcrun simctl list devices available -j | jq -r '[.devices[][] | select(.isAvailable == true and (.name | startswith("iPhone")))] | first | .udid // empty')
+            if [ -n "$DEVICE_ID" ]; then break; fi
+            sleep 5
+          done
+          if [ -z "$DEVICE_ID" ]; then
+            echo "No available iPhone simulator was found" >&2
+            exit 1
+          fi
+          xcrun simctl boot "$DEVICE_ID" || true
+          xcrun simctl bootstatus "$DEVICE_ID" -b
+          echo "id=$DEVICE_ID" >> "$GITHUB_OUTPUT"
       - name: Build and run unit tests
         id: ios_tests
         continue-on-error: true
@@ -35,7 +50,7 @@ jobs:
           xcodebuild test \
             -project ios/BookstrIOS.xcodeproj \
             -scheme BookstrIOS \
-            -destination 'platform=iOS Simulator,name=iPhone 17 Pro,OS=latest' \
+            -destination 'platform=iOS Simulator,id=${{ steps.simulator.outputs.id }}' \
             -only-testing:BookstrIOSTests \
             -enableCodeCoverage YES \
             -resultBundlePath ios/TestResults.xcresult \
@@ -63,7 +78,7 @@ jobs:
           xcodebuild test \
             -project ios/BookstrIOS.xcodeproj \
             -scheme BookstrIOS \
-            -destination 'platform=iOS Simulator,name=iPhone 17 Pro,OS=latest' \
+            -destination 'platform=iOS Simulator,id=${{ steps.simulator.outputs.id }}' \
             -only-testing:BookstrIOSUITests \
             -resultBundlePath ios/E2EResults.xcresult \
             -skipPackagePluginValidation \

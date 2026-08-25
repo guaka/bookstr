@@ -38,6 +38,14 @@ final class AppShellUITests: XCTestCase {
     }
 
     func testContinueReadingOpensTheMostRecentFixture() throws {
+        let epub = app.buttons["library-book-ui-test-alice-epub"]
+        XCTAssertTrue(epub.waitForExistence(timeout: 5))
+        epub.tap()
+        let initialBack = app.buttons["reader-back"]
+        XCTAssertTrue(initialBack.waitForExistence(timeout: 10))
+        initialBack.tap()
+        XCTAssertTrue(app.tabBars.buttons["Library"].waitForExistence(timeout: 5))
+
         let continueTab = app.tabBars.buttons["Continue reading"]
         XCTAssertTrue(continueTab.waitForExistence(timeout: 5))
         continueTab.tap()
