@@ -33,6 +33,12 @@ test('normalizes Istanbul and JaCoCo coverage', () => {
   const metrics = parseJacoco('<report><counter covered="8" missed="2" type="LINE"/><counter type="METHOD" missed="1" covered="9"/><counter type="BRANCH" missed="3" covered="7"/><counter type="INSTRUCTION" missed="4" covered="6"/></report>');
   assert.deepEqual(metrics.map(metric => metric.value), [60, 70, 90, 80]);
   assert.equal(parseXCCov({ targets: [{ coveredLines: 75, executableLines: 100 }] })[0].value, 75);
+  assert.equal(parseXCCov({
+    targets: [
+      { name: 'BookstrIOS.app', coveredLines: 30, executableLines: 100 },
+      { name: 'BookstrIOSTests.xctest', coveredLines: 900, executableLines: 900 },
+    ],
+  })[0].value, 30);
 });
 
 test('renders an accessible dashboard with links and missing suites', () => {

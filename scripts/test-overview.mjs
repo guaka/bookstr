@@ -127,9 +127,13 @@ export function parseJacoco(xml) {
 
 export function parseXCCov(report) {
   const targets = Array.isArray(report?.targets) ? report.targets : [];
-  const executable = number(report?.executableLines) || targets.reduce((sum, target) => sum + number(target?.executableLines), 0);
-  const covered = number(report?.coveredLines) || targets.reduce((sum, target) => sum + number(target?.coveredLines), 0);
-  const coverage = executable ? percent(covered, executable) : number(report?.lineCoverage) * 100;
+  // Xcode's report total includes the test bundles and package dependencies. Use the
+  // application target so adding test code cannot increase displayed app coverage.
+  const appTarget = targets.find(target => String(target?.name || '').endsWith('.app'));
+  const source = appTarget || report;
+  const executable = number(source?.executableLines) || targets.reduce((sum, target) => sum + number(target?.executableLines), 0);
+  const covered = number(source?.coveredLines) || targets.reduce((sum, target) => sum + number(target?.coveredLines), 0);
+  const coverage = executable ? percent(covered, executable) : number(source?.lineCoverage) * 100;
   return [{ label: 'Lines', value: Number(coverage.toFixed(2)), suffix: '%' }];
 }
 

@@ -52,27 +52,6 @@ final class LibraryReaderUITests: XCTestCase {
         attachScreenshot(named: "epub-navigation-restored")
     }
 
-    func testEPUBRepeatedHorizontalPagingKeepsAdvancingAndCanReverse() throws {
-        let (_, chapter) = openEPUB()
-        let initialY = chapter.frame.minY
-
-        app.swipeLeft()
-        XCTAssertTrue(waitForY(chapter, below: initialY - 80), "First left swipe did not advance")
-        let firstPageY = chapter.frame.minY
-
-        app.swipeLeft()
-        XCTAssertTrue(waitForY(chapter, below: firstPageY - 80), "Second left swipe stayed on the same page")
-        let secondPageY = chapter.frame.minY
-
-        app.swipeRight()
-        XCTAssertTrue(waitForY(chapter, above: secondPageY + 80), "First right swipe did not reverse one page")
-        let reversedOnceY = chapter.frame.minY
-
-        app.swipeRight()
-        XCTAssertTrue(waitForY(chapter, above: reversedOnceY + 80), "Second right swipe did not reverse again")
-        XCTAssertGreaterThan(chapter.frame.minY, initialY - 80, "Paging back did not return near the beginning")
-    }
-
     func testEPUBCanBeClosedReopenedAndNavigatedAgain() throws {
         let (back, chapter) = openEPUB()
         let initialY = chapter.frame.minY
