@@ -7,6 +7,19 @@ const readerHtml = await readFile(new URL('../reader.html', import.meta.url), 'u
 const pdfReaderHtml = await readFile(new URL('../pdf-reader.html', import.meta.url), 'utf8');
 const pdfReaderJs = await readFile(new URL('../pdf-reader.js', import.meta.url), 'utf8');
 
+test('People loads the connected user follow list and public book lists', () => {
+  assert.match(html, /id="people-tab-btn"/);
+  assert.match(html, /id="people-list"/);
+  assert.match(html, /const NOSTR_FOLLOW_KIND = 3/);
+  assert.match(html, /async function pullNostrFollows\(pubkey\)/);
+  assert.match(html, /NostrSocial\.latestFollowEvent\(verified, pubkey\)/);
+  assert.match(html, /NostrSocial\.followsFromEvent/);
+  assert.match(html, /async function pullFollowedPublicBookLists\(follows\)/);
+  assert.match(html, /NostrSocial\.publicBookLists\(verified, pubkeys\)/);
+  assert.match(html, /tools\.verifyEvent\(event\)/);
+  assert.match(html, /setHashRoute\('people'\)/);
+});
+
 test('served web app remains React- and bundle-free', () => {
   assert.doesNotMatch(html, /react(?:-dom)?(?:\.production)?/i);
   assert.doesNotMatch(html, /node_modules|bookstr-dist/i);
@@ -508,9 +521,10 @@ test('home search submit updates the route and triggers search pagination state'
 
 test('tabs persist selection in route hash transitions', () => {
   assert.match(html, /function activateTab\(tab, \{ updateHash = false \} = \{\}\) {/);
-  assert.match(html, /activeTab = \['home', 'search', 'reading', 'words', 'settings'\]\.includes\(tab\) \? tab : 'home';/);
+  assert.match(html, /activeTab = \['home', 'search', 'reading', 'words', 'people', 'settings'\]\.includes\(tab\) \? tab : 'home';/);
   assert.match(html, /setHashRoute\(routeValue \? `read=\$\{encodeURIComponent\(routeValue\)\}` : 'reading'\);/);
   assert.match(html, /setHashRoute\('words'\);/);
+  assert.match(html, /setHashRoute\('people'\);/);
   assert.match(html, /setHashRoute\('settings'\);/);
 });
 

@@ -1003,6 +1003,22 @@
       }
       .public-list-books li { margin: 0.28rem 0; }
       .public-list-books small { margin-left: 0.35rem; color: var(--muted-text, #666); }
+      .people-list {
+        display: grid;
+        gap: 0;
+      }
+      .person-row {
+        padding: 0.55rem 0;
+        border-bottom: 1px solid var(--card-border, #ddd);
+      }
+      .person-row code {
+        overflow-wrap: anywhere;
+      }
+      .person-lists {
+        margin: 0.2rem 0 0;
+        padding-left: 1.1rem;
+        color: var(--muted-text, #666);
+      }
       .meta-list {
         display: flex;
         flex-wrap: wrap;
@@ -1387,6 +1403,7 @@
           <button id="reading-favorite-btn" type="button" class="hidden" aria-label="Add to favorites" aria-pressed="false" title="Add to favorites">♡</button>
           <button id="npub-button" type="button" class="npub-info hidden" aria-label="Open settings" aria-pressed="false" title="Settings"><span id="npub-display" class="npub-pill">not connected</span></button>
           <button id="search-tab-btn" class="header-tab" type="button" aria-label="Search" aria-selected="true" title="Search"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m15.5 15.5 5 5"/></svg></button>
+          <button id="people-tab-btn" class="header-tab" type="button" aria-label="People" aria-selected="false" title="People"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="3"/><circle cx="17" cy="10" r="2.5"/><path d="M3.5 20c.4-4 2.2-6 5.5-6s5.1 2 5.5 6M14 15c3.5-.6 5.5 1 6 5"/></svg></button>
           <button id="reading-tab-btn" class="header-tab" type="button" aria-label="Reading" aria-selected="false" title="Reading"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5.5c3.2-.8 5.9-.2 8 1.6v12c-2.1-1.8-4.8-2.4-8-1.6z"/><path d="M20 5.5c-3.2-.8-5.9-.2-8 1.6v12c2.1-1.8 4.8-2.4 8-1.6z"/></svg></button>
           <button id="words-tab-btn" class="header-tab words-tab-icon hidden" type="button" aria-label="Words" aria-selected="false" title="Words">Aᵥ</button>
           <button id="settings-btn" class="header-tab icon-btn" aria-label="Settings" aria-selected="false" aria-pressed="false" title="Settings"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15.25A3.25 3.25 0 1 0 12 8.75a3.25 3.25 0 0 0 0 6.5Z"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06-1.87 1.87-.06-.06A1.7 1.7 0 0 0 16 18.4a1.7 1.7 0 0 0-1 .6 1.7 1.7 0 0 0-.4 1.1V20h-2.65v-.09A1.7 1.7 0 0 0 10.9 18.4a1.7 1.7 0 0 0-1.87.34l-.06.06-1.87-1.87.06-.06A1.7 1.7 0 0 0 7.5 15a1.7 1.7 0 0 0-.6-1 1.7 1.7 0 0 0-1.1-.4H5.7v-2.65h.09A1.7 1.7 0 0 0 7.5 9.9a1.7 1.7 0 0 0-.34-1.87l-.06-.06L8.97 6.1l.06.06A1.7 1.7 0 0 0 10.9 6.5a1.7 1.7 0 0 0 1-.6 1.7 1.7 0 0 0 .4-1.1V4.7h2.65v.09A1.7 1.7 0 0 0 16 6.5a1.7 1.7 0 0 0 1.87-.34l.06-.06 1.87 1.87-.06.06A1.7 1.7 0 0 0 19.4 9.9a1.7 1.7 0 0 0 .6 1 1.7 1.7 0 0 0 1.1.4h.09v2.65h-.09A1.7 1.7 0 0 0 19.4 15Z"/></svg></button>
@@ -1497,6 +1514,10 @@
         <div id="words-list" class="words-list"></div>
       </section>
 
+      <section id="people-tab" class="card hidden" data-tab-panel="people">
+        <div id="people-list" class="people-list" aria-live="polite"></div>
+      </section>
+
       <section
         id="settings-modal"
         class="settings-tab card hidden"
@@ -1562,6 +1583,7 @@
 
     <script src="book-metadata.js"></script>
     <script src="public-lists.js"></script>
+    <script src="nostr-social.js"></script>
     <script src="vendor/sql-wasm.js"></script>
     <script>
       const FAVORITES_KEY = 'bookstr_nostr_favorites_v1';
@@ -1572,6 +1594,7 @@
       const NIP7_STATUS_KEY = 'bookstr_nip7_pubkey_v1';
       const NOSTR_RELAYS = ['wss://relay.nomadwiki.org'];
       const NOSTR_FAVORITES_KIND = 30003;
+      const NOSTR_FOLLOW_KIND = 3;
       const NOSTR_PROGRESS_KIND = 30078;
       const FEATURED_PUBLIC_LIST_D_TAGS = ['abundance-in-commons', 'hitchwiki-books'];
       const FAVORITES_D_TAG = 'libvault-favorites';
@@ -1675,7 +1698,10 @@
         if (section && section !== readingLibraryTab) section.remove();
       }
       const wordsTab = document.getElementById('words-tab');
+      const peopleTab = document.getElementById('people-tab');
+      const peopleList = document.getElementById('people-list');
       const searchTabBtn = document.getElementById('search-tab-btn');
+      const peopleTabBtn = document.getElementById('people-tab-btn');
       const readingTabBtn = document.getElementById('reading-tab-btn');
       readingTabBtn.remove();
       readingLibraryTab.remove();
@@ -1711,6 +1737,9 @@
         reading: [],
         publicLists: [],
         words: [],
+        following: [],
+        publicBookLists: [],
+        followingLoaded: false,
         settings: {
           autoReading: true,
           useNip7: true,
@@ -2003,6 +2032,98 @@
         if (!pubkey) return [];
         const filter = (Array.isArray(filters) ? filters[0] : filters) || {};
         return queryPublicNostrEvents({ ...filter, authors: [pubkey] });
+      }
+
+      let nostrToolsModule;
+      async function verifiedNostrEvents(events) {
+        nostrToolsModule ||= import('./vendor/nostr-tools.js');
+        const tools = await nostrToolsModule;
+        return (Array.isArray(events) ? events : []).filter(event => {
+          try {
+            return tools.verifyEvent(event);
+          } catch {
+            return false;
+          }
+        });
+      }
+
+      async function pullNostrFollows(pubkey) {
+        const events = await queryNostrEvents(pubkey, { kinds: [NOSTR_FOLLOW_KIND], limit: 10 });
+        const verified = await verifiedNostrEvents(events);
+        return NostrSocial.followsFromEvent(NostrSocial.latestFollowEvent(verified, pubkey));
+      }
+
+      async function pullFollowedPublicBookLists(follows) {
+        const pubkeys = (Array.isArray(follows) ? follows : []).map(follow => follow.pubkey).filter(Boolean);
+        if (!pubkeys.length) return [];
+        const batches = [];
+        for (let index = 0; index < pubkeys.length; index += 50) {
+          batches.push(pubkeys.slice(index, index + 50));
+        }
+        const responses = await Promise.all(batches.flatMap(authors => NOSTR_RELAYS.map(relay => readRelayEvents(relay, {
+          kinds: [NOSTR_FAVORITES_KIND],
+          authors,
+          limit: 500,
+        }))));
+        const verified = await verifiedNostrEvents(responses.flat());
+        return NostrSocial.publicBookLists(verified, pubkeys);
+      }
+
+      function renderPeople() {
+        if (!state.nip7.pubkey) {
+          peopleList.innerHTML = '<p class="note">NIP-07 not connected.</p>';
+          return;
+        }
+        if (!state.followingLoaded) {
+          peopleList.innerHTML = '<p class="note">Loading…</p>';
+          return;
+        }
+        if (!state.following.length) {
+          peopleList.innerHTML = '<p class="note">No follows found.</p>';
+          return;
+        }
+        const listsByAuthor = new Map();
+        for (const list of state.publicBookLists) {
+          const lists = listsByAuthor.get(list.pubkey) || [];
+          lists.push(list);
+          listsByAuthor.set(list.pubkey, lists);
+        }
+        const sorted = [...state.following].sort((left, right) => {
+          const leftLatest = listsByAuthor.get(left.pubkey)?.[0]?.createdAt || 0;
+          const rightLatest = listsByAuthor.get(right.pubkey)?.[0]?.createdAt || 0;
+          return Number(Boolean(rightLatest)) - Number(Boolean(leftLatest))
+            || rightLatest - leftLatest;
+        });
+        peopleList.innerHTML = sorted.map(follow => {
+          const npub = publicKeyToNpub(follow.pubkey) || follow.pubkey;
+          const titles = (listsByAuthor.get(follow.pubkey) || [])
+            .map(list => `<li>${escapeHtml(list.title)}</li>`).join('');
+          return `<article class="person-row"><code>${escapeHtml(npub)}</code>${titles ? `<ul class="person-lists">${titles}</ul>` : ''}</article>`;
+        }).join('');
+      }
+
+      let nostrPeopleSyncTask;
+      async function syncNostrPeopleFromNip7() {
+        const pubkey = state.nip7.pubkey;
+        if (!state.settings.useNip7 || !pubkey) return false;
+        if (nostrPeopleSyncTask) return nostrPeopleSyncTask;
+        state.followingLoaded = false;
+        renderPeople();
+        const task = (async () => {
+          const following = await pullNostrFollows(pubkey);
+          const publicBookLists = await pullFollowedPublicBookLists(following);
+          state.following = following;
+          state.publicBookLists = publicBookLists;
+          state.followingLoaded = true;
+          renderPeople();
+          return true;
+        })().catch(() => {
+          state.followingLoaded = true;
+          renderPeople();
+          return false;
+        });
+        nostrPeopleSyncTask = task.finally(() => { nostrPeopleSyncTask = null; });
+        return nostrPeopleSyncTask;
       }
 
       function publishRelayEvent(relayUrl, event) {
@@ -4434,11 +4555,12 @@
 
       function activateTab(tab, { updateHash = false } = {}) {
         if (tab === 'words' && !hasActiveWords()) tab = 'home';
-        activeTab = ['home', 'search', 'reading', 'words', 'settings'].includes(tab) ? tab : 'home';
+        activeTab = ['home', 'search', 'reading', 'words', 'people', 'settings'].includes(tab) ? tab : 'home';
         homeTab.classList.toggle('hidden', activeTab !== 'home');
         searchTab.classList.toggle('hidden', activeTab !== 'search');
         readingLibraryTab.classList.toggle('hidden', activeTab !== 'reading');
         wordsTab.classList.toggle('hidden', activeTab !== 'words');
+        peopleTab.classList.toggle('hidden', activeTab !== 'people');
         settingsModal.classList.toggle('hidden', activeTab !== 'settings');
         settingsModal.setAttribute('aria-hidden', String(activeTab !== 'settings'));
         readerSection.classList.toggle('hidden', activeTab !== 'reading' || !activeReadingBook);
@@ -4446,6 +4568,7 @@
         searchTabBtn.setAttribute('aria-selected', String(activeTab === 'search'));
         readingTabBtn.setAttribute('aria-selected', String(activeTab === 'reading'));
         wordsTabBtn.setAttribute('aria-selected', String(activeTab === 'words'));
+        peopleTabBtn.setAttribute('aria-selected', String(activeTab === 'people'));
         settingsBtn.setAttribute('aria-selected', String(activeTab === 'settings'));
         const showBookTitle = activeTab === 'reading' && activeReadingBook?.title;
         headerBookTitle.classList.toggle('hidden', !showBookTitle);
@@ -4460,6 +4583,10 @@
         updateReadingFavoriteButton();
         if (activeTab === 'home') renderHome();
         if (activeTab === 'words') requestAnimationFrame(() => wordsFilter.focus());
+        if (activeTab === 'people') {
+          renderPeople();
+          if (!state.followingLoaded) void syncNostrPeopleFromNip7();
+        }
         if (!updateHash) return;
         if (activeTab === 'home') {
           setHashRoute(homeHashRoute());
@@ -4474,6 +4601,8 @@
           setHashRoute(routeValue ? `read=${encodeURIComponent(routeValue)}` : 'reading');
         } else if (activeTab === 'words') {
           setHashRoute('words');
+        } else if (activeTab === 'people') {
+          setHashRoute('people');
         } else {
           setHashRoute('settings');
         }
@@ -5380,6 +5509,7 @@
             status.textContent = 'Connected to NIP-07 provider.';
           }
           void syncNostrLibraryFromNip7();
+          void syncNostrPeopleFromNip7();
           return true;
         } catch (error) {
           if (opts.silent && previous && typeof previous.pubkey === 'string' && previous.pubkey) {
@@ -5461,6 +5591,10 @@
           activateTab('settings');
           return;
         }
+        if (route === 'people') {
+          activateTab('people');
+          return;
+        }
         if (route === 'search') {
           activateTab('search');
           requestAnimationFrame(() => queryInput.focus());
@@ -5530,6 +5664,7 @@
       }
 
       searchTabBtn.addEventListener('click', () => activateTab('search', { updateHash: true }));
+      peopleTabBtn.addEventListener('click', () => activateTab('people', { updateHash: true }));
       readingTabBtn.addEventListener('click', () => activateTab('reading', { updateHash: true }));
       wordsTabBtn.addEventListener('click', () => activateTab('words', { updateHash: true }));
 
