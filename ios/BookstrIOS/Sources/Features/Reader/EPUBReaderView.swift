@@ -11,6 +11,42 @@ struct EPUBSection: Identifiable, Equatable {
     var id: String { "\(index):\(href)" }
 }
 
+struct SpeechQueueChunk: Equatable {
+    let text: String
+    let offset: Int
+    let pauseSeconds: Double
+}
+
+struct SpeechPlaybackQueue {
+    private(set) var pendingRequestID: String?
+    private var chunks: [SpeechQueueChunk] = []
+
+    var hasPendingRequest: Bool { pendingRequestID != nil }
+    var isEmpty: Bool { chunks.isEmpty }
+
+    mutating func beginRequest(id: String) {
+        chunks.removeAll()
+        pendingRequestID = id
+    }
+
+    mutating func accept(requestID: String?, chunks: [SpeechQueueChunk]) -> Bool {
+        guard let requestID, requestID == pendingRequestID else { return false }
+        pendingRequestID = nil
+        self.chunks = chunks
+        return true
+    }
+
+    mutating func next() -> SpeechQueueChunk? {
+        guard !chunks.isEmpty else { return nil }
+        return chunks.removeFirst()
+    }
+
+    mutating func cancel() {
+        pendingRequestID = nil
+        chunks.removeAll()
+    }
+}
+
     @MainActor
 final class EPUBReaderController: NSObject, ObservableObject, AVSpeechSynthesizerDelegate {
     @Published var progression = 0.0
@@ -26,7 +62,8 @@ final class EPUBReaderController: NSObject, ObservableObject, AVSpeechSynthesize
     fileprivate weak var webView: WKWebView?
     private let speech = AVSpeechSynthesizer()
     private var utteranceOffsets: [ObjectIdentifier: Int] = [:]
-    private var pendingUtterances = Set<ObjectIdentifier>()
+    private var playbackQueue = SpeechPlaybackQueue()
+    private var activeUtterance: ObjectIdentifier?
     private var nowPlayingTitle = "Bookstr"
     private var nowPlayingAuthor = ""
     private var nowPlayingParagraph = ""
@@ -68,19 +105,14 @@ final class EPUBReaderController: NSObject, ObservableObject, AVSpeechSynthesize
     }
 
     func toggleSpeech() {
-        if speech.isSpeaking || speech.isPaused {
-            speech.stopSpeaking(at: .immediate)
-            utteranceOffsets.removeAll()
-            pendingUtterances.removeAll()
-            isSpeaking = false
-            deactivateAudioSession()
-            evaluate("window.clearSpeechProgress && window.clearSpeechProgress()")
+        if isSpeaking || speech.isSpeaking || speech.isPaused || playbackQueue.hasPendingRequest {
+            stopSpeech()
         } else {
             guard ready else {
                 errorMessage = "The reader is still preparing text for speech."
                 return
             }
-            evaluate("window.requestSpeechText && window.requestSpeechText()")
+            requestSpeechText()
         }
     }
 
@@ -90,8 +122,16 @@ final class EPUBReaderController: NSObject, ObservableObject, AVSpeechSynthesize
         voiceIdentifier: String,
         rate: Double,
         chunks: [(text: String, offset: Int, pauseSeconds: Double)]? = nil,
+        requestID: String? = nil
     ) {
+        let preparedChunks = (chunks?.isEmpty == false ? chunks! : speechChunks(text).map {
+            (text: $0.text, offset: $0.offset, pauseSeconds: 0.035)
+        }).map {
+            SpeechQueueChunk(text: $0.text, offset: $0.offset, pauseSeconds: $0.pauseSeconds)
+        }
+        guard playbackQueue.accept(requestID: requestID, chunks: preparedChunks) else { return }
         guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            stopSpeech()
             errorMessage = "No readable text is visible here."
             return
         }
@@ -104,30 +144,35 @@ final class EPUBReaderController: NSObject, ObservableObject, AVSpeechSynthesize
             )
             try audioSession.setActive(true)
         } catch {
+            stopSpeech()
             errorMessage = "Could not start text-to-speech audio: \(error.localizedDescription)"
             return
         }
         speech.stopSpeaking(at: .immediate)
         utteranceOffsets.removeAll()
-        pendingUtterances.removeAll()
+        activeUtterance = nil
         isSpeaking = true
         updateNowPlaying(isPlaying: true)
-        let preparedChunks = chunks?.isEmpty == false ? chunks! : speechChunks(text).map {
-            (text: $0.text, offset: $0.offset, pauseSeconds: 0.035)
-        }
         let selectedVoice = bestVoice(language: language, identifier: voiceIdentifier)
-        for (index, chunk) in preparedChunks.enumerated() {
-            let utterance = AVSpeechUtterance(string: chunk.text)
-            utterance.voice = selectedVoice
-            utterance.rate = Float(min(max(rate, 0.35), 0.60))
-            utterance.volume = 1
-            utterance.preUtteranceDelay = index == 0 ? 0 : chunk.pauseSeconds
-            let identifier = ObjectIdentifier(utterance)
-            utteranceOffsets[identifier] = chunk.offset
-            pendingUtterances.insert(identifier)
-            speech.speak(utterance)
-        }
+        speakNextUtterance(voice: selectedVoice, rate: rate, isFirst: true)
         errorMessage = nil
+    }
+
+    private func speakNextUtterance(voice: AVSpeechSynthesisVoice?, rate: Double, isFirst: Bool = false) {
+        guard activeUtterance == nil, !playbackQueue.isEmpty else {
+            if activeUtterance == nil { finishSpeech() }
+            return
+        }
+        guard let chunk = playbackQueue.next() else { return }
+        let utterance = AVSpeechUtterance(string: chunk.text)
+        utterance.voice = voice
+        utterance.rate = Float(min(max(rate, 0.35), 0.60))
+        utterance.volume = 1
+        utterance.preUtteranceDelay = isFirst ? 0 : chunk.pauseSeconds
+        let identifier = ObjectIdentifier(utterance)
+        activeUtterance = identifier
+        utteranceOffsets[identifier] = chunk.offset
+        speech.speak(utterance)
     }
 
     nonisolated func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, willSpeakRangeOfSpeechString characterRange: NSRange, utterance: AVSpeechUtterance) {
@@ -151,13 +196,45 @@ final class EPUBReaderController: NSObject, ObservableObject, AVSpeechSynthesize
 
     private func finishUtterance(_ utterance: AVSpeechUtterance) {
         let identifier = ObjectIdentifier(utterance)
-        guard pendingUtterances.remove(identifier) != nil else { return }
+        guard activeUtterance == identifier else { return }
+        activeUtterance = nil
         utteranceOffsets.removeValue(forKey: identifier)
-        guard pendingUtterances.isEmpty else { return }
+        if !playbackQueue.isEmpty {
+            speakNextUtterance(voice: utterance.voice, rate: Double(utterance.rate))
+            return
+        }
+        finishSpeech()
+    }
+
+    private func finishSpeech() {
         isSpeaking = false
         updateNowPlaying(isPlaying: false)
         deactivateAudioSession()
         evaluate("window.clearSpeechProgress && window.clearSpeechProgress()")
+    }
+
+    private func stopSpeech() {
+        playbackQueue.cancel()
+        activeUtterance = nil
+        utteranceOffsets.removeAll()
+        speech.stopSpeaking(at: .immediate)
+        isSpeaking = false
+        updateNowPlaying(isPlaying: false)
+        deactivateAudioSession()
+        evaluate("window.clearSpeechProgress && window.clearSpeechProgress()")
+    }
+
+    private func requestSpeechText(after delayMilliseconds: Int = 0) {
+        let requestID = UUID().uuidString
+        playbackQueue.beginRequest(id: requestID)
+        isSpeaking = true
+        updateNowPlaying(isPlaying: true)
+        let request = "window.requestSpeechText && window.requestSpeechText(true, \(Self.js(requestID)))"
+        if delayMilliseconds > 0 {
+            evaluate("setTimeout(function(){\(request);}, \(delayMilliseconds))")
+        } else {
+            evaluate(request)
+        }
     }
 
     private func bestVoice(language: String, identifier: String) -> AVSpeechSynthesisVoice? {
@@ -255,8 +332,8 @@ final class EPUBReaderController: NSObject, ObservableObject, AVSpeechSynthesize
                     self.speech.continueSpeaking()
                     self.isSpeaking = true
                     self.updateNowPlaying(isPlaying: true)
-                } else if !self.speech.isSpeaking {
-                    self.evaluate("window.requestSpeechText && window.requestSpeechText()")
+                } else if !self.isSpeaking && !self.playbackQueue.hasPendingRequest {
+                    self.requestSpeechText()
                 }
             }
             return .success
@@ -285,19 +362,16 @@ final class EPUBReaderController: NSObject, ObservableObject, AVSpeechSynthesize
     }
 
     private func skipSpokenPage(direction: Int) {
-        speech.stopSpeaking(at: .immediate)
+        playbackQueue.cancel()
+        activeUtterance = nil
         utteranceOffsets.removeAll()
-        pendingUtterances.removeAll()
+        speech.stopSpeaking(at: .immediate)
         nowPlayingParagraph = ""
-        isSpeaking = true
-        updateNowPlaying(isPlaying: true)
         let move = direction > 0
             ? "window.nextPage && window.nextPage()"
             : "window.prevPage && window.prevPage()"
-        evaluate(
-            "\(move); setTimeout(function(){" +
-            "window.requestSpeechText && window.requestSpeechText();}, 340)"
-        )
+        evaluate(move)
+        requestSpeechText(after: 340)
     }
 
     private func updateNowPlaying(isPlaying: Bool) {
@@ -732,7 +806,8 @@ struct EPUBReaderView: UIViewRepresentable {
             controller.speak(text: text, language: item["language"] as? String ?? "en",
                              voiceIdentifier: container.settingsRepository.speechVoiceIdentifier,
                              rate: container.settingsRepository.speechRate,
-                             chunks: chunks.isEmpty ? nil : chunks)
+                             chunks: chunks.isEmpty ? nil : chunks,
+                             requestID: item["requestID"] as? String)
         }
     }
 }
