@@ -33,6 +33,7 @@ class FavoriteMetadataTest {
     @Test
     fun rejectsMissingOrUntrustedBlossomDescriptor() {
         assertNull(CatalogRepository.fromBlossomFavorite(favorite.copy(blossomUrl = null)))
+        assertNull(CatalogRepository.fromBlossomFavorite(favorite.copy(blossomUrl = "   ")))
         assertNull(
             CatalogRepository.fromBlossomFavorite(
                 favorite.copy(blossomUrl = "https://lib.b.bfr.ee/api/files/book.epub"),
@@ -79,5 +80,31 @@ class FavoriteMetadataTest {
 
         assertEquals(sha256, book.id)
         assertEquals(sha256, book.blossomSha256)
+    }
+
+    @Test
+    fun rejectsInvalidSha256WhenMd5KeyIsPresentEvenWithValidDownloadUrl() {
+        assertNull(
+            CatalogRepository.fromBlossomFavorite(
+                favorite.copy(
+                    blossomSha256 = "invalid",
+                    blossomUrl = "https://blossom.bfr.ee/invalid",
+                    url = "https://example.test/book.epub",
+                    libvaultMd5 = null,
+                ),
+            ),
+        )
+    }
+
+    @Test
+    fun fallsBackToCanonicalBlossomUrlForInvalidExplicitBlossomDownloadPath() {
+        val book = CatalogRepository.fromBlossomFavorite(
+            favorite.copy(
+                blossomUrl = "http://blossom.bfr.ee/$sha256",
+                url = ":invalid://", // should not be used while sha256 remains valid
+            ),
+        )
+
+        assertNull(book)
     }
 }

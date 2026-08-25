@@ -89,4 +89,27 @@ class NostrCryptoTest {
         assertFalse(NostrCrypto.verifyEvent(JSONObject()))
         assertFalse(NostrCrypto.verifyEvent(JSONObject().put("id", "00")))
     }
+
+    @Test
+    fun parsePrivateKeyTrimsWhitespaceBeforeParsing() {
+        assertTrue(
+            ByteArray(32).also { it[31] = 1 }.contentEquals(
+                NostrCrypto.parsePrivateKey("   ${"00".repeat(31)}01  \n"),
+            ),
+        )
+    }
+
+    @Test
+    fun verifiesRejectsWhenIdAndPayloadMismatch() {
+        val event = JSONObject()
+            .put("kind", 1)
+            .put("created_at", 1L)
+            .put("pubkey", "00".repeat(32))
+            .put("tags", JSONArray())
+            .put("content", "mismatch")
+        val signed = NostrCrypto.signEvent(ByteArray(32).also { it[31] = 1 }, event)
+
+        signed.put("id", signed.getString("id").replaceRange(0, 1, "0"))
+        assertFalse(NostrCrypto.verifyEvent(signed))
+    }
 }

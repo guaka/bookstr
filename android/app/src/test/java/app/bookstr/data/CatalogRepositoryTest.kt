@@ -101,6 +101,11 @@ class CatalogRepositoryTest {
     }
 
     @Test
+    fun infersPdfFromUnknownFormatWhenUrlIsPdfWithQueryAndFragment() {
+        assertEquals(BookFormat.Pdf, BookFormat.from("mobi", "https://example.org/file.PDF?download=1#a"))
+    }
+
+    @Test
     fun malformedAndEmptySearchPayloadsAreHandledPredictably() {
         assertTrue(CatalogRepository.parseSearchResponse("{}").isEmpty())
         assertTrue(CatalogRepository.parseSearchResponse("""{"results":[]}""").isEmpty())
