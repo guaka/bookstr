@@ -979,11 +979,33 @@
         gap: 0;
       }
       .person-row {
+        display: grid;
+        grid-template-columns: 2.5rem minmax(0, 1fr);
+        gap: 0.65rem;
+        align-items: start;
         padding: 0.55rem 0;
         border-bottom: 1px solid var(--card-border, #ddd);
       }
+      .person-avatar {
+        width: 2.5rem;
+        height: 2.5rem;
+        border-radius: 50%;
+        background: var(--card-border, #ddd);
+        object-fit: cover;
+      }
+      .person-name,
+      .person-nip05,
+      .person-row code {
+        display: block;
+      }
+      .person-nip05 {
+        color: var(--reading-progress);
+        font-size: 0.88rem;
+      }
       .person-row code {
         overflow-wrap: anywhere;
+        color: var(--muted-text, #666);
+        font-size: 0.76rem;
       }
       .person-lists {
         margin: 0.2rem 0 0;
@@ -1700,6 +1722,7 @@
         reading: [],
         words: [],
         following: [],
+        followedProfiles: [],
         publicBookLists: [],
         followingLoaded: false,
         settings: {
@@ -2026,6 +2049,60 @@
         return NostrSocial.publicBookLists(verified, pubkeys);
       }
 
+      async function verifyProfileNip05(profile) {
+        const parts = NostrSocial.nip05Parts(profile?.nip05);
+        if (!parts) return { ...profile, verifiedNip05: '' };
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), NOSTR_QUERY_TIMEOUT_MS);
+        try {
+          const response = await fetch(parts.url, {
+            headers: { Accept: 'application/json' },
+            signal: controller.signal,
+          });
+          if (!response.ok) return { ...profile, verifiedNip05: '' };
+          const document = await response.json();
+          return {
+            ...profile,
+            verifiedNip05: NostrSocial.nip05Matches(document, parts.name, profile.pubkey)
+              ? parts.address
+              : '',
+          };
+        } catch {
+          return { ...profile, verifiedNip05: '' };
+        } finally {
+          clearTimeout(timer);
+        }
+      }
+
+      async function pullFollowedProfiles(follows) {
+        const pubkeys = (Array.isArray(follows) ? follows : []).map(follow => follow.pubkey).filter(Boolean);
+        if (!pubkeys.length) return [];
+        const batches = [];
+        for (let index = 0; index < pubkeys.length; index += 50) {
+          batches.push(pubkeys.slice(index, index + 50));
+        }
+        const requests = batches.flatMap(authors => NOSTR_RELAYS.map(relay => readRelayEvents(relay, {
+          kinds: [0],
+          authors,
+          limit: authors.length * 2,
+        })));
+        const hintedAuthorsByRelay = new Map();
+        for (const follow of follows) {
+          if (!follow.relay || NOSTR_RELAYS.includes(follow.relay)) continue;
+          const authors = hintedAuthorsByRelay.get(follow.relay) || new Set();
+          authors.add(follow.pubkey);
+          hintedAuthorsByRelay.set(follow.relay, authors);
+        }
+        for (const [relay, authorSet] of hintedAuthorsByRelay) {
+          const authors = Array.from(authorSet);
+          requests.push(readRelayEvents(relay, { kinds: [0], authors, limit: authors.length * 2 }));
+        }
+        const responses = await Promise.all(requests);
+        const verified = await verifiedNostrEvents(responses.flat());
+        const profiles = NostrSocial.latestProfiles(verified, pubkeys);
+        return Promise.all(profiles.map(verifyProfileNip05));
+      }
+
       function renderPeople() {
         if (!state.nip7.pubkey) {
           peopleList.innerHTML = '<p class="note">NIP-07 not connected.</p>';
@@ -2045,17 +2122,30 @@
           lists.push(list);
           listsByAuthor.set(list.pubkey, lists);
         }
+        const profilesByAuthor = new Map(state.followedProfiles.map(profile => [profile.pubkey, profile]));
         const sorted = [...state.following].sort((left, right) => {
           const leftLatest = listsByAuthor.get(left.pubkey)?.[0]?.createdAt || 0;
           const rightLatest = listsByAuthor.get(right.pubkey)?.[0]?.createdAt || 0;
           return Number(Boolean(rightLatest)) - Number(Boolean(leftLatest))
-            || rightLatest - leftLatest;
+            || rightLatest - leftLatest
+            || Number(Boolean(profilesByAuthor.get(right.pubkey))) - Number(Boolean(profilesByAuthor.get(left.pubkey)))
+            || String(profilesByAuthor.get(left.pubkey)?.name || left.petname || '').localeCompare(
+              String(profilesByAuthor.get(right.pubkey)?.name || right.petname || '')
+            );
         });
         peopleList.innerHTML = sorted.map(follow => {
           const npub = publicKeyToNpub(follow.pubkey) || follow.pubkey;
+          const profile = profilesByAuthor.get(follow.pubkey);
+          const name = profile?.name || follow.petname;
+          const avatar = profile?.picture
+            ? `<img class="person-avatar" src="${escapeHtml(profile.picture)}" alt="" loading="lazy" referrerpolicy="no-referrer">`
+            : '<span class="person-avatar" aria-hidden="true"></span>';
+          const identity = `${name ? `<strong class="person-name">${escapeHtml(name)}</strong>` : ''}`
+            + `${profile?.verifiedNip05 ? `<span class="person-nip05">${escapeHtml(profile.verifiedNip05)}</span>` : ''}`
+            + `<code>${escapeHtml(npub)}</code>`;
           const titles = (listsByAuthor.get(follow.pubkey) || [])
             .map(list => `<li>${escapeHtml(list.title)}</li>`).join('');
-          return `<article class="person-row"><code>${escapeHtml(npub)}</code>${titles ? `<ul class="person-lists">${titles}</ul>` : ''}</article>`;
+          return `<article class="person-row">${avatar}<div>${identity}${titles ? `<ul class="person-lists">${titles}</ul>` : ''}</div></article>`;
         }).join('');
       }
 
@@ -2068,10 +2158,17 @@
         renderPeople();
         const task = (async () => {
           const following = await pullNostrFollows(pubkey);
-          const publicBookLists = await pullFollowedPublicBookLists(following);
           state.following = following;
-          state.publicBookLists = publicBookLists;
+          state.followedProfiles = [];
+          state.publicBookLists = [];
           state.followingLoaded = true;
+          renderPeople();
+          const [publicBookLists, followedProfiles] = await Promise.all([
+            pullFollowedPublicBookLists(following),
+            pullFollowedProfiles(following),
+          ]);
+          state.publicBookLists = publicBookLists;
+          state.followedProfiles = followedProfiles;
           renderPeople();
           return true;
         })().catch(() => {

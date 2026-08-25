@@ -16,6 +16,12 @@ test('People loads the connected user follow list and public book lists', () => 
   assert.match(html, /NostrSocial\.followsFromEvent/);
   assert.match(html, /async function pullFollowedPublicBookLists\(follows\)/);
   assert.match(html, /NostrSocial\.publicBookLists\(verified, pubkeys\)/);
+  assert.match(html, /async function pullFollowedProfiles\(follows\)/);
+  assert.match(html, /kinds: \[0\]/);
+  assert.match(html, /NostrSocial\.latestProfiles\(verified, pubkeys\)/);
+  assert.match(html, /hintedAuthorsByRelay\.get\(follow\.relay\)/);
+  assert.match(html, /NostrSocial\.nip05Matches\(document, parts\.name, profile\.pubkey\)/);
+  assert.match(html, /profile\?\.verifiedNip05/);
   assert.match(html, /tools\.verifyEvent\(event\)/);
   assert.match(html, /setHashRoute\('people'\)/);
 });

@@ -5,6 +5,9 @@ await import('../nostr-social.js');
 const {
   latestFollowEvent,
   followsFromEvent,
+  latestProfiles,
+  nip05Parts,
+  nip05Matches,
   hasPublicBookReference,
   publicBookLists,
 } = globalThis.NostrSocial;
@@ -32,6 +35,32 @@ test('parses valid followed pubkeys once and preserves NIP-02 metadata', () => {
     { pubkey: alice, relay: 'wss://relay.example', petname: 'Alice' },
     { pubkey: bob, relay: '', petname: 'Bob' },
   ]);
+});
+
+test('keeps the newest kind-0 profile for each followed user', () => {
+  assert.deepEqual(latestProfiles([
+    { id: 'old', kind: 0, pubkey: alice, created_at: 10, content: JSON.stringify({ name: 'Old' }) },
+    { id: 'new', kind: 0, pubkey: alice, created_at: 20, content: JSON.stringify({ display_name: 'Alice', nip05: 'Alice@Example.com', picture: 'https://example.com/alice.jpg' }) },
+    { id: 'stranger', kind: 0, pubkey: owner, created_at: 30, content: JSON.stringify({ name: 'Owner' }) },
+  ], [alice]), [{
+    pubkey: alice,
+    name: 'Alice',
+    about: '',
+    picture: 'https://example.com/alice.jpg',
+    nip05: 'Alice@Example.com',
+    createdAt: 20,
+  }]);
+});
+
+test('builds NIP-05 lookup URLs and verifies the returned pubkey', () => {
+  assert.deepEqual(nip05Parts('Alice@Example.com'), {
+    address: 'alice@example.com',
+    name: 'alice',
+    url: 'https://example.com/.well-known/nostr.json?name=alice',
+  });
+  assert.equal(nip05Parts('not-an-address'), null);
+  assert.equal(nip05Matches({ names: { ALICE: alice.toUpperCase() } }, 'alice', alice), true);
+  assert.equal(nip05Matches({ names: { alice: bob } }, 'alice', alice), false);
 });
 
 test('recognizes public book references without treating generic bookmarks as books', () => {
