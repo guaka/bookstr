@@ -958,11 +958,11 @@ final class FavoritesParserTests: XCTestCase {
         let snapshot = FavoritesParser.parseCollectionIndex(#"""
             [["collection","bookstr-collection-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","Keep","10"],
              ["deleted","bookstr-collection-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","20"],
-             ["collection","bookstr-collection-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","Show","30"]]
+             ["collection","bookstr-collection-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","Show","30"]]
             """#)
 
         XCTAssertEqual(snapshot.entries.count, 1)
-        XCTAssertEqual(snapshot.entries[0].0, "bookstr-collection-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")
+        XCTAssertEqual(snapshot.entries[0].0, "bookstr-collection-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")
         XCTAssertEqual(snapshot.entries[0].1, "Show")
     }
 
@@ -2270,7 +2270,7 @@ final class FavoritesParserTests: XCTestCase {
 
     func testParseCollectionIndexParsesValidEntriesAndSkipsTombstonedCollections() {
         let keepId = "bookstr-collection-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-        let tombstoneId = "bookstr-collection-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        let tombstoneId = "bookstr-collection-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
         let entries = FavoritesParser.parseCollectionIndex(
             """
             [

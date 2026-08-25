@@ -338,8 +338,11 @@ enum FavoritesParser {
                 if let index = refs.firstIndex(where: { $0.libvaultMd5 == md5 }) {
                     if refs[index].url == nil { refs[index].url = legacyURL }
                     currentIndex = index
-                } else {
+                } else if legacyURL != nil {
                     appendOrMerge(SharedFavoriteRef(libvaultMd5: md5, url: legacyURL))
+                } else {
+                    refs.append(SharedFavoriteRef(libvaultMd5: md5))
+                    currentIndex = refs.count - 1
                 }
                 pendingURL = nil
             case "bookstr" where parts.count > 1 && !parts[1].isEmpty:
@@ -483,7 +486,8 @@ enum FavoritesParser {
     private static func fallbackTitle(for ref: SharedFavoriteRef, key: String) -> String {
         if let md5 = ref.libvaultMd5 { return "MD5 \(md5.prefix(10))…" }
         if let sha = ref.blossomSha256 { return "Blossom \(sha.prefix(10))…" }
-        if let isbn = ref.isbn { return "ISBN \(isbn)" }
+        let isbn = normalizeISBN(ref.isbn)
+        if !isbn.isEmpty { return "ISBN \(isbn)" }
         return key
     }
 
