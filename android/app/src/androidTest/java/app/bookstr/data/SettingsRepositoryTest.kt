@@ -827,7 +827,7 @@ class SettingsRepositoryTest {
         preferences.edit().putString("relays", "").apply()
         val repository = SettingsRepository(context)
 
-        assertEquals(emptyList(), repository.relays)
+        assertEquals(emptyList<String>(), repository.relays)
     }
 
     @Test
@@ -836,7 +836,7 @@ class SettingsRepositoryTest {
         preferences.edit().putString("relays", "   ,   ").apply()
         val repository = SettingsRepository(context)
 
-        assertEquals(emptyList(), repository.relays)
+        assertEquals(emptyList<String>(), repository.relays)
     }
 
     @Test
@@ -845,7 +845,7 @@ class SettingsRepositoryTest {
         preferences.edit().putString("relays", ",,,  , ").apply()
         val repository = SettingsRepository(context)
 
-        assertEquals(emptyList(), repository.relays)
+        assertEquals(emptyList<String>(), repository.relays)
     }
 
     @Test
