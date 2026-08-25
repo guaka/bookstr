@@ -139,8 +139,13 @@ tasks.register<JacocoReport>("jacocoDebugUnitTestReport") {
                 "**/R$*.class",
                 "**/BuildConfig.*",
                 "**/*\$Lambda$*.*",
-                "**/*Companion*",
                 "**/*\$inlined$*",
+                // These are exercised by the separate Android e2e suite, not JVM unit tests.
+                "**/ui/**",
+                "**/*Activity*",
+                "**/*Service*",
+                "**/BookstrApp*",
+                "**/ComposableSingletons*",
             )
         },
     )

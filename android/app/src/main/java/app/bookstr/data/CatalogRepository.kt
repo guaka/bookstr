@@ -359,52 +359,57 @@ class CatalogRepository(
         progressDao.upsert(BookProgress(bookId, 0.0, "", System.currentTimeMillis(), 0.0))
     }
 
-    private fun parseDownloadedBookMetadata(json: String): List<CatalogBook> {
-        val root = JSONObject(json)
-        val items: JSONArray = when {
-            root.has("books") -> root.getJSONArray("books")
-            root.has("items") -> root.getJSONArray("items")
-            else -> JSONArray().put(root)
-        }
-
-        return buildList {
-            for (i in 0 until items.length()) {
-                val item = items.getJSONObject(i)
-                val id = item.optString("id").ifBlank { item.optString("sha256") }
-                val title = item.optString("title", "Untitled")
-                val author = item.optString("author", "Unknown")
-                val epubUrl = item.optString("epubUrl")
-                if (id.isBlank() || epubUrl.isBlank()) continue
-                add(
-                    CatalogBook(
-                        id = id.lowercase(),
-                        title = title,
-                        author = author,
-                        epubUrl = epubUrl,
-                        coverUrl = item.optString("coverUrl").takeIf { it.isNotBlank() },
-                        sourceUrl = item.optString("sourceUrl").takeIf { it.isNotBlank() },
-                        isbn = item.optString("isbn").takeIf { it.isNotBlank() },
-                        libvaultMd5 = item.optString("libvaultMd5").takeIf { it.isNotBlank() },
-                        format = BookFormat.from(
-                            item.optString("format").ifBlank {
-                                item.optString("extension").ifBlank { "epub" }
-                            },
-                            epubUrl,
-                        ),
-                        blossomSha256 = item.optString("blossomSha256")
-                            .takeIf { it.matches(Regex("^[a-fA-F0-9]{64}$")) }
-                            ?.lowercase(),
-                        year = item.optString("year").takeIf(String::isNotBlank),
-                    ),
-                )
-            }
-        }
-    }
-
     companion object {
         const val BLOSSOM_HOST = "blossom.bfr.ee"
         const val BOOKS_API_BASE = "https://books-api.guaka.org/api"
         private const val DOWNLOADED_BOOKS_CACHE_FILE = "downloaded-books.json"
+
+        private fun parseDownloadedBookMetadata(json: String): List<CatalogBook> {
+            val root = JSONObject(json)
+            val items: JSONArray = when {
+                root.has("books") -> root.getJSONArray("books")
+                root.has("items") -> root.getJSONArray("items")
+                else -> JSONArray().put(root)
+            }
+
+            return buildList {
+                for (i in 0 until items.length()) {
+                    val item = items.getJSONObject(i)
+                    fun scalar(key: String): String? = when (val value = item.opt(key)) {
+                        is String -> value.trim().takeIf(String::isNotEmpty)
+                        is Number -> value.toString()
+                        else -> null
+                    }
+                    fun text(key: String): String? = (item.opt(key) as? String)
+                        ?.trim()
+                        ?.takeIf(String::isNotEmpty)
+
+                    val id = scalar("id") ?: scalar("sha256")
+                    val epubUrl = text("epubUrl")
+                    if (id == null || epubUrl == null) continue
+                    add(
+                        CatalogBook(
+                            id = id.lowercase(),
+                            title = text("title") ?: "Untitled",
+                            author = text("author") ?: "Unknown",
+                            epubUrl = epubUrl,
+                            coverUrl = text("coverUrl"),
+                            sourceUrl = text("sourceUrl"),
+                            isbn = text("isbn"),
+                            libvaultMd5 = text("libvaultMd5"),
+                            format = BookFormat.from(
+                                text("format") ?: text("extension") ?: "epub",
+                                epubUrl,
+                            ),
+                            blossomSha256 = text("blossomSha256")
+                                ?.takeIf { it.matches(Regex("^[a-fA-F0-9]{64}$")) }
+                                ?.lowercase(),
+                            year = text("year"),
+                        ),
+                    )
+                }
+            }
+        }
 
         fun parseSearchResponse(json: String, limit: Int = 20): List<BookSearchResult> {
             val payload = JSONObject(json)

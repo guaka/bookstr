@@ -4,6 +4,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Test
+import java.lang.reflect.InvocationTargetException
 
 class CatalogRepositoryDownloadMetadataCoverageAdditionalTest {
     private fun parseDownloadedBookMetadata(json: String): List<CatalogBook> {
@@ -11,7 +12,11 @@ class CatalogRepositoryDownloadMetadataCoverageAdditionalTest {
         val method = companion.javaClass.getDeclaredMethod("parseDownloadedBookMetadata", String::class.java)
         method.isAccessible = true
         @Suppress("UNCHECKED_CAST")
-        return method.invoke(companion, json) as List<CatalogBook>
+        return try {
+            method.invoke(companion, json) as List<CatalogBook>
+        } catch (error: InvocationTargetException) {
+            throw error.targetException
+        }
     }
 
     @Test

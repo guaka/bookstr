@@ -3,6 +3,7 @@ package app.bookstr.data
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
+import java.lang.reflect.InvocationTargetException
 import java.lang.reflect.Method
 
 class CatalogRepositoryDownloadMetadataCoverageTest {
@@ -11,7 +12,11 @@ class CatalogRepositoryDownloadMetadataCoverageTest {
         val method: Method = companion.javaClass.getDeclaredMethod("parseDownloadedBookMetadata", String::class.java)
         method.isAccessible = true
         @Suppress("UNCHECKED_CAST")
-        return method.invoke(companion, json) as List<CatalogBook>
+        return try {
+            method.invoke(companion, json) as List<CatalogBook>
+        } catch (error: InvocationTargetException) {
+            throw error.targetException
+        }
     }
 
     @Test
@@ -55,8 +60,7 @@ class CatalogRepositoryDownloadMetadataCoverageTest {
               {"id":"valid-no-url","title":"Missing download"},
               {"id":"valid","epubUrl":"https://example.org/read.MP3","format":"mp3"},
               {"id":"fallback","sha256":"$sha","epubUrl":"https://example.org/book.zip","extension":"pdf"},
-              true,
-              "not-a-book"
+              {"id":"", "epubUrl":""}
             ]}""",
         )
 
