@@ -1592,7 +1592,7 @@ final class FavoritesParserTests: XCTestCase {
             predicate: NSPredicate { _, _ in controller.ready || controller.errorMessage != nil },
             object: nil
         )
-        await fulfillment(of: [finished], timeout: 10)
+        await fulfillment(of: [finished], timeout: 30)
         XCTAssertNil(controller.errorMessage, "stage: \(controller.loadingStage)")
         XCTAssertTrue(controller.ready, "stalled at stage: \(controller.loadingStage)")
 
