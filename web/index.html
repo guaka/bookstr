@@ -3787,11 +3787,14 @@
 
       function bookCoverUrl(book) {
         const direct = book.coverUrl || book.cover_url || book.thumbnail || book.image || book.metadata?.coverUrl || '';
-        if (typeof direct === 'string' && direct.trim()) return direct.trim();
+        if (typeof direct === 'string' && direct.trim()) {
+          try {
+            if (new URL(direct).origin !== new URL(LIBVAULT_API_BASE).origin) return direct.trim();
+          } catch {}
+        }
         const coverId = book.coverId || book.cover_id || '';
         if (coverId) return `https://covers.openlibrary.org/b/id/${encodeURIComponent(coverId)}-M.jpg`;
-        const md5 = String(book.md5 || '').toLowerCase();
-        return isMd5(md5) ? `${LIBVAULT_COVER_BASE}/${md5}` : '';
+        return '';
       }
 
       function searchForAuthor(book) {
@@ -4226,7 +4229,10 @@
           frame.parentElement.insertBefore(panel, frame);
         }
         panel.replaceChildren();
-        const coverUrl = book.coverUrl || (book.coverId ? `https://covers.openlibrary.org/b/id/${book.coverId}-L.jpg` : '');
+        const suppliedCoverUrl = String(book.coverUrl || '');
+        const coverUrl = suppliedCoverUrl && !suppliedCoverUrl.startsWith(LIBVAULT_COVER_BASE)
+          ? suppliedCoverUrl
+          : (book.coverId ? `https://covers.openlibrary.org/b/id/${book.coverId}-L.jpg` : '');
         if (coverUrl) {
           const cover = document.createElement('img');
           cover.src = coverUrl;

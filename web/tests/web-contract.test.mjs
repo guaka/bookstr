@@ -409,6 +409,12 @@ test('Home uses cached LibVault files while their Blossom copies publish', () =>
   assert.match(html, /favoriteBlossomRefreshRetryCount < 6/);
 });
 
+test('Bookstr does not use authenticated LibVault endpoints as cover image fallbacks', () => {
+  assert.match(html, /function bookCoverUrl\(book\)/);
+  assert.match(html, /new URL\(direct\)\.origin !== new URL\(LIBVAULT_API_BASE\)\.origin/);
+  assert.doesNotMatch(html, /return isMd5\(md5\) \? `\$\{LIBVAULT_COVER_BASE\}/);
+});
+
 test('Home can delete a book locally and across synced clients', () => {
   assert.match(html, /data-action="delete-library"/);
   assert.match(html, /aria-label="Delete \$\{escapeHtml\(book\.title \|\| 'book'\)\} from library"/);
