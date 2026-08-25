@@ -1,0 +1,44 @@
+package app.bookstr.data
+
+import org.junit.Assert.assertEquals
+import org.junit.Test
+
+class SettingsRepositoryEnumTest {
+    @Test
+    fun readerThemeDefaultsToPaperForUnknownKey() {
+        assertEquals(ReaderTheme.Paper, ReaderTheme.fromKey("not-a-theme"))
+        assertEquals(ReaderTheme.Paper, ReaderTheme.fromKey(null))
+    }
+
+    @Test
+    fun readerThemeParsesKnownKeys() {
+        assertEquals(ReaderTheme.White, ReaderTheme.fromKey("white"))
+        assertEquals(ReaderTheme.Night, ReaderTheme.fromKey("night"))
+        assertEquals(ReaderTheme.Paper, ReaderTheme.fromKey("paper"))
+    }
+
+    @Test
+    fun readerThemeDefaultsToPaperForBlankOrWhitespaceKey() {
+        assertEquals(ReaderTheme.Paper, ReaderTheme.fromKey(""))
+        assertEquals(ReaderTheme.Paper, ReaderTheme.fromKey("   "))
+    }
+
+    @Test
+    fun nostrAuthModeDefaultsToNoneForUnknownKey() {
+        assertEquals(NostrAuthMode.None, NostrAuthMode.fromKey("not-a-mode"))
+        assertEquals(NostrAuthMode.None, NostrAuthMode.fromKey(null))
+    }
+
+    @Test
+    fun nostrAuthModeParsesKnownKeys() {
+        assertEquals(NostrAuthMode.None, NostrAuthMode.fromKey("none"))
+        assertEquals(NostrAuthMode.Nsec, NostrAuthMode.fromKey("nsec"))
+        assertEquals(NostrAuthMode.Amber, NostrAuthMode.fromKey("amber"))
+    }
+
+    @Test
+    fun nostrAuthModeDefaultsToNoneForWhitespaceAndCapitalizedKey() {
+        assertEquals(NostrAuthMode.None, NostrAuthMode.fromKey("   "))
+        assertEquals(NostrAuthMode.None, NostrAuthMode.fromKey("NSEC"))
+    }
+}
