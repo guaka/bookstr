@@ -2,6 +2,7 @@
   'use strict';
 
   const HEX_PUBKEY = /^[0-9a-f]{64}$/;
+  const TRUSTROOTS_USERNAME_NAMESPACE = 'org.trustroots:username';
   const BOOK_TAGS = new Set([
     'libvault', 'libvault-book', 'bookstr', 'bookstr-book', 'blossom',
   ]);
@@ -68,6 +69,74 @@
       }
     }
     return Array.from(newest.values()).map(profileFromEvent);
+  }
+
+  function trustrootsUsernameFromEvent(event) {
+    const label = (Array.isArray(event?.tags) ? event.tags : []).find(tag =>
+      Array.isArray(tag) && tag[0] === 'l'
+      && String(tag[2] || '').toLowerCase() === TRUSTROOTS_USERNAME_NAMESPACE
+    )?.[1];
+    const username = String(label || '').trim().toLowerCase();
+    return /^[a-z0-9][a-z0-9_.-]{0,63}$/.test(username) ? username : '';
+  }
+
+  function trustrootsProfiles(events, followedPubkeys, importPubkey) {
+    const followed = new Set((Array.isArray(followedPubkeys) ? followedPubkeys : [])
+      .map(normalizedPubkey).filter(Boolean));
+    const importer = normalizedPubkey(importPubkey);
+    const byPubkey = new Map(latestProfiles(events, followedPubkeys)
+      .map(profile => [profile.pubkey, profile]));
+    const identities = new Map();
+    const claims = new Map();
+
+    for (const event of Array.isArray(events) ? events : []) {
+      const author = normalizedPubkey(event?.pubkey);
+      if (event?.kind === 10390 && followed.has(author)) {
+        const current = identities.get(author);
+        if (!current || Number(event.created_at || 0) > Number(current.created_at || 0)) {
+          identities.set(author, event);
+        }
+        continue;
+      }
+      if (event?.kind !== 30390 || (author !== importer && !followed.has(author))) continue;
+      const targets = (Array.isArray(event.tags) ? event.tags : [])
+        .filter(tag => Array.isArray(tag) && tag[0] === 'p')
+        .map(tag => normalizedPubkey(tag[1])).filter(pubkey => followed.has(pubkey));
+      if (!targets.length && followed.has(author)) targets.push(author);
+      for (const pubkey of targets) {
+        const current = claims.get(pubkey);
+        if (!current || Number(event.created_at || 0) > Number(current.created_at || 0)) {
+          claims.set(pubkey, event);
+        }
+      }
+    }
+
+    for (const pubkey of followed) {
+      const base = byPubkey.get(pubkey) || {
+        pubkey, name: '', about: '', picture: '', nip05: '', createdAt: 0,
+      };
+      const identity = identities.get(pubkey);
+      const claim = claims.get(pubkey);
+      let imported = {};
+      try {
+        const parsed = JSON.parse(String(claim?.content || '{}'));
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) imported = parsed;
+      } catch { /* ignore malformed imported metadata */ }
+      const username = trustrootsUsernameFromEvent(identity)
+        || trustrootsUsernameFromEvent(claim)
+        || String(imported.trustrootsUsername || '').trim().toLowerCase();
+      const importedPicture = String(imported.picture || '').trim();
+      const merged = {
+        ...base,
+        name: String(base.name || imported.display_name || imported.name || '').trim(),
+        about: String(base.about || imported.about || '').trim(),
+        picture: base.picture || (/^https?:\/\//i.test(importedPicture) ? importedPicture : ''),
+        nip05: String(base.nip05 || imported.nip05 || (username ? `${username}@trustroots.org` : '')).trim(),
+        createdAt: Math.max(base.createdAt, Number(identity?.created_at || 0), Number(claim?.created_at || 0)),
+      };
+      if (merged.name || merged.about || merged.picture || merged.nip05) byPubkey.set(pubkey, merged);
+    }
+    return Array.from(byPubkey.values());
   }
 
   function nip05Parts(identifier) {
@@ -156,6 +225,8 @@
     followsFromEvent,
     profileFromEvent,
     latestProfiles,
+    trustrootsUsernameFromEvent,
+    trustrootsProfiles,
     nip05Parts,
     nip05Matches,
     nip42AuthTemplate,

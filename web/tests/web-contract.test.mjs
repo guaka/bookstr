@@ -18,7 +18,7 @@ test('People loads the connected user follow list and public book lists', () => 
   assert.match(html, /NostrSocial\.publicBookLists\(verified, pubkeys\)/);
   assert.match(html, /async function pullFollowedProfiles\(follows\)/);
   assert.match(html, /kinds: \[0\]/);
-  assert.match(html, /NostrSocial\.latestProfiles\(verified, pubkeys\)/);
+  assert.match(html, /NostrSocial\.trustrootsProfiles\(verified, pubkeys, TRUSTROOTS_IMPORT_PUBKEY\)/);
   assert.match(html, /hintedAuthorsByRelay\.get\(follow\.relay\)/);
   assert.match(html, /NostrSocial\.nip05Matches\(document, parts\.name, profile\.pubkey\)/);
   assert.match(html, /profile\?\.verifiedNip05/);
@@ -26,7 +26,9 @@ test('People loads the connected user follow list and public book lists', () => 
   assert.match(html, /const NOSTR_TRUSTROOTS_PROFILE_RELAY = 'wss:\/\/nip42\.trustroots\.org'/);
   assert.match(html, /NostrSocial\.nip42AuthTemplate\(relayUrl, id\)/);
   assert.match(html, /socket\.send\(JSON\.stringify\(\['AUTH', signed\]\)\);[\s\S]*?authenticatedRequestSent = true;[\s\S]*?sendRequest\(\)/);
-  assert.match(html, /readRelayEvents\(NOSTR_TRUSTROOTS_PROFILE_RELAY,[\s\S]*?kinds: \[0\],[\s\S]*?\{ authenticate: true \}/);
+  assert.match(html, /readRelayEvents\(NOSTR_TRUSTROOTS_PROFILE_RELAY, \[[\s\S]*?kinds: \[0, 10390\][\s\S]*?\], \{ authenticate: true \}/);
+  assert.match(html, /kinds: \[0, 10390\]/);
+  assert.match(html, /kinds: \[30390\],[\s\S]*?'#p': authors/);
   assert.match(html, /new Set\(\[\.\.\.NOSTR_RELAYS, \.\.\.NOSTR_SOCIAL_RELAYS\]\)/);
   assert.match(html, /tools\.verifyEvent\(event\)/);
   assert.match(html, /setHashRoute\('people'\)/);

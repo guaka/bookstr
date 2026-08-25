@@ -6,6 +6,7 @@ const {
   latestFollowEvent,
   followsFromEvent,
   latestProfiles,
+  trustrootsProfiles,
   nip05Parts,
   nip05Matches,
   nip42AuthTemplate,
@@ -79,6 +80,38 @@ test('builds a NIP-42 authentication event for the challenged relay', () => {
     ],
     content: '',
   });
+});
+
+test('uses authenticated Trustroots profile kinds as kind-0 fallbacks', () => {
+  const importer = 'd'.repeat(64);
+  const profiles = trustrootsProfiles([
+    { id: 'zero', kind: 0, pubkey: alice, created_at: 30, content: JSON.stringify({ name: 'Nostr Alice', about: 'Nostr about' }) },
+    { id: 'identity', kind: 10390, pubkey: alice, created_at: 40, tags: [['l', 'Alice', 'org.trustroots:username']] },
+    { id: 'claim', kind: 30390, pubkey: importer, created_at: 20, tags: [['p', alice]], content: JSON.stringify({ display_name: 'Imported Alice', about: 'Imported about', picture: 'https://www.trustroots.org/uploads-profile/id/avatar/256.jpg' }) },
+    { id: 'spoof', kind: 30390, pubkey: bob, created_at: 99, tags: [['p', alice]], content: JSON.stringify({ name: 'Spoof' }) },
+  ], [alice], importer);
+  assert.deepEqual(profiles, [{
+    pubkey: alice,
+    name: 'Nostr Alice',
+    about: 'Nostr about',
+    picture: 'https://www.trustroots.org/uploads-profile/id/avatar/256.jpg',
+    nip05: 'alice@trustroots.org',
+    createdAt: 40,
+  }]);
+});
+
+test('renders an imported profile when no kind-0 event exists', () => {
+  const importer = 'd'.repeat(64);
+  assert.deepEqual(trustrootsProfiles([
+    { id: 'claim', kind: 30390, pubkey: importer, created_at: 20, tags: [['p', bob], ['l', 'Bob', 'org.trustroots:username']], content: JSON.stringify({ display_name: 'Bob Traveler', nip05: 'bob@trustroots.org' }) },
+  ], [bob], importer), [{
+    pubkey: bob,
+    name: 'Bob Traveler',
+    about: '',
+    picture: '',
+    nip05: 'bob@trustroots.org',
+    createdAt: 20,
+  }]);
 });
 
 test('recognizes public book references without treating generic bookmarks as books', () => {
