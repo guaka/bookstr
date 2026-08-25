@@ -120,6 +120,7 @@
     let readerInteractionReported = false;
     let pageTransitioning = false;
     let readerFontPercent = Number(localStorage.getItem("bookstr-reader-font-percent")) || 100;
+    window.readerFontPercent = readerFontPercent;
     let speechBlocks = [];
     let activeSpeechBlock = null;
     let activeSpeechHighlightWindow = null;
@@ -431,6 +432,7 @@
         const next = Math.max(75, Math.min(180, Math.round(pinchStartFontPercent * dampedRatio)));
         if (next !== readerFontPercent) {
           readerFontPercent = next;
+          window.readerFontPercent = readerFontPercent;
           rendition.themes.fontSize(readerFontPercent + "%");
           localStorage.setItem("bookstr-reader-font-percent", String(readerFontPercent));
           restorePinchAnchor(pinchAnchor);
@@ -649,6 +651,7 @@
 
     window.adjustReaderFont = function(delta) {
       readerFontPercent = Math.max(75, Math.min(180, readerFontPercent + Number(delta || 0)));
+      window.readerFontPercent = readerFontPercent;
       if (rendition) rendition.themes.fontSize(readerFontPercent + "%");
       localStorage.setItem("bookstr-reader-font-percent", String(readerFontPercent));
     };
@@ -1394,8 +1397,14 @@
       }).catch(reportReaderError);
     };
 
+    let pendingPageDirection = 0;
+
     function moveViewportPage(direction) {
-      if (!rendition || pageTransitioning) return;
+      if (!rendition) return;
+      if (pageTransitioning) {
+        pendingPageDirection = direction;
+        return;
+      }
       const container = document.querySelector(".epub-container");
       if (direction < 0 && container && container.scrollTop <= 2) return;
       reportReaderInteraction();
@@ -1422,6 +1431,11 @@
       }).catch(function() {}).finally(function() {
         viewer.style.willChange = "auto";
         pageTransitioning = false;
+        if (pendingPageDirection) {
+          const queuedDirection = pendingPageDirection;
+          pendingPageDirection = 0;
+          moveViewportPage(queuedDirection);
+        }
       });
     }
 

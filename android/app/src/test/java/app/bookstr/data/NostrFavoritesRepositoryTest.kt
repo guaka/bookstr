@@ -492,7 +492,7 @@ class NostrFavoritesRepositoryTest {
         assertEquals(1, refs.size)
         assertEquals(md5, refs.single().libvaultMd5)
         assertEquals("https://example.org/book", refs.single().url)
-        assertEquals(1_700_000_002L, refs.single().addedAt)
+        assertEquals(1_700_000_001L, refs.single().addedAt)
     }
 
     @Test
@@ -511,7 +511,7 @@ class NostrFavoritesRepositoryTest {
         val upgraded = NostrFavoritesRepository.ensureFavoriteAddedAtTags(plaintext, 1_700_000_010L)
         val refs = NostrFavoritesRepository.parseSharedFavoriteTags(upgraded)
 
-        assertEquals(3, Regex("\"libvault-added\"").findAll(upgraded).count())
+        assertEquals(2, Regex("\"libvault-added\"").findAll(upgraded).count())
         assertEquals(2, refs.size)
         assertEquals(1_700_000_001L, refs.single { it.libvaultMd5 == md5 }.addedAt)
         assertEquals(1_700_000_003L, refs.single { it.libvaultMd5 == otherMd5 }.addedAt)
@@ -738,7 +738,7 @@ class NostrFavoritesRepositoryTest {
 
         assertEquals(1, parsed.size)
         assertEquals(original.bookstrId, parsed.single().bookstrId)
-        assertEquals("978123456789", parsed.single().isbn)
+        assertEquals("9780123456789", parsed.single().isbn)
         assertEquals(original.addedAt, parsed.single().addedAt)
     }
 
@@ -1918,7 +1918,7 @@ class NostrFavoritesRepositoryTest {
         assertEquals(2, refs.size)
         assertEquals(url, refs[0].url)
         assertEquals("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", refs[1].libvaultMd5)
-        assertEquals(1_700_000_010L, refs[0].addedAt)
+        assertEquals(1_700_000_002L, refs[0].addedAt)
     }
 
     @Test

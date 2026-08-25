@@ -156,13 +156,14 @@ final class NostrClient {
             let data = content.data(using: .utf8),
             let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
         else { return nil }
-        if let locator = obj["locator"] as? [String: Any] {
+        if obj.keys.contains("locator") {
+            guard let locator = obj["locator"] as? [String: Any] else { return nil }
             let bookId = (obj["bookId"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? fallbackBookId
             return (bookId, jsonNumber(locator["progression"]) ?? 0, locator["cfi"] as? String ?? "",
                     obj["title"] as? String, (obj["author"] as? String) ?? (obj["authors"] as? String),
                     jsonInt64(obj["updatedAt"]))
         }
-        if obj["progression"] != nil {
+        if obj["progression"] != nil || obj["cfi"] != nil {
             return (fallbackBookId, jsonNumber(obj["progression"]) ?? 0, obj["cfi"] as? String ?? "",
                     obj["title"] as? String, (obj["author"] as? String) ?? (obj["authors"] as? String),
                     jsonInt64(obj["updatedAt"]))

@@ -281,14 +281,14 @@ class NostrClient(
                         Triple(
                             bookId,
                             locator.optDouble("progression", 0.0),
-                            locator.optString("cfi", ""),
+                            (locator.opt("cfi") as? String).orEmpty(),
                         )
                     }
                     json.has("progression") -> {
                         Triple(
                             fallbackBookId,
                             json.optDouble("progression", 0.0),
-                            json.optString("cfi", ""),
+                            (json.opt("cfi") as? String).orEmpty(),
                         )
                     }
                     else -> null
@@ -309,7 +309,7 @@ class NostrClient(
         fun parseUpdatedAt(content: String, eventCreatedAtSec: Long): Long {
             return try {
                 val json = JSONObject(content)
-                val fromPayload = json.optLong("updatedAt", 0L)
+                val fromPayload = (json.opt("updatedAt") as? Number)?.toLong() ?: 0L
                 if (fromPayload > 0L) fromPayload else eventCreatedAtSec * 1000
             } catch (_: Exception) {
                 eventCreatedAtSec * 1000

@@ -8,7 +8,7 @@ final class LibraryReaderUITests: XCTestCase {
         app = XCUIApplication()
         app.launchArguments = ["--ui-testing-library-fixtures"]
         app.launch()
-        XCTAssertTrue(app.navigationBars["Library"].waitForExistence(timeout: 8))
+        XCTAssertTrue(app.tabBars.buttons["Library"].waitForExistence(timeout: 12))
     }
 
     func testLibraryOpensEPUBWithVisibleChapterTextThenPDFWithRenderedPage() throws {
@@ -16,7 +16,7 @@ final class LibraryReaderUITests: XCTestCase {
         attachScreenshot(named: "epub-visible")
 
         back.tap()
-        XCTAssertTrue(app.navigationBars["Library"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.tabBars.buttons["Library"].waitForExistence(timeout: 5))
 
         let pdf = app.buttons["library-book-ui-test-alice-pdf"]
         XCTAssertTrue(pdf.waitForExistence(timeout: 5))
@@ -77,7 +77,7 @@ final class LibraryReaderUITests: XCTestCase {
         XCTAssertTrue(waitForY(chapter, below: initialY - 80), "Initial reader did not scroll")
 
         back.tap()
-        XCTAssertTrue(app.navigationBars["Library"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.tabBars.buttons["Library"].waitForExistence(timeout: 5))
 
         let (_, reopenedChapter) = openEPUB()
         let reopenedY = reopenedChapter.frame.minY
@@ -101,7 +101,7 @@ final class LibraryReaderUITests: XCTestCase {
         zoomOut.tap()
 
         back.tap()
-        XCTAssertTrue(app.navigationBars["Library"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.tabBars.buttons["Library"].waitForExistence(timeout: 5))
     }
 
     private func openEPUB() -> (back: XCUIElement, chapter: XCUIElement) {

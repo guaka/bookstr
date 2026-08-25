@@ -453,7 +453,7 @@ final class FavoritesParserTests: XCTestCase {
         XCTAssertEqual(refs.count, 1)
         XCTAssertEqual(refs[0].libvaultMd5, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
         XCTAssertEqual(refs[0].url, "https://example.org/book")
-        XCTAssertEqual(refs[0].addedAt, 1_700_000_002)
+        XCTAssertEqual(refs[0].addedAt, 1_700_000_001)
     }
 
     func testCompactBlossomInvalidIdentifierSkipsOnlyInvalidEntry() {
@@ -809,7 +809,7 @@ final class FavoritesParserTests: XCTestCase {
         let isbn = "9781234567890"
         let result = FavoritesParser.matchSharedFavorites(
             refs: [
-                SharedFavoriteRef(isbn: "978-0-1234-567-89", title: "First"),
+                SharedFavoriteRef(isbn: "978-1-2345-6789-0", title: "First"),
                 SharedFavoriteRef(isbn: isbn, title: "Latest"),
             ],
             books: [CatalogBook(
@@ -1047,8 +1047,8 @@ final class FavoritesParserTests: XCTestCase {
         )
 
         XCTAssertEqual(result.external.count, 1)
-        XCTAssertEqual(result.external[0].title, "ISBN 978123456789")
-        XCTAssertEqual(result.external[0].key, "978123456789")
+        XCTAssertEqual(result.external[0].title, "ISBN 9780123456789")
+        XCTAssertEqual(result.external[0].key, "9780123456789")
     }
 
     func testMatchSharedFavoritesFallbackTitleUsesLibvaultMd5Prefix() {
@@ -2269,8 +2269,8 @@ final class FavoritesParserTests: XCTestCase {
     }
 
     func testParseCollectionIndexParsesValidEntriesAndSkipsTombstonedCollections() {
-        let keepId = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-        let tombstoneId = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        let keepId = "bookstr-collection-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        let tombstoneId = "bookstr-collection-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
         let entries = FavoritesParser.parseCollectionIndex(
             """
             [
@@ -2299,7 +2299,7 @@ final class FavoritesParserTests: XCTestCase {
               ["book", "libvault", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "1700000010"]
             ]
             """,
-            id: "cccccccccccccccccccccccccccccccc",
+            id: "bookstr-collection-cccccccccccccccccccccccccccccccc",
             fallbackTitle: "Fallback name",
             fallbackUpdatedAt: 1_700_000_000,
         )
@@ -2334,7 +2334,7 @@ final class FavoritesParserTests: XCTestCase {
     }
 
     func testParseCollectionIndexIgnoresInvalidUpdatedAtAndDefaultsToZero() {
-        let id = "dddddddddddddddddddddddddddddddd"
+        let id = "bookstr-collection-dddddddddddddddddddddddddddddddd"
         let entries = FavoritesParser.parseCollectionIndex(
             """
             [["collection","\(id)","Bad update","invalid"]]
@@ -2416,7 +2416,7 @@ final class FavoritesParserTests: XCTestCase {
         )
         XCTAssertEqual(result.external.count, 1)
         XCTAssertEqual(result.external[0].key, md5)
-        XCTAssertEqual(result.external[0].title, "MD5 bbbbbbbbb…")
+        XCTAssertEqual(result.external[0].title, "MD5 bbbbbbbbbb…")
     }
 
     func testMatchSharedFavoritesDropsUnidentifiableFavorites() {

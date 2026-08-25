@@ -140,7 +140,7 @@ enum FavoritesParser {
         ref.bookstrId == book.id
             || (ref.libvaultMd5 != nil && ref.libvaultMd5?.lowercased() == book.libvaultMd5?.lowercased())
             || (!normalizeISBN(ref.isbn).isEmpty && normalizeISBN(ref.isbn) == normalizeISBN(book.isbn))
-            || (ref.url != nil && (ref.url == book.sourceUrl || ref.url == book.epubUrl))
+            || (ref.url != nil && (urlsMatch(ref.url, book.sourceUrl) || urlsMatch(ref.url, book.epubUrl)))
     }
 
     static func collectionIndexTags(_ snapshot: CollectionSnapshot) -> [[String]] {
@@ -214,10 +214,11 @@ enum FavoritesParser {
                 continue
             }
             guard (parts.first == "bookstr-chunks" || parts.first == "libvault-chunks"),
-                  parts.count >= 2, let count = Int(parts[1]), count > 0 else {
+                  parts.count >= 2, let count = Int(parts[1]), (1...10_000).contains(count) else {
                 continue
             }
-            let prefix = parts.count > 2 && !parts[2].isEmpty ? parts[2] : NostrKinds.favoritesChunkPrefix
+            let rawPrefix = parts.count > 2 ? parts[2].trimmingCharacters(in: .whitespacesAndNewlines) : ""
+            let prefix = rawPrefix.isEmpty ? NostrKinds.favoritesChunkPrefix : rawPrefix
             return FavoriteChunkManifest(count: count, prefix: prefix)
         }
         return nil
@@ -242,6 +243,17 @@ enum FavoritesParser {
         var pendingURL: String?
         var currentIndex: Int?
 
+        func validURL(_ value: String?) -> String? {
+            guard let value, let url = URL(string: value),
+                  url.scheme == "http" || url.scheme == "https", url.host != nil else { return nil }
+            return value
+        }
+
+        func isURLOnly(_ ref: SharedFavoriteRef) -> Bool {
+            ref.url != nil && ref.libvaultMd5 == nil && ref.bookstrId == nil
+                && ref.isbn == nil && ref.blossomSha256 == nil
+        }
+
         func replaceCurrent(_ transform: (SharedFavoriteRef) -> SharedFavoriteRef) {
             guard let currentIndex, refs.indices.contains(currentIndex) else { return }
             refs[currentIndex] = transform(refs[currentIndex])
@@ -260,7 +272,8 @@ enum FavoritesParser {
                 old.bookstrId = old.bookstrId ?? ref.bookstrId
                 old.libvaultMd5 = old.libvaultMd5 ?? ref.libvaultMd5
                 old.isbn = old.isbn ?? ref.isbn
-                old.url = old.url ?? ref.url
+                if old.addedAt == nil, ref.addedAt != nil { old.url = ref.url ?? old.url }
+                else { old.url = old.url ?? ref.url }
                 old.title = old.title ?? ref.title
                 old.author = old.author ?? ref.author
                 old.year = old.year ?? ref.year
@@ -270,6 +283,14 @@ enum FavoritesParser {
                 old.addedAt = [old.addedAt, ref.addedAt].compactMap { $0 }.min()
                 refs[index] = old
                 currentIndex = index
+            } else if let currentIndex, refs.indices.contains(currentIndex),
+                      (isURLOnly(refs[currentIndex]) && ref.libvaultMd5 != nil
+                       || refs[currentIndex].libvaultMd5 != nil && isURLOnly(ref)) {
+                var old = refs[currentIndex]
+                old.libvaultMd5 = old.libvaultMd5 ?? ref.libvaultMd5
+                old.url = old.url ?? ref.url
+                old.addedAt = [old.addedAt, ref.addedAt].compactMap { $0 }.min()
+                refs[currentIndex] = old
             } else {
                 refs.append(ref)
                 currentIndex = refs.count - 1
@@ -291,7 +312,7 @@ enum FavoritesParser {
                 let namespace = parts[1]
                 let identifier = parts[2]
                 let addedAt = Int64(parts[3]).flatMap { $0 > 0 ? $0 : nil }
-                let locator = parts.count > 4 && !parts[4].isEmpty ? parts[4] : nil
+                let locator = validURL(parts.count > 4 ? parts[4] : nil) ?? pendingURL
                 switch namespace {
                 case "libvault" where isMD5(identifier):
                     appendOrMerge(SharedFavoriteRef(libvaultMd5: identifier.lowercased(), url: locator, addedAt: addedAt))
@@ -300,7 +321,7 @@ enum FavoritesParser {
                 case "isbn":
                     let isbn = normalizeISBN(identifier)
                     if !isbn.isEmpty { appendOrMerge(SharedFavoriteRef(isbn: isbn, url: locator, addedAt: addedAt)) }
-                case "url" where URL(string: identifier) != nil:
+                case "url" where validURL(identifier) != nil:
                     appendOrMerge(SharedFavoriteRef(url: identifier, addedAt: addedAt))
                 case "blossom" where isSHA256(identifier):
                     appendOrMerge(SharedFavoriteRef(url: locator, blossomSha256: identifier.lowercased(),
@@ -308,22 +329,28 @@ enum FavoritesParser {
                 default:
                     continue
                 }
+                pendingURL = nil
             case "r" where (parts.dropFirst().first?.isEmpty == false):
                 pendingURL = parts[1]
             case "libvault" where isMD5(parts.dropFirst().first):
-                refs.append(SharedFavoriteRef(libvaultMd5: parts[1].lowercased(), url: pendingURL))
-                currentIndex = refs.count - 1
+                let md5 = parts[1].lowercased()
+                let legacyURL = validURL(parts.count > 2 ? parts[2] : nil) ?? pendingURL
+                if let index = refs.firstIndex(where: { $0.libvaultMd5 == md5 }) {
+                    if refs[index].url == nil { refs[index].url = legacyURL }
+                    currentIndex = index
+                } else {
+                    appendOrMerge(SharedFavoriteRef(libvaultMd5: md5, url: legacyURL))
+                }
                 pendingURL = nil
             case "bookstr" where parts.count > 1 && !parts[1].isEmpty:
-                refs.append(
+                appendOrMerge(
                     SharedFavoriteRef(
                         bookstrId: parts[1],
-                        url: parts.count > 4 && !parts[4].isEmpty ? parts[4] : pendingURL,
+                        url: validURL(parts.count > 4 ? parts[4] : nil) ?? pendingURL,
                         title: parts.count > 2 && !parts[2].isEmpty ? parts[2] : nil,
                         author: parts.count > 3 && !parts[3].isEmpty ? parts[3] : nil
                     )
                 )
-                currentIndex = refs.count - 1
                 pendingURL = nil
             case "libvault-book" where isMD5(parts.dropFirst().first),
                  "bookstr-book" where isMD5(parts.dropFirst().first):
@@ -426,7 +453,7 @@ enum FavoritesParser {
                     || (ref.libvaultMd5 != nil && candidate.libvaultMd5?.lowercased() == ref.libvaultMd5)
                     || (!isbn.isEmpty && normalizeISBN(candidate.isbn) == isbn)
                     || (ref.blossomSha256 != nil && candidate.blossomSha256?.lowercased() == ref.blossomSha256?.lowercased())
-                    || (ref.url != nil && candidate.sourceUrl == ref.url)
+                    || (ref.url != nil && (urlsMatch(ref.url, candidate.sourceUrl) || urlsMatch(ref.url, candidate.epubUrl)))
             }
             if let book {
                 matched.insert(book.id)
@@ -458,6 +485,17 @@ enum FavoritesParser {
         if let sha = ref.blossomSha256 { return "Blossom \(sha.prefix(10))…" }
         if let isbn = ref.isbn { return "ISBN \(isbn)" }
         return key
+    }
+
+    private static func urlsMatch(_ lhs: String?, _ rhs: String?) -> Bool {
+        guard let lhs, let rhs else { return false }
+        if lhs == rhs { return true }
+        guard var left = URLComponents(string: lhs), var right = URLComponents(string: rhs) else { return false }
+        left.query = nil
+        left.fragment = nil
+        right.query = nil
+        right.fragment = nil
+        return left == right
     }
 
     static func normalizeISBN(_ value: String?) -> String {
