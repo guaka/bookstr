@@ -8,7 +8,10 @@ final class LibraryReaderUITests: XCTestCase {
         app = XCUIApplication()
         app.launchArguments = ["--ui-testing-library-fixtures"]
         app.launch()
-        XCTAssertTrue(app.tabBars.buttons["Library"].waitForExistence(timeout: 12))
+        let library = app.tabBars.buttons["Library"]
+        XCTAssertTrue(library.waitForExistence(timeout: 12))
+        library.tap()
+        XCTAssertTrue(library.isSelected)
     }
 
     func testLibraryOpensEPUBWithVisibleChapterTextThenPDFWithRenderedPage() throws {

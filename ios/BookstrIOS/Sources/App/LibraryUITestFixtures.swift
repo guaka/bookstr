@@ -13,7 +13,16 @@ enum LibraryUITestFixtures {
         settings.theme = .night
         settings.authMode = .none
         settings.pubkeyHex = nil
-        UserDefaults.standard.removeObject(forKey: "reader_session")
+        settings.saveReaderSession(ReaderSession(
+            bookId: epubID,
+            bookTitle: "Alice EPUB Fixture",
+            format: .epub,
+            author: "Lewis Carroll",
+            year: "1865",
+            locator: nil,
+            pageIndex: 0,
+            pageOffset: 0
+        ))
 
         let epub = CatalogBook(
             id: epubID, title: "Alice EPUB Fixture", author: "Lewis Carroll",

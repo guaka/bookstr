@@ -154,6 +154,7 @@ tasks.register<JacocoReport>("jacocoDebugUnitTestReport") {
         fileTree(layout.buildDirectory).include(
             "jacoco/testDebugUnitTest.exec",
             "jacoco/testDebugUnitTest/**",
+            "outputs/unit_test_code_coverage/**/*.exec",
             "**/coverage.exec",
             "**/*.ec",
         ),

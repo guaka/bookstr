@@ -8,7 +8,10 @@ final class AppShellUITests: XCTestCase {
         app = XCUIApplication()
         app.launchArguments = ["--ui-testing-library-fixtures"]
         app.launch()
-        XCTAssertTrue(app.tabBars.buttons["Library"].waitForExistence(timeout: 12))
+        let library = app.tabBars.buttons["Library"]
+        XCTAssertTrue(library.waitForExistence(timeout: 12))
+        library.tap()
+        XCTAssertTrue(library.isSelected)
     }
 
     func testPrimaryTabsOpenTheirExpectedScreens() throws {
@@ -25,8 +28,12 @@ final class AppShellUITests: XCTestCase {
         XCTAssertTrue(relays.waitForExistence(timeout: 5), "Settings did not expose the relay editor")
         relays.tap()
         relays.typeText("wss://relay.example\nwss://backup.example")
+        let done = app.buttons["Done"]
+        if done.waitForExistence(timeout: 2) { done.tap() }
 
-        app.buttons["Save relays"].tap()
+        let save = app.buttons["Save relays"]
+        XCTAssertTrue(save.waitForExistence(timeout: 4))
+        save.tap()
         XCTAssertTrue(app.staticTexts["Relays saved"].waitForExistence(timeout: 4))
     }
 
