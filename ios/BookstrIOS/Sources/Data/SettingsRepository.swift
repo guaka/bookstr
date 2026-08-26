@@ -21,6 +21,10 @@ final class SettingsRepository: ObservableObject {
         static let lastApplicationDataSync = "last_application_data_sync"
         static let speechVoice = "speech_voice"
         static let speechRate = "speech_rate"
+        static let keepReadingOnLockScreen = "keep_reading_on_lock_screen"
+        static let wordSort = "word_sort"
+        static let dictionarySource = "dictionary_source"
+        static let dictionaryTarget = "dictionary_target"
     }
 
     @Published var theme: ReaderTheme {
@@ -51,6 +55,30 @@ final class SettingsRepository: ObservableObject {
         set { defaults.set(newValue.joined(separator: "\n"), forKey: Keys.relays) }
     }
 
+    var keepReadingOnLockScreen: Bool {
+        get {
+            defaults.object(forKey: Keys.keepReadingOnLockScreen) == nil
+                ? true
+                : defaults.bool(forKey: Keys.keepReadingOnLockScreen)
+        }
+        set { defaults.set(newValue, forKey: Keys.keepReadingOnLockScreen) }
+    }
+
+    var wordSort: String {
+        get { defaults.string(forKey: Keys.wordSort) ?? "recent" }
+        set { defaults.set(newValue, forKey: Keys.wordSort) }
+    }
+
+    var dictionarySource: String {
+        get { defaults.string(forKey: Keys.dictionarySource) ?? "en" }
+        set { defaults.set(newValue, forKey: Keys.dictionarySource) }
+    }
+
+    var dictionaryTarget: String {
+        get { defaults.string(forKey: Keys.dictionaryTarget) ?? "pt" }
+        set { defaults.set(newValue, forKey: Keys.dictionaryTarget) }
+    }
+
     var authMode: NostrAuthMode {
         get { NostrAuthMode(rawValue: defaults.string(forKey: Keys.authMode) ?? "") ?? .none }
         set { defaults.set(newValue.rawValue, forKey: Keys.authMode) }
@@ -58,7 +86,11 @@ final class SettingsRepository: ObservableObject {
 
     var pubkeyHex: String? {
         get { defaults.string(forKey: Keys.pubkey) }
-        set { defaults.set(newValue, forKey: Keys.pubkey) }
+        set {
+            defaults.set(newValue?
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+                .lowercased(), forKey: Keys.pubkey)
+        }
     }
 
     var hasNostrIdentity: Bool {
@@ -73,12 +105,12 @@ final class SettingsRepository: ObservableObject {
 
     var signerPackage: String? {
         get { defaults.string(forKey: Keys.signerPackage) }
-        set { defaults.set(newValue, forKey: Keys.signerPackage) }
+        set { defaults.set(newValue?.trimmingCharacters(in: .whitespacesAndNewlines), forKey: Keys.signerPackage) }
     }
 
     var nsec: String? {
         get { keychain.get(key: "nsec") }
-        set { keychain.set(key: "nsec", value: newValue) }
+        set { keychain.set(key: "nsec", value: newValue?.trimmingCharacters(in: .whitespacesAndNewlines)) }
     }
 
     var nip46ClientSecret: String? {
@@ -112,6 +144,10 @@ final class SettingsRepository: ObservableObject {
     }
 
     func saveReaderSession(_ session: ReaderSession) {
+        guard !session.bookId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            clearReaderSession()
+            return
+        }
         guard let data = try? JSONEncoder().encode(session) else { return }
         defaults.set(data, forKey: Keys.readerSession)
     }
@@ -119,6 +155,10 @@ final class SettingsRepository: ObservableObject {
     func readerSession() -> ReaderSession? {
         guard let data = defaults.data(forKey: Keys.readerSession) else { return nil }
         return try? JSONDecoder().decode(ReaderSession.self, from: data)
+    }
+
+    func clearReaderSession() {
+        defaults.removeObject(forKey: Keys.readerSession)
     }
 
     func connectNip46(pubkeyHex: String, bunkerURL: String, clientSecret: String, clientPubkey: String? = nil) {
