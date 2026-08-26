@@ -144,6 +144,34 @@ class SettingsRepositoryCoverageTest {
         assertEquals(true, settings.hasNostrIdentity())
     }
 
+    @Test
+    fun authModeFallsBackToNsecWhenModeIsMissingButNsecExists() {
+        settings.nsec = "  001122"
+        context.getSharedPreferences("bookstr_settings", Context.MODE_PRIVATE).edit().remove("auth_mode").apply()
+
+        assertEquals(NostrAuthMode.Nsec, settings.authMode)
+
+        settings.nsec = "   "
+        assertEquals(NostrAuthMode.None, settings.authMode)
+    }
+
+    @Test
+    fun identityFieldsTrimAndNormalizeWhitespaceBeforeStorage() {
+        settings.pubkeyHex = "  A1B2CC "
+        assertEquals("a1b2cc", settings.pubkeyHex)
+
+        settings.signerPackage = "  com.example.amber  "
+        assertEquals("com.example.amber", settings.signerPackage)
+
+        settings.signerPackage = "   "
+        assertEquals(null, settings.signerPackage)
+
+        settings.connectNsec("  001122 ", "new-key")
+        assertEquals(NostrAuthMode.Nsec, settings.authMode)
+        assertEquals("001122", settings.pubkeyHex)
+        assertEquals(null, settings.signerPackage)
+    }
+
     private fun clearStoredSettings() {
         context.getSharedPreferences("bookstr_settings", Context.MODE_PRIVATE)
             .edit()
