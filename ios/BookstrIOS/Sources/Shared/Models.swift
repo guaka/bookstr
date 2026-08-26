@@ -113,4 +113,24 @@ struct ReaderSession: Codable {
     let locator: String?
     let pageIndex: Int
     let pageOffset: Int
+
+    init(
+        bookId: String,
+        bookTitle: String,
+        format: BookFormat,
+        author: String? = nil,
+        year: String? = nil,
+        locator: String? = nil,
+        pageIndex: Int = 0,
+        pageOffset: Int = 0
+    ) {
+        self.bookId = bookId
+        self.bookTitle = bookTitle
+        self.format = format
+        self.author = author
+        self.year = year
+        self.locator = locator
+        self.pageIndex = max(pageIndex, 0)
+        self.pageOffset = max(pageOffset, 0)
+    }
 }
