@@ -256,4 +256,105 @@ final class WordNavigationStateTests: XCTestCase {
 
         XCTAssertEqual(match?.key, "en:bonjour")
     }
+
+    func testMatchingWordReturnsNilForPartialMatches() {
+        let words = WordNavigationState()
+        let catalog = [VocabularyWord(
+            key: "en:planet",
+            word: "planet",
+            language: "en",
+            syncId: "planet",
+            bookId: "book-9",
+            bookTitle: "Astronomy",
+            cfi: "epubcfi(page=9)",
+            contextSentence: "The planet orbits.",
+            partOfSpeech: "noun",
+            definitions: ["A celestial body."],
+            translation: nil,
+            sourceUrl: "",
+            lookupCount: 1,
+            firstSeenAt: 0,
+            lastSeenAt: 0,
+            deleted: false
+        )]
+
+        XCTAssertNil(words.matchingWord(for: "plan", in: catalog))
+        XCTAssertNil(words.matchingWord(for: "planeta", in: catalog))
+    }
+
+    func testRequestDoesNotIncrementTokenForWhitespaceOnlyInput() {
+        let words = WordNavigationState()
+
+        words.request(word: "first")
+        words.request(word: "\t\n ")
+        words.request(word: "second")
+
+        XCTAssertEqual(words.requestToken, 2)
+        XCTAssertEqual(words.requestedWord, "second")
+    }
+
+    func testMatchingWordCanFindWordWhenCatalogHasManyEntries() {
+        let words = WordNavigationState()
+        let catalog = [
+            VocabularyWord(
+                key: "en:one",
+                word: "one",
+                language: "en",
+                syncId: "one",
+                bookId: "book-1",
+                bookTitle: "One Book",
+                cfi: "epubcfi(page=1)",
+                contextSentence: "One.",
+                partOfSpeech: "num",
+                definitions: ["1"],
+                translation: nil,
+                sourceUrl: "",
+                lookupCount: 1,
+                firstSeenAt: 0,
+                lastSeenAt: 0,
+                deleted: false
+            ),
+            VocabularyWord(
+                key: "en:two",
+                word: "two",
+                language: "en",
+                syncId: "two",
+                bookId: "book-2",
+                bookTitle: "Two Book",
+                cfi: "epubcfi(page=2)",
+                contextSentence: "Two.",
+                partOfSpeech: "num",
+                definitions: ["2"],
+                translation: nil,
+                sourceUrl: "",
+                lookupCount: 2,
+                firstSeenAt: 0,
+                lastSeenAt: 0,
+                deleted: false
+            ),
+            VocabularyWord(
+                key: "en:three",
+                word: "three",
+                language: "en",
+                syncId: "three",
+                bookId: "book-3",
+                bookTitle: "Three Book",
+                cfi: "epubcfi(page=3)",
+                contextSentence: "Three.",
+                partOfSpeech: "num",
+                definitions: ["3"],
+                translation: nil,
+                sourceUrl: "",
+                lookupCount: 3,
+                firstSeenAt: 0,
+                lastSeenAt: 0,
+                deleted: false
+            ),
+        ]
+
+        XCTAssertNotNil(words.matchingWord(for: "two", in: catalog))
+        XCTAssertNotNil(words.matchingWord(for: "THREE", in: catalog))
+        XCTAssertEqual(words.matchingWord(for: "TWO", in: catalog)?.key, "en:two")
+        XCTAssertEqual(words.matchingWord(for: "three", in: catalog)?.key, "en:three")
+    }
 }

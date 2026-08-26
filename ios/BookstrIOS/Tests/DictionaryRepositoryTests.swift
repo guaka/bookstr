@@ -168,4 +168,47 @@ final class DictionaryRepositoryTests: XCTestCase {
     func testLookupCandidatesTrimAndLowercaseWithoutLosingExactForm() {
         XCTAssertEqual(DictionaryRepository().lookupCandidates(for: "  Dou-Lhe  "), ["dou-lhe", "dou"])
     }
+
+    func testParseExtractFallsBackToEmptyWhenLanguageSectionMissing() {
+        let extract = """
+        ==English==
+        ===Noun===
+        heart
+
+        ==French==
+        ===Nom===
+        coeur
+        """
+        let parsed = DictionaryRepository().parseExtract(extract, language: "pt", word: "coração")
+
+        XCTAssertEqual(parsed.partOfSpeech, "")
+        XCTAssertEqual(parsed.definitions, [])
+        XCTAssertNil(parsed.translation)
+    }
+
+    func testParseExtractIgnoresIgnoredSectionsAndSkipsHeadwordPronunciations() {
+        let extract = """
+        ==Português==
+        ===Substantivo===
+        correr.n
+        ação
+        correr.v
+        ===Verbo===
+        correr
+        """
+        let parsed = DictionaryRepository().parseExtract(extract, language: "pt", word: "correr")
+
+        XCTAssertEqual(parsed.partOfSpeech, "Substantivo")
+        XCTAssertEqual(parsed.definitions, ["ação"])
+    }
+
+    func testInflectionNoiseAndGlossHelpersCoverBranches() {
+        let repository = DictionaryRepository()
+        XCTAssertTrue(repository.isInflectionNoise("correr, plural", word: "correr"))
+        XCTAssertTrue(repository.isInflectionNoise("correr, feminino arcaico", word: "correr"))
+        XCTAssertFalse(repository.isInflectionNoise("corrida", word: "correr"))
+        XCTAssertFalse(repository.isInflectionNoise("correr", word: "correr"))
+        XCTAssertTrue(repository.isInflectionGloss("plural de correr", word: "correr"))
+        XCTAssertFalse(repository.isInflectionGloss("corrida", word: "correr"))
+    }
 }
