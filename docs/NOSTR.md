@@ -16,13 +16,13 @@ a competing wire format.
 | --- | --- | --- | --- | --- |
 | `5` | NIP-09 | Implemented on Bookstr web | Request deletion of saved-vocabulary events | Yes |
 | `30003` | NIP-51 | Favorites implemented; compact collections planned | Private Favorites, named book collections, indexes, and chunks | Yes |
-| `30078` | NIP-78 | Implemented | Reading progress and private saved vocabulary | Yes |
+| `30078` | NIP-78 | Implemented | Reading progress, private saved vocabulary, and private book snippets | Yes |
 | `24133` | NIP-46 | Implemented through signer libraries | Encrypted remote-signer requests and responses | Yes |
 | `24242` | Blossom authorization | Implemented | Short-lived HTTP authorization for Blossom upload/download | No |
 | `1059` | NIP-17/NIP-59 | Implemented on LibVault server | Gift-wrapped private book fetch requests and results | Yes |
 | `1063` | NIP-94 | Planned | Public file metadata for a fetched edition | Yes |
 | `17` | NIP-25 | Planned | Public reaction to a book ISBN | Yes |
-| `1111` | NIP-22 | Planned | Public comment on a book ISBN | Yes |
+| `1111` | NIP-22/NIP-73 | Implemented on Bookstr iOS | Public book snippets anchored to an ISBN | Yes |
 
 Kinds described as planned are not part of the current wire contract. NIP-35
 torrent metadata and NIP-65 relay discovery are also planned, not implemented.
@@ -182,6 +182,99 @@ are NIP-17 messages addressed to the requesting pubkey and include an encrypted
 `e` reference to the request rumor. LibVault retains only the opaque outer
 gift-wrap event ID for durable replay protection; it does not persist decrypted
 request contents or sender pubkeys in the replay table.
+
+## Private catalog and downloaded-content search
+
+Search uses the same NIP-17/NIP-59 envelope, service discovery, recipient
+validation, replay protection, and encrypted reply path as private fetches.
+The kind `14` rumor content is:
+
+```json
+{
+  "type": "libvault.search",
+  "request_id": "<client-generated-opaque-id>",
+  "query": "reciprocal responsibility",
+  "search_type": "content",
+  "limit": 20
+}
+```
+
+Existing `search_type` values (`all`, `title`, `author`, `publisher`, and
+`isbn`) remain catalog searches and retain their existing full-text matching
+and response fields. `content` is a distinct optional mode over indexed EPUB/PDF
+files that are both downloaded and currently present in at least one privately
+synced favorites set. A client
+must not substitute catalog matches when this mode is unavailable.
+
+A successful content reply has this shape:
+
+```json
+{
+  "type": "libvault.search.result",
+  "request_id": "<same-id>",
+  "status": "ready",
+  "total": 2,
+  "hits": [
+    {
+      "citation": {
+        "resource_id": "<content-addressed-id>",
+        "chunk_id": "<content-addressed-id>",
+        "uri": "file:///private/cache/<md5>.epub",
+        "title": "Example",
+        "block": { "seq": 3, "kind": "text", "page": 12 },
+        "chunk_position": { "seq_in_block": 0 },
+        "location": { "span": { "start": 120, "end": 512 } },
+        "heading_path": ["Chapter 2", "Reciprocity"],
+        "snippet": "The cited passage is returned here.",
+        "score": { "fused": 0.91, "dense": 0.89, "bm25": 0.42 },
+        "provenance": { "fetched_at": "...", "content_hash": "..." },
+        "metadata": { "kind": "document", "dublin_core": {} }
+      },
+      "book": { "md5": "<md5>", "title": "Example", "authors": "A. Writer" }
+    }
+  ]
+}
+```
+
+`citation` is the semantic index's canonical citation object and is forwarded
+without dropping or rewriting fields. `book` is best-effort catalog enrichment
+resolved from an MD5 filename in `citation.uri`; it is `null` when no matching
+metadata is available, and that must not cause the citation to be discarded.
+
+The server fixes the semantic search scope to its operator-configured private
+store. The requester supplies no store name and cannot broaden the query to
+other stores. The add-on is optional: `unavailable` means it is not configured,
+while `failed` means it was configured but the server-side search could not be
+completed. Neither status permits an unrelated catalog fallback.
+
+The semantic index HTTP API is an unauthenticated, server-side-only boundary.
+It must not be exposed to browsers or the public network. Content queries,
+citations, local source URIs, and enriched book metadata leave that boundary
+only inside the NIP-17 encrypted response to the requesting pubkey; normal
+NIP-17 relay metadata leakage (gift-wrap event timing, size, and recipient tag)
+still applies.
+
+### Private favorites projection sync
+
+Because a user's NIP-51 favorites event is encrypted to that user, LibVault
+cannot read it from the relay. Bookstr therefore sends the current MD5 set over
+the same private NIP-17 flow whenever favorites are synchronized:
+
+```json
+{
+  "type": "libvault.favorites.sync",
+  "request_id": "<client-generated-opaque-id>",
+  "favorites": ["0123456789abcdef0123456789abcdef"]
+}
+```
+
+An empty array clears that requester's set. The server validates and deduplicates
+at most 5,000 MD5s, persists only a one-way hash of the requester pubkey, and
+reconciles a hard-link projection containing matching downloaded EPUB/PDF files.
+Additions request a retained index pass; removals request localdb's `delete`
+policy so stale passages are pruned. The full LibVault cache is never exposed to
+localdb. A successful encrypted reply uses type `libvault.favorites.result`,
+status `ready`, and `total` equal to the accepted set size.
 
 ## Private favorites
 
@@ -566,6 +659,32 @@ visible again.
 
 As with favorites, encryption does not hide the author, kind, `d` tag, event
 time, event size, or relay activity.
+
+## Book snippets
+
+Bookstr iOS lets a reader publish selected EPUB or PDF text as either public or
+private. Public snippets are interoperable NIP-22 comments on a NIP-73 ISBN:
+
+- kind: `1111`
+- content: the selected text
+- root tags: `["I", "isbn:<normalized-isbn>"]`, `["K", "isbn"]`
+- parent tags for a top-level comment: the matching lowercase `i` and `k` tags
+
+ISBNs omit separators as required by NIP-73. A public snippet is unavailable
+when the publication has no valid ISBN-10 or ISBN-13; clients must not expose a
+private download URL or catalog hash as a substitute public identity.
+
+Private snippets use NIP-78 application data with NIP-44 self-encryption:
+
+- kind: `30078`
+- `d`: `app.bookstr.snippet.<random-uuid>`
+- content: NIP-44 ciphertext encrypted to the author's own key
+
+The decrypted version-1 JSON contains `version`, random `id`, selected `text`,
+`bookId`, `title`, `author`, optional normalized `isbn`, `format`, `locator`,
+and `createdAt` in Unix milliseconds. The random address prevents the public
+`d` tag from leaking the book, passage, or locator. Relay observers can still
+see the author, kind, event time, approximate payload size, and relay activity.
 
 ## Blossom authorization
 

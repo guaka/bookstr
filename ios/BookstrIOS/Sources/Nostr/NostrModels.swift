@@ -23,6 +23,8 @@ enum NostrKinds {
     static let collectionChunkPrefix = "bookstr-chunk"
     static let collectionIndexDTag = "bookstr-collections"
     static let vocabularyPrefix = "app.bookstr.vocabulary."
+    static let comment = 1111
+    static let snippetPrefix = "app.bookstr.snippet."
 
     static func progressDTag(bookId: String) -> String {
         "app.bookstr.progress.\(bookId)"
@@ -31,6 +33,24 @@ enum NostrKinds {
     static func favoritesChunkDTag(prefix: String = favoritesChunkPrefix, index: Int) -> String {
         "\(prefix)-\(index)"
     }
+}
+
+enum SnippetVisibility: String, Codable {
+    case publicPost
+    case privateNote
+}
+
+struct BookSnippetPayload: Codable, Equatable {
+    let version: Int
+    let id: String
+    let text: String
+    let bookId: String
+    let title: String
+    let author: String
+    let isbn: String?
+    let format: BookFormat
+    let locator: String
+    let createdAt: Int64
 }
 
 extension NostrEvent {

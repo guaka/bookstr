@@ -2,11 +2,20 @@ import Foundation
 
 enum NostrSyncError: LocalizedError {
     case favoriteAuthorMismatch
+    case noSigner
+    case missingBookIdentity
+    case relayRejected
 
     var errorDescription: String? {
         switch self {
         case .favoriteAuthorMismatch:
             return "Favorite event has the wrong author"
+        case .noSigner:
+            return "Connect Nostr in Settings first."
+        case .missingBookIdentity:
+            return "Public snippets require an ISBN for this book."
+        case .relayRejected:
+            return "No configured relay accepted the snippet."
         }
     }
 }
@@ -49,6 +58,80 @@ final class NostrSyncService {
         if settings.authMode == .nip46 {
             await nip46Service.restore(from: settings)
         }
+    }
+
+    @discardableResult
+    func publishSnippet(
+        text: String,
+        book: CatalogBook,
+        locator: String,
+        visibility: SnippetVisibility
+    ) async throws -> NostrEvent {
+        let snippet = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !snippet.isEmpty else { throw NostrSyncError.relayRejected }
+        await ensureSignerReady()
+        guard let signer = signerStore.signer(from: settings) else { throw NostrSyncError.noSigner }
+        let now = Int64(Date().timeIntervalSince1970)
+        let event: NostrEvent
+        switch visibility {
+        case .publicPost:
+            guard let isbn = Self.normalizedISBN(book.isbn) else {
+                throw NostrSyncError.missingBookIdentity
+            }
+            let identity = "isbn:\(isbn)"
+            event = NostrEvent(
+                id: nil,
+                pubkey: signer.publicKeyHex,
+                createdAt: now,
+                kind: NostrKinds.comment,
+                tags: [
+                    ["I", identity], ["K", "isbn"],
+                    ["i", identity], ["k", "isbn"]
+                ],
+                content: snippet,
+                sig: nil
+            )
+        case .privateNote:
+            let id = UUID().uuidString.lowercased()
+            let payload = BookSnippetPayload(
+                version: 1,
+                id: id,
+                text: snippet,
+                bookId: book.id,
+                title: book.title,
+                author: book.author,
+                isbn: Self.normalizedISBN(book.isbn),
+                format: book.format,
+                locator: locator,
+                createdAt: now * 1000
+            )
+            let data = try JSONEncoder().encode(payload)
+            let plaintext = String(decoding: data, as: UTF8.self)
+            let encrypted = try await signer.nip44Encrypt(plaintext, to: signer.publicKeyHex)
+            event = NostrEvent(
+                id: nil,
+                pubkey: signer.publicKeyHex,
+                createdAt: now,
+                kind: NostrKinds.progress,
+                tags: [["d", NostrKinds.snippetPrefix + id]],
+                content: encrypted,
+                sig: nil
+            )
+        }
+        let signed = try await signer.sign(event)
+        guard await client.publishEvent(signed, relays: settings.relays) else {
+            throw NostrSyncError.relayRejected
+        }
+        return signed
+    }
+
+    static func normalizedISBN(_ raw: String?) -> String? {
+        guard let raw else { return nil }
+        let value = raw.uppercased().filter { $0.isNumber || $0 == "X" }
+        guard value.range(of: #"^(?:[0-9]{13}|[0-9]{9}[0-9X])$"#, options: .regularExpression) != nil else {
+            return nil
+        }
+        return value
     }
 
     func pushProgress(book: CatalogBook, progression: Double, cfi: String) async {
