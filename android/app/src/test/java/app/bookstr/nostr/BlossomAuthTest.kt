@@ -62,6 +62,13 @@ class BlossomAuthTest {
     }
 
     @Test
+    fun unsignedGetEventRejectsWhitespaceWrappedHash() {
+        assertThrows(IllegalArgumentException::class.java) {
+            BlossomAuth.unsignedGetEvent(" ${"ab".repeat(32)} ", "blossom.bfr.ee", 10)
+        }
+    }
+
+    @Test
     fun authorizationHeaderUsesUnpaddedBase64() = kotlinx.coroutines.runBlocking {
         val signer = object : NostrSigner {
             override fun isConfigured() = true
