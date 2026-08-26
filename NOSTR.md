@@ -16,6 +16,9 @@ At a glance, Bookstr uses:
   progress;
 - kind `30078` with `d=app.bookstr.vocabulary.<stable-random-sync-id>` for
   NIP-44-encrypted saved words;
+- kind `30078` with `d=app.bookstr.snippet.<random-uuid>` for NIP-44-encrypted
+  private book snippets;
+- kind `1111` NIP-22 comments with NIP-73 ISBN tags for public book snippets;
 - kind `30003` with `d=libvault-favorites` and optional chunk events for
   NIP-44-encrypted favorites shared with LibVault;
 - public kind `30003` reading lists carrying compact `book` references and
