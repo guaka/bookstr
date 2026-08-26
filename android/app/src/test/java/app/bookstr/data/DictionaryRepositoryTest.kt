@@ -7,6 +7,7 @@ import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.runBlocking
+import kotlin.test.assertFailsWith
 
 class DictionaryRepositoryTest {
     @Test
@@ -244,10 +245,9 @@ class DictionaryRepositoryTest {
     @Test
     fun installPackRejectsUnknownPackIdWithoutNetworkAccess() = runBlocking {
         val repository = DictionaryRepository()
-        assertNotNull(assertThrows<IllegalStateException> {
-            runBlocking {
-                repository.installPack("not-a-real-pack")
-            }
-        }.message)
+        val error = assertFailsWith<IllegalStateException> {
+            repository.installPack("not-a-real-pack")
+        }
+        assertNotNull(error.message)
     }
 }
