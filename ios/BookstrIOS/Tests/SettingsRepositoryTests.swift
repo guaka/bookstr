@@ -1567,6 +1567,32 @@ final class SettingsRepositoryTests: XCTestCase {
         defaults.removePersistentDomain(forName: suite)
     }
 
+    func testSpeechEngineDefaultsToSystemAndPersistsNeuralChoice() {
+        let suite = "bookstr-speech-engine-\(UUID().uuidString)"
+        guard let defaults = UserDefaults(suiteName: suite) else {
+            XCTFail("Could not create isolated UserDefaults")
+            return
+        }
+        defaults.removePersistentDomain(forName: suite)
+        let repository = SettingsRepository(defaults: defaults)
+
+        XCTAssertEqual(repository.speechEngineID, .system)
+
+        repository.speechEngineID = .portuguesePortugal
+        XCTAssertEqual(SettingsRepository(defaults: defaults).speechEngineID, .portuguesePortugal)
+        XCTAssertEqual(defaults.string(forKey: "speech_engine"), "piper_pt_pt")
+        defaults.removePersistentDomain(forName: suite)
+    }
+
+    func testNeuralSpeechEnginesRejectWrongLanguageVariants() {
+        XCTAssertTrue(SpeechEngineID.kokoroEnglish.supports(language: "en-GB"))
+        XCTAssertFalse(SpeechEngineID.kokoroEnglish.supports(language: "pt-PT"))
+        XCTAssertTrue(SpeechEngineID.portuguesePortugal.supports(language: "pt_PT"))
+        XCTAssertTrue(SpeechEngineID.portuguesePortugal.supports(language: "pt"))
+        XCTAssertFalse(SpeechEngineID.portuguesePortugal.supports(language: "pt-BR"))
+        XCTAssertFalse(SpeechEngineID.portuguesePortugal.supports(language: "en"))
+    }
+
     func testKeepsDownloadedCollectionsPersistsAcrossInstances() {
         let suite = "bookstr-collections-instance-\(UUID().uuidString)"
         guard let defaults = UserDefaults(suiteName: suite) else {

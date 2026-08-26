@@ -8,6 +8,9 @@
 
 /* Begin PBXBuildFile section */
 		06A573B5278C4256361ADD02 /* Favorites.swift in Sources */ = {isa = PBXBuildFile; fileRef = C5D2047C5FEB6AC49E9AA4E3 /* Favorites.swift */; };
+		A11111111111111111111111 /* SpeechModelStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = B11111111111111111111111 /* SpeechModelStore.swift */; };
+		A22222222222222222222222 /* NeuralSpeechPlayback.swift in Sources */ = {isa = PBXBuildFile; fileRef = B22222222222222222222222 /* NeuralSpeechPlayback.swift */; };
+		A33333333333333333333333 /* sherpa-onnx in Frameworks */ = {isa = PBXBuildFile; productRef = C33333333333333333333333 /* sherpa-onnx */; };
 		0C0E91F7C3119FAB5C128CB7 /* AppContainer.swift in Sources */ = {isa = PBXBuildFile; fileRef = D92A1F44EF6DBC86327645B5 /* AppContainer.swift */; };
 		13D8078FE0DC6E1D200CED98 /* LibraryReaderUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C98C5936529AA8D4AB76BAA9 /* LibraryReaderUITests.swift */; };
 		A8C4D6E1B2F3907C5D8E1A24 /* AppShellUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B7D2F5A8C1E9463D0F7B2A19 /* AppShellUITests.swift */; };
@@ -75,6 +78,8 @@
 
 /* Begin PBXFileReference section */
 		020A583BD242E7950EE25CC1 /* BookstrIOSApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BookstrIOSApp.swift; sourceTree = "<group>"; };
+		B11111111111111111111111 /* SpeechModelStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeechModelStore.swift; sourceTree = "<group>"; };
+		B22222222222222222222222 /* NeuralSpeechPlayback.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NeuralSpeechPlayback.swift; sourceTree = "<group>"; };
 		0ADD34E2FDD350ABCD0A2F1E /* BookstrIOS.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = BookstrIOS.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		0D63152BFB352FB6E61DBF75 /* Nip46Service.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Nip46Service.swift; sourceTree = "<group>"; };
 		1771139F922E3CBEECA1BD71 /* DictionaryRepository.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DictionaryRepository.swift; sourceTree = "<group>"; };
@@ -129,6 +134,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A33333333333333333333333 /* sherpa-onnx in Frameworks */,
 				9F071395C4FA0319FE7D14EC /* NostrConnect in Frameworks */,
 				4996C0C39A8E6AA94CD4A0D7 /* NostrCore in Frameworks */,
 			);
@@ -235,6 +241,7 @@
 			isa = PBXGroup;
 			children = (
 				BD52C2402974539DD566F6D4 /* EPUBReaderView.swift */,
+				B22222222222222222222222 /* NeuralSpeechPlayback.swift */,
 				BB24551E4D26AE5A5A5FE4E2 /* PDFReaderView.swift */,
 				BF7571C63411B7A9A8988ABD /* ReaderHostView.swift */,
 			);
@@ -250,6 +257,7 @@
 				6184947FF12712F08EA6E37D /* KeychainStore.swift */,
 				F78EB46F2E580C92BBC65414 /* ProgressRepository.swift */,
 				22DDF63A8FC739853B993022 /* SettingsRepository.swift */,
+				B11111111111111111111111 /* SpeechModelStore.swift */,
 				452650E3247A1315589B1C5D /* VocabularyRepository.swift */,
 			);
 			path = Data;
@@ -360,6 +368,7 @@
 			packageProductDependencies = (
 				852A2E2E0141791441DC562E /* NostrConnect */,
 				FEE3AF5A18BD6006726181A5 /* NostrCore */,
+				C33333333333333333333333 /* sherpa-onnx */,
 			);
 			productName = BookstrIOS;
 			productReference = 0ADD34E2FDD350ABCD0A2F1E /* BookstrIOS.app */;
@@ -418,6 +427,7 @@
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
 				23E78AF47BCE51E7F46E4F46 /* XCRemoteSwiftPackageReference "swift-nostr" */,
+				D33333333333333333333333 /* XCRemoteSwiftPackageReference "sherpa-onnx" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 4284AADC49F30077890B572D /* Products */;
@@ -464,6 +474,7 @@
 				293BA6273B450613E6F76A53 /* CatalogRepository.swift in Sources */,
 				886215C0EB2EE4536C15FA17 /* DictionaryRepository.swift in Sources */,
 				810613D82AEEC202EA83E075 /* EPUBReaderView.swift in Sources */,
+				A22222222222222222222222 /* NeuralSpeechPlayback.swift in Sources */,
 				06A573B5278C4256361ADD02 /* Favorites.swift in Sources */,
 				6E913BF2A93ECDBAB524A6BF /* JSONFileStore.swift in Sources */,
 				A2B4B6FC429B2B515679864D /* KeychainStore.swift in Sources */,
@@ -484,6 +495,7 @@
 				82C99821755446B11FE5BAD2 /* ScreenChrome.swift in Sources */,
 				FE3AD27714601135F65B7AED /* SearchView.swift in Sources */,
 				FBDEC08587AE518C8EBAFCED /* SettingsRepository.swift in Sources */,
+				A11111111111111111111111 /* SpeechModelStore.swift in Sources */,
 				49F0454111B5B17BA59976E2 /* SettingsView.swift in Sources */,
 				6480490A639CE5220CC5DFCB /* Theme.swift in Sources */,
 				DA90AA2C2A9749241821174D /* VocabularyRepository.swift in Sources */,
@@ -817,6 +829,14 @@
 				minimumVersion = 0.7.0;
 			};
 		};
+		D33333333333333333333333 /* XCRemoteSwiftPackageReference "sherpa-onnx" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/k2-fsa/sherpa-onnx";
+			requirement = {
+				kind = exactVersion;
+				version = 1.13.6;
+			};
+		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -829,6 +849,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 23E78AF47BCE51E7F46E4F46 /* XCRemoteSwiftPackageReference "swift-nostr" */;
 			productName = NostrCore;
+		};
+		C33333333333333333333333 /* sherpa-onnx */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = D33333333333333333333333 /* XCRemoteSwiftPackageReference "sherpa-onnx" */;
+			productName = "sherpa-onnx";
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

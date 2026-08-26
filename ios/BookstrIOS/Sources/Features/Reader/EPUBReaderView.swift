@@ -79,6 +79,10 @@ final class EPUBReaderController: NSObject, ObservableObject, AVSpeechSynthesize
 
     fileprivate weak var webView: WKWebView?
     private let speech = AVSpeechSynthesizer()
+    private let neuralSpeech = NeuralSpeechPlayback()
+    private var activeSpeechEngine = SpeechEngineID.system
+    private var neuralSpeechRate = 0.48
+    private var neuralChunkOffset: Int?
     private var utteranceOffsets: [ObjectIdentifier: Int] = [:]
     private var playbackQueue = SpeechPlaybackQueue()
     private var activeUtterance: ObjectIdentifier?
@@ -131,7 +135,7 @@ final class EPUBReaderController: NSObject, ObservableObject, AVSpeechSynthesize
     }
 
     func toggleSpeech() {
-        if isSpeaking || speech.isSpeaking || speech.isPaused || playbackQueue.hasPendingRequest {
+        if isSpeaking || speech.isSpeaking || speech.isPaused || neuralSpeech.isPlaying || playbackQueue.hasPendingRequest {
             stopSpeech()
         } else {
             guard ready else {
@@ -145,6 +149,7 @@ final class EPUBReaderController: NSObject, ObservableObject, AVSpeechSynthesize
     fileprivate func speak(
         text: String,
         language: String,
+        engine: SpeechEngineID,
         voiceIdentifier: String,
         rate: Double,
         chunks: [(text: String, offset: Int, pauseSeconds: Double)]? = nil,
@@ -175,13 +180,56 @@ final class EPUBReaderController: NSObject, ObservableObject, AVSpeechSynthesize
             return
         }
         speech.stopSpeaking(at: .immediate)
+        neuralSpeech.stop()
         utteranceOffsets.removeAll()
         activeUtterance = nil
+        activeSpeechEngine = engine
+        neuralSpeechRate = rate
         isSpeaking = true
         updateNowPlaying(isPlaying: true)
-        let selectedVoice = bestVoice(language: language, identifier: voiceIdentifier)
-        speakNextUtterance(voice: selectedVoice, rate: rate, isFirst: true)
         errorMessage = nil
+        if engine == .system {
+            let selectedVoice = bestVoice(language: language, identifier: voiceIdentifier)
+            speakNextUtterance(voice: selectedVoice, rate: rate, isFirst: true)
+        } else if engine.supports(language: language) {
+            speakNextNeuralChunk(isFirst: true)
+        } else {
+            stopSpeech()
+            errorMessage = "\(engine.label) does not support this book's language."
+        }
+    }
+
+    private func speakNextNeuralChunk(isFirst: Bool = false) {
+        guard neuralChunkOffset == nil, !playbackQueue.isEmpty else {
+            if neuralChunkOffset == nil { finishSpeech() }
+            return
+        }
+        guard let chunk = playbackQueue.next() else { return }
+        neuralChunkOffset = chunk.offset
+        updateSpeechProgress(start: chunk.offset, end: chunk.offset + (chunk.text as NSString).length)
+        let start: @MainActor @Sendable () -> Void = { [weak self] in
+            guard let self, self.isSpeaking, self.neuralChunkOffset == chunk.offset else { return }
+            self.neuralSpeech.play(
+                text: chunk.text,
+                engine: self.activeSpeechEngine,
+                speed: Float(min(max(self.neuralSpeechRate / 0.48, 0.73), 1.25))
+            ) { [weak self] result in
+                guard let self else { return }
+                self.neuralChunkOffset = nil
+                switch result {
+                case .success:
+                    self.speakNextNeuralChunk()
+                case .failure(let error):
+                    self.stopSpeech()
+                    self.errorMessage = error.localizedDescription
+                }
+            }
+        }
+        if isFirst || chunk.pauseSeconds <= 0 {
+            start()
+        } else {
+            DispatchQueue.main.asyncAfter(deadline: .now() + chunk.pauseSeconds, execute: start)
+        }
     }
 
     private func speakNextUtterance(voice: AVSpeechSynthesisVoice?, rate: Double, isFirst: Bool = false) {
@@ -242,8 +290,10 @@ final class EPUBReaderController: NSObject, ObservableObject, AVSpeechSynthesize
     private func stopSpeech() {
         playbackQueue.cancel()
         activeUtterance = nil
+        neuralChunkOffset = nil
         utteranceOffsets.removeAll()
         speech.stopSpeaking(at: .immediate)
+        neuralSpeech.stop()
         isSpeaking = false
         updateNowPlaying(isPlaying: false)
         deactivateAudioSession()
@@ -358,6 +408,10 @@ final class EPUBReaderController: NSObject, ObservableObject, AVSpeechSynthesize
                     self.speech.continueSpeaking()
                     self.isSpeaking = true
                     self.updateNowPlaying(isPlaying: true)
+                } else if self.activeSpeechEngine != .system, !self.neuralSpeech.isPlaying, self.neuralChunkOffset != nil {
+                    self.neuralSpeech.resume()
+                    self.isSpeaking = true
+                    self.updateNowPlaying(isPlaying: true)
                 } else if !self.isSpeaking && !self.playbackQueue.hasPendingRequest {
                     self.requestSpeechText()
                 }
@@ -366,8 +420,14 @@ final class EPUBReaderController: NSObject, ObservableObject, AVSpeechSynthesize
         }
         commands.pauseCommand.addTarget { [weak self] _ in
             Task { @MainActor in
-                guard let self, self.speech.isSpeaking else { return }
-                self.speech.pauseSpeaking(at: .word)
+                guard let self else { return }
+                if self.activeSpeechEngine == .system {
+                    guard self.speech.isSpeaking else { return }
+                    self.speech.pauseSpeaking(at: .word)
+                } else {
+                    guard self.neuralSpeech.isPlaying else { return }
+                    self.neuralSpeech.pause()
+                }
                 self.isSpeaking = false
                 self.updateNowPlaying(isPlaying: false)
             }
@@ -390,8 +450,10 @@ final class EPUBReaderController: NSObject, ObservableObject, AVSpeechSynthesize
     private func skipSpokenPage(direction: Int) {
         playbackQueue.cancel()
         activeUtterance = nil
+        neuralChunkOffset = nil
         utteranceOffsets.removeAll()
         speech.stopSpeaking(at: .immediate)
+        neuralSpeech.stop()
         nowPlayingParagraph = ""
         let move = direction > 0
             ? "window.nextPage && window.nextPage()"
@@ -901,6 +963,7 @@ struct EPUBReaderView: UIViewRepresentable {
             guard let item = object(from: json), let text = item["text"] as? String else { return }
             let chunks = controller.parseSpeechChunks(item["chunks"])
             controller.speak(text: text, language: item["language"] as? String ?? "en",
+                             engine: container.settingsRepository.speechEngineID,
                              voiceIdentifier: container.settingsRepository.speechVoiceIdentifier,
                              rate: container.settingsRepository.speechRate,
                              chunks: chunks.isEmpty ? nil : chunks,

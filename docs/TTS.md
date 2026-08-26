@@ -38,7 +38,23 @@ Each TTS adapter renders this plan for its provider:
 - Azure and Amazon Polly: SSML, pronunciation lexicons, and breaks.
 - OpenAI: clean text plus restrained natural-language delivery instructions.
 - ElevenLabs: clean text, a Portugal-native voice, and limited voice settings.
-- iOS and Android: local system-TTS fallback.
+- iOS: Apple system voices plus optional, downloadable on-device models.
+- Android: local system-TTS fallback.
+
+## Implemented iOS offline voices
+
+Bookstr's iOS app now embeds the `sherpa-onnx` runtime and offers two optional
+voice packs under **Settings → Reader → Speech engine**:
+
+- **Kokoro · English** — Kokoro v0.19, about 352 MB.
+- **Tugão · Português (Portugal)** — a Piper/VITS `pt-PT` voice, about 64 MB.
+
+The model files are downloaded only when the reader asks for one, remain on the
+device, and can be removed from Settings. Speech generation is local after the
+download. Apple voices remain the zero-download fallback. Kokoro's currently
+published Portuguese support is Brazilian Portuguese, so the Portugal option
+uses the purpose-built Tugão model rather than presenting a Brazilian voice as
+European Portuguese.
 
 This keeps the reading behavior DRY across platforms and lets us change cloud
 provider without rewriting the readability work.
@@ -106,7 +122,8 @@ Notes:
    voices using representative book passages.
 3. If ElevenLabs clearly wins, offer it as the premium online voice; otherwise
    retain Azure as the main cloud voice.
-4. Keep native iOS and Android TTS as an offline fallback.
+4. On iOS, offer Tugão as the dedicated offline `pt-PT` option and retain Apple
+   voices as the zero-download fallback.
 5. Store `locale: pt-PT` and pronunciation overrides in every shared speech
    plan so Brazilian Portuguese defaults cannot leak in.
 
@@ -123,3 +140,5 @@ Notes:
 - [Deepgram TTS models and languages](https://developers.deepgram.com/docs/tts-models-languages-overview)
 - [Deepgram TTS streaming API](https://developers.deepgram.com/reference/text-to-speech/speak-streaming)
 - [Deepgram pricing](https://deepgram.com/pricing)
+- [sherpa-onnx offline TTS model support](https://github.com/k2-fsa/sherpa-onnx/blob/master/sherpa-onnx/c-api/docs/tts.dox)
+- [Piper Tugão `pt-PT` model card](https://huggingface.co/rhasspy/piper-voices/blob/main/pt/pt_PT/tug%C3%A3o/medium/MODEL_CARD)

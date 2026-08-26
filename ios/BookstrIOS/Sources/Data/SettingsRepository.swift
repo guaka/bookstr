@@ -20,6 +20,7 @@ final class SettingsRepository: ObservableObject {
         static let keepDownloadedCollections = "keep_downloaded_collections"
         static let lastApplicationDataSync = "last_application_data_sync"
         static let speechVoice = "speech_voice"
+        static let speechEngine = "speech_engine"
         static let speechRate = "speech_rate"
         static let keepReadingOnLockScreen = "keep_reading_on_lock_screen"
         static let wordSort = "word_sort"
@@ -35,6 +36,10 @@ final class SettingsRepository: ObservableObject {
         didSet { defaults.set(speechVoiceIdentifier, forKey: Keys.speechVoice) }
     }
 
+    @Published var speechEngineID: SpeechEngineID {
+        didSet { defaults.set(speechEngineID.rawValue, forKey: Keys.speechEngine) }
+    }
+
     @Published var speechRate: Double {
         didSet { defaults.set(speechRate, forKey: Keys.speechRate) }
     }
@@ -43,6 +48,7 @@ final class SettingsRepository: ObservableObject {
         self.defaults = defaults
         self.theme = ReaderTheme(rawValue: defaults.string(forKey: Keys.theme) ?? "") ?? .paper
         self.speechVoiceIdentifier = defaults.string(forKey: Keys.speechVoice) ?? ""
+        self.speechEngineID = SpeechEngineID(rawValue: defaults.string(forKey: Keys.speechEngine) ?? "") ?? .system
         let savedRate = defaults.double(forKey: Keys.speechRate)
         self.speechRate = savedRate == 0 ? 0.48 : min(max(savedRate, 0.35), 0.60)
     }

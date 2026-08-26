@@ -5,6 +5,9 @@ packages:
   swift-nostr:
     url: https://github.com/yysskk/swift-nostr
     from: 0.7.0
+  sherpa-onnx:
+    url: https://github.com/k2-fsa/sherpa-onnx
+    exactVersion: 1.13.6
 targets:
   BookstrIOS:
     type: application
@@ -24,6 +27,8 @@ targets:
         product: NostrConnect
       - package: swift-nostr
         product: NostrCore
+      - package: sherpa-onnx
+        product: sherpa-onnx
     settings:
       ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
       ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS: YES

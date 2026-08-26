@@ -23,6 +23,7 @@ struct SettingsView: View {
     @State private var dictionaryPacks: [DictionaryPack] = []
     @State private var dictionarySelection = DictionaryPairSelection()
     @State private var dictionaryBusy = false
+    @StateObject private var speechModels = SpeechModelStore()
     @FocusState private var focusedField: SettingsField?
 
     var body: some View {
@@ -33,12 +34,21 @@ struct SettingsView: View {
                         Text(item.rawValue.capitalized).tag(item)
                     }
                 }
-                Picker("Reading voice", selection: $settings.speechVoiceIdentifier) {
-                    Text("Best installed voice").tag("")
-                    ForEach(speechVoices, id: \.identifier) { voice in
-                        Text("\(voice.name) · \(voice.language) · \(voiceQuality(voice))")
-                            .tag(voice.identifier)
+                Picker("Speech engine", selection: $settings.speechEngineID) {
+                    ForEach(SpeechEngineID.allCases) { engine in
+                        Text(engine.label).tag(engine)
                     }
+                }
+                if settings.speechEngineID == .system {
+                    Picker("Reading voice", selection: $settings.speechVoiceIdentifier) {
+                        Text("Best installed voice").tag("")
+                        ForEach(speechVoices, id: \.identifier) { voice in
+                            Text("\(voice.name) · \(voice.language) · \(voiceQuality(voice))")
+                                .tag(voice.identifier)
+                        }
+                    }
+                } else {
+                    speechModelControl(settings.speechEngineID)
                 }
                 VStack(alignment: .leading) {
                     HStack {
@@ -305,6 +315,41 @@ struct SettingsView: View {
         case .premium: return "Premium"
         case .enhanced: return "Enhanced"
         default: return "Standard"
+        }
+    }
+
+    @ViewBuilder
+    private func speechModelControl(_ engine: SpeechEngineID) -> some View {
+        if let model = SpeechModelCatalog.model(engine) {
+            if speechModels.isInstalled(engine) {
+                HStack {
+                    Text(ByteCountFormatter.string(fromByteCount: model.approximateBytes, countStyle: .file))
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Button(role: .destructive) {
+                        speechModels.remove(engine)
+                        settings.speechEngineID = .system
+                    } label: {
+                        Image(systemName: "trash")
+                    }
+                    .accessibilityLabel("Remove reading voice")
+                }
+            } else if speechModels.installing == engine {
+                HStack {
+                    ProgressView()
+                    Text("Downloading…")
+                    Spacer()
+                    Text("\(speechModels.completedFiles)/\(model.files.count)")
+                        .foregroundStyle(.secondary)
+                }
+            } else {
+                Button("Download \(ByteCountFormatter.string(fromByteCount: model.approximateBytes, countStyle: .file))") {
+                    Task { await speechModels.install(engine) }
+                }
+            }
+            if let error = speechModels.errorMessage {
+                Text(error).foregroundStyle(.red)
+            }
         }
     }
 
