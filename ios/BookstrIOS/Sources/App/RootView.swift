@@ -75,11 +75,14 @@ struct RootView: View {
             guard !ProcessInfo.processInfo.arguments.contains("--ui-testing-library-fixtures") else { return }
             openContinuation(reportMissing: false)
         }
-        .onReceive(container.wordNavigation.$requestToken) { _ in
+        .onReceive(container.wordNavigation.$requestToken) { token in
+            guard token > 0 else { return }
             selectedTab = 3
         }
         .fullScreenCover(item: $continuation) { book in
-            ReaderHostView(book: book)
+            ReaderHostView(book: book) {
+                continuation = nil
+            }
                 .environmentObject(container)
         }
         .alert("Continue reading", isPresented: Binding(

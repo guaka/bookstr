@@ -91,19 +91,35 @@ final class LibraryReaderUITests: XCTestCase {
         )
     }
 
-    func testReaderHeadersExposeSearchAndRemoveFontButtons() throws {
+    func testReaderHeadersExposeMetadataContentsSearchClockAndProgress() throws {
         let (back, _) = openEPUB()
 
         XCTAssertTrue(app.buttons["reader-search"].waitForExistence(timeout: 4))
+        XCTAssertTrue(app.descendants(matching: .any)["reader-clock"].waitForExistence(timeout: 4))
+        XCTAssertTrue(app.descendants(matching: .any)["reader-progress-epub"].waitForExistence(timeout: 4))
         XCTAssertFalse(app.buttons["reader-font-larger"].exists)
         XCTAssertFalse(app.buttons["reader-font-smaller"].exists)
+        let contents = app.buttons["reader-contents"]
+        XCTAssertTrue(contents.waitForExistence(timeout: 4))
+        contents.tap()
+        XCTAssertTrue(app.navigationBars["Contents"].waitForExistence(timeout: 4))
+        app.buttons["Done"].tap()
 
         back.tap()
         XCTAssertTrue(app.navigationBars["Library"].waitForExistence(timeout: 5))
 
         let (pdfBack, _) = openPDF()
         XCTAssertTrue(app.buttons["reader-search"].waitForExistence(timeout: 4))
-        XCTAssertTrue(app.staticTexts["Alice PDF Fixture — Lewis Carroll · 1865"].exists)
+        XCTAssertTrue(app.staticTexts["Alice PDF Fixture"].exists)
+        XCTAssertTrue(app.staticTexts["Lewis Carroll · 1865"].exists)
+        let pdfClock = app.descendants(matching: .any)["reader-clock"]
+        XCTAssertTrue(pdfClock.waitForExistence(timeout: 4))
+        XCTAssertTrue(
+            NSPredicate(format: "SELF MATCHES %@", #"\d{2}:\d{2}  PDF"#)
+                .evaluate(with: pdfClock.label),
+            "PDF clock was not in 24-hour HH:mm format: \(pdfClock.label)"
+        )
+        XCTAssertTrue(app.descendants(matching: .any)["reader-progress-pdf"].waitForExistence(timeout: 4))
         pdfBack.tap()
         XCTAssertTrue(app.navigationBars["Library"].waitForExistence(timeout: 5))
     }
@@ -122,7 +138,7 @@ final class LibraryReaderUITests: XCTestCase {
         ).firstMatch
         XCTAssertTrue(result.waitForExistence(timeout: 12), "EPUB search returned no result")
         result.tap()
-        XCTAssertFalse(query.exists)
+        XCTAssertTrue(waitForDisappearance(query, timeout: 4))
         XCTAssertTrue(app.staticTexts.matching(
             NSPredicate(format: "label CONTAINS[c] %@", "final page marker")
         ).firstMatch.waitForExistence(timeout: 8))
@@ -140,7 +156,7 @@ final class LibraryReaderUITests: XCTestCase {
         let result = app.buttons["reader-search-result-pdf-0"]
         XCTAssertTrue(result.waitForExistence(timeout: 8), "PDF search returned no result")
         result.tap()
-        XCTAssertFalse(query.exists)
+        XCTAssertTrue(waitForDisappearance(query, timeout: 4))
         XCTAssertTrue(app.descendants(matching: .any)["pdf-reader"].exists)
     }
 
@@ -195,6 +211,14 @@ final class LibraryReaderUITests: XCTestCase {
     private func waitForY(_ element: XCUIElement, condition: @escaping (CGFloat) -> Bool) -> Bool {
         let predicate = NSPredicate { _, _ in element.exists && condition(element.frame.minY) }
         return XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: predicate, object: element)], timeout: 4) == .completed
+    }
+
+    private func waitForDisappearance(_ element: XCUIElement, timeout: TimeInterval) -> Bool {
+        let predicate = NSPredicate(format: "exists == false")
+        return XCTWaiter.wait(
+            for: [XCTNSPredicateExpectation(predicate: predicate, object: element)],
+            timeout: timeout
+        ) == .completed
     }
 
     private func attachScreenshot(named name: String) {

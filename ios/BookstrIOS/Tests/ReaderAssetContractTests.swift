@@ -1,4 +1,6 @@
 import XCTest
+import PDFKit
+import WebKit
 @testable import BookstrIOS
 
 final class ReaderAssetContractTests: XCTestCase {
@@ -224,6 +226,37 @@ final class ReaderAssetContractTests: XCTestCase {
         XCTAssertTrue(html.contains("AndroidBridge.onTextSelected(JSON.stringify({"))
         XCTAssertTrue(html.contains("text: cleanDictionaryText(selection).slice(0, 2000)"))
         XCTAssertTrue(html.contains("contextSentence: selectionContext(selectedRange)"))
+        XCTAssertTrue(html.contains("event.preventDefault();"))
+        XCTAssertTrue(html.contains("event.stopPropagation();"))
+    }
+
+    @MainActor
+    func testReaderViewsSuppressNativeEditActions() {
+        let webView = BookstrReaderWebView(frame: .zero, configuration: WKWebViewConfiguration())
+        let pdfView = VocabularyPDFView()
+
+        XCTAssertFalse(webView.canPerformAction(#selector(UIResponderStandardEditActions.copy(_:)), withSender: nil))
+        XCTAssertFalse(pdfView.canPerformAction(#selector(UIResponderStandardEditActions.copy(_:)), withSender: nil))
+    }
+
+    @MainActor
+    func testPDFProgressTracksCurrentAndFurthestPage() {
+        let controller = PDFReaderController()
+
+        controller.updatePage(index: 1, count: 3)
+        XCTAssertEqual(controller.progression, 0.5, accuracy: 0.000_001)
+        XCTAssertEqual(controller.furthestProgression, 0.5, accuracy: 0.000_001)
+
+        controller.updatePage(index: 0, count: 3)
+        XCTAssertEqual(controller.progression, 0, accuracy: 0.000_001)
+        XCTAssertEqual(controller.furthestProgression, 0.5, accuracy: 0.000_001)
+    }
+
+    func testReaderClockAlwaysUses24HourTime() throws {
+        let date = try XCTUnwrap(Calendar.current.date(from: DateComponents(
+            year: 2026, month: 1, day: 15, hour: 13, minute: 7
+        )))
+        XCTAssertEqual(ReaderClockLabel.formattedTime(date), "13:07")
     }
 
     func testReaderSearchesEverySpineSectionAndCanOpenAResult() throws {
@@ -234,6 +267,13 @@ final class ReaderAssetContractTests: XCTestCase {
         XCTAssertTrue(html.contains("const matches = section.find(needle) || [];"))
         XCTAssertTrue(html.contains("AndroidBridge.onSearchResults(JSON.stringify(results));"))
         XCTAssertTrue(html.contains("window.displaySearchResult = function(cfi) {"))
+    }
+
+    func testReaderReportsWhetherARealTableOfContentsExists() throws {
+        let html = try bundledReaderHTML()
+
+        XCTAssertTrue(html.contains("collect(navigation && navigation.toc);"))
+        XCTAssertTrue(html.contains("hasToc: labels.size > 0"))
     }
 
     private func bundledReaderHTML() throws -> String {
