@@ -175,6 +175,15 @@ final class ReaderAssetContractTests: XCTestCase {
         XCTAssertTrue(html.contains("localStorage.setItem(\"bookstr-reader-font-percent\", String(readerFontPercent));"))
     }
 
+    func testReaderExposesNativePinchBridgeForWKWebView() throws {
+        let html = try bundledReaderHTML()
+
+        XCTAssertTrue(html.contains("window.beginNativeFontPinch = function() {"))
+        XCTAssertTrue(html.contains("window.updateNativeFontPinch = function(scale) {"))
+        XCTAssertTrue(html.contains("Math.round(nativePinchStartFontPercent * dampedRatio)"))
+        XCTAssertTrue(html.contains("window.endNativeFontPinch = function() {"))
+    }
+
     func testKnownWordSetIsBuiltFromInputJSON() throws {
         let html = try bundledReaderHTML()
 
@@ -200,6 +209,35 @@ final class ReaderAssetContractTests: XCTestCase {
         XCTAssertTrue(html.contains("event.preventDefault();"))
         XCTAssertTrue(html.contains("event.stopPropagation();"))
         XCTAssertTrue(html.contains("AndroidBridge.onKnownWordTapped(normalized);"))
+    }
+
+    func testDictionaryRequiresAnExplicitAddToWordsAction() throws {
+        let html = try bundledReaderHTML()
+
+        XCTAssertTrue(html.contains("id=\"dictionary-save\""))
+        XCTAssertTrue(html.contains("aria-label=\"Add to Words\""))
+        XCTAssertTrue(html.contains("function saveActiveDictionaryWord() {"))
+        XCTAssertTrue(html.contains("AndroidBridge.onWordSelected(JSON.stringify(activeDictionary));"))
+        XCTAssertTrue(html.contains("knownWordSet.add(normalized);"))
+        XCTAssertTrue(html.contains("button.textContent = saved ? \"✓\" : \"＋\";"))
+    }
+
+    func testReaderReportsSelectedPassagesForSnippetActions() throws {
+        let html = try bundledReaderHTML()
+
+        XCTAssertTrue(html.contains("AndroidBridge.onTextSelected(JSON.stringify({"))
+        XCTAssertTrue(html.contains("text: cleanDictionaryText(selection).slice(0, 2000)"))
+        XCTAssertTrue(html.contains("contextSentence: selectionContext(selectedRange)"))
+    }
+
+    func testReaderSearchesEverySpineSectionAndCanOpenAResult() throws {
+        let html = try bundledReaderHTML()
+
+        XCTAssertTrue(html.contains("window.searchBook = async function(query) {"))
+        XCTAssertTrue(html.contains("const sections = (book.spine && book.spine.spineItems) || [];"))
+        XCTAssertTrue(html.contains("const matches = section.find(needle) || [];"))
+        XCTAssertTrue(html.contains("AndroidBridge.onSearchResults(JSON.stringify(results));"))
+        XCTAssertTrue(html.contains("window.displaySearchResult = function(cfi) {"))
     }
 
     private func bundledReaderHTML() throws -> String {

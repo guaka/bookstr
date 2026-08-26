@@ -1,8 +1,12 @@
 package app.bookstr.data
 
+import java.io.File
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
+import kotlinx.coroutines.runBlocking
 
 class DictionaryRepositoryTest {
     @Test
@@ -117,5 +121,133 @@ class DictionaryRepositoryTest {
 
         assertEquals("pt", repository.languageFor("Isto é para alguém com atenção."))
         assertEquals("en", repository.languageFor("Portuguese is the language name."))
+    }
+
+    @Test
+    fun parseExtractReturnsNothingWhenLanguageSectionIsMissing() {
+        val parsed = DictionaryRepository().parseExtract(
+            """
+              = Français =
+              == Nom ==
+              bonjour
+              == Verbe ==
+              aller
+            """.trimIndent(),
+            "en",
+            "bonjour",
+        )
+
+        assertEquals("" to emptyList<String>(), parsed)
+    }
+
+    @Test
+    fun parseExtractStopsCollectingAtSiblingsOrLanguageBoundary() {
+        val parsed = DictionaryRepository().parseExtract(
+            """
+              = English =
+              == Verb ==
+              first
+              second
+              == Etymology ==
+              this is not included
+              == Noun ==
+              noun entry
+            """.trimIndent(),
+            "en",
+            "test",
+        )
+
+        assertEquals("Verb", parsed.first)
+        assertEquals(listOf("first", "second"), parsed.second)
+    }
+
+    @Test
+    fun parseExtractIgnoresShortOrRepeatedLinesWhenCollectingDefinitions() {
+        val parsed = DictionaryRepository().parseExtract(
+            """
+              = English =
+              == Noun ==
+              a
+              run
+              run
+              quick
+            """.trimIndent(),
+            "en",
+            "run",
+        )
+
+        assertEquals("Noun", parsed.first)
+        assertEquals(listOf("quick"), parsed.second)
+    }
+
+    @Test
+    fun languageForFallsBackToEnglishForUnknownSignals() {
+        val repository = DictionaryRepository()
+
+        assertEquals("en", repository.languageFor("This text has an unfamiliar mix without portuguese keywords."))
+        assertEquals("en", repository.languageFor("Un texto corto y corto."))
+    }
+
+    @Test
+    fun hasInstalledPackForUsesLanguagePrefixWhenSourceIncludesScriptTag() {
+        val repository = DictionaryRepository()
+        val packsDir = File(System.getProperty("java.io.tmpdir") ?: ".", "wikdict")
+        val target = File(packsDir, "en-fr.sqlite3")
+        val original = if (target.exists()) target.readBytes() else null
+        try {
+            packsDir.mkdirs()
+            target.writeBytes("unit".toByteArray())
+
+            assertEquals(true, repository.hasInstalledPackFor("en-US"))
+            assertEquals(false, repository.hasInstalledPackFor("de-DE"))
+        } finally {
+            if (original != null) target.writeBytes(original) else target.delete()
+        }
+    }
+
+    @Test
+    fun packsReflectInstalledStateAndSizeForKnownPack() {
+        val repository = DictionaryRepository()
+        val packsDir = File(System.getProperty("java.io.tmpdir") ?: ".", "wikdict")
+        val target = File(packsDir, "pt-en.sqlite3")
+        val original = if (target.exists()) target.readBytes() else null
+        try {
+            packsDir.mkdirs()
+            target.writeText("content")
+
+            val pack = repository.packs().first { it.id == "pt-en" }
+            assertTrue(pack.installed)
+            assertEquals("pt-en", pack.id)
+            assertEquals(7L, pack.bytes)
+        } finally {
+            if (original != null) target.writeBytes(original) else target.delete()
+        }
+    }
+
+    @Test
+    fun removePackDeletesExistingFileAndReturnsFalseOtherwise() {
+        val repository = DictionaryRepository()
+        val packsDir = File(System.getProperty("java.io.tmpdir") ?: ".", "wikdict")
+        val target = File(packsDir, "es-de.sqlite3")
+        packsDir.mkdirs()
+        val original = if (target.exists()) target.readBytes() else null
+        try {
+            target.writeText("cached")
+            assertTrue(repository.removePack("es-de"))
+            assertFalse(target.exists())
+            assertFalse(repository.removePack("es-de"))
+        } finally {
+            if (original != null) target.writeBytes(original)
+        }
+    }
+
+    @Test
+    fun installPackRejectsUnknownPackIdWithoutNetworkAccess() = runBlocking {
+        val repository = DictionaryRepository()
+        assertNotNull(assertThrows<IllegalStateException> {
+            runBlocking {
+                repository.installPack("not-a-real-pack")
+            }
+        }.message)
     }
 }
