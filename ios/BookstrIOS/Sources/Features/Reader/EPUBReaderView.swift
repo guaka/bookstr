@@ -99,6 +99,20 @@ enum NativeSpeechFallback {
     }
 }
 
+struct ReaderTextSelection: Equatable {
+    let text: String
+    let locator: String
+    let language: String
+    let context: String
+}
+
+struct EPUBSearchResult: Identifiable, Equatable {
+    let sectionIndex: Int
+    let cfi: String
+    let excerpt: String
+    var id: String { cfi }
+}
+
     @MainActor
 final class EPUBReaderController: NSObject, ObservableObject, AVSpeechSynthesizerDelegate {
     @Published var progression = 0.0
@@ -106,11 +120,15 @@ final class EPUBReaderController: NSObject, ObservableObject, AVSpeechSynthesize
     @Published var sectionIndex = 0
     @Published var sectionCount = 1
     @Published var sections: [EPUBSection] = []
+    @Published var hasTableOfContents = false
     @Published var errorMessage: String?
     @Published var ready = false
     @Published var isSpeaking = false
     @Published var loadingStage = "Starting reader"
     @Published var rights = BookRights()
+    @Published var textSelection: ReaderTextSelection?
+    @Published var searchResults: [EPUBSearchResult] = []
+    @Published var searching = false
 
     fileprivate weak var webView: WKWebView?
     private let speech = AVSpeechSynthesizer()
@@ -133,6 +151,14 @@ final class EPUBReaderController: NSObject, ObservableObject, AVSpeechSynthesize
     func previousPage() { evaluate("window.prevPage && window.prevPage()") }
     func adjustReaderFont(by delta: Int) {
         evaluate("window.adjustReaderFont && window.adjustReaderFont(\(delta));")
+    }
+    func search(_ query: String) {
+        searching = true
+        searchResults = []
+        evaluate("window.searchBook && window.searchBook(\(Self.js(query))); null;")
+    }
+    func display(_ result: EPUBSearchResult) {
+        evaluate("window.displaySearchResult && window.displaySearchResult(\(Self.js(result.cfi))); null;")
     }
 
     func configureNowPlaying(book: CatalogBook) {
@@ -478,6 +504,20 @@ final class EPUBReaderController: NSObject, ObservableObject, AVSpeechSynthesize
     }
 }
 
+final class BookstrReaderWebView: WKWebView {
+    override func canPerformAction(_ action: Selector, withSender sender: Any?) -> Bool {
+        false
+    }
+
+    override func buildMenu(with builder: UIMenuBuilder) {
+        super.buildMenu(with: builder)
+        builder.remove(menu: .standardEdit)
+        builder.remove(menu: .lookup)
+        builder.remove(menu: .share)
+        builder.remove(menu: .replace)
+    }
+}
+
 struct EPUBReaderView: UIViewRepresentable {
     @EnvironmentObject private var container: AppContainer
     let book: CatalogBook
@@ -502,7 +542,7 @@ struct EPUBReaderView: UIViewRepresentable {
 
         // The bundled custom-scheme page can finish before SwiftUI's first layout.
         // EPUB.js cannot complete rendition.display() against a 0x0 viewport.
-        let webView = WKWebView(frame: UIScreen.main.bounds, configuration: configuration)
+        let webView = BookstrReaderWebView(frame: UIScreen.main.bounds, configuration: configuration)
         webView.navigationDelegate = context.coordinator
         webView.scrollView.contentInsetAdjustmentBehavior = .never
         webView.scrollView.contentInset = .zero
@@ -514,10 +554,18 @@ struct EPUBReaderView: UIViewRepresentable {
         webView.accessibilityIdentifier = "epub-reader-webview"
         webView.accessibilityLabel = "EPUB reader"
         webView.allowsBackForwardNavigationGestures = false
+        webView.allowsLinkPreview = false
         let gesture = UIPanGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handlePagePan(_:)))
         gesture.cancelsTouchesInView = false
         gesture.delegate = context.coordinator
         webView.addGestureRecognizer(gesture)
+        let pinchGesture = UIPinchGestureRecognizer(
+            target: context.coordinator,
+            action: #selector(Coordinator.handleFontPinch(_:))
+        )
+        pinchGesture.cancelsTouchesInView = false
+        pinchGesture.delegate = context.coordinator
+        webView.addGestureRecognizer(pinchGesture)
         controller.webView = webView
         controller.rights = book.rights
         controller.configureNowPlaying(book: book)
@@ -546,6 +594,8 @@ struct EPUBReaderView: UIViewRepresentable {
         onRelocated: value => send('onRelocated', value),
         onReaderError: value => send('onReaderError', value),
         onWordSelected: value => send('onWordSelected', value),
+        onTextSelected: value => send('onTextSelected', value),
+        onSearchResults: value => send('onSearchResults', value),
         onDictionaryResult: value => send('onDictionaryResult', value),
         onLookupDictionary: value => send('onLookupDictionary', value),
         onKnownWordTapped: value => send('onKnownWordTapped', value),
@@ -589,6 +639,19 @@ struct EPUBReaderView: UIViewRepresentable {
                 controller.evaluate("window.endNativePageSwipe && window.endNativePageSwipe(\(direction))")
             case .cancelled, .failed:
                 controller.evaluate("window.endNativePageSwipe && window.endNativePageSwipe(0)")
+            default:
+                break
+            }
+        }
+
+        @objc func handleFontPinch(_ gesture: UIPinchGestureRecognizer) {
+            switch gesture.state {
+            case .began:
+                controller.evaluate("window.beginNativeFontPinch && window.beginNativeFontPinch()")
+            case .changed:
+                controller.evaluate("window.updateNativeFontPinch && window.updateNativeFontPinch(\(gesture.scale))")
+            case .ended, .cancelled, .failed:
+                controller.evaluate("window.endNativeFontPinch && window.endNativeFontPinch()")
             default:
                 break
             }
@@ -733,6 +796,8 @@ struct EPUBReaderView: UIViewRepresentable {
             case "onRelocated": handleRelocation(value as? String)
             case "onSections": handleSections(value as? String)
             case "onWordSelected": handleWordSelection(value as? String)
+            case "onTextSelected": handleTextSelection(value as? String)
+            case "onSearchResults": handleSearchResults(value as? String)
             case "onKnownWordTapped": requestKnownWord(value as? String)
             case "onLookupDictionary": lookupDictionary(value as? String)
             case "onDictionaryResult": saveDictionaryResult(value as? String)
@@ -782,6 +847,7 @@ struct EPUBReaderView: UIViewRepresentable {
             guard let json, let data = json.data(using: .utf8),
                   let values = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]]
             else { return }
+            controller.hasTableOfContents = values.contains { $0["hasToc"] as? Bool == true }
             controller.sections = values.compactMap { item in
                 guard let href = item["href"] as? String, !href.isEmpty else { return nil }
                 let index = item["index"] as? Int ?? 0
@@ -799,6 +865,37 @@ struct EPUBReaderView: UIViewRepresentable {
                 context: item["contextSentence"] as? String ?? ""
             )
             NotificationCenter.default.post(name: .bookstrVocabularyDidChange, object: nil)
+        }
+
+        private func handleTextSelection(_ json: String?) {
+            guard let item = object(from: json),
+                  let text = item["text"] as? String,
+                  !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            else { return }
+            controller.textSelection = ReaderTextSelection(
+                text: String(text.prefix(2_000)),
+                locator: item["cfi"] as? String ?? "",
+                language: item["language"] as? String ?? "en",
+                context: item["contextSentence"] as? String ?? ""
+            )
+        }
+
+        private func handleSearchResults(_ json: String?) {
+            defer { controller.searching = false }
+            guard let json, let data = json.data(using: .utf8),
+                  let rows = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]]
+            else {
+                controller.searchResults = []
+                return
+            }
+            controller.searchResults = rows.compactMap { row in
+                guard let cfi = row["cfi"] as? String, !cfi.isEmpty else { return nil }
+                return EPUBSearchResult(
+                    sectionIndex: row["sectionIndex"] as? Int ?? 0,
+                    cfi: cfi,
+                    excerpt: row["excerpt"] as? String ?? ""
+                )
+            }
         }
 
         private func requestKnownWord(_ json: String?) {
