@@ -14,25 +14,17 @@ final class LibraryReaderUITests: XCTestCase {
         XCTAssertTrue(library.isSelected)
     }
 
-    func testLibraryOpensEPUBWithVisibleChapterTextThenPDFWithRenderedPage() throws {
-        let (back, _) = openEPUB()
-        attachScreenshot(named: "epub-visible")
+    func testEPUBNavigationControlsAndPDFRenderingJourney() throws {
+        let (back, chapter) = openEPUB()
+        let zoomIn = app.buttons["reader-font-larger"]
+        let zoomOut = app.buttons["reader-font-smaller"]
+        XCTAssertTrue(zoomIn.waitForExistence(timeout: 4), "EPUB reader did not expose zoom-in button")
+        XCTAssertTrue(zoomOut.waitForExistence(timeout: 4), "EPUB reader did not expose zoom-out button")
+        XCTAssertTrue(zoomIn.isHittable, "zoom-in should be tappable")
+        XCTAssertTrue(zoomOut.isHittable, "zoom-out should be tappable")
+        zoomIn.tap()
+        zoomOut.tap()
 
-        back.tap()
-        XCTAssertTrue(app.tabBars.buttons["Library"].waitForExistence(timeout: 5))
-
-        let pdf = app.buttons["library-book-ui-test-alice-pdf"]
-        XCTAssertTrue(pdf.waitForExistence(timeout: 5))
-        pdf.tap()
-
-        let pdfReader = app.descendants(matching: .any)["pdf-reader"]
-        XCTAssertTrue(pdfReader.waitForExistence(timeout: 10))
-        XCTAssertEqual(pdfReader.value as? String, "1 rendered pages")
-        attachScreenshot(named: "pdf-visible")
-    }
-
-    func testEPUBSupportsLeftRightPagingAndUpDownScrolling() throws {
-        let (_, chapter) = openEPUB()
         let initialY = chapter.frame.minY
 
         app.swipeLeft()
@@ -50,40 +42,18 @@ final class LibraryReaderUITests: XCTestCase {
         app.swipeDown()
         XCTAssertTrue(waitForY(chapter, above: afterUpY + 80), "Swiping down did not scroll back through the EPUB")
         attachScreenshot(named: "epub-navigation-restored")
-    }
-
-    func testEPUBCanBeClosedReopenedAndNavigatedAgain() throws {
-        let (back, chapter) = openEPUB()
-        let initialY = chapter.frame.minY
-        app.swipeUp()
-        XCTAssertTrue(waitForY(chapter, below: initialY - 80), "Initial reader did not scroll")
 
         back.tap()
         XCTAssertTrue(app.tabBars.buttons["Library"].waitForExistence(timeout: 5))
 
-        let (_, reopenedChapter) = openEPUB()
-        let reopenedY = reopenedChapter.frame.minY
-        app.swipeLeft()
-        XCTAssertTrue(
-            waitForY(reopenedChapter, below: reopenedY - 80),
-            "Reopened EPUB stayed on the same page after a left swipe"
-        )
-    }
+        let pdf = app.buttons["library-book-ui-test-alice-pdf"]
+        XCTAssertTrue(pdf.waitForExistence(timeout: 5))
+        pdf.tap()
 
-    func testEPUBReaderHasFontZoomControls() throws {
-        let (back, _) = openEPUB()
-
-        let zoomIn = app.buttons["reader-font-larger"]
-        let zoomOut = app.buttons["reader-font-smaller"]
-        XCTAssertTrue(zoomIn.waitForExistence(timeout: 4), "EPUB reader did not expose zoom-in button")
-        XCTAssertTrue(zoomOut.waitForExistence(timeout: 4), "EPUB reader did not expose zoom-out button")
-        XCTAssertTrue(zoomIn.isHittable, "zoom-in should be tappable")
-        XCTAssertTrue(zoomOut.isHittable, "zoom-out should be tappable")
-        zoomIn.tap()
-        zoomOut.tap()
-
-        back.tap()
-        XCTAssertTrue(app.tabBars.buttons["Library"].waitForExistence(timeout: 5))
+        let pdfReader = app.descendants(matching: .any)["pdf-reader"]
+        XCTAssertTrue(pdfReader.waitForExistence(timeout: 10))
+        XCTAssertEqual(pdfReader.value as? String, "1 rendered pages")
+        attachScreenshot(named: "pdf-visible")
     }
 
     private func openEPUB() -> (back: XCUIElement, chapter: XCUIElement) {

@@ -37,7 +37,13 @@ jobs:
       - name: Run static web tests
         id: web_tests
         continue-on-error: true
-        run: node --test --test-reporter=tap web/tests/*.test.mjs scripts/*.test.mjs | tee web-tests.tap
+        run: |
+          started=$(date +%s)
+          set +e
+          node --test --test-reporter=tap web/tests/*.test.mjs scripts/*.test.mjs | tee web-tests.tap
+          status=${PIPESTATUS[0]}
+          echo "duration_ms=$((($(date +%s) - started) * 1000))" >> "$GITHUB_OUTPUT"
+          exit "$status"
       - name: Generate web test coverage
         id: web_coverage
         if: always()
@@ -62,16 +68,24 @@ jobs:
         id: web_e2e
         if: always()
         continue-on-error: true
-        run: npx playwright test --config web/playwright.config.mjs --reporter=json > web-playwright.json
+        run: |
+          started=$(date +%s)
+          set +e
+          npx playwright test --config web/playwright.config.mjs --reporter=json > web-playwright.json
+          status=$?
+          echo "duration_ms=$((($(date +%s) - started) * 1000))" >> "$GITHUB_OUTPUT"
+          exit "$status"
       - name: Record web test overview
         if: always()
         env:
           UNIT_STATUS: ${{ steps.web_tests.outcome == 'success' && steps.web_coverage.outcome == 'success' && 'passing' || 'failing' }}
           E2E_STATUS: ${{ steps.web_e2e.outcome == 'success' && 'passing' || 'failing' }}
+          UNIT_DURATION_MS: ${{ steps.web_tests.outputs.duration_ms }}
+          E2E_DURATION_MS: ${{ steps.web_e2e.outputs.duration_ms }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
-          node scripts/test-overview.mjs record --id web --suite Web --status "$UNIT_STATUS" --results-format tap --results web-tests.tap --coverage-format istanbul --coverage web/coverage/web-tests/coverage-summary.json --output test-overview/web.json --recorded "$(date -u +%FT%TZ)" --run-url "$RUN_URL" --commit "$GITHUB_SHA"
-          node scripts/test-overview.mjs record --id web-e2e --suite "Web e2e" --status "$E2E_STATUS" --results-format playwright --results web-playwright.json --output test-overview/web-e2e.json --recorded "$(date -u +%FT%TZ)" --run-url "$RUN_URL" --commit "$GITHUB_SHA"
+          node scripts/test-overview.mjs record --id web --suite Web --status "$UNIT_STATUS" --results-format tap --results web-tests.tap --coverage-format istanbul --coverage web/coverage/web-tests/coverage-summary.json --duration-ms "$UNIT_DURATION_MS" --output test-overview/web.json --recorded "$(date -u +%FT%TZ)" --run-url "$RUN_URL" --commit "$GITHUB_SHA"
+          node scripts/test-overview.mjs record --id web-e2e --suite "Web e2e" --status "$E2E_STATUS" --results-format playwright --results web-playwright.json --duration-ms "$E2E_DURATION_MS" --output test-overview/web-e2e.json --recorded "$(date -u +%FT%TZ)" --run-url "$RUN_URL" --commit "$GITHUB_SHA"
       - name: Upload web test overview
         if: always()
         uses: actions/upload-artifact@v4

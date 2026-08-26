@@ -154,6 +154,8 @@ async function record(options) {
   } else if (options['results-format'] === 'xcresult') {
     results = parseXCResult(await optionalJSON(options.results));
   }
+  const measuredDurationMs = number(options['duration-ms']);
+  if (measuredDurationMs > 0) results.durationMs = measuredDurationMs;
 
   let coverage = [];
   if (options['coverage-format'] === 'istanbul') coverage = parseIstanbul(await optionalJSON(options.coverage));

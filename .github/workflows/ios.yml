@@ -47,6 +47,8 @@ jobs:
         id: ios_tests
         continue-on-error: true
         run: |
+          started=$(date +%s)
+          set +e
           xcodebuild test \
             -project ios/BookstrIOS.xcodeproj \
             -scheme BookstrIOS \
@@ -56,6 +58,9 @@ jobs:
             -resultBundlePath ios/TestResults.xcresult \
             -skipPackagePluginValidation \
             CODE_SIGNING_ALLOWED=NO
+          status=$?
+          echo "duration_ms=$((($(date +%s) - started) * 1000))" >> "$GITHUB_OUTPUT"
+          exit "$status"
       - name: Extract iOS test results
         id: ios_results
         if: always()
@@ -67,24 +72,29 @@ jobs:
         if: always()
         env:
           TEST_STATUS: ${{ steps.ios_tests.outcome == 'success' && steps.ios_results.outcome == 'success' && 'passing' || 'failing' }}
+          TEST_DURATION_MS: ${{ steps.ios_tests.outputs.duration_ms }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           KNOWN_TESTS=$(grep -R -h -E '^[[:space:]]*func test' ios/BookstrIOS/Tests --include='*.swift' | wc -l | tr -d ' ')
-          node scripts/test-overview.mjs record --id ios --suite iOS --status "$TEST_STATUS" --results-format xcresult --results ios/test-summary.json --coverage-format xccov --coverage ios/coverage.json --known-tests "$KNOWN_TESTS" --output test-overview/ios.json --recorded "$(date -u +%FT%TZ)" --run-url "$RUN_URL" --commit "$GITHUB_SHA"
+          node scripts/test-overview.mjs record --id ios --suite iOS --status "$TEST_STATUS" --results-format xcresult --results ios/test-summary.json --coverage-format xccov --coverage ios/coverage.json --known-tests "$KNOWN_TESTS" --duration-ms "$TEST_DURATION_MS" --output test-overview/ios.json --recorded "$(date -u +%FT%TZ)" --run-url "$RUN_URL" --commit "$GITHUB_SHA"
       - name: Build and run e2e tests
         id: ios_e2e_tests
         continue-on-error: true
         run: |
+          started=$(date +%s)
+          set +e
           xcodebuild test \
             -project ios/BookstrIOS.xcodeproj \
             -scheme BookstrIOS \
             -destination 'platform=iOS Simulator,id=${{ steps.simulator.outputs.id }}' \
             -only-testing:BookstrIOSUITests \
-            -parallel-testing-enabled YES \
-            -maximum-parallel-testing-workers 2 \
+            -parallel-testing-enabled NO \
             -resultBundlePath ios/E2EResults.xcresult \
             -skipPackagePluginValidation \
             CODE_SIGNING_ALLOWED=NO
+          status=$?
+          echo "duration_ms=$((($(date +%s) - started) * 1000))" >> "$GITHUB_OUTPUT"
+          exit "$status"
       - name: Extract iOS e2e results
         id: ios_e2e_results
         if: always()
@@ -94,10 +104,11 @@ jobs:
         if: always()
         env:
           TEST_STATUS: ${{ steps.ios_e2e_tests.outcome == 'success' && steps.ios_e2e_results.outcome == 'success' && 'passing' || 'failing' }}
+          TEST_DURATION_MS: ${{ steps.ios_e2e_tests.outputs.duration_ms }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           KNOWN_TESTS=$(grep -R -h -E '^[[:space:]]*func test' ios/BookstrIOS/UITests --include='*.swift' | wc -l | tr -d ' ')
-          node scripts/test-overview.mjs record --id ios-e2e --suite "iOS e2e" --status "$TEST_STATUS" --results-format xcresult --results ios/e2e-summary.json --known-tests "$KNOWN_TESTS" --output test-overview/ios-e2e.json --recorded "$(date -u +%FT%TZ)" --run-url "$RUN_URL" --commit "$GITHUB_SHA"
+          node scripts/test-overview.mjs record --id ios-e2e --suite "iOS e2e" --status "$TEST_STATUS" --results-format xcresult --results ios/e2e-summary.json --known-tests "$KNOWN_TESTS" --duration-ms "$TEST_DURATION_MS" --output test-overview/ios-e2e.json --recorded "$(date -u +%FT%TZ)" --run-url "$RUN_URL" --commit "$GITHUB_SHA"
       - name: Upload iOS test overview
         if: always()
         uses: actions/upload-artifact@v4

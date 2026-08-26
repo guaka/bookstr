@@ -14,14 +14,9 @@ final class AppShellUITests: XCTestCase {
         XCTAssertTrue(library.isSelected)
     }
 
-    func testPrimaryTabsOpenTheirExpectedScreens() throws {
+    func testNavigationSettingsAndContinueReadingJourney() throws {
         selectTab("Search")
         selectTab("Words")
-        selectTab("Settings")
-        selectTab("Library")
-    }
-
-    func testSettingsCanSaveRelayList() throws {
         selectTab("Settings")
 
         let relays = app.textViews.firstMatch
@@ -35,9 +30,8 @@ final class AppShellUITests: XCTestCase {
         XCTAssertTrue(save.waitForExistence(timeout: 4))
         save.tap()
         XCTAssertTrue(app.staticTexts["Relays saved"].waitForExistence(timeout: 4))
-    }
 
-    func testContinueReadingOpensTheMostRecentFixture() throws {
+        selectTab("Library")
         let epub = app.buttons["library-book-ui-test-alice-epub"]
         XCTAssertTrue(epub.waitForExistence(timeout: 5))
         epub.tap()
