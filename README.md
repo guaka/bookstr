@@ -7,7 +7,10 @@
 [Read on the web](https://books.guaka.org) · [Download the Android APK](https://github.com/guaka/bookstr/releases/latest) · [View the source](https://github.com/guaka/bookstr)
 
 > [!IMPORTANT]
-> Bookstr is early-stage software and is approaching its first broadly usable release. Expect rough edges, incomplete platform parity, and occasional data-format changes. Keep copies of books you care about.
+> 1. Bookstr is early-stage software and is approaching its first broadly usable release. Expect rough edges, incomplete platform parity, and occasional data-format changes. Keep copies of books you care about.
+
+> 2. Bookstr SHOULD use established, demonstrably adopted Nostr representations for interoperable data.  Bookstr-specific events MAY provide enrichment, moderation or missing capabilities, but should not obscure canonical user-authored data or duplicate registered ecosystem formats without a documented need.
+
 
 ## Reading without the noise
 
