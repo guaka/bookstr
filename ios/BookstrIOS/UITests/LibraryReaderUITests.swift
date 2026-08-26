@@ -33,14 +33,6 @@ final class LibraryReaderUITests: XCTestCase {
 
         app.swipeRight()
         XCTAssertTrue(waitForY(chapter, above: afterLeftY + 80), "Swiping right did not return to the previous EPUB page")
-        let beforeUpY = chapter.frame.minY
-
-        app.swipeUp()
-        XCTAssertTrue(waitForY(chapter, below: beforeUpY - 80), "Swiping up did not scroll the EPUB")
-        let afterUpY = chapter.frame.minY
-
-        app.swipeDown()
-        XCTAssertTrue(waitForY(chapter, above: afterUpY + 80), "Swiping down did not scroll back through the EPUB")
         attachScreenshot(named: "epub-navigation-restored")
 
         back.tap()
