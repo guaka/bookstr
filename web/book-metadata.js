@@ -410,6 +410,7 @@
   }
 
   root.BookMetadata = {
+    metadataObject,
     isPlaceholderTitle,
     resolveTitle,
     languageForBook,

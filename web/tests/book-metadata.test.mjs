@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 
 await import('../book-metadata.js');
 const {
+  metadataObject,
   isPlaceholderTitle,
   resolveTitle,
   languageForBook,
@@ -29,6 +30,15 @@ const {
   enrichBookMetadata,
   isbnForBook,
 } = globalThis.BookMetadata;
+
+test('metadataObject parses object payloads and ignores invalid payloads', () => {
+  assert.deepEqual(metadataObject({ title: 'Book' }), { title: 'Book' });
+  assert.deepEqual(metadataObject('{"isbn":"978-0-00-000000-0","title":"Remote"}'), {
+    isbn: '978-0-00-000000-0',
+    title: 'Remote',
+  });
+  assert.deepEqual(metadataObject('{ invalid json }'), {});
+});
 
 test('normalizes and preserves the earliest favorite addition time', () => {
   assert.equal(normalizeFavoriteAddedAt(1_700_000_000_123), 1_700_000_000);
@@ -208,6 +218,11 @@ test('builds stable identities for books without MD5 hashes', () => {
     bookIdentity({ title: 'A Book', authors: 'An Author', year: 2024, language: 'pt' }),
     'title:a book:an author:2024:pt',
   );
+});
+
+test('bookIdentity preserves malformed URLs as raw identity fallbacks', () => {
+  const malformedReadUrl = '::://bad url';
+  assert.equal(bookIdentity({ readUrl: malformedReadUrl }), `url:${malformedReadUrl}`);
 });
 
 test('builds canonical Open Library work and edition links', () => {

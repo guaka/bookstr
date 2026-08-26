@@ -680,3 +680,133 @@ test('HTTP search results expose format filters and can be favorited in place', 
     localStorage.getItem('bookstr_nostr_favorites_v1') || '[]',
   )[0]?.title)).toBe('Paper Walls');
 });
+
+test('Home retries delayed NIP-07 and renders an iOS-shaped encrypted favorite', async ({ page }) => {
+  const pubkey = 'a'.repeat(64);
+  const tags = [
+    ['bookstr-collection', '2'],
+    ['bookstr-publications', '1'],
+    ['title', 'Favorites'],
+    ['book', 'bookstr', 'gutenberg:44956', '1700000000', 'https://books-api.guaka.org/api/books/44956/download'],
+    ['bookstr', 'gutenberg:44956', 'Anna Karenina', 'Leo Tolstoy', 'https://books-api.guaka.org/api/books/44956/download', 'epub', '1878'],
+  ];
+  await page.addInitScript(({ pubkey, tags }) => {
+    localStorage.setItem('bookstr_reader_settings_v1', JSON.stringify({ useNip7: true, autoReading: true, theme: 'dark' }));
+    localStorage.setItem('bookstr_nip7_pubkey_v1', JSON.stringify({ pubkey, npub: '', ts: Date.now() }));
+    let publicKeyCalls = 0;
+    window.nostr = {
+      getPublicKey() {
+        publicKeyCalls += 1;
+        if (publicKeyCalls === 1) return new Promise(resolve => setTimeout(() => resolve(pubkey), 2000));
+        return Promise.resolve(pubkey);
+      },
+      nip44: {
+        decrypt: async () => JSON.stringify(tags),
+        encrypt: async (_recipient, plaintext) => plaintext,
+      },
+      signEvent: async event => ({ ...event, id: 'signed-event', pubkey, sig: 'f'.repeat(128) }),
+    };
+    class RelaySocket extends EventTarget {
+      static CONNECTING = 0;
+      static OPEN = 1;
+      static CLOSED = 3;
+      constructor() {
+        super();
+        this.readyState = RelaySocket.CONNECTING;
+        setTimeout(() => {
+          this.readyState = RelaySocket.OPEN;
+          this.dispatchEvent(new Event('open'));
+        }, 0);
+      }
+      send(raw) {
+        const packet = JSON.parse(raw);
+        if (packet[0] !== 'REQ') return;
+        const subscription = packet[1];
+        const filter = packet[2] || {};
+        if (filter.kinds?.includes(30003) && filter['#d']?.includes('libvault-favorites')) {
+          this.dispatchEvent(new MessageEvent('message', { data: JSON.stringify(['EVENT', subscription, {
+            id: 'favorite-event', pubkey, created_at: 1700000100, kind: 30003,
+            tags: [['d', 'libvault-favorites']], content: 'encrypted-favorites', sig: 'f'.repeat(128),
+          }]) }));
+        }
+        this.dispatchEvent(new MessageEvent('message', { data: JSON.stringify(['EOSE', subscription]) }));
+      }
+      close() {
+        this.readyState = RelaySocket.CLOSED;
+        this.dispatchEvent(new Event('close'));
+      }
+    }
+    window.WebSocket = RelaySocket;
+  }, { pubkey, tags });
+
+  await page.goto('/#home');
+  await expect(page.locator('#home-reading-list')).toContainText('Anna Karenina', { timeout: 12_000 });
+  await expect(page.locator('#home-reading-list')).toContainText('Leo Tolstoy');
+  await expect(page.locator('#home-sync-state')).toContainText('Last synced');
+  await page.locator('#home-sync-refresh').click();
+  await expect(page.locator('#home-sync-state')).toContainText('Last synced');
+});
+
+test('search pagination is bookmarkable and keeps the result count stable', async ({ page }) => {
+  const books = Array.from({ length: 55 }, (_, index) => ({
+    md5: String(index + 1).padStart(32, '0'),
+    title: `Paper Result ${index + 1}`,
+    authors: [`Author ${index + 1}`],
+    language: index % 2 ? 'pt' : 'en',
+    extension: index % 2 ? 'pdf' : 'epub',
+    readUrl: `https://files.test/paper-${index + 1}.epub`,
+  }));
+  await page.route('https://books-api.guaka.org/api/search**', route => route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify({ books }),
+  }));
+
+  await page.goto('/#search=paper');
+  await expect(page.locator('#search-result-count')).toHaveText('55 results');
+  await expect(page.locator('#search-page-label')).toHaveText('Page 1 of 2 · 55 results');
+  await expect(page.locator('#results')).toContainText('Paper Result 1');
+  await expect(page.locator('#results')).not.toContainText('Paper Result 51');
+
+  await page.locator('#search-page-next').click();
+  await expect(page).toHaveURL(/#search=paper&page=2$/);
+  await expect(page.locator('#search-page-label')).toHaveText('Page 2 of 2 · 55 results');
+  await expect(page.locator('#results')).toContainText('Paper Result 51');
+  await expect(page.locator('#results')).not.toContainText('Paper Result 1');
+
+  await page.reload();
+  await expect(page.locator('#search-page-label')).toHaveText('Page 2 of 2 · 55 results');
+  await expect(page.locator('#results')).toContainText('Paper Result 55');
+});
+
+test('a search result opens its EPUB in the Bookstr reader', async ({ page }) => {
+  const md5 = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+  const downloadUrl = 'https://files.test/search-result.epub';
+  const searchResultEpub = await minimalEpub('Search Result Reader', 'Opened from the search results.');
+  await page.route('https://books-api.guaka.org/api/search**', route => route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify({ books: [{
+      md5,
+      title: 'Search Result Reader',
+      authors: ['Search Author'],
+      extension: 'epub',
+      readUrl: downloadUrl,
+    }] }),
+  }));
+  await page.route(downloadUrl, route => route.fulfill({
+    status: 200,
+    contentType: 'application/epub+zip',
+    body: searchResultEpub,
+  }));
+
+  await page.goto('/#search=reader');
+  await page.locator('a.result-title', { hasText: 'Search Result Reader' }).click();
+
+  await expect(page).toHaveURL(new RegExp(`#read=${md5}$`));
+  await expect(page.locator('#reader-frame')).toHaveAttribute('src', /reader\.html/);
+  const reader = page.frameLocator('#reader-frame');
+  await expect(reader.locator('body')).toHaveAttribute('data-location', /epubcfi\(/);
+  await expect(reader.frameLocator('#viewer iframe').first().locator('h1'))
+    .toHaveText('Search Result Reader');
+});

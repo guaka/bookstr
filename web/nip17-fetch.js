@@ -3,6 +3,7 @@ const LIBVAULT_NIP05_URL = 'https://blossom.bfr.ee/.well-known/nostr.json?name=b
 const LIBVAULT_FETCH_TYPE = 'libvault.fetch';
 const LIBVAULT_SEARCH_TYPE = 'libvault.search';
 const LIBVAULT_SEARCH_RESPONSE_TYPE = 'libvault.search.result';
+const LIBVAULT_FAVORITES_TYPE = 'libvault.favorites.sync';
 const DEFAULT_RELAY = 'wss://relay.nomadwiki.org';
 const LIBVAULT_API = 'https://lib.b.bfr.ee/api';
 const TWO_DAYS_SECONDS = 2 * 24 * 60 * 60;
@@ -98,6 +99,31 @@ export async function sendLibVaultFetchRequest(book, options = {}) {
   if (typeof publish !== 'function') throw new Error('No Nostr relay publisher is available');
   const accepted = await Promise.all(service.relays.map(relay => publish(relay, wrap)));
   if (!accepted.some(Boolean)) throw new Error('No relay accepted the private LibVault fetch request');
+  return { requestId: id, service, wrap };
+}
+
+export async function sendLibVaultFavoritesSync(favorites, options = {}) {
+  const signer = options.signer || globalThis.window?.nostr;
+  if (!signer?.getPublicKey || !signer?.signEvent || !signer?.nip44?.encrypt) {
+    throw new Error('NIP-07 with NIP-44 support is required');
+  }
+  const md5s = [...new Set((Array.isArray(favorites) ? favorites : [])
+    .map(item => String(item?.md5 || item || '').toLowerCase())
+    .filter(md5 => validHex(md5, 32)))];
+  if (md5s.length > 5000) throw new Error('Too many favorites to sync with LibVault');
+  const service = await resolveLibVaultService(options.fetchImpl || fetch);
+  const senderPubkey = String(await signer.getPublicKey()).toLowerCase();
+  if (!validHex(senderPubkey, 64)) throw new Error('The NIP-07 signer returned an invalid public key');
+  const id = requestId();
+  const tools = await (options.loadTools || (() => import('./vendor/nostr-tools.js')))();
+  const wrap = await createPrivateRequestWrap({
+    type: LIBVAULT_FAVORITES_TYPE,
+    request_id: id,
+    favorites: md5s,
+  }, id, service, senderPubkey, signer, tools);
+  if (typeof options.publish !== 'function') throw new Error('No Nostr relay publisher is available');
+  const accepted = await Promise.all(service.relays.map(relay => options.publish(relay, wrap)));
+  if (!accepted.some(Boolean)) throw new Error('No relay accepted the private favorites sync');
   return { requestId: id, service, wrap };
 }
 
@@ -396,5 +422,5 @@ export async function lookupLibVaultBlossom(md5, fetchImpl = fetch) {
 
 export {
   LIBVAULT_API, LIBVAULT_NIP05, LIBVAULT_NIP05_URL, LIBVAULT_FETCH_TYPE,
-  LIBVAULT_SEARCH_TYPE, LIBVAULT_SEARCH_RESPONSE_TYPE,
+  LIBVAULT_SEARCH_TYPE, LIBVAULT_SEARCH_RESPONSE_TYPE, LIBVAULT_FAVORITES_TYPE,
 };

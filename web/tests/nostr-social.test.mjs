@@ -143,3 +143,48 @@ test('keeps arbitrary public NIP-51 lists from followed people', () => {
     { pubkey: alice, title: 'Interesting links', kind: 30001, createdAt: 20, eventId: 'new' },
   ]);
 });
+
+test('latestFollowEvent matches pubkeys case-insensitively without mutating the event', () => {
+  const latest = latestFollowEvent([
+    { id: 'older', kind: 3, pubkey: alice.toUpperCase(), created_at: 11 },
+    { id: 'newest', kind: 3, pubkey: 'invalid', created_at: 12 },
+  ], alice);
+  assert.equal(latest.id, 'older');
+  assert.equal(latest.pubkey, alice.toUpperCase());
+});
+
+test('followsFromEvent preserves valid WebSocket relay URLs', () => {
+  const follows = followsFromEvent({ tags: [
+    ['p', alice, 'ws://relay.example'],
+    ['p', bob, 'wss://relay.example', 'Bob'],
+  ]});
+  assert.deepEqual(follows, [
+    { pubkey: alice, relay: 'ws://relay.example', petname: '' },
+    { pubkey: bob, relay: 'wss://relay.example', petname: 'Bob' },
+  ]);
+});
+
+test('publicBookLists defaults list title when title tag is missing', () => {
+  const lists = publicBookLists([
+    { id: 'only', kind: 30003, pubkey: alice, created_at: 100, tags: [['d', 'missing-title'], ['i', 'isbn:9780765382030']] },
+  ], [alice]);
+  assert.equal(lists[0].title, 'Book list');
+  assert.equal(lists[0].eventId, 'only');
+});
+
+test('latestProfiles ignores malformed json profiles and out-of-order same-timestamp events', () => {
+  assert.deepEqual(latestProfiles([
+    { id: 'high', kind: 0, pubkey: alice, created_at: 10, content: '{invalid' },
+    { id: 'tie2', kind: 0, pubkey: alice, created_at: 20, content: JSON.stringify({ name: 'Alice', picture: 'bad-uri' }) },
+    { id: 'tie1', kind: 0, pubkey: alice, created_at: 20, content: JSON.stringify({ name: 'Alice Older' }) },
+  ], [alice]).map(profile => profile.name), ['Alice']);
+});
+
+test('latestFollowEvent uses lexicographic tie-break between same-timestamp events', () => {
+  const latest = latestFollowEvent([
+    { id: 'a_lower', kind: 3, pubkey: owner, created_at: 40, tags: [] },
+    { id: 'z_upper', kind: 3, pubkey: owner, created_at: 40, tags: [] },
+    { id: 'middle', kind: 3, pubkey: owner, created_at: 39, tags: [] },
+  ], owner);
+  assert.equal(latest.id, 'z_upper');
+});

@@ -56,6 +56,17 @@ test('Home independently discovers featured and connected-user public NIP-51 rea
   assert.match(html, /void openBook\(book, \{ addToReading: false \}\)/);
 });
 
+test('cross-device favorites retain iOS metadata and expose retryable Home sync', () => {
+  assert.match(html, /id="home-sync-refresh"/);
+  assert.match(html, /id="home-sync-state"/);
+  assert.match(html, /name === 'bookstr' && tag\[1\]/);
+  assert.match(html, /entry\.title = tag\[2\]/);
+  assert.match(html, /function nextFavoritesCreatedAt\(\)/);
+  assert.match(html, /setTimeout\(\(\) => void connectNip7\(\{ silent: true, quick: false \}\), 1500\)/);
+  assert.match(html, /window\.addEventListener\('focus', scheduleFocusedNostrSync\)/);
+  assert.match(html, /Nostr library sync failed:/);
+});
+
 test('footer links to the latest released Android APK', () => {
   assert.match(html, /github\.com\/guaka\/bookstr\/releases\/latest/);
   assert.match(html, /Download the latest Bookstr Android APK/);
@@ -80,6 +91,17 @@ test('search tries private LibVault NIP-17 before the HTTP catalog fallback', ()
   assert.match(html, /limit: SEARCH_RESULT_LIMIT/);
   assert.match(html, /limit=\$\{SEARCH_RESULT_LIMIT\}/);
   assert.doesNotMatch(html, /search\?q=\$\{encodeURIComponent\(query\)\}&limit=20/);
+});
+
+test('Search offers private inside-book passage search without catalog fallback', () => {
+  assert.match(html, /<option value="content">Inside downloaded books<\/option>/);
+  assert.match(html, /searchType\.value === 'content'/);
+  assert.match(html, /renderPassageResults\(response\)/);
+  assert.match(html, /Inside-book search unavailable:/);
+  assert.match(html, /Inside-book search is unavailable\. Check the Nostr connection or try again later\./);
+  assert.match(html, /if \(searchType\.value === 'content'\) \{[\s\S]*?return;[\s\S]*?Searching privately through LibVault/);
+  assert.match(html, /PassageResults\.passageResultsMarkup\(entries\)/);
+  assert.match(html, /contentSearchBooks\.find/);
 });
 
 test('authors stay green on Home and Search even when links are globally red', () => {

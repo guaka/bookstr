@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 
 import {
   LIBVAULT_FETCH_TYPE,
+  LIBVAULT_FAVORITES_TYPE,
   LIBVAULT_NIP05,
   LIBVAULT_SEARCH_RESPONSE_TYPE,
   LIBVAULT_API,
@@ -12,6 +13,7 @@ import {
   monitorLibVaultFetch,
   resolveLibVaultService,
   sendLibVaultFetchRequest,
+  sendLibVaultFavoritesSync,
   searchLibVault,
   unwrapLibVaultResponse,
 } from '../nip17-fetch.js';
@@ -297,6 +299,26 @@ test('gift-wraps and publishes a libvault.fetch request', async () => {
   assert.ok(Number(expiration[1]) <= Math.floor(Date.now() / 1000) + 605);
 });
 
+test('gift-wraps the complete deduplicated favorites set for LibVault', async () => {
+  let rumor;
+  const signer = {
+    getPublicKey: async () => senderPubkey,
+    nip44: { encrypt: async (_recipient, plaintext) => { rumor = JSON.parse(plaintext); return 'sealed'; } },
+    signEvent: async event => ({ ...event, id: 'seal', pubkey: senderPubkey, sig: 'signed' }),
+  };
+  const tools = {
+    generateSecretKey: () => new Uint8Array(32).fill(1),
+    finalizeEvent: event => ({ ...event, id: 'wrap', pubkey: '6'.repeat(64), sig: 'wrapped' }),
+    nip44: { v2: { utils: { getConversationKey: () => new Uint8Array(32) }, encrypt: value => value } },
+  };
+  await sendLibVaultFavoritesSync([{ md5: 'a'.repeat(32) }, { md5: 'a'.repeat(32) }, { md5: 'b'.repeat(32) }], {
+    signer, fetchImpl: async () => discoveryResponse(), loadTools: async () => tools, publish: async () => true,
+  });
+  const request = JSON.parse(rumor.content);
+  assert.equal(request.type, LIBVAULT_FAVORITES_TYPE);
+  assert.deepEqual(request.favorites, ['a'.repeat(32), 'b'.repeat(32)]);
+});
+
 test('the real NIP-44 implementation lets the LibVault key unwrap the request', async () => {
   const senderSecret = nostrTools.generateSecretKey();
   const recipientSecret = nostrTools.generateSecretKey();
@@ -537,6 +559,49 @@ test('sends a private search and returns its matching response', async () => {
   assert.equal(traces[0].event.kind, 1059);
   assert.equal(traces[1].direction, 'received');
   assert.equal(traces[1].payload.books[0].title, 'Green Books');
+});
+
+test('sends content search through the existing private request shape', async () => {
+  let request;
+  const signer = {
+    getPublicKey: async () => senderPubkey,
+    nip44: {
+      encrypt: async (_recipient, plaintext) => {
+        request = JSON.parse(JSON.parse(plaintext).content);
+        return `sealed:${plaintext}`;
+      },
+      decrypt: async () => '',
+    },
+    signEvent: async event => ({ ...event, id: 'seal', pubkey: senderPubkey, sig: 'signed' }),
+  };
+  const tools = {
+    generateSecretKey: () => new Uint8Array(32).fill(1),
+    finalizeEvent: event => ({ ...event, id: 'wrap', pubkey: '6'.repeat(64), sig: 'wrapped' }),
+    nip19: { npubEncode: pubkey => `npub:${pubkey}` },
+    nip44: { v2: {
+      utils: { getConversationKey: () => new Uint8Array(32).fill(2) },
+      encrypt: plaintext => `wrapped:${plaintext}`,
+    } },
+  };
+  const response = await searchLibVault('green ideas', 'content', {
+    signer,
+    fetchImpl: async () => discoveryResponse(),
+    loadTools: async () => tools,
+    publish: async () => true,
+    listen: ({ requestID }) => ({
+      ready: Promise.resolve(),
+      result: Promise.resolve({
+        type: 'libvault.search.result', request_id: requestID, status: 'ready', total: 1,
+        hits: [{ citation: { snippet: 'A passage' }, book: null }],
+      }),
+      arm: () => {},
+      close: () => {},
+    }),
+  });
+  assert.deepEqual(request, {
+    type: 'libvault.search', request_id: request.request_id, query: 'green ideas', search_type: 'content', limit: 200,
+  });
+  assert.equal(response.hits[0].citation.snippet, 'A passage');
 });
 
 test('unwraps a signed private search response from the LibVault service', async () => {
