@@ -150,7 +150,7 @@ object Nip55 {
         if (data?.getBooleanExtra(RESULT_REJECTED, false) == true) {
             throw Nip55Exception("Favorite decryption was rejected")
         }
-        return data?.getStringExtra(RESULT)
+        return data?.getStringExtra(RESULT)?.takeIf { it.isNotBlank() }
             ?: throw Nip55Exception("No plaintext in signer response")
     }
 
@@ -159,7 +159,7 @@ object Nip55 {
         if (data?.getBooleanExtra(RESULT_REJECTED, false) == true) {
             throw Nip55Exception("Favorite encryption was rejected")
         }
-        return data?.getStringExtra(RESULT)
+        return data?.getStringExtra(RESULT)?.takeIf { it.isNotBlank() }
             ?: throw Nip55Exception("No ciphertext in signer response")
     }
 
