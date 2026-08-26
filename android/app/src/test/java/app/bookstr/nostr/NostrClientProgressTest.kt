@@ -5,6 +5,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Test
 
@@ -87,7 +88,7 @@ class NostrClientProgressTest {
     fun parseUpdatedAtFallsBackForNonnumericInput() {
         assertEquals(7_000L, NostrClient.parseUpdatedAt("""{"updatedAt":"not-a-number"}""", 7L))
         assertEquals(8_000L, NostrClient.parseUpdatedAt("""{"updatedAt":null}""", 8L))
-        assertEquals(9_000L, NostrClient.parseUpdatedAt("""{"updatedAt":"1200"}""", 9L))
+        assertEquals(1_200L, NostrClient.parseUpdatedAt("""{"updatedAt":"1200"}""", 9L))
     }
 
     @Test
@@ -112,7 +113,13 @@ class NostrClientProgressTest {
         val locator = """{"locator":{"progression":0.22,"cfi":123}}"""
         val parsed = NostrClient.parseProgressContent(locator, bookId)!!
         assertEquals(0.22, parsed.second, 1e-9)
-        assertEquals("", parsed.third)
+        assertEquals("123", parsed.third)
+    }
+
+    @Test
+    fun parseFurthestProgressionAcceptsNumericStringAndIntegerValues() {
+        assertEquals(0.7, NostrClient.parseFurthestProgression("""{"locator":{"furthestProgression":"0.7"}}""", 0.5), 1e-9)
+        assertEquals(3.0, NostrClient.parseFurthestProgression("""{"locator":{"furthestProgression":3}}""", 0.1), 1e-9)
     }
 
     @Test
@@ -198,6 +205,111 @@ class NostrClientProgressTest {
         assertFalse(bare.has("author"))
         assertEquals("Title", described.getString("title"))
         assertEquals("Author", described.getString("author"))
+    }
+
+    @Test
+    fun parseProgressContentFallsBackToZeroWhenLocatorProgressionIsInvalid() {
+        val payload = """{"locator":{"progression":"not-a-number","cfi":"epubcfi(/6/7)"},"progression":0.9}"""
+        val parsed = NostrClient.parseProgressContent(payload, bookId)!!
+
+        assertEquals(0.0, parsed.second, 1e-9)
+        assertEquals("epubcfi(/6/7)", parsed.third)
+        assertEquals(bookId, parsed.first)
+    }
+
+    @Test
+    fun progressContentStripsBlankMetadataBeforeEncoding() {
+        val content = JSONObject(
+            NostrClient.progressContent(
+                bookId,
+                0.1,
+                "cfi",
+                title = " ",
+                author = "\t",
+                updatedAt = 1,
+            ),
+        )
+
+        assertFalse(content.has("title"))
+        assertFalse(content.has("author"))
+    }
+
+    @Test
+    fun parseProgressContentPrefersLocatorObjectWhenLocatorIsEmptyObject() {
+        val payload = """{"locator":{}, "progression":"0.77", "cfi":"legacy-cfi"}"""
+        val parsed = NostrClient.parseProgressContent(payload, bookId)!!
+
+        assertEquals(bookId, parsed.first)
+        assertEquals(0.0, parsed.second, 1e-9)
+        assertEquals("", parsed.third)
+    }
+
+    @Test
+    fun parseProgressContentFallsBackToLegacyWhenLocatorIsNotObject() {
+        val payload = """{"locator":"x","progression":"0.88","cfi":"epubcfi(/6/88)"}"""
+        val parsed = NostrClient.parseProgressContent(payload, "fallback")!!
+
+        assertEquals("fallback", parsed.first)
+        assertEquals(0.88, parsed.second, 1e-9)
+        assertEquals("epubcfi(/6/88)", parsed.third)
+    }
+
+    @Test
+    fun progressContentSkipsBlankMetadataFields() {
+        val json = JSONObject(
+            NostrClient.progressContent(
+                bookId = bookId,
+                progression = 0.5,
+                cfi = "epubcfi(/6/1)",
+                title = " ",
+                author = "",
+                updatedAt = 1_700_000_000_000L,
+            )
+        )
+
+        assertFalse(json.has("title"))
+        assertFalse(json.has("author"))
+    }
+
+    @Test
+    fun parseProgressContentFallsBackToLegacyForMissingLocatorAndStringProgression() {
+        val payload = """{"progression":"0.73","cfi":"epubcfi(/6/2)","bookId":"ignored"}"""
+        val parsed = requireNotNull(NostrClient.parseProgressContent(payload, bookId))
+
+        assertEquals(bookId, parsed.first)
+        assertEquals(0.73, parsed.second, 1e-9)
+        assertEquals("epubcfi(/6/2)", parsed.third)
+    }
+
+    @Test
+    fun parseProgressContentReturnsNullForLocatorStringWithoutProgression() {
+        assertNull(NostrClient.parseProgressContent("""{"locator":"x","cfi":"epubcfi(/6/1)"}""", bookId))
+    }
+
+    @Test
+    fun parseProgressContentPrioritizesLocatorProgressionOverLegacyProgression() {
+        val payload = """{"locator":{"progression":0.21,"cfi":"locator-cfi"},"progression":0.99,"cfi":"legacy-cfi"}"""
+        val parsed = NostrClient.parseProgressContent(payload, "fallback")!!
+
+        assertEquals("fallback", parsed.first)
+        assertEquals(0.21, parsed.second, 1e-9)
+        assertEquals("locator-cfi", parsed.third)
+    }
+
+    @Test
+    fun parseProgressContentDefaultsCfiToEmptyWhenLocatorCfiMissing() {
+        val payload = """{"locator":{"progression":0.42}}"""
+        val parsed = NostrClient.parseProgressContent(payload, bookId)!!
+
+        assertEquals(bookId, parsed.first)
+        assertEquals(0.42, parsed.second, 1e-9)
+        assertEquals("", parsed.third)
+    }
+
+    @Test
+    fun parseUpdatedAtFallsBackForInvalidPayloadValues() {
+        assertEquals(7_000L, NostrClient.parseUpdatedAt("""{"updatedAt":"bad-number"}""", 7L))
+        assertEquals(1_700_000_000L, NostrClient.parseUpdatedAt("""{"updatedAt":"1700000000"}""", 8L))
     }
 
 }

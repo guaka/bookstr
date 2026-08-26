@@ -47,6 +47,25 @@ final class AppShellUITests: XCTestCase {
         XCTAssertTrue(app.navigationBars["Library"].waitForExistence(timeout: 5))
     }
 
+    func testWordsTabShowsUnavailableEmptyCopyByDefault() throws {
+        selectTab("Words", navigationTitle: "Words")
+        if app.staticTexts["Connect Nostr in Settings to sync saved words."].waitForExistence(timeout: 4) {
+            return
+        }
+        XCTAssertTrue(app.staticTexts["Words you look up while reading will appear here."].waitForExistence(timeout: 4))
+    }
+
+    func testContinueReadingShowsNoRecentBookAlert() throws {
+        let continueTab = app.tabBars.buttons["Continue reading"]
+        XCTAssertTrue(continueTab.waitForExistence(timeout: 5))
+        continueTab.tap()
+
+        let alert = app.alerts["Continue reading"]
+        XCTAssertTrue(alert.waitForExistence(timeout: 5))
+        XCTAssertTrue(alert.staticTexts["No recent book to continue."].exists)
+        alert.buttons["OK"].tap()
+    }
+
     private func selectTab(_ label: String, navigationTitle: String) {
         let tab = app.tabBars.buttons[label]
         XCTAssertTrue(tab.waitForExistence(timeout: 5), "Missing " + label + " tab")

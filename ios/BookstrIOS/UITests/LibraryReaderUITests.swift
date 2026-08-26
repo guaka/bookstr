@@ -8,6 +8,9 @@ final class LibraryReaderUITests: XCTestCase {
         app = XCUIApplication()
         app.launchArguments = ["--ui-testing-library-fixtures"]
         app.launch()
+        let libraryTab = app.tabBars.buttons["Library"]
+        XCTAssertTrue(libraryTab.waitForExistence(timeout: 8))
+        libraryTab.tap()
         XCTAssertTrue(app.navigationBars["Library"].waitForExistence(timeout: 8))
     }
 
@@ -88,19 +91,70 @@ final class LibraryReaderUITests: XCTestCase {
         )
     }
 
-    func testEPUBReaderHasFontZoomControls() throws {
+    func testReaderHeadersExposeSearchAndRemoveFontButtons() throws {
         let (back, _) = openEPUB()
 
-        let zoomIn = app.buttons["reader-font-larger"]
-        let zoomOut = app.buttons["reader-font-smaller"]
-        XCTAssertTrue(zoomIn.waitForExistence(timeout: 4), "EPUB reader did not expose zoom-in button")
-        XCTAssertTrue(zoomOut.waitForExistence(timeout: 4), "EPUB reader did not expose zoom-out button")
-        XCTAssertTrue(zoomIn.isHittable, "zoom-in should be tappable")
-        XCTAssertTrue(zoomOut.isHittable, "zoom-out should be tappable")
-        zoomIn.tap()
-        zoomOut.tap()
+        XCTAssertTrue(app.buttons["reader-search"].waitForExistence(timeout: 4))
+        XCTAssertFalse(app.buttons["reader-font-larger"].exists)
+        XCTAssertFalse(app.buttons["reader-font-smaller"].exists)
 
         back.tap()
+        XCTAssertTrue(app.navigationBars["Library"].waitForExistence(timeout: 5))
+
+        let (pdfBack, _) = openPDF()
+        XCTAssertTrue(app.buttons["reader-search"].waitForExistence(timeout: 4))
+        XCTAssertTrue(app.staticTexts["Alice PDF Fixture — Lewis Carroll · 1865"].exists)
+        pdfBack.tap()
+        XCTAssertTrue(app.navigationBars["Library"].waitForExistence(timeout: 5))
+    }
+
+    func testEPUBSearchFindsAndOpensAResult() throws {
+        _ = openEPUB()
+        app.buttons["reader-search"].tap()
+        let query = app.textFields["reader-search-query"]
+        XCTAssertTrue(query.waitForExistence(timeout: 4))
+        query.tap()
+        query.typeText("final page marker")
+        app.buttons["reader-search-submit"].tap()
+
+        let result = app.buttons.matching(
+            NSPredicate(format: "identifier BEGINSWITH %@", "reader-search-result-epub-")
+        ).firstMatch
+        XCTAssertTrue(result.waitForExistence(timeout: 12), "EPUB search returned no result")
+        result.tap()
+        XCTAssertFalse(query.exists)
+        XCTAssertTrue(app.staticTexts.matching(
+            NSPredicate(format: "label CONTAINS[c] %@", "final page marker")
+        ).firstMatch.waitForExistence(timeout: 8))
+    }
+
+    func testPDFSearchFindsAndOpensAResult() throws {
+        _ = openPDF()
+        app.buttons["reader-search"].tap()
+        let query = app.textFields["reader-search-query"]
+        XCTAssertTrue(query.waitForExistence(timeout: 4))
+        query.tap()
+        query.typeText("Wonderland")
+        app.buttons["reader-search-submit"].tap()
+
+        let result = app.buttons["reader-search-result-pdf-0"]
+        XCTAssertTrue(result.waitForExistence(timeout: 8), "PDF search returned no result")
+        result.tap()
+        XCTAssertFalse(query.exists)
+        XCTAssertTrue(app.descendants(matching: .any)["pdf-reader"].exists)
+    }
+
+    func testPDFCanBeClosedAndReopened() throws {
+        let (pdfBack, pdfReader) = openPDF()
+        XCTAssertTrue(pdfReader.waitForExistence(timeout: 8), "Opened PDF did not expose rendered content")
+        XCTAssertEqual(pdfReader.value as? String, "1 rendered pages")
+
+        pdfBack.tap()
+        XCTAssertTrue(app.navigationBars["Library"].waitForExistence(timeout: 5))
+
+        let (secondPdfBack, secondPdfReader) = openPDF()
+        XCTAssertTrue(secondPdfReader.waitForExistence(timeout: 8))
+        secondPdfBack.tap()
         XCTAssertTrue(app.navigationBars["Library"].waitForExistence(timeout: 5))
     }
 
@@ -116,6 +170,18 @@ final class LibraryReaderUITests: XCTestCase {
         ).firstMatch
         XCTAssertTrue(chapter.waitForExistence(timeout: 12), "EPUB opened but did not expose visible chapter text")
         return (back, chapter)
+    }
+
+    private func openPDF() -> (back: XCUIElement, reader: XCUIElement) {
+        let pdf = app.buttons["library-book-ui-test-alice-pdf"]
+        XCTAssertTrue(pdf.waitForExistence(timeout: 5))
+        pdf.tap()
+
+        let back = app.buttons["reader-back"]
+        XCTAssertTrue(back.waitForExistence(timeout: 10), "PDF reader was not presented")
+        let reader = app.descendants(matching: .any)["pdf-reader"]
+        XCTAssertTrue(reader.waitForExistence(timeout: 10), "PDF rendered view did not appear")
+        return (back, reader)
     }
 
     private func waitForY(_ element: XCUIElement, below maximum: CGFloat) -> Bool {

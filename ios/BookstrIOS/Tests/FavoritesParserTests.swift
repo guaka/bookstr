@@ -2310,6 +2310,59 @@ final class FavoritesParserTests: XCTestCase {
         XCTAssertEqual(collection?.items.count, 1)
     }
 
+    func testParseCollectionRejectsInvalidCollectionId() {
+        let collection = FavoritesParser.parseCollection(
+            """
+            [
+              ["book", "libvault", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "1700000010"]
+            ]
+            """,
+            id: "not-a-collection-id",
+            fallbackTitle: "Fallback name",
+            fallbackUpdatedAt: 1_700_000_000,
+        )
+
+        XCTAssertNil(collection)
+    }
+
+    func testMatchSharedFavoritesMatchesByBlossomSha256() {
+        let sha = String(repeating: "a", count: 64)
+        let result = FavoritesParser.matchSharedFavorites(
+            refs: [
+                SharedFavoriteRef(
+                    libvaultMd5: nil,
+                    isbn: nil,
+                    url: nil,
+                    title: "Remote favorite",
+                    author: "Archive",
+                    year: nil,
+                    format: nil,
+                    blossomSha256: sha,
+                    blossomUrl: nil,
+                    addedAt: 1_700_000_000
+                )
+            ],
+            books: [
+                CatalogBook(
+                    id: "local-book",
+                    title: "Local title",
+                    author: "Reader",
+                    epubUrl: "https://example.org/local.epub",
+                    coverUrl: nil,
+                    sourceUrl: nil,
+                    isbn: nil,
+                    libvaultMd5: nil,
+                    format: .epub,
+                    blossomSha256: sha,
+                    year: "2025"
+                )
+            ]
+        )
+
+        XCTAssertEqual(result.bookIds, Set(["local-book"]))
+        XCTAssertTrue(result.external.isEmpty)
+    }
+
     func testCollectionIndexTagsIncludesTombstonesAndDescription() {
         let snapshot = CollectionSnapshot(
             collections: [

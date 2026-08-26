@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="app.bookstr">
+
+    <application>
+        <provider
+            android:name=".nostr.FakeNip55ContentProvider"
+            android:authorities="test.nostr.signer.SIGN_EVENT;test.nostr.signer.NIP44_DECRYPT;test.nostr.signer.NIP44_ENCRYPT"
+            android:exported="false" />
+    </application>
+</manifest>

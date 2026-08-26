@@ -249,4 +249,17 @@ class CatalogRepositorySearchEdgeCoverageTest {
         assertEquals("archive", results[0].source)
         assertEquals(BookFormat.Epub, results[0].format)
     }
+
+    @Test
+    fun parseSearchResponseDefaultsSourceToAllBooksWhenSourceIsMissingAndUsesNumericNativeId() {
+        val results = CatalogRepository.parseSearchResponse(
+            """{"results":[
+              {"id":null,"source_native_id":9876,"title":"Numeric native fallback","format":"epub","url":"https://example.org/book.epub"}
+            ]}""",
+        )
+
+        assertEquals(1, results.size)
+        assertEquals("all.books.party:9876", results[0].id)
+        assertEquals(BookFormat.Epub, results[0].format)
+    }
 }

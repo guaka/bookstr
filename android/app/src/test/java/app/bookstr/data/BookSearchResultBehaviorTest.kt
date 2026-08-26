@@ -119,9 +119,36 @@ class BookSearchResultBehaviorTest {
     }
 
     @Test
+    fun asCatalogBookPreservesCoverAndFormatFields() {
+        val result = BookSearchResult(
+            id = "all.books.party:cover",
+            source = "all.books.party",
+            title = "Readable",
+            author = "Test",
+            downloadUrl = "https://example.org/cover.jpg",
+            coverUrl = "https://example.org/cover.png",
+            format = BookFormat.Pdf,
+        )
+
+        val catalogBook = result.asCatalogBook()!!
+
+        assertEquals(BookFormat.Pdf, catalogBook.format)
+        assertEquals("https://example.org/cover.png", catalogBook.coverUrl)
+        assertEquals("Readable", catalogBook.title)
+    }
+
+    @Test
     fun bookFormatFromMixedCaseValueIsNormalized() {
         assertEquals(BookFormat.Pdf, BookFormat.from("Pdf", "https://example.org/file.txt"))
         assertEquals(BookFormat.Epub, BookFormat.from(" ePuB ", "https://example.org/file.txt"))
+    }
+
+    @Test
+    fun bookFormatFromUnknownValueFallsBackToPdfWhenUrlContainsPdfInFragment() {
+        assertEquals(
+            BookFormat.Pdf,
+            BookFormat.from("mobi", "https://example.org/library/notes.PDF#chapter=1&download=story.epub"),
+        )
     }
 
     @Test
@@ -136,6 +163,26 @@ class BookSearchResultBehaviorTest {
         )
 
         assertNull(result.asCatalogBook())
+    }
+
+    @Test
+    fun bookFormatFromUnknownValueDoesNotTreatPdfMentionOutsidePathAsPdfHint() {
+        assertEquals(
+            BookFormat.Epub,
+            BookFormat.from("mobi", "https://example.org/library/notes?download=book.PDF&source=opds"),
+        )
+    }
+
+    @Test
+    fun bookFormatFromExplicitValueCanBeTrimmedAndLowercasedFromWhitespace() {
+        assertEquals(
+            BookFormat.Epub,
+            BookFormat.from(" EPUB ", "https://example.org/library/notes.bin"),
+        )
+        assertEquals(
+            BookFormat.Pdf,
+            BookFormat.from(" pdf ", "https://example.org/library/notes.bin"),
+        )
     }
 
     @Test
@@ -158,6 +205,100 @@ class BookSearchResultBehaviorTest {
         )
 
         assertEquals(true, readable.isReadable)
+        assertEquals(false, unread.isReadable)
+    }
+
+    @Test
+    fun isReadableFalseWhenFormatIsNull() {
+        val unread = BookSearchResult(
+            id = "all.books.party:6",
+            source = "all.books.party",
+            title = "No format",
+            author = "Test",
+            downloadUrl = "https://example.org/book.epub",
+            format = null,
+        )
+
+        assertEquals(false, unread.isReadable)
+    }
+
+    @Test
+    fun asCatalogBookPreservesQueryAndFragmentInUrl() {
+        val result = BookSearchResult(
+            id = "all.books.party:7",
+            source = "all.books.party",
+            title = "Readable",
+            author = "Test",
+            downloadUrl = "https://example.org/book.epub?download=1#section",
+            format = BookFormat.Pdf,
+            coverUrl = "https://example.org/cover.png",
+        )
+        val catalogBook = result.asCatalogBook()!!
+
+        assertEquals("Readable", catalogBook.title)
+        assertEquals("https://example.org/book.epub?download=1#section", catalogBook.epubUrl)
+        assertEquals("https://example.org/book.epub?download=1#section", catalogBook.sourceUrl)
+        assertEquals("https://example.org/cover.png", catalogBook.coverUrl)
+        assertEquals("Test", catalogBook.author)
+        assertEquals("all.books.party:7", catalogBook.id)
+    }
+
+    @Test
+    fun bookFormatFromUrlWithPdfInQueryAndExplicitEpubStillUsesExplicitValue() {
+        assertEquals(
+            BookFormat.Epub,
+            BookFormat.from(" epub ", "https://example.org/library/notes.PDF?download=story.pdf"),
+        )
+    }
+
+    @Test
+    fun bookFormatFromNullFormatDefaultsToEpubWhenPathDoesNotLookLikePdf() {
+        assertEquals(
+            BookFormat.Epub,
+            BookFormat.from(null, "https://example.org/library/notes?download=story.PDF"),
+        )
+    }
+    @Test
+    fun bookFormatFromUnknownValueIgnoresPdfHintInQueryAndFragment() {
+        assertEquals(
+            BookFormat.Epub,
+            BookFormat.from(
+                "mobi",
+                "https://example.org/library/notes?download=story.pdf#download=file.epub",
+            ),
+        )
+    }
+
+    @Test
+    fun asCatalogBookPreservesYearAndCoverUrl() {
+        val result = BookSearchResult(
+            id = "all.books.party:8",
+            source = "all.books.party",
+            title = "Readable",
+            author = "Test",
+            year = "2026",
+            downloadUrl = "https://example.org/book.epub",
+            format = BookFormat.Epub,
+            coverUrl = "https://example.org/cover.jpg",
+        )
+        val catalogBook = result.asCatalogBook()!!
+
+        assertEquals("2026", catalogBook.year)
+        assertEquals("https://example.org/cover.jpg", catalogBook.coverUrl)
+        assertEquals("Readable", catalogBook.title)
+    }
+
+    @Test
+    fun isReadableFalseWhenUrlIsOnlyWhitespace() {
+        val unread = BookSearchResult(
+            id = "all.books.party:9",
+            source = "all.books.party",
+            title = "Whitespace",
+            author = "Test",
+            downloadUrl = " \n\t",
+            format = BookFormat.Pdf,
+        )
+
         assertEquals(false, unread.isReadable)
     }
 }
