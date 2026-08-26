@@ -186,7 +186,8 @@ final class NostrClient {
 
     private func queryEvents(relayURL: String, subscriptionId: String, filter: [String: Any]) async -> RelayQueryReport {
         let started = Date()
-        guard let socketURL = URL(string: relayURL) else {
+        guard let socketURL = URL(string: relayURL),
+              ["ws", "wss"].contains(socketURL.scheme?.lowercased() ?? "") else {
             return RelayQueryReport(relay: relayURL, events: [], finished: "bad-url", elapsedMs: 0, notices: [], error: "invalid URL")
         }
         let socket = Self.relaySession.webSocketTask(with: socketURL)
@@ -286,7 +287,8 @@ final class NostrClient {
     }
 
     private func sendEventOnce(_ event: NostrEvent, relayURL: String) async -> Bool {
-        guard let socketURL = URL(string: relayURL) else { return false }
+        guard let socketURL = URL(string: relayURL),
+              ["ws", "wss"].contains(socketURL.scheme?.lowercased() ?? "") else { return false }
         let task = Self.relaySession.webSocketTask(with: socketURL)
         task.resume()
         defer { Self.close(task) }
