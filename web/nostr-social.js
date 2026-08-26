@@ -87,7 +87,7 @@
     return {
       address: `${name}@${domain}`,
       name,
-      url: `https://${domain}/.well-known/nostr.json?name=${encodeURIComponent(name)}`,
+      url: `https://${domain === 'trustroots.org' ? 'www.trustroots.org' : domain}/.well-known/nostr.json?name=${encodeURIComponent(name)}`,
     };
   }
 
@@ -97,6 +97,18 @@
     const names = Object.entries(document.names);
     const match = names.find(([candidate]) => String(candidate).toLowerCase() === String(name).toLowerCase());
     return normalizedPubkey(match?.[1]) === expected;
+  }
+
+  function nip42AuthTemplate(relay, challenge, createdAt = Math.floor(Date.now() / 1000)) {
+    return {
+      kind: 22242,
+      created_at: Number(createdAt),
+      tags: [
+        ['relay', String(relay || '')],
+        ['challenge', String(challenge || '')],
+      ],
+      content: '',
+    };
   }
 
   function hasPublicBookReference(tags) {
@@ -146,6 +158,7 @@
     latestProfiles,
     nip05Parts,
     nip05Matches,
+    nip42AuthTemplate,
     hasPublicBookReference,
     publicBookLists,
   };

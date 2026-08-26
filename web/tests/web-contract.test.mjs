@@ -22,6 +22,13 @@ test('People loads the connected user follow list and public book lists', () => 
   assert.match(html, /hintedAuthorsByRelay\.get\(follow\.relay\)/);
   assert.match(html, /NostrSocial\.nip05Matches\(document, parts\.name, profile\.pubkey\)/);
   assert.match(html, /profile\?\.verifiedNip05/);
+  assert.match(html, /const NOSTR_SOCIAL_RELAYS = \['wss:\/\/relay\.trustroots\.org'\]/);
+  assert.match(html, /const NOSTR_TRUSTROOTS_PROFILE_RELAY = 'wss:\/\/nip42\.trustroots\.org'/);
+  assert.match(html, /NostrSocial\.nip42AuthTemplate\(relayUrl, id\)/);
+  assert.match(html, /socket\.send\(JSON\.stringify\(\['AUTH', signed\]\)\)/);
+  assert.match(html, /socket\.send\(JSON\.stringify\(\['AUTH', signed\]\)\);[\s\S]*?authenticatedRequestSent = true;[\s\S]*?sendRequest\(\)/);
+  assert.match(html, /readRelayEvents\(NOSTR_TRUSTROOTS_PROFILE_RELAY,[\s\S]*?kinds: \[0\],[\s\S]*?\{ authenticate: true \}/);
+  assert.match(html, /new Set\(\[\.\.\.NOSTR_RELAYS, \.\.\.NOSTR_SOCIAL_RELAYS\]\)/);
   assert.match(html, /tools\.verifyEvent\(event\)/);
   assert.match(html, /setHashRoute\('people'\)/);
 });
@@ -29,6 +36,19 @@ test('People loads the connected user follow list and public book lists', () => 
 test('served web app remains React- and bundle-free', () => {
   assert.doesNotMatch(html, /react(?:-dom)?(?:\.production)?/i);
   assert.doesNotMatch(html, /node_modules|bookstr-dist/i);
+});
+
+test('cross-device favorites retain iOS metadata and expose retryable Home sync', async () => {
+  const agents = await readFile(new URL('../../AGENTS.md', import.meta.url), 'utf8');
+  assert.match(agents, /All new and changed executable lines must be covered by automated tests/);
+  assert.match(html, /id="home-sync-refresh"/);
+  assert.match(html, /id="home-sync-state"/);
+  assert.match(html, /name === 'bookstr' && tag\[1\]/);
+  assert.match(html, /entry\.title = tag\[2\]/);
+  assert.match(html, /function nextFavoritesCreatedAt\(\)/);
+  assert.match(html, /setTimeout\(\(\) => void connectNip7\(\{ silent: true, quick: false \}\), 1500\)/);
+  assert.match(html, /window\.addEventListener\('focus', scheduleFocusedNostrSync\)/);
+  assert.match(html, /Nostr library sync failed:/);
 });
 
 test('footer links to the latest released Android APK', () => {
@@ -55,6 +75,17 @@ test('search tries private LibVault NIP-17 before the HTTP catalog fallback', ()
   assert.match(html, /limit: SEARCH_RESULT_LIMIT/);
   assert.match(html, /limit=\$\{SEARCH_RESULT_LIMIT\}/);
   assert.doesNotMatch(html, /search\?q=\$\{encodeURIComponent\(query\)\}&limit=20/);
+});
+
+test('Search offers private inside-book passage search without catalog fallback', () => {
+  assert.match(html, /<option value="content">Inside downloaded books<\/option>/);
+  assert.match(html, /searchType\.value === 'content'/);
+  assert.match(html, /renderPassageResults\(response\)/);
+  assert.match(html, /Inside-book search unavailable:/);
+  assert.match(html, /Inside-book search is unavailable\. Check the Nostr connection or try again later\./);
+  assert.match(html, /if \(searchType\.value === 'content'\) \{[\s\S]*?return;[\s\S]*?Searching privately through LibVault/);
+  assert.match(html, /PassageResults\.passageResultsMarkup\(entries\)/);
+  assert.match(html, /contentSearchBooks\.find/);
 });
 
 test('authors stay green on Home and Search even when links are globally red', () => {
@@ -254,6 +285,11 @@ test('Home retries LibVault books that are still publishing to Blossom', () => {
   assert.match(html, /if \(blossom\?\.status === 'publishing'\) \{[\s\S]*?publishing \+= 1/);
   assert.match(html, /favoriteBlossomRefreshRetryTimer = setTimeout/);
   assert.match(html, /}, 5000\)/);
+});
+
+test('reader recovers legacy LibVault lookup URLs to the canonical Blossom server', () => {
+  assert.match(html, /candidate\.hostname\.toLowerCase\(\) === 'blossom\.bfr\.ee'/);
+  assert.match(html, /blossomUrl \|\|= `https:\/\/blossom\.bfr\.ee\/\$\{sha256\}`/);
 });
 
 test('EPUBs use persistent IndexedDB caching', () => {

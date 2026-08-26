@@ -8,6 +8,7 @@ const {
   latestProfiles,
   nip05Parts,
   nip05Matches,
+  nip42AuthTemplate,
   hasPublicBookReference,
   publicBookLists,
 } = globalThis.NostrSocial;
@@ -58,9 +59,26 @@ test('builds NIP-05 lookup URLs and verifies the returned pubkey', () => {
     name: 'alice',
     url: 'https://example.com/.well-known/nostr.json?name=alice',
   });
+  assert.deepEqual(nip05Parts('Alice@trustroots.org'), {
+    address: 'alice@trustroots.org',
+    name: 'alice',
+    url: 'https://www.trustroots.org/.well-known/nostr.json?name=alice',
+  });
   assert.equal(nip05Parts('not-an-address'), null);
   assert.equal(nip05Matches({ names: { ALICE: alice.toUpperCase() } }, 'alice', alice), true);
   assert.equal(nip05Matches({ names: { alice: bob } }, 'alice', alice), false);
+});
+
+test('builds a NIP-42 authentication event for the challenged relay', () => {
+  assert.deepEqual(nip42AuthTemplate('wss://nip42.trustroots.org', 'challenge-value', 123), {
+    kind: 22242,
+    created_at: 123,
+    tags: [
+      ['relay', 'wss://nip42.trustroots.org'],
+      ['challenge', 'challenge-value'],
+    ],
+    content: '',
+  });
 });
 
 test('recognizes public book references without treating generic bookmarks as books', () => {
@@ -77,4 +95,46 @@ test('keeps the newest public book list per author and address', () => {
     { id: 'other', kind: 30003, pubkey: bob, created_at: 30, tags: [['d', 'articles'], ['e', 'f'.repeat(64)]] },
   ], [alice, bob]);
   assert.deepEqual(lists, [{ pubkey: alice, title: 'Reading', createdAt: 20, eventId: 'new' }]);
+});
+
+test('latestFollowEvent returns null when followed pubkey is missing or lowercase normalization is needed', () => {
+  const latest = latestFollowEvent([
+    { id: 'older', kind: 3, pubkey: alice.toUpperCase(), created_at: 11, id: 'older' },
+    { id: 'newest', kind: 3, pubkey: 'invalid', created_at: 12 },
+  ], alice);
+  assert.equal(latest.id, 'older');
+  assert.equal(latest.pubkey, alice);
+});
+
+test('followsFromEvent preserves only valid pubkeys and valid relay URLs', () => {
+  const follows = followsFromEvent({ tags: [
+    ['p', alice, 'ws://relay.example'], // invalid scheme should be dropped
+    ['p', bob, 'wss://relay.example', 'Bob'],
+  ]});
+  assert.deepEqual(follows, [{ pubkey: bob, relay: 'wss://relay.example', petname: 'Bob' }]);
+});
+
+test('publicBookLists defaults list title when title tag is missing', () => {
+  const lists = publicBookLists([
+    { id: 'only', kind: 30003, pubkey: alice, created_at: 100, tags: [['d', 'missing-title'], ['i', 'isbn:9780765382030']] },
+  ], [alice]);
+  assert.equal(lists[0].title, 'Book list');
+  assert.equal(lists[0].eventId, 'only');
+});
+
+test('latestProfiles ignores malformed json profiles and out-of-order same-timestamp events', () => {
+  assert.deepEqual(latestProfiles([
+    { id: 'high', kind: 0, pubkey: alice, created_at: 10, content: '{invalid' },
+    { id: 'tie2', kind: 0, pubkey: alice, created_at: 20, content: JSON.stringify({ name: 'Alice', picture: 'bad-uri' }) },
+    { id: 'tie1', kind: 0, pubkey: alice, created_at: 20, content: JSON.stringify({ name: 'Alice Older' }) },
+  ], [alice]).map(profile => profile.name), ['Alice']);
+});
+
+test('latestFollowEvent uses lexicographic tie-break between same-timestamp events', () => {
+  const latest = latestFollowEvent([
+    { id: 'a_lower', kind: 3, pubkey: owner, created_at: 40, tags: [] },
+    { id: 'z_upper', kind: 3, pubkey: owner, created_at: 40, tags: [] },
+    { id: 'middle', kind: 3, pubkey: owner, created_at: 39, tags: [] },
+  ], owner);
+  assert.equal(latest.id, 'z_upper');
 });

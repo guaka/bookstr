@@ -287,6 +287,30 @@
         gap: 0.8rem;
         align-items: center;
       }
+      .home-sync {
+        display: flex;
+        justify-content: flex-end;
+        align-items: center;
+        gap: 0.45rem;
+        min-height: 1.8rem;
+      }
+      .home-sync button {
+        width: 1.75rem;
+        height: 1.75rem;
+        padding: 0.28rem;
+        border-radius: 50%;
+      }
+      .home-sync button svg {
+        width: 100%;
+        height: 100%;
+        fill: none;
+        stroke: currentColor;
+        stroke-width: 1.8;
+      }
+      .home-sync-state {
+        color: var(--note-text, #666);
+        font-size: 0.75rem;
+      }
       .row {
         display: grid;
         grid-template-columns: minmax(0, 1fr) auto;
@@ -307,6 +331,40 @@
       .results {
         display: grid;
         gap: 0;
+      }
+      .passage-result {
+        padding: 1rem 0.15rem;
+        border-bottom: 1px solid var(--card-border, #ddd);
+      }
+      .passage-result-heading h3,
+      .passage-result-heading p,
+      .passage-heading-path,
+      .passage-provenance {
+        margin: 0;
+      }
+      .passage-book-title {
+        border: 0;
+        padding: 0;
+        background: transparent;
+        color: var(--reading-progress);
+        font: inherit;
+        font-weight: 750;
+        text-align: left;
+      }
+      .passage-result-heading p,
+      .passage-heading-path,
+      .passage-provenance {
+        color: var(--note-text, #666);
+        font-size: 0.86rem;
+      }
+      .passage-heading-path {
+        margin-top: 0.65rem;
+      }
+      .passage-result blockquote {
+        margin: 0.5rem 0;
+        padding-left: 0.85rem;
+        border-left: 3px solid var(--reading-progress);
+        line-height: 1.55;
       }
       #status {
         position: fixed;
@@ -374,6 +432,13 @@
       }
       .book-table-row:hover {
         background: color-mix(in srgb, var(--reading-progress) 8%, transparent);
+      }
+      body.theme-dark .book-table-row,
+      body.theme-dark .home-book-row,
+      body.theme-dark .word-row,
+      body.theme-dark .passage-result {
+        background: #2a2c2b;
+        border-color: #555a57;
       }
       .result-main {
         min-width: 0;
@@ -1415,6 +1480,10 @@
             </label>
           </div>
         </form>
+        <div class="home-sync">
+          <span id="home-sync-state" class="home-sync-state" role="status" aria-live="polite">Not synced yet</span>
+          <button id="home-sync-refresh" type="button" aria-label="Refresh Nostr library" title="Refresh Nostr library"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 6v5h-5"/><path d="M19 11a8 8 0 1 0 1 4"/></svg></button>
+        </div>
         <div class="home-grid">
           <div class="home-column">
             <h3>Currently reading</h3>
@@ -1441,6 +1510,7 @@
             <option value="author">Author</option>
             <option value="isbn">ISBN</option>
             <option value="publisher">Publisher</option>
+            <option value="content">Inside downloaded books</option>
           </select>
           <div id="search-result-filters" class="search-result-filters hidden" aria-label="Filter search results">
             <label id="search-language-filter-wrap" class="search-result-filter hidden">
@@ -1571,6 +1641,7 @@
     </main>
 
     <script src="book-metadata.js"></script>
+    <script src="passage-results.js"></script>
     <script src="nostr-social.js"></script>
     <script src="vendor/sql-wasm.js"></script>
     <script>
@@ -1580,7 +1651,10 @@
       const WORDS_SORT_KEY = 'bookstr_words_sort_v1';
       const SETTINGS_KEY = 'bookstr_reader_settings_v1';
       const NIP7_STATUS_KEY = 'bookstr_nip7_pubkey_v1';
+      const NOSTR_FAVORITES_PUBLISH_TIME_KEY = 'bookstr_nostr_favorites_publish_time_v1';
       const NOSTR_RELAYS = ['wss://relay.nomadwiki.org'];
+      const NOSTR_SOCIAL_RELAYS = ['wss://relay.trustroots.org'];
+      const NOSTR_TRUSTROOTS_PROFILE_RELAY = 'wss://nip42.trustroots.org';
       const NOSTR_FAVORITES_KIND = 30003;
       const NOSTR_FOLLOW_KIND = 3;
       const NOSTR_PROGRESS_KIND = 30078;
@@ -1610,6 +1684,7 @@
         tr: 'Turkish', zh: 'Chinese'
       };
       const NOSTR_QUERY_TIMEOUT_MS = 5000;
+      const NOSTR_AUTH_QUERY_TIMEOUT_MS = 30000;
       const NOSTR_SEARCH_READY_TIMEOUT_MS = 8000;
       const NOSTR_SEARCH_RESPONSE_TIMEOUT_MS = 20000;
       const SEARCH_RESULT_LIMIT = 200;
@@ -1637,6 +1712,8 @@
       const homeLanguageFilter = document.getElementById('home-language-filter');
       const homeFormatFilterWrap = document.getElementById('home-format-filter-wrap');
       const homeFormatFilter = document.getElementById('home-format-filter');
+      const homeSyncState = document.getElementById('home-sync-state');
+      const homeSyncRefresh = document.getElementById('home-sync-refresh');
       homeQueryInput.placeholder = 'Filter here · press Enter to search all books';
       const homeReadingList = document.getElementById('home-reading-list');
       const homeFavoritesList = document.getElementById('home-favorites-list');
@@ -1737,6 +1814,7 @@
       };
 
       let searchResultBooks = [];
+      let contentSearchBooks = [];
       const searchResultSort = { key: '', direction: 'asc' };
       const searchResultFilter = { language: '', format: '' };
       let searchResultPage = 1;
@@ -1936,11 +2014,23 @@
         return `x${Math.abs(hash).toString(16).padStart(8, '0')}`;
       }
 
-      function readRelayEvents(relayUrl, filters) {
+      function readRelayEvents(relayUrl, filters, { authenticate = false } = {}) {
         return new Promise((resolve) => {
           const events = [];
           let socket;
+          let settled = false;
+          let authEventId = '';
+          let authInFlight = false;
+          let authenticatedRequestSent = false;
+          const subscription = makeSubId('bookstr-sync');
+          const sendRequest = () => {
+            if (socket?.readyState !== WebSocket.OPEN) return;
+            socket.send(JSON.stringify(['REQ', subscription, filters]));
+          };
           const done = (next) => {
+            if (settled) return;
+            settled = true;
+            clearTimeout(timer);
             try {
               if (socket?.readyState === WebSocket.OPEN) {
                 socket.send(JSON.stringify(['CLOSE', subscription]));
@@ -1956,9 +2046,11 @@
             resolve(next);
           };
 
-          const subscription = makeSubId('bookstr-sync');
-          const timer = setTimeout(() => done(events), NOSTR_QUERY_TIMEOUT_MS);
-          const onMessage = (event) => {
+          const timer = setTimeout(
+            () => done(events),
+            authenticate ? NOSTR_AUTH_QUERY_TIMEOUT_MS : NOSTR_QUERY_TIMEOUT_MS
+          );
+          const onMessage = async (event) => {
             try {
               const packet = JSON.parse(event.data);
               if (!Array.isArray(packet) || packet.length < 2) {
@@ -1966,12 +2058,42 @@
               }
               const type = packet[0];
               const id = packet[1];
+              if (type === 'AUTH' && authenticate && !authInFlight) {
+                if (!window.nostr?.signEvent || !String(id || '')) {
+                  done(events);
+                  return;
+                }
+                authInFlight = true;
+                try {
+                  const signed = await window.nostr.signEvent(
+                    NostrSocial.nip42AuthTemplate(relayUrl, id)
+                  );
+                  authEventId = String(signed?.id || '');
+                  if (!authEventId || socket?.readyState !== WebSocket.OPEN) {
+                    done(events);
+                    return;
+                  }
+                  socket.send(JSON.stringify(['AUTH', signed]));
+                  authenticatedRequestSent = true;
+                  sendRequest();
+                } catch {
+                  done(events);
+                }
+                return;
+              }
+              if (type === 'OK' && authenticate && id === authEventId) {
+                if (packet[2] !== true) {
+                  done(events);
+                }
+                return;
+              }
               if (type === 'EVENT' && id === subscription && packet[2]?.pubkey) {
                 const payload = packet[2];
                 events.push(payload);
                 return;
               }
               if (type === 'EOSE' && id === subscription) {
+                if (authenticate && !authenticatedRequestSent) return;
                 clearTimeout(timer);
                 done(events);
               }
@@ -1983,20 +2105,17 @@
           try {
             socket = new WebSocket(relayUrl);
             socket.addEventListener('open', () => {
-              socket.send(JSON.stringify(['REQ', subscription, filters]));
+              sendRequest();
             });
             socket.addEventListener('message', onMessage);
             socket.addEventListener('error', () => {
-              clearTimeout(timer);
               done(events);
             });
             socket.addEventListener('close', () => {
-              clearTimeout(timer);
-              resolve(events);
+              done(events);
             });
           } catch {
-            clearTimeout(timer);
-            resolve([]);
+            done([]);
           }
         });
       }
@@ -2040,11 +2159,24 @@
         for (let index = 0; index < pubkeys.length; index += 50) {
           batches.push(pubkeys.slice(index, index + 50));
         }
-        const responses = await Promise.all(batches.flatMap(authors => NOSTR_RELAYS.map(relay => readRelayEvents(relay, {
+        const socialRelays = Array.from(new Set([...NOSTR_RELAYS, ...NOSTR_SOCIAL_RELAYS]));
+        const requests = batches.flatMap(authors => socialRelays.map(relay => readRelayEvents(relay, {
           kinds: [NOSTR_FAVORITES_KIND],
           authors,
           limit: 500,
-        }))));
+        })));
+        const hintedAuthorsByRelay = new Map();
+        for (const follow of follows) {
+          if (!follow.relay || socialRelays.includes(follow.relay)) continue;
+          const authors = hintedAuthorsByRelay.get(follow.relay) || new Set();
+          authors.add(follow.pubkey);
+          hintedAuthorsByRelay.set(follow.relay, authors);
+        }
+        for (const [relay, authorSet] of hintedAuthorsByRelay) {
+          const authors = Array.from(authorSet);
+          requests.push(readRelayEvents(relay, { kinds: [NOSTR_FAVORITES_KIND], authors, limit: 500 }));
+        }
+        const responses = await Promise.all(requests);
         const verified = await verifiedNostrEvents(responses.flat());
         return NostrSocial.publicBookLists(verified, pubkeys);
       }
@@ -2081,14 +2213,22 @@
         for (let index = 0; index < pubkeys.length; index += 50) {
           batches.push(pubkeys.slice(index, index + 50));
         }
-        const requests = batches.flatMap(authors => NOSTR_RELAYS.map(relay => readRelayEvents(relay, {
+        const socialRelays = Array.from(new Set([...NOSTR_RELAYS, ...NOSTR_SOCIAL_RELAYS]));
+        const requests = batches.flatMap(authors => socialRelays.map(relay => readRelayEvents(relay, {
           kinds: [0],
           authors,
           limit: authors.length * 2,
         })));
+        for (const authors of batches) {
+          requests.push(readRelayEvents(NOSTR_TRUSTROOTS_PROFILE_RELAY, {
+            kinds: [0],
+            authors,
+            limit: authors.length * 2,
+          }, { authenticate: true }));
+        }
         const hintedAuthorsByRelay = new Map();
         for (const follow of follows) {
-          if (!follow.relay || NOSTR_RELAYS.includes(follow.relay)) continue;
+          if (!follow.relay || socialRelays.includes(follow.relay)) continue;
           const authors = hintedAuthorsByRelay.get(follow.relay) || new Set();
           authors.add(follow.pubkey);
           hintedAuthorsByRelay.set(follow.relay, authors);
@@ -2259,12 +2399,20 @@
         return `bookstr-chunk-${random.slice(0, 32)}`;
       }
 
+      function nextFavoritesCreatedAt() {
+        const wallClock = Math.floor(Date.now() / 1000);
+        const previous = Number(localStorage.getItem(NOSTR_FAVORITES_PUBLISH_TIME_KEY) || 0);
+        const next = Math.max(wallClock, Number.isFinite(previous) ? previous + 1 : wallClock);
+        localStorage.setItem(NOSTR_FAVORITES_PUBLISH_TIME_KEY, String(next));
+        return next;
+      }
+
       async function syncFavoritesToNostr() {
         if (!window.nostr?.signEvent || !window.nostr?.nip44?.encrypt) {
           throw new Error('NIP-07 with NIP-44 support is required to sync favorites.');
         }
         const pubkey = state.nip7.pubkey || await window.nostr.getPublicKey();
-        const now = Math.floor(Date.now() / 1000);
+        const now = nextFavoritesCreatedAt();
         const header = [['bookstr-collection', '2'], ['bookstr-publications', '1'], ['title', 'Favorites'], ['updated', String(now)]];
         const itemTags = favoriteNostrItemTags(now);
         const publishEncrypted = async (dTag, tags) => {
@@ -2295,6 +2443,12 @@
             ['bookstr-chunks', String(chunks.length), prefix],
           ]);
         }
+        nip17FetchModule ||= import('./nip17-fetch.js');
+        const libvault = await nip17FetchModule;
+        await libvault.sendLibVaultFavoritesSync(state.favorites, {
+          signer: window.nostr,
+          publish: publishRelayEvent,
+        });
         saveNostrSyncCache(pubkey, {
           favorites: state.favorites,
           reading: state.reading,
@@ -2515,7 +2669,11 @@
             if (namespace === 'libvault' && isMd5(identifier)) {
               entries.push({ md5: identifier.toLowerCase(), favoriteAddedAt });
             } else if (namespace === 'bookstr' && identifier) {
-              entries.push({ md5: identifier, url: locator, readUrl: locator, favoriteAddedAt });
+              const entry = entries.find(item => item.md5 === identifier) || { md5: identifier };
+              if (!entries.includes(entry)) entries.push(entry);
+              entry.url ||= locator;
+              entry.readUrl ||= locator;
+              entry.favoriteAddedAt = BookMetadata.earliestFavoriteAddedAt(entry.favoriteAddedAt, favoriteAddedAt);
             } else if (namespace === 'isbn' && normalizeIsbnFromTag(identifier)) {
               entries.push({ md5: pseudoIdForSeed(identifier), isbn: normalizeIsbnFromTag(identifier), url: locator, favoriteAddedAt });
             } else if (namespace === 'url' && identifier) {
@@ -2523,6 +2681,19 @@
             } else if (namespace === 'blossom' && /^[a-f0-9]{64}$/i.test(identifier)) {
               entries.push({ md5: identifier.toLowerCase(), blossomSha256: identifier.toLowerCase(), blossomUrl: locator, url: locator, favoriteAddedAt });
             }
+            continue;
+          }
+          if (name === 'bookstr' && tag[1]) {
+            const id = tag[1];
+            const entry = entries.find(item => item.md5 === id) || { md5: id };
+            if (!entries.includes(entry)) entries.push(entry);
+            entry.title = tag[2] || entry.title || '';
+            entry.author = tag[3] || entry.author || '';
+            entry.authors = tag[3] || entry.authors || entry.author || '';
+            entry.url = tag[4] || entry.url || '';
+            entry.readUrl = tag[4] || entry.readUrl || entry.url || '';
+            entry.format = tag[5] || entry.format || '';
+            entry.year = tag[6] || entry.year || '';
             continue;
           }
           if (name === 'r') {
@@ -2653,6 +2824,7 @@
           '#d': [FAVORITES_D_TAG],
         });
         if (!rootEvents.length) return null;
+        let lastError = null;
         for (const rootEvent of rootEvents) {
           try {
             const rootTags = await decryptFavoritePayload(pubkey, rootEvent.content);
@@ -2680,11 +2852,12 @@
               ...ref,
               favoriteAddedAt: ref.favoriteAddedAt || fallbackAddedAt,
             }));
-          } catch {
+          } catch (error) {
+            lastError = error;
             // A partial new generation must not hide an older complete snapshot.
           }
         }
-        return null;
+        throw new Error(`Favorites could not be decrypted or assembled: ${lastError?.message || 'unknown payload error'}`);
       }
 
       function parseReadingProgressEvent(event) {
@@ -2952,6 +3125,14 @@
       }
 
       let nostrSyncTask = null;
+      let lastNostrSyncAt = 0;
+      let nostrFocusSyncTimer = null;
+
+      function setHomeSyncState(kind, message) {
+        homeSyncState.textContent = message;
+        homeSyncState.dataset.state = kind;
+        homeSyncRefresh.disabled = kind === 'syncing';
+      }
 
       async function syncNostrLibraryFromNip7() {
         const pubkey = state.nip7.pubkey;
@@ -2961,6 +3142,7 @@
         if (nostrSyncTask) {
           return nostrSyncTask;
         }
+        setHomeSyncState('syncing', 'Syncing…');
         const task = (async () => {
           const cached = readNostrSyncCache(pubkey);
           if (cached && isNostrCacheFresh(cached)) {
@@ -2986,8 +3168,12 @@
             if (document.activeElement !== null) {
               status.textContent = 'Synced latest Nostr library data.';
             }
+            lastNostrSyncAt = Date.now();
+            setHomeSyncState('ready', `Last synced ${new Date(lastNostrSyncAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`);
             return true;
-          } catch {
+          } catch (error) {
+            setHomeSyncState('failed', 'Sync failed · retry');
+            status.textContent = `Nostr library sync failed: ${error?.message || error}`;
             return false;
           }
         })();
@@ -2996,6 +3182,27 @@
         });
         return task;
       }
+
+      function scheduleFocusedNostrSync() {
+        if (!state.settings.useNip7 || !state.nip7.pubkey || document.visibilityState === 'hidden') return;
+        clearTimeout(nostrFocusSyncTimer);
+        nostrFocusSyncTimer = setTimeout(() => {
+          if (Date.now() - lastNostrSyncAt >= 30_000) void syncNostrLibraryFromNip7();
+        }, 250);
+      }
+
+      homeSyncRefresh.addEventListener('click', async () => {
+        setHomeSyncState('syncing', 'Syncing…');
+        const connected = await connectNip7({ silent: false });
+        if (!connected && state.nip7.pubkey) {
+          await syncNostrLibraryFromNip7();
+        } else if (!connected) {
+          setHomeSyncState('failed', 'Signer unavailable · retry');
+          status.textContent = 'Nostr library sync failed: no NIP-07 signer is available.';
+        }
+      });
+      window.addEventListener('focus', scheduleFocusedNostrSync);
+      document.addEventListener('visibilitychange', scheduleFocusedNostrSync);
 
       function safeJSONRead(raw, fallback) {
         if (!raw) return fallback;
@@ -3791,6 +3998,7 @@
 
       function renderResults(books, { preserveResults = false, routeState = null } = {}) {
         if (!preserveResults) {
+          contentSearchBooks = [];
           searchResultBooks = books.slice();
           searchResultFilter.language = routeState?.language || '';
           searchResultFilter.format = routeState?.format || '';
@@ -3837,6 +4045,31 @@
           },
         });
         return { shown: pageBooks.length, total: sortedBooks.length, page: searchResultPage, totalPages };
+      }
+
+      function renderPassageResults(payload) {
+        const entries = PassageResults.normalizePassageHits(payload).map(entry => {
+          const normalized = entry.book
+            ? normalizeSearchBooks({ books: [entry.book] }, 'private-search')[0]
+            : null;
+          const book = normalized ? enrichedHomeBooks([normalized])[0] : null;
+          return { ...entry, book, canOpen: Boolean(book && isBookReadableNow(book)) };
+        });
+        contentSearchBooks = entries.map(entry => entry.book).filter(Boolean);
+        searchResultBooks = [];
+        searchResultFilter.language = '';
+        searchResultFilter.format = '';
+        searchResultFilters.classList.add('hidden');
+        searchPagination.classList.add('hidden');
+        searchResultCount.textContent = `${entries.length} passage${entries.length === 1 ? '' : 's'}`;
+        resultsEl.innerHTML = PassageResults.passageResultsMarkup(entries);
+        resultsEl.querySelectorAll('[data-passage-open]').forEach(button => {
+          button.addEventListener('click', () => {
+            const entry = entries[Number(button.dataset.passageOpen)];
+            if (entry?.book) void openBook(entry.book);
+          });
+        });
+        return entries;
       }
 
       function isFavoriteMd5(md5) {
@@ -3991,6 +4224,8 @@
         if (isMd5(bookId)) {
           const searchBook = searchResultBooks.find(book => String(book?.md5 || '').toLowerCase() === bookId);
           if (searchBook) return searchBook;
+          const contentBook = contentSearchBooks.find(book => String(book?.md5 || '').toLowerCase() === bookId);
+          if (contentBook) return contentBook;
           const saved = BookMetadata.mergeLibraryState(state.reading, state.favorites)
             .find(book => String(book?.md5 || '').toLowerCase() === bookId);
           if (saved) return saved;
@@ -4561,8 +4796,18 @@
         if (!window.nostr?.signEvent) {
           throw new Error('Connect NIP-07 to authorize this Blossom download.');
         }
-        const blossomUrl = String(book.blossomUrl || readPath || '');
-        if (!/^https:\/\//i.test(blossomUrl)) throw new Error('No Blossom download URL is available.');
+        const suppliedUrl = String(book.blossomUrl || readPath || '');
+        let blossomUrl = '';
+        try {
+          const candidate = new URL(suppliedUrl);
+          if (candidate.protocol === 'https:' && candidate.hostname.toLowerCase() === 'blossom.bfr.ee') {
+            blossomUrl = candidate.toString();
+          }
+        } catch {}
+        // Old LibVault notes could contain the MD5 -> SHA-256 lookup URL as a
+        // Blossom URL. The SHA-256 tag is authoritative, so recover it to the
+        // canonical Blossom blob location instead of fetching lib.b.bfr.ee.
+        blossomUrl ||= `https://blossom.bfr.ee/${sha256}`;
         const server = new URL(blossomUrl).hostname;
         const now = Math.floor(Date.now() / 1000);
         const event = await window.nostr.signEvent({
@@ -5092,7 +5337,7 @@
           responseTimeoutMs: NOSTR_SEARCH_RESPONSE_TIMEOUT_MS,
           onTrace: showNip17Trace,
         });
-        return normalizeSearchBooks(response, 'libvault');
+        return searchType.value === 'content' ? response : normalizeSearchBooks(response, 'libvault');
       }
 
       async function startSearch({ updateHash = true, routeState = null } = {}) {
@@ -5118,6 +5363,23 @@
         searchResultCount.textContent = '0 results';
         searchPagination.classList.add('hidden');
         resetNip17Exchange();
+        if (searchType.value === 'content') {
+          status.textContent = 'Searching inside downloaded books…';
+          try {
+            const response = await searchViaNostr(query);
+            const passages = renderPassageResults(response);
+            status.textContent = `Found ${passages.length} matching passage${passages.length === 1 ? '' : 's'}.`;
+            replaceSearchHash();
+          } catch (error) {
+            showNip17Trace({ direction: 'error', error: error?.message || String(error) });
+            const reason = error?.message || String(error);
+            status.textContent = `Inside-book search unavailable: ${reason}`;
+            resultsEl.innerHTML = '<p class="note">Inside-book search is unavailable. Check the Nostr connection or try again later.</p>';
+            searchResultCount.textContent = '0 passages';
+            searchPagination.classList.add('hidden');
+          }
+          return;
+        }
         status.textContent = 'Searching privately through LibVault…';
         try {
           let books;
@@ -5409,6 +5671,7 @@
             state.nip7.pubkey = previous.pubkey;
             state.nip7.npub = typeof previous.npub === 'string' ? previous.npub : '';
             updateNip7Status();
+            if (opts.quick) setTimeout(() => void connectNip7({ silent: true, quick: false }), 1500);
             return false;
           }
           state.nip7.pubkey = '';
@@ -5459,6 +5722,7 @@
               ts: Date.now()
             }));
             updateNip7Status();
+            if (opts.quick) setTimeout(() => void connectNip7({ silent: true, quick: false }), 1500);
             return false;
           }
           state.nip7.pubkey = '';
