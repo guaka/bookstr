@@ -1,4 +1,5 @@
 import Foundation
+import Combine
 
 final class WordNavigationState: ObservableObject {
     @Published private(set) var requestedWord: String?
@@ -17,4 +18,3 @@ final class WordNavigationState: ObservableObject {
         return words.first(where: { $0.word.lowercased() == needle })
     }
 }
-

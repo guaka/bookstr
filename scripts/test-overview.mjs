@@ -46,6 +46,16 @@ export function parseTap(text) {
   };
 }
 
+export function parseSwiftTest(text) {
+  const summaries = [...text.matchAll(/Executed\s+(\d+)\s+tests?,\s+with\s+(?:(\d+)\s+tests?\s+skipped\s+and\s+)?(\d+)\s+failures?[^\n]*?in\s+(\d+(?:\.\d+)?)(?:\s+\(\d+(?:\.\d+)?\))?\s+seconds/g)];
+  const match = summaries.at(-1);
+  if (!match) return { tests: 0, passed: 0, failed: 0, skipped: 0, durationMs: 0 };
+  const tests = number(match[1]);
+  const skipped = number(match[2]);
+  const failed = number(match[3]);
+  return { tests, passed: Math.max(0, tests - skipped - failed), failed, skipped, durationMs: number(match[4]) * 1000 };
+}
+
 export function parseJUnit(documents) {
   const result = { tests: 0, passed: 0, failed: 0, skipped: 0, durationMs: 0 };
   for (const document of documents) {
@@ -137,6 +147,25 @@ export function parseXCCov(report) {
   return [{ label: 'Lines', value: Number(coverage.toFixed(2)), suffix: '%' }];
 }
 
+export function parseLLVM(report) {
+  const files = (report?.data || []).flatMap(item => item?.files || [])
+    .filter(file => String(file?.filename || '').includes('/BookstrIOS/Sources/'));
+  const metrics = [
+    ['regions', 'Statements'],
+    ['branches', 'Branches'],
+    ['functions', 'Functions'],
+    ['lines', 'Lines'],
+  ];
+  return metrics.flatMap(([key, label]) => {
+    const totals = files.reduce((result, file) => {
+      result.count += number(file?.summary?.[key]?.count);
+      result.covered += number(file?.summary?.[key]?.covered);
+      return result;
+    }, { count: 0, covered: 0 });
+    return totals.count ? [{ label, value: percent(totals.covered, totals.count), suffix: '%' }] : [];
+  });
+}
+
 async function optionalJSON(path) {
   if (!path) return null;
   try { return JSON.parse(await readFile(path, 'utf8')); } catch { return null; }
@@ -146,6 +175,8 @@ async function record(options) {
   let results = { tests: 0, passed: 0, failed: 0, skipped: 0, durationMs: 0 };
   if (options['results-format'] === 'tap') {
     results = parseTap(await readFile(options.results, 'utf8').catch(() => ''));
+  } else if (options['results-format'] === 'swift') {
+    results = parseSwiftTest(await readFile(options.results, 'utf8').catch(() => ''));
   } else if (options['results-format'] === 'junit') {
     const files = await filesBelow(options.results, '.xml');
     results = parseJUnit(await Promise.all(files.map(file => readFile(file, 'utf8').catch(() => ''))));
@@ -161,6 +192,7 @@ async function record(options) {
   if (options['coverage-format'] === 'istanbul') coverage = parseIstanbul(await optionalJSON(options.coverage));
   if (options['coverage-format'] === 'jacoco') coverage = parseJacoco(await readFile(options.coverage, 'utf8').catch(() => ''));
   if (options['coverage-format'] === 'xccov') coverage = parseXCCov(await optionalJSON(options.coverage));
+  if (options['coverage-format'] === 'llvm') coverage = parseLLVM(await optionalJSON(options.coverage));
 
   const passing = options.status === 'passing' && results.tests > 0 && results.failed === 0;
   const payload = {

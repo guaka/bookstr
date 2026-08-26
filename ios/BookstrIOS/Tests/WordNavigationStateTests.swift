@@ -1,6 +1,9 @@
 import XCTest
-
+#if SWIFT_PACKAGE
+@testable import BookstrLogic
+#else
 @testable import BookstrIOS
+#endif
 
 final class WordNavigationStateTests: XCTestCase {
     func testRequestNormalizesWordAndIncrementsToken() {

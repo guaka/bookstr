@@ -28,6 +28,29 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+      - name: Run fast iOS logic tests
+        id: ios_tests
+        continue-on-error: true
+        run: |
+          started=$(date +%s)
+          set +e
+          swift test --package-path ios --enable-code-coverage 2>&1 | tee ios/swift-test-results.log
+          status=${PIPESTATUS[0]}
+          echo "duration_ms=$((($(date +%s) - started) * 1000))" >> "$GITHUB_OUTPUT"
+          coverage_path=$(find ios/.build -path '*/codecov/BookstrLogic.json' -print -quit)
+          echo "coverage_path=$coverage_path" >> "$GITHUB_OUTPUT"
+          if [ ! -s "$coverage_path" ]; then status=1; fi
+          exit "$status"
+      - name: Record iOS test overview
+        if: always()
+        env:
+          TEST_STATUS: ${{ steps.ios_tests.outcome == 'success' && 'passing' || 'failing' }}
+          TEST_DURATION_MS: ${{ steps.ios_tests.outputs.duration_ms }}
+          COVERAGE_PATH: ${{ steps.ios_tests.outputs.coverage_path }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          KNOWN_TESTS=$(grep -h -E '^[[:space:]]*func test' ios/BookstrIOS/Tests/{DictionaryRepositoryTests,FavoritesParserTests,NostrClientProgressTests,ProgressRepositoryTests,ReaderAssetContractTests,SettingsRepositoryTests,VocabularyRepositoryTests,WordNavigationStateTests}.swift | wc -l | tr -d ' ')
+          node scripts/test-overview.mjs record --id ios --suite iOS --status "$TEST_STATUS" --results-format swift --results ios/swift-test-results.log --coverage-format llvm --coverage "$COVERAGE_PATH" --known-tests "$KNOWN_TESTS" --duration-ms "$TEST_DURATION_MS" --output test-overview/ios.json --recorded "$(date -u +%FT%TZ)" --run-url "$RUN_URL" --commit "$GITHUB_SHA"
       - name: Prepare iOS simulator
         id: simulator
         run: |
@@ -43,40 +66,6 @@ jobs:
           xcrun simctl boot "$DEVICE_ID" || true
           xcrun simctl bootstatus "$DEVICE_ID" -b
           echo "id=$DEVICE_ID" >> "$GITHUB_OUTPUT"
-      - name: Build and run unit tests
-        id: ios_tests
-        continue-on-error: true
-        run: |
-          started=$(date +%s)
-          set +e
-          xcodebuild test \
-            -project ios/BookstrIOS.xcodeproj \
-            -scheme BookstrIOS \
-            -destination 'platform=iOS Simulator,id=${{ steps.simulator.outputs.id }}' \
-            -only-testing:BookstrIOSTests \
-            -enableCodeCoverage YES \
-            -resultBundlePath ios/TestResults.xcresult \
-            -skipPackagePluginValidation \
-            CODE_SIGNING_ALLOWED=NO
-          status=$?
-          echo "duration_ms=$((($(date +%s) - started) * 1000))" >> "$GITHUB_OUTPUT"
-          exit "$status"
-      - name: Extract iOS test results
-        id: ios_results
-        if: always()
-        continue-on-error: true
-        run: |
-          xcrun xcresulttool get test-results summary --path ios/TestResults.xcresult > ios/test-summary.json
-          xcrun xccov view --report --json ios/TestResults.xcresult > ios/coverage.json
-      - name: Record iOS test overview
-        if: always()
-        env:
-          TEST_STATUS: ${{ steps.ios_tests.outcome == 'success' && steps.ios_results.outcome == 'success' && 'passing' || 'failing' }}
-          TEST_DURATION_MS: ${{ steps.ios_tests.outputs.duration_ms }}
-          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-        run: |
-          KNOWN_TESTS=$(grep -R -h -E '^[[:space:]]*func test' ios/BookstrIOS/Tests --include='*.swift' | wc -l | tr -d ' ')
-          node scripts/test-overview.mjs record --id ios --suite iOS --status "$TEST_STATUS" --results-format xcresult --results ios/test-summary.json --coverage-format xccov --coverage ios/coverage.json --known-tests "$KNOWN_TESTS" --duration-ms "$TEST_DURATION_MS" --output test-overview/ios.json --recorded "$(date -u +%FT%TZ)" --run-url "$RUN_URL" --commit "$GITHUB_SHA"
       - name: Build and run e2e tests
         id: ios_e2e_tests
         continue-on-error: true
@@ -88,6 +77,12 @@ jobs:
             -scheme BookstrIOS \
             -destination 'platform=iOS Simulator,id=${{ steps.simulator.outputs.id }}' \
             -only-testing:BookstrIOSUITests \
+            -only-testing:BookstrIOSTests/AppContainerTests \
+            -only-testing:BookstrIOSTests/FavoritesParserTests/testRealPdfIsAccepted \
+            -only-testing:BookstrIOSTests/FavoritesParserTests/testPublicDomainAlicePdfFixtureIsAcceptedAndHasReadableText \
+            -only-testing:BookstrIOSTests/FavoritesParserTests/testPublicDomainAliceEpubFixtureIsAccepted \
+            -only-testing:BookstrIOSTests/FavoritesParserTests/testPublicDomainAliceEpubActuallyReachesReadyReader \
+            -only-testing:BookstrIOSTests/FavoritesParserTests/testEPUBReaderCanAdjustFontPercentViaReaderAPI \
             -parallel-testing-enabled NO \
             -resultBundlePath ios/E2EResults.xcresult \
             -skipPackagePluginValidation \
@@ -107,7 +102,8 @@ jobs:
           TEST_DURATION_MS: ${{ steps.ios_e2e_tests.outputs.duration_ms }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
-          KNOWN_TESTS=$(grep -R -h -E '^[[:space:]]*func test' ios/BookstrIOS/UITests --include='*.swift' | wc -l | tr -d ' ')
+          UI_TESTS=$(grep -R -h -E '^[[:space:]]*func test' ios/BookstrIOS/UITests --include='*.swift' | wc -l | tr -d ' ')
+          KNOWN_TESTS=$((UI_TESTS + 7))
           node scripts/test-overview.mjs record --id ios-e2e --suite "iOS e2e" --status "$TEST_STATUS" --results-format xcresult --results ios/e2e-summary.json --known-tests "$KNOWN_TESTS" --duration-ms "$TEST_DURATION_MS" --output test-overview/ios-e2e.json --recorded "$(date -u +%FT%TZ)" --run-url "$RUN_URL" --commit "$GITHUB_SHA"
       - name: Upload iOS test overview
         if: always()
@@ -117,9 +113,8 @@ jobs:
           path: |
             test-overview/ios.json
             test-overview/ios-e2e.json
-            ios/test-summary.json
+            ios/swift-test-results.log
             ios/e2e-summary.json
-            ios/coverage.json
       - name: Fail unsuccessful iOS checks
-        if: always() && (steps.ios_tests.outcome != 'success' || steps.ios_results.outcome != 'success' || steps.ios_e2e_tests.outcome != 'success' || steps.ios_e2e_results.outcome != 'success')
+        if: always() && (steps.ios_tests.outcome != 'success' || steps.ios_e2e_tests.outcome != 'success' || steps.ios_e2e_results.outcome != 'success')
         run: exit 1

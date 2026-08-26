@@ -5,7 +5,9 @@ import {
   parseIstanbul,
   parseJacoco,
   parseJUnit,
+  parseLLVM,
   parsePlaywright,
+  parseSwiftTest,
   parseTap,
   parseXCResult,
   parseXCCov,
@@ -21,6 +23,12 @@ test('normalizes platform test reports', () => {
   });
   assert.equal(parsePlaywright({ stats: { expected: 6, unexpected: 1, skipped: 2, duration: 900 } }).tests, 9);
   assert.equal(parseXCResult({ totalTestCount: 8, failedTests: 1, skippedTests: 1 }).passed, 6);
+  assert.deepEqual(parseSwiftTest("Executed 231 tests, with 0 failures (0 unexpected) in 0.178 (0.190) seconds\n"), {
+    tests: 231, passed: 231, failed: 0, skipped: 0, durationMs: 178,
+  });
+  assert.deepEqual(parseSwiftTest("Executed 5 tests, with 1 test skipped and 1 failure (1 unexpected) in 0.25 seconds\n"), {
+    tests: 5, passed: 3, failed: 1, skipped: 1, durationMs: 250,
+  });
   assert.deepEqual(parseXCResult({
     devicesAndConfigurations: [{ passedTests: 12, failedTests: 1, skippedTests: 2 }],
     startTime: 1_700_000_000,
@@ -39,6 +47,15 @@ test('normalizes Istanbul and JaCoCo coverage', () => {
       { name: 'BookstrIOSTests.xctest', coveredLines: 900, executableLines: 900 },
     ],
   })[0].value, 30);
+  assert.deepEqual(parseLLVM({ data: [{ files: [
+    { filename: '/repo/ios/BookstrIOS/Sources/Data/Store.swift', summary: {
+      regions: { count: 10, covered: 7 }, branches: { count: 4, covered: 2 },
+      functions: { count: 5, covered: 4 }, lines: { count: 20, covered: 15 },
+    } },
+    { filename: '/repo/ios/BookstrIOS/Tests/StoreTests.swift', summary: {
+      regions: { count: 100, covered: 100 }, lines: { count: 100, covered: 100 },
+    } },
+  ] }] }).map(metric => metric.value), [70, 50, 80, 75]);
 });
 
 test('renders an accessible dashboard with links and missing suites', () => {

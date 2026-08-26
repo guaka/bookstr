@@ -1,5 +1,9 @@
 import XCTest
+#if SWIFT_PACKAGE
+@testable import BookstrLogic
+#else
 @testable import BookstrIOS
+#endif
 
 final class ReaderAssetContractTests: XCTestCase {
     func testSpeechPlaybackQueueYieldsEveryChunkOnceInOrder() {
@@ -203,10 +207,18 @@ final class ReaderAssetContractTests: XCTestCase {
     }
 
     private func bundledAsset(named name: String, extension fileExtension: String) throws -> String {
+#if SWIFT_PACKAGE
+        let url = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent("ReaderAssets")
+            .appendingPathComponent("\(name).\(fileExtension)")
+#else
         let url = try XCTUnwrap(
             Bundle.main.url(forResource: name, withExtension: fileExtension),
             "Missing bundled reader asset: \(name).\(fileExtension)"
         )
+#endif
         return try String(contentsOf: url, encoding: .utf8)
     }
 }

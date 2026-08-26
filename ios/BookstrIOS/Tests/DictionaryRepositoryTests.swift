@@ -1,5 +1,9 @@
 import XCTest
+#if SWIFT_PACKAGE
+@testable import BookstrLogic
+#else
 @testable import BookstrIOS
+#endif
 
 final class DictionaryRepositoryTests: XCTestCase {
     private func pack(_ id: String, installed: Bool = false) -> DictionaryPack {

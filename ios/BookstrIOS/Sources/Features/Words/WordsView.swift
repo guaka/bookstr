@@ -349,11 +349,6 @@ struct WordsView: View {
     }
 }
 
-func shouldClearWordFilter(_ query: String, deletedWord: String) -> Bool {
-    query.trimmingCharacters(in: .whitespacesAndNewlines)
-        .localizedCaseInsensitiveCompare(deletedWord.trimmingCharacters(in: .whitespacesAndNewlines)) == .orderedSame
-}
-
 private enum WordSort: String, CaseIterable, Identifiable {
     case recent
     case alphabetical

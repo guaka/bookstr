@@ -19,6 +19,10 @@ ios/.*Derived*/
 ios/.deviceDerived/
 ios/.device-current/
 ios/.device-diagnostic/
+ios/.build/
+ios/default.profraw
+ios/swift-test-results*.log
+ios/swift-test-results*.xml
 ios/**/xcuserdata/
 
 # Editor / local agent tooling

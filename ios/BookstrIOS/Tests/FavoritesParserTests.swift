@@ -1,10 +1,16 @@
 import XCTest
 import PDFKit
-import UIKit
 import CryptoKit
+#if canImport(UIKit)
+import UIKit
 import SwiftUI
 import WebKit
+#endif
+#if SWIFT_PACKAGE
+@testable import BookstrLogic
+#else
 @testable import BookstrIOS
+#endif
 
 final class FavoritesParserTests: XCTestCase {
     func testPublicationIdentityCandidatesIncludeBlossomAndMD5AliasesOnce() {
@@ -17,7 +23,7 @@ final class FavoritesParserTests: XCTestCase {
         )
 
         XCTAssertEqual(
-            CatalogRepository.publicationIdentityCandidates(for: book),
+            PublicationUtilities.publicationIdentityCandidates(for: book),
             [
                 "legacy-id",
                 "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
@@ -120,7 +126,7 @@ final class FavoritesParserTests: XCTestCase {
             blossomSha256: sha,
             blossomUrl: "https://blossom.bfr.ee/\(sha)"
         )
-        let book = CatalogRepository.fromBlossomFavorite(favorite)
+        let book = PublicationUtilities.fromBlossomFavorite(favorite)
         XCTAssertEqual(book?.id, sha)
         XCTAssertEqual(book?.title, "A Book")
         XCTAssertEqual(book?.epubUrl, "https://blossom.bfr.ee/\(sha)")
@@ -140,7 +146,7 @@ final class FavoritesParserTests: XCTestCase {
             blossomSha256: sha,
             blossomUrl: nil
         )
-        XCTAssertEqual(CatalogRepository.fromBlossomFavorite(favorite)?.epubUrl, "https://blossom.bfr.ee/\(sha)")
+        XCTAssertEqual(PublicationUtilities.fromBlossomFavorite(favorite)?.epubUrl, "https://blossom.bfr.ee/\(sha)")
     }
 
     func testBlossomFavoriteRejectsMalformedBlossomHash() {
@@ -158,7 +164,7 @@ final class FavoritesParserTests: XCTestCase {
             blossomUrl: "https://blossom.bfr.ee/\(sha)"
         )
 
-        XCTAssertNil(CatalogRepository.fromBlossomFavorite(favorite))
+        XCTAssertNil(PublicationUtilities.fromBlossomFavorite(favorite))
     }
 
     func testBlossomFavoriteNeverFallsBackToLibVaultLocator() {
@@ -170,7 +176,7 @@ final class FavoritesParserTests: XCTestCase {
             isbn: nil, libvaultMd5: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", format: "epub",
             blossomSha256: sha, blossomUrl: nil
         )
-        XCTAssertEqual(CatalogRepository.fromBlossomFavorite(favorite)?.epubUrl,
+        XCTAssertEqual(PublicationUtilities.fromBlossomFavorite(favorite)?.epubUrl,
                        "https://blossom.bfr.ee/\(sha)")
     }
 
@@ -188,7 +194,7 @@ final class FavoritesParserTests: XCTestCase {
             blossomSha256: nil,
             blossomUrl: nil
         )
-        XCTAssertNil(CatalogRepository.fromExternalFavorite(favorite))
+        XCTAssertNil(PublicationUtilities.fromExternalFavorite(favorite))
     }
 
     func testRegularDownloadFavoriteBecomesCatalogBook() {
@@ -204,7 +210,7 @@ final class FavoritesParserTests: XCTestCase {
             blossomSha256: nil,
             blossomUrl: nil
         )
-        let book = CatalogRepository.fromExternalFavorite(favorite)
+        let book = PublicationUtilities.fromExternalFavorite(favorite)
         XCTAssertEqual(book?.id, "gutenberg:123")
         XCTAssertEqual(book?.format, .epub)
         XCTAssertEqual(book?.epubUrl, favorite.url)
@@ -223,7 +229,7 @@ final class FavoritesParserTests: XCTestCase {
             blossomSha256: nil,
             blossomUrl: nil
         )
-        XCTAssertNil(CatalogRepository.fromExternalFavorite(favorite))
+        XCTAssertNil(PublicationUtilities.fromExternalFavorite(favorite))
     }
 
     func testParsesWrappedTagsObject() {
@@ -1409,10 +1415,11 @@ final class FavoritesParserTests: XCTestCase {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".pdf")
         defer { try? FileManager.default.removeItem(at: url) }
         try Data("%PDF-not-a-document".utf8).write(to: url)
-        XCTAssertEqual(CatalogRepository.detectedFormat(fileURL: url), .pdf)
-        XCTAssertFalse(CatalogRepository.isStructurallyValidPublication(fileURL: url, format: .pdf))
+        XCTAssertEqual(PublicationUtilities.detectedFormat(fileURL: url), .pdf)
+        XCTAssertFalse(PublicationUtilities.isStructurallyValidPublication(fileURL: url, format: .pdf))
     }
 
+#if canImport(UIKit)
     func testRealPdfIsAccepted() throws {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".pdf")
         defer { try? FileManager.default.removeItem(at: url) }
@@ -1421,8 +1428,8 @@ final class FavoritesParserTests: XCTestCase {
             context.beginPage()
             "Bookstr".draw(at: CGPoint(x: 20, y: 20), withAttributes: nil)
         }
-        XCTAssertEqual(CatalogRepository.detectedFormat(fileURL: url), .pdf)
-        XCTAssertTrue(CatalogRepository.isStructurallyValidPublication(fileURL: url, format: .pdf))
+        XCTAssertEqual(PublicationUtilities.detectedFormat(fileURL: url), .pdf)
+        XCTAssertTrue(PublicationUtilities.isStructurallyValidPublication(fileURL: url, format: .pdf))
     }
 
     func testPublicDomainAlicePdfFixtureIsAcceptedAndHasReadableText() throws {
@@ -1437,7 +1444,7 @@ final class FavoritesParserTests: XCTestCase {
                 withAttributes: [.font: UIFont.systemFont(ofSize: 15)]
             )
         }
-        XCTAssertTrue(CatalogRepository.isStructurallyValidPublication(fileURL: url, format: .pdf))
+        XCTAssertTrue(PublicationUtilities.isStructurallyValidPublication(fileURL: url, format: .pdf))
         let extracted = PDFDocument(url: url)?.string ?? ""
         XCTAssertTrue(extracted.contains("Alice was beginning"))
         XCTAssertTrue(extracted.contains("Lewis Carroll"))
@@ -1453,8 +1460,8 @@ final class FavoritesParserTests: XCTestCase {
             ("OEBPS/chapter.xhtml", "<html xmlns=\"http://www.w3.org/1999/xhtml\"><body><h1>Down the Rabbit-Hole</h1><p>Alice was beginning to get very tired.</p></body></html>")
         ]
         try makeStoredZip(entries).write(to: url)
-        XCTAssertEqual(CatalogRepository.detectedFormat(fileURL: url), .epub)
-        XCTAssertTrue(CatalogRepository.isStructurallyValidPublication(fileURL: url, format: .epub))
+        XCTAssertEqual(PublicationUtilities.detectedFormat(fileURL: url), .epub)
+        XCTAssertTrue(PublicationUtilities.isStructurallyValidPublication(fileURL: url, format: .epub))
     }
 
     @MainActor
@@ -1647,13 +1654,14 @@ final class FavoritesParserTests: XCTestCase {
         if let match = root as? T { return match }
         return root.subviews.lazy.compactMap { self.findSubview(type, in: $0) }.first
     }
+#endif
 
     func testEpubContainerMarkerAcrossReadBoundaryIsAccepted() throws {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".epub")
         defer { try? FileManager.default.removeItem(at: url) }
         let padding = String(repeating: "x", count: 65_530)
         try makeStoredZip([("padding.txt", padding), ("META-INF/container.xml", "<container/>")]).write(to: url)
-        XCTAssertTrue(CatalogRepository.isStructurallyValidPublication(fileURL: url, format: .epub))
+        XCTAssertTrue(PublicationUtilities.isStructurallyValidPublication(fileURL: url, format: .epub))
     }
 
     func testIncrementalPublicationHashMatchesCryptoKit() throws {
@@ -1662,15 +1670,15 @@ final class FavoritesParserTests: XCTestCase {
         let data = Data(String(repeating: "Alice in Wonderland. ", count: 10_000).utf8)
         try data.write(to: url)
         let expected = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
-        XCTAssertEqual(CatalogRepository.sha256(fileURL: url, chunkSize: 31), expected)
+        XCTAssertEqual(PublicationUtilities.sha256(fileURL: url, chunkSize: 31), expected)
     }
 
     func testZipWithoutEpubContainerIsRejected() throws {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".epub")
         defer { try? FileManager.default.removeItem(at: url) }
         try Data([0x50, 0x4b, 0x03, 0x04, 0x00]).write(to: url)
-        XCTAssertEqual(CatalogRepository.detectedFormat(fileURL: url), .epub)
-        XCTAssertFalse(CatalogRepository.isStructurallyValidPublication(fileURL: url, format: .epub))
+        XCTAssertEqual(PublicationUtilities.detectedFormat(fileURL: url), .epub)
+        XCTAssertFalse(PublicationUtilities.isStructurallyValidPublication(fileURL: url, format: .epub))
     }
 
     func testUnavailableSearchResultMatchesExternalFavoriteByStableID() {
