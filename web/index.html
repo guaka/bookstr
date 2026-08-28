@@ -1145,6 +1145,12 @@
         color: var(--note-text, #666);
         font-size: 0.77rem;
       }
+      .opds-feed-input {
+        width: 100%;
+        min-height: 4.8rem;
+        box-sizing: border-box;
+        resize: vertical;
+      }
       .desktop-signer {
         display: grid;
         gap: 0.55rem;
@@ -1771,6 +1777,10 @@
             <p id="dictionary-status" class="meta-note"></p>
             <div id="dictionary-packs" class="dictionary-packs"></div>
           </div>
+          <div class="settings-section settings-opds">
+            <h3>Public OPDS feeds</h3>
+            <textarea id="opds-feeds" class="opds-feed-input" rows="3" placeholder="Name | https://catalog.example/opds" aria-label="Public OPDS feeds, one name and HTTPS URL per line"></textarea>
+          </div>
         </section>
       </section>
 
@@ -1971,6 +1981,7 @@
       const dictionaryInstall = document.getElementById('dictionary-install');
       const dictionaryStatus = document.getElementById('dictionary-status');
       const dictionaryPacks = document.getElementById('dictionary-packs');
+      const opdsFeedsInput = document.getElementById('opds-feeds');
 
       const state = {
         favorites: [],
@@ -1983,7 +1994,8 @@
         settings: {
           autoReading: true,
           useNip7: true,
-          theme: 'white'
+          theme: 'white',
+          opdsFeeds: []
         },
         nip7: {
           pubkey: '',
@@ -1999,6 +2011,7 @@
 
       let dictionaryDbPromise;
       let sqlRuntimePromise;
+      let opdsSourcesModule;
       let desktopNip46QrUri = '';
       let desktopNip46QrTimer = null;
 
@@ -2607,7 +2620,14 @@
         }
         const pubkey = state.nip7.pubkey || await nostrSigner.getPublicKey();
         const now = nextFavoritesCreatedAt();
-		const header = [['bookstr-collection', '2'], ['bookstr-publications', '2'], ['title', 'Favorites'], ['updated', String(now)]];
+		const header = [
+          ['bookstr-collection', '2'],
+          ['bookstr-publications', '2'],
+          ['bookstr-opds-feeds', '1'],
+          ...publicOPDSFeedNostrTags(),
+          ['title', 'Favorites'],
+          ['updated', String(now)],
+        ];
         const itemTags = favoriteNostrItemTags(now);
         const publishEncrypted = async (dTag, tags) => {
           const plaintext = JSON.stringify(tags);
@@ -3050,6 +3070,8 @@
               createdAt: Number(rootEvent.created_at || 0),
               pubkey: String(rootEvent.pubkey || pubkey),
             };
+            const updatedOPDSFeeds = applySharedOPDSFeedTags(allTags);
+            if (updatedOPDSFeeds) renderSearchSources();
             return parseSharedFavoriteTags(allTags).map(ref => normalizeFavoriteFromRemote({
               ...ref,
               favoriteAddedAt: ref.favoriteAddedAt || fallbackAddedAt,
@@ -3221,6 +3243,7 @@
           favorites: payload.favorites.filter(item => item && typeof item.md5 === 'string'),
           reading: payload.reading.filter(item => item && typeof item.md5 === 'string'),
           words: payload.words.map(normalizeVocabularyWord).filter(Boolean),
+          opdsFeeds: normalizePublicOPDSFeedSettings(payload.opdsFeeds),
           ts,
           version: Number(payload.version || 0) || 0,
           pubkey: payload.pubkey || pubkey,
@@ -3234,6 +3257,7 @@
           favorites: Array.isArray(payload.favorites) ? payload.favorites : [],
           reading: Array.isArray(payload.reading) ? payload.reading : [],
           words: Array.isArray(payload.words) ? payload.words : [],
+          opdsFeeds: normalizePublicOPDSFeedSettings(payload.opdsFeeds || state.settings.opdsFeeds),
           ts: Date.now(),
           version: 1,
           pubkey,
@@ -3289,6 +3313,11 @@
             if (!existing || word.updatedAt >= existing.updatedAt) merged.set(word.key, word);
           });
           state.words = sortByUpdatedAt(Array.from(merged.values())).slice(0, 120);
+        }
+        if (Array.isArray(next.opdsFeeds)) {
+          state.settings.opdsFeeds = normalizePublicOPDSFeedSettings(next.opdsFeeds);
+          opdsFeedsInput.value = opdsFeedInputValue();
+          localStorage.setItem(SETTINGS_KEY, JSON.stringify(state.settings));
         }
         localStorage.setItem(FAVORITES_KEY, JSON.stringify(state.favorites));
         localStorage.setItem(READING_KEY, JSON.stringify(state.reading));
@@ -3408,6 +3437,78 @@
         } catch (error) {
           return fallback;
         }
+      }
+
+      function isPublicOPDSSettingsURL(value) {
+        try {
+          const url = new URL(String(value));
+          const hostname = url.hostname.replace(/^\[|\]$/g, '').toLowerCase();
+          if (url.protocol !== 'https:' || url.username || url.password || !hostname) return false;
+          if (hostname === 'localhost' || hostname.endsWith('.localhost') || hostname.endsWith('.local')) return false;
+          if (hostname === '::1' || /^(?:fc|fd|fe80):/i.test(hostname)) return false;
+          const ipv4 = hostname.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+          if (!ipv4) return true;
+          const parts = ipv4.slice(1).map(Number);
+          return !parts.some(part => part > 255) && !(parts[0] === 0 || parts[0] === 10 || parts[0] === 127
+            || (parts[0] === 169 && parts[1] === 254)
+            || (parts[0] === 172 && parts[1] >= 16 && parts[1] <= 31)
+            || (parts[0] === 192 && parts[1] === 168));
+        } catch {
+          return false;
+        }
+      }
+
+      function normalizePublicOPDSFeedSettings(value) {
+        if (!Array.isArray(value)) return [];
+        const seen = new Set();
+        const feeds = [];
+        for (const candidate of value) {
+          const name = String(candidate?.name || '').replace(/\s+/g, ' ').trim();
+          const rawURL = String(candidate?.url || '').trim();
+          if (!name || name.length > 80 || !isPublicOPDSSettingsURL(rawURL)) continue;
+          const url = new URL(rawURL).href;
+          if (seen.has(url)) continue;
+          seen.add(url);
+          feeds.push({ name, url });
+          if (feeds.length === 12) break;
+        }
+        return feeds;
+      }
+
+      function parseOPDSFeedInput(value) {
+        return normalizePublicOPDSFeedSettings(String(value || '').split(/\r?\n/).map(line => {
+          const divider = line.indexOf('|');
+          return divider < 0 ? null : { name: line.slice(0, divider), url: line.slice(divider + 1) };
+        }).filter(Boolean));
+      }
+
+      function opdsFeedInputValue(feeds = state.settings.opdsFeeds) {
+        return normalizePublicOPDSFeedSettings(feeds).map(feed => `${feed.name} | ${feed.url}`).join('\n');
+      }
+
+      function saveOPDSFeedSettingsFromUI() {
+        state.settings.opdsFeeds = parseOPDSFeedInput(opdsFeedsInput.value);
+        opdsFeedsInput.value = opdsFeedInputValue();
+      }
+
+      function publicOPDSFeedNostrTags() {
+        return state.settings.opdsFeeds.map(feed => ['bookstr-opds-feed', feed.name, feed.url]);
+      }
+
+      function applySharedOPDSFeedTags(tags) {
+        const hasSettings = Array.isArray(tags) && tags.some(tag => Array.isArray(tag) && tag[0] === 'bookstr-opds-feeds');
+        if (!hasSettings) return false;
+        state.settings.opdsFeeds = normalizePublicOPDSFeedSettings(tags
+          .filter(tag => Array.isArray(tag) && tag[0] === 'bookstr-opds-feed')
+          .map(tag => ({ name: tag[1], url: tag[2] })));
+        opdsFeedsInput.value = opdsFeedInputValue();
+        localStorage.setItem(SETTINGS_KEY, JSON.stringify(state.settings));
+        return true;
+      }
+
+      async function getOPDSSourcesModule() {
+        opdsSourcesModule ||= import('./opds-sources.js');
+        return opdsSourcesModule;
       }
 
       function clampWords(value) {
@@ -6025,6 +6126,24 @@
         return searchType.value === 'content' ? response : normalizeSearchBooks(response, 'libvault');
       }
 
+      async function searchLitresPublicDomain(query) {
+        const response = await fetch(`${BOOKS_API_BASE}/litres/search?q=${encodeURIComponent(query)}&limit=${SEARCH_RESULT_LIMIT}`);
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(payload?.error || `LitRes search failed (${response.status})`);
+        const adapter = await getOPDSSourcesModule();
+        const books = (Array.isArray(payload.records) ? payload.records : [])
+          .map(record => adapter.providerRecordToBook(record, 'https://www.litres.ru/'))
+          .filter(Boolean);
+        return dedupeBooks(normalizeSearchBooks({ books }, 'litres-public-domain'));
+      }
+
+      async function searchCustomOPDSFeed(feed, query) {
+        const adapter = await getOPDSSourcesModule();
+        const records = await adapter.searchOPDSFeed(feed, query);
+        const books = records.map(record => adapter.providerRecordToBook(record, feed.url)).filter(Boolean);
+        return dedupeBooks(normalizeSearchBooks({ books }, adapter.providerForOPDSFeed(feed)));
+      }
+
       function privateBookSearchAvailable() {
         return Boolean(state.settings.useNip7 && state.nip7.pubkey && nostrSigner?.signEvent
           && nostrSigner?.nip44?.encrypt && nostrSigner?.nip44?.decrypt);
@@ -6046,6 +6165,10 @@
             deliveries: ['Metadata', 'EPUB', 'Covers'], access: 'Public', search: searchProjectGutenberg,
           },
           {
+            id: 'litres-public-domain', name: 'LitRes Public Domain', coverage: 'Explicitly public-domain, free editions',
+            deliveries: ['Metadata', 'FB2'], access: 'Public', search: searchLitresPublicDomain,
+          },
+          {
             id: 'oapen', name: 'OAPEN', coverage: 'Peer-reviewed open-access academic books',
             deliveries: ['Metadata', 'PDF', 'Licenses'], access: 'Public', search: searchOapen,
           },
@@ -6062,6 +6185,16 @@
             deliveries: ['Metadata', 'EPUB', 'Licenses', 'Covers'], access: 'Public', search: searchGlobalDigitalLibrary,
           },
         ];
+        for (const feed of normalizePublicOPDSFeedSettings(state.settings.opdsFeeds)) {
+          sources.push({
+            id: `opds-${feed.url}`,
+            name: feed.name,
+            coverage: 'Your public OPDS catalogue',
+            deliveries: ['Metadata', 'FB2'],
+            access: 'Public',
+            search: query => searchCustomOPDSFeed(feed, query),
+          });
+        }
         if (privateBookSearchAvailable()) sources.push({
           id: 'libvault', name: 'LibVault', coverage: 'Your connected private catalog and cache',
           deliveries: ['Metadata', 'EPUB', 'PDF', 'Full text'], access: 'Private', search: searchViaNostr,
@@ -6384,7 +6517,7 @@
         const favorites = safeJSONRead(localStorage.getItem(FAVORITES_KEY), []);
         const reading = safeJSONRead(localStorage.getItem(READING_KEY), []);
         const words = safeJSONRead(localStorage.getItem(WORDS_KEY), []);
-        const settings = safeJSONRead(localStorage.getItem(SETTINGS_KEY), { autoReading: true, useNip7: true, theme: 'white' });
+        const settings = safeJSONRead(localStorage.getItem(SETTINGS_KEY), { autoReading: true, useNip7: true, theme: 'white', opdsFeeds: [] });
         const nip7 = safeJSONRead(localStorage.getItem(NIP7_STATUS_KEY), { pubkey: '', npub: '', ts: 0 });
         const hasFreshNip7Status = Date.now() - Number(nip7.ts || 0) < NIP7_CACHE_TTL_MS;
 
@@ -6420,6 +6553,7 @@
           if (typeof settings.theme === 'string') {
             state.settings.theme = settings.theme;
           }
+          state.settings.opdsFeeds = normalizePublicOPDSFeedSettings(settings.opdsFeeds);
         }
         if (nip7 && typeof nip7.pubkey === 'string') {
           state.nip7.pubkey = nip7.pubkey;
@@ -6431,6 +6565,7 @@
         autoReadingInput.checked = Boolean(state.settings.autoReading);
         nip7EnabledInput.checked = Boolean(state.settings.useNip7);
         themeModeInput.value = ['white', 'paper', 'dark'].includes(state.settings.theme) ? state.settings.theme : 'white';
+        opdsFeedsInput.value = opdsFeedInputValue();
         applyTheme(themeModeInput.value);
         renderFavorites();
         renderReading();
@@ -6689,11 +6824,17 @@
       }
 
       function applySettingsFromUI() {
+        const previousOPDSFeeds = JSON.stringify(state.settings.opdsFeeds);
         state.settings.autoReading = autoReadingInput.checked;
         state.settings.useNip7 = nip7EnabledInput.checked;
         state.settings.theme = themeModeInput.value;
+        saveOPDSFeedSettingsFromUI();
         applyTheme(state.settings.theme);
         localStorage.setItem(SETTINGS_KEY, JSON.stringify(state.settings));
+        if (previousOPDSFeeds !== JSON.stringify(state.settings.opdsFeeds)) {
+          renderSearchSources();
+          if (state.settings.useNip7 && state.nip7.pubkey) queueFavoriteSync();
+        }
         if (!state.settings.useNip7) {
           state.nip7.pubkey = '';
           localStorage.removeItem(NIP7_STATUS_KEY);
@@ -6868,6 +7009,7 @@
       });
       desktopSignerDisconnect.addEventListener('click', () => void disconnectDesktopNostrSigner());
       themeModeInput.addEventListener('change', applySettingsFromUI);
+      opdsFeedsInput.addEventListener('change', applySettingsFromUI);
 
       searchForm.addEventListener('submit', (event) => {
         event.preventDefault();

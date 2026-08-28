@@ -17,6 +17,7 @@ const CATALOG_PATHS = [
   /^\/api\/doab$/,
   /^\/api\/gdl$/,
   /^\/api\/gdl-epub$/,
+  /^\/api\/litres\/search$/,
   /^\/api\/books\/\d+$/,
   /^\/api\/books\/\d+\/download$/,
 ];

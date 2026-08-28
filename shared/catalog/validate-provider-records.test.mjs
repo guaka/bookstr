@@ -29,6 +29,15 @@ test('FB2 contract defines MIME types, filename forms, and portable progress loc
   assert.match(contract, /retain the downloaded bytes/);
 });
 
+test('OPDS settings contract keeps only public name and URL metadata in Nostr', () => {
+  assert.match(contract, /credential-free public/);
+  assert.match(contract, /Private-network endpoints,\s+embedded credentials/);
+  assert.match(contract, /bookstr-opds-feed/);
+  assert.match(contract, /bookstr-opds-feeds/);
+  assert.match(contract, /OPDS 1 Atom acquisition feeds, OpenSearch discovery, and\s+OPDS 2 JSON/);
+  assert.match(contract, /never forwarded through Bookstr's public worker/);
+});
+
 test('validator reports document, record, identity, and collection errors', () => {
   assert.deepEqual(validateProviderRecords(null), ['$: must be an object']);
   assert.deepEqual(validateProviderRecords({ version: 2, records: [] }), ['version: must be 1', 'records: must be a non-empty array']);
