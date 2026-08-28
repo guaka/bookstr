@@ -25,6 +25,7 @@ jobs:
   android:
     name: Android
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     defaults:
       run:
         working-directory: android
@@ -40,7 +41,7 @@ jobs:
           cache: gradle
       - uses: android-actions/setup-android@v3
       - name: Install SDK packages
-        run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
+        run: sdkmanager "platforms;android-35" "build-tools;35.0.0" "system-images;android-30;google_apis;x86_64"
       - name: Unit tests
         id: unit_tests
         continue-on-error: true
@@ -83,34 +84,15 @@ jobs:
         with:
           name: bookstr-test-overview-android-${{ github.run_id }}
           path: test-overview/android.json
-      - name: Fail unsuccessful Android checks
-        if: always() && (steps.unit_tests.outcome != 'success' || steps.unit_coverage.outcome != 'success' || steps.assemble.outcome != 'success')
-        run: exit 1
-
-  android-instrumented:
-    name: Android UI
-    runs-on: ubuntu-latest
-    timeout-minutes: 45
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-      - uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: '21'
-          cache: gradle
-      - uses: android-actions/setup-android@v3
-      - name: Install SDK packages
-        run: sdkmanager "platforms;android-35" "build-tools;35.0.0" "system-images;android-30;google_apis;x86_64"
       - name: Enable KVM
+        working-directory: .
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
       - name: Start Android UI timer
         id: ui_timer
+        working-directory: .
         run: echo "started=$(date +%s)" >> "$GITHUB_OUTPUT"
       - name: Compose UI tests
         id: ui_tests
@@ -123,6 +105,7 @@ jobs:
           script: cd android && ./gradlew --no-daemon connectedDebugAndroidTest
       - name: Record Android UI test overview
         if: always()
+        working-directory: .
         env:
           TEST_STATUS: ${{ steps.ui_tests.outcome == 'success' && 'passing' || 'failing' }}
           TEST_STARTED: ${{ steps.ui_timer.outputs.started }}
@@ -137,6 +120,6 @@ jobs:
         with:
           name: bookstr-test-overview-android-ui-${{ github.run_id }}
           path: test-overview/android-ui.json
-      - name: Fail unsuccessful Android UI checks
-        if: always() && steps.ui_tests.outcome != 'success'
+      - name: Fail unsuccessful Android checks
+        if: always() && (steps.unit_tests.outcome != 'success' || steps.unit_coverage.outcome != 'success' || steps.assemble.outcome != 'success' || steps.ui_tests.outcome != 'success')
         run: exit 1
