@@ -19,6 +19,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       web: ${{ steps.filter.outputs.web }}
+      electron: ${{ steps.filter.outputs.electron }}
       workflows: ${{ steps.filter.outputs.workflows }}
     steps:
       - uses: actions/checkout@v4
@@ -36,6 +37,12 @@ jobs:
               - 'shared/design-tokens/**'
               - 'docs/CLIENT_CAPABILITIES.md'
               - 'scripts/**'
+              - '.github/workflows/ci.yml'
+            electron:
+              - 'desktop/**'
+              - 'web/**'
+              - 'shared/**'
+              - 'scripts/test-overview.mjs'
               - '.github/workflows/ci.yml'
             workflows:
               - '.github/workflows/**'
@@ -144,4 +151,73 @@ jobs:
           path: test-overview/*.json
       - name: Fail unsuccessful web checks
         if: always() && (steps.web_tests.outcome != 'success' || steps.web_coverage.outcome != 'success' || steps.web_e2e.outcome != 'success')
+        run: exit 1
+
+  electron:
+    name: Electron
+    needs: changes
+    if: needs.changes.outputs.electron == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: desktop
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+      - name: Install desktop dependencies
+        run: npm ci
+      - name: Run Electron unit coverage
+        id: electron_tests
+        continue-on-error: true
+        run: |
+          started=$(date +%s)
+          set +e
+          npm run test:coverage | tee electron-tests.tap
+          status=${PIPESTATUS[0]}
+          echo "duration_ms=$((($(date +%s) - started) * 1000))" >> "$GITHUB_OUTPUT"
+          exit "$status"
+      - name: Upload Electron unit coverage
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bookstr-electron-unit-coverage-${{ github.sha }}
+          path: desktop/electron-tests.tap
+      - name: Install Electron test dependencies
+        if: always()
+        run: npx playwright install-deps
+      - name: Run Electron smoke tests
+        id: electron_e2e
+        if: always()
+        continue-on-error: true
+        run: |
+          started=$(date +%s)
+          set +e
+          xvfb-run -a npx playwright test tests/e2e/desktop.smoke.spec.js --reporter=json > electron-playwright.json
+          status=$?
+          echo "duration_ms=$((($(date +%s) - started) * 1000))" >> "$GITHUB_OUTPUT"
+          exit "$status"
+      - name: Record Electron test overview
+        if: always()
+        working-directory: .
+        env:
+          UNIT_STATUS: ${{ steps.electron_tests.outcome == 'success' && 'passing' || 'failing' }}
+          E2E_STATUS: ${{ steps.electron_e2e.outcome == 'success' && 'passing' || 'failing' }}
+          UNIT_DURATION_MS: ${{ steps.electron_tests.outputs.duration_ms }}
+          E2E_DURATION_MS: ${{ steps.electron_e2e.outputs.duration_ms }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          node scripts/test-overview.mjs record --id electron --suite Electron --status "$UNIT_STATUS" --results-format tap --results desktop/electron-tests.tap --coverage-format node --coverage desktop/electron-tests.tap --duration-ms "$UNIT_DURATION_MS" --output test-overview/electron.json --recorded "$(date -u +%FT%TZ)" --run-url "$RUN_URL" --commit "$GITHUB_SHA"
+          node scripts/test-overview.mjs record --id electron-e2e --suite "Electron e2e" --status "$E2E_STATUS" --results-format playwright --results desktop/electron-playwright.json --duration-ms "$E2E_DURATION_MS" --output test-overview/electron-e2e.json --recorded "$(date -u +%FT%TZ)" --run-url "$RUN_URL" --commit "$GITHUB_SHA"
+      - name: Upload Electron test overview
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bookstr-test-overview-electron-${{ github.run_id }}
+          path: test-overview/*.json
+      - name: Fail unsuccessful Electron checks
+        if: always() && (steps.electron_tests.outcome != 'success' || steps.electron_e2e.outcome != 'success')
         run: exit 1

@@ -6,6 +6,7 @@ import {
   parseJacoco,
   parseJUnit,
   parseLLVM,
+  parseNodeCoverage,
   parsePlaywright,
   parseSwiftTest,
   parseTap,
@@ -58,12 +59,27 @@ test('normalizes Istanbul and JaCoCo coverage', () => {
   ] }] }).map(metric => metric.value), [70, 50, 80, 75]);
 });
 
+test('normalizes Node test-runner coverage from TAP and spec reports', () => {
+  assert.deepEqual(
+    parseNodeCoverage('# all files | 100.00 | 85.96 | 100.00 |\n'),
+    [
+      { label: 'Lines', value: 100, suffix: '%' },
+      { label: 'Branches', value: 85.96, suffix: '%' },
+      { label: 'Functions', value: 100, suffix: '%' },
+    ],
+  );
+  assert.equal(parseNodeCoverage('ℹ all files | 99.50 | 80.00 | 98.25 |')[0].value, 99.5);
+  assert.deepEqual(parseNodeCoverage('coverage unavailable'), []);
+});
+
 test('renders an accessible dashboard with links and missing suites', () => {
   const html = renderDashboard([{ id: 'web', suite: 'Web', status: 'passing', recorded: '2026-08-24T10:00:00Z', runUrl: 'https://example.com/run', results: { tests: 10, passed: 10 }, coverage: [] }]);
   assert.match(html, /<th scope="row"><a href="https:\/\/example\.com\/run">Web<\/a><\/th>/);
   assert.match(html, /10\/10/);
   assert.match(html, /2026-08-24 10:00/);
   assert.match(html, /status missing/);
+  assert.match(html, />Electron</);
+  assert.match(html, />Electron e2e</);
   assert.match(html, /class="logo"[^>]+alt="Bookstr"/);
   assert.match(html, /<th>Tests<\/th><th>Pass rate<\/th><th>Duration<\/th>/);
   assert.doesNotMatch(html, /border-radius:999px/);

@@ -50,6 +50,7 @@ jobs:
             echo 0
           }
           echo "ci=$(latest_run_with_artifact ci.yml bookstr-test-overview-web-)" >> "$GITHUB_OUTPUT"
+          echo "electron=$(latest_run_with_artifact ci.yml bookstr-test-overview-electron-)" >> "$GITHUB_OUTPUT"
           echo "android=$(latest_run_with_artifact android.yml bookstr-test-overview-android-)" >> "$GITHUB_OUTPUT"
           echo "android_ui=$(latest_run_with_artifact android.yml bookstr-test-overview-android-ui-)" >> "$GITHUB_OUTPUT"
           echo "ios=$(latest_run_with_artifact ios.yml bookstr-test-overview-ios-)" >> "$GITHUB_OUTPUT"
@@ -70,6 +71,16 @@ jobs:
         with:
           run-id: ${{ steps.runs.outputs.android }}
           name: bookstr-test-overview-android-${{ steps.runs.outputs.android }}
+          path: test-overview-data
+          merge-multiple: true
+          github-token: ${{ github.token }}
+      - name: Download latest Electron results
+        if: steps.runs.outputs.electron != '0'
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          run-id: ${{ steps.runs.outputs.electron }}
+          pattern: bookstr-test-overview-electron-*
           path: test-overview-data
           merge-multiple: true
           github-token: ${{ github.token }}
