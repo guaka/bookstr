@@ -39,8 +39,10 @@ test('CodeQL gates each language while retaining scheduled full scans', async ()
   }
 
   assert.match(workflow, /event_name == 'schedule'/);
+  assert.match(workflow, /cancel-in-progress: false/);
   assert.match(workflow, /runs-on: macos-26[\s\S]*languages: swift/);
-  assert.match(workflow, /languages: java-kotlin\n\s+build-mode: autobuild/);
+  assert.match(workflow, /languages: java-kotlin\n\s+build-mode: manual/);
+  assert.match(workflow, /run: \.\/gradlew --no-daemon assembleDebug/);
 });
 
 test('Pages deploys once after CI and does not cancel an active deploy', async () => {
@@ -49,6 +51,12 @@ test('Pages deploys once after CI and does not cancel an active deploy', async (
   assert.doesNotMatch(workflow, /^  push:/m);
   assert.match(workflow, /workflows: \[CI\]/);
   assert.match(workflow, /cancel-in-progress: false/);
+  assert.match(workflow, /workflow_run\.event == 'push'/);
+  assert.match(workflow, /workflow_run\.head_repository\.full_name == github\.repository/);
+  assert.match(workflow, /workflow_run\.conclusion == 'success'/);
+  assert.match(workflow, /ref: main/);
+  assert.doesNotMatch(workflow, /ref: \$\{\{ github\.event\.workflow_run\.head_sha/);
+  assert.match(workflow, /deploy:[\s\S]*permissions:[\s\S]*pages: write[\s\S]*id-token: write/);
   assert.equal(
     [...workflow.matchAll(/uses: actions\/deploy-pages@v4/g)].length,
     1,
