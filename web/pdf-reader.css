@@ -50,6 +50,20 @@ body[data-theme="night"] {
   align-items: center;
 }
 
+#pdf-speech-controls {
+  display: flex;
+  gap: .3rem;
+  align-items: center;
+}
+
+#pdf-speech-controls.hidden {
+  display: none;
+}
+
+#pdf-speech-controls button:disabled {
+  opacity: .45;
+}
+
 button,
 .actions a {
   min-width: 2rem;

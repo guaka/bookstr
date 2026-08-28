@@ -1,0 +1,409 @@
+import assert from 'node:assert/strict';
+import test from 'node:test';
+
+function createMockElement(tagName, { ownerDocument } = {}) {
+  const children = [];
+  const classSet = new Set();
+  const listeners = {};
+  const style = {};
+  const dataset = {};
+  const rect = { top: 0, bottom: 0 };
+
+  const classList = {
+    add(name) {
+      classSet.add(name);
+      return this;
+    },
+    remove(name) {
+      classSet.delete(name);
+      return this;
+    },
+    contains(name) {
+      return classSet.has(name);
+    },
+    get value() {
+      return [...classSet].join(' ');
+    },
+  };
+
+  const element = {
+    tagName,
+    ownerDocument,
+    children,
+    style,
+    dataset,
+    classList,
+    parentElement: null,
+    disabled: false,
+    textContent: '',
+    id: '',
+    set className(value) {
+      classSet.clear();
+      String(value || '').split(/\s+/).filter(Boolean).forEach(name => classSet.add(name));
+    },
+    get className() {
+      return classList.value;
+    },
+    appendChild(child) {
+      child.parentElement = element;
+      children.push(child);
+      return child;
+    },
+    replaceChildren() {
+      children.length = 0;
+    },
+    addEventListener(name, listener) {
+      (listeners[name] ||= []).push(listener);
+    },
+    click() {
+      (listeners.click || []).forEach(listener => listener());
+    },
+    setAttribute(name, value) {
+      element[name] = value;
+    },
+    getAttribute(name) {
+      return element[name];
+    },
+    querySelector(selector) {
+      if (selector === 'canvas') {
+        return children.find(child => child.tagName === 'canvas');
+      }
+      return null;
+    },
+    querySelectorAll(selector) {
+      if (selector !== '.pdf-page') return [];
+      return children.filter(child => child.classList.contains('pdf-page'));
+    },
+    getContext() {
+      return {};
+    },
+    getBoundingClientRect() {
+      return rect;
+    },
+    setRect(top, bottom) {
+      rect.top = top;
+      rect.bottom = bottom;
+    },
+  };
+
+  return element;
+}
+
+function setupPdfReaderEnvironment({ pdfPages = 3 } = {}) {
+  const document = {
+    body: createMockElement('body'),
+    _elementsById: {},
+    createElement(tagName) {
+      const element = createMockElement(tagName, { ownerDocument: document });
+      if (tagName === 'canvas') {
+        element.getContext = () => ({
+          putImageData: () => {},
+          drawImage: () => {},
+          clearRect: () => {},
+        });
+      }
+      return element;
+    },
+    getElementById(id) {
+      return this._elementsById[id] || null;
+    },
+    registerElement(id, element) {
+      this._elementsById[id] = element;
+      return element;
+    },
+  };
+
+  document.body.dataset = {};
+
+  const ids = [
+    'pages',
+    'message',
+    'title',
+    'page-count',
+    'zoom-label',
+    'download',
+    'pdf-speech-controls',
+    'pdf-speech-play',
+    'pdf-speech-pause',
+    'pdf-speech-stop',
+    'zoom-out',
+    'zoom-in',
+  ];
+  for (const id of ids) {
+    const element = document.createElement('div');
+    element.id = id;
+    document.registerElement(id, element);
+  }
+
+  const pages = document.getElementById('pages');
+  const message = document.getElementById('message');
+  const title = document.getElementById('title');
+  const pageCount = document.getElementById('page-count');
+  const zoomLabel = document.getElementById('zoom-label');
+  const download = document.getElementById('download');
+  const controls = {
+    panel: document.getElementById('pdf-speech-controls'),
+    play: document.getElementById('pdf-speech-play'),
+    pause: document.getElementById('pdf-speech-pause'),
+    stop: document.getElementById('pdf-speech-stop'),
+  };
+
+  for (const button of [controls.play, controls.pause, controls.stop, document.getElementById('zoom-out'), document.getElementById('zoom-in')]) {
+    button.getContext = () => ({});
+    button.disabled = false;
+    button.textContent = '';
+  }
+
+  const progress = [];
+  const speech = {
+    createCalls: 0,
+    startCalls: 0,
+    pauseCalls: 0,
+    resumeCalls: 0,
+    stopCalls: 0,
+    lastPlan: null,
+    onStateChange: null,
+  };
+  speech.supported = true;
+
+  const createdObjectURLs = [];
+  const revokedObjectURLs = [];
+
+  const windowObject = globalThis;
+  windowObject.document = document;
+  windowObject.window = windowObject;
+  windowObject.innerHeight = 900;
+  windowObject.innerWidth = 1024;
+  windowObject.hidden = false;
+  windowObject._events = {};
+  windowObject.addEventListener = (name, listener) => {
+    (windowObject._events[name] ||= []).push(listener);
+  };
+  windowObject.__triggers = {
+    trigger(name) {
+      (windowObject._events[name] || []).forEach(listener => listener());
+    },
+  };
+  windowObject.BookstrSpeech = {
+    supported: true,
+    normalizeLocale: (language) => String(language || 'en').replace(/_/g, '-').toLowerCase() === 'pt' ? 'pt-PT' : String(language || 'en'),
+    buildPlan: (paragraphs) => {
+      const text = Array.isArray(paragraphs) ? paragraphs.join(' ').trim() : '';
+      const chunks = text ? [{ text, start: 0, pauseMs: 0 }] : [];
+      speech.startCalls = 0;
+      return { text, chunks };
+    },
+    createPlayer: ({ onStateChange }) => {
+      speech.createCalls += 1;
+      speech.onStateChange = onStateChange;
+      let state = 'stopped';
+      return {
+        supported: true,
+        start(plan) {
+          speech.startCalls += 1;
+          speech.lastPlan = plan;
+          state = 'playing';
+          if (typeof onStateChange === 'function') onStateChange('playing');
+          return true;
+        },
+        pause() {
+          speech.pauseCalls += 1;
+          state = 'paused';
+          if (typeof onStateChange === 'function') onStateChange('paused');
+          return true;
+        },
+        resume() {
+          speech.resumeCalls += 1;
+          state = 'playing';
+          if (typeof onStateChange === 'function') onStateChange('playing');
+          return true;
+        },
+        stop() {
+          speech.stopCalls += 1;
+          state = 'stopped';
+          if (typeof onStateChange === 'function') onStateChange('stopped');
+          return true;
+        },
+      };
+    },
+  };
+  windowObject.speechSynthesis = {
+    cancel: () => {},
+  };
+  windowObject.SpeechSynthesisUtterance = function(text) {
+    this.text = text;
+    this.lang = '';
+    this.rate = 0;
+    this.onend = null;
+    this.onerror = null;
+  };
+
+  windowObject.bookstrDesktop = {
+    reportProgress: (payload) => {
+      progress.push(payload);
+    },
+  };
+
+  let pageIndex = 1;
+  windowObject.__bookstrGetDocument = async () => ({
+    promise: Promise.resolve({
+      numPages: pdfPages,
+      getPage: async () => ({
+        index: pageIndex++,
+        getTextContent: async () => ({ items: [{ str: `page ${pageIndex - 1}` }] }),
+        getViewport: () => ({ width: 960, height: 1200 }),
+        render: () => ({ promise: Promise.resolve() }),
+      }),
+      destroy: async () => {},
+    }),
+  });
+
+  windowObject.__bookstrCreateObjectURL = () => {
+    const value = `blob://pdf-${createdObjectURLs.length + 1}`;
+    createdObjectURLs.push({ value, blobLength: 1 });
+    return value;
+  };
+  windowObject.__bookstrRevokeObjectURL = (value) => {
+    revokedObjectURLs.push(value);
+  };
+
+  const intersectionObserverEntries = [];
+  windowObject.IntersectionObserver = class {
+    constructor(callback) {
+      this.callback = callback;
+      this.targets = [];
+    }
+    observe(target) {
+      this.targets.push(target);
+      intersectionObserverEntries.push(target);
+      const rect = target.getBoundingClientRect();
+      this.callback([{ isIntersecting: true, target, boundingClientRect: rect }]);
+    }
+    unobserve(target) {
+      this.targets = this.targets.filter(item => item !== target);
+    }
+    disconnect() {
+      this.targets = [];
+    }
+  };
+
+  return {
+    document,
+    window: windowObject,
+    pages,
+    message,
+    title,
+    pageCount,
+    zoomLabel,
+    download,
+    controls,
+    zoomOutButton: document.getElementById('zoom-out'),
+    zoomInButton: document.getElementById('zoom-in'),
+    progress,
+    speech,
+    createdObjectURLs,
+    revokedObjectURLs,
+    intersectionObserverEntries,
+  };
+}
+
+test('pdf-reader supports desktop payload normalization, rendering, and speech controls', async () => {
+  const env = setupPdfReaderEnvironment();
+  const { PdfReaderTest } = env.window;
+
+  assert.ok(typeof PdfReaderTest.normalizeDesktopReaderPayload === 'function');
+  const prepared = {
+    base64: 'VGVzdC1wZGY=',
+    filename: 'Bad:Name/Book.pdf',
+    theme: 'solarized',
+    readUrl: '/books/guide.pdf',
+    book: {
+      md5: 'A'.repeat(32),
+      title: 'Reader title',
+      authors: 'Author Name',
+      year: 2024,
+      source: 'gutenberg',
+      sourceNativeId: '123',
+      extension: 'pdf',
+    },
+  };
+
+  assert.equal(PdfReaderTest.normalizePdfPageProgress(1, 1), 1);
+  assert.equal(PdfReaderTest.normalizePdfPageProgress(1, 2), 0);
+  assert.equal(PdfReaderTest.normalizePdfPageProgress(5, 2), 1);
+  assert.equal(PdfReaderTest.clampProgress('1.7'), 1);
+  assert.equal(PdfReaderTest.clampProgress(-2), 0);
+
+  const readerPayload = PdfReaderTest.normalizeDesktopReaderPayload(prepared);
+  assert.equal(readerPayload.filename, 'Bad Name Book.pdf');
+  assert.equal(readerPayload.theme, 'solarized');
+  assert.equal(readerPayload.book.extension, 'pdf');
+  assert.equal(readerPayload.base64, 'VGVzdC1wZGY=');
+
+  const fallbackPayload = PdfReaderTest.normalizeDesktopReaderPayload({
+    base64: 'VGVzdA==',
+    book: { },
+  });
+  assert.equal(fallbackPayload.filename, 'Book.pdf');
+  assert.deepEqual(PdfReaderTest.bytesFromBase64('dGVzdA=='), new Uint8Array([116, 101, 115, 116]));
+
+  await env.window.loadPdf(prepared);
+
+  assert.equal(env.message.classList.contains('hidden'), true);
+  assert.equal(env.title.textContent, 'Reader title');
+  assert.equal(env.download.href, 'blob://pdf-1');
+  assert.equal(env.download.download, 'Bad Name Book.pdf');
+  assert.equal(env.pageCount.textContent, '3 pages');
+  assert.equal(env.window.document.body.dataset.theme, 'solarized');
+  assert.equal(env.zoomLabel.textContent, '100%');
+  assert.equal(env.progress.length >= 4, true);
+  assert.equal(env.progress.some((entry) => entry.furthestProgression === 1), true);
+
+  const firstUrl = env.createdObjectURLs[0].value;
+  await env.window.loadPdf({
+    ...prepared,
+    filename: 'Reader-Second.pdf',
+    base64: 'VGVzdC1wZGY=',
+  });
+  assert.equal(env.createdObjectURLs.length, 2);
+  assert.equal(env.revokedObjectURLs.includes(firstUrl), true);
+
+  const reportedBefore = env.progress.length;
+  const originalLoadPdf = env.window.loadPdf;
+  let forwardedCalls = 0;
+  env.window.loadPdf = async (...args) => {
+    forwardedCalls += 1;
+    return originalLoadPdf(...args);
+  };
+  await env.window.bookstrDesktop.onOpenReader({
+    base64: 'VGVzdC1wZGY=',
+    theme: 'sepia',
+    filename: 'FromBridge.pdf',
+    book: { md5: 'D'.repeat(32), title: 'Bridge title' },
+  });
+  assert.equal(forwardedCalls, 1);
+  await env.window.bookstrDesktop.onOpenReader({});
+  assert.equal(forwardedCalls, 1);
+  env.window.loadPdf = originalLoadPdf;
+
+  assert.equal(env.progress.length > reportedBefore, true);
+  assert.equal(env.speech.createCalls > 0, true);
+
+  env.controls.play.click();
+  await Promise.resolve();
+  assert.equal(env.speech.startCalls, 1);
+  assert.ok(env.speech.lastPlan?.chunks?.length > 0);
+
+  env.controls.pause.click();
+  assert.equal(env.speech.pauseCalls, 1);
+  assert.equal(env.speech.onStateChange?.name, undefined);
+  assert.equal(env.controls.pause.textContent, '▶');
+
+  env.controls.pause.click();
+  assert.equal(env.speech.resumeCalls, 1);
+  env.controls.stop.click();
+  assert.equal(env.speech.stopCalls, 1);
+
+  assert.equal(env.controls.play.disabled, false);
+  assert.equal(env.controls.pause.disabled, true);
+});

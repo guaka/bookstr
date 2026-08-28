@@ -8,6 +8,9 @@ const {
   resolveTitle,
   languageForBook,
   yearForBook,
+	normalizeRights,
+	rightsLabel,
+	rightsAccessibleLabel,
   authorSearchName,
   readingProgressForBook,
   normalizeFavoriteAddedAt,
@@ -24,12 +27,44 @@ const {
   availabilitySourcesForBook,
   sortBooks,
   dedupeLibraryBooks,
+  parseUnglueItOpdsFeed,
   matchesBookFilter,
   sameLibraryBook,
   mergeLibraryState,
   enrichBookMetadata,
   isbnForBook,
 } = globalThis.BookMetadata;
+
+test('normalizes explicit rights evidence without date or source heuristics', () => {
+  assert.deepEqual(normalizeRights({}), {
+    rights_status: 'unknown', license: '', license_url: '', rights_source: '',
+  });
+  assert.equal(normalizeRights({ year: 1700, source: 'gutenberg' }).rights_status, 'unknown');
+  assert.equal(normalizeRights({ copyright: false }).rights_status, 'public_domain');
+  assert.equal(normalizeRights({ copyright: true }).rights_status, 'copyrighted');
+  assert.equal(normalizeRights({ license: 'CC BY-SA 4.0' }).rights_status, 'open_license');
+  assert.equal(normalizeRights({ license: 'CC0 1.0' }).rights_status, 'public_domain');
+  assert.equal(normalizeRights({ license: 'GNU Free Documentation License' }).rights_status, 'open_license');
+  assert.equal(normalizeRights({ license: 'All rights reserved' }).rights_status, 'copyrighted');
+  assert.equal(normalizeRights({ license: 'See publisher terms' }).rights_status, 'unknown');
+  assert.equal(normalizeRights({ license_url: 'javascript:alert(1)' }).license_url, '');
+});
+
+test('builds compact and accessible rights labels', () => {
+  assert.equal(rightsLabel({ license: 'CC BY-SA 4.0' }), 'CC BY-SA 4.0');
+  assert.equal(rightsLabel({ license: 'Public Domain' }), 'PD');
+  assert.equal(rightsLabel({}), '©');
+  assert.equal(rightsAccessibleLabel({ rights_status: 'copyrighted' }), 'Copyrighted');
+  assert.equal(rightsAccessibleLabel({}), 'No open license identified');
+});
+
+test('unknown favorite refreshes do not erase explicit rights evidence', () => {
+  const entries = [{ md5: 'a'.repeat(32), rights_status: 'open_license', license: 'CC BY 4.0', rights_source: 'opds' }];
+  mergeFavoriteEntry(entries, { md5: 'a'.repeat(32), license: 'See publisher terms' });
+  assert.equal(entries[0].rights_status, 'open_license');
+  assert.equal(entries[0].license, 'CC BY 4.0');
+  assert.equal(entries[0].rights_source, 'opds');
+});
 
 test('metadataObject parses object payloads and ignores invalid payloads', () => {
   assert.deepEqual(metadataObject({ title: 'Book' }), { title: 'Book' });
@@ -246,6 +281,86 @@ test('classifies supported book availability sources', () => {
   assert.equal(availabilityForBook({ readUrl: 'https://books-api.guaka.org/api/books/48320/download' }), 'Gutenberg');
   assert.equal(availabilityForBook({ md5: 'a'.repeat(32) }), 'Metadata only');
   assert.equal(availabilityForBook({ readUrl: 'https://example.test/book.epub' }), 'Metadata only');
+});
+
+test('parses Unglue.it OPDS feed entries into searchable records', () => {
+  const feed = `
+    <feed xmlns:dcterms=\"http://purl.org/dc/terms/\" xmlns=\"http://www.w3.org/2005/Atom\">
+      <entry>
+        <id>https://unglue.it/api/id/work/156702/</id>
+        <title>War and Peace</title>
+        <author><name>Leo Tolstoy</name></author>
+        <dcterms:issued>1869</dcterms:issued>
+        <dcterms:publisher>Recovering the Classics</dcterms:publisher>
+        <dcterms:language>en</dcterms:language>
+        <link rel=\"http://opds-spec.org/acquisition/open-access\" href=\"https://unglue.it/download_ebook/209548/?feed=opds\" type=\"application/epub+zip\" />
+        <link href=\"https://example.org/cover.jpg\" rel=\"http://opds-spec.org/image/thumbnail\" type=\"image/jpeg\" />
+      </entry>
+    </feed>
+  `;
+  const books = parseUnglueItOpdsFeed(feed);
+  assert.equal(books.length, 1);
+  assert.equal(books[0].source, 'unglueit');
+  assert.equal(books[0].sourceNativeId, '156702');
+  assert.equal(books[0].md5, 'unglueit:156702');
+  assert.equal(books[0].extension, 'epub');
+  assert.equal(books[0].year, '1869');
+  assert.equal(books[0].readUrl, 'https://unglue.it/download_ebook/209548/?feed=opds');
+  assert.equal(books[0].coverUrl, 'https://example.org/cover.jpg');
+  assert.equal(books[0].license, '');
+});
+
+test('parses namespaced OPDS entries and preserves public-domain works', () => {
+  const feed = `
+    <feed xmlns:opds="http://opds-spec.org/" xmlns:atom="http://www.w3.org/2005/Atom" xmlns:dcterms="http://purl.org/dc/terms/">
+      <atom:entry>
+        <dcterms:title>Open Source Utopia</dcterms:title>
+        <id>https://unglue.it/api/id/work/777777/</id>
+        <link rel="http://opds-spec.org/acquisition/open-access" href="https://unglue.it/download_ebook/777777/?feed=opds" type="application/epub+zip" dcterms:rights="CC BY-SA" />
+        <link rel="http://opds-spec.org/image/thumbnail" href="https://example.org/open-source-utopia.jpg" type="image/jpeg" />
+        <dcterms:issued>2021</dcterms:issued>
+        <author><name>Open Source Author</name></author>
+        <category term="Technology" />
+        <category term="Open Education" />
+        <content type="text">This is an open textbook.</content>
+      </atom:entry>
+      <atom:entry>
+        <title>Old Public Domain Work</title>
+        <id>https://unglue.it/api/id/work/888888/</id>
+        <link rel="http://opds-spec.org/acquisition/open-access" href="https://unglue.it/download_ebook/888888/?feed=opds" type="application/pdf" dcterms:rights="Public Domain" />
+        <dcterms:issued>1912</dcterms:issued>
+        <author><name>Historical Author</name></author>
+      </atom:entry>
+    </feed>
+  `;
+  const books = parseUnglueItOpdsFeed(feed);
+  assert.equal(books.length, 2);
+  assert.equal(books[0].source, 'unglueit');
+  assert.equal(books[0].sourceNativeId, '777777');
+  assert.equal(books[0].title, 'Open Source Utopia');
+  assert.equal(books[0].description, 'This is an open textbook.');
+  assert.deepEqual(books[0].subjects, ['Technology', 'Open Education']);
+  assert.equal(books[0].license, 'CC BY-SA');
+	assert.equal(books[0].rights_status, 'open_license');
+	assert.equal(books[0].rights_source, 'unglueit');
+  assert.equal(books[0].md5, 'unglueit:777777');
+  assert.equal(books[1].license, 'Public Domain');
+	assert.equal(books[1].rights_status, 'public_domain');
+  assert.equal(books[1].extension, 'pdf');
+});
+
+test('accepts only explicit EPUB and PDF OPDS acquisition links', () => {
+  const feed = `<feed xmlns="http://www.w3.org/2005/Atom">
+    <entry><id>https://unglue.it/api/id/work/999001/</id><title>Mixed links</title>
+      <link rel="subsection" href="https://example.org/feed.xml" type="application/atom+xml" />
+      <link rel="http://opds-spec.org/acquisition/open-access" href="https://example.org/book.pdf" type="application/pdf" /></entry>
+    <entry><id>https://unglue.it/api/id/work/999002/</id><title>No book file</title>
+      <link rel="subsection" href="https://example.org/feed.xml" type="application/atom+xml" /></entry>
+  </feed>`;
+  const books = parseUnglueItOpdsFeed(feed);
+  assert.equal(books.length, 1);
+  assert.equal(books[0].title, 'Mixed links');
+  assert.equal(books[0].extension, 'pdf');
 });
 
 test('availabilityForBook marks cached availability on top of source tags', () => {
@@ -1405,5 +1520,87 @@ test('availabilitySourcesForBook returns unique source list for readUrl with que
       true,
     ),
     ['Gutenberg', 'Cached'],
+  );
+});
+
+test('languageForBook resolves nested language objects with code or name keys', () => {
+  assert.equal(languageForBook({ language: { id: 'EN' } }), 'en');
+  assert.equal(languageForBook({ language: { name: 'fr' } }), 'fr');
+});
+
+test('availabilityForBook reports cached-only availability when only cache is present', () => {
+  assert.equal(availabilityForBook({ title: 'Cached title' }, true), 'Cached');
+});
+
+test('resolveTitle ignores non-object metadata payloads', () => {
+  assert.equal(
+    resolveTitle({
+      title: 'Untitled book',
+      metadata: 12,
+      readUrl: 'https://books-api.guaka.org/downloads/Amazing%20Story.epub',
+    }),
+    'Amazing Story',
+  );
+});
+
+test('resolveTitle treats read URL placeholders as non-title metadata sources', () => {
+  assert.equal(
+    resolveTitle({
+      title: 'Untitled book',
+      readUrl: 'https://books-api.guaka.org/api/read/' + 'a'.repeat(32),
+    }),
+    'Untitled book',
+  );
+});
+
+test('sortBooks uses a deterministic title tie-breaker for equal numeric keys', () => {
+  const books = [
+    { title: 'Zulu', year: '2020' },
+    { title: 'Alpha', year: '2020' },
+    { title: 'Gamma', year: '2021' },
+  ];
+
+  assert.deepEqual(
+    sortBooks(books, 'year').map((book) => book.title),
+    ['Alpha', 'Zulu', 'Gamma'],
+  );
+});
+
+test('sortBooks falls back for language sorting when Intl.DisplayNames is unavailable', () => {
+  const previous = globalThis.Intl.DisplayNames;
+  const descriptor = Object.getOwnPropertyDescriptor(globalThis.Intl, 'DisplayNames');
+  if (!descriptor?.configurable) {
+    return;
+  }
+  try {
+    Object.defineProperty(globalThis.Intl, 'DisplayNames', {
+      value: undefined,
+      configurable: true,
+    });
+
+    assert.deepEqual(
+      sortBooks(
+        [
+          { title: 'Book A', language: 'zz' },
+          { title: 'Book B', language: 'aa' },
+        ],
+        'language',
+      ).map((book) => book.title),
+      ['Book A', 'Book B'],
+    );
+  } finally {
+    if (descriptor) Object.defineProperty(globalThis.Intl, 'DisplayNames', descriptor);
+  }
+});
+
+test('sortBooks uses the default cache callback when not provided', () => {
+  const books = [
+    { title: 'Remote copy', readUrl: 'https://example.test/remote.epub' },
+    { title: 'Local copy', md5: 'a'.repeat(32) },
+  ];
+
+  assert.deepEqual(
+    sortBooks(books, 'cached').map((book) => book.title),
+    ['Local copy', 'Remote copy'],
   );
 });

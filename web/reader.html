@@ -129,14 +129,52 @@
     body.night #dictionary-source { color: #7fb8a7; }
     #dictionary-context { margin: 0.65rem 0 0; font-size: 0.9rem; line-height: 1.4; opacity: 0.9; }
     #dictionary-context mark { background: #e7c766; color: #1c1916; font-weight: 700; padding: 0 0.08em; }
+    #reader-speech-controls {
+      position: fixed;
+      z-index: 15;
+      right: 0.8rem;
+      bottom: 1.6rem;
+      display: flex;
+      gap: 0.35rem;
+      align-items: center;
+      padding: 0.25rem;
+      border: 1px solid color-mix(in srgb, currentColor 22%, transparent);
+      border-radius: 999px;
+      background: color-mix(in srgb, currentColor 8%, transparent);
+      backdrop-filter: blur(4px);
+    }
+    #reader-speech-controls.hidden { display: none; }
+    #reader-speech-controls button {
+      width: 2rem;
+      height: 2rem;
+      padding: 0;
+      border: 0;
+      border-radius: 999px;
+      background: transparent;
+      color: currentColor;
+      font-size: 1rem;
+      font-weight: 600;
+      line-height: 1;
+      cursor: pointer;
+    }
+    #reader-speech-controls button:disabled {
+      opacity: 0.45;
+      cursor: not-allowed;
+    }
   </style>
   <script src="jszip.min.js"></script>
   <script src="epub.min.js"></script>
+  <script src="reader-speech.js"></script>
 </head>
 <body>
   <div id="viewer"></div>
   <button id="reader-prev" class="reader-nav" type="button" aria-label="Previous page">‹</button>
   <button id="reader-next" class="reader-nav" type="button" aria-label="Next page">›</button>
+  <div id="reader-speech-controls" class="hidden" aria-label="Read-aloud controls">
+    <button id="reader-speech-play" type="button" aria-label="Start reading">▶</button>
+    <button id="reader-speech-pause" type="button" aria-label="Pause or resume reading" disabled>▮▮</button>
+    <button id="reader-speech-stop" type="button" aria-label="Stop reading" disabled>⏹</button>
+  </div>
   <footer id="reader-footer" aria-label="Reading progress">
     <span id="reader-progress-track" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><span id="reader-progress-value"></span></span>
     <span id="reader-progress-text">0% read</span>
@@ -152,12 +190,94 @@
     <a id="dictionary-source" target="_blank" rel="noreferrer">Wiktionary</a>
   </aside>
   <script>
+    const desktopBridge = window.bookstrDesktop || null;
     let book = null;
     let rendition = null;
     let currentBookId = "";
     let activeDictionary = null;
     let bookLoadGeneration = 0;
     let readerFontPercent = Number(localStorage.getItem("bookstr-reader-font-percent")) || 100;
+    let desktopReaderBook = null;
+    let desktopReaderFurthestProgress = 0;
+    let desktopReaderProgress = null;
+    const readerSpeechControls = document.getElementById("reader-speech-controls");
+    const readerSpeechPlayButton = document.getElementById("reader-speech-play");
+    const readerSpeechPauseButton = document.getElementById("reader-speech-pause");
+    const readerSpeechStopButton = document.getElementById("reader-speech-stop");
+    let readerSpeechState = "stopped";
+    let readerSpeechPlayer = null;
+
+    function normalizeDesktopBookMetadata(payloadBook, readUrl = "") {
+      const bookPayload = payloadBook && typeof payloadBook === "object" ? payloadBook : {};
+      return {
+        md5: String(bookPayload.md5 || "").trim().toLowerCase(),
+        title: String(bookPayload.title || bookPayload.name || "Book"),
+        authors: String(bookPayload.authors || bookPayload.author || ""),
+        year: String(bookPayload.year || ""),
+        language: String(bookPayload.language || ""),
+        extension: String(bookPayload.extension || bookPayload.format || "epub").toLowerCase(),
+        readUrl: String(readUrl || bookPayload.readUrl || bookPayload.url || ""),
+        source: String(bookPayload.source || ""),
+        sourceNativeId: String(bookPayload.sourceNativeId || bookPayload.source_native_id || ""),
+        sourceUrl: String(bookPayload.sourceUrl || ""),
+        blossomUrl: String(bookPayload.blossomUrl || ""),
+        blossomSha256: String(bookPayload.blossomSha256 || ""),
+		rights_status: String(bookPayload.rights_status || bookPayload.rightsStatus || "unknown"),
+		license: String(bookPayload.license || bookPayload.rights || ""),
+		license_url: String(bookPayload.license_url || bookPayload.licenseUrl || ""),
+		rights_source: String(bookPayload.rights_source || bookPayload.rightsSource || ""),
+      };
+    }
+
+    function clampProgress(value) {
+      const numericValue = Number(value);
+      if (!Number.isFinite(numericValue)) return 0;
+      return Math.max(0, Math.min(1, numericValue));
+    }
+
+    function normalizeDesktopReaderPayload(payload) {
+      if (!payload || typeof payload !== "object") return null;
+      const base64 = String(payload.base64 || "").trim();
+      if (!base64) return null;
+      return {
+        base64,
+        theme: String(payload.theme || "paper").toLowerCase(),
+        cfi: String(payload.cfi || ""),
+        readUrl: String(payload.readUrl || ""),
+        book: normalizeDesktopBookMetadata(payload.book, String(payload.readUrl || "")),
+      };
+    }
+
+    function reportDesktopProgress(cfi, progression, furthestProgression) {
+      if (!desktopBridge || !desktopReaderBook || !desktopReaderBook.md5) return;
+      const normalizedProgress = clampProgress(progression);
+      const safeFurthest = Number.isFinite(Number(furthestProgression)) ? clampProgress(Number(furthestProgression)) : normalizedProgress;
+      const payload = {
+        md5: desktopReaderBook.md5,
+        readUrl: String(desktopReaderBook.readUrl || ""),
+        progression: normalizedProgress,
+        furthestProgression: Math.max(clampProgress(safeFurthest), desktopReaderFurthestProgress),
+        cfi: String(cfi || ""),
+        title: String(desktopReaderBook.title || ""),
+        authors: String(desktopReaderBook.authors || ""),
+        year: String(desktopReaderBook.year || ""),
+        extension: String(desktopReaderBook.extension || "epub"),
+        language: String(desktopReaderBook.language || ""),
+        source: String(desktopReaderBook.source || ""),
+        sourceNativeId: String(desktopReaderBook.sourceNativeId || ""),
+        sourceUrl: String(desktopReaderBook.sourceUrl || ""),
+        blossomUrl: String(desktopReaderBook.blossomUrl || ""),
+        blossomSha256: String(desktopReaderBook.blossomSha256 || ""),
+		rights_status: String(desktopReaderBook.rights_status || "unknown"),
+		license: String(desktopReaderBook.license || ""),
+		license_url: String(desktopReaderBook.license_url || ""),
+		rights_source: String(desktopReaderBook.rights_source || ""),
+      };
+      payload.furthestProgression = Math.max(payload.furthestProgression, desktopReaderFurthestProgress);
+      desktopReaderFurthestProgress = payload.furthestProgression;
+      desktopReaderProgress = payload;
+      if (desktopBridge.reportProgress) desktopBridge.reportProgress(payload);
+    }
 
     function base64ToArrayBuffer(base64) {
       const binary = atob(base64);
@@ -265,8 +385,12 @@
       document.head.appendChild(scrollbarStyle);
     }
 
-    function openBook(source, cfi, theme, highlightCfi, bookId) {
+    function openBook(source, cfi, theme, highlightCfi, bookId, desktopPayloadBook = null) {
       const generation = ++bookLoadGeneration;
+      desktopReaderBook = desktopPayloadBook && typeof desktopPayloadBook === "object" ? normalizeDesktopBookMetadata(desktopPayloadBook) : null;
+      desktopReaderFurthestProgress = 0;
+      desktopReaderProgress = null;
+      stopReaderSpeech();
       currentBookId = String(bookId || "");
       document.body.dataset.bookId = currentBookId;
       applyTheme(theme || "paper");
@@ -288,7 +412,15 @@
           nextBook.destroy();
           return Promise.reject(new DOMException("A newer book was opened.", "AbortError"));
         }
-        book = nextBook;
+		book = nextBook;
+		const embeddedRights = String(book.packaging?.metadata?.rights || "").trim();
+		if (embeddedRights) {
+		  const rights = { rights_status: "unknown", license: embeddedRights, license_url: "", rights_source: "epub_opf" };
+		  if (desktopReaderBook) Object.assign(desktopReaderBook, rights);
+		  if (window.parent && window.parent !== window) {
+			window.parent.postMessage({ type: "bookstr-reader-metadata", md5: currentBookId, ...rights }, "*");
+		  }
+		}
         rendition = nextBook.renderTo("viewer", {
           width: "100%",
           height: "100%",
@@ -342,6 +474,7 @@
       }
       if (!Number.isFinite(progression)) progression = 0;
       updateReaderProgress(progression);
+      reportDesktopProgress(start.cfi, progression, progression);
       if (!window.AndroidBridge) return;
       AndroidBridge.onRelocated(JSON.stringify({
         cfi: start.cfi,
@@ -362,8 +495,146 @@
       if (window.AndroidBridge) AndroidBridge.onReaderError(message);
     }
 
-    window.loadBook = function(base64, cfi, theme, bookId) {
-      return reportPromise(openBook(base64ToArrayBuffer(base64), cfi, theme, null, bookId));
+    function setReaderSpeechState(state) {
+      readerSpeechState = state;
+      if (!readerSpeechControls) return;
+      readerSpeechPlayButton.disabled = state === "playing";
+      readerSpeechPauseButton.disabled = state === "stopped";
+      readerSpeechStopButton.disabled = state === "stopped";
+      readerSpeechPlayButton.setAttribute("aria-label", state === "stopped" ? "Start reading" : "Reading");
+      readerSpeechPauseButton.textContent = state === "paused" ? "▶" : "▮▮";
+      if (state === "paused") {
+        readerSpeechPauseButton.setAttribute("aria-label", "Resume reading");
+      } else {
+        readerSpeechPauseButton.setAttribute("aria-label", "Pause reading");
+      }
+    }
+
+    function hasSpeechSupport() {
+      return Boolean(
+        desktopBridge &&
+        window.BookstrSpeech &&
+        typeof window.speechSynthesis === "object" &&
+        typeof window.SpeechSynthesisUtterance === "function"
+      );
+    }
+
+    function collectReaderSpeechPlan() {
+      if (!rendition || typeof rendition.getContents !== "function" || !window.BookstrSpeech) {
+        return { text: "", chunks: [], language: "en" };
+      }
+      const selector = "h1, h2, h3, h4, h5, h6, p, li, blockquote, pre, figcaption, dt, dd";
+      const paragraphs = [];
+      let language = "";
+      let foundVisibleText = false;
+      const contentViews = rendition.getContents();
+      for (const view of contentViews) {
+        const contentDocument = view && view.document;
+        if (!contentDocument) continue;
+        if (!language) language = String(contentDocument.documentElement.lang || "").trim();
+        const frame = contentDocument.defaultView && contentDocument.defaultView.frameElement;
+        const frameTop = frame && frame.getBoundingClientRect ? frame.getBoundingClientRect().top : 0;
+        let elements = Array.from(contentDocument.querySelectorAll(selector));
+        if (!elements.length && contentDocument.body) {
+          elements = [contentDocument.body];
+        }
+        for (const element of elements) {
+          const text = String(element.innerText || element.textContent || "")
+            .replace(/\s+/g, " ")
+            .trim();
+          if (!text) continue;
+          const rect = element.getBoundingClientRect ? element.getBoundingClientRect() : { bottom: 1 };
+          if (!foundVisibleText && frameTop + rect.bottom <= 0) continue;
+          foundVisibleText = true;
+          paragraphs.push(text);
+        }
+      }
+      if (!language && book && book.packaging && book.packaging.metadata) {
+        language = String(book.packaging.metadata.language || "");
+      }
+      const plan = window.BookstrSpeech.buildPlan(paragraphs);
+      plan.language = window.BookstrSpeech.normalizeLocale(language);
+      return plan;
+    }
+
+    function stopReaderSpeech() {
+      if (readerSpeechPlayer) readerSpeechPlayer.stop();
+      else setReaderSpeechState("stopped");
+    }
+
+    function startReaderSpeech() {
+      if (!hasSpeechSupport() || !readerSpeechPlayer) return;
+      stopReaderSpeech();
+      const plan = collectReaderSpeechPlan();
+      readerSpeechPlayer.start(plan, { language: plan.language, rate: 1 });
+    }
+
+    function pauseReaderSpeech() {
+      if (!hasSpeechSupport() || !readerSpeechPlayer) return;
+      if (readerSpeechState === "paused") {
+        readerSpeechPlayer.resume();
+        return;
+      }
+      readerSpeechPlayer.pause();
+    }
+
+    function handleDesktopOpenReader(payload) {
+      const normalized = normalizeDesktopReaderPayload(payload);
+      if (!normalized) return;
+      setupReaderSpeechControls();
+      const bookMetadata = normalized.book;
+      if (!bookMetadata.md5) {
+        desktopReaderBook = null;
+      } else {
+        desktopReaderBook = bookMetadata;
+      }
+      desktopReaderFurthestProgress = 0;
+      desktopReaderProgress = null;
+      const bookId = desktopReaderBook ? desktopReaderBook.md5 : "";
+      void reportPromise(window.loadBook(
+        normalized.base64,
+        normalized.cfi,
+        normalized.theme,
+        bookId,
+        desktopReaderBook
+      ));
+    }
+
+    if (desktopBridge?.onOpenReader) {
+      desktopBridge.onOpenReader(handleDesktopOpenReader);
+    }
+
+    function setupReaderSpeechControls() {
+      if (!readerSpeechControls || readerSpeechPlayer) return Boolean(readerSpeechPlayer);
+      if (!hasSpeechSupport()) {
+        readerSpeechControls.classList.add("hidden");
+        return false;
+      }
+      readerSpeechPlayer = window.BookstrSpeech.createPlayer({
+        speechSynthesis: window.speechSynthesis,
+        Utterance: window.SpeechSynthesisUtterance,
+        onStateChange: setReaderSpeechState,
+      });
+      readerSpeechControls.classList.remove("hidden");
+      setReaderSpeechState("stopped");
+      readerSpeechPlayButton.addEventListener("click", startReaderSpeech);
+      readerSpeechPauseButton.addEventListener("click", pauseReaderSpeech);
+      readerSpeechStopButton.addEventListener("click", stopReaderSpeech);
+      return true;
+    }
+
+    if (!setupReaderSpeechControls() && desktopBridge) {
+      let speechSupportAttempts = 0;
+      const retryReaderSpeechSetup = function() {
+        if (setupReaderSpeechControls() || speechSupportAttempts >= 20) return;
+        speechSupportAttempts += 1;
+        window.setTimeout(retryReaderSpeechSetup, 50);
+      };
+      window.setTimeout(retryReaderSpeechSetup, 0);
+    }
+
+    window.loadBook = function(base64, cfi, theme, bookId, desktopPayloadBook = null) {
+      return reportPromise(openBook(base64ToArrayBuffer(base64), cfi, theme, null, bookId, desktopPayloadBook));
     };
 
     window.loadBookUrl = function(url, cfi, theme, highlightCfi, bookId) {
@@ -734,6 +1005,9 @@
 
     function moveViewportPage(direction) {
       if (!rendition) return;
+      if (readerSpeechState === "playing" || readerSpeechState === "paused") {
+        stopReaderSpeech();
+      }
       const container = document.querySelector(".epub-container");
       if (container && container.scrollBy) {
         const before = container.scrollTop;
@@ -765,6 +1039,26 @@
     window.setReaderTheme = function(theme) {
       applyTheme(theme);
     };
+
+    function flushDesktopProgress() {
+      if (desktopReaderProgress && desktopBridge?.reportProgress) {
+        desktopBridge.reportProgress(desktopReaderProgress);
+      }
+    }
+
+    window.addEventListener("visibilitychange", function() {
+      if (document.hidden && (readerSpeechState === "playing" || readerSpeechState === "paused")) {
+        stopReaderSpeech();
+      }
+    });
+    window.addEventListener("beforeunload", function() {
+      stopReaderSpeech();
+      flushDesktopProgress();
+    });
+    window.addEventListener("pagehide", function() {
+      stopReaderSpeech();
+      flushDesktopProgress();
+    });
 
   </script>
 </body>
