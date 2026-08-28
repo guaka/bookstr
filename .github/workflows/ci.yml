@@ -29,7 +29,9 @@ jobs:
           filters: |
             web:
               - 'web/**'
+              - 'shared/architecture/**'
               - 'shared/design-tokens/**'
+              - 'docs/CLIENT_CAPABILITIES.md'
               - 'scripts/**'
               - '.github/workflows/ci.yml'
             workflows:
@@ -81,6 +83,7 @@ jobs:
         run: |
           started=$(date +%s)
           set +e
+          node scripts/generate-client-overview.mjs --check
           node shared/design-tokens/generate.mjs --check
           node shared/catalog/generate-provider-record-dtos.mjs --check
           node --test --test-reporter=tap web/tests/*.test.mjs scripts/*.test.mjs shared/catalog/*.test.mjs shared/design-tokens/*.test.mjs | tee web-tests.tap
