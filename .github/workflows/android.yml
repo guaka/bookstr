@@ -5,11 +5,13 @@ on:
     branches: [main]
     paths:
       - 'android/**'
+      - 'shared/reader/**'
       - 'scripts/test-overview.mjs'
       - '.github/workflows/android.yml'
   pull_request:
     paths:
       - 'android/**'
+      - 'shared/reader/**'
       - 'scripts/test-overview.mjs'
       - '.github/workflows/android.yml'
   workflow_dispatch:

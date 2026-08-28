@@ -14,16 +14,24 @@ plugins {
     id("jacoco")
 }
 
+val sharedReaderDirectory = rootProject.file("../shared/reader")
 val sharedReaderSpeechFile = rootProject.file("../web/reader-speech.js")
-val generatedReaderSpeechAssets = layout.buildDirectory.dir("generated/reader-speech-assets")
-val syncReaderSpeechAsset by tasks.registering(Sync::class) {
+val generatedReaderAssets = layout.buildDirectory.dir("generated/reader-assets")
+val syncReaderAssets by tasks.registering(Sync::class) {
+    from(sharedReaderDirectory) {
+        include("reader.html", "epub.min.js", "jszip.min.js")
+    }
     from(sharedReaderSpeechFile)
-    into(generatedReaderSpeechAssets)
+    into(generatedReaderAssets)
 }
 
 // Keep BuildConfig stable across no-change builds so a displayed timestamp does not invalidate
 // Kotlin compilation. It advances whenever an app source or shared reader asset changes.
-val newestSourceChange = (fileTree("src/main").files + sharedReaderSpeechFile)
+val newestSourceChange = (
+    fileTree("src/main").files +
+        fileTree(sharedReaderDirectory).files +
+        sharedReaderSpeechFile
+)
     .maxOfOrNull(File::lastModified)
     ?: System.currentTimeMillis()
 val sourceChangeTime = Instant.ofEpochMilli(newestSourceChange)
@@ -54,7 +62,7 @@ android {
         buildConfigField("String", "BUILD_DATE", "\"$buildDate\"")
     }
 
-    sourceSets.getByName("main").assets.srcDir(generatedReaderSpeechAssets)
+    sourceSets.getByName("main").assets.srcDir(generatedReaderAssets)
 
     signingConfigs {
         create("release") {
@@ -105,7 +113,7 @@ android {
 }
 
 tasks.named("preBuild").configure {
-    dependsOn(syncReaderSpeechAsset)
+    dependsOn(syncReaderAssets)
 }
 
 tasks.matching { it.name == "packageRelease" }.configureEach {

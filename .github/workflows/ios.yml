@@ -5,11 +5,13 @@ on:
     branches: [main]
     paths:
       - 'ios/**'
+      - 'shared/reader/**'
       - 'scripts/test-overview.mjs'
       - '.github/workflows/ios.yml'
   pull_request:
     paths:
       - 'ios/**'
+      - 'shared/reader/**'
       - 'scripts/test-overview.mjs'
       - '.github/workflows/ios.yml'
   workflow_dispatch:
@@ -80,6 +82,7 @@ jobs:
             -scheme BookstrIOS \
             -destination 'platform=iOS Simulator,id=${{ steps.simulator.outputs.id }}' \
             -only-testing:BookstrIOSUITests \
+            -only-testing:BookstrIOSTests/ReaderAssetContractTests \
             -only-testing:BookstrIOSTests/AppContainerTests \
             -only-testing:BookstrIOSTests/FavoritesParserTests/testRealPdfIsAccepted \
             -only-testing:BookstrIOSTests/FavoritesParserTests/testPublicDomainAlicePdfFixtureIsAcceptedAndHasReadableText \

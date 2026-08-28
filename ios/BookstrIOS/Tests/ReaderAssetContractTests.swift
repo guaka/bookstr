@@ -1,3 +1,4 @@
+import CryptoKit
 import XCTest
 #if !SWIFT_PACKAGE
 import JavaScriptCore
@@ -353,23 +354,53 @@ final class ReaderAssetContractTests: XCTestCase {
         XCTAssertTrue(html.contains("collect(navigation && navigation.toc);"))
         XCTAssertTrue(html.contains("hasToc: labels.size > 0"))
     }
+
+    func testBundledVendorAssetsMatchCanonicalSourcesAndLockedHashes() throws {
+        let expectedHashes = [
+            ("epub.min", "js", "06eae15745107b4aa508c95538275251f69bfb9f1175621fc458d9f42ed082d4"),
+            ("jszip.min", "js", "acc7e41455a80765b5fd9c7ee1b8078a6d160bbbca455aeae854de65c947d59e"),
+        ]
+
+        for (name, fileExtension, expectedHash) in expectedHashes {
+            let bundled = try bundledAssetData(named: name, extension: fileExtension)
+            let canonical = try Data(contentsOf: canonicalAssetURL(named: name, extension: fileExtension))
+            XCTAssertEqual(bundled, canonical, "Bundled \(name).\(fileExtension) differs from shared/reader")
+            XCTAssertEqual(sha256(bundled), expectedHash)
+        }
+    }
+
     private func bundledReaderHTML() throws -> String {
         try bundledAsset(named: "reader", extension: "html")
     }
 
     private func bundledAsset(named name: String, extension fileExtension: String) throws -> String {
+        let data = try bundledAssetData(named: name, extension: fileExtension)
+        return try XCTUnwrap(String(data: data, encoding: .utf8))
+    }
+
+    private func bundledAssetData(named name: String, extension fileExtension: String) throws -> Data {
 #if SWIFT_PACKAGE
-        let url = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .appendingPathComponent("ReaderAssets")
-            .appendingPathComponent("\(name).\(fileExtension)")
+        let url = canonicalAssetURL(named: name, extension: fileExtension)
 #else
         let url = try XCTUnwrap(
             Bundle.main.url(forResource: name, withExtension: fileExtension),
             "Missing bundled reader asset: \(name).\(fileExtension)"
         )
 #endif
-        return try String(contentsOf: url, encoding: .utf8)
+        return try Data(contentsOf: url)
+    }
+
+    private func canonicalAssetURL(named name: String, extension fileExtension: String) -> URL {
+        URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent("shared/reader")
+            .appendingPathComponent("\(name).\(fileExtension)")
+    }
+
+    private func sha256(_ data: Data) -> String {
+        SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
     }
 }
