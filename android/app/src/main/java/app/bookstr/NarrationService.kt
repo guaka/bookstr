@@ -5,6 +5,7 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
@@ -737,16 +738,20 @@ class NarrationService : MediaBrowserServiceCompat(), TextToSpeech.OnInitListene
     private fun buildNotification(): Notification {
         val metadata = mediaSession.controller.metadata
         val description = metadata?.description
+        val mediaButtonReceiver = ComponentName(this, MediaButtonReceiver::class.java)
         val previous = MediaButtonReceiver.buildMediaButtonPendingIntent(
             this,
+            mediaButtonReceiver,
             PlaybackStateCompat.ACTION_SKIP_TO_PREVIOUS,
         )
         val playPause = MediaButtonReceiver.buildMediaButtonPendingIntent(
             this,
+            mediaButtonReceiver,
             if (isPlaying) PlaybackStateCompat.ACTION_PAUSE else PlaybackStateCompat.ACTION_PLAY,
         )
         val next = MediaButtonReceiver.buildMediaButtonPendingIntent(
             this,
+            mediaButtonReceiver,
             PlaybackStateCompat.ACTION_SKIP_TO_NEXT,
         )
         val stop = PendingIntent.getService(
