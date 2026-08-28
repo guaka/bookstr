@@ -5444,11 +5444,14 @@
         if (!(blob instanceof Blob)) return '';
         const type = String(blob.type || '').toLowerCase();
         if (type.includes('pdf')) return 'pdf';
+        if (type.includes('fictionbook') || type.includes('fb2')) return 'fb2';
         if (type.includes('epub') || type.includes('zip')) return 'epub';
         try {
           const bytes = new Uint8Array(await blob.slice(0, 5).arrayBuffer());
           if (String.fromCharCode(...bytes) === '%PDF-') return 'pdf';
           if (bytes[0] === 0x50 && bytes[1] === 0x4b) return 'epub';
+          const prefix = new TextDecoder('utf-8', { fatal: false }).decode(bytes);
+          if (prefix.trimStart().startsWith('<')) return 'fb2';
         } catch {}
         return '';
       }
@@ -5685,8 +5688,8 @@
       let readerFrameNavigationId = 0;
 
       async function readerFrameLoader(kind, openGeneration) {
-        const loaderName = kind === 'pdf' ? 'loadPdf' : 'loadBook';
-        const readerPath = kind === 'pdf' ? 'pdf-reader.html' : 'reader.html';
+        const loaderName = kind === 'pdf' ? 'loadPdf' : kind === 'fb2' ? 'loadFB2' : 'loadBook';
+        const readerPath = kind === 'pdf' ? 'pdf-reader.html' : kind === 'fb2' ? 'fb2-reader.html' : 'reader.html';
         const existingLoader = readerFrame.contentWindow?.[loaderName];
         if (!readerFrameNavigation && readerFrameKind === kind && typeof existingLoader === 'function') {
           return existingLoader;
@@ -5788,6 +5791,15 @@
         if (openGeneration === readerOpenGeneration) status.textContent = `Opened ${book.title || 'book'}.`;
       }
 
+      async function displayFB2(blob, book, readPath, openGeneration) {
+        const base64 = await blobToBase64(blob);
+        if (openGeneration !== readerOpenGeneration) return;
+        const readerLoad = await readerFrameLoader('fb2', openGeneration);
+        if (!readerLoad) return;
+        await readerLoad(base64, book.cfi || '', state.settings.theme === 'dark' ? 'night' : state.settings.theme, book.md5 || BookMetadata.bookIdentity(book));
+        if (openGeneration === readerOpenGeneration) status.textContent = `Opened ${book.title || 'book'}.`;
+      }
+
       function pdfDownloadFilename(book) {
         const resolvedTitle = BookMetadata.resolveTitle(book);
         const identity = String(book?.sourceNativeId || book?.source_native_id || book?.md5 || 'book').replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '').slice(0, 32);
@@ -5858,6 +5870,8 @@
             const blossomFormat = await bookFormatForBlob(blossomBlob) || String(book.extension || '').toLowerCase();
             if (blossomFormat === 'pdf') {
             await displayPdf(blossomBlob, book, readPath, openGeneration);
+          } else if (blossomFormat === 'fb2') {
+            await displayFB2(blossomBlob, book, readPath, openGeneration);
           } else {
             status.textContent = `Opening ${book.title || 'book'}…`;
             await displayEpub(blossomBlob, book, readPath, openGeneration);
@@ -5875,6 +5889,17 @@
               void cacheBookBlob(book, readPath, blob).catch(() => {});
             }
             await displayPdf(blob, book, readPath, openGeneration);
+          } else if (String(book.extension || '').toLowerCase() === 'fb2' || /\.fb2(?:\?|$)/i.test(readPath)) {
+            let blob = await cachedBookBlob(book, readPath).catch(() => null);
+            if (!blob) {
+              if (!readPath) throw new Error('No cached FB2 copy was found.');
+              const response = await fetch(readPath);
+              if (!response.ok) throw new Error(`FB2 download failed (${response.status}).`);
+              blob = await response.blob();
+              await enforceBlobSha256(book, blob);
+              void cacheBookBlob(book, readPath, blob).catch(() => {});
+            }
+            await displayFB2(blob, book, readPath, openGeneration);
           } else if (String(book.extension || '').toLowerCase() === 'epub' || /\/download(?:\?|$)/i.test(readPath) || (!readPath && isMd5(book.md5))) {
             let blob = await cachedBookBlob(book, readPath).catch(() => null);
             if (openGeneration !== readerOpenGeneration) return;
@@ -5903,10 +5928,11 @@
             const format = await bookFormatForBlob(blob);
             if (format === 'pdf') await displayPdf(blob, book, readPath, openGeneration);
             else if (format === 'epub') await displayEpub(blob, book, readPath, openGeneration);
+            else if (format === 'fb2') await displayFB2(blob, book, readPath, openGeneration);
             else throw new Error('The downloaded book format is not supported.');
             void cacheBookBlob(book, readPath, blob).catch(() => {});
           } else {
-            throw new Error('Only EPUB and PDF book files can be opened.');
+            throw new Error('Only EPUB, PDF, and FB2 book files can be opened.');
           }
         } catch (error) {
           status.textContent = `Could not open ${book.title || 'book'}: ${error?.message || error}`;

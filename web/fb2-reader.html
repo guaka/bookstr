@@ -1,0 +1,14 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Bookstr FB2 reader</title>
+<style>body{max-width:46rem;margin:auto;padding:1.5rem;font:1.15rem/1.7 Georgia,serif;background:#f7f3ea;color:#1c1916}body.night{background:#121212;color:#e8e4dc}article{padding-bottom:15vh}h1,h2{line-height:1.2}pre{white-space:pre-wrap;font:inherit;margin-left:2rem}blockquote{margin-left:1.5rem;font-style:italic}a{color:inherit}</style></head>
+<body><main id="viewer" aria-live="polite"></main><script type="module">
+import { parseFB2 } from './fb2.js';
+const viewer=document.getElementById('viewer'); let active='';
+function decode(base64){return new TextDecoder('utf-8',{fatal:false}).decode(Uint8Array.from(atob(base64),c=>c.charCodeAt(0)));}
+function progress(){const height=Math.max(1,document.documentElement.scrollHeight-innerHeight);return Math.max(0,Math.min(1,scrollY/height));}
+function locator(){const sections=[...viewer.querySelectorAll('[data-fb2-section]')];const activeSection=sections.findLast?.(s=>s.getBoundingClientRect().top<=80)||sections[0];return `fb2:${activeSection?.dataset.fb2Section||'section-1'}:0:0`;}
+function report(){parent.postMessage({type:'bookstr-fb2-progress',bookId:active,cfi:locator(),progression:progress()},location.origin);}
+addEventListener('scroll',()=>requestAnimationFrame(report),{passive:true});
+window.loadFB2=async(base64,cfi='',theme='paper',bookId='')=>{active=bookId;document.body.className=theme==='night'?'night':'';const parsed=parseFB2(decode(base64),document);viewer.replaceChildren(parsed.document.body.firstElementChild);const heading=document.createElement('h1');heading.textContent=parsed.title;viewer.prepend(heading);const id=String(cfi).split(':')[1];if(id) viewer.querySelector(`#${CSS.escape(id)}`)?.scrollIntoView();report();};
+window.nextPage=()=>scrollBy({top:innerHeight*.85,behavior:'smooth'});window.prevPage=()=>scrollBy({top:-innerHeight*.85,behavior:'smooth'});
+</script></body></html>

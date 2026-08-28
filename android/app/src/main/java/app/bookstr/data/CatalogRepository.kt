@@ -20,6 +20,7 @@ import org.xmlpull.v1.XmlPullParser
 enum class BookFormat(val extension: String) {
     Epub("epub"),
     Pdf("pdf"),
+    Fb2("fb2"),
     ;
 
     companion object {
@@ -27,7 +28,13 @@ enum class BookFormat(val extension: String) {
             val normalized = value?.trim()?.lowercase()
             if (normalized == "pdf") return Pdf
             if (normalized == "epub") return Epub
-            return if (url.substringBefore('?').substringBefore('#').lowercase().endsWith(".pdf")) Pdf else Epub
+            if (normalized == "fb2" || normalized == "fb2.zip") return Fb2
+            val path = url.substringBefore('?').substringBefore('#').lowercase()
+            return when {
+                path.endsWith(".pdf") -> Pdf
+                path.endsWith(".fb2") || path.endsWith(".fb2.zip") -> Fb2
+                else -> Epub
+            }
         }
     }
 }
@@ -126,7 +133,7 @@ class CatalogRepository(
         withContext(Dispatchers.IO) {
             val cached = loadDownloadedBookMetadata().associateBy { it.id }.toMutableMap()
             val discovered = booksDir().listFiles().orEmpty()
-                .filter { it.isFile && it.extension.lowercase() in setOf("epub", "pdf") }
+                .filter { it.isFile && it.extension.lowercase() in setOf("epub", "pdf", "fb2") }
                 .mapNotNull { file ->
                     val id = file.nameWithoutExtension.lowercase()
                     cached[id] ?: discoverDownloadedBook(file, externalFavorites)
@@ -214,10 +221,15 @@ class CatalogRepository(
         file: File,
         externalFavorites: List<ExternalFavorite>,
     ): CatalogBook? {
-        val format = if (file.extension.equals("pdf", ignoreCase = true)) BookFormat.Pdf else BookFormat.Epub
+        val format = when (file.extension.lowercase()) {
+            "pdf" -> BookFormat.Pdf
+            "fb2" -> BookFormat.Fb2
+            else -> BookFormat.Epub
+        }
         val embedded = when (format) {
             BookFormat.Epub -> readEpubMetadata(file)
             BookFormat.Pdf -> readPdfMetadata(file)
+            BookFormat.Fb2 -> Pair(null, null)
         }
         val matched = embedded.first?.let { title ->
             externalFavorites.firstOrNull {
@@ -400,6 +412,8 @@ class CatalogRepository(
                     runCatching {
                         ZipFile(file).use { archive -> archive.getEntry("META-INF/container.xml") != null }
                     }.getOrDefault(false)
+            BookFormat.Fb2 -> signature.decodeToString().trimStart().startsWith("<?xml")
+                || file.inputStream().bufferedReader().use { it.readText().contains("<FictionBook", ignoreCase = true) }
         }
     }
 
@@ -505,11 +519,15 @@ class CatalogRepository(
                     val format = when (rawFormat?.trim()?.lowercase()) {
                         "epub" -> BookFormat.Epub
                         "pdf" -> BookFormat.Pdf
+                        "fb2", "fb2.zip" -> BookFormat.Fb2
                         null -> when {
                             explicitUrl.orEmpty().substringBefore('?').substringBefore('#')
                                 .endsWith(".epub", ignoreCase = true) -> BookFormat.Epub
                             explicitUrl.orEmpty().substringBefore('?').substringBefore('#')
                                 .endsWith(".pdf", ignoreCase = true) -> BookFormat.Pdf
+                            explicitUrl.orEmpty().substringBefore('?').substringBefore('#')
+                                .endsWith(".fb2", ignoreCase = true) || explicitUrl.orEmpty()
+                                .substringBefore('?').substringBefore('#').endsWith(".fb2.zip", ignoreCase = true) -> BookFormat.Fb2
                             else -> null
                         }
                         else -> null

@@ -10,8 +10,16 @@ Required record fields are `provider`, `recordId`, `publicationId`, `title`,
 - `publicationId` is exactly `<provider>:<recordId>` and is stable per provider.
 - `rights.status` is one of `public_domain`, `open_license`, `copyrighted`, or
   `unknown`. The remaining rights fields are optional provider evidence.
-- An acquisition has an `epub` or `pdf` format, an absolute HTTP(S) URL, and an
+- An acquisition has an `epub`, `pdf`, or `fb2` format, an absolute HTTP(S) URL, and an
   availability of `open`, `borrow`, `buy`, `preview`, or `restricted`.
+
+`fb2` means a FictionBook 2 XML document (`application/x-fictionbook+xml` or
+`application/fb2+xml`) or a ZIP containing exactly one `.fb2` file. Clients
+retain the downloaded bytes and use the provider record's rights evidence;
+they do not silently convert FictionBook editions to EPUB.
+
+FB2 reading locations use `fb2:<section-id-or-ordinal>:<paragraph>:<offset>`.
+Readers fall back to the section ordinal when an edition has no stable ID.
 
 Adapters accept their provider's wire data, normalize it into this shape, and
 leave network, storage, presentation, and download policy platform-owned.
