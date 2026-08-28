@@ -1,0 +1,67 @@
+{
+  "version": 2,
+  "cases": [
+    {
+      "name": "canonical v2 locator",
+      "content": { "v": 2, "bookId": "book-v2", "locator": { "progression": 0.4, "furthestProgression": 0.7, "cfi": "epubcfi(/6/2)" }, "updatedAt": 1700000000000 },
+      "fallbackBookId": "fallback",
+      "eventCreatedAt": 9,
+      "valid": true,
+      "expected": { "bookId": "book-v2", "progression": 0.4, "furthestProgression": 0.7, "cfi": "epubcfi(/6/2)", "updatedAt": 1700000000000 }
+    },
+    {
+      "name": "v1 locator accepts numeric string and event timestamp",
+      "content": { "v": 1, "bookId": "book-v1", "locator": { "progression": "0.5", "cfi": "legacy-cfi" } },
+      "fallbackBookId": "fallback",
+      "eventCreatedAt": 9,
+      "valid": true,
+      "expected": { "bookId": "book-v1", "progression": 0.5, "furthestProgression": 0.5, "cfi": "legacy-cfi", "updatedAt": 9000 }
+    },
+    {
+      "name": "legacy flat payload accepts numeric-string timestamp",
+      "content": { "progression": 0.9, "cfi": "flat-cfi", "updatedAt": "1200" },
+      "fallbackBookId": "legacy-book",
+      "eventCreatedAt": 9,
+      "valid": true,
+      "expected": { "bookId": "legacy-book", "progression": 0.9, "furthestProgression": 0.9, "cfi": "flat-cfi", "updatedAt": 1200 }
+    },
+    {
+      "name": "blank id and missing progression use compatibility defaults",
+      "content": { "bookId": "", "locator": { "cfi": "position" }, "updatedAt": 0 },
+      "fallbackBookId": "fallback-book",
+      "eventCreatedAt": 12,
+      "valid": true,
+      "expected": { "bookId": "fallback-book", "progression": 0, "furthestProgression": 0, "cfi": "position", "updatedAt": 12000 }
+    },
+    {
+      "name": "invalid progression preserves valid furthest value",
+      "content": { "bookId": "invalid-number", "locator": { "progression": "bad", "furthestProgression": "0.8", "cfi": 123 } },
+      "fallbackBookId": "fallback",
+      "eventCreatedAt": 5,
+      "valid": true,
+      "expected": { "bookId": "invalid-number", "progression": 0, "furthestProgression": 0.8, "cfi": "", "updatedAt": 5000 }
+    },
+    {
+      "name": "furthest progress cannot regress",
+      "content": { "bookId": "monotonic", "locator": { "progression": 0.8, "furthestProgression": 0.2, "cfi": "here" }, "updatedAt": 3 },
+      "fallbackBookId": "fallback",
+      "eventCreatedAt": 5,
+      "valid": true,
+      "expected": { "bookId": "monotonic", "progression": 0.8, "furthestProgression": 0.8, "cfi": "here", "updatedAt": 3 }
+    },
+    {
+      "name": "non-object locator is rejected",
+      "content": { "bookId": "bad", "locator": "not-an-object", "progression": 0.9 },
+      "fallbackBookId": "fallback",
+      "eventCreatedAt": 5,
+      "valid": false
+    },
+    {
+      "name": "payload without location is rejected",
+      "content": { "bookId": "bad", "title": "No progress" },
+      "fallbackBookId": "fallback",
+      "eventCreatedAt": 5,
+      "valid": false
+    }
+  ]
+}

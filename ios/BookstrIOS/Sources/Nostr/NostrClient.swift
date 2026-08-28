@@ -142,12 +142,14 @@ final class NostrClient: NostrEventPublishing {
         }
     }
 
-    static func progressContent(bookId: String, progression: Double, cfi: String, title: String?, author: String?, updatedAt: Int64,
+    static func progressContent(bookId: String, progression: Double, cfi: String, furthestProgression: Double? = nil,
+                                title: String?, author: String?, updatedAt: Int64,
                                 rights: BookRights = BookRights()) -> String {
+        let furthest = max(progression, furthestProgression ?? progression)
         var obj: [String: Any] = [
-            "v": 1,
+            "v": 2,
             "bookId": bookId,
-            "locator": ["progression": progression, "cfi": cfi],
+            "locator": ["progression": progression, "cfi": cfi, "furthestProgression": furthest],
             "updatedAt": updatedAt
         ]
         if let title, !title.isEmpty { obj["title"] = title }
@@ -189,6 +191,23 @@ final class NostrClient: NostrEventPublishing {
             licenseURL: obj["license_url"] as? String,
             source: obj["rights_source"] as? String
         )
+    }
+
+    static func parseFurthestProgression(_ content: String, fallback: Double) -> Double {
+        guard let data = content.data(using: .utf8),
+              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return fallback }
+        let locator = obj["locator"] as? [String: Any]
+        let parsed = jsonNumber(locator?["furthestProgression"] ?? obj["furthestProgression"]) ?? fallback
+        return max(fallback, parsed)
+    }
+
+    static func parseProgressUpdatedAt(_ content: String, eventCreatedAtSeconds: Int64) -> Int64 {
+        guard let data = content.data(using: .utf8),
+              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let updatedAt = jsonInt64(obj["updatedAt"]), updatedAt > 0 else {
+            return eventCreatedAtSeconds * 1_000
+        }
+        return updatedAt
     }
 
     private static func jsonNumber(_ value: Any?) -> Double? {
