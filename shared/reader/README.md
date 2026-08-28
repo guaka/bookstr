@@ -13,5 +13,7 @@ reader integration tests rather than instrumented or modified.
 | `jszip.min.js` | `acc7e41455a80765b5fd9c7ee1b8078a6d160bbbca455aeae854de65c947d59e` |
 
 Android copies these resources to its Gradle-generated asset directory. iOS
-references them directly as Xcode resources. `web/reader.html` and its vendor
-files intentionally remain separate browser assets.
+references them directly as Xcode resources. The static web and Electron
+packages require same-directory URLs, so `generate-web-assets.mjs` copies the
+canonical vendor bytes into committed `web/` outputs. Run it with `--check` to
+reject altered canonical hashes, missing outputs, or stale copies.
