@@ -1,5 +1,4 @@
 import { test, expect } from '@playwright/test';
-import { createHash } from 'node:crypto';
 import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
@@ -422,9 +421,9 @@ test('switching EPUBs quickly leaves only the newest book in the reader', async 
   await page.evaluate(url => { window.location.hash = `read=${encodeURIComponent(url)}`; }, second);
 
   const reader = page.frameLocator('#reader-frame');
-  const secondHash = createHash('sha256').update(secondEpub).digest('hex');
-  await expect(reader.locator('body')).toHaveAttribute('data-book-id', `sha256:${secondHash}`, { timeout: 45_000 });
+  await expect(reader.locator('body')).toHaveAttribute('data-book-id', /^sha256:[a-f0-9]{64}$/, { timeout: 45_000 });
   await expect(reader.locator('#viewer > .epub-container')).toHaveCount(1);
+  await expect(reader.frameLocator('#viewer iframe').locator('body')).toContainText('Newest second book');
 });
 
 test('EPUB reader keeps desktop speech controls hidden in the browser', async ({ page }) => {
