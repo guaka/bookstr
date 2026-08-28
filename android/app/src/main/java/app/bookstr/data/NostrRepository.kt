@@ -25,6 +25,7 @@ class NostrRepository(
         furthestProgression: Double = progression,
         title: String? = null,
         author: String? = null,
+        rights: BookRights = BookRights(),
     ): Boolean =
         withContext(Dispatchers.IO) {
             val signer = NostrSignerFactory.create(context, settings) ?: return@withContext false
@@ -40,6 +41,7 @@ class NostrRepository(
                     furthestProgression = furthestProgression,
                     title = title,
                     author = author,
+                    rights = rights,
                     updatedAt = updatedAt,
                 )
                 val tags = JSONArray()

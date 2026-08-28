@@ -412,15 +412,17 @@
           nextBook.destroy();
           return Promise.reject(new DOMException("A newer book was opened.", "AbortError"));
         }
-		book = nextBook;
-		const embeddedRights = String(book.packaging?.metadata?.rights || "").trim();
-		if (embeddedRights) {
-		  const rights = { rights_status: "unknown", license: embeddedRights, license_url: "", rights_source: "epub_opf" };
-		  if (desktopReaderBook) Object.assign(desktopReaderBook, rights);
-		  if (window.parent && window.parent !== window) {
-			window.parent.postMessage({ type: "bookstr-reader-metadata", md5: currentBookId, ...rights }, "*");
-		  }
-		}
+        book = nextBook;
+        reportBookMetadata();
+        const embeddedRights = String(book.packaging?.metadata?.rights || "").trim();
+        if (embeddedRights && desktopReaderBook) {
+          Object.assign(desktopReaderBook, {
+            rights_status: "unknown",
+            license: embeddedRights,
+            license_url: "",
+            rights_source: "epub_opf"
+          });
+        }
         rendition = nextBook.renderTo("viewer", {
           width: "100%",
           height: "100%",

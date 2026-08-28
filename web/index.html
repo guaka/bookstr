@@ -3569,8 +3569,12 @@
           const directReadUrl = provider === 'gutenberg' && item.id
             ? `${BOOKS_API_BASE}/books/${encodeURIComponent(item.id)}/download`
             : item.readUrl || item.url || item.link || blossom.url || '';
-		  const rights = BookMetadata.normalizeRights(item);
-		  if (!rights.rights_source && (rights.rights_status !== 'unknown' || rights.license || rights.license_url)) rights.rights_source = provider;
+          const rights = BookMetadata.normalizeRights(item);
+          if (!rights.rights_source && (
+            rights.rights_status !== 'unknown' || rights.license || rights.license_url
+          )) rights.rights_source = provider === 'gutenberg' && typeof item.copyright === 'boolean'
+            ? 'gutendex'
+            : provider;
           return {
             md5,
             title: item.title || 'Untitled',
@@ -3597,7 +3601,7 @@
             sourceNativeId: item.source_native_id || item.sourceNativeId || '',
             sourceUrl: item.source_url || item.sourceUrl || '',
             license: item.license || item.rights || '',
-			...rights,
+            ...rights,
             readUrl: directReadUrl,
             fallback: Boolean(directReadUrl)
           };

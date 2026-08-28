@@ -22,6 +22,7 @@ final class EPUBReaderController: NSObject, ObservableObject, AVSpeechSynthesize
     @Published var ready = false
     @Published var isSpeaking = false
     @Published var loadingStage = "Starting reader"
+    @Published var rights = BookRights()
 
     fileprivate weak var webView: WKWebView?
     private let speech = AVSpeechSynthesizer()
@@ -461,6 +462,7 @@ struct EPUBReaderView: UIViewRepresentable {
         gesture.delegate = context.coordinator
         webView.addGestureRecognizer(gesture)
         controller.webView = webView
+        controller.rights = book.rights
         controller.configureNowPlaying(book: book)
 
         guard let readerURL = URL(string: "bookstr-reader://app/reader.html") else {
@@ -664,6 +666,7 @@ struct EPUBReaderView: UIViewRepresentable {
                 controller.errorMessage = detail?.isEmpty == false
                     ? "Could not open this book: \(detail!)"
                     : "Could not open this EPUB. The file may be damaged or unsupported."
+            case "onMetadata": handleMetadata(value as? String)
             case "onRelocated": handleRelocation(value as? String)
             case "onSections": handleSections(value as? String)
             case "onWordSelected": handleWordSelection(value as? String)
@@ -692,9 +695,24 @@ struct EPUBReaderView: UIViewRepresentable {
             container.progressRepository.save(bookId: book.id, progression: progression, cfi: cfi)
             container.settingsRepository.saveReaderSession(
                 ReaderSession(bookId: book.id, bookTitle: book.title, format: .epub, author: book.author,
-                              year: book.year, locator: cfi, pageIndex: 0, pageOffset: 0)
+                              year: book.year, locator: cfi, pageIndex: 0, pageOffset: 0,
+                              rightsStatus: controller.rights.status.rawValue,
+                              license: controller.rights.license, licenseUrl: controller.rights.licenseURL,
+                              rightsSource: controller.rights.source)
             )
-            Task { await container.nostrSyncService.pushProgress(book: book, progression: progression, cfi: cfi) }
+            var progressBook = book
+            progressBook.rightsStatus = controller.rights.status.rawValue
+            progressBook.license = controller.rights.license
+            progressBook.licenseUrl = controller.rights.licenseURL
+            progressBook.rightsSource = controller.rights.source
+            Task { await container.nostrSyncService.pushProgress(book: progressBook, progression: progression, cfi: cfi) }
+        }
+
+        private func handleMetadata(_ json: String?) {
+            guard let item = object(from: json) else { return }
+            let statement = (item["rights"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard statement?.isEmpty == false else { return }
+            controller.rights = container.catalogRepository.rememberEmbeddedRights(book: book, statement: statement)
         }
 
         private func handleSections(_ json: String?) {

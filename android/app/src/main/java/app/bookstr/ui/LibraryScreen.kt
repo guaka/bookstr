@@ -46,6 +46,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import app.bookstr.data.BookProgress
@@ -190,6 +191,10 @@ fun LibraryScreen(
                             favoriteMetadata(
                                 author = favorite.author,
                                 year = favorite.year,
+                                rightsStatus = favorite.rightsStatus,
+                                license = favorite.license,
+                                licenseUrl = favorite.licenseUrl,
+                                rightsSource = favorite.rightsSource,
                                 showMissingValues = true,
                             )
                             favoritePublicationStatus(
@@ -298,7 +303,9 @@ private fun LazyListScope.bookRows(
                         CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
                     }
                 }
-                favoriteMetadata(book.author, book.year)
+                favoriteMetadata(
+                    book.author, book.year, book.rightsStatus, book.license, book.licenseUrl, book.rightsSource,
+                )
                 if (showPublicationStatus) {
                     favoritePublicationStatus(
                         format = book.format.extension,
@@ -344,7 +351,10 @@ private fun BookDetailsDialog(
 ) {
     FullScreenDetails(title = "Book details", onDismiss = onDismiss) {
         Text(book.title, style = MaterialTheme.typography.headlineMedium)
-        favoriteMetadata(book.author, book.year, showMissingValues = true)
+        favoriteMetadata(
+            book.author, book.year, book.rightsStatus, book.license, book.licenseUrl, book.rightsSource,
+            showMissingValues = true,
+        )
         HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
         DetailRow("Format", book.format.extension.uppercase())
         DetailRow("Blossom", if (book.blossomSha256.isNullOrBlank()) "Not available" else "Available")
@@ -358,6 +368,7 @@ private fun BookDetailsDialog(
         }
         book.isbn?.takeIf(String::isNotBlank)?.let { DetailRow("ISBN", it) }
         book.sourceUrl?.takeIf(String::isNotBlank)?.let { DetailRow("Source", sourceLabel(it)) }
+        RightsDetails(book.rightsStatus, book.license, book.licenseUrl, book.rightsSource)
         Spacer(modifier = Modifier.height(12.dp))
         Button(onClick = onOpen, modifier = Modifier.fillMaxWidth()) { Text("Open book") }
         if (isFavorite) {
@@ -388,13 +399,17 @@ private fun ExternalBookDetailsDialog(
 ) {
     FullScreenDetails(title = "Book details", onDismiss = onDismiss) {
         Text(favorite.title, style = MaterialTheme.typography.headlineMedium)
-        favoriteMetadata(favorite.author, favorite.year, showMissingValues = true)
+        favoriteMetadata(
+            favorite.author, favorite.year, favorite.rightsStatus, favorite.license,
+            favorite.licenseUrl, favorite.rightsSource, showMissingValues = true,
+        )
         HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
         DetailRow("Format", favorite.format?.uppercase() ?: "Unknown")
         val onBlossom = !favorite.blossomSha256.isNullOrBlank() && !favorite.blossomUrl.isNullOrBlank()
         DetailRow("Blossom", if (onBlossom) "Available" else "Not available")
         favorite.isbn?.takeIf(String::isNotBlank)?.let { DetailRow("ISBN", it) }
         favorite.url?.takeIf(String::isNotBlank)?.let { DetailRow("Source", sourceLabel(it)) }
+        RightsDetails(favorite.rightsStatus, favorite.license, favorite.licenseUrl, favorite.rightsSource)
         Spacer(modifier = Modifier.height(12.dp))
         if (onBlossom) {
             Button(onClick = onOpen, modifier = Modifier.fillMaxWidth()) { Text("Open book") }
@@ -451,6 +466,25 @@ private fun DetailRow(label: String, value: String) {
     }
 }
 
+@Composable
+private fun RightsDetails(status: String, license: String?, licenseUrl: String?, source: String?) {
+    val rights = app.bookstr.data.BookRightsMetadata.normalize(status, license, licenseUrl, source)
+    val uriHandler = LocalUriHandler.current
+    DetailRow("Rights status", rights.accessibleLabel)
+    rights.license?.let { DetailRow("Rights statement", it) }
+    rights.licenseUrl?.let { url ->
+        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
+            Text("License URL", color = MaterialTheme.colorScheme.secondary, modifier = Modifier.width(128.dp))
+            Text(
+                text = url,
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.weight(1f).clickable { uriHandler.openUri(url) },
+            )
+        }
+    }
+    rights.source?.let { DetailRow("Rights source", it) }
+}
+
 private fun formatBytes(bytes: Long): String {
     val megabytes = bytes / (1024.0 * 1024.0)
     return if (megabytes >= 1.0) "%.1f MB".format(megabytes) else "${bytes / 1024} KB"
@@ -478,6 +512,10 @@ private fun favoritePublicationStatus(format: String?, availableOnBlossom: Boole
 private fun favoriteMetadata(
     author: String?,
     year: String?,
+    rightsStatus: String,
+    license: String?,
+    licenseUrl: String?,
+    rightsSource: String?,
     showMissingValues: Boolean = false,
 ) {
     val normalizedAuthor = author
@@ -488,7 +526,8 @@ private fun favoriteMetadata(
         normalizedAuthor ?: "Author unknown".takeIf { showMissingValues },
         normalizedYear ?: "Year unknown".takeIf { showMissingValues },
     ).joinToString(" · ")
-    if (text.isNotEmpty()) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+      if (text.isNotEmpty()) {
         Text(
             text = text,
             style = MaterialTheme.typography.bodySmall,
@@ -496,5 +535,13 @@ private fun favoriteMetadata(
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
+      }
+      RightsMarker(
+          rightsStatus = rightsStatus,
+          license = license,
+          licenseUrl = licenseUrl,
+          rightsSource = rightsSource,
+          modifier = Modifier.padding(start = 6.dp),
+      )
     }
 }

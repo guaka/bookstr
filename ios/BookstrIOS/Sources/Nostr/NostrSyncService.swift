@@ -62,7 +62,8 @@ final class NostrSyncService {
             cfi: cfi,
             title: book.title,
             author: book.author,
-            updatedAt: now
+            updatedAt: now,
+            rights: book.rights
         )
         var event = NostrEvent(
             id: nil,
@@ -107,7 +108,8 @@ final class NostrSyncService {
         guard let parsed = NostrClient.parseProgressContent(event.content, fallbackBookId: bookId) else { return }
         progress.save(bookId: parsed.bookId, progression: parsed.progression, cfi: parsed.cfi)
         favoriteMetadata.rememberProgress(bookId: parsed.bookId, title: parsed.title, author: parsed.author,
-                                          updatedAt: parsed.updatedAt ?? event.createdAt * 1000)
+                                          updatedAt: parsed.updatedAt ?? event.createdAt * 1000,
+                                          rights: NostrClient.parseProgressRights(event.content))
     }
 
     /// Refreshes the same descriptive cache the web app builds from reading
@@ -124,7 +126,8 @@ final class NostrSyncService {
             progress.save(bookId: parsed.bookId, progression: parsed.progression, cfi: parsed.cfi)
             favoriteMetadata.rememberProgress(
                 bookId: parsed.bookId, title: parsed.title, author: parsed.author,
-                updatedAt: parsed.updatedAt ?? event.createdAt * 1000
+                updatedAt: parsed.updatedAt ?? event.createdAt * 1000,
+                rights: NostrClient.parseProgressRights(event.content)
             )
             if parsed.title?.isEmpty == false { merged += 1 }
         }
@@ -654,7 +657,8 @@ final class NostrSyncService {
                 guard let parsed = NostrClient.parseProgressContent(event.content, fallbackBookId: bookId) else { continue }
                 favoriteMetadata.rememberProgress(
                     bookId: parsed.bookId, title: parsed.title, author: parsed.author,
-                    updatedAt: parsed.updatedAt ?? event.createdAt * 1000
+                    updatedAt: parsed.updatedAt ?? event.createdAt * 1000,
+                    rights: NostrClient.parseProgressRights(event.content)
                 )
                 let local = progress.get(bookId: parsed.bookId)
                 if parsed.cfi != local.cfi || parsed.progression != local.progression || local.updatedAt == 0 {

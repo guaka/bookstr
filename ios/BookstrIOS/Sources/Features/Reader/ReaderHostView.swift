@@ -14,6 +14,7 @@ struct ReaderHostView: View {
     @State private var loading = true
     @State private var error: String?
     @State private var showSections = false
+    @State private var showRightsDetails = false
     @StateObject private var epubController = EPUBReaderController()
 
     var body: some View {
@@ -95,6 +96,13 @@ struct ReaderHostView: View {
             }
             .preferredColorScheme(container.settingsRepository.theme.colorScheme)
         }
+        .sheet(isPresented: $showRightsDetails) {
+            RightsDetailsView(item: RightsDetailsItem(
+                title: book.title, author: book.author, year: book.year,
+                format: book.format.rawValue,
+                rights: book.format == .epub ? epubController.rights : book.rights
+            ))
+        }
         .task { await openBook() }
         .onAppear { UIApplication.shared.isIdleTimerDisabled = true }
         .onDisappear {
@@ -123,6 +131,12 @@ struct ReaderHostView: View {
                     .font(.system(size: 11))
                     .lineLimit(1)
                     .frame(maxWidth: .infinity, alignment: .leading)
+
+                Button { showRightsDetails = true } label: {
+                    RightsBadge(rights: epubController.rights)
+                }
+                .buttonStyle(.plain)
+                .accessibilityHint("Shows the complete rights statement and source")
 
                 Button { epubController.toggleSpeech() } label: {
                     Image(systemName: epubController.isSpeaking ? "stop.fill" : "play.fill")
@@ -166,6 +180,11 @@ struct ReaderHostView: View {
                 }
                 .accessibilityIdentifier("reader-back")
                 Spacer()
+                Button { showRightsDetails = true } label: {
+                    RightsBadge(rights: book.rights)
+                }
+                .buttonStyle(.plain)
+                .accessibilityHint("Shows the complete rights statement and source")
             }
             .padding(.horizontal, 12)
             .padding(.top, 12)
