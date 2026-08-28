@@ -43,6 +43,7 @@ final class AppContainerTests: XCTestCase {
         XCTAssertEqual(LibraryViewModel.sorted([alpha, beta], by: .author, progress: progress).map(\.id), ["beta", "alpha"])
         XCTAssertEqual(LibraryViewModel.sorted([alpha, beta], by: .progress, progress: progress).map(\.id), ["beta", "alpha"])
         XCTAssertEqual(LibraryViewModel.sorted([beta, alpha], by: .recent, progress: [:]).map(\.id), ["alpha", "beta"])
+        XCTAssertEqual(LibraryViewModel.sorted([beta, alpha], by: .progress, progress: [:]).map(\.id), ["alpha", "beta"])
     }
 
     @MainActor
