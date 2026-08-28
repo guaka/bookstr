@@ -55,6 +55,7 @@ let package = Package(
             path: "BookstrIOS/Tests",
             exclude: ["AppContainerTests.swift"],
             sources: [
+                "BookRightsV1ContractTests.swift",
                 "DictionaryRepositoryTests.swift",
                 "CatalogProviderRecordV1ContractTests.swift",
                 "FavoritesParserTests.swift",

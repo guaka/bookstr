@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bookstr.app/contracts/book-rights-v1.schema.json",
+  "title": "Bookstr book rights conformance cases v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "cases"],
+  "properties": {
+    "version": { "const": 1 },
+    "cases": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/case" }
+    }
+  },
+  "$defs": {
+    "nullableString": { "type": ["string", "null"] },
+    "input": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "status": { "$ref": "#/$defs/nullableString" },
+        "license": { "$ref": "#/$defs/nullableString" },
+        "license_url": { "$ref": "#/$defs/nullableString" },
+        "rights_source": { "$ref": "#/$defs/nullableString" },
+        "copyright": { "type": ["boolean", "null"] }
+      }
+    },
+    "output": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["rights_status", "license", "license_url", "rights_source"],
+      "properties": {
+        "rights_status": { "enum": ["public_domain", "open_license", "copyrighted", "unknown"] },
+        "license": { "$ref": "#/$defs/nullableString" },
+        "license_url": { "$ref": "#/$defs/nullableString" },
+        "rights_source": { "$ref": "#/$defs/nullableString" }
+      }
+    },
+    "case": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "input", "expected"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "input": { "$ref": "#/$defs/input" },
+        "expected": { "$ref": "#/$defs/output" }
+      }
+    }
+  }
+}

@@ -48,6 +48,7 @@
 		A2B4B6FC429B2B515679864D /* KeychainStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6184947FF12712F08EA6E37D /* KeychainStore.swift */; };
 		A36198BE8953B392A5E2BB9E /* SettingsRepositoryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E3F0A3ACD7868D79F4ED96FB /* SettingsRepositoryTests.swift */; };
 		B7907145EEC0B5D06140A3FB /* FavoriteOutboxTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FCD9820EF78EE6965850690D /* FavoriteOutboxTests.swift */; };
+		B95DDB98306B0503A6BF330C /* BookRightsV1ContractTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 05418DD35E388592E61BA7F1 /* BookRightsV1ContractTests.swift */; };
 		B95DDC79D1CA0647762EAF04 /* reader-speech.js in Resources */ = {isa = PBXBuildFile; fileRef = 2D679E1606D450E44108F4C5 /* reader-speech.js */; };
 		BCC258213EF048015668D4F5 /* NostrClientProgressTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 26093A7C9C6D80009BF573DB /* NostrClientProgressTests.swift */; };
 		BF91A7B21A99F8B7DB9B0036 /* NostrSnippetPublishingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B4A645B2C9889F01FF4BA99 /* NostrSnippetPublishingTests.swift */; };
@@ -84,6 +85,7 @@
 
 /* Begin PBXFileReference section */
 		020A583BD242E7950EE25CC1 /* BookstrIOSApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BookstrIOSApp.swift; sourceTree = "<group>"; };
+		05418DD35E388592E61BA7F1 /* BookRightsV1ContractTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BookRightsV1ContractTests.swift; sourceTree = "<group>"; };
 		0ADD34E2FDD350ABCD0A2F1E /* BookstrIOS.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = BookstrIOS.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		0B4A645B2C9889F01FF4BA99 /* NostrSnippetPublishingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NostrSnippetPublishingTests.swift; sourceTree = "<group>"; };
 		0D63152BFB352FB6E61DBF75 /* Nip46Service.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Nip46Service.swift; sourceTree = "<group>"; };
@@ -185,6 +187,7 @@
 			isa = PBXGroup;
 			children = (
 				E953DE583891B52989473771 /* AppContainerTests.swift */,
+				05418DD35E388592E61BA7F1 /* BookRightsV1ContractTests.swift */,
 				1CA7CD478C05965C8C68F0DB /* CatalogProviderRecordV1ContractTests.swift */,
 				4232605E9E8A0830608191B3 /* DictionaryRepositoryTests.swift */,
 				FCD9820EF78EE6965850690D /* FavoriteOutboxTests.swift */,
@@ -547,6 +550,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				5D14136E0D59C256F2F69460 /* AppContainerTests.swift in Sources */,
+				B95DDB98306B0503A6BF330C /* BookRightsV1ContractTests.swift in Sources */,
 				DA1F0FD7000D971FC7D5F6C7 /* CatalogProviderRecordV1ContractTests.swift in Sources */,
 				3293AEF36AE06143583E5FD1 /* DictionaryRepositoryTests.swift in Sources */,
 				B7907145EEC0B5D06140A3FB /* FavoriteOutboxTests.swift in Sources */,

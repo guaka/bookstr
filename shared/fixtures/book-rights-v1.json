@@ -1,0 +1,65 @@
+{
+  "version": 1,
+  "cases": [
+    {
+      "name": "legacy public-domain alias",
+      "input": { "status": "pd" },
+      "expected": { "rights_status": "public_domain", "license": null, "license_url": null, "rights_source": null }
+    },
+    {
+      "name": "canonical public-domain status",
+      "input": { "status": "public_domain" },
+      "expected": { "rights_status": "public_domain", "license": null, "license_url": null, "rights_source": null }
+    },
+    {
+      "name": "hyphenated open-license alias",
+      "input": { "status": "open-license", "license": "CC BY-SA 4.0", "rights_source": "catalog" },
+      "expected": { "rights_status": "open_license", "license": "CC BY-SA 4.0", "license_url": null, "rights_source": "catalog" }
+    },
+    {
+      "name": "legacy open alias",
+      "input": { "status": "open" },
+      "expected": { "rights_status": "open_license", "license": null, "license_url": null, "rights_source": null }
+    },
+    {
+      "name": "legacy copyright alias",
+      "input": { "status": "copyright" },
+      "expected": { "rights_status": "copyrighted", "license": null, "license_url": null, "rights_source": null }
+    },
+    {
+      "name": "canonical copyrighted status",
+      "input": { "status": "copyrighted" },
+      "expected": { "rights_status": "copyrighted", "license": null, "license_url": null, "rights_source": null }
+    },
+    {
+      "name": "copyright false compatibility",
+      "input": { "copyright": false, "rights_source": "gutendex" },
+      "expected": { "rights_status": "public_domain", "license": "Public domain in the U.S.", "license_url": null, "rights_source": "gutendex" }
+    },
+    {
+      "name": "public-domain evidence",
+      "input": { "license": "No known copyright restrictions", "rights_source": "provider" },
+      "expected": { "rights_status": "public_domain", "license": "No known copyright restrictions", "license_url": null, "rights_source": "provider" }
+    },
+    {
+      "name": "open-license URL extracted from statement",
+      "input": { "license": "Creative Commons: https://creativecommons.org/licenses/by/4.0/.", "rights_source": "opf" },
+      "expected": { "rights_status": "open_license", "license": "Creative Commons: https://creativecommons.org/licenses/by/4.0/.", "license_url": "https://creativecommons.org/licenses/by/4.0/", "rights_source": "opf" }
+    },
+    {
+      "name": "unknown statement rejects unsafe URL",
+      "input": { "license": "Use responsibly", "license_url": "javascript:alert(1)", "rights_source": "fixture" },
+      "expected": { "rights_status": "unknown", "license": "Use responsibly", "license_url": null, "rights_source": "fixture" }
+    },
+    {
+      "name": "legacy null placeholders are absent",
+      "input": { "status": "unknown", "license": "null", "license_url": "undefined", "rights_source": "undefined", "copyright": null },
+      "expected": { "rights_status": "unknown", "license": null, "license_url": null, "rights_source": null }
+    },
+    {
+      "name": "unknown status still permits evidence detection",
+      "input": { "status": "unknown", "license": "All rights reserved" },
+      "expected": { "rights_status": "copyrighted", "license": "All rights reserved", "license_url": null, "rights_source": null }
+    }
+  ]
+}
