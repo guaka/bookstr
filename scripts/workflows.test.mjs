@@ -23,6 +23,19 @@ test('web tests are gated by web-related path changes', async () => {
   );
 });
 
+test('Electron unit coverage and smoke results are published beside other clients', async () => {
+  const workflow = await readWorkflow('ci.yml');
+  const deploy = await readWorkflow('deploy-web.yml');
+
+  assert.match(workflow, /electron: \$\{\{ steps\.filter\.outputs\.electron \}\}/);
+  assert.match(workflow, /npm run test:coverage \| tee electron-tests\.tap/);
+  assert.match(workflow, /xvfb-run -a npx playwright test tests\/e2e\/desktop\.smoke\.spec\.js/);
+  assert.match(workflow, /--coverage-format node --coverage desktop\/electron-tests\.tap/);
+  assert.match(workflow, /bookstr-test-overview-electron-\$\{\{ github\.run_id \}\}/);
+  assert.match(deploy, /latest_run_with_artifact ci\.yml bookstr-test-overview-electron-/);
+  assert.match(deploy, /pattern: bookstr-test-overview-electron-\*/);
+});
+
 test('CodeQL gates each language while retaining scheduled full scans', async () => {
   const workflow = await readWorkflow('codeql.yml');
 

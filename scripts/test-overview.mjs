@@ -119,6 +119,16 @@ export function parseIstanbul(summary) {
   }));
 }
 
+export function parseNodeCoverage(text) {
+  const match = text.match(/^(?:#|ℹ)\s+all files\s*\|\s*(\d+(?:\.\d+)?)\s*\|\s*(\d+(?:\.\d+)?)\s*\|\s*(\d+(?:\.\d+)?)\s*\|/m);
+  if (!match) return [];
+  return [
+    { label: 'Lines', value: number(match[1]), suffix: '%' },
+    { label: 'Branches', value: number(match[2]), suffix: '%' },
+    { label: 'Functions', value: number(match[3]), suffix: '%' },
+  ];
+}
+
 export function parseJacoco(xml) {
   const labels = { INSTRUCTION: 'Instructions', BRANCH: 'Branches', METHOD: 'Methods', LINE: 'Lines' };
   const counters = [...xml.matchAll(/<counter\s+([^>]+)\/?>/g)].map(match => {
@@ -190,6 +200,7 @@ async function record(options) {
 
   let coverage = [];
   if (options['coverage-format'] === 'istanbul') coverage = parseIstanbul(await optionalJSON(options.coverage));
+  if (options['coverage-format'] === 'node') coverage = parseNodeCoverage(await readFile(options.coverage, 'utf8').catch(() => ''));
   if (options['coverage-format'] === 'jacoco') coverage = parseJacoco(await readFile(options.coverage, 'utf8').catch(() => ''));
   if (options['coverage-format'] === 'xccov') coverage = parseXCCov(await optionalJSON(options.coverage));
   if (options['coverage-format'] === 'llvm') coverage = parseLLVM(await optionalJSON(options.coverage));
@@ -251,8 +262,17 @@ function suiteRow(suite) {
 }
 
 export function renderDashboard(suites) {
-  const order = ['web', 'web-e2e', 'android', 'android-ui', 'ios', 'ios-e2e'];
-  const names = { web: 'Web', 'web-e2e': 'Web e2e', android: 'Android', 'android-ui': 'Android e2e', ios: 'iOS', 'ios-e2e': 'iOS e2e' };
+  const order = ['web', 'web-e2e', 'electron', 'electron-e2e', 'android', 'android-ui', 'ios', 'ios-e2e'];
+  const names = {
+    web: 'Web',
+    'web-e2e': 'Web e2e',
+    electron: 'Electron',
+    'electron-e2e': 'Electron e2e',
+    android: 'Android',
+    'android-ui': 'Android e2e',
+    ios: 'iOS',
+    'ios-e2e': 'iOS e2e',
+  };
   const byId = new Map(suites.map(suite => [suite.id, suite]));
   const complete = order.map(id => byId.get(id) || { id, suite: names[id], status: 'missing', results: {}, coverage: [] });
   const passing = complete.filter(suite => suite.status === 'passing').length;
