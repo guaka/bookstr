@@ -5,7 +5,6 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
-import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
@@ -23,6 +22,7 @@ import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
 import android.speech.tts.Voice
 import android.util.Log
+import android.view.KeyEvent
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import androidx.media.MediaBrowserServiceCompat
@@ -738,20 +738,13 @@ class NarrationService : MediaBrowserServiceCompat(), TextToSpeech.OnInitListene
     private fun buildNotification(): Notification {
         val metadata = mediaSession.controller.metadata
         val description = metadata?.description
-        val mediaButtonReceiver = ComponentName(this, MediaButtonReceiver::class.java)
-        val previous = MediaButtonReceiver.buildMediaButtonPendingIntent(
-            this,
-            mediaButtonReceiver,
+        val previous = mediaButtonPendingIntent(
             PlaybackStateCompat.ACTION_SKIP_TO_PREVIOUS,
         )
-        val playPause = MediaButtonReceiver.buildMediaButtonPendingIntent(
-            this,
-            mediaButtonReceiver,
+        val playPause = mediaButtonPendingIntent(
             if (isPlaying) PlaybackStateCompat.ACTION_PAUSE else PlaybackStateCompat.ACTION_PLAY,
         )
-        val next = MediaButtonReceiver.buildMediaButtonPendingIntent(
-            this,
-            mediaButtonReceiver,
+        val next = mediaButtonPendingIntent(
             PlaybackStateCompat.ACTION_SKIP_TO_NEXT,
         )
         val stop = PendingIntent.getService(
@@ -787,6 +780,18 @@ class NarrationService : MediaBrowserServiceCompat(), TextToSpeech.OnInitListene
                     .setCancelButtonIntent(stop),
             )
             .build()
+    }
+
+    private fun mediaButtonPendingIntent(action: Long): PendingIntent {
+        val keyCode = PlaybackStateCompat.toKeyCode(action)
+        val intent = Intent(Intent.ACTION_MEDIA_BUTTON, null, this, MediaButtonReceiver::class.java)
+            .putExtra(Intent.EXTRA_KEY_EVENT, KeyEvent(KeyEvent.ACTION_DOWN, keyCode))
+        return PendingIntent.getBroadcast(
+            this,
+            keyCode,
+            intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
     }
 
     private fun mainActivityPendingIntent(): PendingIntent = PendingIntent.getActivity(

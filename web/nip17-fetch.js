@@ -8,15 +8,6 @@ const DEFAULT_RELAY = 'wss://relay.nomadwiki.org';
 const LIBVAULT_API = 'https://lib.b.bfr.ee/api';
 const TWO_DAYS_SECONDS = 2 * 24 * 60 * 60;
 const GIFT_WRAP_TTL_SECONDS = 10 * 60;
-const unavailableLibVaultFetchers = new WeakSet();
-
-function libVaultAPIUnavailable(fetchImpl) {
-  return unavailableLibVaultFetchers.has(fetchImpl);
-}
-
-function markLibVaultAPIUnavailable(fetchImpl) {
-  unavailableLibVaultFetchers.add(fetchImpl);
-}
 
 function validHex(value, length) {
   return new RegExp(`^[a-f0-9]{${length}}$`, 'i').test(String(value || ''));
@@ -82,11 +73,11 @@ export async function resolveLibVaultService(fetchImpl = fetch) {
 export async function sendLibVaultFetchRequest(book, options = {}) {
   const signer = options.signer || globalThis.window?.nostr;
   if (!signer?.getPublicKey || !signer?.signEvent || !signer?.nip44?.encrypt) {
-    throw new Error('NIP-07 with NIP-44 support is required');
+    throw new Error('A Nostr signer with NIP-44 support is required');
   }
   const service = await resolveLibVaultService(options.fetchImpl || fetch);
   const senderPubkey = String(await signer.getPublicKey()).toLowerCase();
-  if (!validHex(senderPubkey, 64)) throw new Error('The NIP-07 signer returned an invalid public key');
+  if (!validHex(senderPubkey, 64)) throw new Error('The Nostr signer returned an invalid public key');
 
   const id = requestId();
   const tools = await (options.loadTools || (() => import('./vendor/nostr-tools.js')))();
@@ -105,7 +96,7 @@ export async function sendLibVaultFetchRequest(book, options = {}) {
 export async function sendLibVaultFavoritesSync(favorites, options = {}) {
   const signer = options.signer || globalThis.window?.nostr;
   if (!signer?.getPublicKey || !signer?.signEvent || !signer?.nip44?.encrypt) {
-    throw new Error('NIP-07 with NIP-44 support is required');
+    throw new Error('A Nostr signer with NIP-44 support is required');
   }
   const md5s = [...new Set((Array.isArray(favorites) ? favorites : [])
     .map(item => String(item?.md5 || item || '').toLowerCase())
@@ -113,7 +104,7 @@ export async function sendLibVaultFavoritesSync(favorites, options = {}) {
   if (md5s.length > 5000) throw new Error('Too many favorites to sync with LibVault');
   const service = await resolveLibVaultService(options.fetchImpl || fetch);
   const senderPubkey = String(await signer.getPublicKey()).toLowerCase();
-  if (!validHex(senderPubkey, 64)) throw new Error('The NIP-07 signer returned an invalid public key');
+  if (!validHex(senderPubkey, 64)) throw new Error('The Nostr signer returned an invalid public key');
   const id = requestId();
   const tools = await (options.loadTools || (() => import('./vendor/nostr-tools.js')))();
   const wrap = await createPrivateRequestWrap({
@@ -259,13 +250,13 @@ function listenForSearchResponse(requestID, service, senderPubkey, signer, tools
 export async function searchLibVault(query, searchType = 'all', options = {}) {
   const signer = options.signer || globalThis.window?.nostr;
   if (!signer?.getPublicKey || !signer?.signEvent || !signer?.nip44?.encrypt || !signer?.nip44?.decrypt) {
-    throw new Error('NIP-07 with NIP-44 support is required');
+    throw new Error('A Nostr signer with NIP-44 support is required');
   }
   const publish = options.publish;
   if (typeof publish !== 'function' && !options.listen) throw new Error('No Nostr relay publisher is available');
   const service = await resolveLibVaultService(options.fetchImpl || fetch);
   const senderPubkey = String(await signer.getPublicKey()).toLowerCase();
-  if (!validHex(senderPubkey, 64)) throw new Error('The NIP-07 signer returned an invalid public key');
+  if (!validHex(senderPubkey, 64)) throw new Error('The Nostr signer returned an invalid public key');
   const tools = await (options.loadTools || (() => import('./vendor/nostr-tools.js')))();
   const id = requestId();
   let receivedTraced = false;
@@ -348,11 +339,6 @@ export async function monitorLibVaultFetch(md5, options = {}) {
 
   report({ status: 'waiting' });
   while (!signal?.aborted && Date.now() < deadline) {
-    if (libVaultAPIUnavailable(fetchImpl)) {
-      const result = { status: 'failed', error: 'LibVault HTTP API is unavailable' };
-      report(result);
-      return result;
-    }
     try {
       const jobResponse = await fetchImpl(`${LIBVAULT_API}/jobs?md5=${normalized}`, { headers: { Accept: 'application/json' }, signal });
       if (jobResponse.ok) {
@@ -384,10 +370,7 @@ export async function monitorLibVaultFetch(md5, options = {}) {
       }
     } catch (error) {
       if (signal?.aborted) return { status: 'cancelled' };
-      markLibVaultAPIUnavailable(fetchImpl);
-      const result = { status: 'failed', error: 'LibVault HTTP API is unavailable' };
-      report(result);
-      return result;
+      report({ status: 'waiting', error: error?.message || String(error) });
     }
     await wait(intervalMs, signal);
   }
@@ -399,18 +382,10 @@ export async function monitorLibVaultFetch(md5, options = {}) {
 
 export async function lookupLibVaultBlossomState(md5, fetchImpl = fetch) {
   const normalized = String(md5 || '').toLowerCase();
-  if (!validHex(normalized, 32) || libVaultAPIUnavailable(fetchImpl)) return null;
-  try {
-    const response = await fetchImpl(`${LIBVAULT_API}/blossom/${normalized}`, { headers: { Accept: 'application/json' } });
-    if (!response.ok) {
-      markLibVaultAPIUnavailable(fetchImpl);
-      return null;
-    }
-    return response.json();
-  } catch {
-    markLibVaultAPIUnavailable(fetchImpl);
-    return null;
-  }
+  if (!validHex(normalized, 32)) return null;
+  const response = await fetchImpl(`${LIBVAULT_API}/blossom/${normalized}`, { headers: { Accept: 'application/json' } });
+  if (!response.ok) return null;
+  return response.json();
 }
 
 export async function lookupLibVaultBlossom(md5, fetchImpl = fetch) {

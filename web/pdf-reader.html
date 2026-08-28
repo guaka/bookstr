@@ -14,11 +14,17 @@
         <button id="zoom-out" type="button" aria-label="Zoom out">−</button>
         <span id="zoom-label">100%</span>
         <button id="zoom-in" type="button" aria-label="Zoom in">+</button>
+        <div id="pdf-speech-controls" class="hidden" aria-label="Read-aloud controls">
+          <button id="pdf-speech-play" type="button" aria-label="Start reading">▶</button>
+          <button id="pdf-speech-pause" type="button" aria-label="Pause or resume reading" disabled>▮▮</button>
+          <button id="pdf-speech-stop" type="button" aria-label="Stop reading" disabled>⏹</button>
+        </div>
         <a id="download" href="#">Download</a>
       </div>
     </header>
     <main id="pages" aria-label="PDF pages"></main>
     <p id="message" role="status">Opening PDF…</p>
+    <script src="reader-speech.js"></script>
     <script type="module" src="pdf-reader.js"></script>
   </body>
 </html>

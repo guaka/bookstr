@@ -201,6 +201,10 @@
       if (event?.kind !== 30003 || !followed.has(author) || !hasPublicBookReference(event.tags)) continue;
       const d = (Array.isArray(event.tags) ? event.tags : [])
         .find(tag => Array.isArray(tag) && tag[0] === 'd')?.[1] || '';
+      if (d === 'libvault-favorites'
+        || d.startsWith('libvault-favorites-chunk')
+        || d.startsWith('bookstr-collection-')
+        || d.startsWith('bookstr-chunk-')) continue;
       const key = `${author}:${d}`;
       const current = newestByAddress.get(key);
       if (!current || Number(event.created_at || 0) > Number(current.created_at || 0)) {

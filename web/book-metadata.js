@@ -251,6 +251,26 @@
     }
   }
 
+  function desktopBlossomProxyUrl(blossomUrl, sha256, appBaseUrl) {
+    const hash = String(sha256 || '').trim().toLowerCase();
+    if (!/^[a-f0-9]{64}$/.test(hash)) return '';
+    let source;
+    try {
+      source = new URL(blossomUrl);
+    } catch {
+      return '';
+    }
+    if (source.protocol !== 'https:' || source.hostname.toLowerCase() !== 'blossom.bfr.ee') return '';
+    const name = source.pathname.split('/').filter(Boolean).pop() || '';
+    const match = name.match(/^([a-f0-9]{64})(\.(?:epub|pdf))?$/i);
+    if (!match || match[1].toLowerCase() !== hash) return '';
+    try {
+      return new URL(`/api/blossom/${hash}${String(match[2] || '').toLowerCase()}`, appBaseUrl).toString();
+    } catch {
+      return '';
+    }
+  }
+
   function canonicalReadUrl(book, apiBase = 'https://books-api.guaka.org/api') {
     const gutenbergId = String(book?.md5 || book?.id || '').match(/^gutenberg:(\d+)$/i)?.[1]
       || (String(book?.source || '').toLowerCase() === 'gutenberg' && /^\d+$/.test(String(book?.sourceNativeId || ''))
@@ -510,6 +530,7 @@
     normalizeReadUrl,
     findBookByReadUrl,
     metadataEndpointForReadUrl,
+    desktopBlossomProxyUrl,
     canonicalReadUrl,
     canonicalCatalogUrl,
     availabilityForBook,
