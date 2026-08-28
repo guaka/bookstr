@@ -110,7 +110,7 @@ class NostrRepository(
         if (relays.isEmpty()) return@withContext false
         try {
             val pubkey = signer.getPublicKey()
-            val content = encryptToSelf(pubkey, vocabularyJson(word).toString())
+            val content = encryptToSelf(pubkey, VocabularyWire.encode(word).toString())
             val unsigned = JSONObject()
                 .put("kind", NostrClient.KIND_PROGRESS)
                 .put("created_at", word.lastSeenAt / 1000)
@@ -138,7 +138,7 @@ class NostrRepository(
             val pubkey = signer.getPublicKey()
             for (event in NostrClient(relays).fetchVocabulary(pubkey)) {
                 runCatching {
-                    val parsed = parseVocabulary(JSONObject(decryptFromSelf(pubkey, event.getString("content"))))
+                    val parsed = VocabularyWire.parse(JSONObject(decryptFromSelf(pubkey, event.getString("content"))))
                     if (vocabularyRepository.mergeRemote(parsed)) merged++
                 }.onFailure { Log.w(TAG, "Skipping malformed private vocabulary event", it) }
             }
@@ -160,47 +160,6 @@ class NostrRepository(
         return Nip55.decryptNip44ViaContentResolver(context, pkg, ciphertext, pubkey, pubkey)
             ?: AmberIntentSession.Host.session?.decryptNip44(ciphertext, pubkey, pubkey, pkg)
             ?: throw Nip55Exception("Reconnect Amber and remember private vocabulary decryption")
-    }
-
-    private fun vocabularyJson(word: VocabularyWord): JSONObject = JSONObject()
-        .put("key", word.key)
-        .put("word", word.word)
-        .put("language", word.language)
-        .put("syncId", word.syncId)
-        .put("bookId", word.bookId)
-        .put("bookTitle", word.bookTitle)
-        .put("cfi", word.cfi)
-        .put("contextSentence", word.contextSentence)
-        .put("partOfSpeech", word.partOfSpeech)
-        .put("definitions", JSONArray(word.definitions))
-        .put("sourceUrl", word.sourceUrl)
-        .put("lookupCount", word.lookupCount)
-        .put("firstSeenAt", word.firstSeenAt)
-        .put("lastSeenAt", word.lastSeenAt)
-        .put("updatedAt", word.lastSeenAt)
-        .put("deleted", word.deleted)
-
-    private fun parseVocabulary(json: JSONObject): VocabularyWord {
-        val word = json.getString("word").lowercase()
-        val language = json.getString("language").lowercase()
-        val definitions = json.optJSONArray("definitions") ?: JSONArray()
-        return VocabularyWord(
-            key = json.optString("key", "$language:$word"),
-            word = word,
-            language = language,
-            syncId = json.getString("syncId"),
-            bookId = json.getString("bookId"),
-            bookTitle = json.getString("bookTitle"),
-            cfi = json.optString("cfi"),
-            contextSentence = json.optString("contextSentence"),
-            partOfSpeech = json.optString("partOfSpeech"),
-            definitionsJson = definitions.toString(),
-            sourceUrl = json.optString("sourceUrl"),
-            lookupCount = json.optInt("lookupCount", 1),
-            firstSeenAt = json.optLong("firstSeenAt", json.optLong("updatedAt")),
-            lastSeenAt = json.optLong("lastSeenAt", json.optLong("updatedAt")),
-            deleted = json.optBoolean("deleted", false),
-        )
     }
 
     companion object {

@@ -1,3 +1,4 @@
+import Foundation
 import XCTest
 #if SWIFT_PACKAGE
 @testable import BookstrLogic
@@ -6,6 +7,45 @@ import XCTest
 #endif
 
 final class VocabularyRepositoryTests: XCTestCase {
+    func testSharedVocabularyWireV1Fixtures() throws {
+        let fixture = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: Data(contentsOf: vocabularyFixtureURL())) as? [String: Any]
+        )
+        XCTAssertEqual(fixture["version"] as? Int, 1)
+        let fields = try XCTUnwrap(fixture["fields"] as? [String: Any])
+        let cases = try XCTUnwrap(fixture["cases"] as? [[String: Any]])
+        for entry in cases {
+            let name = try XCTUnwrap(entry["name"] as? String)
+            let payload = try XCTUnwrap(entry["payload"] as? [String: Any])
+            let parsed = VocabularyRepository.parseRemote(payload)
+            guard entry["valid"] as? Bool == true else {
+                XCTAssertNil(parsed, name)
+                continue
+            }
+            let expected = try XCTUnwrap(entry["expected"] as? [String: Any])
+            let value = try XCTUnwrap(parsed, name)
+            let actual: [String: Any] = [
+                "key": value.key, "word": value.word, "language": value.language, "syncId": value.syncId,
+                "bookId": value.bookId, "bookTitle": value.bookTitle, "cfi": value.cfi,
+                "contextSentence": value.contextSentence, "partOfSpeech": value.partOfSpeech,
+                "definitions": value.definitions, "sourceUrl": value.sourceUrl, "lookupCount": value.lookupCount,
+                "firstSeenAt": value.firstSeenAt, "lastSeenAt": value.lastSeenAt, "deleted": value.deleted,
+            ]
+            var comparable: [String: Any] = [:]
+            for field in fields.keys { comparable[field] = actual[field] }
+            XCTAssertTrue(NSDictionary(dictionary: comparable).isEqual(to: expected), name)
+        }
+    }
+
+    private func vocabularyFixtureURL() -> URL {
+        URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent("shared/fixtures/vocabulary-wire-v1.json")
+    }
+
     func testSaveSelectionIncrementsLookupCount() {
         let store = JSONFileStore(subdirectory: "bookstr-test-\(UUID().uuidString)")
         let repo = VocabularyRepository(fileStore: store)
