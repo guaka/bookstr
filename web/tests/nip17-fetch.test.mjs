@@ -127,7 +127,10 @@ test('sendLibVaultFetchRequest rejects when no relay publisher is available', as
   };
 
   await assert.rejects(
-    () => sendLibVaultFetchRequest({ md5: 'a'.repeat(32), title: 'Blocked' }, { signer }),
+    () => sendLibVaultFetchRequest({ md5: 'a'.repeat(32), title: 'Blocked' }, {
+      signer,
+      fetchImpl: async () => discoveryResponse(),
+    }),
     /No Nostr relay publisher is available/,
   );
 });
@@ -3116,6 +3119,68 @@ test('searchLibVault times out when default listener never receives EOSE', async
   );
 
   assert.equal(published, false);
+  assert.equal(closed, true);
+});
+
+test('searchLibVault closes default listeners when the response times out after EOSE', async () => {
+  const sender = senderPubkey;
+  const service = servicePubkey;
+  let closed = false;
+
+  class FakeWebSocket {
+    constructor() {
+      this.handlers = {};
+      setTimeout(() => this._emit('open'), 0);
+    }
+
+    addEventListener(name, handler) {
+      (this.handlers[name] ||= []).push(handler);
+    }
+
+    send(message) {
+      const packet = JSON.parse(message);
+      if (packet?.[0] === 'REQ') {
+        setTimeout(() => this._emit('message', { data: JSON.stringify(['EOSE', packet[1]]) }), 0);
+      }
+    }
+
+    close() {
+      closed = true;
+    }
+
+    _emit(name, event) {
+      (this.handlers[name] || []).forEach(handler => handler(event));
+    }
+  }
+
+  await assert.rejects(
+    () => searchLibVault('books', 'title', {
+      signer: {
+        getPublicKey: async () => sender,
+        nip44: { encrypt: async () => '{}', decrypt: async () => '{}' },
+        signEvent: async event => ({ ...event, id: 'seed', pubkey: sender, sig: 'signed' }),
+      },
+      fetchImpl: async () => ({
+        ok: true,
+        json: async () => ({
+          names: { books: service },
+          relays: { [service]: ['wss://relay.example'] },
+        }),
+      }),
+      loadTools: async () => ({
+        generateSecretKey: () => new Uint8Array(32).fill(13),
+        finalizeEvent: event => ({ ...event, id: 'wrap', pubkey: 'f'.repeat(64), sig: 'wrapped' }),
+        nip19: { npubEncode: pubkey => `npub:${pubkey}` },
+        nip44: { v2: { utils: { getConversationKey: () => new Uint8Array(32).fill(14) }, encrypt: plaintext => `wrapped:${plaintext}` } },
+        verifyEvent: () => true,
+      }),
+      publish: async () => true,
+      WebSocketImpl: FakeWebSocket,
+      responseTimeoutMs: 8,
+    }),
+    /Private LibVault search response timed out/,
+  );
+
   assert.equal(closed, true);
 });
 
