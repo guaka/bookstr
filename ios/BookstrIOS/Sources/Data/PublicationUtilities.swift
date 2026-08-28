@@ -78,6 +78,7 @@ enum PublicationUtilities {
         guard let prefix else { return nil }
         if String(data: prefix, encoding: .ascii)?.hasPrefix("%PDF-") == true { return .pdf }
         if prefix.starts(with: [0x50, 0x4b]) { return .epub }
+        if String(data: prefix, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("<") == true { return .fb2 }
         return nil
     }
 
@@ -88,6 +89,9 @@ enum PublicationUtilities {
         case .epub:
             return detectedFormat(fileURL: fileURL) == .epub
                 && fileContains(fileURL, needle: Data("META-INF/container.xml".utf8))
+        case .fb2:
+            return detectedFormat(fileURL: fileURL) == .fb2
+                && fileContains(fileURL, needle: Data("<FictionBook".utf8))
         }
     }
 

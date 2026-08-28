@@ -3,12 +3,17 @@ import Foundation
 enum BookFormat: String, Codable, CaseIterable, Sendable {
     case epub
     case pdf
+    case fb2
 
     static func from(format: String?, url: String = "") -> BookFormat {
         let normalized = format?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         if normalized == "pdf" { return .pdf }
         if normalized == "epub" { return .epub }
-        return url.lowercased().contains(".pdf") ? .pdf : .epub
+        if normalized == "fb2" || normalized == "fb2.zip" { return .fb2 }
+        let path = url.lowercased()
+        if path.contains(".pdf") { return .pdf }
+        if path.contains(".fb2") { return .fb2 }
+        return .epub
     }
 }
 

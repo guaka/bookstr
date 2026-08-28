@@ -51,6 +51,17 @@
       "languages": [],
       "rights": { "status": "unknown" },
       "acquisitions": [{ "format": "epub", "url": "https://example.test/unknown.epub", "availability": "restricted" }]
+    },
+    {
+      "provider": "litres-public-domain",
+      "recordId": "172569",
+      "publicationId": "litres-public-domain:172569",
+      "title": "Записки из мёртвого дома",
+      "authors": ["Фёдор Достоевский"],
+      "languages": ["ru"],
+      "publishedYear": "1860",
+      "rights": { "status": "public_domain", "license": "Public Domain", "source": "litres" },
+      "acquisitions": [{ "format": "fb2", "url": "https://www.litres.ru/book/fedor-dostoevskiy/zapiski-iz-mertvogo-doma-172569/", "availability": "open" }]
     }
   ]
 }

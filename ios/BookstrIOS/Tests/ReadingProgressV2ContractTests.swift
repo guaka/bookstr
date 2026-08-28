@@ -1,6 +1,10 @@
 import Foundation
 import XCTest
+#if SWIFT_PACKAGE
 @testable import BookstrLogic
+#else
+@testable import BookstrIOS
+#endif
 
 final class ReadingProgressV2ContractTests: XCTestCase {
     func testIOSProgressAdapterConformsToEverySharedV2Case() throws {
