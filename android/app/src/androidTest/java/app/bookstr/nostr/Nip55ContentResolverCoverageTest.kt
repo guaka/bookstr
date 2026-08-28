@@ -1,6 +1,8 @@
 package app.bookstr.nostr
 
+import android.content.ContentResolver
 import android.content.Context
+import android.content.ContextWrapper
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import kotlinx.coroutines.runBlocking
@@ -18,7 +20,14 @@ class Nip55ContentResolverCoverageTest {
 
     @Before
     fun setUp() {
-        context = ApplicationProvider.getApplicationContext()
+        val targetContext = ApplicationProvider.getApplicationContext<Context>()
+        val provider = FakeNip55ContentProvider().apply {
+            attachInfo(targetContext, null)
+        }
+        val resolver = ContentResolver.wrap(provider)
+        context = object : ContextWrapper(targetContext) {
+            override fun getContentResolver() = resolver
+        }
         FakeNip55ContentProvider.reset()
     }
 
@@ -120,6 +129,7 @@ class Nip55ContentResolverCoverageTest {
                 "aabb",
             )
         }
+        Unit
     }
 
     @Test
