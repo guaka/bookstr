@@ -100,6 +100,19 @@ class MainActivity : ComponentActivity() {
                                 pageIndex = session.pageIndex,
                                 pageOffset = session.pageOffset,
                             )
+                        } else if (session.format == BookFormat.Fb2) {
+                            Fb2ReaderActivity.intent(
+                                context = this@MainActivity,
+                                bookId = session.bookId,
+                                bookTitle = session.bookTitle,
+                                author = session.author,
+                                year = session.year,
+                                locator = session.locator,
+                                rightsStatus = session.rightsStatus,
+                                license = session.license,
+                                licenseUrl = session.licenseUrl,
+                                rightsSource = session.rightsSource,
+                            )
                         } else {
                             ReaderActivity.intent(
                                 context = this@MainActivity,
@@ -299,6 +312,22 @@ class MainActivity : ComponentActivity() {
                                         year = book.year,
                                     ),
                                 )
+                            } else if (book.format == BookFormat.Fb2) {
+                                val localProgress = catalog.getProgressForBooks(listOf(book))[book.id]
+                                startActivity(
+                                    Fb2ReaderActivity.intent(
+                                        context = this@MainActivity,
+                                        bookId = book.id,
+                                        bookTitle = book.title,
+                                        author = book.author,
+                                        year = book.year,
+                                        locator = localProgress?.cfi,
+                                        rightsStatus = book.rightsStatus,
+                                        license = book.license,
+                                        licenseUrl = book.licenseUrl,
+                                        rightsSource = book.rightsSource,
+                                    ),
+                                )
                             } else {
                                 val localProgress = catalog.getProgressForBooks(listOf(book))[book.id]
                                 startActivity(
@@ -412,6 +441,19 @@ class MainActivity : ComponentActivity() {
                                                             year = session.year,
                                                             pageIndex = session.pageIndex,
                                                             pageOffset = session.pageOffset,
+                                                        )
+                                                    } else if (session.format == BookFormat.Fb2) {
+                                                        Fb2ReaderActivity.intent(
+                                                            context = this@MainActivity,
+                                                            bookId = session.bookId,
+                                                            bookTitle = session.bookTitle,
+                                                            author = session.author,
+                                                            year = session.year,
+                                                            locator = session.locator,
+                                                            rightsStatus = session.rightsStatus,
+                                                            license = session.license,
+                                                            licenseUrl = session.licenseUrl,
+                                                            rightsSource = session.rightsSource,
                                                         )
                                                     } else {
                                                         ReaderActivity.intent(
@@ -561,7 +603,12 @@ class MainActivity : ComponentActivity() {
                                 },
                                 onOpenWord = { word ->
                                     val isPdf = word.cfi.startsWith("pdf:")
-                                    val format = if (isPdf) BookFormat.Pdf else BookFormat.Epub
+                                    val isFb2 = word.cfi.startsWith("fb2:")
+                                    val format = when {
+                                        isPdf -> BookFormat.Pdf
+                                        isFb2 -> BookFormat.Fb2
+                                        else -> BookFormat.Epub
+                                    }
                                     val publication = catalog.publicationFile(word.bookId, format)
                                     if (!publication.isFile) {
                                         error = "This book is no longer downloaded. Open it from Library first."
@@ -578,6 +625,19 @@ class MainActivity : ComponentActivity() {
                                                 pageIndex = parts.getOrNull(1)?.toIntOrNull() ?: 0,
                                                 pageOffset = parts.getOrNull(2)?.toIntOrNull() ?: 0,
                                                 highlightWord = word.word,
+                                            )
+                                        } else if (isFb2) {
+                                            Fb2ReaderActivity.intent(
+                                                context = this@MainActivity,
+                                                bookId = word.bookId,
+                                                bookTitle = word.bookTitle,
+                                                author = book?.author,
+                                                year = book?.year,
+                                                locator = word.cfi,
+                                                rightsStatus = book?.rightsStatus,
+                                                license = book?.license,
+                                                licenseUrl = book?.licenseUrl,
+                                                rightsSource = book?.rightsSource,
                                             )
                                         } else {
                                             ReaderActivity.intent(

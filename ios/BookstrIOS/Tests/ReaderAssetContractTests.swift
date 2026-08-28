@@ -31,6 +31,48 @@ final class ReaderAssetContractTests: XCTestCase {
     }
 
 #if !SWIFT_PACKAGE
+    func testFB2ParserExtractsMetadataSectionsAndNestedMarkup() throws {
+        let xml = """
+        <?xml version="1.0" encoding="UTF-8"?>
+        <FictionBook xmlns="http://www.gribuser.ru/xml/fictionbook/2.0">
+          <description><title-info><book-title>Тест</book-title><lang>ru</lang><author><first-name>Анна</first-name><last-name>Автор</last-name></author></title-info></description>
+          <body><section id="chapter-1"><title><p>Глава первая</p></title><p>Привет, <emphasis>мир</emphasis>!</p><section id="nested"><title><p>Вложенная</p></title><p>Текст.</p></section></section></body>
+        </FictionBook>
+        """
+        let document = try FB2Parser.parse(data: Data(xml.utf8))
+        XCTAssertEqual(document.title, "Тест")
+        XCTAssertEqual(document.author, "Анна Автор")
+        XCTAssertEqual(document.language, "ru")
+        XCTAssertEqual(document.flatSections.map(\.id), ["chapter-1", "nested"])
+        XCTAssertEqual(document.flatSections[0].title, "Глава первая")
+        XCTAssertEqual(document.flatSections[0].paragraphs.first?.text, "Привет, мир!")
+    }
+
+    func testFB2ParserRejectsExternalEntitiesAndEmptyBodies() {
+        XCTAssertThrowsError(try FB2Parser.parse(data: Data("<!DOCTYPE FictionBook [<!ENTITY x SYSTEM 'file:///tmp/x'>]><FictionBook/>".utf8))) { error in
+            XCTAssertTrue(error is FB2ParseError)
+        }
+        XCTAssertThrowsError(try FB2Parser.parse(data: Data("<FictionBook><body/></FictionBook>".utf8))) { error in
+            XCTAssertEqual(error as? FB2ParseError, .emptyBody)
+        }
+    }
+
+    @MainActor
+    func testFB2ReaderLoadsDeflatedZipAndEmitsFourPartLocator() async throws {
+        let encoded = "UEsDBBQAAAAIAI+eHF2swOoxXQAAAJsAAAAIAAAAYm9vay5mYjJVjkEKgDAMBF9U8oGQg4gv8AO2jRAsTbE56O+tClKPOzssi5MEE82D6kYYuYZdyg0ITSyxk7wqoW+1ewCNvKbFOCJ0EKG34bfjNZ6ElcMbC818GEJp3gfhlaB/cwFQSwECFAMUAAAACACPnhxdrMDqMV0AAACbAAAACAAAAAAAAAAAAAAAgAEAAAAAYm9vay5mYjJQSwUGAAAAAAEAAQA2AAAAgwAAAAAA"
+        let fileURL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".fb2.zip")
+        defer { try? FileManager.default.removeItem(at: fileURL) }
+        try XCTUnwrap(Data(base64Encoded: encoded)).write(to: fileURL)
+
+        let controller = FB2ReaderController()
+        await controller.load(fileURL: fileURL, initialLocator: nil)
+        XCTAssertTrue(controller.ready)
+        let section = try XCTUnwrap(controller.sections.first)
+        XCTAssertEqual(controller.update(section: section.index, paragraph: 0, offset: 7), "fb2:\(section.id):0:7")
+        await controller.load(fileURL: fileURL, initialLocator: "fb2:\(section.id):0:0")
+        XCTAssertEqual(controller.sectionIndex, section.index)
+    }
+
     func testEPUBSpeechPlannerKeepsShortTailAndParagraphPause() throws {
         let html = try bundledReaderHTML()
         let speechSource = try bundledAsset(named: "reader-speech", extension: "js")
