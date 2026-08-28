@@ -422,9 +422,24 @@ function decodeXML(value) {
     '&amp;': '&', '&lt;': '<', '&gt;': '>', '&quot;': '"', '&apos;': "'",
   })[entity]);
   // Decode before removing markup so entities cannot recreate an HTML tag
-  // after sanitization. Drop any leftover angle brackets as a final guard for
-  // malformed or deliberately overlapping tag syntax.
-  return decoded.replace(/<[^>]*>/g, '').replace(/[<>]/g, '');
+  // after sanitization. A small state machine also handles malformed or
+  // deliberately overlapping tag syntax without partial string replacement.
+  return textWithoutXMLMarkup(decoded);
+}
+
+function textWithoutXMLMarkup(value) {
+  let text = '';
+  let insideTag = false;
+  for (const character of value) {
+    if (character === '<') {
+      insideTag = true;
+    } else if (character === '>') {
+      insideTag = false;
+    } else if (!insideTag) {
+      text += character;
+    }
+  }
+  return text;
 }
 
 function escapeRegExp(value) {
