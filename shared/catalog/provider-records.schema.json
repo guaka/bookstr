@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bookstr.app/contracts/catalog-provider-records-v1.schema.json",
+  "title": "Bookstr catalog provider records v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "records"],
+  "properties": {
+    "version": { "const": 1 },
+    "records": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/providerRecord" }
+    }
+  },
+  "$defs": {
+    "providerRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["provider", "recordId", "publicationId", "title", "authors", "languages", "rights", "acquisitions"],
+      "properties": {
+        "provider": { "type": "string", "minLength": 1 },
+        "recordId": { "type": "string", "minLength": 1 },
+        "publicationId": { "type": "string", "minLength": 1 },
+        "title": { "type": "string", "minLength": 1 },
+        "authors": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+        "languages": { "type": "array", "items": { "type": "string", "pattern": "^[A-Za-z]{2,3}$" } },
+        "publishedYear": { "type": "string" },
+        "rights": { "$ref": "#/$defs/rights" },
+        "acquisitions": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/acquisition" }
+        }
+      }
+    },
+    "rights": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status"],
+      "properties": {
+        "status": { "enum": ["public_domain", "open_license", "copyrighted", "unknown"] },
+        "license": { "type": "string" },
+        "licenseUrl": { "type": "string", "format": "uri" },
+        "source": { "type": "string" }
+      }
+    },
+    "acquisition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["format", "url", "availability"],
+      "properties": {
+        "format": { "enum": ["epub", "pdf"] },
+        "url": { "type": "string", "format": "uri" },
+        "availability": { "enum": ["open", "borrow", "buy", "preview", "restricted"] }
+      }
+    }
+  }
+}

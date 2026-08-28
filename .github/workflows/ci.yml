@@ -82,7 +82,8 @@ jobs:
           started=$(date +%s)
           set +e
           node shared/design-tokens/generate.mjs --check
-          node --test --test-reporter=tap web/tests/*.test.mjs scripts/*.test.mjs shared/design-tokens/*.test.mjs | tee web-tests.tap
+          node shared/catalog/generate-provider-record-dtos.mjs --check
+          node --test --test-reporter=tap web/tests/*.test.mjs scripts/*.test.mjs shared/catalog/*.test.mjs shared/design-tokens/*.test.mjs | tee web-tests.tap
           status=${PIPESTATUS[0]}
           echo "duration_ms=$((($(date +%s) - started) * 1000))" >> "$GITHUB_OUTPUT"
           exit "$status"
@@ -97,7 +98,7 @@ jobs:
             --reporter=lcov \
             --reporter=json-summary \
             --reporter=text \
-            node --test web/tests/*.test.mjs shared/design-tokens/*.test.mjs
+            node --test web/tests/*.test.mjs shared/catalog/*.test.mjs shared/design-tokens/*.test.mjs
       - name: Archive web coverage artifacts
         uses: actions/upload-artifact@v4
         with:

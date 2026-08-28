@@ -95,7 +95,7 @@ formats, fixtures, and reader behavior. See the
 The development server opens Bookstr at `http://localhost:11111`. Run the dependency-free regression tests with:
 
 ```bash
-node --test web/tests/*.test.mjs scripts/*.test.mjs
+node --test web/tests/*.test.mjs scripts/*.test.mjs shared/catalog/*.test.mjs shared/design-tokens/*.test.mjs
 ```
 
 For coverage reports, run the same tests with coverage collection:
