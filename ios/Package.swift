@@ -62,6 +62,7 @@ let package = Package(
                 "NostrClientProgressTests.swift",
                 "ProgressRepositoryTests.swift",
                 "ReaderAssetContractTests.swift",
+                "ReadingProgressV2ContractTests.swift",
                 "SettingsRepositoryTests.swift",
                 "VocabularyRepositoryTests.swift",
                 "WordNavigationStateTests.swift",

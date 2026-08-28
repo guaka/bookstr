@@ -87,7 +87,7 @@ class NostrClientProgressTest {
     fun parseUpdatedAtFallsBackForNonnumericInput() {
         assertEquals(7_000L, NostrClient.parseUpdatedAt("""{"updatedAt":"not-a-number"}""", 7L))
         assertEquals(8_000L, NostrClient.parseUpdatedAt("""{"updatedAt":null}""", 8L))
-        assertEquals(9_000L, NostrClient.parseUpdatedAt("""{"updatedAt":"1200"}""", 9L))
+        assertEquals(1_200L, NostrClient.parseUpdatedAt("""{"updatedAt":"1200"}""", 9L))
     }
 
     @Test

@@ -571,7 +571,7 @@ test('Home can delete a book locally and across synced clients', () => {
   assert.match(html, /if \(wasFavorite\) tasks\.push\(syncFavoritesToNostr\(\)\)/);
   assert.match(html, /if \(wasReading\) tasks\.push\(publishReadingDeletion\(book\)\)/);
   assert.match(html, /content: JSON\.stringify\(\{ bookId, deleted: true, updatedAt: now \* 1000 \}\)/);
-  assert.match(html, /if \(payload\.deleted === true\)/);
+  assert.match(html, /if \(parsed\.deleted\)/);
 });
 
 test('Home can refresh and sync merged LibVault and Open Library metadata', () => {

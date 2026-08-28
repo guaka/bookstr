@@ -1790,6 +1790,7 @@
     <script src="passage-results.js"></script>
     <script src="nostr-social.js"></script>
     <script src="desktop-progress.js"></script>
+    <script src="nostr-progress.js"></script>
     <script src="vendor/sql-wasm.js"></script>
     <script>
       const FAVORITES_KEY = 'bookstr_nostr_favorites_v1';
@@ -3074,23 +3075,13 @@
       }
 
       function parseReadingProgressEvent(event) {
+        const parsed = BookstrNostrProgress.parseProgressEvent(event);
+        if (!parsed) return null;
+        const { payload, bookId, updatedAt } = parsed;
+        if (parsed.deleted) {
+          return { md5: bookId.toLowerCase(), updatedAt, deleted: true };
+        }
         try {
-          const payload = JSON.parse(event.content);
-          const created = Number(event.created_at || 0) * 1000;
-          const bookId = String(payload.bookId || '').trim();
-          const updatedAt = Number(payload.updatedAt) || created;
-          if (!bookId) return null;
-          if (payload.deleted === true) {
-            return { md5: bookId.toLowerCase(), updatedAt, deleted: true };
-          }
-          const locator = payload.locator && typeof payload.locator === 'object'
-            ? payload.locator
-            : null;
-          const hasProgression = payload.progression != null
-            || (locator && typeof locator.progression === 'number');
-          if (!hasProgression) {
-            return null;
-          }
           return {
             md5: bookId.toLowerCase(),
             title: BookMetadata.resolveTitle(payload),
@@ -3105,9 +3096,9 @@
             sourceNativeId: String(payload.sourceNativeId || payload.source_native_id || ''),
 			...BookMetadata.normalizeRights(payload),
             updatedAt,
-            progression: BookMetadata.readingProgressForBook(payload),
-            furthestProgression: Number(payload.furthestProgression ?? locator?.furthestProgression ?? 0) || 0,
-            cfi: String(payload.cfi || locator?.locations?.cfi || locator?.href || ''),
+            progression: parsed.progression,
+            furthestProgression: parsed.furthestProgression,
+            cfi: parsed.cfi,
             extension: String(payload.extension || payload.format || 'epub').toLowerCase(),
             readUrl: payload.readUrl || '',
           };
@@ -4093,9 +4084,10 @@
           created_at: now,
           tags: [['d', `${READING_D_PREFIX}${bookId}`]],
           content: JSON.stringify({
+            v: 2,
             bookId,
             title: book.title || '',
-            authors: book.authors || book.author || '',
+            author: book.authors || book.author || '',
             year: book.year || '',
             language: book.language || '',
             publisher: book.publisher || '',
@@ -4106,9 +4098,14 @@
             source: book.source || '',
             sourceNativeId: book.sourceNativeId || '',
 			...BookMetadata.normalizeRights(book),
-            progression: BookMetadata.readingProgressForBook(book),
-            furthestProgression: Number(book.furthestProgression || 0) || 0,
-            cfi: book.cfi || '',
+            locator: {
+              progression: BookMetadata.readingProgressForBook(book),
+              furthestProgression: Math.max(
+                Number(BookMetadata.readingProgressForBook(book) || 0),
+                Number(book.furthestProgression || 0) || 0,
+              ),
+              cfi: book.cfi || '',
+            },
             readUrl: book.readUrl || book.url || '',
             updatedAt: now * 1000,
           }),

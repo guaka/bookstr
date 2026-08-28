@@ -281,6 +281,7 @@ class NostrClient(
             return try {
                 val json = JSONObject(content)
                 val locator = json.optJSONObject("locator")
+                if (json.has("locator") && locator == null) return null
                 when {
                     locator != null -> {
                         val bookId = json.optString("bookId", fallbackBookId).ifBlank { fallbackBookId }
@@ -307,7 +308,13 @@ class NostrClient(
         fun parseFurthestProgression(content: String, fallback: Double): Double = try {
             val json = JSONObject(content)
             val locator = json.optJSONObject("locator")
-            maxOf(fallback, locator?.optDouble("furthestProgression", fallback) ?: fallback)
+            val raw = locator?.opt("furthestProgression") ?: json.opt("furthestProgression")
+            val parsed = when (raw) {
+                is Number -> raw.toDouble()
+                is String -> raw.toDoubleOrNull()
+                else -> null
+            } ?: fallback
+            maxOf(fallback, parsed)
         } catch (_: Exception) {
             fallback
         }
@@ -315,7 +322,11 @@ class NostrClient(
         fun parseUpdatedAt(content: String, eventCreatedAtSec: Long): Long {
             return try {
                 val json = JSONObject(content)
-                val fromPayload = (json.opt("updatedAt") as? Number)?.toLong() ?: 0L
+                val fromPayload = when (val raw = json.opt("updatedAt")) {
+                    is Number -> raw.toLong()
+                    is String -> raw.toDoubleOrNull()?.toLong()
+                    else -> null
+                } ?: 0L
                 if (fromPayload > 0L) fromPayload else eventCreatedAtSec * 1000
             } catch (_: Exception) {
                 eventCreatedAtSec * 1000
