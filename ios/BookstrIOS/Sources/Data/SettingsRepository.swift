@@ -3,7 +3,7 @@ import Combine
 
 final class SettingsRepository: ObservableObject {
     private let defaults: UserDefaults
-    private let keychain = KeychainStore(service: "app.bookstr.ios")
+    private let keychain: any SecureStringStore
 
     private enum Keys {
         static let relays = "relays"
@@ -40,8 +40,12 @@ final class SettingsRepository: ObservableObject {
         didSet { defaults.set(speechRate, forKey: Keys.speechRate) }
     }
 
-    init(defaults: UserDefaults = .standard) {
+    init(
+        defaults: UserDefaults = .standard,
+        keychain: any SecureStringStore = KeychainStore(service: "app.bookstr.ios")
+    ) {
         self.defaults = defaults
+        self.keychain = keychain
         self.theme = ReaderTheme(rawValue: defaults.string(forKey: Keys.theme) ?? "") ?? .paper
         self.speechVoiceIdentifier = defaults.string(forKey: Keys.speechVoice) ?? ""
         let savedRate = defaults.double(forKey: Keys.speechRate)
@@ -117,20 +121,19 @@ final class SettingsRepository: ObservableObject {
     var nip46ClientSecret: String? {
         get {
             if let value = keychain.get(key: Keys.nip46ClientSecret), !value.isEmpty {
-                if defaults.string(forKey: Keys.nip46ClientSecret) == nil {
-                    defaults.set(value, forKey: Keys.nip46ClientSecret)
-                }
+                defaults.removeObject(forKey: Keys.nip46ClientSecret)
                 return value
             }
-            return defaults.string(forKey: Keys.nip46ClientSecret)
+            guard let legacyValue = defaults.string(forKey: Keys.nip46ClientSecret),
+                  !legacyValue.isEmpty else { return nil }
+            if keychain.set(key: Keys.nip46ClientSecret, value: legacyValue) {
+                defaults.removeObject(forKey: Keys.nip46ClientSecret)
+            }
+            return legacyValue
         }
         set {
             keychain.set(key: Keys.nip46ClientSecret, value: newValue)
-            if let newValue, !newValue.isEmpty {
-                defaults.set(newValue, forKey: Keys.nip46ClientSecret)
-            } else {
-                defaults.removeObject(forKey: Keys.nip46ClientSecret)
-            }
+            defaults.removeObject(forKey: Keys.nip46ClientSecret)
         }
     }
 
