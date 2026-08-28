@@ -161,17 +161,31 @@ fun SearchScreen(
                                 CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
                             }
                         }
-                        Text(
-                            text = buildList {
-                                add(result.author)
-                                result.year?.let(::add)
-                                result.publisher?.let(::add)
-                            }.joinToString(" · "),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.secondary,
-                            maxLines = 2,
-                            overflow = TextOverflow.Ellipsis,
-                        )
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                text = listOfNotNull(result.author, result.year).joinToString(" · "),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.secondary,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                            RightsMarker(
+                                rightsStatus = result.rightsStatus,
+                                license = result.license,
+                                licenseUrl = result.licenseUrl,
+                                rightsSource = result.rightsSource,
+                                modifier = Modifier.padding(start = 6.dp),
+                            )
+                        }
+                        result.publisher?.let {
+                            Text(
+                                text = it,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.secondary,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
                         Text(
                             text = buildList {
                                 add(result.source)

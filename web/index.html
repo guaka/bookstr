@@ -521,6 +521,22 @@
         color: var(--muted-text, #5f6368);
         font-size: 0.82rem;
       }
+      .rights-marker {
+        display: inline-block;
+        margin-left: 0.35rem;
+        border-radius: 0.25rem;
+        padding: 0.05rem 0.28rem;
+        background: color-mix(in srgb, currentColor 8%, transparent);
+        color: var(--muted-text, #666);
+        font-size: 0.68rem;
+        font-weight: 700;
+        line-height: 1.25;
+        vertical-align: baseline;
+      }
+      .rights-marker.open {
+        background: color-mix(in srgb, var(--reading-progress) 18%, transparent);
+        color: var(--reading-progress);
+      }
       .result-author,
       .result-author:visited,
       body a.result-author:any-link,
@@ -2398,6 +2414,7 @@
           const id = String(favorite.md5 || '');
           const readUrl = favorite.readUrl || favorite.url || '';
           const addedAt = String(BookMetadata.normalizeFavoriteAddedAt(favorite.favoriteAddedAt) || now);
+          const rights = BookMetadata.normalizeRights(favorite);
           if (isMd5(id)) {
             tags.push(['book', 'libvault', id.toLowerCase(), addedAt]);
             tags.push([
@@ -2405,6 +2422,7 @@
               favorite.format || '', String(Number(favorite.filesizeBytes || favorite.filesize_bytes) || 0),
               favorite.year || '', favorite.language || '', favorite.source || '',
               favorite.coverUrl || '', favorite.coverSha256 || '',
+              rights.rights_status, rights.license, rights.license_url, rights.rights_source,
             ]);
             const sha256 = String(favorite.blossomSha256 || '').toLowerCase();
             const blossomUrl = favorite.blossomUrl || '';
@@ -2415,6 +2433,14 @@
             tags.push(['book', 'blossom', favorite.blossomSha256.toLowerCase(), addedAt, readUrl].filter(Boolean));
           } else {
             tags.push(['book', 'bookstr', id, addedAt, readUrl].filter(Boolean));
+          }
+          if (id) {
+            tags.push([
+              'bookstr', id, favorite.title || '', favorite.authors || favorite.author || '', readUrl,
+              favorite.format || favorite.extension || '', favorite.year || '', favorite.language || '',
+              favorite.source || '', favorite.coverUrl || '', favorite.coverSha256 || '',
+              rights.rights_status, rights.license, rights.license_url, rights.rights_source,
+            ]);
           }
         }
         return tags;
@@ -2456,7 +2482,7 @@
         }
         const pubkey = state.nip7.pubkey || await window.nostr.getPublicKey();
         const now = nextFavoritesCreatedAt();
-        const header = [['bookstr-collection', '2'], ['bookstr-publications', '1'], ['title', 'Favorites'], ['updated', String(now)]];
+        const header = [['bookstr-collection', '2'], ['bookstr-publications', '2'], ['title', 'Favorites'], ['updated', String(now)]];
         const itemTags = favoriteNostrItemTags(now);
         const publishEncrypted = async (dTag, tags) => {
           const plaintext = JSON.stringify(tags);
@@ -2737,6 +2763,9 @@
             entry.readUrl = tag[4] || entry.readUrl || entry.url || '';
             entry.format = tag[5] || entry.format || '';
             entry.year = tag[6] || entry.year || '';
+            Object.assign(entry, BookMetadata.normalizeRights({
+              rights_status: tag[11], license: tag[12], license_url: tag[13], rights_source: tag[14],
+            }));
             continue;
           }
           if (name === 'r') {
@@ -2781,6 +2810,9 @@
             entry.source = tag[8] || entry.source || '';
             entry.coverUrl = tag[9] || entry.coverUrl || '';
             entry.coverSha256 = tag[10] || entry.coverSha256 || '';
+            Object.assign(entry, BookMetadata.normalizeRights({
+              rights_status: tag[11], license: tag[12], license_url: tag[13], rights_source: tag[14],
+            }));
             entry.url ||= contextUrl || '';
             continue;
           }
@@ -2796,6 +2828,10 @@
               url: tag[7] || '',
               language: tag[8] || '',
               source: tag[9] || '',
+              rights_status: tag[10] || 'unknown',
+              license: tag[11] || '',
+              license_url: tag[12] || '',
+              rights_source: tag[13] || '',
             });
             continue;
           }
@@ -2856,6 +2892,7 @@
           cfi: String(ref.cfi || ref.locator?.locations?.cfi || ref.locator?.href || ''),
           metadataLookupComplete: Boolean(ref.metadataLookupComplete),
           metadataProvenance: ref.metadataProvenance && typeof ref.metadataProvenance === 'object' ? ref.metadataProvenance : {},
+          ...BookMetadata.normalizeRights(ref),
         };
       }
 
@@ -2939,6 +2976,7 @@
             cfi: String(payload.cfi || locator?.locations?.cfi || locator?.href || ''),
             extension: String(payload.extension || payload.format || 'epub').toLowerCase(),
             readUrl: payload.readUrl || '',
+            ...BookMetadata.normalizeRights(payload),
           };
         } catch {
           return null;
@@ -3370,6 +3408,12 @@
           const directReadUrl = provider === 'gutenberg' && item.id
             ? `${BOOKS_API_BASE}/books/${encodeURIComponent(item.id)}/download`
             : item.readUrl || item.url || item.link || blossom.url || '';
+          const rights = BookMetadata.normalizeRights(item);
+          if (!rights.rights_source && (
+            rights.rights_status !== 'unknown' || rights.license || rights.license_url
+          )) rights.rights_source = provider === 'gutenberg' && typeof item.copyright === 'boolean'
+            ? 'gutendex'
+            : provider;
           return {
             md5,
             title: item.title || 'Untitled',
@@ -3390,6 +3434,7 @@
             source: item.source || source,
             sourceNativeId: item.source_native_id || item.sourceNativeId || '',
             readUrl: directReadUrl,
+            ...rights,
             fallback: Boolean(directReadUrl)
           };
         }).sort((a, b) => Number(Boolean(b.readUrl)) - Number(Boolean(a.readUrl)));
@@ -3414,6 +3459,13 @@
           .replaceAll('>', '&gt;')
           .replaceAll('"', '&quot;')
           .replaceAll("'", '&#39;');
+      }
+
+      function rightsMarkerMarkup(book) {
+        const rights = BookMetadata.normalizeRights(book);
+        const accessible = BookMetadata.rightsAccessibleLabel(book);
+        const openClass = ['public_domain', 'open_license'].includes(rights.rights_status) ? ' open' : '';
+        return `<span class="rights-marker${openClass}" title="${escapeHtml(accessible)}" aria-label="${escapeHtml(accessible)}">${escapeHtml(BookMetadata.rightsLabel(book))}</span>`;
       }
 
       function bytesLabel(value) {
@@ -3634,6 +3686,7 @@
             furthestProgression: Number(book.furthestProgression || 0) || 0,
             cfi: book.cfi || '',
             readUrl: book.readUrl || book.url || '',
+            ...BookMetadata.normalizeRights(book),
             updatedAt: now * 1000,
           }),
         });
@@ -3894,7 +3947,7 @@
         }
         for (const entry of matches) {
           const item = document.createElement('li');
-          item.textContent = `${entry.title} · ${entry.authors}`;
+          item.innerHTML = `${escapeHtml(entry.title)} · ${escapeHtml(entry.authors || '')} ${rightsMarkerMarkup(entry)}`;
           item.title = `Open ${entry.title}`;
           item.style.cursor = 'pointer';
           item.addEventListener('click', () => openBook(entry));
@@ -3919,7 +3972,7 @@
         }
         for (const entry of matches) {
           const item = document.createElement('li');
-          item.textContent = `${entry.title} · ${entry.authors}`;
+          item.innerHTML = `${escapeHtml(entry.title)} · ${escapeHtml(entry.authors || '')} ${rightsMarkerMarkup(entry)}`;
           item.title = `Open ${entry.title}`;
           item.style.cursor = 'pointer';
           item.addEventListener('click', () => openBook(entry));
@@ -4032,7 +4085,7 @@
             <span class="result-cover-slot" role="cell">${coverUrl ? `<img class="result-cover" src="${escapeHtml(coverUrl)}" alt="" loading="lazy">` : ''}</span>
             <span class="result-cell" role="cell">${canOpen ? `<a class="result-title ${titleAvailabilityClass}" data-action="open" href="#read=${encodeURIComponent(readRouteValue(book, readUrl))}">${escapeHtml(book.title)}</a>` : `<span class="result-title ${titleAvailabilityClass}">${escapeHtml(book.title)}</span>`}${titleDetails ? `<small>${titleDetails}</small>` : ''}</span>
             <span class="result-cell" role="cell">${authorQuery ? `<a class="result-author" data-action="author-search" href="#search=${encodeURIComponent(authorQuery)}">${escapeHtml(book.authors)}</a>` : `<span class="result-author">${escapeHtml(book.authors || '')}</span>`}</span>
-            <span class="result-cell" role="cell">${escapeHtml(book.year || '—')}</span>
+            <span class="result-cell" role="cell">${escapeHtml(book.year || '—')}${rightsMarkerMarkup(book)}</span>
             <span class="result-cell result-availability" role="cell"><span class="availability-primary">${escapeHtml(availability)}</span></span>
             <span class="result-cell" role="cell">${escapeHtml(String(book.extension || book.format || '—').toLowerCase())}${Number(book.filesize) > 0 ? `<small>${escapeHtml(bytesLabel(book.filesize))}</small>` : ''}</span>
             <span class="result-cell" role="cell">${escapeHtml(languageCode ? languageCode.toUpperCase() : '—')}</span>
@@ -4432,6 +4485,26 @@
           row.append(strong, document.createTextNode(String(value)));
           details.append(row);
         }
+        const rights = BookMetadata.normalizeRights(book);
+        const rightsRow = document.createElement('p');
+        rightsRow.style.cssText = 'margin:.45rem 0;color:var(--muted)';
+        const rightsStrong = document.createElement('strong');
+        rightsStrong.textContent = 'Rights: ';
+        rightsStrong.style.color = 'var(--ink, currentColor)';
+        rightsRow.append(rightsStrong);
+        const rightsText = rights.license || BookMetadata.rightsAccessibleLabel(book);
+        if (rights.license_url) {
+          const link = document.createElement('a');
+          link.href = rights.license_url;
+          link.target = '_blank';
+          link.rel = 'noopener noreferrer';
+          link.textContent = rightsText;
+          rightsRow.append(link);
+        } else {
+          rightsRow.append(document.createTextNode(rightsText));
+        }
+        if (rights.rights_source) rightsRow.append(document.createTextNode(` · ${rights.rights_source}`));
+        details.append(rightsRow);
         const note = document.createElement('p');
         note.textContent = 'Book details are available, but the book file could not be loaded.';
         note.style.cssText = 'margin:1.5rem 0 0;color:var(--muted)';
@@ -4637,7 +4710,8 @@
             title: BookMetadata.resolveTitle(metadata, readUrl, window.location.href),
             authors: Array.isArray(metadata?.authors) ? metadata.authors.join(', ') : metadata?.authors || metadata?.author || '',
             year: BookMetadata.yearForBook(metadata),
-            language: BookMetadata.languageForBook(metadata),
+                language: BookMetadata.languageForBook(metadata),
+                ...BookMetadata.normalizeRights(metadata),
             extension: metadata?.extension || metadata?.format || 'epub',
             source: metadata?.source || 'gutenberg',
             readUrl,
@@ -4918,9 +4992,12 @@
         const bookMeta = showBookTitle
           ? [activeReadingBook.authors || activeReadingBook.author, activeReadingBook.year].filter(Boolean).join(' · ')
           : '';
-        headerBookMeta.classList.toggle('hidden', !bookMeta);
-        headerBookMeta.textContent = bookMeta;
-        headerBookMeta.title = bookMeta;
+        const rightsMeta = showBookTitle ? BookMetadata.rightsAccessibleLabel(activeReadingBook) : '';
+        headerBookMeta.classList.toggle('hidden', !showBookTitle);
+        headerBookMeta.innerHTML = showBookTitle
+          ? `${escapeHtml(bookMeta)}${bookMeta ? ' ' : ''}${rightsMarkerMarkup(activeReadingBook)}`
+          : '';
+        headerBookMeta.title = [bookMeta, rightsMeta].filter(Boolean).join(' · ');
         updateReadingFavoriteButton();
         if (activeTab === 'home') renderHome();
         if (activeTab === 'words') requestAnimationFrame(() => wordsFilter.focus());
@@ -5345,6 +5422,32 @@
         readerFrame.contentWindow?.[command]?.();
       });
 
+      window.addEventListener('message', event => {
+        if (event.source !== readerFrame.contentWindow) return;
+        const payload = event.data;
+        if (!payload || payload.type !== 'bookstr-reader-metadata') return;
+        const rights = BookMetadata.normalizeRights({
+          license: payload.rights,
+          license_url: payload.license_url,
+          rights_source: 'epub_opf',
+        });
+        if (rights.rights_status === 'unknown' && !rights.license && !rights.license_url) return;
+        const bookId = String(payload.bookId || activeReadingBook?.md5 || '').toLowerCase();
+        const update = item => String(item?.md5 || '').toLowerCase() === bookId
+          ? { ...item, ...BookMetadata.preferredRights(item, rights), updatedAt: Date.now() }
+          : item;
+        state.reading = state.reading.map(update);
+        state.favorites = state.favorites.map(update);
+        if (activeReadingBook && String(activeReadingBook.md5 || '').toLowerCase() === bookId) {
+          activeReadingBook = { ...activeReadingBook, ...BookMetadata.preferredRights(activeReadingBook, rights) };
+          activateTab('reading');
+        }
+        localStorage.setItem(READING_KEY, JSON.stringify(state.reading));
+        localStorage.setItem(FAVORITES_KEY, JSON.stringify(state.favorites));
+        renderHome();
+        renderReading();
+      });
+
       async function openBook(book, { updateHash = true, addToReading = true } = {}) {
         if (!book) {
           status.textContent = `${book?.title || 'This book'} has metadata only; no readable copy is available.`;
@@ -5437,7 +5540,8 @@
             source: book.source || '',
             extension: book.extension || 'epub',
             blossomSha256: book.blossomSha256 || '',
-            readUrl: readPath
+            readUrl: readPath,
+            ...BookMetadata.normalizeRights(book),
           });
           state.reading = state.reading.sort((a, b) => b.updatedAt - a.updatedAt).slice();
           localStorage.setItem(READING_KEY, JSON.stringify(state.reading));

@@ -37,6 +37,10 @@ data class ReaderSession(
     val locator: String? = null,
     val pageIndex: Int = 0,
     val pageOffset: Int = 0,
+    val rightsStatus: String = RIGHTS_UNKNOWN,
+    val license: String? = null,
+    val licenseUrl: String? = null,
+    val rightsSource: String? = null,
 )
 
 class SettingsRepository(context: Context) {
@@ -178,6 +182,10 @@ class SettingsRepository(context: Context) {
             .putString(KEY_READER_LOCATOR, session.locator.orEmpty())
             .putInt(KEY_READER_PAGE, session.pageIndex.coerceAtLeast(0))
             .putInt(KEY_READER_OFFSET, session.pageOffset.coerceAtLeast(0))
+            .putString(KEY_READER_RIGHTS_STATUS, session.rightsStatus)
+            .putString(KEY_READER_LICENSE, session.license.orEmpty())
+            .putString(KEY_READER_LICENSE_URL, session.licenseUrl.orEmpty())
+            .putString(KEY_READER_RIGHTS_SOURCE, session.rightsSource.orEmpty())
             .apply()
     }
 
@@ -194,6 +202,10 @@ class SettingsRepository(context: Context) {
             locator = securePrefs.getString(KEY_READER_LOCATOR, null)?.takeIf(String::isNotBlank),
             pageIndex = securePrefs.getInt(KEY_READER_PAGE, 0).coerceAtLeast(0),
             pageOffset = securePrefs.getInt(KEY_READER_OFFSET, 0).coerceAtLeast(0),
+            rightsStatus = securePrefs.getString(KEY_READER_RIGHTS_STATUS, RIGHTS_UNKNOWN) ?: RIGHTS_UNKNOWN,
+            license = securePrefs.getString(KEY_READER_LICENSE, null)?.takeIf(String::isNotBlank),
+            licenseUrl = securePrefs.getString(KEY_READER_LICENSE_URL, null)?.takeIf(String::isNotBlank),
+            rightsSource = securePrefs.getString(KEY_READER_RIGHTS_SOURCE, null)?.takeIf(String::isNotBlank),
         )
     }
 
@@ -207,6 +219,10 @@ class SettingsRepository(context: Context) {
             .remove(KEY_READER_LOCATOR)
             .remove(KEY_READER_PAGE)
             .remove(KEY_READER_OFFSET)
+            .remove(KEY_READER_RIGHTS_STATUS)
+            .remove(KEY_READER_LICENSE)
+            .remove(KEY_READER_LICENSE_URL)
+            .remove(KEY_READER_RIGHTS_SOURCE)
             .apply()
     }
 
@@ -243,5 +259,9 @@ class SettingsRepository(context: Context) {
         private const val KEY_READER_LOCATOR = "reader_locator"
         private const val KEY_READER_PAGE = "reader_page"
         private const val KEY_READER_OFFSET = "reader_offset"
+        private const val KEY_READER_RIGHTS_STATUS = "reader_rights_status"
+        private const val KEY_READER_LICENSE = "reader_license"
+        private const val KEY_READER_LICENSE_URL = "reader_license_url"
+        private const val KEY_READER_RIGHTS_SOURCE = "reader_rights_source"
     }
 }

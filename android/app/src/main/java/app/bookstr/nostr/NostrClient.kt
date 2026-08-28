@@ -10,6 +10,7 @@ import okhttp3.WebSocket
 import okhttp3.WebSocketListener
 import org.json.JSONArray
 import org.json.JSONObject
+import app.bookstr.data.BookRights
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicReference
@@ -254,6 +255,7 @@ class NostrClient(
             furthestProgression: Double = progression,
             title: String? = null,
             author: String? = null,
+            rights: BookRights = BookRights(),
             updatedAt: Long = System.currentTimeMillis(),
         ): String {
             val locator = JSONObject()
@@ -261,12 +263,16 @@ class NostrClient(
                 .put("cfi", cfi)
                 .put("furthestProgression", maxOf(progression, furthestProgression))
             val obj = JSONObject()
-                .put("v", 1)
+                .put("v", 2)
                 .put("bookId", bookId)
                 .put("locator", locator)
                 .put("updatedAt", updatedAt)
             if (!title.isNullOrBlank()) obj.put("title", title)
             if (!author.isNullOrBlank()) obj.put("author", author)
+            obj.put("rights_status", rights.status)
+            if (!rights.license.isNullOrBlank()) obj.put("license", rights.license)
+            if (!rights.licenseUrl.isNullOrBlank()) obj.put("license_url", rights.licenseUrl)
+            if (!rights.source.isNullOrBlank()) obj.put("rights_source", rights.source)
             return obj.toString()
         }
 

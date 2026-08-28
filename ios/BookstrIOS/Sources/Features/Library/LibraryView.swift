@@ -7,6 +7,7 @@ struct LibraryView: View {
     @State private var selectedBookURL: URL?
     @State private var openError: String?
     @State private var openingBookID: String?
+    @State private var rightsDetails: RightsDetailsItem?
 
     var body: some View {
         List {
@@ -32,6 +33,9 @@ struct LibraryView: View {
                         .buttonStyle(.plain)
                         .accessibilityIdentifier("library-book-\(book.id)")
                         .frame(maxWidth: .infinity, alignment: .leading)
+                        .contextMenu {
+                            Button("Rights details") { rightsDetails = details(for: book) }
+                        }
                     }
                 }
             }
@@ -49,6 +53,9 @@ struct LibraryView: View {
                         .buttonStyle(.plain)
                         .accessibilityIdentifier("library-book-\(book.id)")
                         .frame(maxWidth: .infinity, alignment: .leading)
+                        .contextMenu {
+                            Button("Rights details") { rightsDetails = details(for: book) }
+                        }
                     }
                     ForEach(viewModel.externalFavorites) { favorite in
                         Button {
@@ -66,9 +73,13 @@ struct LibraryView: View {
                                     if let author = favorite.author, !author.isEmpty {
                                         Text(author).font(.subheadline).foregroundStyle(.secondary)
                                     }
-                                    Text(publicationLabel(favorite))
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
+                                    HStack(spacing: 5) {
+                                        if let year = favorite.year { Text(year) }
+                                        RightsBadge(rights: favorite.rights)
+                                        Text("· \(publicationLabel(favorite))")
+                                    }
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
                                 }
                                 Spacer(minLength: 0)
                             }
@@ -78,6 +89,14 @@ struct LibraryView: View {
                         .buttonStyle(.plain)
                         .disabled(openingBookID != nil)
                         .frame(maxWidth: .infinity, alignment: .leading)
+                        .contextMenu {
+                            Button("Rights details") {
+                                rightsDetails = RightsDetailsItem(
+                                    title: favorite.title, author: favorite.author, year: favorite.year,
+                                    format: favorite.format, rights: favorite.rights
+                                )
+                            }
+                        }
                     }
                 }
             }
@@ -98,6 +117,7 @@ struct LibraryView: View {
         } message: {
             Text(openError ?? "")
         }
+        .sheet(item: $rightsDetails) { RightsDetailsView(item: $0) }
         .task {
             viewModel.attach(container)
             await viewModel.load()
@@ -124,9 +144,13 @@ struct LibraryView: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text(book.title).font(.headline)
                 Text(book.author).font(.subheadline).foregroundStyle(.secondary)
-                Text(book.format.rawValue.uppercased())
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                HStack(spacing: 5) {
+                    if let year = book.year { Text(year) }
+                    RightsBadge(rights: book.rights)
+                    Text("· \(book.format.rawValue.uppercased())")
+                }
+                .font(.caption)
+                .foregroundStyle(.secondary)
                 if showProgress, let item = viewModel.progress[book.id], item.progression > 0 {
                     ProgressView(value: min(max(item.progression, 0), 1))
                 }
@@ -162,5 +186,12 @@ struct LibraryView: View {
         }
         let candidate = (favorite.libvaultMd5 ?? favorite.key).lowercased()
         return candidate.count == 32 ? candidate : (title.isEmpty ? favorite.key : title)
+    }
+
+    private func details(for book: CatalogBook) -> RightsDetailsItem {
+        RightsDetailsItem(
+            title: book.title, author: book.author, year: book.year,
+            format: book.format.rawValue, rights: book.rights
+        )
     }
 }

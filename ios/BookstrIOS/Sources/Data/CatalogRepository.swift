@@ -12,6 +12,10 @@ final class FavoriteMetadataRepository {
         var author: String?
         var year: String?
         var format: String?
+        var rightsStatus: String?
+        var license: String?
+        var licenseUrl: String?
+        var rightsSource: String?
         var updatedAt: Int64
     }
 
@@ -37,6 +41,8 @@ final class FavoriteMetadataRepository {
                     bookstrId: book.id, libvaultMd5: book.libvaultMd5, isbn: book.isbn,
                     title: book.title, author: book.author, year: book.year,
                     format: book.format.rawValue,
+                    rightsStatus: book.rightsStatus, license: book.license,
+                    licenseUrl: book.licenseUrl, rightsSource: book.rightsSource,
                     updatedAt: Int64(pair.value.fetchedAt.timeIntervalSince1970 * 1000)
                 )
             }
@@ -48,7 +54,9 @@ final class FavoriteMetadataRepository {
             bookstrId: book.id, libvaultMd5: book.libvaultMd5, isbn: book.isbn,
             url: book.sourceUrl ?? book.epubUrl, title: book.title, author: book.author,
             year: book.year, format: book.format.rawValue, blossomSha256: book.blossomSha256,
-            blossomUrl: book.blossomSha256 == nil ? nil : book.epubUrl
+            blossomUrl: book.blossomSha256 == nil ? nil : book.epubUrl,
+            rightsStatus: book.rightsStatus, license: book.license,
+            licenseUrl: book.licenseUrl, rightsSource: book.rightsSource
         ), updatedAt: updatedAt)
     }
 
@@ -57,6 +65,8 @@ final class FavoriteMetadataRepository {
         let entry = Entry(
             bookstrId: ref.bookstrId, libvaultMd5: ref.libvaultMd5?.lowercased(), isbn: ref.isbn,
             title: title, author: useful(ref.author), year: useful(ref.year), format: useful(ref.format),
+            rightsStatus: ref.rightsStatus, license: ref.license,
+            licenseUrl: ref.licenseUrl, rightsSource: ref.rightsSource,
             updatedAt: updatedAt
         )
         let keys = identityKeys(ref)
@@ -67,13 +77,16 @@ final class FavoriteMetadataRepository {
         persist()
     }
 
-    func rememberProgress(bookId: String, title: String?, author: String?, updatedAt: Int64) {
+    func rememberProgress(bookId: String, title: String?, author: String?, updatedAt: Int64,
+                          rights: BookRights = BookRights()) {
         let normalized = bookId.lowercased()
         remember(SharedFavoriteRef(
             bookstrId: bookId,
             libvaultMd5: Self.isMD5(normalized) ? normalized : nil,
             title: title,
-            author: author
+            author: author,
+            rightsStatus: rights.status.rawValue, license: rights.license,
+            licenseUrl: rights.licenseURL, rightsSource: rights.source
         ), updatedAt: updatedAt)
     }
 
@@ -89,6 +102,16 @@ final class FavoriteMetadataRepository {
             if useful(result.format) == nil { result.format = cached.format }
             if result.isbn == nil { result.isbn = cached.isbn }
             if result.bookstrId == nil { result.bookstrId = cached.bookstrId }
+            let rights = BookRights.preferred(
+                current: BookRights.normalize(status: result.rightsStatus, license: result.license,
+                                              licenseURL: result.licenseUrl, source: result.rightsSource),
+                incoming: BookRights.normalize(status: cached.rightsStatus, license: cached.license,
+                                               licenseURL: cached.licenseUrl, source: cached.rightsSource)
+            )
+            result.rightsStatus = rights.status.rawValue
+            result.license = rights.license
+            result.licenseUrl = rights.licenseURL
+            result.rightsSource = rights.source
             return result
         }
     }
@@ -158,7 +181,9 @@ final class CatalogRepository {
                     epubUrl: "https://\(Self.blossomHost)/\(id)", coverUrl: nil,
                     sourceUrl: favorite.blossomUrl, isbn: favorite.isbn,
                     libvaultMd5: favorite.libvaultMd5,
-                    format: ext == "pdf" ? .pdf : .epub, blossomSha256: id, year: favorite.year
+                    format: ext == "pdf" ? .pdf : .epub, blossomSha256: id, year: favorite.year,
+                    rightsStatus: favorite.rightsStatus, license: favorite.license,
+                    licenseUrl: favorite.licenseUrl, rightsSource: favorite.rightsSource
                 )
             } else if byID[id] == nil {
                 byID[id] = CatalogBook(
@@ -218,12 +243,22 @@ final class CatalogRepository {
             let author = string(item["author"]) ?? string(item["authors"]) ?? "Unknown author"
             let issued = string(item["issued"])?.split(separator: "-").first.map(String.init)
             let cover = string(item["cover_id"]).map { "https://covers.openlibrary.org/b/id/\($0)-M.jpg" }
+            let rightsProvider = source == "gutenberg" && item.keys.contains("copyright") ? "gutendex" : source
+            let rights = BookRights.normalize(
+                status: string(item["rights_status"]) ?? string(item["rightsStatus"]),
+                license: string(item["license"]) ?? string(item["rights"]),
+                licenseURL: string(item["license_url"]) ?? string(item["licenseUrl"]),
+                source: string(item["rights_source"]) ?? string(item["rightsSource"]) ?? rightsProvider,
+                copyright: bool(item["copyright"])
+            )
             return BookSearchResult(
                 id: "\(source):\(nativeID)", source: source, title: string(item["title"]) ?? "Untitled",
                 author: author, year: issued ?? string(item["year"]), publisher: string(item["publisher"]),
                 language: string(item["language"]), format: format, downloadUrl: downloadURL, coverUrl: cover,
                 rating: (item["avg_rating"] as? NSNumber)?.doubleValue ?? (item["rating"] as? NSNumber)?.doubleValue ?? 0,
-                editionCount: (item["edition_count"] as? NSNumber)?.intValue ?? 0
+                editionCount: (item["edition_count"] as? NSNumber)?.intValue ?? 0,
+                rightsStatus: rights.status.rawValue, license: rights.license,
+                licenseUrl: rights.licenseURL, rightsSource: rights.source
             )
         }.sorted { $0.isReadable && !$1.isReadable }
     }
@@ -231,6 +266,13 @@ final class CatalogRepository {
     private static func string(_ value: Any?) -> String? {
         if let value = value as? String, !value.isEmpty { return value }
         if let value = value as? NSNumber { return value.stringValue }
+        return nil
+    }
+
+    private static func bool(_ value: Any?) -> Bool? {
+        if value is NSNull || value == nil { return nil }
+        if let value = value as? Bool { return value }
+        if let value = value as? NSNumber { return value.boolValue }
         return nil
     }
 
@@ -351,9 +393,32 @@ final class CatalogRepository {
 
     private func rememberDownloaded(_ book: CatalogBook) {
         var books = fileStore.load("downloaded-books.json", as: [CatalogBook].self, fallback: [])
+        let rights = BookRights.preferred(
+            current: books.first(where: { $0.id == book.id })?.rights ?? BookRights(),
+            incoming: book.rights
+        )
+        var updated = book
+        updated.rightsStatus = rights.status.rawValue
+        updated.license = rights.license
+        updated.licenseUrl = rights.licenseURL
+        updated.rightsSource = rights.source
         books.removeAll { $0.id == book.id }
-        books.append(book)
+        books.append(updated)
         fileStore.save("downloaded-books.json", value: books)
+    }
+
+    func rememberEmbeddedRights(book: CatalogBook, statement: String?) -> BookRights {
+        let rights = BookRights.preferred(
+            current: book.rights,
+            incoming: BookRights.normalize(license: statement, source: "epub_opf")
+        )
+        var updated = book
+        updated.rightsStatus = rights.status.rawValue
+        updated.license = rights.license
+        updated.licenseUrl = rights.licenseURL
+        updated.rightsSource = rights.source
+        rememberDownloaded(updated)
+        return rights
     }
 
     private func replacingIdentity(of book: CatalogBook, with id: String, format: BookFormat) -> CatalogBook {
@@ -361,7 +426,9 @@ final class CatalogRepository {
             id: id, title: book.title, author: book.author, epubUrl: book.epubUrl,
             coverUrl: book.coverUrl, sourceUrl: book.sourceUrl, isbn: book.isbn,
             libvaultMd5: book.libvaultMd5, format: format,
-            blossomSha256: book.blossomSha256, year: book.year
+            blossomSha256: book.blossomSha256, year: book.year,
+            rightsStatus: book.rightsStatus, license: book.license,
+            licenseUrl: book.licenseUrl, rightsSource: book.rightsSource
         )
     }
 
@@ -394,7 +461,9 @@ final class CatalogRepository {
             id: book.id, title: book.title, author: book.author, epubUrl: book.epubUrl,
             coverUrl: book.coverUrl, sourceUrl: book.sourceUrl, isbn: book.isbn,
             libvaultMd5: book.libvaultMd5, format: format,
-            blossomSha256: book.blossomSha256, year: book.year
+            blossomSha256: book.blossomSha256, year: book.year,
+            rightsStatus: book.rightsStatus, license: book.license,
+            licenseUrl: book.licenseUrl, rightsSource: book.rightsSource
         )
     }
 
