@@ -2085,6 +2085,91 @@ final class FavoritesParserTests: XCTestCase {
         XCTAssertFalse(FavoritesParser.matches(SharedFavoriteRef(url: "https://example.test/book-v2.epub"), book: book))
     }
 
+    func testFavoriteFallbackMatchingNormalizesURLAndIgnoresQueryAndFragment() {
+        let book = CatalogBook(
+            id: "catalog-book",
+            title: "Catalog book",
+            author: "Author",
+            epubUrl: "https://catalog.example/books/one?download=1",
+            coverUrl: nil,
+            sourceUrl: nil,
+            isbn: nil,
+            libvaultMd5: nil,
+            format: .epub,
+            blossomSha256: nil,
+            year: nil
+        )
+        let ref = SharedFavoriteRef(url: "HTTPS://Catalog.Example/books/one?source=nostr#chapter")
+
+        XCTAssertTrue(FavoritesParser.matches(ref, book: book))
+        XCTAssertEqual(
+            FavoritesParser.matchSharedFavorites(refs: [ref], books: [book]).bookIds,
+            ["catalog-book"]
+        )
+    }
+
+    func testStableFavoriteDoesNotMatchDifferentBookThroughFallbackIdentity() {
+        let sharedURL = "https://catalog.example/books/one"
+        let ref = SharedFavoriteRef(
+            bookstrId: "source:expected",
+            isbn: "9780123456789",
+            url: sharedURL
+        )
+        let book = CatalogBook(
+            id: "source:different",
+            title: "Different edition",
+            author: "Author",
+            epubUrl: sharedURL,
+            coverUrl: nil,
+            sourceUrl: sharedURL,
+            isbn: "9780123456789",
+            libvaultMd5: nil,
+            format: .epub,
+            blossomSha256: nil,
+            year: nil
+        )
+
+        XCTAssertFalse(FavoritesParser.matches(ref, book: book))
+        let result = FavoritesParser.matchSharedFavorites(refs: [ref], books: [book])
+        XCTAssertTrue(result.bookIds.isEmpty)
+        XCTAssertEqual(result.external.first?.key, "source:expected")
+    }
+
+    func testBlankStableIdentifiersStillAllowLegacyFallbackMatching() {
+        let ref = SharedFavoriteRef(
+            bookstrId: " ",
+            libvaultMd5: "",
+            isbn: "9780123456789",
+            blossomSha256: "\n"
+        )
+        let book = CatalogBook(
+            id: "legacy-isbn", title: "Legacy book", author: "Author", epubUrl: "",
+            coverUrl: nil, sourceUrl: nil, isbn: "9780123456789", libvaultMd5: nil,
+            format: .epub, blossomSha256: nil, year: nil
+        )
+
+        XCTAssertTrue(FavoritesParser.matches(ref, book: book))
+        XCTAssertEqual(
+            FavoritesParser.matchSharedFavorites(refs: [ref], books: [book]).bookIds,
+            Set(["legacy-isbn"])
+        )
+    }
+
+    func testMalformedFallbackURLDoesNotMatchCatalogBook() {
+        let ref = SharedFavoriteRef(url: "https://[broken")
+        let book = CatalogBook(
+            id: "catalog-book", title: "Catalog book", author: "Author",
+            epubUrl: "https://catalog.example/books/one", coverUrl: nil, sourceUrl: nil,
+            isbn: nil, libvaultMd5: nil, format: .epub, blossomSha256: nil, year: nil
+        )
+
+        XCTAssertFalse(FavoritesParser.matches(ref, book: book))
+        XCTAssertEqual(
+            FavoritesParser.matchSharedFavorites(refs: [ref], books: [book]).external.first?.key,
+            "https://[broken"
+        )
+    }
+
     func testReadsChunkManifestWithNoiseInStringPayload() {
         let manifest = FavoritesParser.chunkManifest(
             from: """
