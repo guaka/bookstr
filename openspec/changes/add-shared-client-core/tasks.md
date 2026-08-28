@@ -6,6 +6,6 @@
 - [x] Add validation for invalid inventory data and stale generated output.
 - [x] Establish canonical shared directory areas.
 - [ ] Move versioned domain contracts and cross-language fixtures.
-- [ ] Move the canonical reader runtime without changing vendor bytes.
-- [ ] Generate committed platform design-token declarations.
+- [x] Move the canonical reader runtime without changing vendor bytes.
+- [x] Generate committed platform design-token declarations.
 - [ ] Capture and ratchet per-client coverage baselines.
