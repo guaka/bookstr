@@ -1,0 +1,56 @@
+{
+  "version": 1,
+  "cases": [
+    {
+      "name": "all compact reference types",
+      "tags": [
+        ["book", "libvault", "ABCDEF0123456789ABCDEF0123456789", "20", "https://books.example/libvault.epub"],
+        ["book", "bookstr", "provider:record-1", "21", "https://books.example/record-1"],
+        ["book", "isbn", "978-0-123456-78-9", "22", "https://books.example/isbn"],
+        ["book", "url", "https://books.example/direct.epub", "23"],
+        ["book", "blossom", "ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789", "24", "https://cdn.example/book.epub"]
+      ],
+      "expected": [
+        { "type": "libvault", "identifier": "abcdef0123456789abcdef0123456789", "locator": "https://books.example/libvault.epub", "addedAt": 20 },
+        { "type": "bookstr", "identifier": "provider:record-1", "locator": "https://books.example/record-1", "addedAt": 21 },
+        { "type": "isbn", "identifier": "9780123456789", "locator": "https://books.example/isbn", "addedAt": 22 },
+        { "type": "url", "identifier": "https://books.example/direct.epub", "locator": "https://books.example/direct.epub", "addedAt": 23 },
+        { "type": "blossom", "identifier": "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789", "locator": "https://cdn.example/book.epub", "addedAt": 24 }
+      ]
+    },
+    {
+      "name": "duplicates keep first order locator and earliest timestamp",
+      "tags": [
+        ["book", "libvault", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "30", "https://first.example/book.epub"],
+        ["book", "bookstr", "book-2", "25"],
+        ["book", "libvault", "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", "10", "https://second.example/book.epub"],
+        ["book", "bookstr", "book-2", "15", "https://later.example/book-2"]
+      ],
+      "expected": [
+        { "type": "libvault", "identifier": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "locator": "https://first.example/book.epub", "addedAt": 10 },
+        { "type": "bookstr", "identifier": "book-2", "locator": "https://later.example/book-2", "addedAt": 15 }
+      ]
+    },
+    {
+      "name": "invalid identifiers are ignored",
+      "tags": [
+        ["book", "libvault", "not-an-md5", "1"],
+        ["book", "bookstr", "", "1"],
+        ["book", "isbn", "123", "1"],
+        ["book", "url", "ftp://books.example/book", "1"],
+        ["book", "blossom", "not-a-sha", "1"],
+        ["other", "libvault", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "1"]
+      ],
+      "expected": []
+    },
+    {
+      "name": "unsafe locator and nonpositive timestamp are omitted",
+      "tags": [
+        ["book", "libvault", "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "0", "javascript:alert(1)"]
+      ],
+      "expected": [
+        { "type": "libvault", "identifier": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "locator": "", "addedAt": 0 }
+      ]
+    }
+  ]
+}

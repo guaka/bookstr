@@ -13,6 +13,45 @@ import WebKit
 #endif
 
 final class FavoritesParserTests: XCTestCase {
+    func testSharedFavoriteReferenceV1Fixtures() throws {
+        let fixture = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: Data(contentsOf: favoriteReferenceFixtureURL())) as? [String: Any]
+        )
+        XCTAssertEqual(fixture["version"] as? Int, 1)
+        for entry in try XCTUnwrap(fixture["cases"] as? [[String: Any]]) {
+            let name = try XCTUnwrap(entry["name"] as? String)
+            let tags = try XCTUnwrap(entry["tags"] as? [Any])
+            let expected = try XCTUnwrap(entry["expected"] as? [[String: Any]])
+            let actual = FavoritesParser.parseSharedFavoriteTags(tags).map { ref -> [String: Any] in
+                let type: String
+                let identifier: String
+                let locator: String
+                if let value = ref.libvaultMd5 {
+                    (type, identifier, locator) = ("libvault", value, ref.url ?? "")
+                } else if let value = ref.bookstrId {
+                    (type, identifier, locator) = ("bookstr", value, ref.url ?? "")
+                } else if let value = ref.isbn {
+                    (type, identifier, locator) = ("isbn", value, ref.url ?? "")
+                } else if let value = ref.blossomSha256 {
+                    (type, identifier, locator) = ("blossom", value, ref.blossomUrl ?? "")
+                } else {
+                    (type, identifier, locator) = ("url", ref.url ?? "", ref.url ?? "")
+                }
+                return ["type": type, "identifier": identifier, "locator": locator, "addedAt": ref.addedAt ?? 0]
+            }
+            XCTAssertTrue(NSArray(array: actual).isEqual(to: expected), name)
+        }
+    }
+
+    private func favoriteReferenceFixtureURL() -> URL {
+        URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent("shared/fixtures/favorite-reference-v1.json")
+    }
+
     func testRightsNormalizationMarkersAndSafeURLs() {
         XCTAssertEqual(BookRights.normalize(license: "Public Domain Mark 1.0").status, .publicDomain)
         XCTAssertEqual(BookRights.normalize(license: "CC0 1.0").compactLabel, "CC0")
