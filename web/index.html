@@ -5420,8 +5420,7 @@
             else throw new Error('The downloaded book format is not supported.');
             void cacheBookBlob(book, readPath, blob).catch(() => {});
           } else {
-            readerFrame.src = readPath;
-            status.textContent = `Opening ${book.title || 'book'}…`;
+            throw new Error('Only EPUB and PDF book files can be opened.');
           }
         } catch (error) {
           status.textContent = `Could not open ${book.title || 'book'}: ${error?.message || error}`;

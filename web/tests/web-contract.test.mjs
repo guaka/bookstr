@@ -582,3 +582,8 @@ test('reader-open route always updates hash with encoded book identity', () => {
   assert.match(html, /setHashRoute\(`read=\$\{encodeURIComponent\(readRouteValue\(book, readPath\)\)\}`\);/);
   assert.match(html, /const readPath = BookMetadata\.canonicalReadUrl\(book, BOOKS_API_BASE\);/);
 });
+
+test('reader never navigates its iframe to an untrusted book URL', () => {
+  assert.doesNotMatch(html, /readerFrame\.src\s*=\s*readPath/);
+  assert.match(html, /throw new Error\('Only EPUB and PDF book files can be opened\.'\)/);
+});
