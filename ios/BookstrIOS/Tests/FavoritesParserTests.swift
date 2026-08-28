@@ -13,6 +13,41 @@ import WebKit
 #endif
 
 final class FavoritesParserTests: XCTestCase {
+    func testRightsNormalizationMarkersAndSafeURLs() {
+        XCTAssertEqual(BookRights.normalize(license: "Public Domain Mark 1.0").status, .publicDomain)
+        XCTAssertEqual(BookRights.normalize(license: "CC0 1.0").compactLabel, "CC0")
+        XCTAssertEqual(BookRights.normalize(license: "CC BY-SA 4.0").compactLabel, "CC BY-SA 4.0")
+        XCTAssertEqual(BookRights.normalize(license: "GNU Free Documentation License").compactLabel, "OPEN")
+        XCTAssertEqual(BookRights.normalize(license: "All rights reserved").status, .copyrighted)
+        XCTAssertEqual(BookRights.normalize(source: "gutenberg").status, .unknown)
+        XCTAssertEqual(BookRights().accessibleLabel, "No open license identified")
+        XCTAssertNil(BookRights.normalize(licenseURL: "javascript:alert(1)").licenseURL)
+    }
+
+    func testGutendexSemanticsAndPartialRefreshPreservation() {
+        let publicDomain = BookRights.normalize(source: "gutendex", copyright: false)
+        XCTAssertEqual(publicDomain.license, "Public domain in the U.S.")
+        XCTAssertEqual(BookRights.normalize(copyright: true).status, .copyrighted)
+        XCTAssertEqual(BookRights.normalize(copyright: nil).status, .unknown)
+        let current = BookRights.normalize(license: "CC BY 4.0", source: "catalog")
+        XCTAssertEqual(BookRights.preferred(current: current, incoming: BookRights()), current)
+    }
+
+    func testPublicationV2RoundTripsRightsAndLegacyRemainsUnknown() {
+        let ref = SharedFavoriteRef(
+            bookstrId: "gutenberg:7", title: "Open", author: "Author", year: "2024", format: "epub",
+            rightsStatus: RightsStatus.openLicense.rawValue, license: "CC BY 4.0",
+            licenseUrl: "https://creativecommons.org/licenses/by/4.0/", rightsSource: "gutendex"
+        )
+        let tags = FavoritesParser.collectionTags(refs: [ref], updatedAt: 1)
+        XCTAssertEqual(tags[1], ["bookstr-publications", "2"])
+        let parsed = FavoritesParser.parseSharedFavoriteTags(tags as [Any])
+        XCTAssertEqual(parsed.first?.license, "CC BY 4.0")
+        XCTAssertEqual(parsed.first?.rights.status, .openLicense)
+
+        let legacy = FavoritesParser.parseSharedFavoriteTags([["book", "bookstr", "legacy", "1"]] as [Any])
+        XCTAssertEqual(legacy.first?.rights.status, .unknown)
+    }
     func testPublicationIdentityCandidatesIncludeBlossomAndMD5AliasesOnce() {
         let book = CatalogBook(
             id: "legacy-id", title: "Alias test", author: "Author", epubUrl: "https://example.com/book.epub",

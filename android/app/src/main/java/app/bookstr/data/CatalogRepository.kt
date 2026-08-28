@@ -44,6 +44,10 @@ data class CatalogBook(
     val format: BookFormat = BookFormat.Epub,
     val blossomSha256: String? = null,
     val year: String? = null,
+    val rightsStatus: String = RIGHTS_UNKNOWN,
+    val license: String? = null,
+    val licenseUrl: String? = null,
+    val rightsSource: String? = null,
 )
 
 data class BookSearchResult(
@@ -59,6 +63,10 @@ data class BookSearchResult(
     val coverUrl: String? = null,
     val rating: Double = 0.0,
     val editionCount: Int = 0,
+    val rightsStatus: String = RIGHTS_UNKNOWN,
+    val license: String? = null,
+    val licenseUrl: String? = null,
+    val rightsSource: String? = null,
 ) {
     val isReadable: Boolean get() = !downloadUrl.isNullOrBlank() && format != null
 
@@ -74,6 +82,10 @@ data class BookSearchResult(
             sourceUrl = url,
             format = bookFormat,
             year = year,
+            rightsStatus = rightsStatus,
+            license = license,
+            licenseUrl = licenseUrl,
+            rightsSource = rightsSource,
         )
     }
 }
@@ -143,7 +155,7 @@ class CatalogRepository(
     suspend fun ensureDownloaded(book: CatalogBook): File = withContext(Dispatchers.IO) {
         val target = publicationFile(book.id, book.format)
         if (target.exists() && isValidCachedFile(book, target)) {
-            rememberDownloadedBook(book)
+            rememberDownloadedBook(withEmbeddedRights(book, target))
             return@withContext target
         }
         if (target.exists()) target.delete()
@@ -154,7 +166,7 @@ class CatalogRepository(
                 partial.copyTo(target, overwrite = true)
                 partial.delete()
             }
-            rememberDownloadedBook(book)
+            rememberDownloadedBook(withEmbeddedRights(book, target))
             return@withContext target
         }
         val partialLength = partial.takeIf(File::isFile)?.length() ?: 0L
@@ -194,7 +206,7 @@ class CatalogRepository(
             partial.copyTo(target, overwrite = true)
             partial.delete()
         }
-        rememberDownloadedBook(book)
+        rememberDownloadedBook(withEmbeddedRights(book, target))
         target
     }
 
@@ -215,6 +227,11 @@ class CatalogRepository(
         }
         val id = file.nameWithoutExtension.lowercase()
         if (!id.matches(Regex("^[a-f0-9]{64}$"))) return null
+        val embeddedRights = if (format == BookFormat.Epub) readEpubRights(file) else BookRights()
+        val matchedRights = BookRightsMetadata.normalize(
+            matched?.rightsStatus, matched?.license, matched?.licenseUrl, matched?.rightsSource,
+        )
+        val rights = BookRightsMetadata.preferred(matchedRights, embeddedRights)
         return CatalogBook(
             id = id,
             title = matched?.title ?: embedded.first ?: "Downloaded ${format.extension.uppercase()}",
@@ -227,8 +244,46 @@ class CatalogRepository(
             format = format,
             blossomSha256 = id,
             year = matched?.year ?: embedded.third,
+            rightsStatus = rights.status,
+            license = rights.license,
+            licenseUrl = rights.licenseUrl,
+            rightsSource = rights.source,
         )
     }
+
+    private fun withEmbeddedRights(book: CatalogBook, file: File): CatalogBook {
+        if (book.format != BookFormat.Epub) return book
+        val current = BookRightsMetadata.normalize(book.rightsStatus, book.license, book.licenseUrl, book.rightsSource)
+        val rights = BookRightsMetadata.preferred(current, readEpubRights(file))
+        return book.copy(
+            rightsStatus = rights.status,
+            license = rights.license,
+            licenseUrl = rights.licenseUrl,
+            rightsSource = rights.source,
+        )
+    }
+
+    private fun readEpubRights(file: File): BookRights = runCatching {
+        ZipFile(file).use { archive ->
+            val containerEntry = archive.getEntry("META-INF/container.xml") ?: return@use BookRights()
+            val container = archive.getInputStream(containerEntry).bufferedReader().readText()
+            val packagePath = Regex("full-path=[\"']([^\"']+)").find(container)?.groupValues?.get(1)
+                ?: return@use BookRights()
+            val entry = archive.getEntry(packagePath) ?: return@use BookRights()
+            val parser = Xml.newPullParser().apply {
+                setFeature(XmlPullParser.FEATURE_PROCESS_NAMESPACES, true)
+                setInput(archive.getInputStream(entry), null)
+            }
+            var statement: String? = null
+            while (parser.eventType != XmlPullParser.END_DOCUMENT && statement == null) {
+                if (parser.eventType == XmlPullParser.START_TAG && parser.name.equals("rights", ignoreCase = true)) {
+                    statement = parser.nextText().trim().ifBlank { null }
+                }
+                parser.next()
+            }
+            BookRightsMetadata.normalize(license = statement, source = "epub_opf")
+        }
+    }.getOrDefault(BookRights())
 
     private fun readEpubMetadata(file: File): Triple<String?, String?, String?> = runCatching {
         ZipFile(file).use { archive ->
@@ -274,7 +329,21 @@ class CatalogRepository(
     }.getOrDefault(Triple(null, null, null))
 
     private fun rememberDownloadedBook(book: CatalogBook) {
-        val merged = (loadDownloadedBookMetadata() + book).distinctBy { it.id }
+        val existing = loadDownloadedBookMetadata()
+        val previous = existing.firstOrNull { it.id == book.id }
+        val rights = BookRightsMetadata.preferred(
+            BookRightsMetadata.normalize(
+                previous?.rightsStatus, previous?.license, previous?.licenseUrl, previous?.rightsSource,
+            ),
+            BookRightsMetadata.normalize(book.rightsStatus, book.license, book.licenseUrl, book.rightsSource),
+        )
+        val updated = book.copy(
+            rightsStatus = rights.status,
+            license = rights.license,
+            licenseUrl = rights.licenseUrl,
+            rightsSource = rights.source,
+        )
+        val merged = existing.filterNot { it.id == book.id } + updated
         saveDownloadedBookMetadata(merged)
     }
 
@@ -299,7 +368,11 @@ class CatalogRepository(
                     .put("year", book.year)
                     .put("sourceUrl", book.sourceUrl)
                     .put("isbn", book.isbn)
-                    .put("libvaultMd5", book.libvaultMd5),
+                    .put("libvaultMd5", book.libvaultMd5)
+                    .put("rights_status", book.rightsStatus)
+                    .put("license", book.license)
+                    .put("license_url", book.licenseUrl)
+                    .put("rights_source", book.rightsSource),
             )
         }
         val target = File(context.filesDir, DOWNLOADED_BOOKS_CACHE_FILE)
@@ -387,6 +460,7 @@ class CatalogRepository(
                     val id = scalar("id") ?: scalar("sha256")
                     val epubUrl = text("epubUrl")
                     if (id == null || epubUrl == null) continue
+                    val rights = rightsFromJson(item)
                     add(
                         CatalogBook(
                             id = id.lowercase(),
@@ -405,6 +479,10 @@ class CatalogRepository(
                                 ?.takeIf { it.matches(Regex("^[a-fA-F0-9]{64}$")) }
                                 ?.lowercase(),
                             year = text("year"),
+                            rightsStatus = rights.status,
+                            license = rights.license,
+                            licenseUrl = rights.licenseUrl,
+                            rightsSource = rights.source,
                         ),
                     )
                 }
@@ -442,6 +520,7 @@ class CatalogRepository(
                         else -> null
                     }
                     val coverId = item.cleanString("cover_id")
+                    val rights = rightsFromJson(item, source)
                     add(
                         BookSearchResult(
                             id = "$source:$nativeId",
@@ -458,6 +537,10 @@ class CatalogRepository(
                             coverUrl = coverId?.let { "https://covers.openlibrary.org/b/id/$it-M.jpg" },
                             rating = item.optDouble("avg_rating", item.optDouble("rating", 0.0)),
                             editionCount = item.optInt("edition_count", 0),
+                            rightsStatus = rights.status,
+                            license = rights.license,
+                            licenseUrl = rights.licenseUrl,
+                            rightsSource = rights.source,
                         ),
                     )
                 }
@@ -470,6 +553,26 @@ class CatalogRepository(
                 it.isBlank() || it.equals("null", ignoreCase = true) ||
                     it.equals("undefined", ignoreCase = true)
             }
+        }
+
+        private fun rightsFromJson(item: JSONObject, provider: String? = null): BookRights {
+            val copyright = if (item.has("copyright") && !item.isNull("copyright") && item.opt("copyright") is Boolean) {
+                item.optBoolean("copyright")
+            } else {
+                null
+            }
+            val evidenceSource = item.cleanString("rights_source") ?: item.cleanString("rightsSource")
+                ?: provider?.takeIf {
+                    copyright != null || item.cleanString("rights_status") != null ||
+                        item.cleanString("license") != null || item.cleanString("rights") != null
+                }?.let { if (it == "gutenberg" && copyright != null) "gutendex" else it }
+            return BookRightsMetadata.normalize(
+                status = item.cleanString("rights_status") ?: item.cleanString("rightsStatus"),
+                license = item.cleanString("license") ?: item.cleanString("rights"),
+                licenseUrl = item.cleanString("license_url") ?: item.cleanString("licenseUrl"),
+                source = evidenceSource,
+                copyright = copyright,
+            )
         }
 
         fun fromBlossomFavorite(favorite: ExternalFavorite): CatalogBook? {
@@ -491,6 +594,10 @@ class CatalogRepository(
                 format = BookFormat.from(favorite.format, blossomUrl),
                 blossomSha256 = sha256,
                 year = favorite.year,
+                rightsStatus = favorite.rightsStatus,
+                license = favorite.license,
+                licenseUrl = favorite.licenseUrl,
+                rightsSource = favorite.rightsSource,
             )
         }
     }

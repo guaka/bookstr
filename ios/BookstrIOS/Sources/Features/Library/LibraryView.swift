@@ -7,9 +7,21 @@ struct LibraryView: View {
     @State private var selectedBookURL: URL?
     @State private var openError: String?
     @State private var openingBookID: String?
+    @State private var rightsDetails: RightsDetailsItem?
+    @AppStorage("library_sort") private var selectedSort = LibrarySort.recent
 
     var body: some View {
-        List {
+        let sortedReading = LibraryViewModel.sorted(
+            viewModel.reading, by: selectedSort, progress: viewModel.progress
+        )
+        let sortedFavorites = LibraryViewModel.sorted(
+            viewModel.favorites, by: selectedSort, progress: viewModel.progress
+        )
+        let sortedExternalFavorites = LibraryViewModel.sorted(
+            viewModel.externalFavorites, by: selectedSort
+        )
+
+        return List {
             if let error = viewModel.errorMessage {
                 Section {
                     Button(error) {
@@ -24,7 +36,7 @@ struct LibraryView: View {
                     Text("Books you open will appear here with their progress.")
                         .foregroundStyle(.secondary)
                 } else {
-                    ForEach(viewModel.reading) { book in
+                    ForEach(sortedReading) { book in
                         Button { open(book) } label: {
                             bookRow(book, showProgress: true)
                         }
@@ -32,6 +44,9 @@ struct LibraryView: View {
                         .buttonStyle(.plain)
                         .accessibilityIdentifier("library-book-\(book.id)")
                         .frame(maxWidth: .infinity, alignment: .leading)
+                        .contextMenu {
+                            Button("Rights details") { rightsDetails = details(for: book) }
+                        }
                     }
                 }
             }
@@ -41,7 +56,7 @@ struct LibraryView: View {
                     Text(emptyFavoritesCopy)
                         .foregroundStyle(.secondary)
                 } else {
-                    ForEach(viewModel.favorites) { book in
+                    ForEach(sortedFavorites) { book in
                         Button { open(book) } label: {
                             bookRow(book, showProgress: false)
                         }
@@ -49,8 +64,11 @@ struct LibraryView: View {
                         .buttonStyle(.plain)
                         .accessibilityIdentifier("library-book-\(book.id)")
                         .frame(maxWidth: .infinity, alignment: .leading)
+                        .contextMenu {
+                            Button("Rights details") { rightsDetails = details(for: book) }
+                        }
                     }
-                    ForEach(viewModel.externalFavorites) { favorite in
+                    ForEach(sortedExternalFavorites) { favorite in
                         Button {
                             if let book = CatalogRepository.fromExternalFavorite(favorite) {
                                 open(book)
@@ -66,9 +84,13 @@ struct LibraryView: View {
                                     if let author = favorite.author, !author.isEmpty {
                                         Text(author).font(.subheadline).foregroundStyle(.secondary)
                                     }
-                                    Text(publicationLabel(favorite))
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
+                                    HStack(spacing: 5) {
+                                        if let year = favorite.year { Text(year) }
+                                        RightsBadge(rights: favorite.rights)
+                                        Text("· \(publicationLabel(favorite))")
+                                    }
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
                                 }
                                 Spacer(minLength: 0)
                             }
@@ -78,6 +100,14 @@ struct LibraryView: View {
                         .buttonStyle(.plain)
                         .disabled(openingBookID != nil)
                         .frame(maxWidth: .infinity, alignment: .leading)
+                        .contextMenu {
+                            Button("Rights details") {
+                                rightsDetails = RightsDetailsItem(
+                                    title: favorite.title, author: favorite.author, year: favorite.year,
+                                    format: favorite.format, rights: favorite.rights
+                                )
+                            }
+                        }
                     }
                 }
             }
@@ -86,6 +116,21 @@ struct LibraryView: View {
         .contentMargins(.top, 8, for: .scrollContent)
         .contentMargins(.horizontal, 0, for: .scrollContent)
         .bookstrScreenTitle("Library")
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Menu {
+                    Picker("Sort books", selection: $selectedSort) {
+                        ForEach(LibrarySort.allCases) { option in
+                            Text(option.label).tag(option)
+                        }
+                    }
+                } label: {
+                    Image(systemName: "arrow.up.arrow.down")
+                }
+                .accessibilityLabel("Sort books")
+                .accessibilityIdentifier("library-sort")
+            }
+        }
         .fullScreenCover(item: $selectedBook) { book in
             ReaderHostView(book: book, preparedURL: selectedBookURL)
                 .id(book.id)
@@ -98,6 +143,7 @@ struct LibraryView: View {
         } message: {
             Text(openError ?? "")
         }
+        .sheet(item: $rightsDetails) { RightsDetailsView(item: $0) }
         .task {
             viewModel.attach(container)
             await viewModel.load()
@@ -124,9 +170,13 @@ struct LibraryView: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text(book.title).font(.headline)
                 Text(book.author).font(.subheadline).foregroundStyle(.secondary)
-                Text(book.format.rawValue.uppercased())
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                HStack(spacing: 5) {
+                    if let year = book.year { Text(year) }
+                    RightsBadge(rights: book.rights)
+                    Text("· \(book.format.rawValue.uppercased())")
+                }
+                .font(.caption)
+                .foregroundStyle(.secondary)
                 if showProgress, let item = viewModel.progress[book.id], item.progression > 0 {
                     ProgressView(value: min(max(item.progression, 0), 1))
                 }
@@ -162,5 +212,12 @@ struct LibraryView: View {
         }
         let candidate = (favorite.libvaultMd5 ?? favorite.key).lowercased()
         return candidate.count == 32 ? candidate : (title.isEmpty ? favorite.key : title)
+    }
+
+    private func details(for book: CatalogBook) -> RightsDetailsItem {
+        RightsDetailsItem(
+            title: book.title, author: book.author, year: book.year,
+            format: book.format.rawValue, rights: book.rights
+        )
     }
 }

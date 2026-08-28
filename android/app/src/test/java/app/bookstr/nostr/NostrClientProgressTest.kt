@@ -17,7 +17,7 @@ class NostrClientProgressTest {
     }
 
     @Test
-    fun roundTripV1Payload() {
+    fun roundTripV2Payload() {
         val json = NostrClient.progressContent(
             bookId = bookId,
             progression = 0.42,
@@ -27,7 +27,7 @@ class NostrClientProgressTest {
             updatedAt = 1_700_000_000_000L,
         )
         val obj = JSONObject(json)
-        assertEquals(1, obj.getInt("v"))
+        assertEquals(2, obj.getInt("v"))
         assertEquals(bookId, obj.getString("bookId"))
         assertEquals(0.42, obj.getJSONObject("locator").getDouble("progression"), 1e-9)
         assertEquals("epubcfi(/6/4)", obj.getJSONObject("locator").getString("cfi"))

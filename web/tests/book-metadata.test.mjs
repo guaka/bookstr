@@ -8,6 +8,10 @@ const {
   resolveTitle,
   languageForBook,
   yearForBook,
+  normalizeRights,
+  preferredRights,
+  rightsLabel,
+  rightsAccessibleLabel,
   authorSearchName,
   readingProgressForBook,
   normalizeFavoriteAddedAt,
@@ -30,6 +34,45 @@ const {
   enrichBookMetadata,
   isbnForBook,
 } = globalThis.BookMetadata;
+
+test('normalizes explicit rights evidence without inferring from age or source', () => {
+  assert.deepEqual(normalizeRights({ copyright: false, source: 'gutenberg' }), {
+    rights_status: 'public_domain',
+    license: 'Public domain in the U.S.',
+    license_url: '',
+    rights_source: '',
+  });
+  assert.equal(normalizeRights({ copyright: true }).rights_status, 'copyrighted');
+  assert.equal(normalizeRights({ copyright: null }).rights_status, 'unknown');
+  assert.equal(normalizeRights({ source: 'gutenberg', year: 1800 }).rights_status, 'unknown');
+  assert.equal(normalizeRights({ license: 'Public Domain Mark 1.0' }).rights_status, 'public_domain');
+  assert.equal(normalizeRights({ license: 'CC0 1.0' }).rights_status, 'public_domain');
+  assert.equal(normalizeRights({ rights: 'Creative Commons Attribution-ShareAlike 4.0' }).rights_status, 'open_license');
+  assert.equal(normalizeRights({ license: 'GNU Free Documentation License' }).rights_status, 'open_license');
+  assert.equal(normalizeRights({ license: 'All rights reserved' }).rights_status, 'copyrighted');
+  assert.equal(normalizeRights({ license: 'Use responsibly' }).rights_status, 'unknown');
+});
+
+test('formats rights markers and accessible distinctions', () => {
+  assert.equal(rightsLabel({ license: 'Public domain' }), 'PD');
+  assert.equal(rightsLabel({ license: 'CC0 1.0' }), 'CC0');
+  assert.equal(rightsLabel({ license: 'CC BY-SA 4.0' }), 'CC BY-SA 4.0');
+  assert.equal(rightsLabel({ license: 'GNU Free Documentation License' }), 'OPEN');
+  assert.equal(rightsLabel({}), '©');
+  assert.equal(rightsAccessibleLabel({ rights_status: 'copyrighted' }), 'Copyrighted');
+  assert.equal(rightsAccessibleLabel({}), 'No open license identified');
+});
+
+test('keeps license URLs safe and preserves explicit metadata during partial refreshes', () => {
+  assert.equal(normalizeRights({ license_url: 'javascript:alert(1)' }).license_url, '');
+  assert.equal(
+    normalizeRights({ license: 'See https://creativecommons.org/licenses/by/4.0/.' }).license_url,
+    'https://creativecommons.org/licenses/by/4.0/',
+  );
+  const current = normalizeRights({ license: 'CC BY 4.0', rights_source: 'catalog' });
+  assert.deepEqual(preferredRights(current, {}), current);
+  assert.equal(preferredRights(current, { license: 'All rights reserved' }).rights_status, 'copyrighted');
+});
 
 test('metadataObject parses object payloads and ignores invalid payloads', () => {
   assert.deepEqual(metadataObject({ title: 'Book' }), { title: 'Book' });

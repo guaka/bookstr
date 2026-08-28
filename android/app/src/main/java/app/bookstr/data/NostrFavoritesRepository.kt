@@ -24,6 +24,10 @@ data class SharedFavoriteRef(
     val blossomSha256: String? = null,
     val blossomUrl: String? = null,
     val addedAt: Long? = null,
+    val rightsStatus: String = RIGHTS_UNKNOWN,
+    val license: String? = null,
+    val licenseUrl: String? = null,
+    val rightsSource: String? = null,
 )
 
 data class ExternalFavorite(
@@ -38,6 +42,10 @@ data class ExternalFavorite(
     val blossomSha256: String? = null,
     val blossomUrl: String? = null,
     val addedAt: Long? = null,
+    val rightsStatus: String = RIGHTS_UNKNOWN,
+    val license: String? = null,
+    val licenseUrl: String? = null,
+    val rightsSource: String? = null,
 )
 
 data class SharedFavorites(
@@ -143,6 +151,10 @@ class NostrFavoritesRepository(
                 format = book.format.extension,
                 blossomSha256 = book.blossomSha256,
                 blossomUrl = book.epubUrl.takeIf { !book.blossomSha256.isNullOrBlank() },
+                rightsStatus = book.rightsStatus,
+                license = book.license,
+                licenseUrl = book.licenseUrl,
+                rightsSource = book.rightsSource,
             ),
             books,
         )
@@ -304,7 +316,7 @@ class NostrFavoritesRepository(
         }
 
         fun serializeSharedFavoriteTags(refs: List<SharedFavoriteRef>): String {
-            val tags = JSONArray()
+            val tags = JSONArray().put(JSONArray().put("bookstr-publications").put("2"))
             refs.forEach { ref ->
                 if (!ref.url.isNullOrBlank()) tags.put(JSONArray().put("r").put(ref.url))
                 when {
@@ -326,7 +338,15 @@ class NostrFavoritesRepository(
                                 .put(ref.author.orEmpty())
                                 .put(ref.format.orEmpty())
                                 .put("")
-                                .put(ref.year.orEmpty()),
+                                .put(ref.year.orEmpty())
+                                .put("")
+                                .put("")
+                                .put("")
+                                .put("")
+                                .put(ref.rightsStatus)
+                                .put(ref.license.orEmpty())
+                                .put(ref.licenseUrl.orEmpty())
+                                .put(ref.rightsSource.orEmpty()),
                         )
                         if (!ref.blossomSha256.isNullOrBlank() || !ref.blossomUrl.isNullOrBlank()) {
                             tags.put(
@@ -354,7 +374,17 @@ class NostrFavoritesRepository(
                                 .put(ref.bookstrId)
                                 .put(ref.title.orEmpty())
                                 .put(ref.author.orEmpty())
-                                .put(ref.url.orEmpty()),
+                                .put(ref.url.orEmpty())
+                                .put(ref.format.orEmpty())
+                                .put(ref.year.orEmpty())
+                                .put("")
+                                .put("")
+                                .put("")
+                                .put("")
+                                .put(ref.rightsStatus)
+                                .put(ref.license.orEmpty())
+                                .put(ref.licenseUrl.orEmpty())
+                                .put(ref.rightsSource.orEmpty()),
                         )
                     }
                     !ref.blossomSha256.isNullOrBlank() && SHA256.matches(ref.blossomSha256) -> tags.put(
@@ -511,11 +541,18 @@ class NostrFavoritesRepository(
                         pendingUrl = null
                     }
                     name == "bookstr" && item.optString(1).isNotBlank() -> {
+                        val rights = rightsFromTag(item, 11)
                         val next = SharedFavoriteRef(
                             bookstrId = item.optString(1),
                             title = item.optString(2).ifBlank { null },
                             author = item.optString(3).ifBlank { null },
                             url = item.optString(4).ifBlank { pendingUrl },
+                            format = item.optString(5).ifBlank { null },
+                            year = item.optString(6).ifBlank { null },
+                            rightsStatus = rights.status,
+                            license = rights.license,
+                            licenseUrl = rights.licenseUrl,
+                            rightsSource = rights.source,
                         )
                         val existing = refs.indexOfFirst { it.bookstrId == next.bookstrId }
                         if (existing >= 0) {
@@ -524,6 +561,24 @@ class NostrFavoritesRepository(
                                 title = old.title ?: next.title,
                                 author = old.author ?: next.author,
                                 url = old.url ?: next.url,
+                                format = old.format ?: next.format,
+                                year = old.year ?: next.year,
+                                rightsStatus = BookRightsMetadata.preferred(
+                                    BookRightsMetadata.normalize(old.rightsStatus, old.license, old.licenseUrl, old.rightsSource),
+                                    rights,
+                                ).status,
+                                license = BookRightsMetadata.preferred(
+                                    BookRightsMetadata.normalize(old.rightsStatus, old.license, old.licenseUrl, old.rightsSource),
+                                    rights,
+                                ).license,
+                                licenseUrl = BookRightsMetadata.preferred(
+                                    BookRightsMetadata.normalize(old.rightsStatus, old.license, old.licenseUrl, old.rightsSource),
+                                    rights,
+                                ).licenseUrl,
+                                rightsSource = BookRightsMetadata.preferred(
+                                    BookRightsMetadata.normalize(old.rightsStatus, old.license, old.licenseUrl, old.rightsSource),
+                                    rights,
+                                ).source,
                             )
                             currentIndex = existing
                         } else {
@@ -553,6 +608,7 @@ class NostrFavoritesRepository(
                         else refs.indexOfFirst { it.bookstrId == identifier }
                         if (index < 0 && !isLibvault) continue
                         val format = supportedFormat(item.optString(4))
+                        val rights = rightsFromTag(item, if (name == "libvault-book") 11 else 10)
                         if (index >= 0) {
                             currentIndex = index
                             replaceCurrent {
@@ -561,6 +617,10 @@ class NostrFavoritesRepository(
                                     author = item.optString(3).ifBlank { it.author },
                                     format = format ?: it.format,
                                     year = item.optString(6).ifBlank { it.year },
+                                    rightsStatus = rights.status,
+                                    license = rights.license,
+                                    licenseUrl = rights.licenseUrl,
+                                    rightsSource = rights.source,
                                 )
                             }
                         } else {
@@ -570,6 +630,10 @@ class NostrFavoritesRepository(
                                 author = item.optString(3).ifBlank { null },
                                 format = format,
                                 year = item.optString(6).ifBlank { null },
+                                rightsStatus = rights.status,
+                                license = rights.license,
+                                licenseUrl = rights.licenseUrl,
+                                rightsSource = rights.source,
                             )
                             currentIndex = refs.lastIndex
                         }
@@ -659,6 +723,10 @@ class NostrFavoritesRepository(
                     blossomSha256 = ref.blossomSha256,
                     blossomUrl = ref.blossomUrl,
                     addedAt = ref.addedAt,
+                    rightsStatus = ref.rightsStatus,
+                    license = ref.license,
+                    licenseUrl = ref.licenseUrl,
+                    rightsSource = ref.rightsSource,
                 )
             }
             return SharedFavorites(matched, external.values.toList())
@@ -668,6 +736,13 @@ class NostrFavoritesRepository(
             val normalized = value.orEmpty().filter { it.isDigit() || it.equals('X', ignoreCase = true) }.uppercase()
             return normalized.takeIf { it.length == 10 || it.length == 13 }.orEmpty()
         }
+
+        private fun rightsFromTag(item: JSONArray, offset: Int): BookRights = BookRightsMetadata.normalize(
+            status = item.optString(offset).ifBlank { null },
+            license = item.optString(offset + 1).ifBlank { null },
+            licenseUrl = item.optString(offset + 2).ifBlank { null },
+            source = item.optString(offset + 3).ifBlank { null },
+        )
 
         private val MD5 = Regex("^[a-fA-F0-9]{32}$")
         private val SHA256 = Regex("^[a-fA-F0-9]{64}$")

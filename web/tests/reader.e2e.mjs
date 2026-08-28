@@ -685,7 +685,7 @@ test('Home retries delayed NIP-07 and renders an iOS-shaped encrypted favorite',
   const pubkey = 'a'.repeat(64);
   const tags = [
     ['bookstr-collection', '2'],
-    ['bookstr-publications', '1'],
+    ['bookstr-publications', '2'],
     ['title', 'Favorites'],
     ['book', 'bookstr', 'gutenberg:44956', '1700000000', 'https://books-api.guaka.org/api/books/44956/download'],
     ['bookstr', 'gutenberg:44956', 'Anna Karenina', 'Leo Tolstoy', 'https://books-api.guaka.org/api/books/44956/download', 'epub', '1878'],

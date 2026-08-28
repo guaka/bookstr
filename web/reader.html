@@ -159,6 +159,28 @@
     let bookLoadGeneration = 0;
     let readerFontPercent = Number(localStorage.getItem("bookstr-reader-font-percent")) || 100;
 
+    function metadataText(value) {
+      if (Array.isArray(value)) return value.map(metadataText).filter(Boolean).join(", ");
+      if (value && typeof value === "object") return metadataText(value.name || value.value || value.label);
+      return String(value || "").trim();
+    }
+
+    function reportBookMetadata() {
+      const metadata = book && book.packaging && book.packaging.metadata;
+      if (!metadata) return;
+      const payload = {
+        type: "bookstr-reader-metadata",
+        bookId: currentBookId,
+        title: metadataText(metadata.title),
+        author: metadataText(metadata.creator || metadata.author),
+        rights: metadataText(metadata.rights)
+      };
+      if (window.parent !== window) window.parent.postMessage(payload, window.location.origin);
+      if (window.AndroidBridge && AndroidBridge.onMetadata) {
+        AndroidBridge.onMetadata(JSON.stringify(payload));
+      }
+    }
+
     function base64ToArrayBuffer(base64) {
       const binary = atob(base64);
       const len = binary.length;
@@ -289,6 +311,7 @@
           return Promise.reject(new DOMException("A newer book was opened.", "AbortError"));
         }
         book = nextBook;
+        reportBookMetadata();
         rendition = nextBook.renderTo("viewer", {
           width: "100%",
           height: "100%",
