@@ -1,14 +1,21 @@
 import Foundation
 import Security
 
-final class KeychainStore {
+protocol SecureStringStore {
+    @discardableResult
+    func set(key: String, value: String?) -> Bool
+    func get(key: String) -> String?
+}
+
+final class KeychainStore: SecureStringStore {
     private let service: String
 
     init(service: String) {
         self.service = service
     }
 
-    func set(key: String, value: String?) {
+    @discardableResult
+    func set(key: String, value: String?) -> Bool {
         if let value {
             let data = Data(value.utf8)
             let query: [String: Any] = [
@@ -21,14 +28,15 @@ final class KeychainStore {
                 kSecValueData as String: data,
                 kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlock
             ]) { _, new in new }
-            SecItemAdd(attrs as CFDictionary, nil)
+            return SecItemAdd(attrs as CFDictionary, nil) == errSecSuccess
         } else {
             let query: [String: Any] = [
                 kSecClass as String: kSecClassGenericPassword,
                 kSecAttrService as String: service,
                 kSecAttrAccount as String: key
             ]
-            SecItemDelete(query as CFDictionary)
+            let status = SecItemDelete(query as CFDictionary)
+            return status == errSecSuccess || status == errSecItemNotFound
         }
     }
 

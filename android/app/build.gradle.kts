@@ -30,6 +30,13 @@ val releaseKeystoreFile = providers.environmentVariable("BOOKSTR_KEYSTORE_FILE")
 val releaseKeystorePassword = providers.environmentVariable("BOOKSTR_KEYSTORE_PASSWORD").orNull
 val releaseKeyAlias = providers.environmentVariable("BOOKSTR_KEY_ALIAS").orNull
 val releaseKeyPassword = providers.environmentVariable("BOOKSTR_KEY_PASSWORD").orNull
+val hasReleaseSigningCredentials = listOf(
+    releaseKeystoreFile,
+    releaseKeystorePassword,
+    releaseKeyAlias,
+    releaseKeyPassword,
+).none { it.isNullOrBlank() }
+val isCodeQLBuild = providers.environmentVariable("CODEQL_ACTION_INIT_HAS_RUN").orNull == "true"
 
 android {
     namespace = "app.bookstr"
@@ -60,7 +67,9 @@ android {
         }
         release {
             isMinifyEnabled = false
-            signingConfig = signingConfigs.getByName("release")
+            if (hasReleaseSigningCredentials) {
+                signingConfig = signingConfigs.getByName("release")
+            }
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",
@@ -91,10 +100,15 @@ android {
     testOptions {
         unitTests.isReturnDefaultValues = true
     }
+
+    lint {
+        checkReleaseBuilds = !isCodeQLBuild
+    }
 }
 
 tasks.matching { it.name == "packageRelease" }.configureEach {
     doFirst {
+        if (isCodeQLBuild) return@doFirst
         val missing = buildList {
             if (releaseKeystoreFile.isNullOrBlank()) add("BOOKSTR_KEYSTORE_FILE")
             if (releaseKeystorePassword.isNullOrBlank()) add("BOOKSTR_KEYSTORE_PASSWORD")
