@@ -11,10 +11,12 @@ test('web tests are gated by web-related path changes', async () => {
   assert.match(workflow, /name: Detect web changes/);
   assert.match(workflow, /- 'web\/\*\*'/);
   assert.match(workflow, /- 'shared\/architecture\/\*\*'/);
+  assert.match(workflow, /- 'shared\/coverage\/\*\*'/);
   assert.match(workflow, /- 'docs\/CLIENT_CAPABILITIES\.md'/);
   assert.match(workflow, /- 'scripts\/\*\*'/);
   assert.match(workflow, /node scripts\/generate-client-overview\.mjs --check/);
   assert.match(workflow, /node shared\/contracts\/generate-nostr-constants\.mjs --check/);
+  assert.match(workflow, /--test-coverage-lines=100 --test-coverage-branches=100 --test-coverage-functions=100 scripts\/coverage-ratchet\.test\.mjs/);
   assert.match(workflow, /shared\/contracts\/\*\.test\.mjs/);
   assert.match(workflow, /if: needs\.changes\.outputs\.web == 'true'/);
   assert.match(workflow, /repository-hygiene:/);
@@ -36,6 +38,19 @@ test('Electron unit coverage and smoke results are published beside other client
   assert.match(workflow, /bookstr-test-overview-electron-\$\{\{ github\.run_id \}\}/);
   assert.match(deploy, /latest_run_with_artifact ci\.yml bookstr-test-overview-electron-/);
   assert.match(deploy, /pattern: bookstr-test-overview-electron-\*/);
+});
+
+test('every client enforces the shared coverage baseline', async () => {
+  const ci = await readWorkflow('ci.yml');
+  const android = await readWorkflow('android.yml');
+  const ios = await readWorkflow('ios.yml');
+
+  assert.match(ci, /coverage-ratchet\.mjs --suite web --report test-overview\/web\.json/);
+  assert.match(ci, /coverage-ratchet\.mjs --suite electron --report test-overview\/electron\.json/);
+  assert.match(android, /- 'shared\/coverage\/\*\*'/);
+  assert.match(android, /coverage-ratchet\.mjs --suite android --report test-overview\/android\.json/);
+  assert.match(ios, /- 'shared\/coverage\/\*\*'/);
+  assert.match(ios, /coverage-ratchet\.mjs --suite ios --report test-overview\/ios\.json/);
 });
 
 test('CodeQL gates each language while retaining scheduled full scans', async () => {

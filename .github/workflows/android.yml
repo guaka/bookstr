@@ -6,12 +6,16 @@ on:
     paths:
       - 'android/**'
       - 'shared/reader/**'
+      - 'shared/coverage/**'
+      - 'scripts/coverage-ratchet.mjs'
       - 'scripts/test-overview.mjs'
       - '.github/workflows/android.yml'
   pull_request:
     paths:
       - 'android/**'
       - 'shared/reader/**'
+      - 'shared/coverage/**'
+      - 'scripts/coverage-ratchet.mjs'
       - 'scripts/test-overview.mjs'
       - '.github/workflows/android.yml'
   workflow_dispatch:
@@ -71,6 +75,10 @@ jobs:
           coverage_xml="$(find android/app/build/reports/jacoco -name '*.xml' -print -quit 2>/dev/null || true)"
           KNOWN_TESTS=$(grep -R -h -E '^[[:space:]]*@Test' android/app/src/test --include='*.kt' | wc -l | tr -d ' ')
           node scripts/test-overview.mjs record --id android --suite Android --status "$TEST_STATUS" --results-format junit --results android/app/build/test-results/testDebugUnitTest --coverage-format jacoco --coverage "$coverage_xml" --known-tests "$KNOWN_TESTS" --duration-ms "$TEST_DURATION_MS" --output test-overview/android.json --recorded "$(date -u +%FT%TZ)" --run-url "$RUN_URL" --commit "$GITHUB_SHA"
+      - name: Enforce Android coverage baseline
+        if: always()
+        working-directory: .
+        run: node scripts/coverage-ratchet.mjs --suite android --report test-overview/android.json
       - name: Upload Android test overview
         if: always()
         uses: actions/upload-artifact@v4
