@@ -1,5 +1,15 @@
 import Foundation
 
+enum LibrarySort: String, CaseIterable, Identifiable {
+    case recent
+    case title
+    case author
+    case progress
+
+    var id: String { rawValue }
+    var label: String { rawValue.capitalized }
+}
+
 @MainActor
 final class LibraryViewModel: ObservableObject {
     @Published var reading: [CatalogBook] = []
@@ -110,6 +120,50 @@ final class LibraryViewModel: ObservableObject {
     private func hasStartedReading(_ progress: BookProgress?) -> Bool {
         guard let progress else { return false }
         return !progress.cfi.isEmpty || progress.progression > 0
+    }
+
+    static func sorted(
+        _ books: [CatalogBook],
+        by sort: LibrarySort,
+        progress: [String: BookProgress]
+    ) -> [CatalogBook] {
+        books.sorted { lhs, rhs in
+            let lhsProgress = progress[lhs.id]
+            let rhsProgress = progress[rhs.id]
+            switch sort {
+            case .recent:
+                let lhsDate = lhsProgress?.updatedAt ?? 0
+                let rhsDate = rhsProgress?.updatedAt ?? 0
+                if lhsDate != rhsDate { return lhsDate > rhsDate }
+            case .title:
+                break
+            case .author:
+                let authors = lhs.author.localizedCaseInsensitiveCompare(rhs.author)
+                if authors != .orderedSame { return authors == .orderedAscending }
+            case .progress:
+                let lhsValue = lhsProgress?.progression ?? 0
+                let rhsValue = rhsProgress?.progression ?? 0
+                if lhsValue != rhsValue { return lhsValue > rhsValue }
+            }
+            return lhs.title.localizedCaseInsensitiveCompare(rhs.title) == .orderedAscending
+        }
+    }
+
+    static func sorted(_ favorites: [ExternalFavorite], by sort: LibrarySort) -> [ExternalFavorite] {
+        favorites.sorted { lhs, rhs in
+            switch sort {
+            case .recent, .progress:
+                let lhsDate = lhs.addedAt ?? 0
+                let rhsDate = rhs.addedAt ?? 0
+                if lhsDate != rhsDate { return lhsDate > rhsDate }
+            case .author:
+                let authors = (lhs.author ?? "").localizedCaseInsensitiveCompare(rhs.author ?? "")
+                if authors != .orderedSame { return authors == .orderedAscending }
+            case .title:
+                break
+            }
+            return lhs.title.localizedCaseInsensitiveCompare(rhs.title) == .orderedAscending
+        }
     }
 
     private func externalMD5(_ favorite: ExternalFavorite) -> String? {
