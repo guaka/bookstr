@@ -5,6 +5,7 @@ import { inflateSync } from 'node:zlib';
 
 const html = await readFile(new URL('../index.html', import.meta.url), 'utf8');
 const designTokens = await readFile(new URL('../design-tokens.css', import.meta.url), 'utf8');
+const desktopProgress = await readFile(new URL('../desktop-progress.js', import.meta.url), 'utf8');
 const readerHtml = await readFile(new URL('../reader.html', import.meta.url), 'utf8');
 const pdfReaderHtml = await readFile(new URL('../pdf-reader.html', import.meta.url), 'utf8');
 const pdfReaderJs = await readFile(new URL('../pdf-reader.js', import.meta.url), 'utf8');
@@ -630,6 +631,12 @@ test('web chrome uses the shared Bookstr identity', () => {
   assert.match(designTokens, /body\.theme-paper\s*\{[\s\S]*?--reading-progress:\s*#2F5D50/);
   assert.match(designTokens, /body\.theme-dark\s*\{[\s\S]*?--reading-progress:\s*#7FB8A7/);
   assert.match(html, /background:\s*#e7c766/);
+});
+
+test('desktop reading progress uses the shared browser-safe normalizer', () => {
+  assert.match(html, /<script src="desktop-progress\.js"><\/script>/);
+  assert.match(html, /BookstrDesktopProgress\.normalizeProgressPayload\(value, 'web'\)/);
+  assert.match(desktopProgress, /function normalizeProgressPayload\(payload, profile = 'main'\)/);
 });
 
 test('footer APK and GitHub icons stay green', () => {

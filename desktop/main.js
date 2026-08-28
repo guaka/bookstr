@@ -13,6 +13,7 @@ const crypto = require('node:crypto');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const QRCode = require('qrcode');
+const { normalizeProgressPayload } = require('../web/desktop-progress');
 const { proxyBlossomRequest } = require('./blossom-proxy');
 const { proxyCatalogRequest } = require('./catalog-proxy');
 const { proxyDictionaryRequest } = require('./dictionary-proxy');
@@ -826,43 +827,6 @@ function isBase64Safe(value) {
   return typeof value === 'string' && value.length > 64;
 }
 
-function clampProgress(value) {
-  const numericValue = Number(value);
-  if (!Number.isFinite(numericValue)) return 0;
-  return Math.max(0, Math.min(1, numericValue));
-}
-
-function normalizeProgressPayload(payload) {
-  if (!payload || typeof payload !== 'object') {
-    return null;
-  }
-  const md5 = String(payload.md5 || payload.bookId || '').trim().toLowerCase();
-  if (!md5) {
-    return null;
-  }
-  return {
-    md5,
-    readUrl: String(payload.readUrl || ''),
-    progression: clampProgress(payload.progression),
-    furthestProgression: clampProgress(payload.furthestProgression),
-    cfi: String(payload.cfi || ''),
-    title: String(payload.title || ''),
-    authors: String(payload.authors || ''),
-    year: String(payload.year || ''),
-    extension: String(payload.extension || 'epub'),
-    language: String(payload.language || ''),
-    source: String(payload.source || ''),
-    sourceNativeId: String(payload.sourceNativeId || ''),
-    sourceUrl: String(payload.sourceUrl || ''),
-    blossomUrl: String(payload.blossomUrl || ''),
-    blossomSha256: String(payload.blossomSha256 || ''),
-	rights_status: String(payload.rights_status || payload.rightsStatus || 'unknown'),
-	license: String(payload.license || payload.rights || ''),
-	license_url: String(payload.license_url || payload.licenseUrl || ''),
-	rights_source: String(payload.rights_source || payload.rightsSource || ''),
-  };
-}
-
 function focusLibraryWindow() {
   if (!mainWindow || mainWindow.isDestroyed()) {
     return false;
@@ -986,7 +950,7 @@ function setupIpcHandlers() {
   });
 
   ipcMain.on('bookstr-desktop-report-progress', (_, payload) => {
-    const safe = normalizeProgressPayload(payload);
+    const safe = normalizeProgressPayload(payload, 'main');
     if (!safe || !mainWindow || mainWindow.isDestroyed()) {
       return;
     }

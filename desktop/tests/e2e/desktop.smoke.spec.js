@@ -226,6 +226,38 @@ test('desktop pane shortcuts work from controls and reader windows', async () =>
   }
 });
 
+test('desktop bridge round-trips normalized reading progress to the library', async () => {
+  const electronApp = await electron.launch({
+    args: electronArgs(),
+  });
+
+  try {
+    const library = await electronApp.firstWindow();
+    const progress = await library.evaluate(() => new Promise((resolve) => {
+      const unsubscribe = window.bookstrDesktop.onProgress((payload) => {
+        unsubscribe();
+        resolve(payload);
+      });
+      window.bookstrDesktop.reportProgress({
+        md5: ' AABB ',
+        progression: 2,
+        furthestProgression: -1,
+        extension: 'PDF',
+        language: 'pt-BR',
+      });
+    }));
+    expect(progress).toMatchObject({
+      md5: 'aabb',
+      progression: 1,
+      furthestProgression: 0,
+      extension: 'pdf',
+      language: '',
+    });
+  } finally {
+    await electronApp.close();
+  }
+});
+
 test('desktop downloads dictionaries through its same-origin proxy', async () => {
   const fixture = await dictionaryFixture();
   const server = await dictionaryServer(fixture);
