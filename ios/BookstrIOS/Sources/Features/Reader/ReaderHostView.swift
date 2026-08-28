@@ -1,4 +1,5 @@
 import SwiftUI
+import Foundation
 
 struct ReaderHostView: View {
     @EnvironmentObject private var container: AppContainer
@@ -23,6 +24,7 @@ struct ReaderHostView: View {
     @State private var searchQuery = ""
     @StateObject private var epubController = EPUBReaderController()
     @StateObject private var pdfController = PDFReaderController()
+    @StateObject private var fb2Controller = FB2ReaderController()
 
     var body: some View {
         Group {
@@ -42,6 +44,18 @@ struct ReaderHostView: View {
                         controller: pdfController
                     )
                     .padding(.top, 48)
+                } else if book.format == .fb2 {
+                    FB2ReaderView(
+                        book: book,
+                        fileURL: localURL,
+                        controller: fb2Controller,
+                        initialLocator: initialLocator,
+                        onProgress: { progression, locator in
+                            container.progressRepository.save(bookId: book.id, progression: progression, cfi: locator)
+                        }
+                    )
+                    .padding(.top, 48)
+                    .padding(.bottom, 5)
                 } else {
                     EPUBReaderView(book: book, fileURL: localURL, controller: epubController,
                                    initialCFI: initialLocator, highlightCFI: highlightLocator)
@@ -109,6 +123,22 @@ struct ReaderHostView: View {
                                     Text(section.label).foregroundStyle(.primary)
                                     Spacer()
                                     if section.index == epubController.sectionIndex {
+                                        Image(systemName: "checkmark").foregroundStyle(container.settingsRepository.theme.primary)
+                                    }
+                                }
+                            }
+                        }
+                    } else if book.format == .fb2 {
+                        List(fb2Controller.sections) { section in
+                            Button {
+                                showSections = false
+                                fb2Controller.requestedSectionID = section.id
+                            } label: {
+                                HStack {
+                                    Text(section.title.isEmpty ? "Section \(section.index + 1)" : section.title)
+                                        .foregroundStyle(.primary)
+                                    Spacer()
+                                    if section.index == fb2Controller.sectionIndex {
                                         Image(systemName: "checkmark").foregroundStyle(container.settingsRepository.theme.primary)
                                     }
                                 }
@@ -221,7 +251,9 @@ struct ReaderHostView: View {
     }
 
     private var hasTableOfContents: Bool {
-        book.format == .epub ? epubController.hasTableOfContents : !pdfController.tableOfContents.isEmpty
+        if book.format == .epub { return epubController.hasTableOfContents }
+        if book.format == .fb2 { return !fb2Controller.sections.isEmpty }
+        return !pdfController.tableOfContents.isEmpty
     }
 
     private var searchButton: some View {
