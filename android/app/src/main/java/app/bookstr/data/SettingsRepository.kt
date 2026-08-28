@@ -156,6 +156,8 @@ class SettingsRepository(context: Context) {
         securePrefs.edit()
             .remove(KEY_FAVORITES_CACHE_PUBKEY)
             .remove(KEY_FAVORITES_CACHE_CONTENT)
+            .remove(KEY_COLLECTIONS_CACHE_PUBKEY)
+            .remove(KEY_COLLECTIONS_CACHE_CONTENT)
             .apply()
     }
 
@@ -170,6 +172,19 @@ class SettingsRepository(context: Context) {
         val cachedPubkey = securePrefs.getString(KEY_FAVORITES_CACHE_PUBKEY, null)
         if (!cachedPubkey.equals(pubkeyHex, ignoreCase = true)) return null
         return securePrefs.getString(KEY_FAVORITES_CACHE_CONTENT, null)?.takeIf(String::isNotBlank)
+    }
+
+    fun cacheNostrCollections(pubkeyHex: String, snapshot: CollectionSnapshot) {
+        securePrefs.edit()
+            .putString(KEY_COLLECTIONS_CACHE_PUBKEY, pubkeyHex.lowercase())
+            .putString(KEY_COLLECTIONS_CACHE_CONTENT, CollectionSnapshotCodec.encode(snapshot))
+            .apply()
+    }
+
+    fun cachedNostrCollections(pubkeyHex: String): CollectionSnapshot {
+        val cachedPubkey = securePrefs.getString(KEY_COLLECTIONS_CACHE_PUBKEY, null)
+        if (!cachedPubkey.equals(pubkeyHex, ignoreCase = true)) return CollectionSnapshot()
+        return CollectionSnapshotCodec.decode(securePrefs.getString(KEY_COLLECTIONS_CACHE_CONTENT, null))
     }
 
     fun saveReaderSession(session: ReaderSession) {
@@ -232,6 +247,8 @@ class SettingsRepository(context: Context) {
         securePrefs.edit()
             .remove(KEY_FAVORITES_CACHE_PUBKEY)
             .remove(KEY_FAVORITES_CACHE_CONTENT)
+            .remove(KEY_COLLECTIONS_CACHE_PUBKEY)
+            .remove(KEY_COLLECTIONS_CACHE_CONTENT)
             .apply()
     }
 
@@ -251,6 +268,8 @@ class SettingsRepository(context: Context) {
         private const val KEY_NSEC = "nsec"
         private const val KEY_FAVORITES_CACHE_PUBKEY = "nostr_favorites_cache_pubkey"
         private const val KEY_FAVORITES_CACHE_CONTENT = "nostr_favorites_cache_content"
+        private const val KEY_COLLECTIONS_CACHE_PUBKEY = "nostr_collections_cache_pubkey"
+        private const val KEY_COLLECTIONS_CACHE_CONTENT = "nostr_collections_cache_content"
         private const val KEY_READER_BOOK_ID = "reader_book_id"
         private const val KEY_READER_BOOK_TITLE = "reader_book_title"
         private const val KEY_READER_AUTHOR = "reader_author"
