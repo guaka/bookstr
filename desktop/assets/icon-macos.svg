@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-label="Bookstr">
+  <defs>
+    <linearGradient id="tile" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#47796B"/>
+      <stop offset="0.48" stop-color="#2F5D50"/>
+      <stop offset="1" stop-color="#244A40"/>
+    </linearGradient>
+    <linearGradient id="paper" x1="0" y1="0" x2="0.75" y2="1">
+      <stop offset="0" stop-color="#FFFFFF"/>
+      <stop offset="0.55" stop-color="#FFFAF2"/>
+      <stop offset="1" stop-color="#E9DCC8"/>
+    </linearGradient>
+    <linearGradient id="cover" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#E76A4D"/>
+      <stop offset="0.5" stop-color="#C74B32"/>
+      <stop offset="1" stop-color="#9F3527"/>
+    </linearGradient>
+    <linearGradient id="gloss" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.32"/>
+      <stop offset="0.42" stop-color="#FFFFFF" stop-opacity="0.08"/>
+      <stop offset="0.66" stop-color="#FFFFFF" stop-opacity="0"/>
+    </linearGradient>
+    <clipPath id="tile-clip">
+      <rect width="512" height="512" rx="112"/>
+    </clipPath>
+  </defs>
+  <g transform="translate(100 100) scale(1.609375)">
+    <rect width="512" height="512" rx="112" fill="url(#tile)"/>
+    <path fill="url(#paper)" d="M78 112c59-25 118-19 178 18 60-37 119-43 178-18l-92 143h76L237 454l17-151H93l91-143H78V112Z"/>
+    <path fill="url(#cover)" d="M256 130c-30-20-61-31-92-34v46c32 3 63 15 92 36 29-21 60-33 92-36V96c-31 3-62 14-92 34Z"/>
+    <path fill="none" stroke="#2F5D50" stroke-linecap="round" stroke-width="14" d="M256 132v61"/>
+    <g clip-path="url(#tile-clip)" pointer-events="none">
+      <ellipse cx="256" cy="-8" rx="330" ry="248" fill="url(#gloss)"/>
+      <path d="M-48 222 388-40h96L20 272Z" fill="#FFFFFF" opacity="0.055"/>
+      <rect x="4" y="4" width="504" height="504" rx="108" fill="none" stroke="#FFFFFF" stroke-opacity="0.16" stroke-width="8"/>
+    </g>
+  </g>
+</svg>

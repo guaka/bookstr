@@ -14,6 +14,11 @@ web/dist/
 web/coverage/
 web/playwright-report/
 web/test-results/
+desktop/.electron-cache/
+desktop/.npm-cache/
+desktop/.tmp/
+desktop/.openssl.cnf
+desktop/test-results/
 .codex-ci-artifacts/
 ios/.*Derived*/
 ios/.deviceDerived/
