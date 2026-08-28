@@ -5,13 +5,17 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.File
+import java.security.MessageDigest
 
 class ReaderAssetContractTest {
+    private val generatedReaderAssets = File("build/generated/reader-assets")
+    private val sharedReaderAssets = File("../../shared/reader")
+
     @Test
     fun readerSupportsStreamedBookUrlsAndVisibleErrors() {
-        val html = File("src/main/assets/reader.html").readText()
+        val html = generatedAsset("reader.html").readText()
 
-        assertTrue(File("src/main/assets/jszip.min.js").isFile)
+        assertTrue(generatedAsset("jszip.min.js").isFile)
         assertTrue(html.indexOf("jszip.min.js") < html.indexOf("epub.min.js"))
         assertTrue(html.contains("window.loadBookUrl"))
         assertTrue(html.contains("response.arrayBuffer()"))
@@ -90,14 +94,41 @@ class ReaderAssetContractTest {
 
     @Test
     fun packagedReaderUsesCanonicalSpeechPlanner() {
-        val html = File("src/main/assets/reader.html").readText()
+        val html = generatedAsset("reader.html").readText()
         val sharedSpeech = File("../../web/reader-speech.js")
         val scriptTag = "<script src=\"reader-speech.js\"></script>"
 
         assertTrue(sharedSpeech.isFile)
+        assertTrue(generatedAsset("reader-speech.js").readBytes().contentEquals(sharedSpeech.readBytes()))
         assertTrue(html.contains(scriptTag))
         assertEquals(1, Regex(Regex.escape(scriptTag)).findAll(html).count())
         assertTrue(html.contains("window.BookstrSpeech.buildPlan(parts)"))
         assertTrue(sharedSpeech.readText().contains("paragraphPauseMs: PARAGRAPH_PAUSE_MS"))
     }
+
+    @Test
+    fun generatedAssetsMatchTheCanonicalMobileReaderAndLockedVendorHashes() {
+        listOf("reader.html", "epub.min.js", "jszip.min.js").forEach { name ->
+            val canonical = File(sharedReaderAssets, name)
+            val generated = generatedAsset(name)
+            assertTrue("Missing canonical reader asset: $name", canonical.isFile)
+            assertTrue("Missing generated reader asset: $name", generated.isFile)
+            assertTrue("Generated $name differs from its canonical source", generated.readBytes().contentEquals(canonical.readBytes()))
+        }
+
+        assertEquals(
+            "06eae15745107b4aa508c95538275251f69bfb9f1175621fc458d9f42ed082d4",
+            sha256(generatedAsset("epub.min.js")),
+        )
+        assertEquals(
+            "acc7e41455a80765b5fd9c7ee1b8078a6d160bbbca455aeae854de65c947d59e",
+            sha256(generatedAsset("jszip.min.js")),
+        )
+    }
+
+    private fun generatedAsset(name: String) = File(generatedReaderAssets, name)
+
+    private fun sha256(file: File): String = MessageDigest.getInstance("SHA-256")
+        .digest(file.readBytes())
+        .joinToString("") { byte -> "%02x".format(byte) }
 }

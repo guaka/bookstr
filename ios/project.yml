@@ -13,13 +13,13 @@ targets:
     sources:
       - path: BookstrIOS/Sources
       - path: BookstrIOS/Assets.xcassets
-      - path: BookstrIOS/ReaderAssets/reader.html
+      - path: ../shared/reader/reader.html
         buildPhase: resources
       - path: ../web/reader-speech.js
         buildPhase: resources
-      - path: BookstrIOS/ReaderAssets/epub.min.js
+      - path: ../shared/reader/epub.min.js
         buildPhase: resources
-      - path: BookstrIOS/ReaderAssets/jszip.min.js
+      - path: ../shared/reader/jszip.min.js
         buildPhase: resources
     dependencies:
       - package: swift-nostr

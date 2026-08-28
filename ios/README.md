@@ -15,8 +15,8 @@ parity where iOS permits it.
 
 ## Build
 
-Open `BookstrIOS.xcodeproj` in Xcode. The project bundles `reader.html`, epub.js,
-and JSZip directly from the Android asset directory so both apps exercise the
-same EPUB implementation.
+Open `BookstrIOS.xcodeproj` in Xcode. The project bundles the canonical mobile
+reader runtime from `../shared/reader/`, so both native apps exercise the same
+EPUB implementation.
 
 Minimum iOS version: 17.0.
