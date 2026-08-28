@@ -82,11 +82,11 @@ export async function resolveLibVaultService(fetchImpl = fetch) {
 export async function sendLibVaultFetchRequest(book, options = {}) {
   const signer = options.signer || globalThis.window?.nostr;
   if (!signer?.getPublicKey || !signer?.signEvent || !signer?.nip44?.encrypt) {
-    throw new Error('NIP-07 with NIP-44 support is required');
+    throw new Error('A Nostr signer with NIP-44 support is required');
   }
   const service = await resolveLibVaultService(options.fetchImpl || fetch);
   const senderPubkey = String(await signer.getPublicKey()).toLowerCase();
-  if (!validHex(senderPubkey, 64)) throw new Error('The NIP-07 signer returned an invalid public key');
+  if (!validHex(senderPubkey, 64)) throw new Error('The Nostr signer returned an invalid public key');
 
   const id = requestId();
   const tools = await (options.loadTools || (() => import('./vendor/nostr-tools.js')))();
@@ -105,7 +105,7 @@ export async function sendLibVaultFetchRequest(book, options = {}) {
 export async function sendLibVaultFavoritesSync(favorites, options = {}) {
   const signer = options.signer || globalThis.window?.nostr;
   if (!signer?.getPublicKey || !signer?.signEvent || !signer?.nip44?.encrypt) {
-    throw new Error('NIP-07 with NIP-44 support is required');
+    throw new Error('A Nostr signer with NIP-44 support is required');
   }
   const md5s = [...new Set((Array.isArray(favorites) ? favorites : [])
     .map(item => String(item?.md5 || item || '').toLowerCase())
@@ -113,7 +113,7 @@ export async function sendLibVaultFavoritesSync(favorites, options = {}) {
   if (md5s.length > 5000) throw new Error('Too many favorites to sync with LibVault');
   const service = await resolveLibVaultService(options.fetchImpl || fetch);
   const senderPubkey = String(await signer.getPublicKey()).toLowerCase();
-  if (!validHex(senderPubkey, 64)) throw new Error('The NIP-07 signer returned an invalid public key');
+  if (!validHex(senderPubkey, 64)) throw new Error('The Nostr signer returned an invalid public key');
   const id = requestId();
   const tools = await (options.loadTools || (() => import('./vendor/nostr-tools.js')))();
   const wrap = await createPrivateRequestWrap({
@@ -259,13 +259,13 @@ function listenForSearchResponse(requestID, service, senderPubkey, signer, tools
 export async function searchLibVault(query, searchType = 'all', options = {}) {
   const signer = options.signer || globalThis.window?.nostr;
   if (!signer?.getPublicKey || !signer?.signEvent || !signer?.nip44?.encrypt || !signer?.nip44?.decrypt) {
-    throw new Error('NIP-07 with NIP-44 support is required');
+    throw new Error('A Nostr signer with NIP-44 support is required');
   }
   const publish = options.publish;
   if (typeof publish !== 'function' && !options.listen) throw new Error('No Nostr relay publisher is available');
   const service = await resolveLibVaultService(options.fetchImpl || fetch);
   const senderPubkey = String(await signer.getPublicKey()).toLowerCase();
-  if (!validHex(senderPubkey, 64)) throw new Error('The NIP-07 signer returned an invalid public key');
+  if (!validHex(senderPubkey, 64)) throw new Error('The Nostr signer returned an invalid public key');
   const tools = await (options.loadTools || (() => import('./vendor/nostr-tools.js')))();
   const id = requestId();
   let receivedTraced = false;

@@ -903,7 +903,7 @@ test('searchLibVault requires a decrypt-capable NIP-44 signer', async () => {
       }),
       publish: async () => true,
     }),
-    /NIP-07 with NIP-44 support is required/,
+    /A Nostr signer with NIP-44 support is required/,
   );
 });
 
@@ -2290,7 +2290,7 @@ test('sendLibVaultFetchRequest requires a NIP-44 signer', async () => {
       }),
       publish: async () => true,
     }),
-    /NIP-07 with NIP-44 support is required/,
+    /A Nostr signer with NIP-44 support is required/,
   );
 });
 
@@ -2322,7 +2322,7 @@ test('sendLibVaultFetchRequest requires a signer that can sign events', async ()
       }),
       publish: async () => true,
     }),
-    /NIP-07 with NIP-44 support is required/,
+    /A Nostr signer with NIP-44 support is required/,
   );
 });
 
