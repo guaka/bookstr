@@ -275,10 +275,6 @@ class DictionaryRepository(context: Context? = null) {
         val languageIndex = lines.indexOfFirst { headingText(it).equals(wanted, ignoreCase = true) }
         if (languageIndex < 0) return "" to emptyList()
         val languageLevel = headingLevel(lines[languageIndex])
-        val end = (languageIndex + 1 until lines.size).firstOrNull { index ->
-            val level = headingLevel(lines[index])
-            level in 1..languageLevel
-        } ?: lines.size
         val ignored = Regex(
             "^(Etimologia|Pronúncia|Tradução|Ver também|Ligações externas|Etymology.*|Pronunciation|Translations|Related terms|Derived terms|See also|Further reading|Anagrams)$",
             RegexOption.IGNORE_CASE,
@@ -286,13 +282,16 @@ class DictionaryRepository(context: Context? = null) {
         var partOfSpeech = ""
         val definitions = mutableListOf<String>()
         var accepting = false
-        for (index in languageIndex + 1 until end) {
+        for (index in languageIndex + 1 until lines.size) {
             val line = lines[index]
             val level = headingLevel(line)
-            if (level > languageLevel) {
+            if (level > 0) {
+                if (level <= languageLevel) break
                 val heading = headingText(line)
-                accepting = !ignored.matches(heading) && heading.isNotBlank()
-                if (accepting && partOfSpeech.isBlank()) partOfSpeech = heading
+                if (accepting) break
+                if (ignored.matches(heading) || heading.isBlank()) continue
+                accepting = true
+                partOfSpeech = heading
                 continue
             }
             if (!accepting || line.isBlank()) continue

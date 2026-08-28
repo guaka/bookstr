@@ -82,6 +82,75 @@ class DictionaryRepositoryTest {
     }
 
     @Test
+    fun stopsAtTheFirstSectionBoundaryAfterDefinitionsBegin() {
+        val parsed = DictionaryRepository().parseExtract(
+            """
+              = English =
+              == ==
+              == Pronunciation ==
+              IPA: /test/
+              == Verb ==
+              first definition
+              second definition
+              == Etymology ==
+              must not be included
+              == Noun ==
+              also must not be included
+              = French =
+              == Nom ==
+              encore excluded
+            """.trimIndent(),
+            "en",
+            "test",
+        )
+
+        assertEquals("Verb", parsed.first)
+        assertEquals(listOf("first definition", "second definition"), parsed.second)
+    }
+
+    @Test
+    fun stopsAtTheNextLanguageBoundaryWhenNoPartOfSpeechWasFound() {
+        val parsed = DictionaryRepository().parseExtract(
+            """
+              = English =
+              == Pronunciation ==
+              IPA: /test/
+              = French =
+              == Nom ==
+              definition that belongs to French
+            """.trimIndent(),
+            "en",
+            "test",
+        )
+
+        assertEquals("", parsed.first)
+        assertEquals(emptyList(), parsed.second)
+    }
+
+    @Test
+    fun filtersNonDefinitionLinesWithinTheSelectedPartOfSpeech() {
+        val parsed = DictionaryRepository().parseExtract(
+            """
+              = English =
+              == Verb ==
+              test
+              IPA: /test/
+              Rhymes: -est
+              Hyphenation: test
+              x
+              first definition
+              first definition
+              second definition
+            """.trimIndent(),
+            "en",
+            "test",
+        )
+
+        assertEquals("Verb", parsed.first)
+        assertEquals(listOf("first definition", "second definition"), parsed.second)
+    }
+
+    @Test
     fun limitsAndDeduplicatesExtractDefinitions() {
         val parsed = DictionaryRepository().parseExtract(
             """
