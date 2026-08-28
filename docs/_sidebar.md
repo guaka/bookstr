@@ -1,4 +1,6 @@
 - [Overview](README.md)
+- [Client architecture](CLIENT_ARCHITECTURE.md)
+- [Client capabilities](CLIENT_CAPABILITIES.md)
 - [TTS direction](TTS.md)
 - [Design](DESIGN.md)
 - [Kindle](KINDLE.md)

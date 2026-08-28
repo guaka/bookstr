@@ -74,9 +74,13 @@ Blossom access controls are not DRM. An authorized reader receives the original 
 
 ## Develop Bookstr
 
-The repository contains three clients that share formats and reader behavior:
+The repository contains four client shells built around a shared core of
+formats, fixtures, and reader behavior. See the
+[client architecture](./docs/CLIENT_ARCHITECTURE.md) and generated
+[capability matrix](./docs/CLIENT_CAPABILITIES.md).
 
 - `web/` — a static HTML, CSS, and JavaScript app with no build step or runtime backend.
+- `desktop/` — an Electron shell around the static web client with desktop protocol adapters.
 - `android/` — a native Kotlin and Jetpack Compose app using a bundled epub.js reader and Android's PDF renderer.
 - `ios/` — a native SwiftUI app using the shared epub.js assets and PDFKit.
 - `worker/` — the optional Books API and dictionary proxy for the hosted web client.
