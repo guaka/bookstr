@@ -17,6 +17,8 @@ final class SettingsRepository: ObservableObject {
         static let nip46ClientPubkey = "nip46_client_pubkey"
         static let cachedFavoritesPrefix = "nostr_favorites_"
         static let cachedFavoritesEventPrefix = "nostr_favorites_event_"
+        static let favoriteOutboxPrefix = "nostr_favorites_outbox_"
+        static let favoritePublishTimestampPrefix = "nostr_favorites_timestamp_"
         static let cachedCollectionsPrefix = "nostr_collections_"
         static let keepDownloadedCollections = "keep_downloaded_collections"
         static let lastApplicationDataSync = "last_application_data_sync"
@@ -190,6 +192,32 @@ final class SettingsRepository: ObservableObject {
 
     func cachedFavoritesEventId(pubkey: String) -> String? {
         defaults.string(forKey: Keys.cachedFavoritesEventPrefix + pubkey.lowercased())
+    }
+
+    func saveFavoriteOutbox(pubkey: String, snapshot: FavoritePendingSnapshot) {
+        guard let data = try? JSONEncoder().encode(snapshot) else { return }
+        defaults.set(data, forKey: Keys.favoriteOutboxPrefix + pubkey.lowercased())
+    }
+
+    func favoriteOutbox(pubkey: String) -> FavoritePendingSnapshot? {
+        guard let data = defaults.data(forKey: Keys.favoriteOutboxPrefix + pubkey.lowercased()) else { return nil }
+        return try? JSONDecoder().decode(FavoritePendingSnapshot.self, from: data)
+    }
+
+    /// Only clears the snapshot it successfully published. A newer tap may
+    /// have replaced the outbox while a relay request was still in flight.
+    func clearFavoriteOutbox(pubkey: String, timestamp: Int64) {
+        let key = Keys.favoriteOutboxPrefix + pubkey.lowercased()
+        guard favoriteOutbox(pubkey: pubkey)?.timestamp == timestamp else { return }
+        defaults.removeObject(forKey: key)
+    }
+
+    func nextFavoritePublishTimestamp(pubkey: String, wallClock: Int64) -> Int64 {
+        let key = Keys.favoritePublishTimestampPrefix + pubkey.lowercased()
+        let previous = defaults.object(forKey: key) as? Int64 ?? 0
+        let timestamp = max(wallClock, previous + 1)
+        defaults.set(timestamp, forKey: key)
+        return timestamp
     }
 
     func cacheNostrCollections(pubkey: String, snapshot: CollectionSnapshot) {
