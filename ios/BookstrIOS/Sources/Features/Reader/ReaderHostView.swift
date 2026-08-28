@@ -752,18 +752,42 @@ enum FB2Parser {
 private final class FB2XMLNode {
     let name: String
     let attributes: [String: String]
-    var text = ""
     var children: [FB2XMLNode] = []
+    private var contents: [FB2XMLContent] = []
 
     init(name: String, attributes: [String: String]) { self.name = name; self.attributes = attributes }
+    func appendText(_ value: String) {
+        guard !value.isEmpty else { return }
+        if case let .text(previous)? = contents.last {
+            contents[contents.count - 1] = .text(previous + value)
+        } else {
+            contents.append(.text(value))
+        }
+    }
+    func appendChild(_ child: FB2XMLNode) {
+        children.append(child)
+        contents.append(.child(child))
+    }
     var localName: String { name.split(separator: ":").last.map(String.init) ?? name }
-    var textValue: String { text + children.map(\.textValue).joined() }
+    var textValue: String {
+        contents.map { content in
+            switch content {
+            case let .text(value): return value
+            case let .child(child): return child.textValue
+            }
+        }.joined()
+    }
     func first(named name: String) -> FB2XMLNode? { children.first { $0.localName == name } }
     func firstDescendant(named name: String) -> FB2XMLNode? {
         if localName == name { return self }
         for child in children { if let found = child.firstDescendant(named: name) { return found } }
         return nil
     }
+}
+
+private enum FB2XMLContent {
+    case text(String)
+    case child(FB2XMLNode)
 }
 
 private final class FB2XMLDelegate: NSObject, XMLParserDelegate {
@@ -776,11 +800,11 @@ private final class FB2XMLDelegate: NSObject, XMLParserDelegate {
         stack.append(node)
     }
 
-    func parser(_ parser: XMLParser, foundCharacters string: String) { stack.last?.text.append(string) }
+    func parser(_ parser: XMLParser, foundCharacters string: String) { stack.last?.appendText(string) }
 
     func parser(_ parser: XMLParser, didEndElement elementName: String, namespaceURI: String?, qualifiedName qName: String?) {
         guard let node = stack.popLast() else { return }
-        if let parent = stack.last { parent.children.append(node) } else { root = node }
+        if let parent = stack.last { parent.appendChild(node) } else { root = node }
     }
 }
 

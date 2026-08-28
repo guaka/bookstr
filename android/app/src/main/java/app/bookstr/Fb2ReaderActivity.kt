@@ -46,6 +46,7 @@ import androidx.lifecycle.lifecycleScope
 import app.bookstr.data.BookFormat
 import app.bookstr.data.BookRights
 import app.bookstr.data.BookRightsMetadata
+import app.bookstr.data.CatalogRepository
 import app.bookstr.data.ReaderSession
 import app.bookstr.ui.RightsMarker
 import app.bookstr.ui.theme.BookstrThemeFromSettings
@@ -376,7 +377,7 @@ private fun Fb2ReaderScreen(title: String, author: String?, year: String?, right
         when {
             error != null -> Text(error ?: "Cannot open FB2", color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(24.dp))
             doc == null -> CircularProgressIndicator(Modifier.padding(24.dp))
-            else -> LazyColumn(state = listState, Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
+            else -> LazyColumn(state = listState, modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
                 itemsIndexed(blocks, key = { _, block -> "${block.sectionID}:${block.paragraphIndex}" }) { index, block ->
                     block.title?.let { title -> Text(title, fontSize = 22.sp, fontWeight = FontWeight.Bold,
                         modifier = Modifier.padding(top = if (index == 0) 18.dp else 28.dp, bottom = 8.dp)) }
