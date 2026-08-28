@@ -13,6 +13,84 @@ import WebKit
 #endif
 
 final class FavoritesParserTests: XCTestCase {
+    func testSharedCollectionSemanticsV1Fixtures() throws {
+        let fixture = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: Data(contentsOf: collectionSemanticsFixtureURL())) as? [String: Any]
+        )
+        XCTAssertEqual(fixture["version"] as? Int, 1)
+        for entry in try XCTUnwrap(fixture["indexCases"] as? [[String: Any]]) {
+            let name = try XCTUnwrap(entry["name"] as? String)
+            let expected = try XCTUnwrap(entry["expected"] as? [String: Any])
+            let actual = FavoritesParser.parseCollectionIndex(try XCTUnwrap(entry["plaintext"] as? String))
+            let entries = actual.entries.map {
+                ["id": $0.id, "title": $0.title, "updatedAt": $0.updatedAt] as [String: Any]
+            }
+            let tombstones = actual.tombstones.map {
+                ["id": $0.id, "deletedAt": $0.deletedAt] as [String: Any]
+            }
+            XCTAssertTrue(
+                NSArray(array: entries).isEqual(to: try XCTUnwrap(expected["entries"] as? [[String: Any]])),
+                name
+            )
+            XCTAssertTrue(
+                NSArray(array: tombstones).isEqual(to: try XCTUnwrap(expected["tombstones"] as? [[String: Any]])),
+                name
+            )
+        }
+
+        for entry in try XCTUnwrap(fixture["collectionCases"] as? [[String: Any]]) {
+            let name = try XCTUnwrap(entry["name"] as? String)
+            let collection = FavoritesParser.parseCollection(
+                try XCTUnwrap(entry["plaintext"] as? String),
+                id: try XCTUnwrap(entry["id"] as? String),
+                fallbackTitle: try XCTUnwrap(entry["fallbackTitle"] as? String),
+                fallbackUpdatedAt: try XCTUnwrap(entry["fallbackUpdatedAt"] as? Int64
+                    ?? (entry["fallbackUpdatedAt"] as? NSNumber)?.int64Value)
+            )
+            guard let expected = entry["expected"] as? [String: Any] else {
+                XCTAssertNil(collection, name)
+                continue
+            }
+            let value = try XCTUnwrap(collection, name)
+            let items = value.items.map(canonicalFavoriteReference)
+            let actual: [String: Any] = [
+                "id": value.id,
+                "title": value.title,
+                "description": value.description,
+                "updatedAt": value.updatedAt,
+                "items": items,
+            ]
+            XCTAssertTrue(NSDictionary(dictionary: actual).isEqual(to: expected), name)
+        }
+    }
+
+    private func collectionSemanticsFixtureURL() -> URL {
+        URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent("shared/fixtures/collection-semantics-v1.json")
+    }
+
+    private func canonicalFavoriteReference(_ ref: SharedFavoriteRef) -> [String: Any] {
+        let type: String
+        let identifier: String
+        let locator: String
+        if let value = ref.libvaultMd5 {
+            (type, identifier, locator) = ("libvault", value, ref.url ?? "")
+        } else if let value = ref.bookstrId {
+            (type, identifier, locator) = ("bookstr", value, ref.url ?? "")
+        } else if let value = ref.isbn {
+            (type, identifier, locator) = ("isbn", value, ref.url ?? "")
+        } else if let value = ref.blossomSha256 {
+            (type, identifier, locator) = ("blossom", value, ref.blossomUrl ?? "")
+        } else {
+            (type, identifier, locator) = ("url", ref.url ?? "", ref.url ?? "")
+        }
+        return ["type": type, "identifier": identifier, "locator": locator, "addedAt": ref.addedAt ?? 0]
+    }
+
     func testSharedFavoriteReferenceV1Fixtures() throws {
         let fixture = try XCTUnwrap(
             JSONSerialization.jsonObject(with: Data(contentsOf: favoriteReferenceFixtureURL())) as? [String: Any]
@@ -22,23 +100,7 @@ final class FavoritesParserTests: XCTestCase {
             let name = try XCTUnwrap(entry["name"] as? String)
             let tags = try XCTUnwrap(entry["tags"] as? [Any])
             let expected = try XCTUnwrap(entry["expected"] as? [[String: Any]])
-            let actual = FavoritesParser.parseSharedFavoriteTags(tags).map { ref -> [String: Any] in
-                let type: String
-                let identifier: String
-                let locator: String
-                if let value = ref.libvaultMd5 {
-                    (type, identifier, locator) = ("libvault", value, ref.url ?? "")
-                } else if let value = ref.bookstrId {
-                    (type, identifier, locator) = ("bookstr", value, ref.url ?? "")
-                } else if let value = ref.isbn {
-                    (type, identifier, locator) = ("isbn", value, ref.url ?? "")
-                } else if let value = ref.blossomSha256 {
-                    (type, identifier, locator) = ("blossom", value, ref.blossomUrl ?? "")
-                } else {
-                    (type, identifier, locator) = ("url", ref.url ?? "", ref.url ?? "")
-                }
-                return ["type": type, "identifier": identifier, "locator": locator, "addedAt": ref.addedAt ?? 0]
-            }
+            let actual = FavoritesParser.parseSharedFavoriteTags(tags).map(canonicalFavoriteReference)
             XCTAssertTrue(NSArray(array: actual).isEqual(to: expected), name)
         }
     }

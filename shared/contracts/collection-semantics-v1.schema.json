@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bookstr.app/contracts/collection-semantics-v1.schema.json",
+  "title": "Bookstr decrypted collection compatibility cases v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "indexCases", "collectionCases"],
+  "properties": {
+    "version": { "const": 1 },
+    "indexCases": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "plaintext", "expected"],
+        "properties": {
+          "name": { "type": "string", "minLength": 1 },
+          "plaintext": { "type": "string" },
+          "expected": {
+            "type": "object",
+            "required": ["entries", "tombstones"],
+            "properties": {
+              "entries": { "type": "array" },
+              "tombstones": { "type": "array" }
+            }
+          }
+        }
+      }
+    },
+    "collectionCases": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "plaintext", "id", "fallbackTitle", "fallbackUpdatedAt", "expected"],
+        "properties": {
+          "name": { "type": "string", "minLength": 1 },
+          "plaintext": { "type": "string" },
+          "id": { "type": "string" },
+          "fallbackTitle": { "type": "string" },
+          "fallbackUpdatedAt": { "type": "integer" },
+          "expected": { "type": ["object", "null"] }
+        }
+      }
+    }
+  }
+}
