@@ -8,9 +8,20 @@ struct LibraryView: View {
     @State private var openError: String?
     @State private var openingBookID: String?
     @State private var rightsDetails: RightsDetailsItem?
+    @AppStorage("library_sort") private var selectedSort = LibrarySort.recent
 
     var body: some View {
-        List {
+        let sortedReading = LibraryViewModel.sorted(
+            viewModel.reading, by: selectedSort, progress: viewModel.progress
+        )
+        let sortedFavorites = LibraryViewModel.sorted(
+            viewModel.favorites, by: selectedSort, progress: viewModel.progress
+        )
+        let sortedExternalFavorites = LibraryViewModel.sorted(
+            viewModel.externalFavorites, by: selectedSort
+        )
+
+        return List {
             if let error = viewModel.errorMessage {
                 Section {
                     Button(error) {
@@ -25,7 +36,7 @@ struct LibraryView: View {
                     Text("Books you open will appear here with their progress.")
                         .foregroundStyle(.secondary)
                 } else {
-                    ForEach(viewModel.reading) { book in
+                    ForEach(sortedReading) { book in
                         Button { open(book) } label: {
                             bookRow(book, showProgress: true)
                         }
@@ -45,7 +56,7 @@ struct LibraryView: View {
                     Text(emptyFavoritesCopy)
                         .foregroundStyle(.secondary)
                 } else {
-                    ForEach(viewModel.favorites) { book in
+                    ForEach(sortedFavorites) { book in
                         Button { open(book) } label: {
                             bookRow(book, showProgress: false)
                         }
@@ -57,7 +68,7 @@ struct LibraryView: View {
                             Button("Rights details") { rightsDetails = details(for: book) }
                         }
                     }
-                    ForEach(viewModel.externalFavorites) { favorite in
+                    ForEach(sortedExternalFavorites) { favorite in
                         Button {
                             if let book = CatalogRepository.fromExternalFavorite(favorite) {
                                 open(book)
@@ -105,6 +116,21 @@ struct LibraryView: View {
         .contentMargins(.top, 8, for: .scrollContent)
         .contentMargins(.horizontal, 0, for: .scrollContent)
         .bookstrScreenTitle("Library")
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Menu {
+                    Picker("Sort books", selection: $selectedSort) {
+                        ForEach(LibrarySort.allCases) { option in
+                            Text(option.label).tag(option)
+                        }
+                    }
+                } label: {
+                    Image(systemName: "arrow.up.arrow.down")
+                }
+                .accessibilityLabel("Sort books")
+                .accessibilityIdentifier("library-sort")
+            }
+        }
         .fullScreenCover(item: $selectedBook) { book in
             ReaderHostView(book: book, preparedURL: selectedBookURL)
                 .id(book.id)
