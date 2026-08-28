@@ -1,16 +1,8 @@
 name: Deploy web to GitHub Pages
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - 'web/**'
-      - 'docs/**'
-      - 'README.md'
-      - 'scripts/test-overview.mjs'
-      - '.github/workflows/deploy-web.yml'
   workflow_run:
-    workflows: [CI, Android CI, iOS CI]
+    workflows: [CI]
     types: [completed]
   workflow_dispatch:
 
@@ -22,14 +14,16 @@ permissions:
 
 concurrency:
   group: pages
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   build:
-    if: github.event_name != 'workflow_run' || github.event.workflow_run.head_branch == 'main'
+    if: github.event_name != 'workflow_run' || (github.event.workflow_run.head_branch == 'main' && github.event.workflow_run.conclusion != 'cancelled')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -108,29 +102,13 @@ jobs:
           path: web
 
   deploy:
-    if: github.event_name != 'workflow_run' || github.event.workflow_run.head_branch == 'main'
+    if: github.event_name != 'workflow_run' || (github.event.workflow_run.head_branch == 'main' && github.event.workflow_run.conclusion != 'cancelled')
     needs: build
     runs-on: ubuntu-latest
     environment:
       name: github-pages
-      url: ${{ steps.deployment_1.outputs.page_url || steps.deployment_2.outputs.page_url || steps.deployment_3.outputs.page_url }}
+      url: ${{ steps.deployment.outputs.page_url }}
     steps:
-      - name: Deploy to Pages (attempt 1)
-        id: deployment_1
-        uses: actions/deploy-pages@v4
-        continue-on-error: true
-      - name: Wait before retry
-        if: steps.deployment_1.outcome == 'failure'
-        run: sleep 30
-      - name: Deploy to Pages (attempt 2)
-        id: deployment_2
-        if: steps.deployment_1.outcome == 'failure'
-        uses: actions/deploy-pages@v4
-        continue-on-error: true
-      - name: Wait before final retry
-        if: steps.deployment_1.outcome == 'failure' && steps.deployment_2.outcome == 'failure'
-        run: sleep 60
-      - name: Deploy to Pages (attempt 3)
-        id: deployment_3
-        if: steps.deployment_1.outcome == 'failure' && steps.deployment_2.outcome == 'failure'
+      - name: Deploy to Pages
+        id: deployment
         uses: actions/deploy-pages@v4
