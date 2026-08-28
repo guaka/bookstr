@@ -220,11 +220,11 @@ The canonical field positions are:
   ["r", "https://lib.b.bfr.ee/#book?md5=<md5>"],
   ["libvault", "<md5>"],
   ["libvault-added", "<md5>", "<unix-seconds>"],
-  ["libvault-book", "<md5>", "<title>", "<author>", "<format>", "<size-bytes>", "<year>"],
+  ["libvault-book", "<md5>", "<title>", "<author>", "<format>", "<size-bytes>", "<year>", "<language>", "<source>", "<cover-url>", "<cover-sha256>", "<rights-status>", "<license>", "<license-url>", "<rights-source>"],
   ["blossom", "<md5>", "<sha256>", "<https-url>", "<format>"],
   ["i", "isbn:9780123456789", "https://lib.b.bfr.ee/#book?md5=<md5>"],
   ["k", "isbn"],
-  ["bookstr", "<book-id>", "<title>", "<author>", "<url>"]
+  ["bookstr", "<book-id>", "<title>", "<author>", "<url>", "<format>", "<year>", "<language>", "<source>", "<cover-url>", "<cover-sha256>", "<rights-status>", "<license>", "<license-url>", "<rights-source>"]
 ]
 ```
 
@@ -243,6 +243,9 @@ The canonical field positions are:
   permits a final `X`, and ISBN-13 contains 13 digits. The optional third `i`
   value is a URL hint.
 - `bookstr` identifies a Bookstr-native book that has no LibVault MD5.
+- Rights fields use `public_domain`, `open_license`, `copyrighted`, or
+  `unknown`. Empty rights fields in older records decode as `unknown` and must
+  not erase explicit metadata already stored locally.
 
 Current Bookstr web builds also emit `bookstr-book` with fields
 `book-id, title, author, format, size-bytes, year, url`. Readers should accept
@@ -253,7 +256,9 @@ LibVault MD5, normalized ISBN, source URL, or Blossom SHA-256. A valid unmatched
 reference remains an external favorite rather than being discarded.
 
 Compact list writers that can provide publication descriptors add
-`["bookstr-publications", "1"]` to the encrypted private tags. For each compact
+`["bookstr-publications", "2"]` to the encrypted private tags. Version 2 adds
+the canonical rights fields to publication descriptors. Readers continue to
+accept version 1 and records with no marker. For each compact
 `book` membership tag they may also include the existing `libvault-book` tag
 and, when a verified copy exists, the existing `blossom` tag. These descriptor
 tags are encrypted auxiliary data, not additional collection memberships.

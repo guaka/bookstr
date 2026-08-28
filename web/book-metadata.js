@@ -74,6 +74,81 @@
     return match?.[1] || '';
   }
 
+  function safeLicenseUrl(value) {
+    const raw = String(value || '').trim();
+    if (!raw) return '';
+    try {
+      const parsed = new URL(raw);
+      return ['http:', 'https:'].includes(parsed.protocol) ? parsed.href : '';
+    } catch {
+      return '';
+    }
+  }
+
+  function normalizeRights(ref) {
+    const source = ref && typeof ref === 'object' ? ref : {};
+    const metadata = metadataObject(source.metadata);
+    const aliases = {
+      public_domain: 'public_domain', 'public-domain': 'public_domain', 'public domain': 'public_domain', pd: 'public_domain',
+      open_license: 'open_license', 'open-license': 'open_license', 'open license': 'open_license', open: 'open_license',
+      copyrighted: 'copyrighted', copyright: 'copyrighted',
+    };
+    let rightsStatus = aliases[String(
+      source.rights_status || source.rightsStatus || metadata.rights_status || metadata.rightsStatus || '',
+    ).trim().toLowerCase()] || 'unknown';
+    let license = String(source.license || source.rights || metadata.license || metadata.rights || '').trim();
+    let licenseUrl = safeLicenseUrl(
+      source.license_url || source.licenseUrl || metadata.license_url || metadata.licenseUrl,
+    );
+    const copyright = source.copyright ?? metadata.copyright;
+    if (!licenseUrl) {
+      const match = license.match(/https?:\/\/[^\s<>"']+/i);
+      if (match) licenseUrl = safeLicenseUrl(match[0].replace(/[),.;]+$/, ''));
+    }
+    if (rightsStatus === 'unknown' && typeof copyright === 'boolean') {
+      rightsStatus = copyright ? 'copyrighted' : 'public_domain';
+      if (!copyright && !license) license = 'Public domain in the U.S.';
+    }
+    if (rightsStatus === 'unknown') {
+      const evidence = `${license} ${licenseUrl}`.toLowerCase();
+      if (/public[ -]domain|no known copyright restrictions|creativecommons\.org\/publicdomain\/(?:zero|mark)|\bcc0(?:\s|$|[./-])/.test(evidence)) rightsStatus = 'public_domain';
+      else if (/creative commons|creativecommons\.org\/licenses\/|\bcc[ -]?by|gnu free documentation|\bgfdl\b|free art license|open publication license|unlicense/.test(evidence)) rightsStatus = 'open_license';
+      else if (/all rights reserved|copyrighted|copyright ©|^©/.test(evidence)) rightsStatus = 'copyrighted';
+    }
+    return {
+      rights_status: rightsStatus,
+      license,
+      license_url: licenseUrl,
+      rights_source: String(
+        source.rights_source || source.rightsSource || metadata.rights_source || metadata.rightsSource || '',
+      ).trim(),
+    };
+  }
+
+  function rightsLabel(ref) {
+    const rights = normalizeRights(ref);
+    const cc = rights.license.match(/\b(CC0|CC[ -]BY(?:-NC)?(?:-ND|-SA)?)(?:[ -]?(\d(?:\.\d)?))?\b/i);
+    if (rights.rights_status === 'public_domain') return cc?.[1]?.toUpperCase() === 'CC0' ? 'CC0' : 'PD';
+    if (rights.rights_status === 'open_license') return cc ? `${cc[1].toUpperCase()}${cc[2] ? ` ${cc[2]}` : ''}` : 'OPEN';
+    return '©';
+  }
+
+  function rightsAccessibleLabel(ref) {
+    const rights = normalizeRights(ref);
+    if (rights.rights_status === 'copyrighted') return 'Copyrighted';
+    if (rights.rights_status === 'unknown') return 'No open license identified';
+    return rights.license || (rights.rights_status === 'public_domain' ? 'Public domain' : 'Open license');
+  }
+
+  function preferredRights(existing, incoming) {
+    const current = normalizeRights(existing);
+    const next = normalizeRights(incoming);
+    if (next.rights_status !== 'unknown') return next;
+    if (current.rights_status !== 'unknown') return current;
+    if (next.license || next.license_url || next.rights_source) return next;
+    return current;
+  }
+
   function authorSearchName(value) {
     return String(value || '')
       .replace(/\s*\((?:c\.?\s*)?\d{3,4}\??\s*[-–—]\s*(?:\d{0,4}\??|present)?\)\s*$/i, '')
@@ -120,6 +195,8 @@
       entries.push(entry);
     }
     const favoriteAddedAt = earliestFavoriteAddedAt(entry.favoriteAddedAt, incoming?.favoriteAddedAt);
+    const existingRights = normalizeRights(entry);
+    const incomingRights = normalizeRights(incoming);
     for (const [key, value] of Object.entries(incoming || {})) {
       if (value === '' || value == null) continue;
       if (key === 'title') {
@@ -128,6 +205,7 @@
         entry[key] = value;
       }
     }
+    Object.assign(entry, preferredRights(existingRights, incomingRights));
     if (favoriteAddedAt) entry.favoriteAddedAt = favoriteAddedAt;
     return entry;
   }
@@ -288,6 +366,7 @@
         }
       }
       next.title = title;
+      Object.assign(next, preferredRights(existing, book));
       if (!next.authors) next.authors = next.author || '';
       if (favoriteAddedAt) next.favoriteAddedAt = favoriteAddedAt;
       merged.set(identity, next);
@@ -341,6 +420,7 @@
       publisher: incoming.publisher || incoming.publishers?.[0] || '',
       blossomUrl: incoming.blossomUrl || incoming.blossom_url || '',
       blossomSha256: incoming.blossomSha256 || incoming.blossom_sha256 || incoming.sha256 || '',
+      ...normalizeRights(incoming),
     };
     for (const [field, value] of Object.entries(fields)) {
       if (!value || (field === 'title' && isPlaceholderTitle(value))) continue;
@@ -349,6 +429,7 @@
         if (provenance) next.metadataProvenance[field] = provenance;
       }
     }
+    Object.assign(next, preferredRights(base, incoming));
     next.metadataLookupComplete = true;
     return next;
   }
@@ -376,7 +457,7 @@
     const add = (book, status) => {
       let entry = merged.find(item => sameLibraryBook(item, book));
       if (!entry) {
-        entry = { ...book };
+        entry = { ...book, ...normalizeRights(book) };
         merged.push(entry);
       } else {
         const existingTitle = resolveTitle(entry);
@@ -388,6 +469,7 @@
           if ((key === 'author' || key === 'authors') && existingHasRealTitle && !incomingHasRealTitle) continue;
           entry[key] = value;
         }
+        Object.assign(entry, preferredRights(entry, book));
         entry.title = incomingHasRealTitle ? incomingTitle : existingTitle;
       }
       if (status === 'reading') {
@@ -415,6 +497,10 @@
     resolveTitle,
     languageForBook,
     yearForBook,
+    normalizeRights,
+    preferredRights,
+    rightsLabel,
+    rightsAccessibleLabel,
     authorSearchName,
     readingProgressForBook,
     normalizeFavoriteAddedAt,

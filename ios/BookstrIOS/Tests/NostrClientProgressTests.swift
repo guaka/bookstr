@@ -6,6 +6,17 @@ import XCTest
 #endif
 
 final class NostrClientProgressTests: XCTestCase {
+    func testProgressRoundTripsRightsMetadata() throws {
+        let content = NostrClient.progressContent(
+            bookId: "book", progression: 0.4, cfi: "cfi", title: "Open", author: "Author", updatedAt: 1,
+            rights: BookRights(status: .openLicense, license: "CC BY 4.0", licenseURL: nil, source: "catalog")
+        )
+        let rights = NostrClient.parseProgressRights(content)
+        XCTAssertEqual(rights.status, .openLicense)
+        XCTAssertEqual(rights.license, "CC BY 4.0")
+        XCTAssertEqual(rights.source, "catalog")
+    }
+
     func testProgressContentRoundTrip() {
         let content = NostrClient.progressContent(
             bookId: "book-1",

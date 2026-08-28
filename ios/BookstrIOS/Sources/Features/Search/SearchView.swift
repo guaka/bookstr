@@ -13,6 +13,7 @@ struct SearchView: View {
     @State private var externalFavorites: [ExternalFavorite] = []
     @State private var favoriteBusyID: String?
     @State private var actionMessage: String?
+    @State private var rightsDetails: RightsDetailsItem?
 
     var body: some View {
         Group {
@@ -25,12 +26,27 @@ struct SearchView: View {
                             VStack(alignment: .leading, spacing: 4) {
                                 Text(result.title).font(.headline).foregroundStyle(.primary)
                                 Text(result.author).font(.subheadline).foregroundStyle(.secondary)
-                                Text(metadata(result)).font(.caption).foregroundStyle(.secondary)
+                                HStack(spacing: 5) {
+                                    if let year = result.year { Text(year) }
+                                    RightsBadge(rights: result.rights)
+                                    let details = metadata(result)
+                                    if !details.isEmpty { Text("· \(details)") }
+                                }
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
                             }
                             .frame(maxWidth: .infinity, alignment: .leading)
                         }
                         .buttonStyle(.plain)
                         .disabled(!result.isReadable || openingBookID != nil)
+                        .contextMenu {
+                            Button("Rights details") {
+                                rightsDetails = RightsDetailsItem(
+                                    title: result.title, author: result.author, year: result.year,
+                                    format: result.format?.rawValue, rights: result.rights
+                                )
+                            }
+                        }
 
                         Button { Task { await toggleFavorite(result) } } label: {
                             if favoriteBusyID == result.id {
@@ -64,6 +80,7 @@ struct SearchView: View {
             }
         }
         .fullScreenCover(item: $openedBook) { ReaderHostView(book: $0) }
+        .sheet(item: $rightsDetails) { RightsDetailsView(item: $0) }
         .task {
             knownBooks = container.catalogRepository.downloadedBooks()
             refreshFavoriteIDs()
@@ -142,7 +159,9 @@ struct SearchView: View {
             epubUrl: favorite.blossomUrl ?? favorite.url ?? "", coverUrl: nil,
             sourceUrl: favorite.url, isbn: favorite.isbn, libvaultMd5: favorite.libvaultMd5,
             format: BookFormat.from(format: favorite.format, url: favorite.blossomUrl ?? favorite.url ?? ""),
-            blossomSha256: favorite.blossomSha256, year: favorite.year
+            blossomSha256: favorite.blossomSha256, year: favorite.year,
+            rightsStatus: favorite.rightsStatus, license: favorite.license,
+            licenseUrl: favorite.licenseUrl, rightsSource: favorite.rightsSource
         )
     }
 
@@ -153,6 +172,6 @@ struct SearchView: View {
     }
 
     private func metadata(_ result: BookSearchResult) -> String {
-        [result.year, result.publisher, result.format?.rawValue.uppercased()].compactMap { $0 }.joined(separator: " · ")
+        [result.publisher, result.format?.rawValue.uppercased()].compactMap { $0 }.joined(separator: " · ")
     }
 }

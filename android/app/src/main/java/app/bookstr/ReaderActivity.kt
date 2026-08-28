@@ -71,9 +71,12 @@ import androidx.webkit.WebViewAssetLoader
 import app.bookstr.data.ReaderTheme
 import app.bookstr.data.BookFormat
 import app.bookstr.data.ReaderSession
+import app.bookstr.data.BookRights
+import app.bookstr.data.BookRightsMetadata
 import app.bookstr.data.DictionaryDefinition
 import app.bookstr.nostr.AmberIntentSession
 import app.bookstr.ui.theme.BookstrThemeFromSettings
+import app.bookstr.ui.RightsMarker
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.json.JSONObject
@@ -104,6 +107,7 @@ class ReaderActivity : ComponentActivity() {
     private var bookTitle by mutableStateOf("")
     private var bookAuthor by mutableStateOf<String?>(null)
     private var bookYear by mutableStateOf<String?>(null)
+    private var bookRights by mutableStateOf(BookRights())
     private var bookCoverUrl: String? = null
     private var initialCfi: String? = null
     private var highlightCfi: String? = null
@@ -133,6 +137,12 @@ class ReaderActivity : ComponentActivity() {
         bookTitle = intent.getStringExtra(EXTRA_BOOK_TITLE) ?: "bookstr"
         bookAuthor = intent.getStringExtra(EXTRA_BOOK_AUTHOR)
         bookYear = intent.getStringExtra(EXTRA_BOOK_YEAR)
+        bookRights = BookRightsMetadata.normalize(
+            status = intent.getStringExtra(EXTRA_RIGHTS_STATUS),
+            license = intent.getStringExtra(EXTRA_LICENSE),
+            licenseUrl = intent.getStringExtra(EXTRA_LICENSE_URL),
+            source = intent.getStringExtra(EXTRA_RIGHTS_SOURCE),
+        )
         bookCoverUrl = intent.getStringExtra(EXTRA_BOOK_COVER_URL)
         initialCfi = intent.getStringExtra(EXTRA_INITIAL_CFI)
         highlightCfi = intent.getStringExtra(EXTRA_HIGHLIGHT_CFI)
@@ -149,6 +159,10 @@ class ReaderActivity : ComponentActivity() {
                 author = bookAuthor,
                 year = bookYear,
                 locator = lastCfi,
+                rightsStatus = bookRights.status,
+                license = bookRights.license,
+                licenseUrl = bookRights.licenseUrl,
+                rightsSource = bookRights.source,
             ),
         )
         applyLockScreenPolicy(app.settingsRepository.keepReadingOnLockScreen)
@@ -187,10 +201,14 @@ class ReaderActivity : ComponentActivity() {
                             webView?.evaluateJavascript("requestSpeechText(false);", null)
                             NarrationService.sync(this@ReaderActivity)
                         },
-                        onMetadata = { title, author, year ->
+                        onMetadata = { title, author, year, rightsStatement ->
                             title?.takeIf(String::isNotBlank)?.let { bookTitle = it }
                             author?.takeIf(String::isNotBlank)?.let { bookAuthor = it }
                             year?.takeIf(String::isNotBlank)?.let { bookYear = it }
+                            bookRights = BookRightsMetadata.preferred(
+                                bookRights,
+                                BookRightsMetadata.normalize(license = rightsStatement, source = "epub_opf"),
+                            )
                         },
                         onSections = { sections -> readerSections = sections },
                         onReaderLongPress = { selectedText ->
@@ -297,6 +315,10 @@ class ReaderActivity : ComponentActivity() {
                                     author = bookAuthor,
                                     year = bookYear,
                                     locator = cfi,
+                                    rightsStatus = bookRights.status,
+                                    license = bookRights.license,
+                                    licenseUrl = bookRights.licenseUrl,
+                                    rightsSource = bookRights.source,
                                 ),
                             )
                             lifecycleScope.launch {
@@ -308,6 +330,8 @@ class ReaderActivity : ComponentActivity() {
                                     cfi = cfi,
                                     furthestProgression = saved.furthestProgression,
                                     title = bookTitle,
+                                    author = bookAuthor,
+                                    rights = bookRights,
                                 )
                             }
                         },
@@ -332,6 +356,7 @@ class ReaderActivity : ComponentActivity() {
                         title = bookTitle,
                         author = bookAuthor,
                         year = bookYear,
+                        rights = bookRights,
                         isSpeaking = isSpeaking,
                         onBack = { closeReader() },
                         onSpeechClick = { toggleTextToSpeech() },
@@ -559,6 +584,10 @@ class ReaderActivity : ComponentActivity() {
                     author = bookAuthor,
                     year = bookYear,
                     locator = lastCfi,
+                    rightsStatus = bookRights.status,
+                    license = bookRights.license,
+                    licenseUrl = bookRights.licenseUrl,
+                    rightsSource = bookRights.source,
                 ),
             )
         }
@@ -716,6 +745,10 @@ class ReaderActivity : ComponentActivity() {
         private const val EXTRA_BOOK_TITLE = "book_title"
         private const val EXTRA_BOOK_AUTHOR = "book_author"
         private const val EXTRA_BOOK_YEAR = "book_year"
+        private const val EXTRA_RIGHTS_STATUS = "rights_status"
+        private const val EXTRA_LICENSE = "license"
+        private const val EXTRA_LICENSE_URL = "license_url"
+        private const val EXTRA_RIGHTS_SOURCE = "rights_source"
         private const val EXTRA_BOOK_COVER_URL = "book_cover_url"
         private const val EXTRA_INITIAL_CFI = "initial_cfi"
         private const val EXTRA_HIGHLIGHT_CFI = "highlight_cfi"
@@ -766,12 +799,20 @@ class ReaderActivity : ComponentActivity() {
             theme: ReaderTheme,
             highlightCfi: String? = null,
             coverUrl: String? = null,
+            rightsStatus: String = app.bookstr.data.RIGHTS_UNKNOWN,
+            license: String? = null,
+            licenseUrl: String? = null,
+            rightsSource: String? = null,
         ): Intent =
             Intent(context, ReaderActivity::class.java).apply {
                 putExtra(EXTRA_BOOK_ID, bookId)
                 putExtra(EXTRA_BOOK_TITLE, bookTitle)
                 putExtra(EXTRA_BOOK_AUTHOR, author)
                 putExtra(EXTRA_BOOK_YEAR, year)
+                putExtra(EXTRA_RIGHTS_STATUS, rightsStatus)
+                putExtra(EXTRA_LICENSE, license)
+                putExtra(EXTRA_LICENSE_URL, licenseUrl)
+                putExtra(EXTRA_RIGHTS_SOURCE, rightsSource)
                 putExtra(EXTRA_BOOK_COVER_URL, coverUrl)
                 putExtra(EXTRA_INITIAL_CFI, initialCfi)
                 putExtra(EXTRA_HIGHLIGHT_CFI, highlightCfi)
@@ -785,6 +826,7 @@ private fun ReaderChrome(
     title: String,
     author: String?,
     year: String?,
+    rights: BookRights,
     isSpeaking: Boolean,
     onBack: () -> Unit,
     onSpeechClick: () -> Unit,
@@ -825,6 +867,13 @@ private fun ReaderChrome(
             color = androidx.compose.material3.MaterialTheme.colorScheme.onPrimary,
             maxLines = 1,
             modifier = Modifier.weight(1f),
+        )
+        RightsMarker(
+            rightsStatus = rights.status,
+            license = rights.license,
+            licenseUrl = rights.licenseUrl,
+            rightsSource = rights.source,
+            modifier = Modifier.padding(horizontal = 4.dp),
         )
         Box(
             modifier = Modifier
@@ -904,7 +953,7 @@ private fun ReaderWebView(
     knownWords: List<String>,
     theme: ReaderTheme,
     onReaderReady: () -> Unit,
-    onMetadata: (String?, String?, String?) -> Unit,
+    onMetadata: (String?, String?, String?, String?) -> Unit,
     onSections: (List<ReaderSection>) -> Unit,
     onReaderLongPress: (String) -> Unit,
     onSearchResults: (List<ReaderSearchResult>) -> Unit,
@@ -1028,8 +1077,9 @@ private fun ReaderWebView(
                                 val title = obj.optString("title").takeIf(String::isNotBlank)
                                 val author = obj.optString("author").takeIf(String::isNotBlank)
                                 val year = obj.optString("year").takeIf(String::isNotBlank)
+                                val rights = obj.optString("rights").takeIf(String::isNotBlank)
                                 (ctx as? ComponentActivity)?.runOnUiThread {
-                                    onMetadata(title, author, year)
+                                    onMetadata(title, author, year, rights)
                                 }
                             } catch (_: Exception) {
                             }
