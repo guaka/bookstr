@@ -4,8 +4,58 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.io.File
+import java.util.zip.ZipEntry
+import java.util.zip.ZipOutputStream
 
 class CatalogRepositoryTest {
+
+    @Test
+    fun validatesNativeFb2AndRejectsDtdOrMissingSections() {
+        val valid = temporaryFile("""
+            <?xml version="1.0" encoding="UTF-8"?>
+            <FictionBook xmlns="http://www.gribuser.ru/xml/fictionbook/2.0">
+              <description><title-info><book-title>Тест</book-title><author><first-name>Ada</first-name><last-name>Writer</last-name></author><date>2024-01-01</date></title-info></description>
+              <body><section><title><p>Глава</p></title><p>Текст</p></section></body>
+            </FictionBook>
+        """.trimIndent())
+        val noSections = temporaryFile("<FictionBook><body/></FictionBook>")
+        val dtd = temporaryFile("<!DOCTYPE FictionBook [<!ENTITY x SYSTEM \"https://example.test/x\">]><FictionBook><body><section><p>&x;</p></section></body></FictionBook>")
+        try {
+            assertTrue(CatalogRepository.isStructurallyValidFb2(valid))
+            assertFalse(CatalogRepository.isStructurallyValidFb2(noSections))
+            assertFalse(CatalogRepository.isStructurallyValidFb2(dtd))
+        } finally {
+            valid.delete(); noSections.delete(); dtd.delete()
+        }
+    }
+
+    @Test
+    fun validatesExactlyOneSafeFb2ZipAndRejectsMultipleOrTraversalEntries() {
+        fun zip(vararg names: String): File {
+            val file = File.createTempFile("bookstr-fb2-", ".fb2.zip")
+            ZipOutputStream(file.outputStream()).use { output ->
+                names.forEach { name ->
+                    output.putNextEntry(ZipEntry(name))
+                    output.write("<FictionBook><body><section><p>Text</p></section></body></FictionBook>".toByteArray())
+                    output.closeEntry()
+                }
+            }
+            return file
+        }
+        val valid = zip("book.fb2")
+        val multiple = zip("one.fb2", "two.fb2")
+        val traversal = zip("../book.fb2")
+        try {
+            assertTrue(CatalogRepository.isStructurallyValidFb2(valid))
+            assertFalse(CatalogRepository.isStructurallyValidFb2(multiple))
+            assertFalse(CatalogRepository.isStructurallyValidFb2(traversal))
+        } finally {
+            valid.delete(); multiple.delete(); traversal.delete()
+        }
+    }
+
+    private fun temporaryFile(contents: String): File = File.createTempFile("bookstr-fb2-", ".fb2").also { it.writeText(contents) }
     @Test
     fun parsesAndPrioritizesReadableWebSearchResults() {
         val results = CatalogRepository.parseSearchResponse(

@@ -14,6 +14,7 @@ import org.json.JSONObject
 import java.io.File
 import java.util.concurrent.TimeUnit
 import java.util.zip.ZipFile
+import java.io.BufferedInputStream
 import android.util.Xml
 import org.xmlpull.v1.XmlPullParser
 
@@ -229,7 +230,7 @@ class CatalogRepository(
         val embedded = when (format) {
             BookFormat.Epub -> readEpubMetadata(file)
             BookFormat.Pdf -> readPdfMetadata(file)
-            BookFormat.Fb2 -> Triple(null, null, null)
+            BookFormat.Fb2 -> readFb2Metadata(file)
         }
         val matched = embedded.first?.let { title ->
             externalFavorites.firstOrNull {
@@ -340,6 +341,41 @@ class CatalogRepository(
         Triple(field("Title"), field("Author"), date?.let { Regex("(1[0-9]{3}|20[0-9]{2}|21[0-9]{2})").find(it)?.value })
     }.getOrDefault(Triple(null, null, null))
 
+    /** Reads only descriptive FB2 fields. The XML parser is non-validating and
+     * never resolves external entities; the content is bounded by the caller's
+     * structural validation before this method is used for a downloaded file.
+     */
+    private fun readFb2Metadata(file: File): Triple<String?, String?, String?> = runCatching {
+        withFb2Input(file) { input ->
+            val parser = Xml.newPullParser().apply {
+                setFeature(XmlPullParser.FEATURE_PROCESS_NAMESPACES, true)
+                runCatching { setFeature("http://xmlpull.org/v1/doc/features.html#process-docdecl", false) }
+                runCatching { setFeature("http://xmlpull.org/v1/doc/features.html#process-namespaces", true) }
+                setInput(input, null)
+            }
+            var title: String? = null
+            var author: String? = null
+            var year: String? = null
+            var firstName: String? = null
+            var lastName: String? = null
+            while (parser.eventType != XmlPullParser.END_DOCUMENT) {
+                if (parser.eventType == XmlPullParser.START_TAG) {
+                    when (parser.name.lowercase()) {
+                        "book-title" -> if (title == null) title = parser.nextText().trim().ifBlank { null }
+                        "first-name" -> if (firstName == null) firstName = parser.nextText().trim().ifBlank { null }
+                        "last-name" -> if (lastName == null) lastName = parser.nextText().trim().ifBlank { null }
+                        "nickname" -> if (author == null) author = parser.nextText().trim().ifBlank { null }
+                        "date" -> if (year == null) year = Regex("\\b(1[0-9]{3}|20[0-9]{2}|21[0-9]{2})\\b")
+                            .find(parser.nextText())?.value
+                    }
+                }
+                parser.next()
+            }
+            if (author == null) author = listOfNotNull(firstName, lastName).joinToString(" ").ifBlank { null }
+            Triple(title, author, year)
+        }
+    }.getOrDefault(Triple(null, null, null))
+
     private fun rememberDownloadedBook(book: CatalogBook) {
         val existing = loadDownloadedBookMetadata()
         val previous = existing.firstOrNull { it.id == book.id }
@@ -412,8 +448,7 @@ class CatalogRepository(
                     runCatching {
                         ZipFile(file).use { archive -> archive.getEntry("META-INF/container.xml") != null }
                     }.getOrDefault(false)
-            BookFormat.Fb2 -> signature.decodeToString().trimStart().startsWith("<?xml")
-                || file.inputStream().bufferedReader().use { it.readText().contains("<FictionBook", ignoreCase = true) }
+            BookFormat.Fb2 -> isStructurallyValidFb2(file)
         }
     }
 
@@ -450,6 +485,77 @@ class CatalogRepository(
         const val BLOSSOM_HOST = "blossom.bfr.ee"
         const val BOOKS_API_BASE = "https://books-api.guaka.org/api"
         private const val DOWNLOADED_BOOKS_CACHE_FILE = "downloaded-books.json"
+        const val MAX_FB2_BYTES = 50L * 1024L * 1024L
+
+        /** Public for contract tests and shared by discovery/download validation. */
+        internal fun isStructurallyValidFb2(file: File): Boolean {
+            if (!file.isFile || file.length() <= 0L || file.length() > MAX_FB2_BYTES) return false
+            return runCatching {
+                withFb2Input(file) { input ->
+                    val parser = Xml.newPullParser().apply {
+                        setFeature(XmlPullParser.FEATURE_PROCESS_NAMESPACES, true)
+                        runCatching { setFeature("http://xmlpull.org/v1/doc/features.html#process-docdecl", false) }
+                        setInput(CountingInputStream(BufferedInputStream(input)), null)
+                    }
+                    var rootSeen = false
+                    var rootDepth = 0
+                    var sections = 0
+                    while (parser.eventType != XmlPullParser.END_DOCUMENT) {
+                        when (parser.eventType) {
+                            XmlPullParser.START_TAG -> {
+                                if (!rootSeen) {
+                                    if (!parser.name.equals("FictionBook", ignoreCase = true)) return@withFb2Input false
+                                    rootSeen = true
+                                    rootDepth = parser.depth
+                                } else if (parser.name.equals("section", ignoreCase = true)) {
+                                    sections++
+                                }
+                            }
+                            XmlPullParser.DOCDECL -> return@withFb2Input false
+                        }
+                        parser.next()
+                    }
+                    rootSeen && sections > 0 && parser.depth <= rootDepth
+                }
+            }.getOrDefault(false)
+        }
+
+        /** Runs a bounded parser over either native XML or one safe FB2 ZIP entry. */
+        private fun <T> withFb2Input(file: File, block: (java.io.InputStream) -> T): T {
+            val prefix = file.inputStream().use { input -> ByteArray(2).also { input.read(it) } }
+            if (prefix.size == 2 && prefix[0] == 'P'.code.toByte() && prefix[1] == 'K'.code.toByte()) {
+                ZipFile(file).use { archive ->
+                    val entries = archive.entries().toList()
+                    val files = entries.filterNot { it.isDirectory }
+                    if (entries.size != 1 || files.size != 1) throw IllegalArgumentException("FB2 ZIP must contain exactly one file")
+                    val entry = files.single()
+                    val name = entry.name.replace('\\', '/')
+                    val safe = !name.startsWith('/') && name.split('/').none { it == ".." || it.isBlank() }
+                        && name.endsWith(".fb2", ignoreCase = true)
+                    if (!safe || entry.size <= 0L || entry.size > MAX_FB2_BYTES) throw IllegalArgumentException("Unsafe FB2 ZIP entry")
+                    return block(archive.getInputStream(entry).limit(MAX_FB2_BYTES))
+                }
+            }
+            return block(file.inputStream().limit(MAX_FB2_BYTES))
+        }
+
+        private class CountingInputStream(input: java.io.InputStream) : java.io.FilterInputStream(input)
+
+        private fun java.io.InputStream.limit(maxBytes: Long): java.io.InputStream = object : java.io.FilterInputStream(this) {
+            private var remaining = maxBytes
+            override fun read(): Int {
+                if (remaining <= 0) return -1
+                val value = super.read()
+                if (value >= 0) remaining--
+                return value
+            }
+            override fun read(buffer: ByteArray, offset: Int, length: Int): Int {
+                if (remaining <= 0) return -1
+                val count = super.read(buffer, offset, minOf(length.toLong(), remaining).toInt())
+                if (count > 0) remaining -= count
+                return count
+            }
+        }
 
         private fun parseDownloadedBookMetadata(json: String): List<CatalogBook> {
             val root = JSONObject(json)
