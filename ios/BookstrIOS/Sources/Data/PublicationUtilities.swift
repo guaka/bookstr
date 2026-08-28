@@ -193,7 +193,8 @@ enum PublicationUtilities {
     // and support the common stored single-entry FB2 ZIP form; deflated or
     // multi-entry archives are rejected instead of being treated as valid XML.
     private static func extractStoredFB2Zip(_ data: Data) -> Data? {
-        guard let end = data.lastIndex(of: 0x50), data.distance(from: end, to: data.endIndex) >= 22 else { return nil }
+        guard data.count >= 22 else { return nil }
+        let end = data.endIndex - 4
         let lower = max(data.startIndex, end - 65_557)
         var eocd: Data.Index?
         var cursor = end

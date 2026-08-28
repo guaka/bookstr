@@ -135,6 +135,7 @@ class CatalogRepository(
             val cached = loadDownloadedBookMetadata().associateBy { it.id }.toMutableMap()
             val discovered = booksDir().listFiles().orEmpty()
                 .filter { it.isFile && it.extension.lowercase() in setOf("epub", "pdf", "fb2") }
+                .filter { it.extension.lowercase() != "fb2" || isStructurallyValidFb2(it) }
                 .mapNotNull { file ->
                     val id = file.nameWithoutExtension.lowercase()
                     cached[id] ?: discoverDownloadedBook(file, externalFavorites)
