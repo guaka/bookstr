@@ -44,37 +44,28 @@ jobs:
       - uses: android-actions/setup-android@v3
       - name: Install SDK packages
         run: sdkmanager "platforms;android-35" "build-tools;35.0.0" "system-images;android-30;google_apis;x86_64"
-      - name: Unit tests
-        id: unit_tests
+      - name: Unit tests, coverage, and debug APK
+        id: android_build
         continue-on-error: true
         run: |
           started=$(date +%s)
           set +e
-          ./gradlew --no-daemon testDebugUnitTest
+          ./gradlew --no-daemon --continue testDebugUnitTest jacocoDebugUnitTestReport assembleDebug
           status=$?
           echo "duration_ms=$((($(date +%s) - started) * 1000))" >> "$GITHUB_OUTPUT"
           exit "$status"
-      - name: Generate unit coverage
-        id: unit_coverage
-        if: always()
-        continue-on-error: true
-        run: ./gradlew --no-daemon jacocoDebugUnitTestReport
       - name: Upload unit test coverage
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: bookstr-android-unit-coverage-${{ github.sha }}
           path: android/app/build/reports/jacoco/
-      - name: Assemble debug
-        id: assemble
-        if: always()
-        continue-on-error: true
-        run: ./gradlew --no-daemon assembleDebug
       - name: Record Android test overview
         if: always()
         working-directory: .
         env:
-          TEST_STATUS: ${{ steps.unit_tests.outcome == 'success' && steps.unit_coverage.outcome == 'success' && steps.assemble.outcome == 'success' && 'passing' || 'failing' }}
-          TEST_DURATION_MS: ${{ steps.unit_tests.outputs.duration_ms }}
+          TEST_STATUS: ${{ steps.android_build.outcome == 'success' && 'passing' || 'failing' }}
+          TEST_DURATION_MS: ${{ steps.android_build.outputs.duration_ms }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           coverage_xml="$(find android/app/build/reports/jacoco -name '*.xml' -print -quit 2>/dev/null || true)"
@@ -123,5 +114,5 @@ jobs:
           name: bookstr-test-overview-android-ui-${{ github.run_id }}
           path: test-overview/android-ui.json
       - name: Fail unsuccessful Android checks
-        if: always() && (steps.unit_tests.outcome != 'success' || steps.unit_coverage.outcome != 'success' || steps.assemble.outcome != 'success' || steps.ui_tests.outcome != 'success')
+        if: always() && (steps.android_build.outcome != 'success' || steps.ui_tests.outcome != 'success')
         run: exit 1

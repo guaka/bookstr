@@ -48,6 +48,22 @@ test('CodeQL gates each language while retaining scheduled full scans', async ()
   assert.match(workflow, /run: \.\/gradlew --no-daemon assembleDebug/);
 });
 
+test('Android CI shares one cached Gradle invocation across unit build tasks', async () => {
+  const workflow = await readWorkflow('android.yml');
+  const properties = await readFile(new URL('../android/gradle.properties', import.meta.url), 'utf8');
+
+  assert.match(properties, /^org\.gradle\.configuration-cache=true$/m);
+  assert.match(
+    workflow,
+    /\.\/gradlew --no-daemon --continue testDebugUnitTest jacocoDebugUnitTestReport assembleDebug/,
+  );
+  assert.equal([...workflow.matchAll(/testDebugUnitTest/g)].length, 2);
+  assert.equal([...workflow.matchAll(/jacocoDebugUnitTestReport/g)].length, 1);
+  assert.equal([...workflow.matchAll(/assembleDebug/g)].length, 1);
+  assert.match(workflow, /steps\.android_build\.outcome == 'success'/);
+  assert.doesNotMatch(workflow, /steps\.(unit_tests|unit_coverage|assemble)\./);
+});
+
 test('Pages deploys once after CI and does not cancel an active deploy', async () => {
   const workflow = await readWorkflow('deploy-web.yml');
 
