@@ -1,0 +1,85 @@
+{
+  "version": 1,
+  "indexCases": [
+    {
+      "name": "directory defaults timestamps and applies tombstones",
+      "plaintext": "[[\"bookstr-collection-index\",\"1\"],[\"collection\",\"bookstr-collection-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"Reading\",\"12\"],[\"collection\",\"bookstr-collection-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"\",\"bad\"],[\"deleted\",\"bookstr-collection-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"13\"],[\"collection\",\"invalid\",\"Ignored\",\"1\"]]",
+      "expected": {
+        "entries": [
+          {
+            "id": "bookstr-collection-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "title": "Reading",
+            "updatedAt": 12
+          }
+        ],
+        "tombstones": [
+          {
+            "id": "bookstr-collection-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "deletedAt": 13
+          }
+        ]
+      }
+    },
+    {
+      "name": "malformed directory is empty",
+      "plaintext": "not json",
+      "expected": {
+        "entries": [],
+        "tombstones": []
+      }
+    }
+  ],
+  "collectionCases": [
+    {
+      "name": "collection metadata and compact references",
+      "plaintext": "[[\"bookstr-collection\",\"2\"],[\"title\",\"Custom\"],[\"description\",\"Notes\"],[\"updated\",\"21\"],[\"book\",\"isbn\",\"978-0-306-40615-7\",\"9\"]]",
+      "id": "bookstr-collection-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "fallbackTitle": "Fallback",
+      "fallbackUpdatedAt": 8,
+      "expected": {
+        "id": "bookstr-collection-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "title": "Custom",
+        "description": "Notes",
+        "updatedAt": 21,
+        "items": [
+          {
+            "type": "isbn",
+            "identifier": "9780306406157",
+            "locator": "",
+            "addedAt": 9
+          }
+        ]
+      }
+    },
+    {
+      "name": "empty and invalid metadata use directory fallbacks",
+      "plaintext": "[[\"title\",\"\"],[\"updated\",\"bad\"]]",
+      "id": "bookstr-collection-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "fallbackTitle": "Fallback",
+      "fallbackUpdatedAt": 8,
+      "expected": {
+        "id": "bookstr-collection-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "title": "Fallback",
+        "description": "",
+        "updatedAt": 8,
+        "items": []
+      }
+    },
+    {
+      "name": "invalid identifier is rejected",
+      "plaintext": "[]",
+      "id": "bookstr-collection-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "fallbackTitle": "Fallback",
+      "fallbackUpdatedAt": 8,
+      "expected": null
+    },
+    {
+      "name": "malformed collection is rejected",
+      "plaintext": "not json",
+      "id": "bookstr-collection-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "fallbackTitle": "Fallback",
+      "fallbackUpdatedAt": 8,
+      "expected": null
+    }
+  ]
+}
