@@ -1,0 +1,45 @@
+{
+  "version": 1,
+  "clients": [
+    {
+      "id": "web",
+      "label": "Web",
+      "shell": "Static HTML, CSS, and JavaScript",
+      "reader": "Browser EPUB and PDF readers",
+      "speech": "Hidden in ordinary browsers",
+      "catalog": "LibVault HTTP adapter",
+      "persistence": "Browser storage",
+      "sharedCore": "Contracts, fixtures, speech planning, reader libraries, and tokens"
+    },
+    {
+      "id": "electron",
+      "label": "Electron",
+      "shell": "Electron main/preload around the static web client",
+      "reader": "Chromium EPUB and PDF readers",
+      "speech": "Chromium speechSynthesis adapter",
+      "catalog": "Desktop protocol and proxy adapters",
+      "persistence": "Chromium storage and desktop session",
+      "sharedCore": "Web behavior modules, contracts, fixtures, reader runtime, and tokens"
+    },
+    {
+      "id": "android",
+      "label": "Android",
+      "shell": "Jetpack Compose",
+      "reader": "WebView EPUB and native PDF adapters",
+      "speech": "TextToSpeech and NarrationService adapters",
+      "catalog": "Native HTTP adapter",
+      "persistence": "Room and Android preferences",
+      "sharedCore": "Generated DTOs, fixtures, speech planning, reader runtime, and tokens"
+    },
+    {
+      "id": "ios",
+      "label": "iOS",
+      "shell": "SwiftUI",
+      "reader": "WKWebView EPUB and PDFKit adapters",
+      "speech": "Apple speech and sherpa-onnx adapters",
+      "catalog": "URLSession adapter",
+      "persistence": "JSON stores, UserDefaults, and Keychain",
+      "sharedCore": "Generated DTOs, fixtures, speech planning, reader runtime, and tokens"
+    }
+  ]
+}
