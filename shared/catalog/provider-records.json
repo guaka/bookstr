@@ -1,0 +1,36 @@
+{
+  "version": 1,
+  "records": [
+    {
+      "provider": "gutenberg",
+      "recordId": "1342",
+      "publicationId": "gutenberg:1342",
+      "title": "Pride and Prejudice",
+      "authors": ["Jane Austen"],
+      "languages": ["en"],
+      "publishedYear": "1813",
+      "rights": { "status": "public_domain", "source": "gutendex" },
+      "acquisitions": [{ "format": "epub", "url": "https://www.gutenberg.org/ebooks/1342.epub.images", "availability": "open" }]
+    },
+    {
+      "provider": "unglueit",
+      "recordId": "209548",
+      "publicationId": "unglueit:209548",
+      "title": "Open publication",
+      "authors": ["Example Author"],
+      "languages": ["en"],
+      "rights": { "status": "open_license", "license": "CC BY-SA", "source": "opds" },
+      "acquisitions": [{ "format": "epub", "url": "https://unglue.it/download_ebook/209548/?feed=opds", "availability": "open" }]
+    },
+    {
+      "provider": "standardebooks",
+      "recordId": "jane-austen/pride-and-prejudice",
+      "publicationId": "standardebooks:jane-austen/pride-and-prejudice",
+      "title": "Pride and Prejudice",
+      "authors": ["Jane Austen"],
+      "languages": ["en"],
+      "rights": { "status": "public_domain", "source": "standardebooks-opds" },
+      "acquisitions": [{ "format": "epub", "url": "https://standardebooks.org/ebooks/jane-austen/pride-and-prejudice/downloads/epub", "availability": "open" }]
+    }
+  ]
+}
