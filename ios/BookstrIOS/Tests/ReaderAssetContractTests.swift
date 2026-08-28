@@ -81,6 +81,14 @@ final class ReaderAssetContractTests: XCTestCase {
             sentenceBoundary
         )
 
+        let firstGroupedSentence = String(repeating: "Alpha ", count: 20) + "ends."
+        let secondGroupedSentence = String(repeating: "Beta ", count: 24) + "ends."
+        let groupedSentences = firstGroupedSentence + " " + secondGroupedSentence
+        XCTAssertEqual(
+            NativeSpeechFallback.chunks(groupedSentences).map(\.text),
+            [firstGroupedSentence, secondGroupedSentence]
+        )
+
         let afterSoftBoundary = "lead " + String(repeating: "x", count: 190)
             + " tail words continue until this fallback must split the text safely"
         XCTAssertEqual(
