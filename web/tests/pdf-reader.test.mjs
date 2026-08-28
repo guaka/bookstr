@@ -172,6 +172,9 @@ function setupPdfReaderEnvironment({ pdfPages = 3 } = {}) {
   const windowObject = globalThis;
   windowObject.document = document;
   windowObject.window = windowObject;
+  windowObject.DOMMatrix = class DOMMatrix {};
+  windowObject.ImageData = class ImageData {};
+  windowObject.Path2D = class Path2D {};
   windowObject.innerHeight = 900;
   windowObject.innerWidth = 1024;
   windowObject.hidden = false;
@@ -242,10 +245,13 @@ function setupPdfReaderEnvironment({ pdfPages = 3 } = {}) {
     reportProgress: (payload) => {
       progress.push(payload);
     },
+    onOpenReader: (callback) => {
+      windowObject.__openReaderCallback = callback;
+    },
   };
 
   let pageIndex = 1;
-  windowObject.__bookstrGetDocument = async () => ({
+  windowObject.__bookstrGetDocument = () => ({
     promise: Promise.resolve({
       numPages: pdfPages,
       getPage: async () => ({
@@ -309,6 +315,7 @@ function setupPdfReaderEnvironment({ pdfPages = 3 } = {}) {
 
 test('pdf-reader supports desktop payload normalization, rendering, and speech controls', async () => {
   const env = setupPdfReaderEnvironment();
+  await import('../pdf-reader.js');
   const { PdfReaderTest } = env.window;
 
   assert.ok(typeof PdfReaderTest.normalizeDesktopReaderPayload === 'function');
@@ -375,14 +382,14 @@ test('pdf-reader supports desktop payload normalization, rendering, and speech c
     forwardedCalls += 1;
     return originalLoadPdf(...args);
   };
-  await env.window.bookstrDesktop.onOpenReader({
+  await env.window.__openReaderCallback({
     base64: 'VGVzdC1wZGY=',
     theme: 'sepia',
     filename: 'FromBridge.pdf',
     book: { md5: 'D'.repeat(32), title: 'Bridge title' },
   });
   assert.equal(forwardedCalls, 1);
-  await env.window.bookstrDesktop.onOpenReader({});
+  await env.window.__openReaderCallback({});
   assert.equal(forwardedCalls, 1);
   env.window.loadPdf = originalLoadPdf;
 
@@ -390,19 +397,20 @@ test('pdf-reader supports desktop payload normalization, rendering, and speech c
   assert.equal(env.speech.createCalls > 0, true);
 
   env.controls.play.click();
-  await Promise.resolve();
+  await new Promise(resolve => setTimeout(resolve, 0));
   assert.equal(env.speech.startCalls, 1);
   assert.ok(env.speech.lastPlan?.chunks?.length > 0);
 
   env.controls.pause.click();
   assert.equal(env.speech.pauseCalls, 1);
-  assert.equal(env.speech.onStateChange?.name, undefined);
+  assert.equal(env.speech.onStateChange?.name, 'setPdfSpeechState');
   assert.equal(env.controls.pause.textContent, '▶');
 
   env.controls.pause.click();
   assert.equal(env.speech.resumeCalls, 1);
+  const stopCallsBeforeClick = env.speech.stopCalls;
   env.controls.stop.click();
-  assert.equal(env.speech.stopCalls, 1);
+  assert.equal(env.speech.stopCalls, stopCallsBeforeClick + 1);
 
   assert.equal(env.controls.play.disabled, false);
   assert.equal(env.controls.pause.disabled, true);

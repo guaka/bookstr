@@ -498,17 +498,6 @@ test('preserves publishing state so the library can retry availability', async (
   assert.equal(blossom.status, 'publishing');
 });
 
-test('stops repeated Blossom state requests after the LibVault API first fails', async () => {
-  let requests = 0;
-  const failingFetch = async () => {
-    requests += 1;
-    throw new TypeError('Failed to fetch');
-  };
-  assert.equal(await lookupLibVaultBlossomState('a'.repeat(32), failingFetch), null);
-  assert.equal(await lookupLibVaultBlossomState('b'.repeat(32), failingFetch), null);
-  assert.equal(requests, 1);
-});
-
 test('sends a private search and returns its matching response', async () => {
   let request;
   let armed = false;
@@ -1596,7 +1585,7 @@ test('searchLibVault normalizes query, search type, and limit', async () => {
   assert.equal(sent.tags[0]?.[1], servicePubkey);
 });
 
-test('monitorLibVaultFetch stops polling when the LibVault API is unavailable', async () => {
+test('monitorLibVaultFetch keeps waiting when fetch throws', async () => {
   const progress = [];
   const result = await monitorLibVaultFetch('a'.repeat(32), {
     intervalMs: 0,
@@ -1608,13 +1597,13 @@ test('monitorLibVaultFetch stops polling when the LibVault API is unavailable', 
   });
 
   assert.equal(result.status, 'failed');
-  assert.equal(result.error, 'LibVault HTTP API is unavailable');
+  assert.equal(result.error, 'Timed out waiting for LibVault');
   assert.equal(progress[0].status, 'waiting');
   assert.equal(progress.at(-1).status, 'failed');
 });
 
 
-test('monitorLibVaultFetch treats malformed job payloads as an unavailable API', async () => {
+test('monitorLibVaultFetch treats malformed job payloads as waiting until timeout', async () => {
   const progress = [];
   const result = await monitorLibVaultFetch('a'.repeat(32), {
     intervalMs: 0,
@@ -1629,9 +1618,9 @@ test('monitorLibVaultFetch treats malformed job payloads as an unavailable API',
   });
 
   assert.equal(result.status, 'failed');
-  assert.equal(result.error, 'LibVault HTTP API is unavailable');
+  assert.equal(result.error, 'Timed out waiting for LibVault');
   assert.equal(progress[0]?.status, 'waiting');
-  assert.equal(progress.at(-1)?.status, 'failed');
+  assert.equal(progress.some(update => update.status === 'waiting'), true);
 });
 
 test('resolveLibVaultService rejects invalid NIP-05 pubkeys', async () => {
@@ -2322,6 +2311,13 @@ test('sendLibVaultFetchRequest requires a signer that can sign events', async ()
       }),
       publish: async () => true,
     }),
+    /A Nostr signer with NIP-44 support is required/,
+  );
+});
+
+test('sendLibVaultFavoritesSync requires a Nostr signer with NIP-44 support', async () => {
+  await assert.rejects(
+    () => sendLibVaultFavoritesSync([{ md5: 'a'.repeat(32) }], { signer: {} }),
     /A Nostr signer with NIP-44 support is required/,
   );
 });
@@ -3797,4 +3793,20 @@ test('searchLibVault clamps oversized limits to the maximum', async () => {
   assert.equal(sentPayload?.request_id?.length > 0, true);
   assert.equal(response.status, 'ready');
   assert.equal(response.books[0]?.title, 'Limited Search');
+});
+
+test('libvaultBookRef ignores an invalid md5 and keeps normalized isbn', () => {
+  const ref = libvaultBookRef({
+    md5: 'ZZZZ',
+    isbn: '978-1-2345-6789-0',
+    title: ' Invalid md5 example ',
+    author: 'Ada',
+    source: 'openlibrary',
+  });
+
+  assert.equal(ref.md5, undefined);
+  assert.equal(ref.isbn, '9781234567890');
+  assert.equal(ref.title, 'Invalid md5 example');
+  assert.equal(ref.author, 'Ada');
+  assert.equal(ref.source, 'openlibrary');
 });

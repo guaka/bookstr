@@ -169,7 +169,8 @@ function normalizeDesktopReaderPayload(payload) {
     theme: String(payload.theme || "white").toLowerCase(),
     readUrl: String(payload.readUrl || ""),
     book: normalizeDesktopBookMetadata(payload.book),
-    filename: String(payload.filename || (payload.book && (payload.book.title || payload.book.name) ? `${String(payload.book.title || payload.book.name).replace(/[\\/:*?"<>|]+/g, ' ').trim()}.pdf` : "Book.pdf")),
+    filename: String(payload.filename || (payload.book && (payload.book.title || payload.book.name) ? `${String(payload.book.title || payload.book.name)}.pdf` : "Book.pdf"))
+      .replace(/[\\/:*?"<>|]+/g, ' ').trim(),
   };
 }
 
@@ -328,14 +329,14 @@ window.loadPdf = async ({
     pdfFurthestProgress = 0;
     latestPdfProgress = null;
     document.body.dataset.theme = theme;
-    title.textContent = bookTitle || 'PDF';
+    title.textContent = bookTitle || activePdfBook.title || 'PDF';
     pdfBytes = bytesFromBase64(base64);
     pdf = await resolvePdfDocument({ data: pdfBytes.slice() }).promise;
     pageCount.textContent = `${pdf.numPages} ${pdf.numPages === 1 ? 'page' : 'pages'}`;
     if (downloadUrl) revokePdfObjectURL(downloadUrl);
     downloadUrl = createPdfObjectURL(new Blob([pdfBytes], { type: 'application/pdf' }));
     download.href = downloadUrl;
-    download.download = filename;
+    download.download = String(filename || 'Book.pdf').replace(/[\\/:*?"<>|]+/g, ' ').trim();
     await renderPages();
     message.classList.add('hidden');
     reportPdfProgress(1);

@@ -106,17 +106,16 @@ test('footer links to the latest released Android APK', () => {
 });
 
 test('browser traffic uses the Cloudflare books API', () => {
-  assert.match(html, /const BOOKS_API_BASE = 'https:\/\/books-api\.guaka\.org\/api'/);
+  assert.match(html, /const BOOKS_API_BASE = window\.bookstrDesktop[\s\S]*?: 'https:\/\/books-api\.guaka\.org\/api'/);
   assert.doesNotMatch(html, /localhost:11111\/api|books\.guaka\.org\/api\/search/);
 });
 
-test('search tries private LibVault NIP-17 before the HTTP catalog fallback', () => {
+test('search includes private LibVault NIP-17 alongside public catalog sources', () => {
   assert.match(html, /async function searchViaNostr\(query\)/);
   assert.match(html, /module\.searchLibVault\(query, searchType\.value \|\| 'all'/);
-  assert.match(html, /books = await searchViaNostr\(query\)/);
-  assert.match(html, /Private search unavailable; trying the HTTP catalog/);
-  assert.match(html, /books = await searchAllBooksParty\(query\)/);
-  assert.match(html, /source = 'HTTP fallback'/);
+  assert.match(html, /id: 'libvault'[\s\S]*?search: searchViaNostr/);
+  assert.match(html, /const outcomes = await Promise\.all\(sources\.map/);
+  assert.match(html, /const books = await source\.search\(query\)/);
   assert.match(html, /const NOSTR_SEARCH_READY_TIMEOUT_MS = 8000/);
   assert.match(html, /const NOSTR_SEARCH_RESPONSE_TIMEOUT_MS = 20000/);
   assert.match(html, /responseTimeoutMs: NOSTR_SEARCH_RESPONSE_TIMEOUT_MS/);
@@ -227,7 +226,7 @@ test('book opening canonicalizes stable Gutenberg IDs', () => {
 test('LibVault books use MD5 hash routes and resolve through Blossom', () => {
   assert.match(html, /return isMd5\(md5\) \? md5/);
   assert.match(html, /legacyMd5 = routeValue\.match/);
-  assert.match(html, /const blossomUrl = String\(book\.blossomUrl \|\| readPath/);
+  assert.match(html, /const suppliedUrl = String\(book\.blossomUrl \|\| readPath/);
   assert.match(html, /fetch\(downloadUrl/);
   assert.match(html, /BookMetadata\.desktopBlossomProxyUrl\(blossomUrl, sha256, window\.location\.href\)/);
   assert.match(desktopMain, /const blossomResponse = await proxyBlossomRequest\(request, net\.fetch, BLOSSOM_PROXY_BASE_URL\)/);
@@ -289,9 +288,9 @@ test('Home titles use the same read hash resolver as Search titles', () => {
 
 test('Home and Search share tables with covers and author search links', () => {
   assert.match(html, /renderBookTable\(target, books/);
-  assert.match(html, /bookCoverUrl\(book\)/);
+  assert.match(html, /bookCoverUrls\(book\)/);
   assert.match(html, /const LIBVAULT_COVER_BASE = 'https:\/\/lib\.b\.bfr\.ee\/api\/covers'/);
-  assert.match(html, /return isMd5\(md5\) \? `\$\{LIBVAULT_COVER_BASE\}\/\$\{md5\}` : ''/);
+  assert.match(html, /CoverAssets\.bookCoverCandidates\(book/);
   assert.match(html, /const cover = payload\?\.covers\?\.\[rawId\] \|\| \{\}/);
   assert.match(html, /coverUrl: item\.cover_url \|\| item\.coverUrl \|\| item\.thumbnail \|\| cover\.url/);
   assert.match(html, /data-action="author-search"/);
@@ -464,7 +463,7 @@ test('PDF reader uses local PDF.js, lazy page rendering, and an explicit downloa
   assert.match(pdfReaderJs, /from '\.\/vendor\/pdfjs\/pdf\.mjs'/);
   assert.match(pdfReaderJs, /GlobalWorkerOptions\.workerSrc = '\.\/vendor\/pdfjs\/pdf\.worker\.mjs'/);
   assert.match(pdfReaderJs, /new IntersectionObserver/);
-  assert.match(pdfReaderJs, /download\.download = filename/);
+  assert.match(pdfReaderJs, /download\.download = String\(filename \|\| 'Book\.pdf'\)\.replace/);
   assert.match(pdfReaderJs, /pdf\?\.destroy\(\)/);
   assert.match(pdfReaderJs, /const desktopBridge = window\.bookstrDesktop \|\| null;/);
   assert.match(pdfReaderJs, /if \(desktopBridge\?\.onOpenReader\)/);

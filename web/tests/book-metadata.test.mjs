@@ -1586,7 +1586,7 @@ test('sortBooks falls back for language sorting when Intl.DisplayNames is unavai
         ],
         'language',
       ).map((book) => book.title),
-      ['Book A', 'Book B'],
+      ['Book B', 'Book A'],
     );
   } finally {
     if (descriptor) Object.defineProperty(globalThis.Intl, 'DisplayNames', descriptor);

@@ -1,10 +1,23 @@
 import { test, expect } from '@playwright/test';
+import { createHash } from 'node:crypto';
 import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
 const JSZip = require('../jszip.min.js');
 
-async function minimalEpub(title, body = title) {
+test('empty Search shows a responsive table of active catalog sources', async ({ page }) => {
+  await page.goto('/#search');
+  const table = page.locator('#search-sources-table');
+  await expect(table).toBeVisible();
+  await expect(table.locator('thead')).toContainText('Coverage');
+  await expect(table).toContainText('all.books.party');
+  await expect(table).toContainText('Unglue.it');
+  await expect(table).not.toContainText('LibVault');
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(table.locator('td[data-label="Delivers"]').first()).toBeVisible();
+});
+
+async function minimalEpub(title, body = title, rights = '') {
   const zip = new JSZip();
   zip.file('mimetype', 'application/epub+zip', { compression: 'STORE' });
   zip.file('META-INF/container.xml', `<?xml version="1.0"?>
@@ -16,6 +29,7 @@ async function minimalEpub(title, body = title) {
       <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
         <dc:identifier id="book-id">urn:bookstr:test:${title}</dc:identifier>
         <dc:title>${title}</dc:title><dc:language>en</dc:language>
+        ${rights ? `<dc:rights>${rights}</dc:rights>` : ''}
       </metadata>
       <manifest><item id="chapter" href="chapter.xhtml" media-type="application/xhtml+xml"/></manifest>
       <spine><itemref idref="chapter"/></spine>
@@ -84,6 +98,51 @@ function minimalPdf(text) {
   body += offsets.slice(1).map(offset => `${String(offset).padStart(10, '0')} 00000 n \n`).join('');
   body += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`;
   return Buffer.from(body);
+}
+
+function installReaderSpeechHarness() {
+  const state = {
+    calls: 0,
+    latestUtterance: null,
+    canceled: 0,
+    paused: false,
+  };
+  class MockSpeechSynthesisUtterance {
+    constructor(text) {
+      this.text = text;
+      this.onend = null;
+      this.onerror = null;
+    }
+  }
+  const mockSpeechSynthesis = {
+    speak(utterance) {
+      state.calls += 1;
+      state.latestUtterance = utterance;
+      this.paused = false;
+    },
+    cancel() {
+      state.canceled += 1;
+      this.paused = false;
+    },
+    pause() { this.paused = true; },
+    resume() { this.paused = false; },
+    getVoices() { return []; },
+    paused: false,
+  };
+  const defineOrAssign = (property, value) => {
+    try {
+      Object.defineProperty(window, property, { configurable: true, value });
+    } catch (error) {
+      Object.defineProperty(window, property, {
+        configurable: true,
+        writable: true,
+        value,
+      });
+    }
+  };
+  defineOrAssign("SpeechSynthesisUtterance", MockSpeechSynthesisUtterance);
+  defineOrAssign("speechSynthesis", mockSpeechSynthesis);
+  window.__bookstrSpeechTestState = state;
 }
 
 const books = [
@@ -363,8 +422,49 @@ test('switching EPUBs quickly leaves only the newest book in the reader', async 
   await page.evaluate(url => { window.location.hash = `read=${encodeURIComponent(url)}`; }, second);
 
   const reader = page.frameLocator('#reader-frame');
-  await expect(reader.locator('body')).toHaveAttribute('data-book-id', `url:${second}`, { timeout: 45_000 });
+  const secondHash = createHash('sha256').update(secondEpub).digest('hex');
+  await expect(reader.locator('body')).toHaveAttribute('data-book-id', `sha256:${secondHash}`, { timeout: 45_000 });
   await expect(reader.locator('#viewer > .epub-container')).toHaveCount(1);
+});
+
+test('EPUB reader keeps desktop speech controls hidden in the browser', async ({ page }) => {
+  const readUrl = 'https://files.test/speech-reader.epub';
+  const epub = await readerFixtureEpub('Speech Reader');
+  await page.addInitScript(installReaderSpeechHarness);
+  await page.route(readUrl, route => route.fulfill({
+    status: 200,
+    contentType: 'application/epub+zip',
+    body: epub,
+  }));
+  await page.goto(`/#read=${encodeURIComponent(readUrl)}`);
+
+  const reader = page.frameLocator('#reader-frame');
+  await expect(reader.locator('#reader-speech-controls')).toBeHidden();
+});
+
+test('PDF reader keeps desktop speech controls hidden in the browser', async ({ page }) => {
+  const md5 = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
+  const pdfUrl = 'https://files.test/speech-reader.pdf';
+  await page.addInitScript(({ md5, pdfUrl }) => {
+    localStorage.setItem('bookstr_nostr_favorites_v1', JSON.stringify([{
+      md5,
+      title: 'Speech PDF',
+      extension: 'pdf',
+      readUrl: pdfUrl,
+    }]));
+  }, { md5, pdfUrl });
+  await page.addInitScript(installReaderSpeechHarness);
+  await page.route(pdfUrl, route => route.fulfill({
+    status: 200,
+    contentType: 'application/pdf',
+    body: minimalPdf('Speech PDF'),
+  }));
+
+  await page.goto(`/#read=${md5}`);
+
+  const pdfReader = page.frameLocator('#reader-frame');
+  await expect(pdfReader.locator('.pdf-page canvas')).toHaveAttribute('data-rendered', 'true');
+  await expect(pdfReader.locator('#pdf-speech-controls')).toBeHidden();
 });
 
 test('two cached EPUBs remain isolated while switching without a page refresh', async ({ page }) => {
@@ -632,7 +732,7 @@ test('saved-word deletion reports the missing signer without losing the local wo
 
   await page.goto('/#words');
   await page.locator('button[aria-label="Delete offline"]').click();
-  await expect(page.locator('#status')).toContainText('Could not delete offline: Connect NIP-07');
+  await expect(page.locator('#status')).toContainText('Could not delete offline: Connect your NIP-07');
   await expect(page.locator('#words-list')).toContainText('offline');
 });
 
@@ -649,6 +749,8 @@ test('HTTP search results expose format filters and can be favorited in place', 
           language: 'en',
           extension: 'epub',
           readUrl: 'https://files.test/paper-boats.epub',
+          year: '1910',
+          copyright: false,
         },
         {
           md5: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
@@ -657,6 +759,9 @@ test('HTTP search results expose format filters and can be favorited in place', 
           language: 'pt',
           extension: 'pdf',
           readUrl: 'https://files.test/paper-walls.pdf',
+          license: 'CC BY-SA 4.0',
+          license_url: 'https://creativecommons.org/licenses/by-sa/4.0/',
+          rights_source: 'catalog',
         },
       ],
     }),
@@ -666,6 +771,11 @@ test('HTTP search results expose format filters and can be favorited in place', 
   await expect(page.locator('#search-result-count')).toHaveText('2 results');
   await expect(page.locator('#results')).toContainText('Paper Boats');
   await expect(page.locator('#results')).toContainText('Paper Walls');
+  const publicDomainRow = page.locator('#results .book-table-row').filter({ hasText: 'Paper Boats' });
+  await expect(publicDomainRow.locator('.result-cell').nth(2)).toContainText('1910');
+  await expect(publicDomainRow.locator('.rights-marker')).toHaveText('PD');
+  const openLicenseRow = page.locator('#results .book-table-row').filter({ hasText: 'Paper Walls' });
+  await expect(openLicenseRow.locator('.rights-marker')).toHaveText('CC BY-SA 4.0');
   await expect(page.locator('#search-format-filter')).toBeVisible();
 
   await page.locator('#search-format-filter').selectOption('pdf');
@@ -679,6 +789,9 @@ test('HTTP search results expose format filters and can be favorited in place', 
   await expect.poll(async () => page.evaluate(() => JSON.parse(
     localStorage.getItem('bookstr_nostr_favorites_v1') || '[]',
   )[0]?.title)).toBe('Paper Walls');
+  await expect.poll(async () => page.evaluate(() => JSON.parse(
+    localStorage.getItem('bookstr_nostr_favorites_v1') || '[]',
+  )[0]?.rights_status)).toBe('open_license');
 });
 
 test('Home retries delayed NIP-07 and renders an iOS-shaped encrypted favorite', async ({ page }) => {
@@ -738,13 +851,18 @@ test('Home retries delayed NIP-07 and renders an iOS-shaped encrypted favorite',
     }
     window.WebSocket = RelaySocket;
   }, { pubkey, tags });
+  await page.route('**/vendor/nostr-tools.js', route => route.fulfill({
+    status: 200,
+    contentType: 'text/javascript',
+    body: 'export function verifyEvent() { return true; }',
+  }));
 
   await page.goto('/#home');
   await expect(page.locator('#home-reading-list')).toContainText('Anna Karenina', { timeout: 12_000 });
   await expect(page.locator('#home-reading-list')).toContainText('Leo Tolstoy');
-  await expect(page.locator('#home-sync-state')).toContainText('Last synced');
+  await expect(page.locator('#home-sync-state')).toContainText('event favorite-eve');
   await page.locator('#home-sync-refresh').click();
-  await expect(page.locator('#home-sync-state')).toContainText('Last synced');
+  await expect(page.locator('#home-sync-state')).toContainText('event favorite-eve');
 });
 
 test('search pagination is bookmarkable and keeps the result count stable', async ({ page }) => {
@@ -782,7 +900,11 @@ test('search pagination is bookmarkable and keeps the result count stable', asyn
 test('a search result opens its EPUB in the Bookstr reader', async ({ page }) => {
   const md5 = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
   const downloadUrl = 'https://files.test/search-result.epub';
-  const searchResultEpub = await minimalEpub('Search Result Reader', 'Opened from the search results.');
+  const searchResultEpub = await minimalEpub(
+    'Search Result Reader',
+    'Opened from the search results.',
+    'CC BY 4.0',
+  );
   await page.route('https://books-api.guaka.org/api/search**', route => route.fulfill({
     status: 200,
     contentType: 'application/json',
@@ -809,4 +931,10 @@ test('a search result opens its EPUB in the Bookstr reader', async ({ page }) =>
   await expect(reader.locator('body')).toHaveAttribute('data-location', /epubcfi\(/);
   await expect(reader.frameLocator('#viewer iframe').first().locator('h1'))
     .toHaveText('Search Result Reader');
+  await expect.poll(async () => page.evaluate(() => JSON.parse(
+    localStorage.getItem('bookstr_reading_library_v1') || '[]',
+  )[0]?.license)).toBe('CC BY 4.0');
+  await expect.poll(async () => page.evaluate(() => JSON.parse(
+    localStorage.getItem('bookstr_reading_library_v1') || '[]',
+  )[0]?.rights_source)).toBe('epub_opf');
 });
