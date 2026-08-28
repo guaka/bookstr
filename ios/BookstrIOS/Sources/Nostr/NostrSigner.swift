@@ -72,27 +72,20 @@ struct Nip46Signer: NostrSigner {
 
 enum BlossomAuthorization {
     static func get(signer: NostrSigner, hash: String, server: String, now: Int64? = nil) async throws -> String {
-        guard hash.range(of: "^[a-fA-F0-9]{64}$", options: .regularExpression) != nil else {
-            throw NSError(domain: "BlossomAuthorization", code: 1,
-                          userInfo: [NSLocalizedDescriptionKey: "Invalid Blossom SHA-256"])
-        }
-        guard !server.isEmpty, !server.contains("/") else {
-            throw NSError(domain: "BlossomAuthorization", code: 2,
-                          userInfo: [NSLocalizedDescriptionKey: "Invalid Blossom server name"])
-        }
         let timestamp = now ?? Int64(Date().timeIntervalSince1970)
+        let request = try BlossomAuthorizationWire.unsignedGetEvent(
+            hash: hash,
+            server: server,
+            now: timestamp,
+            content: "Download a Bookstr book"
+        )
         let event = NostrEvent(
             id: nil,
             pubkey: signer.publicKeyHex,
-            createdAt: timestamp,
-            kind: 24_242,
-            tags: [
-                ["t", "get"],
-                ["expiration", String(timestamp + 120)],
-                ["server", server],
-                ["x", hash.lowercased()]
-            ],
-            content: "Download a Bookstr book",
+            createdAt: request.createdAt,
+            kind: request.kind,
+            tags: request.tags,
+            content: request.content,
             sig: nil
         )
         let signed = try await signer.sign(event)

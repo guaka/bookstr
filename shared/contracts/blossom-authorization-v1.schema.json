@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bookstr.app/contracts/blossom-authorization-v1.schema.json",
+  "title": "Bookstr Blossom authorization compatibility cases v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "cases"],
+  "properties": {
+    "version": { "const": 1 },
+    "cases": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "hash", "server", "now", "content", "valid"],
+        "properties": {
+          "name": { "type": "string", "minLength": 1 },
+          "hash": { "type": "string" },
+          "server": { "type": "string" },
+          "now": { "type": "integer" },
+          "content": { "type": "string" },
+          "valid": { "type": "boolean" },
+          "expected": { "type": "object" }
+        }
+      }
+    }
+  }
+}

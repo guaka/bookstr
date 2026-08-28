@@ -1,0 +1,75 @@
+{
+  "version": 1,
+  "cases": [
+    {
+      "name": "canonical Bookstr GET request",
+      "hash": "ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789",
+      "server": "blossom.bfr.ee",
+      "now": 1800000000,
+      "content": "Download a Bookstr book",
+      "valid": true,
+      "expected": {
+        "kind": 24242,
+        "created_at": 1800000000,
+        "tags": [
+          ["t", "get"],
+          ["expiration", "1800000120"],
+          ["server", "blossom.bfr.ee"],
+          ["x", "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789"]
+        ],
+        "content": "Download a Bookstr book"
+      }
+    },
+    {
+      "name": "legacy LibVault content remains accepted",
+      "hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "server": "cdn.example.org",
+      "now": 10,
+      "content": "Download a LibVault book",
+      "valid": true,
+      "expected": {
+        "kind": 24242,
+        "created_at": 10,
+        "tags": [
+          ["t", "get"],
+          ["expiration", "130"],
+          ["server", "cdn.example.org"],
+          ["x", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"]
+        ],
+        "content": "Download a LibVault book"
+      }
+    },
+    {
+      "name": "short hash is invalid",
+      "hash": "short",
+      "server": "blossom.bfr.ee",
+      "now": 10,
+      "content": "Download",
+      "valid": false
+    },
+    {
+      "name": "whitespace wrapped hash is invalid",
+      "hash": " aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa ",
+      "server": "blossom.bfr.ee",
+      "now": 10,
+      "content": "Download",
+      "valid": false
+    },
+    {
+      "name": "empty server is invalid",
+      "hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "server": "",
+      "now": 10,
+      "content": "Download",
+      "valid": false
+    },
+    {
+      "name": "server path is invalid",
+      "hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "server": "blossom.bfr.ee/path",
+      "now": 10,
+      "content": "Download",
+      "valid": false
+    }
+  ]
+}
