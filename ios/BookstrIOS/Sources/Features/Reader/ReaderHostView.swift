@@ -785,7 +785,7 @@ private final class FB2XMLDelegate: NSObject, XMLParserDelegate {
 }
 
 @MainActor
-final class FB2ReaderController: ObservableObject {
+final class FB2ReaderController: NSObject, ObservableObject {
     @Published var document: FB2Document?
     @Published var sections: [FB2Section] = []
     @Published var sectionIndex = 0
@@ -799,18 +799,27 @@ final class FB2ReaderController: ObservableObject {
     @Published var isSpeaking = false
     private let speech = AVSpeechSynthesizer()
 
-    init() { speech.delegate = self }
+    override init() {
+        super.init()
+        speech.delegate = self
+    }
 
     func load(fileURL: URL, initialLocator: String?) async {
         do {
-            let data = try Data(contentsOf: fileURL, options: [.mappedIfSafe])
+            guard let data = PublicationUtilities.fb2Data(fileURL: fileURL) else {
+                throw FB2ParseError.invalidDocument
+            }
             let parsed = try FB2Parser.parse(data: data)
             document = parsed
             sections = parsed.flatSections
-            if let locator = initialLocator, let id = locator.split(separator: ":").dropFirst().first,
-               let index = sections.firstIndex(where: { $0.id == id }) {
+            if let locator = initialLocator,
+               let location = parseLocator(locator),
+               let index = sections.firstIndex(where: { $0.id == location.sectionID }) {
+                let paragraph = min(max(location.paragraph, 0), max(0, sections[index].paragraphs.count - 1))
                 sectionIndex = index
-                progression = progress(for: index)
+                let count = sections.reduce(0) { $0 + $1.paragraphs.count }
+                let rank = sections.prefix(index).reduce(0) { $0 + $1.paragraphs.count } + paragraph
+                progression = count > 1 ? Double(rank) / Double(count - 1) : progress(for: index)
                 requestedSectionID = sections[index].id
             }
             ready = true
@@ -818,11 +827,13 @@ final class FB2ReaderController: ObservableObject {
         } catch { errorMessage = error.localizedDescription; ready = false }
     }
 
-    func update(section index: Int) -> String {
+    func update(section index: Int, paragraph paragraphIndex: Int = 0, offset: Int = 0) -> String {
         sectionIndex = index
-        progression = progress(for: index)
+        let count = sections.reduce(0) { $0 + $1.paragraphs.count }
+        let rank = sections.prefix(index).reduce(0) { $0 + $1.paragraphs.count } + paragraphIndex
+        progression = count > 1 ? Double(rank) / Double(count - 1) : progress(for: index)
         furthestProgression = max(furthestProgression, progression)
-        return "fb2:\(sections[index].id):0"
+        return "fb2:\(sections[index].id):\(max(0, paragraphIndex)):\(max(0, offset))"
     }
 
     func search(_ query: String) {
@@ -855,6 +866,19 @@ final class FB2ReaderController: ObservableObject {
     private func progress(for index: Int) -> Double {
         guard sections.count > 1 else { return 0 }
         return Double(index) / Double(sections.count - 1)
+    }
+
+    private struct FB2Locator {
+        let sectionID: String
+        let paragraph: Int
+    }
+
+    private func parseLocator(_ locator: String) -> FB2Locator? {
+        let parts = locator.split(separator: ":", omittingEmptySubsequences: false)
+        guard parts.count == 4, parts[0] == "fb2", !parts[1].isEmpty,
+              let paragraph = Int(parts[2]), let offset = Int(parts[3]),
+              paragraph >= 0, offset >= 0 else { return nil }
+        return FB2Locator(sectionID: String(parts[1]), paragraph: paragraph)
     }
 }
 
@@ -891,13 +915,24 @@ struct FB2ReaderView: View {
                                         Text(section.title).font(.title2.bold()).padding(.top, section.index == 0 ? 12 : 24)
                                     }
                                     ForEach(section.paragraphs) { paragraph in
-                                        Text(paragraph.text).font(.body).textSelection(.enabled)
+                                        Text(paragraph.text)
+                                            .font(.body)
+                                            .textSelection(.enabled)
+                                            .onAppear {
+                                                let locator = controller.update(
+                                                    section: section.index,
+                                                    paragraph: section.paragraphs.firstIndex(of: paragraph) ?? 0
+                                                )
+                                                onProgress(controller.progression, locator)
+                                            }
                                     }
                                 }
                                 .id(section.id)
                                 .onAppear {
-                                    let locator = controller.update(section: section.index)
-                                    onProgress(controller.progression, locator)
+                                    if section.paragraphs.isEmpty {
+                                        let locator = controller.update(section: section.index)
+                                        onProgress(controller.progression, locator)
+                                    }
                                 }
                             }
                         }

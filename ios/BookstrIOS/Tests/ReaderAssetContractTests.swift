@@ -57,6 +57,22 @@ final class ReaderAssetContractTests: XCTestCase {
         }
     }
 
+    @MainActor
+    func testFB2ReaderLoadsDeflatedZipAndEmitsFourPartLocator() async throws {
+        let encoded = "UEsDBBQAAAAIAI+eHF2swOoxXQAAAJsAAAAIAAAAYm9vay5mYjJVjkEKgDAMBF9U8oGQg4gv8AO2jRAsTbE56O+tClKPOzssi5MEE82D6kYYuYZdyg0ITSyxk7wqoW+1ewCNvKbFOCJ0EKG34bfjNZ6ElcMbC818GEJp3gfhlaB/cwFQSwECFAMUAAAACACPnhxdrMDqMV0AAACbAAAACAAAAAAAAAAAAAAAgAEAAAAAYm9vay5mYjJQSwUGAAAAAAEAAQA2AAAAgwAAAAAA"
+        let fileURL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".fb2.zip")
+        defer { try? FileManager.default.removeItem(at: fileURL) }
+        try XCTUnwrap(Data(base64Encoded: encoded)).write(to: fileURL)
+
+        let controller = FB2ReaderController()
+        await controller.load(fileURL: fileURL, initialLocator: nil)
+        XCTAssertTrue(controller.ready)
+        let section = try XCTUnwrap(controller.sections.first)
+        XCTAssertEqual(controller.update(section: section.index, paragraph: 0, offset: 7), "fb2:\(section.id):0:7")
+        await controller.load(fileURL: fileURL, initialLocator: "fb2:\(section.id):0:0")
+        XCTAssertEqual(controller.sectionIndex, section.index)
+    }
+
     func testEPUBSpeechPlannerKeepsShortTailAndParagraphPause() throws {
         let html = try bundledReaderHTML()
         let speechSource = try bundledAsset(named: "reader-speech", extension: "js")

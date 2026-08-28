@@ -33,6 +33,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
@@ -53,8 +54,9 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.xmlpull.v1.XmlPullParser
 import android.util.Xml
+import java.io.ByteArrayOutputStream
 import java.io.File
-import java.io.FileInputStream
+import java.io.InputStream
 import java.nio.charset.StandardCharsets
 
 data class Fb2Paragraph(val text: String)
@@ -93,16 +95,18 @@ object Fb2Parser {
 
     fun parse(file: File): Fb2Document {
         require(file.isFile && file.length() in 1..MAX_BYTES) { "This FB2 file is empty or too large" }
-        val input = FileInputStream(file)
-        input.use {
-            val prefix = it.readBytes(MAX_BYTES.toInt())
-            val source = prefix.toString(StandardCharsets.UTF_8)
-            require(!source.contains("<!DOCTYPE", ignoreCase = true) &&
-                !source.contains("<!ENTITY", ignoreCase = true)) { "External entities are not allowed" }
-        }
+        return CatalogRepository.withFb2Input(file) { parse(it) }
+    }
+
+    fun parse(input: InputStream): Fb2Document {
+        val bytes = input.readAtMost(MAX_BYTES)
+        val source = bytes.toString(StandardCharsets.UTF_8)
+        require(!source.contains("<!DOCTYPE", ignoreCase = true) &&
+            !source.contains("<!ENTITY", ignoreCase = true)) { "External entities are not allowed" }
         val parser = Xml.newPullParser().apply {
             setFeature(XmlPullParser.FEATURE_PROCESS_NAMESPACES, true)
-            setInput(FileInputStream(file), "UTF-8")
+            runCatching { setFeature("http://xmlpull.org/v1/doc/features.html#process-docdecl", false) }
+            setInput(bytes.inputStream(), "UTF-8")
         }
         var rootSeen = false
         var title: String? = null
@@ -211,6 +215,17 @@ object Fb2Parser {
     }
 
     private fun text(parser: XmlPullParser): String = blockText(parser)
+
+    private fun InputStream.readAtMost(maxBytes: Long): ByteArray {
+        val output = ByteArrayOutputStream()
+        val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+        while (true) {
+            val count = read(buffer)
+            if (count < 0) return output.toByteArray()
+            require(output.size().toLong() + count <= maxBytes) { "This FB2 file is empty or too large" }
+            output.write(buffer, 0, count)
+        }
+    }
 }
 
 class Fb2ReaderActivity : ComponentActivity() {
@@ -219,7 +234,6 @@ class Fb2ReaderActivity : ComponentActivity() {
     private var bookAuthor: String? = null
     private var bookYear: String? = null
     private var rights = BookRights()
-    private var closing = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -275,7 +289,7 @@ class Fb2ReaderActivity : ComponentActivity() {
 
     override fun onBackPressed() { closeReader() }
 
-    private fun closeReader() { closing = true; finish() }
+    private fun closeReader() { finish() }
 
     private fun applyLockScreenPolicy(enabled: Boolean) {
         if (enabled) window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
@@ -317,6 +331,7 @@ private fun Fb2ReaderScreen(title: String, author: String?, year: String?, right
     var showContents by remember { mutableStateOf(false) }
     var speaking by remember { mutableStateOf(false) }
     val listState = rememberLazyListState()
+    val scope = rememberCoroutineScope()
     val context = LocalContext.current
     val tts = remember(context) { android.speech.tts.TextToSpeech(context, null) }
     LaunchedEffect(file) {
@@ -324,18 +339,26 @@ private fun Fb2ReaderScreen(title: String, author: String?, year: String?, right
         result.onSuccess { document = it }.onFailure { error = it.message ?: "Cannot open FB2" }
     }
     val doc = document
+    val blocks = doc?.flatSections()?.flatMap { section ->
+        section.paragraphs.mapIndexed { paragraphIndex, paragraph ->
+            Fb2Block(section.id, paragraphIndex, section.title.takeIf { paragraphIndex == 0 }, paragraph.text)
+        }
+    }.orEmpty()
     LaunchedEffect(doc) {
         if (doc == null) return@LaunchedEffect
-        val sections = doc.flatSections()
-        val index = initialLocator?.substringAfter("fb2:")?.substringBefore(':')?.let { id ->
-            sections.indexOfFirst { it.id == id }
-        }?.takeIf { it >= 0 } ?: 0
+        val parts = initialLocator?.removePrefix("fb2:")?.split(':') ?: emptyList()
+        val sectionID = parts.getOrNull(0)
+        val paragraph = (parts.getOrNull(1)?.toIntOrNull() ?: 0).coerceAtLeast(0)
+        val index = blocks.indexOfFirst { it.sectionID == sectionID && it.paragraphIndex == paragraph }
         if (index > 0) listState.scrollToItem(index)
     }
     LaunchedEffect(listState, doc) {
         snapshotFlow { listState.firstVisibleItemIndex }.collect { index ->
-            val count = doc?.flatSections()?.size ?: return@collect
-            if (count > 0) onProgress(index.toDouble() / count.toDouble(), "fb2:${doc.flatSections()[index.coerceIn(0, count - 1)].id}:0")
+            if (blocks.isNotEmpty()) {
+                val block = blocks[index.coerceIn(0, blocks.lastIndex)]
+                val progression = if (blocks.size > 1) index.toDouble() / blocks.lastIndex.toDouble() else 0.0
+                onProgress(progression, "fb2:${block.sectionID}:${block.paragraphIndex}:0")
+            }
         }
     }
     Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
@@ -351,18 +374,23 @@ private fun Fb2ReaderScreen(title: String, author: String?, year: String?, right
             Icon(Icons.Filled.List, "Table of contents", Modifier.padding(8.dp).clickable { showContents = true }, tint = MaterialTheme.colorScheme.onPrimary)
         }
         when {
-            error != null -> Text(error ?: "Cannot open FB2", color = MaterialTheme.colorScheme.error, Modifier.padding(24.dp))
+            error != null -> Text(error ?: "Cannot open FB2", color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(24.dp))
             doc == null -> CircularProgressIndicator(Modifier.padding(24.dp))
             else -> LazyColumn(state = listState, Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
-                itemsIndexed(doc.flatSections(), key = { _, section -> section.id }) { index, section ->
-                    if (section.title.isNotBlank()) Text(section.title, fontSize = 22.sp, fontWeight = FontWeight.Bold,
-                        modifier = Modifier.padding(top = if (index == 0) 18.dp else 28.dp, bottom = 8.dp))
-                    section.paragraphs.forEach { paragraph -> Text(paragraph.text, fontSize = 18.sp, modifier = Modifier.padding(vertical = 6.dp)) }
+                itemsIndexed(blocks, key = { _, block -> "${block.sectionID}:${block.paragraphIndex}" }) { index, block ->
+                    block.title?.let { title -> Text(title, fontSize = 22.sp, fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(top = if (index == 0) 18.dp else 28.dp, bottom = 8.dp)) }
+                    Text(block.text, fontSize = 18.sp, modifier = Modifier.padding(vertical = 6.dp))
                 }
             }
         }
     }
     if (showContents && doc != null) AlertDialog(onDismissRequest = { showContents = false }, title = { Text("Contents") },
-        text = { LazyColumn { itemsIndexed(doc.flatSections()) { index, section -> Text(section.title.ifBlank { "Section ${index + 1}" }, Modifier.fillMaxWidth().clickable { showContents = false }) } } },
+        text = { LazyColumn { itemsIndexed(doc.flatSections()) { index, section -> Text(section.title.ifBlank { "Section ${index + 1}" }, Modifier.fillMaxWidth().clickable {
+            showContents = false
+            blocks.indexOfFirst { it.sectionID == section.id }.takeIf { it >= 0 }?.let { target -> scope.launch { listState.animateScrollToItem(target) } }
+        }) } } },
         confirmButton = { TextButton({ showContents = false }) { Text("Close") } })
 }
+
+private data class Fb2Block(val sectionID: String, val paragraphIndex: Int, val title: String?, val text: String)
