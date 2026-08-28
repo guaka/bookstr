@@ -7,7 +7,7 @@ const {
   proxyBlossomRequest,
 } = require('../../blossom-proxy');
 
-test('Blossom proxy accepts only hash-addressed EPUB and PDF downloads', () => {
+test('Blossom proxy accepts only hash-addressed EPUB, PDF, and FB2 downloads', () => {
   const hash = 'a'.repeat(64);
   assert.equal(blossomBlobNameFromUrl(`app://bookstr/api/blossom/${hash}`), hash);
   assert.equal(blossomBlobNameFromUrl(`app://bookstr/api/blossom/${hash}.EPUB`), `${hash}.epub`);
@@ -15,6 +15,7 @@ test('Blossom proxy accepts only hash-addressed EPUB and PDF downloads', () => {
     blossomUpstreamUrl(`app://bookstr/api/blossom/${hash}.pdf`, 'https://blossom.test/'),
     `https://blossom.test/${hash}.pdf`,
   );
+  assert.equal(blossomBlobNameFromUrl(`app://bookstr/api/blossom/${hash}.FB2.ZIP`), `${hash}.fb2.zip`);
   for (const url of [
     'not a URL',
     'app://bookstr/index.html',

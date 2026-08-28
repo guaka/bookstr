@@ -267,7 +267,7 @@
     }
     if (source.protocol !== 'https:' || source.hostname.toLowerCase() !== 'blossom.bfr.ee') return '';
     const name = source.pathname.split('/').filter(Boolean).pop() || '';
-    const match = name.match(/^([a-f0-9]{64})(\.(?:epub|pdf))?$/i);
+    const match = name.match(/^([a-f0-9]{64})(\.(?:epub|pdf|fb2(?:\.zip)?))?$/i);
     if (!match || match[1].toLowerCase() !== hash) return '';
     try {
       return new URL(`/api/blossom/${hash}${String(match[2] || '').toLowerCase()}`, appBaseUrl).toString();

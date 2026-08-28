@@ -1817,6 +1817,57 @@ final class FavoritesParserTests: XCTestCase {
         XCTAssertFalse(PublicationUtilities.isStructurallyValidPublication(fileURL: url, format: .epub))
     }
 
+    func testNativeFB2MetadataAndValidationRejectUnsafeXML() throws {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".fb2")
+        defer { try? FileManager.default.removeItem(at: url) }
+        let fb2 = """
+            <FictionBook xmlns="http://www.gribuser.ru/xml/fictionbook/2.0">
+              <description><title-info><book-title>Тест</book-title><author><first-name>Ada</first-name><last-name>Writer</last-name></author><date>2024-01-01</date></title-info></description>
+              <body><section><title><p>Глава</p></title><p>Текст</p></section></body>
+            </FictionBook>
+            """
+        try Data(fb2.utf8).write(to: url)
+        XCTAssertEqual(PublicationUtilities.detectedFormat(fileURL: url), .fb2)
+        XCTAssertTrue(PublicationUtilities.isStructurallyValidPublication(fileURL: url, format: .fb2))
+        XCTAssertEqual(PublicationUtilities.fb2Metadata(fileURL: url)?.title, "Тест")
+        XCTAssertEqual(PublicationUtilities.fb2Metadata(fileURL: url)?.author, "Ada Writer")
+        XCTAssertEqual(PublicationUtilities.fb2Metadata(fileURL: url)?.year, "2024")
+
+        let unsafe = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".fb2")
+        defer { try? FileManager.default.removeItem(at: unsafe) }
+        try Data("<!DOCTYPE FictionBook [<!ENTITY x SYSTEM 'https://example.test/x'>]><FictionBook><body><section><p>&x;</p></section></body></FictionBook>".utf8).write(to: unsafe)
+        XCTAssertFalse(PublicationUtilities.isStructurallyValidPublication(fileURL: unsafe, format: .fb2))
+    }
+
+    func testSingleStoredFB2ZipIsAcceptedAndMultiEntryZipRejected() throws {
+        let valid = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".fb2")
+        defer { try? FileManager.default.removeItem(at: valid) }
+        let xml = #"<FictionBook><description><title-info><book-title>Stored</book-title></title-info></description><body><section><p>Text</p></section></body></FictionBook>"#
+        try makeStoredZip([("book.fb2", xml)]).write(to: valid)
+        XCTAssertEqual(PublicationUtilities.detectedFormat(fileURL: valid), .fb2)
+        XCTAssertTrue(PublicationUtilities.isStructurallyValidPublication(fileURL: valid, format: .fb2))
+
+        let multiple = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".fb2")
+        defer { try? FileManager.default.removeItem(at: multiple) }
+        try makeStoredZip([("one.fb2", xml), ("two.fb2", xml)]).write(to: multiple)
+        XCTAssertFalse(PublicationUtilities.isStructurallyValidPublication(fileURL: multiple, format: .fb2))
+
+        let traversal = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".fb2")
+        defer { try? FileManager.default.removeItem(at: traversal) }
+        try makeStoredZip([("../book.fb2", xml)]).write(to: traversal)
+        XCTAssertFalse(PublicationUtilities.isStructurallyValidPublication(fileURL: traversal, format: .fb2))
+    }
+
+    func testSingleDeflatedFB2ZipIsAccepted() throws {
+        let valid = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".fb2.zip")
+        defer { try? FileManager.default.removeItem(at: valid) }
+        // ZIP_DEFLATED archive containing exactly one safe FB2 entry.
+        let encoded = "UEsDBBQAAAAIAI+eHF2swOoxXQAAAJsAAAAIAAAAYm9vay5mYjJVjkEKgDAMBF9U8oGQg4gv8AO2jRAsTbE56O+tClKPOzssi5MEE82D6kYYuYZdyg0ITSyxk7wqoW+1ewCNvKbFOCJ0EKG34bfjNZ6ElcMbC818GEJp3gfhlaB/cwFQSwECFAMUAAAACACPnhxdrMDqMV0AAACbAAAACAAAAAAAAAAAAAAAgAEAAAAAYm9vay5mYjJQSwUGAAAAAAEAAQA2AAAAgwAAAAAA"
+        guard let data = Data(base64Encoded: encoded) else { return XCTFail("invalid fixture") }
+        try data.write(to: valid)
+        XCTAssertTrue(PublicationUtilities.isStructurallyValidPublication(fileURL: valid, format: .fb2))
+    }
+
     func testUnavailableSearchResultMatchesExternalFavoriteByStableID() {
         let result = BookSearchResult(
             id: "openlibrary:OL123M", source: "openlibrary", title: "A Book", author: "An Author",

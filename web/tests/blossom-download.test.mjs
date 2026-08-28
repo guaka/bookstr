@@ -14,6 +14,14 @@ test('maps trusted Blossom book URLs onto the Electron same-origin proxy', () =>
     desktopBlossomProxyUrl(`https://blossom.bfr.ee/${hash}`, hash, 'app://bookstr/index.html'),
     `app://bookstr/api/blossom/${hash}`,
   );
+  assert.equal(
+    desktopBlossomProxyUrl(`https://blossom.bfr.ee/${hash}.fb2`, hash, 'app://bookstr/index.html'),
+    `app://bookstr/api/blossom/${hash}.fb2`,
+  );
+  assert.equal(
+    desktopBlossomProxyUrl(`https://blossom.bfr.ee/${hash}.fb2.zip`, hash, 'app://bookstr/index.html'),
+    `app://bookstr/api/blossom/${hash}.fb2.zip`,
+  );
   assert.equal(desktopBlossomProxyUrl(`https://example.test/${hash}.epub`, hash, 'app://bookstr/index.html'), '');
   assert.equal(desktopBlossomProxyUrl(`http://blossom.bfr.ee/${hash}.epub`, hash, 'app://bookstr/index.html'), '');
   assert.equal(desktopBlossomProxyUrl('https://blossom.bfr.ee/', hash, 'app://bookstr/index.html'), '');

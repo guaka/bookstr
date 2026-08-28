@@ -1789,6 +1789,8 @@
     <script src="cover-assets.js"></script>
     <script src="passage-results.js"></script>
     <script src="nostr-social.js"></script>
+    <script src="jszip.min.js"></script>
+    <script src="fb2-validation.js"></script>
     <script src="desktop-progress.js"></script>
     <script src="nostr-progress.js"></script>
     <script src="favorite-references.js"></script>
@@ -5445,11 +5447,18 @@
         const type = String(blob.type || '').toLowerCase();
         if (type.includes('pdf')) return 'pdf';
         if (type.includes('fictionbook') || type.includes('fb2')) return 'fb2';
-        if (type.includes('epub') || type.includes('zip')) return 'epub';
+        if (type.includes('zip')) {
+          const inspected = await globalThis.BookstrFB2?.inspect(blob);
+          return inspected?.format === 'fb2' ? 'fb2' : 'epub';
+        }
+        if (type.includes('epub')) return 'epub';
         try {
           const bytes = new Uint8Array(await blob.slice(0, 5).arrayBuffer());
           if (String.fromCharCode(...bytes) === '%PDF-') return 'pdf';
-          if (bytes[0] === 0x50 && bytes[1] === 0x4b) return 'epub';
+          if (bytes[0] === 0x50 && bytes[1] === 0x4b) {
+            const inspected = await globalThis.BookstrFB2?.inspect(blob);
+            return inspected?.format === 'fb2' ? 'fb2' : 'epub';
+          }
           const prefix = new TextDecoder('utf-8', { fatal: false }).decode(bytes);
           if (prefix.trimStart().startsWith('<')) return 'fb2';
         } catch {}
@@ -5792,6 +5801,7 @@
       }
 
       async function displayFB2(blob, book, readPath, openGeneration) {
+        blob = await globalThis.BookstrFB2?.normalizeBlob(blob) || blob;
         const base64 = await blobToBase64(blob);
         if (openGeneration !== readerOpenGeneration) return;
         const readerLoad = await readerFrameLoader('fb2', openGeneration);
@@ -5889,7 +5899,7 @@
               void cacheBookBlob(book, readPath, blob).catch(() => {});
             }
             await displayPdf(blob, book, readPath, openGeneration);
-          } else if (String(book.extension || '').toLowerCase() === 'fb2' || /\.fb2(?:\?|$)/i.test(readPath)) {
+          } else if (String(book.extension || '').toLowerCase() === 'fb2' || /\.fb2(?:\.zip)?(?:\?|$)/i.test(readPath)) {
             let blob = await cachedBookBlob(book, readPath).catch(() => null);
             if (!blob) {
               if (!readPath) throw new Error('No cached FB2 copy was found.');
@@ -5897,6 +5907,7 @@
               if (!response.ok) throw new Error(`FB2 download failed (${response.status}).`);
               blob = await response.blob();
               await enforceBlobSha256(book, blob);
+              await globalThis.BookstrFB2.normalizeBlob(blob);
               void cacheBookBlob(book, readPath, blob).catch(() => {});
             }
             await displayFB2(blob, book, readPath, openGeneration);

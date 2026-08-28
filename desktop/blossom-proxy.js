@@ -1,6 +1,6 @@
 const BLOSSOM_BASE_URL = 'https://blossom.bfr.ee';
 const BLOSSOM_PROXY_PATH_PREFIX = '/api/blossom/';
-const BLOSSOM_BLOB_NAME = /^[a-f0-9]{64}(?:\.(?:epub|pdf))?$/i;
+const BLOSSOM_BLOB_NAME = /^[a-f0-9]{64}(?:\.(?:epub|pdf|fb2(?:\.zip)?))?$/i;
 
 function blossomBlobNameFromUrl(url) {
   let parsed;

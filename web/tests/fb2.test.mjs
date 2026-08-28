@@ -11,6 +11,7 @@ const { isFB2Name, isFB2ProgressLocator, isFB2Type } = await import(
   `data:text/javascript;base64,${Buffer.from(fb2Source).toString('base64')}`,
 );
 const reader = await readFile(new URL('../fb2-reader.html', import.meta.url), 'utf8');
+const validation = await readFile(new URL('../fb2-validation.js', import.meta.url), 'utf8');
 
 test('recognizes supported FictionBook downloads and MIME types', () => {
   assert.equal(isFB2Type('application/x-fictionbook+xml; charset=utf-8'), true);
@@ -54,4 +55,15 @@ test('FB2 parser asset rejects active XML content and external navigation', () =
   assert.match(fb2Source, /\^#\[-A-Za-z0-9_\.:\]\+\$/);
   assert.match(fb2Source, /createTextNode/);
   assert.doesNotMatch(fb2Source, /innerHTML\s*=/);
+});
+
+test('FB2 download validation keeps native bytes and restricts ZIPs to one safe book', () => {
+  assert.match(validation, /MAX_BYTES = 50 \* 1024 \* 1024/);
+  assert.match(validation, /<!DOCTYPE\|<!ENTITY/);
+  assert.match(validation, /entries\.length !== 1/);
+  assert.match(validation, /safeName\(files\[0\]\.name\)/);
+  assert.match(validation, /uncompressedSize/);
+  assert.match(validation, /checkCRC32: true/);
+  assert.match(validation, /new Blob\(\[bytes\], \{ type: 'application\/fb2\+xml' \}\)/);
+  assert.match(validation, /Invalid or unsafe FB2 file/);
 });
