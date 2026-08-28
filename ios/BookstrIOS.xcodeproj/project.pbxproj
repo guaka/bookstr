@@ -26,6 +26,7 @@
 		5DB889E6F39D4FE4A93EDE88 /* ReaderAssetContractTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 72EA11CB11F3CEF1440866E6 /* ReaderAssetContractTests.swift */; };
 		601AF8A79D4831DDC09A645C /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 23A93D9A5855B73ACF116D90 /* RootView.swift */; };
 		6480490A639CE5220CC5DFCB /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6F93448D346ACAB3619DFEB4 /* Theme.swift */; };
+		6A0D1FD1C20FDF3EA0EF7F56 /* NostrConstantsV1.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7BA154F3ED4ACB912D2B64FE /* NostrConstantsV1.swift */; };
 		6CFA77C5EDBF89E9E2C87904 /* NostrSigner.swift in Sources */ = {isa = PBXBuildFile; fileRef = CBC8C1E2AA5F7475E90DE61A /* NostrSigner.swift */; };
 		6E913BF2A93ECDBAB524A6BF /* JSONFileStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 23275C7851892FD731C80E1F /* JSONFileStore.swift */; };
 		704028FAC63534ADE859A683 /* WordNavigationState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A620E1092146DF465DC2EA6 /* WordNavigationState.swift */; };
@@ -117,6 +118,7 @@
 		6F93448D346ACAB3619DFEB4 /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
 		72EA11CB11F3CEF1440866E6 /* ReaderAssetContractTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReaderAssetContractTests.swift; sourceTree = "<group>"; };
 		771CD32EA4B275B34585217A /* ScreenChrome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScreenChrome.swift; sourceTree = "<group>"; };
+		7BA154F3ED4ACB912D2B64FE /* NostrConstantsV1.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NostrConstantsV1.swift; sourceTree = "<group>"; };
 		87B9B26B320EF361E399E7BD /* CatalogRepository.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CatalogRepository.swift; sourceTree = "<group>"; };
 		8DC1903A1A4F090EDAB6D322 /* NostrClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NostrClient.swift; sourceTree = "<group>"; };
 		8E8629ECA94AC88A9C66B1A3 /* CatalogProviderRecordV1.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CatalogProviderRecordV1.swift; sourceTree = "<group>"; };
@@ -345,6 +347,7 @@
 			isa = PBXGroup;
 			children = (
 				8E8629ECA94AC88A9C66B1A3 /* CatalogProviderRecordV1.swift */,
+				7BA154F3ED4ACB912D2B64FE /* NostrConstantsV1.swift */,
 			);
 			path = Generated;
 			sourceTree = "<group>";
@@ -525,6 +528,7 @@
 				85FD5E6ACD4DF7CF36D9DBE5 /* Models.swift in Sources */,
 				86061D91919D1891934388FA /* Nip46Service.swift in Sources */,
 				892C9DFE89D05FC1A4D19F77 /* NostrClient.swift in Sources */,
+				6A0D1FD1C20FDF3EA0EF7F56 /* NostrConstantsV1.swift in Sources */,
 				3285ADECD2163ADDA0E6B768 /* NostrIdentity.swift in Sources */,
 				7C95BE7A89C4D68166526DE8 /* NostrModels.swift in Sources */,
 				6CFA77C5EDBF89E9E2C87904 /* NostrSigner.swift in Sources */,

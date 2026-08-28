@@ -16,15 +16,15 @@ struct NostrEvent: Codable {
 }
 
 enum NostrKinds {
-    static let progress = 30078
-    static let favorites = 30003
-    static let favoritesDTag = "libvault-favorites"
-    static let favoritesChunkPrefix = "libvault-favorites-chunk"
-    static let collectionChunkPrefix = "bookstr-chunk"
-    static let collectionIndexDTag = "bookstr-collections"
-    static let vocabularyPrefix = "app.bookstr.vocabulary."
+    static let progress = NostrConstantsV1.progressKind
+    static let favorites = NostrConstantsV1.favoritesKind
+    static let favoritesDTag = NostrConstantsV1.favoritesDTag
+    static let favoritesChunkPrefix = NostrConstantsV1.favoritesChunkPrefix
+    static let collectionChunkPrefix = NostrConstantsV1.collectionChunkPrefix
+    static let collectionIndexDTag = NostrConstantsV1.collectionIndexDTag
+    static let vocabularyPrefix = NostrConstantsV1.vocabularyPrefix
     static let comment = 1111
-    static let snippetPrefix = "app.bookstr.snippet."
+    static let snippetPrefix = NostrConstantsV1.snippetPrefix
 
     static func progressDTag(bookId: String) -> String {
         "app.bookstr.progress.\(bookId)"
@@ -43,7 +43,7 @@ struct BlossomAuthorizationRequest: Equatable {
 }
 
 enum BlossomAuthorizationWire {
-    static let kind = 24_242
+    static let kind = NostrConstantsV1.blossomAuthorizationKind
 
     static func unsignedGetEvent(
         hash: String,

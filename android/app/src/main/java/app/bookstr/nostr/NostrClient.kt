@@ -1,5 +1,6 @@
 package app.bookstr.nostr
 
+import app.bookstr.shared.generated.NostrConstantsV1
 import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -240,13 +241,13 @@ class NostrClient(
 
     companion object {
         private const val TAG = "NostrClient"
-        const val KIND_PROGRESS = 30078
-        const val KIND_FAVORITES = 30003
-        const val FAVORITES_D_TAG = "libvault-favorites"
+        const val KIND_PROGRESS = NostrConstantsV1.PROGRESS_KIND
+        const val KIND_FAVORITES = NostrConstantsV1.FAVORITES_KIND
+        const val FAVORITES_D_TAG = NostrConstantsV1.FAVORITES_D_TAG
         const val DEFAULT_INTEROP_RELAY = "wss://relay.nomadwiki.org"
-        const val VOCABULARY_D_PREFIX = "app.bookstr.vocabulary."
+        const val VOCABULARY_D_PREFIX = NostrConstantsV1.VOCABULARY_PREFIX
 
-        fun progressDTag(bookId: String): String = "app.bookstr.progress.$bookId"
+        fun progressDTag(bookId: String): String = NostrConstantsV1.PROGRESS_PREFIX + bookId
 
         fun progressContent(
             bookId: String,

@@ -44,6 +44,7 @@ let package = Package(
                 "Nostr/NostrClient.swift",
                 "Nostr/NostrModels.swift",
                 "Shared/Generated/CatalogProviderRecordV1.swift",
+                "Shared/Generated/NostrConstantsV1.swift",
                 "Shared/Models.swift",
                 "Shared/WordNavigationState.swift",
             ],
