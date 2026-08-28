@@ -1802,6 +1802,7 @@
     <script src="jszip.min.js"></script>
     <script src="fb2-validation.js"></script>
     <script src="desktop-progress.js"></script>
+    <script src="generated/nostr-constants-v1.js"></script>
     <script src="nostr-progress.js"></script>
     <script src="favorite-references.js"></script>
     <script src="blossom-authorization.js"></script>
@@ -1818,14 +1819,14 @@
       const NOSTR_RELAYS = ['wss://relay.nomadwiki.org'];
       const NOSTR_SOCIAL_RELAYS = ['wss://relay.trustroots.org'];
       const NOSTR_TRUSTROOTS_PROFILE_RELAY = 'wss://nip42.trustroots.org';
-      const NOSTR_FAVORITES_KIND = 30003;
+      const NOSTR_FAVORITES_KIND = BookstrNostrConstants.kinds.favorites;
       const NOSTR_FOLLOW_KIND = 3;
-      const NOSTR_PROGRESS_KIND = 30078;
-      const FAVORITES_D_TAG = 'libvault-favorites';
-      const FAVORITES_CHUNK_PREFIX = 'libvault-favorites-chunk';
+      const NOSTR_PROGRESS_KIND = BookstrNostrConstants.kinds.progress;
+      const FAVORITES_D_TAG = BookstrNostrConstants.dTags.favorites;
+      const FAVORITES_CHUNK_PREFIX = BookstrNostrConstants.prefixes.favoritesChunk;
       const FAVORITES_CHUNK_LIMIT = 6000;
       const READING_D_PREFIX = 'app.bookstr.progress.';
-      const WORDS_D_PREFIX = 'app.bookstr.vocabulary.';
+      const WORDS_D_PREFIX = BookstrNostrConstants.prefixes.vocabulary;
       const NOSTR_SYNC_CACHE_PREFIX = 'bookstr_nostr_sync_v1_';
       const NOSTR_SYNC_CACHE_TTL_MS = 30 * 60 * 1000;
       const NIP7_CACHE_TTL_MS = 24 * 60 * 60 * 1000;

@@ -14,6 +14,8 @@ test('web tests are gated by web-related path changes', async () => {
   assert.match(workflow, /- 'docs\/CLIENT_CAPABILITIES\.md'/);
   assert.match(workflow, /- 'scripts\/\*\*'/);
   assert.match(workflow, /node scripts\/generate-client-overview\.mjs --check/);
+  assert.match(workflow, /node shared\/contracts\/generate-nostr-constants\.mjs --check/);
+  assert.match(workflow, /shared\/contracts\/\*\.test\.mjs/);
   assert.match(workflow, /if: needs\.changes\.outputs\.web == 'true'/);
   assert.match(workflow, /repository-hygiene:/);
   assert.match(workflow, /name: Workflow contracts/);

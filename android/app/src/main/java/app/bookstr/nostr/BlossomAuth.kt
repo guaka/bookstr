@@ -1,11 +1,12 @@
 package app.bookstr.nostr
 
+import app.bookstr.shared.generated.NostrConstantsV1
 import org.json.JSONArray
 import org.json.JSONObject
 import java.util.Base64
 
 object BlossomAuth {
-    const val KIND = 24242
+    const val KIND = NostrConstantsV1.BLOSSOM_AUTHORIZATION_KIND
 
     fun unsignedGetEvent(
         hash: String,
