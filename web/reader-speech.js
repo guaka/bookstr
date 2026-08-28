@@ -196,7 +196,7 @@
     }
     flushActive();
     if (!chunks.length && paragraph) chunks.push({ start: 0, end: paragraph.length });
-    return chunks;
+    return rebalanceFinalRange(paragraph, chunks, hardLimit);
   }
 
   function pauseAfter(text) {

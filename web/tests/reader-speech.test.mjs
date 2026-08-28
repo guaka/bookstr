@@ -99,6 +99,12 @@ test('speech planner joins short sentences and rebalances a one-word tail', () =
     'ccccc ddddd',
   ]);
   assertPlanIntegrity(rebalanced);
+
+  const sentenceTail = `word `.repeat(47) + 'end. Tail.';
+  const sentencePlan = BookstrSpeech.buildPlan([sentenceTail]);
+  assert.equal(sentencePlan.chunks.at(-1).text, 'end. Tail.');
+  assert.notEqual(sentencePlan.chunks.at(-1).text.split(/\s+/).length, 1);
+  assertPlanIntegrity(sentencePlan);
 });
 
 test('speech planner hard-splits only an overlong unbroken token', () => {
