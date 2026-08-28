@@ -1789,6 +1789,7 @@
     <script src="cover-assets.js"></script>
     <script src="passage-results.js"></script>
     <script src="nostr-social.js"></script>
+    <script src="desktop-progress.js"></script>
     <script src="vendor/sql-wasm.js"></script>
     <script>
       const FAVORITES_KEY = 'bookstr_nostr_favorites_v1';
@@ -3808,30 +3809,12 @@
       }
 
       function normalizeDesktopProgress(value) {
-        if (!value || typeof value !== 'object') return null;
-        const md5 = String(value.md5 || value.bookId || value.book?.md5 || '').trim().toLowerCase();
-        if (!md5) return null;
-        const readUrl = String(value.readUrl || value.url || '').trim();
-        const progression = Number(value.progression);
-        if (!Number.isFinite(progression)) return null;
+        const normalized = BookstrDesktopProgress.normalizeProgressPayload(value, 'web');
+        if (!normalized) return null;
         return {
-          md5,
-          readUrl,
-          progression: Math.max(0, Math.min(1, progression)),
-          cfi: String(value.cfi || value.locator?.locations?.cfi || value.locator?.href || ''),
-          title: String(value.title || ''),
-          authors: String(value.authors || value.author || ''),
-          language: String(value.language || '').toLowerCase(),
-          year: String(value.year || ''),
-		  ...BookMetadata.normalizeRights(value),
+          ...normalized,
+          ...BookMetadata.normalizeRights(value),
           publisher: String(value.publisher || ''),
-          extension: String(value.extension || value.format || 'epub').toLowerCase(),
-          source: String(value.source || ''),
-          sourceNativeId: String(value.sourceNativeId || value.source_native_id || ''),
-          furthestProgression: Number(value.furthestProgression || value.locator?.furthestProgression || 0) || 0,
-          sourceUrl: String(value.sourceUrl || value.source_url || ''),
-          blossomUrl: String(value.blossomUrl || value.blossom_url || ''),
-          blossomSha256: String(value.blossomSha256 || value.blossom_sha256 || ''),
           updatedAt: Number(value.updatedAt || Date.now()),
         };
       }
