@@ -19,7 +19,11 @@ struct FavoritesQueryResult {
     var fallbackUsed: Bool
 }
 
-final class NostrClient {
+protocol NostrEventPublishing {
+    func publishEvent(_ event: NostrEvent, relays: [String]) async -> Bool
+}
+
+final class NostrClient: NostrEventPublishing {
     static let defaultInteropRelay = "wss://relay.nomadwiki.org"
 
     /// Isolated from `URLSession.shared` so closing a catalog/favorites socket cannot
