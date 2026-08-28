@@ -53,6 +53,22 @@ test('Search explains active sources and fans out without private-first fallback
   assert.match(html, /@media \(max-width: 600px\)[\s\S]*\.search-sources-table td::before/);
 });
 
+test('search registers lawful LitRes and configured public OPDS FB2 sources', () => {
+  assert.match(html, /async function searchLitresPublicDomain\(query\)/);
+  assert.match(html, /\/litres\/search\?q=/);
+  assert.match(html, /name: 'LitRes Public Domain'/);
+  assert.match(html, /async function searchCustomOPDSFeed\(feed, query\)/);
+  assert.match(html, /getOPDSSourcesModule\(\)/);
+  assert.match(html, /opds-/);
+  assert.match(html, /deliveries: \['Metadata', 'FB2'\]/);
+  assert.match(html, /id="opds-feeds"/);
+  assert.match(html, /function normalizePublicOPDSFeedSettings\(value\)/);
+  assert.match(html, /bookstr-opds-feeds/);
+  assert.match(html, /bookstr-opds-feed/);
+  assert.match(html, /function applySharedOPDSFeedTags\(tags\)/);
+  assert.match(html, /opdsFeeds: normalizePublicOPDSFeedSettings\(payload\.opdsFeeds\)/);
+});
+
 test('People loads the connected user follow list and public book lists', () => {
   assert.match(html, /id="people-tab-btn"/);
   assert.match(html, /id="people-list"/);

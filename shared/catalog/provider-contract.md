@@ -35,3 +35,17 @@ Check the fixtures and committed generated files with:
 node shared/catalog/validate-provider-records.mjs
 node shared/catalog/generate-provider-record-dtos.mjs --check
 ```
+
+## Public OPDS sources
+
+Users may configure a public OPDS source as a display `name` and a
+credential-free public `https://` feed URL. Private-network endpoints,
+embedded credentials, and all credential fields are rejected and never
+serialized. The portable Nostr representation is a
+`["bookstr-opds-feed", name, url]` tag under the
+`["bookstr-opds-feeds", "1"]` marker.
+
+Adapters support OPDS 1 Atom acquisition feeds, OpenSearch discovery, and
+OPDS 2 JSON publication feeds. They return only FB2 acquisitions and report a
+feed-specific failure to the calling client; custom feed URLs are fetched by
+the client and are never forwarded through Bookstr's public worker.

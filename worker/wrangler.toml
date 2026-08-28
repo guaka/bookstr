@@ -5,3 +5,7 @@ compatibility_date = "2026-08-23"
 # Use a dedicated Cloudflare-managed hostname because books.guaka.org points
 # directly to GitHub Pages and therefore cannot intercept Worker routes.
 routes = [{ pattern = "books-api.guaka.org", custom_domain = true }]
+
+# Set LITRES_PUBLIC_DOMAIN_CATALOG_URL as an operator-owned Worker environment
+# value. It must point to the vetted LitRes public-domain catalogue; users'
+# custom OPDS URLs are never configured here.

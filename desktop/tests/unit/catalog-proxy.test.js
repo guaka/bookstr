@@ -45,6 +45,10 @@ test('catalog proxy allowlists only Bookstr search and acquisition routes', () =
     catalogUpstreamUrl('app://bookstr/api/gdl-epub?id=14165'),
     'https://content.digitallibrary.io/wp-json/epub-generator/v1/book/14165',
   );
+  assert.equal(
+    catalogUpstreamUrl('app://bookstr/api/litres/search?q=tolstoy&limit=20', base),
+    'https://catalog.test/api/litres/search?q=tolstoy&limit=20',
+  );
   assert.equal(catalogUpstreamUrl('app://bookstr/api/gdl-epub?id=not-a-number'), '');
   assert.equal(catalogUpstreamUrl('app://bookstr/api/oapen-file?id=not-a-uuid'), '');
   assert.equal(catalogUpstreamUrl('app://bookstr/api/gutendex', base), '');
