@@ -158,6 +158,20 @@ final class NostrClientProgressTests: XCTestCase {
         XCTAssertNil(parsed?.author)
     }
 
+    func testFetchLatestProgressReturnsNilForEmptyRelayList() async {
+        let client = NostrClient()
+        let event = await client.fetchLatestProgress(pubkey: "abc", bookId: "book-id", relays: [])
+
+        XCTAssertNil(event)
+    }
+
+    func testFetchVocabularyReturnsEmptyForEmptyRelayList() async {
+        let client = NostrClient()
+        let events = await client.fetchVocabulary(pubkey: "abc", relays: [])
+
+        XCTAssertTrue(events.isEmpty)
+    }
+
     func testAcceptsAuthorsAliasFromMetadata() {
         let content = #"{"locator":{"progression":0.12,"cfi":"epubcfi"},"authors":"Alias Author"}"#
         let parsed = NostrClient.parseProgressContent(content, fallbackBookId: "fallback")
