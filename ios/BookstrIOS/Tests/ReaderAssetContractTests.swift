@@ -31,6 +31,32 @@ final class ReaderAssetContractTests: XCTestCase {
     }
 
 #if !SWIFT_PACKAGE
+    func testFB2ParserExtractsMetadataSectionsAndNestedMarkup() throws {
+        let xml = """
+        <?xml version="1.0" encoding="UTF-8"?>
+        <FictionBook xmlns="http://www.gribuser.ru/xml/fictionbook/2.0">
+          <description><title-info><book-title>Тест</book-title><lang>ru</lang><author><first-name>Анна</first-name><last-name>Автор</last-name></author></title-info></description>
+          <body><section id="chapter-1"><title><p>Глава первая</p></title><p>Привет, <emphasis>мир</emphasis>!</p><section id="nested"><title><p>Вложенная</p></title><p>Текст.</p></section></section></body>
+        </FictionBook>
+        """
+        let document = try FB2Parser.parse(data: Data(xml.utf8))
+        XCTAssertEqual(document.title, "Тест")
+        XCTAssertEqual(document.author, "Анна Автор")
+        XCTAssertEqual(document.language, "ru")
+        XCTAssertEqual(document.flatSections.map(\.id), ["chapter-1", "nested"])
+        XCTAssertEqual(document.flatSections[0].title, "Глава первая")
+        XCTAssertEqual(document.flatSections[0].paragraphs.first?.text, "Привет, мир!")
+    }
+
+    func testFB2ParserRejectsExternalEntitiesAndEmptyBodies() {
+        XCTAssertThrowsError(try FB2Parser.parse(data: Data("<!DOCTYPE FictionBook [<!ENTITY x SYSTEM 'file:///tmp/x'>]><FictionBook/>".utf8))) { error in
+            XCTAssertTrue(error is FB2ParseError)
+        }
+        XCTAssertThrowsError(try FB2Parser.parse(data: Data("<FictionBook><body/></FictionBook>".utf8))) { error in
+            XCTAssertEqual(error as? FB2ParseError, .emptyBody)
+        }
+    }
+
     func testEPUBSpeechPlannerKeepsShortTailAndParagraphPause() throws {
         let html = try bundledReaderHTML()
         let speechSource = try bundledAsset(named: "reader-speech", extension: "js")

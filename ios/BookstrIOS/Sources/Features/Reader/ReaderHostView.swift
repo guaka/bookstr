@@ -1,5 +1,6 @@
 import SwiftUI
 import Foundation
+import AVFoundation
 
 struct ReaderHostView: View {
     @EnvironmentObject private var container: AppContainer
@@ -185,6 +186,7 @@ struct ReaderHostView: View {
         .onDisappear {
             UIApplication.shared.isIdleTimerDisabled = false
             if epubController.isSpeaking { epubController.toggleSpeech() }
+            if fb2Controller.isSpeaking { fb2Controller.toggleSpeech() }
             epubController.endNowPlaying()
         }
         .onChange(of: container.settingsRepository.theme) { _, theme in
@@ -230,6 +232,15 @@ struct ReaderHostView: View {
                         .frame(width: 24, height: 24)
                 }
                 .accessibilityLabel(epubController.isSpeaking ? "Stop reading aloud" : "Read aloud")
+            }
+
+            if book.format == .fb2 {
+                Button { fb2Controller.toggleSpeech() } label: {
+                    Image(systemName: fb2Controller.isSpeaking ? "stop.fill" : "play.fill")
+                        .font(.system(size: 16))
+                        .frame(width: 24, height: 24)
+                }
+                .accessibilityLabel(fb2Controller.isSpeaking ? "Stop reading aloud" : "Read aloud")
             }
 
             if hasTableOfContents {
@@ -326,6 +337,22 @@ struct ReaderHostView: View {
                 }
                 .accessibilityIdentifier("reader-search-result-epub-\(result.sectionIndex)")
             }
+        } else if book.format == .fb2 {
+            List(fb2Controller.searchResults) { result in
+                Button {
+                    showSearch = false
+                    fb2Controller.requestedSectionID = fb2Controller.sections[result.sectionIndex].id
+                } label: {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(fb2Controller.sections[result.sectionIndex].title.isEmpty
+                             ? "Section \(result.sectionIndex + 1)"
+                             : fb2Controller.sections[result.sectionIndex].title)
+                            .font(.caption).foregroundStyle(.secondary)
+                        Text(result.excerpt).foregroundStyle(.primary).lineLimit(3)
+                    }
+                }
+                .accessibilityIdentifier("reader-search-result-fb2-\(result.sectionIndex)")
+            }
         } else {
             List(pdfController.searchResults) { result in
                 Button {
@@ -343,17 +370,23 @@ struct ReaderHostView: View {
     }
 
     private var isSearching: Bool {
-        book.format == .epub ? epubController.searching : pdfController.searching
+        if book.format == .epub { return epubController.searching }
+        if book.format == .fb2 { return fb2Controller.searching }
+        return pdfController.searching
     }
 
     private var searchResultCount: Int {
-        book.format == .epub ? epubController.searchResults.count : pdfController.searchResults.count
+        if book.format == .epub { return epubController.searchResults.count }
+        if book.format == .fb2 { return fb2Controller.searchResults.count }
+        return pdfController.searchResults.count
     }
 
     private func performSearch() {
         let query = searchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
         guard query.count >= 2 else { return }
-        if book.format == .epub { epubController.search(query) } else { pdfController.search(query) }
+        if book.format == .epub { epubController.search(query) }
+        else if book.format == .fb2 { fb2Controller.search(query) }
+        else { pdfController.search(query) }
     }
 
     private func epubSectionLabel(_ index: Int) -> String {
@@ -475,12 +508,15 @@ struct ReaderHostView: View {
 
     @ViewBuilder
     private var readerBottomBar: some View {
-        if (book.format == .epub && epubController.ready) || (book.format == .pdf && localURL != nil) {
+        let progress = book.format == .epub ? epubController.progression :
+            (book.format == .fb2 ? fb2Controller.progression : pdfController.progression)
+        let furthest = book.format == .epub ? epubController.furthestProgression :
+            (book.format == .fb2 ? fb2Controller.furthestProgression : pdfController.furthestProgression)
+        if (book.format == .epub && epubController.ready) || (book.format == .pdf && localURL != nil) ||
+            (book.format == .fb2 && fb2Controller.ready) {
             CurvedReaderProgress(
-                progress: book.format == .epub ? epubController.progression : pdfController.progression,
-                furthest: book.format == .epub
-                    ? epubController.furthestProgression
-                    : pdfController.furthestProgression,
+                progress: progress,
+                furthest: furthest,
                 theme: container.settingsRepository.theme
             )
             .frame(height: 18)
@@ -491,7 +527,7 @@ struct ReaderHostView: View {
             .accessibilityElement()
             .accessibilityLabel("Reading progress")
             .accessibilityValue(
-                "\(Int(round(100 * (book.format == .epub ? epubController.progression : pdfController.progression)))) percent"
+                "\(Int(round(100 * progress))) percent"
             )
             .accessibilityIdentifier("reader-progress-\(book.format.rawValue)")
         }
@@ -512,7 +548,9 @@ struct ReaderHostView: View {
             } else {
                 localURL = try await container.catalogRepository.ensureDownloaded(book: book)
             }
-            epubController.furthestProgression = container.progressRepository.get(bookId: book.id).progression
+            let saved = container.progressRepository.get(bookId: book.id)
+            epubController.furthestProgression = saved.progression
+            fb2Controller.furthestProgression = saved.progression
         } catch {
             self.error = error.localizedDescription
         }
@@ -580,5 +618,301 @@ struct ReaderClockLabel: View {
         formatter.locale = Locale(identifier: "en_GB_POSIX")
         formatter.dateFormat = "HH:mm"
         return formatter.string(from: date)
+    }
+}
+
+struct FB2Paragraph: Identifiable, Equatable {
+    let id: String
+    let text: String
+}
+
+struct FB2Section: Identifiable, Equatable {
+    let index: Int
+    let id: String
+    let title: String
+    let paragraphs: [FB2Paragraph]
+    let children: [FB2Section]
+}
+
+struct FB2SearchResult: Identifiable, Equatable {
+    let sectionIndex: Int
+    let excerpt: String
+    var id: String { "\(sectionIndex):\(excerpt)" }
+}
+
+struct FB2Document: Equatable {
+    let title: String
+    let author: String?
+    let language: String?
+    let sections: [FB2Section]
+
+    var flatSections: [FB2Section] {
+        var result: [FB2Section] = []
+        func append(_ sections: [FB2Section]) {
+            for section in sections {
+                result.append(section)
+                append(section.children)
+            }
+        }
+        append(sections)
+        return result.enumerated().map { index, section in
+            FB2Section(index: index, id: section.id, title: section.title,
+                       paragraphs: section.paragraphs, children: section.children)
+        }
+    }
+}
+
+enum FB2ParseError: LocalizedError, Equatable {
+    case tooLarge
+    case unsafeDocument
+    case invalidDocument
+    case emptyBody
+
+    var errorDescription: String? {
+        switch self {
+        case .tooLarge: return "This FB2 file is empty or too large."
+        case .unsafeDocument: return "External entities are not allowed in FB2 files."
+        case .invalidDocument: return "This is not a valid FictionBook document."
+        case .emptyBody: return "The FB2 document has no readable body."
+        }
+    }
+}
+
+private func fb2NilIfBlank(_ value: String?) -> String? {
+    guard let value = value?.trimmingCharacters(in: .whitespacesAndNewlines), !value.isEmpty else { return nil }
+    return value
+}
+
+/// Parses FictionBook XML into a small safe structure. XML is never turned into HTML and
+/// external entities/resources are disabled and rejected before Foundation parses it.
+enum FB2Parser {
+    private static let maximumBytes = 50 * 1024 * 1024
+
+    static func parse(data: Data) throws -> FB2Document {
+        guard !data.isEmpty, data.count <= maximumBytes else { throw FB2ParseError.tooLarge }
+        let prefix = String(data: data.prefix(256 * 1024), encoding: .utf8) ?? ""
+        guard prefix.range(of: "<!DOCTYPE", options: .caseInsensitive) == nil,
+              prefix.range(of: "<!ENTITY", options: .caseInsensitive) == nil
+        else { throw FB2ParseError.unsafeDocument }
+        let delegate = FB2XMLDelegate()
+        let parser = XMLParser(data: data)
+        parser.delegate = delegate
+        parser.shouldResolveExternalEntities = false
+        guard parser.parse(), let root = delegate.root,
+              root.name.lowercased() == "fictionbook" else { throw FB2ParseError.invalidDocument }
+        let metadata = root.first(named: "description")
+        let title = fb2NilIfBlank(metadata?.firstDescendant(named: "book-title")?.textValue) ?? "Untitled"
+        let authorNode = metadata?.firstDescendant(named: "author")
+        let author = fb2NilIfBlank(authorNode?.children.map(\.textValue).joined(separator: " "))
+            ?? fb2NilIfBlank(metadata?.firstDescendant(named: "nickname")?.textValue)
+        let language = fb2NilIfBlank(metadata?.firstDescendant(named: "lang")?.textValue)
+        let bodies = root.children.filter { $0.localName == "body" }
+        var sections: [FB2Section] = []
+        var looseParagraphs: [FB2Paragraph] = []
+        for body in bodies {
+            for child in body.children {
+                if child.localName == "section" {
+                    sections.append(convertSection(child, index: sections.count, parentID: "section"))
+                } else if blockNames.contains(child.localName), let text = clean(child.textValue) {
+                    looseParagraphs.append(FB2Paragraph(id: "body:\(looseParagraphs.count)", text: text))
+                }
+            }
+        }
+        if !looseParagraphs.isEmpty {
+            sections.insert(FB2Section(index: 0, id: "body", title: "", paragraphs: looseParagraphs, children: []), at: 0)
+        }
+        guard !sections.isEmpty else { throw FB2ParseError.emptyBody }
+        return FB2Document(title: title, author: author, language: language, sections: sections)
+    }
+
+    private static let blockNames: Set<String> = ["p", "subtitle", "text-author", "epigraph", "poem", "v"]
+
+    private static func convertSection(_ node: FB2XMLNode, index: Int, parentID: String) -> FB2Section {
+        let id = fb2NilIfBlank(node.attributes["id"]) ?? "\(parentID)-\(index)"
+        let title = fb2NilIfBlank(node.first(named: "title")?.textValue) ?? ""
+        var paragraphs: [FB2Paragraph] = []
+        var children: [FB2Section] = []
+        for child in node.children {
+            if child.localName == "section" {
+                children.append(convertSection(child, index: children.count, parentID: id))
+            } else if blockNames.contains(child.localName), let text = clean(child.textValue) {
+                paragraphs.append(FB2Paragraph(id: "\(id):\(paragraphs.count)", text: text))
+            }
+        }
+        return FB2Section(index: index, id: id, title: title, paragraphs: paragraphs, children: children)
+    }
+
+    private static func clean(_ value: String) -> String? {
+        let normalized = value.replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return normalized.isEmpty ? nil : normalized
+    }
+}
+
+private final class FB2XMLNode {
+    let name: String
+    let attributes: [String: String]
+    var text = ""
+    var children: [FB2XMLNode] = []
+
+    init(name: String, attributes: [String: String]) { self.name = name; self.attributes = attributes }
+    var localName: String { name.split(separator: ":").last.map(String.init) ?? name }
+    var textValue: String { text + children.map(\.textValue).joined() }
+    func first(named name: String) -> FB2XMLNode? { children.first { $0.localName == name } }
+    func firstDescendant(named name: String) -> FB2XMLNode? {
+        if localName == name { return self }
+        for child in children { if let found = child.firstDescendant(named: name) { return found } }
+        return nil
+    }
+}
+
+private final class FB2XMLDelegate: NSObject, XMLParserDelegate {
+    var root: FB2XMLNode?
+    private var stack: [FB2XMLNode] = []
+
+    func parser(_ parser: XMLParser, didStartElement elementName: String,
+                namespaceURI: String?, qualifiedName qName: String?, attributes attributeDict: [String: String] = [:]) {
+        let node = FB2XMLNode(name: qName ?? elementName, attributes: attributeDict)
+        stack.append(node)
+    }
+
+    func parser(_ parser: XMLParser, foundCharacters string: String) { stack.last?.text.append(string) }
+
+    func parser(_ parser: XMLParser, didEndElement elementName: String, namespaceURI: String?, qualifiedName qName: String?) {
+        guard let node = stack.popLast() else { return }
+        if let parent = stack.last { parent.children.append(node) } else { root = node }
+    }
+}
+
+@MainActor
+final class FB2ReaderController: ObservableObject {
+    @Published var document: FB2Document?
+    @Published var sections: [FB2Section] = []
+    @Published var sectionIndex = 0
+    @Published var progression = 0.0
+    @Published var furthestProgression = 0.0
+    @Published var ready = false
+    @Published var errorMessage: String?
+    @Published var requestedSectionID: String?
+    @Published var searchResults: [FB2SearchResult] = []
+    @Published var searching = false
+    @Published var isSpeaking = false
+    private let speech = AVSpeechSynthesizer()
+
+    init() { speech.delegate = self }
+
+    func load(fileURL: URL, initialLocator: String?) async {
+        do {
+            let data = try Data(contentsOf: fileURL, options: [.mappedIfSafe])
+            let parsed = try FB2Parser.parse(data: data)
+            document = parsed
+            sections = parsed.flatSections
+            if let locator = initialLocator, let id = locator.split(separator: ":").dropFirst().first,
+               let index = sections.firstIndex(where: { $0.id == id }) {
+                sectionIndex = index
+                progression = progress(for: index)
+                requestedSectionID = sections[index].id
+            }
+            ready = true
+            errorMessage = nil
+        } catch { errorMessage = error.localizedDescription; ready = false }
+    }
+
+    func update(section index: Int) -> String {
+        sectionIndex = index
+        progression = progress(for: index)
+        furthestProgression = max(furthestProgression, progression)
+        return "fb2:\(sections[index].id):0"
+    }
+
+    func search(_ query: String) {
+        let needle = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard needle.count >= 2 else { searchResults = []; return }
+        searching = true
+        let foldedNeedle = needle.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
+        searchResults = sections.enumerated().flatMap { index, section in
+            section.paragraphs.compactMap { paragraph in
+                let folded = paragraph.text.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
+                guard folded.range(of: foldedNeedle) != nil else { return nil }
+                return FB2SearchResult(sectionIndex: index, excerpt: String(paragraph.text.prefix(240)))
+            }
+        }.prefix(100).map { $0 }
+        searching = false
+    }
+
+    func toggleSpeech() {
+        if speech.isSpeaking || isSpeaking {
+            speech.stopSpeaking(at: .immediate)
+            isSpeaking = false
+            return
+        }
+        let text = sections.flatMap(\.paragraphs).map(\.text).joined(separator: "\n\n")
+        guard !text.isEmpty else { return }
+        speech.speak(AVSpeechUtterance(string: text))
+        isSpeaking = true
+    }
+
+    private func progress(for index: Int) -> Double {
+        guard sections.count > 1 else { return 0 }
+        return Double(index) / Double(sections.count - 1)
+    }
+}
+
+extension FB2ReaderController: AVSpeechSynthesizerDelegate {
+    nonisolated func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {
+        Task { @MainActor in isSpeaking = false }
+    }
+    nonisolated func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didCancel utterance: AVSpeechUtterance) {
+        Task { @MainActor in isSpeaking = false }
+    }
+}
+
+struct FB2ReaderView: View {
+    let book: CatalogBook
+    let fileURL: URL
+    @ObservedObject var controller: FB2ReaderController
+    let initialLocator: String?
+    let onProgress: (Double, String) -> Void
+    @EnvironmentObject private var container: AppContainer
+
+    var body: some View {
+        Group {
+            if let error = controller.errorMessage {
+                Text(error).foregroundStyle(.red).padding(24)
+            } else if !controller.ready {
+                ProgressView("Preparing FB2…")
+            } else {
+                ScrollViewReader { proxy in
+                    ScrollView {
+                        LazyVStack(alignment: .leading, spacing: 8) {
+                            ForEach(controller.sections) { section in
+                                VStack(alignment: .leading, spacing: 8) {
+                                    if !section.title.isEmpty {
+                                        Text(section.title).font(.title2.bold()).padding(.top, section.index == 0 ? 12 : 24)
+                                    }
+                                    ForEach(section.paragraphs) { paragraph in
+                                        Text(paragraph.text).font(.body).textSelection(.enabled)
+                                    }
+                                }
+                                .id(section.id)
+                                .onAppear {
+                                    let locator = controller.update(section: section.index)
+                                    onProgress(controller.progression, locator)
+                                }
+                            }
+                        }
+                        .padding(.horizontal, 18)
+                        .padding(.bottom, 24)
+                    }
+                    .onChange(of: controller.requestedSectionID) { _, requested in
+                        guard let requested else { return }
+                        withAnimation { proxy.scrollTo(requested, anchor: .top) }
+                        controller.requestedSectionID = nil
+                    }
+                }
+            }
+        }
+        .task { await controller.load(fileURL: fileURL, initialLocator: initialLocator) }
+        .onDisappear { controller.requestedSectionID = nil }
     }
 }

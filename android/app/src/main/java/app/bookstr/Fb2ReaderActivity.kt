@@ -204,7 +204,10 @@ object Fb2Parser {
                 }
             }
         }
-        return out.toString().replace(Regex("\\s+"), " ").replace(" \\n ", "\\n").trim()
+        return out.toString()
+            .replace(Regex("[ \\t\\r\\f]+"), " ")
+            .replace(Regex("\\n\\s*"), "\\n")
+            .trim()
     }
 
     private fun text(parser: XmlPullParser): String = blockText(parser)
@@ -246,6 +249,14 @@ class Fb2ReaderActivity : ComponentActivity() {
                     onProgress = { progression, locator ->
                         lifecycleScope.launch {
                             val saved = app.catalogRepository.saveProgress(bookId, progression, locator)
+                            app.settingsRepository.saveReaderSession(
+                                ReaderSession(
+                                    bookId, bookTitle, BookFormat.Fb2, bookAuthor, bookYear,
+                                    locator = locator, rightsStatus = rights.status,
+                                    license = rights.license, licenseUrl = rights.licenseUrl,
+                                    rightsSource = rights.source,
+                                ),
+                            )
                             app.nostrRepository.publishProgress(
                                 bookId = bookId,
                                 progression = progression,
@@ -264,7 +275,7 @@ class Fb2ReaderActivity : ComponentActivity() {
 
     override fun onBackPressed() { closeReader() }
 
-    private fun closeReader() { closing = true; (application as BookstrApp).settingsRepository.clearReaderSession(); finish() }
+    private fun closeReader() { closing = true; finish() }
 
     private fun applyLockScreenPolicy(enabled: Boolean) {
         if (enabled) window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
@@ -309,9 +320,8 @@ private fun Fb2ReaderScreen(title: String, author: String?, year: String?, right
     val context = LocalContext.current
     val tts = remember(context) { android.speech.tts.TextToSpeech(context, null) }
     LaunchedEffect(file) {
-        withContext(Dispatchers.IO) {
-            runCatching { Fb2Parser.parse(file) }.onSuccess { document = it }.onFailure { error = it.message }
-        }
+        val result = withContext(Dispatchers.IO) { runCatching { Fb2Parser.parse(file) } }
+        result.onSuccess { document = it }.onFailure { error = it.message ?: "Cannot open FB2" }
     }
     val doc = document
     LaunchedEffect(doc) {
