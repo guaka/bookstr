@@ -3,7 +3,7 @@
 
     <application>
         <provider
-            android:name=".nostr.FakeNip55ContentProvider"
+            android:name="app.bookstr.nostr.FakeNip55ContentProvider"
             android:authorities="test.nostr.signer.SIGN_EVENT;test.nostr.signer.NIP44_DECRYPT;test.nostr.signer.NIP44_ENCRYPT"
             android:exported="false" />
     </application>
