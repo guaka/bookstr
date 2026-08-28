@@ -5,7 +5,13 @@ Opt-in cross-device reading progress sync via Nostr.
 ## ADDED Requirements
 
 ### Requirement: NIP-78 progress events
-When a Nostr identity is configured, clients SHALL publish reading progress as kind `30078` with `d` tag `app.bookstr.progress.<sha256>` and a JSON payload including `v: 1`, `bookId`, `locator` (with `progression` and optional `cfi`/`href`), and `updatedAt`. Conflict resolution SHALL be last-write-wins by `updatedAt`. Android and web SHALL use the same payload schema.
+When a Nostr identity is configured, clients SHALL publish reading progress as
+kind `30078` with `d` tag `app.bookstr.progress.<sha256>` and the shared version
+2 JSON payload. The payload includes `v: 2`, `bookId`, `locator` (with
+`progression`, monotonic `furthestProgression`, and optional `cfi`/`href`), and
+`updatedAt`. Web, Android, and iOS SHALL use this wire contract while retaining
+read compatibility with version 1 and the documented legacy flat payloads.
+Conflict resolution SHALL be last-write-wins by `updatedAt`.
 
 #### Scenario: Publish after page change
 - **GIVEN** the user has a Nostr identity configured
