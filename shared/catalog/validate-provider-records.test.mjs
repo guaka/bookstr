@@ -12,7 +12,7 @@ test('provider catalog fixtures conform to the versioned contract', () => {
 
 test('fixture exercises FB2 alongside existing EPUB and PDF acquisitions', () => {
   const formats = new Set(fixture.records.flatMap(record => record.acquisitions.map(acquisition => acquisition.format)));
-  assert.deepEqual([...formats].sort(), ['epub', 'fb2']);
+  assert.deepEqual([...formats].sort(), ['epub', 'fb2', 'pdf']);
   const fb2 = fixture.records.find(record => record.acquisitions.some(acquisition => acquisition.format === 'fb2'));
   assert.ok(fb2);
   assert.equal(fb2.rights.status, 'public_domain');
