@@ -12,6 +12,35 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.net.URI
 
+data class BookCollection(
+    val id: String,
+    val title: String,
+    val description: String,
+    val updatedAt: Long,
+    val items: List<SharedFavoriteRef>,
+)
+
+data class CollectionTombstone(
+    val id: String,
+    val deletedAt: Long,
+)
+
+data class CollectionIndexEntry(
+    val id: String,
+    val title: String,
+    val updatedAt: Long,
+)
+
+data class CollectionIndex(
+    val entries: List<CollectionIndexEntry> = emptyList(),
+    val tombstones: List<CollectionTombstone> = emptyList(),
+)
+
+data class CollectionSnapshot(
+    val collections: List<BookCollection> = emptyList(),
+    val tombstones: List<CollectionTombstone> = emptyList(),
+)
+
 data class SharedFavoriteRef(
     val bookstrId: String? = null,
     val libvaultMd5: String? = null,
@@ -265,6 +294,67 @@ class NostrFavoritesRepository(
     }
 
     companion object {
+        fun isCollectionId(value: String): Boolean = COLLECTION_ID.matches(value)
+
+        fun parseCollectionIndex(plaintext: String): CollectionIndex {
+            val value = runCatching { JSONArray(plaintext) }.getOrElse { return CollectionIndex() }
+            val entries = mutableListOf<CollectionIndexEntry>()
+            val tombstones = mutableListOf<CollectionTombstone>()
+
+            for (index in 0 until value.length()) {
+                val tag = value.optJSONArray(index) ?: continue
+                when (tag.optString(0)) {
+                    "collection" -> {
+                        val id = tag.optString(1)
+                        if (!isCollectionId(id) || tag.length() < 4) continue
+                        entries += CollectionIndexEntry(
+                            id = id,
+                            title = tag.optString(2).ifEmpty { "Untitled list" },
+                            updatedAt = tag.optString(3).toLongOrNull() ?: 0L,
+                        )
+                    }
+                    "deleted" -> {
+                        val id = tag.optString(1)
+                        if (!isCollectionId(id)) continue
+                        tombstones += CollectionTombstone(
+                            id = id,
+                            deletedAt = tag.optString(2).toLongOrNull() ?: 0L,
+                        )
+                    }
+                }
+            }
+
+            val deletedIds = tombstones.mapTo(mutableSetOf()) { it.id }
+            return CollectionIndex(
+                entries = entries.filterNot { it.id in deletedIds },
+                tombstones = tombstones,
+            )
+        }
+
+        fun parseCollection(
+            plaintext: String,
+            id: String,
+            fallbackTitle: String,
+            fallbackUpdatedAt: Long,
+        ): BookCollection? {
+            if (!isCollectionId(id)) return null
+            val refs = runCatching { parseSharedFavoriteTags(plaintext) }.getOrNull() ?: return null
+            val value = runCatching { JSONArray(plaintext) }.getOrNull() ?: return null
+
+            var title = fallbackTitle
+            var description = ""
+            var updatedAt = fallbackUpdatedAt
+            for (index in 0 until value.length()) {
+                val tag = value.optJSONArray(index) ?: continue
+                when (tag.optString(0)) {
+                    "title" -> tag.optString(1).takeIf(String::isNotEmpty)?.let { title = it }
+                    "description" -> description = tag.optString(1)
+                    "updated" -> tag.optString(1).toLongOrNull()?.let { updatedAt = it }
+                }
+            }
+            return BookCollection(id, title, description, updatedAt, refs)
+        }
+
         fun chunkManifest(plaintext: String): FavoriteChunkManifest? {
             val tags = JSONArray(plaintext)
             for (index in 0 until tags.length()) {
@@ -781,6 +871,7 @@ class NostrFavoritesRepository(
 
         private val MD5 = Regex("^[a-fA-F0-9]{32}$")
         private val SHA256 = Regex("^[a-fA-F0-9]{64}$")
+        private val COLLECTION_ID = Regex("^bookstr-collection-[a-f0-9]{32}$")
         private const val TAG = "NostrFavorites"
     }
 }
