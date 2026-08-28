@@ -48,6 +48,25 @@ final class LibraryReaderUITests: XCTestCase {
         attachScreenshot(named: "pdf-visible")
     }
 
+    func testLibrarySortControlReordersFixtureBooks() {
+        let epub = app.buttons["library-book-ui-test-alice-epub"]
+        let pdf = app.buttons["library-book-ui-test-alice-pdf"]
+        XCTAssertTrue(epub.waitForExistence(timeout: 5))
+        XCTAssertTrue(pdf.waitForExistence(timeout: 5))
+
+        chooseSort("Progress")
+        XCTAssertLessThan(pdf.frame.minY, epub.frame.minY)
+
+        chooseSort("Title")
+        XCTAssertLessThan(epub.frame.minY, pdf.frame.minY)
+
+        chooseSort("Author")
+        XCTAssertLessThan(epub.frame.minY, pdf.frame.minY)
+
+        chooseSort("Recent")
+        XCTAssertLessThan(epub.frame.minY, pdf.frame.minY)
+    }
+
     private func openEPUB() -> (back: XCUIElement, chapter: XCUIElement) {
         let epub = app.buttons["library-book-ui-test-alice-epub"]
         XCTAssertTrue(epub.waitForExistence(timeout: 5))
@@ -60,6 +79,15 @@ final class LibraryReaderUITests: XCTestCase {
         ).firstMatch
         XCTAssertTrue(chapter.waitForExistence(timeout: 12), "EPUB opened but did not expose visible chapter text")
         return (back, chapter)
+    }
+
+    private func chooseSort(_ label: String) {
+        let sort = app.buttons["library-sort"]
+        XCTAssertTrue(sort.waitForExistence(timeout: 4))
+        sort.tap()
+        let option = app.buttons[label]
+        XCTAssertTrue(option.waitForExistence(timeout: 4))
+        option.tap()
     }
 
     private func waitForY(_ element: XCUIElement, below maximum: CGFloat) -> Bool {
