@@ -418,9 +418,13 @@ function litResFB2Acquisition(item) {
 }
 
 function decodeXML(value) {
-  return String(value).replace(/<[^>]+>/g, '').replace(/&(?:amp|lt|gt|quot|apos);/g, entity => ({
+  const decoded = String(value).replace(/&(?:amp|lt|gt|quot|apos);/g, entity => ({
     '&amp;': '&', '&lt;': '<', '&gt;': '>', '&quot;': '"', '&apos;': "'",
   })[entity]);
+  // Decode before removing markup so entities cannot recreate an HTML tag
+  // after sanitization. Drop any leftover angle brackets as a final guard for
+  // malformed or deliberately overlapping tag syntax.
+  return decoded.replace(/<[^>]*>/g, '').replace(/[<>]/g, '');
 }
 
 function escapeRegExp(value) {

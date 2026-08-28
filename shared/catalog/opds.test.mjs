@@ -21,6 +21,13 @@ test('normalizes a public OPDS FB2 acquisition without trusting unrecognized rec
   }]);
 });
 
+test('neutralizes markup introduced by XML entity decoding', () => {
+  const hostile = feed.replace('Open FB2', '&lt;script&gt;alert(1)&lt;/script&gt;Open FB2');
+  const [record] = normalizeOPDSFeed(hostile, { provider: 'my-feed', feedURL: 'https://books.example/opds' });
+  assert.equal(record.title, 'alert(1)Open FB2');
+  assert.doesNotMatch(record.title, /[<>]/);
+});
+
 test('only accepts public credential-free HTTPS OPDS source URLs and rejects XML entities', () => {
   assert.equal(isPublicHTTPSURL('https://books.example/opds'), true);
   assert.equal(isPublicHTTPSURL('https://user:secret@books.example/opds'), false);

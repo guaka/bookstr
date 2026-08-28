@@ -305,9 +305,12 @@ function parseJSON(value) {
 }
 
 function decodeXML(value) {
-  return String(value).replace(/<[^>]+>/g, '').replace(/&(?:amp|lt|gt|quot|apos);/g, entity => ({
+  const decoded = String(value).replace(/&(?:amp|lt|gt|quot|apos);/g, entity => ({
     '&amp;': '&', '&lt;': '<', '&gt;': '>', '&quot;': '"', '&apos;': "'",
   })[entity]);
+  // Entity decoding must precede markup removal; otherwise encoded markup can
+  // be introduced after the sanitizer has already run.
+  return decoded.replace(/<[^>]*>/g, '').replace(/[<>]/g, '');
 }
 
 function publicHost(value) {

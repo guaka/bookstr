@@ -101,6 +101,14 @@ test('discovers an OPDS 1 OpenSearch descriptor without proxying it through the 
   assert.equal(records[0].rights.status, 'open_license');
 });
 
+test('neutralizes encoded markup in directly fetched OPDS metadata', async () => {
+  const feed = { name: 'Atom', url: 'https://atom.example/catalog' };
+  const hostile = '<feed><entry><id>a-1</id><title>&lt;script&gt;alert(1)&lt;/script&gt;Open book</title><dc:rights>Public Domain</dc:rights><link rel="http://opds-spec.org/acquisition/open-access" type="application/x-fictionbook+xml" href="/books/open.fb2"/></entry></feed>';
+  const records = await searchOPDSFeed(feed, '', async url => response(url, hostile));
+  assert.equal(records[0].title, 'alert(1)Open book');
+  assert.doesNotMatch(records[0].title, /[<>]/);
+});
+
 test('reports custom OPDS request failures to the caller for per-source status handling', async () => {
   await assert.rejects(
     searchOPDSFeed({ name: 'Broken', url: 'https://books.example/opds' }, 'book', async () => ({ ok: false, status: 503 })),
