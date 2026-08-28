@@ -1,5 +1,6 @@
 package app.bookstr
 
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.File
@@ -36,13 +37,11 @@ class NarrationServiceContractTest {
         assertTrue(source.contains("setWillPauseWhenDucked(true)"))
         assertTrue(source.contains("setPlaybackToLocal(AudioManager.STREAM_MUSIC)"))
         assertTrue(source.contains("MediaButtonReceiver.handleIntent"))
-        assertTrue(source.contains("ComponentName(this, MediaButtonReceiver::class.java)"))
-        assertTrue(
-            Regex(
-                "MediaButtonReceiver\\.buildMediaButtonPendingIntent\\(\\s*" +
-                    "this,\\s*mediaButtonReceiver,",
-            ).findAll(source).count() == 3,
-        )
+        assertFalse(source.contains("MediaButtonReceiver.buildMediaButtonPendingIntent"))
+        assertTrue(source.contains("Intent.ACTION_MEDIA_BUTTON, null, this, MediaButtonReceiver::class.java"))
+        assertTrue(source.contains("PendingIntent.getBroadcast"))
+        assertTrue(source.contains("PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE"))
+        assertTrue(Regex("mediaButtonPendingIntent\\(").findAll(source).count() == 4)
         assertTrue(source.contains("Service.START_STICKY"))
         assertTrue(source.contains("abandonAudioFocusRequest"))
     }
