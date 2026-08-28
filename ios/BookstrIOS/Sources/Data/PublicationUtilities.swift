@@ -1,5 +1,8 @@
 import CryptoKit
 import Foundation
+#if canImport(zlib)
+import zlib
+#endif
 import PDFKit
 
 enum PublicationUtilities {
@@ -180,19 +183,21 @@ enum PublicationUtilities {
         return (delegate.title, delegate.author, delegate.year)
     }
 
-    private static func fb2Data(fileURL: URL) -> Data? {
+    /// Returns native FB2 XML or the sole validated entry from a safe FB2 ZIP.
+    /// The cache retains the original download; readers consume this extracted view.
+    static func fb2Data(fileURL: URL) -> Data? {
         guard let attributes = try? FileManager.default.attributesOfItem(atPath: fileURL.path),
               let size = attributes[.size] as? NSNumber, size.int64Value > 0,
               size.int64Value <= maxFB2Bytes else { return nil }
         guard let data = try? Data(contentsOf: fileURL, options: [.mappedIfSafe]), !data.isEmpty else { return nil }
-        if data.starts(with: [0x50, 0x4b]) { return extractStoredFB2Zip(data) }
+        if data.starts(with: [0x50, 0x4b]) { return extractFB2Zip(data) }
         return data
     }
 
     // iOS has no Foundation ZIP API. Parse the central directory defensively
-    // and support the common stored single-entry FB2 ZIP form; deflated or
-    // multi-entry archives are rejected instead of being treated as valid XML.
-    private static func extractStoredFB2Zip(_ data: Data) -> Data? {
+    // and support a single stored or raw-deflate FB2 entry. All archive
+    // metadata is bounded before allocating or inflating any payload.
+    private static func extractFB2Zip(_ data: Data) -> Data? {
         guard data.count >= 22 else { return nil }
         let end = data.endIndex - 4
         let lower = max(data.startIndex, end - 65_557)
@@ -204,7 +209,12 @@ enum PublicationUtilities {
             if cursor == data.startIndex { break }
             cursor -= 1
         }
-        guard let endRecord = eocd, readUInt16(data, endRecord + 8) == 1 else { return nil }
+        guard let endRecord = eocd,
+              readUInt16(data, endRecord + 4) == 0,
+              readUInt16(data, endRecord + 6) == 0,
+              readUInt16(data, endRecord + 8) == 1,
+              readUInt16(data, endRecord + 10) == 1,
+              endRecord + 22 + Int(readUInt16(data, endRecord + 20)) == data.endIndex else { return nil }
         let directorySize = Int(readUInt32(data, endRecord + 12))
         let directoryOffset = Int(readUInt32(data, endRecord + 16))
         guard directoryOffset >= 0, directorySize >= 46, directoryOffset + directorySize <= data.count,
@@ -218,22 +228,60 @@ enum PublicationUtilities {
               let name = String(data: data[nameStart..<(nameStart + nameLength)], encoding: .utf8) else { return nil }
         let normalized = name.replacingOccurrences(of: "\\", with: "/")
         guard !normalized.hasPrefix("/"), !normalized.split(separator: "/").contains(".."),
-              !normalized.split(separator: "/").contains(""), normalized.lowercased().hasSuffix(".fb2"),
-              readUInt16(data, entry + 10) == 0 else { return nil }
+              !normalized.split(separator: "/").contains(""), normalized.lowercased().hasSuffix(".fb2") else { return nil }
+        let flags = readUInt16(data, entry + 8)
+        let method = readUInt16(data, entry + 10)
+        guard method == 0 || method == 8 else { return nil }
+        guard flags & 0x0001 == 0 else { return nil }
         let compressedSize = Int(readUInt32(data, entry + 20))
+        let uncompressedSize = Int(readUInt32(data, entry + 24))
         let localOffset = Int(readUInt32(data, entry + 42))
-        guard compressedSize > 0, Int64(compressedSize) <= maxFB2Bytes, localOffset >= 0,
+        guard compressedSize > 0, uncompressedSize > 0,
+              Int64(compressedSize) <= maxFB2Bytes, Int64(uncompressedSize) <= maxFB2Bytes, localOffset >= 0,
               localOffset + 30 <= data.count, readUInt32(data, data.startIndex + localOffset) == 0x04034b50 else { return nil }
+        guard readUInt16(data, data.startIndex + localOffset + 6) == flags,
+              readUInt16(data, data.startIndex + localOffset + 8) == method else { return nil }
         let localNameLength = Int(readUInt16(data, data.startIndex + localOffset + 26))
         let localExtraLength = Int(readUInt16(data, data.startIndex + localOffset + 28))
         let payload = data.startIndex + localOffset + 30 + localNameLength + localExtraLength
         guard payload + compressedSize <= data.endIndex else { return nil }
-        return Data(data[payload..<(payload + compressedSize)])
+        let compressed = Data(data[payload..<(payload + compressedSize)])
+        if method == 0 {
+            guard compressedSize == uncompressedSize else { return nil }
+            return compressed
+        }
+        return inflateRawDeflate(compressed, expectedSize: uncompressedSize)
     }
 
     private static func isSafeFB2Zip(fileURL: URL) -> Bool {
         guard let data = try? Data(contentsOf: fileURL, options: [.mappedIfSafe]), Int64(data.count) <= maxFB2Bytes else { return false }
-        return extractStoredFB2Zip(data) != nil
+        return extractFB2Zip(data) != nil
+    }
+
+    private static func inflateRawDeflate(_ compressed: Data, expectedSize: Int) -> Data? {
+        #if canImport(zlib)
+        guard !compressed.isEmpty, expectedSize > 0, expectedSize <= maxFB2Bytes else { return nil }
+        var stream = z_stream()
+        guard inflateInit2_(&stream, -15, ZLIB_VERSION, Int32(MemoryLayout<z_stream>.size)) == Z_OK else { return nil }
+        defer { inflateEnd(&stream) }
+        var output = Data(count: expectedSize)
+        var inflated = false
+        compressed.withUnsafeBytes { inputBuffer in
+            output.withUnsafeMutableBytes { outputBuffer in
+                guard let inputAddress = inputBuffer.bindMemory(to: Bytef.self).baseAddress,
+                      let outputAddress = outputBuffer.bindMemory(to: Bytef.self).baseAddress else { return }
+                stream.next_in = UnsafeMutablePointer(mutating: inputAddress)
+                stream.avail_in = uInt(compressed.count)
+                stream.next_out = outputAddress
+                stream.avail_out = uInt(expectedSize)
+                inflated = inflate(&stream, Z_FINISH) == Z_STREAM_END &&
+                    stream.total_out == uLong(expectedSize) && stream.avail_in == 0
+            }
+        }
+        return inflated ? output : nil
+        #else
+        return nil
+        #endif
     }
 
     private static func readUInt16(_ data: Data, _ index: Data.Index) -> UInt16 {

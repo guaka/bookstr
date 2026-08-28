@@ -1,6 +1,7 @@
 package app.bookstr.data
 
 import android.content.Context
+import android.util.Xml
 import app.bookstr.nostr.BlossomAuth
 import app.bookstr.nostr.NostrSignerFactory
 import app.bookstr.util.Sha256
@@ -12,10 +13,15 @@ import okhttp3.HttpUrl.Companion.toHttpUrl
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
+import java.io.IOException
 import java.util.concurrent.TimeUnit
 import java.util.zip.ZipFile
 import java.io.BufferedInputStream
-import android.util.Xml
+import javax.xml.parsers.SAXParserFactory
+import org.xml.sax.Attributes
+import org.xml.sax.InputSource
+import org.xml.sax.SAXException
+import org.xml.sax.helpers.DefaultHandler
 import org.xmlpull.v1.XmlPullParser
 
 enum class BookFormat(val extension: String) {
@@ -493,36 +499,64 @@ class CatalogRepository(
             if (!file.isFile || file.length() <= 0L || file.length() > MAX_FB2_BYTES) return false
             return runCatching {
                 withFb2Input(file) { input ->
-                    val parser = Xml.newPullParser().apply {
-                        setFeature(XmlPullParser.FEATURE_PROCESS_NAMESPACES, true)
-                        runCatching { setFeature("http://xmlpull.org/v1/doc/features.html#process-docdecl", false) }
-                        setInput(CountingInputStream(BufferedInputStream(input)), null)
+                    val parser = SAXParserFactory.newInstance().apply {
+                        isNamespaceAware = true
+                        listOf(
+                            "http://apache.org/xml/features/disallow-doctype-decl" to true,
+                            "http://xml.org/sax/features/external-general-entities" to false,
+                            "http://xml.org/sax/features/external-parameter-entities" to false,
+                            "http://apache.org/xml/features/nonvalidating/load-external-dtd" to false,
+                        ).forEach { (feature, enabled) -> runCatching { setFeature(feature, enabled) } }
                     }
                     var rootSeen = false
+                    var rootClosed = false
                     var rootDepth = 0
                     var sections = 0
-                    while (parser.eventType != XmlPullParser.END_DOCUMENT) {
-                        when (parser.eventType) {
-                            XmlPullParser.START_TAG -> {
-                                if (!rootSeen) {
-                                    if (!parser.name.equals("FictionBook", ignoreCase = true)) return@withFb2Input false
-                                    rootSeen = true
-                                    rootDepth = parser.depth
-                                } else if (parser.name.equals("section", ignoreCase = true)) {
-                                    sections++
-                                }
+                    var depth = 0
+                    val handler = object : DefaultHandler() {
+                        private fun nameOf(localName: String?, qName: String?): String =
+                            (localName.takeUnless { it.isNullOrBlank() } ?: qName.orEmpty()).substringAfterLast(':')
+
+                        override fun startElement(uri: String?, localName: String?, qName: String?, attributes: Attributes?) {
+                            depth++
+                            val name = nameOf(localName, qName)
+                            if (!rootSeen) {
+                                if (!name.equals("FictionBook", ignoreCase = true)) throw SAXException("Expected FictionBook root")
+                                rootSeen = true
+                                rootDepth = depth
+                            } else if (rootClosed) {
+                                throw SAXException("Unexpected XML after FictionBook root")
+                            } else if (name.equals("section", ignoreCase = true)) {
+                                sections++
                             }
-                            XmlPullParser.DOCDECL -> return@withFb2Input false
                         }
-                        parser.next()
+
+                        override fun endElement(uri: String?, localName: String?, qName: String?) {
+                            if (rootSeen && depth == rootDepth && nameOf(localName, qName).equals("FictionBook", ignoreCase = true)) {
+                                rootClosed = true
+                            }
+                            depth--
+                        }
+
+                        override fun resolveEntity(publicId: String?, systemId: String?): InputSource? {
+                            throw SAXException("External entities are not allowed")
+                        }
                     }
-                    rootSeen && sections > 0 && parser.depth <= rootDepth
+                    parser.newSAXParser().parse(XmlSafetyInputStream(BufferedInputStream(input)), handler)
+                    rootSeen && rootClosed && sections > 0
                 }
             }.getOrDefault(false)
         }
 
         /** Runs a bounded parser over either native XML or one safe FB2 ZIP entry. */
-        private fun <T> withFb2Input(file: File, block: (java.io.InputStream) -> T): T {
+        /**
+         * Opens native FB2 XML or the sole validated entry in an FB2 ZIP.
+         *
+         * Readers use this after the cache gate has retained the original
+         * download, so an accepted `.fb2.zip` is never handed to an XML parser
+         * as archive bytes.
+         */
+        internal fun <T> withFb2Input(file: File, block: (java.io.InputStream) -> T): T {
             val prefix = file.inputStream().use { input -> ByteArray(2).also { input.read(it) } }
             if (prefix.size == 2 && prefix[0] == 'P'.code.toByte() && prefix[1] == 'K'.code.toByte()) {
                 ZipFile(file).use { archive ->
@@ -540,7 +574,30 @@ class CatalogRepository(
             return block(file.inputStream().limit(MAX_FB2_BYTES))
         }
 
-        private class CountingInputStream(input: java.io.InputStream) : java.io.FilterInputStream(input)
+        /** Rejects DTD/entity declarations even on XML parsers lacking a DTD-disabling feature. */
+        private class XmlSafetyInputStream(input: java.io.InputStream) : java.io.FilterInputStream(input) {
+            private val prohibited = arrayOf("<!doctype".encodeToByteArray(), "<!entity".encodeToByteArray())
+            private val matched = IntArray(prohibited.size)
+
+            override fun read(): Int = super.read().also { if (it >= 0) inspect(it) }
+
+            override fun read(buffer: ByteArray, offset: Int, length: Int): Int {
+                val count = super.read(buffer, offset, length)
+                if (count > 0) for (index in offset until offset + count) inspect(buffer[index].toInt() and 0xff)
+                return count
+            }
+
+            private fun inspect(value: Int) {
+                val normalized = if (value in 'A'.code..'Z'.code) value + ('a'.code - 'A'.code) else value
+                prohibited.forEachIndexed { index, pattern ->
+                    var prefix = matched[index]
+                    if (prefix > 0 && pattern[prefix].toInt() != normalized) prefix = 0
+                    if (pattern[prefix].toInt() == normalized) prefix++
+                    if (prefix == pattern.size) throw IOException("DTD and entity declarations are not allowed")
+                    matched[index] = prefix
+                }
+            }
+        }
 
         private fun java.io.InputStream.limit(maxBytes: Long): java.io.InputStream = object : java.io.FilterInputStream(this) {
             private var remaining = maxBytes

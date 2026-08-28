@@ -1796,6 +1796,16 @@ final class FavoritesParserTests: XCTestCase {
         XCTAssertFalse(PublicationUtilities.isStructurallyValidPublication(fileURL: traversal, format: .fb2))
     }
 
+    func testSingleDeflatedFB2ZipIsAccepted() throws {
+        let valid = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".fb2.zip")
+        defer { try? FileManager.default.removeItem(at: valid) }
+        // ZIP_DEFLATED archive containing exactly one safe FB2 entry.
+        let encoded = "UEsDBBQAAAAIAI+eHF2swOoxXQAAAJsAAAAIAAAAYm9vay5mYjJVjkEKgDAMBF9U8oGQg4gv8AO2jRAsTbE56O+tClKPOzssi5MEE82D6kYYuYZdyg0ITSyxk7wqoW+1ewCNvKbFOCJ0EKG34bfjNZ6ElcMbC818GEJp3gfhlaB/cwFQSwECFAMUAAAACACPnhxdrMDqMV0AAACbAAAACAAAAAAAAAAAAAAAgAEAAAAAYm9vay5mYjJQSwUGAAAAAAEAAQA2AAAAgwAAAAAA"
+        guard let data = Data(base64Encoded: encoded) else { return XCTFail("invalid fixture") }
+        try data.write(to: valid)
+        XCTAssertTrue(PublicationUtilities.isStructurallyValidPublication(fileURL: valid, format: .fb2))
+    }
+
     func testUnavailableSearchResultMatchesExternalFavoriteByStableID() {
         let result = BookSearchResult(
             id: "openlibrary:OL123M", source: "openlibrary", title: "A Book", author: "An Author",
