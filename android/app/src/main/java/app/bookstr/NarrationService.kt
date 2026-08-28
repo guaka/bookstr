@@ -5,6 +5,7 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
@@ -784,7 +785,8 @@ class NarrationService : MediaBrowserServiceCompat(), TextToSpeech.OnInitListene
 
     private fun mediaButtonPendingIntent(action: Long): PendingIntent {
         val keyCode = PlaybackStateCompat.toKeyCode(action)
-        val intent = Intent(Intent.ACTION_MEDIA_BUTTON, null, this, MediaButtonReceiver::class.java)
+        val intent = Intent(Intent.ACTION_MEDIA_BUTTON)
+            .setComponent(ComponentName(this, MediaButtonReceiver::class.java))
             .putExtra(Intent.EXTRA_KEY_EVENT, KeyEvent(KeyEvent.ACTION_DOWN, keyCode))
         return PendingIntent.getBroadcast(
             this,
