@@ -65,4 +65,53 @@ final class ProgressRepositoryTests: XCTestCase {
         XCTAssertEqual(0.7, progress.progression, accuracy: 0.0001)
         XCTAssertEqual("checkpoint", progress.cfi)
     }
+
+    func testRemoteMergeNormalizesSecondsAndRejectsOlderUpdates() {
+        let store = JSONFileStore(subdirectory: "bookstr-test-\(UUID().uuidString)")
+        let repo = ProgressRepository(fileStore: store)
+
+        XCTAssertTrue(repo.mergeRemote(
+            bookId: "remote",
+            progression: 0.6,
+            cfi: "new",
+            updatedAt: 1_700_000_100
+        ))
+        XCTAssertFalse(repo.mergeRemote(
+            bookId: "remote",
+            progression: 0.1,
+            cfi: "old",
+            updatedAt: 1_700_000_000_000
+        ))
+
+        let progress = repo.get(bookId: "remote")
+        XCTAssertEqual(progress.progression, 0.6, accuracy: 0.0001)
+        XCTAssertEqual(progress.cfi, "new")
+        XCTAssertEqual(progress.updatedAt, 1_700_000_100_000)
+    }
+
+    func testRemoteMergeAcceptsEqualTimestampCorrectionsButNotExactDuplicates() {
+        let store = JSONFileStore(subdirectory: "bookstr-test-\(UUID().uuidString)")
+        let repo = ProgressRepository(fileStore: store)
+
+        XCTAssertTrue(repo.mergeRemote(
+            bookId: "remote",
+            progression: 0.2,
+            cfi: "first",
+            updatedAt: 1_700_000_100_000
+        ))
+        XCTAssertTrue(repo.mergeRemote(
+            bookId: "remote",
+            progression: 0.3,
+            cfi: "corrected",
+            updatedAt: 1_700_000_100_000
+        ))
+        XCTAssertFalse(repo.mergeRemote(
+            bookId: "remote",
+            progression: 0.3,
+            cfi: "corrected",
+            updatedAt: 1_700_000_100_000
+        ))
+
+        XCTAssertEqual(repo.get(bookId: "remote").cfi, "corrected")
+    }
 }
