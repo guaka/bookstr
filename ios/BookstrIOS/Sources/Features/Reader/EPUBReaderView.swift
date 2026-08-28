@@ -11,6 +11,94 @@ struct EPUBSection: Identifiable, Equatable {
     var id: String { "\(index):\(href)" }
 }
 
+enum NativeSpeechFallback {
+    static func chunks(_ text: String, maximumLength: Int = 240) -> [(text: String, offset: Int)] {
+        let source = text as NSString
+        let fullRange = NSRange(location: 0, length: source.length)
+        guard fullRange.length > 0 else { return [] }
+        var sentences: [NSRange] = []
+        source.enumerateSubstrings(in: fullRange, options: [.bySentences, .substringNotRequired]) { _, range, _, _ in
+            sentences.append(range)
+        }
+        if sentences.isEmpty { sentences = [fullRange] }
+        var result: [(text: String, offset: Int)] = []
+        var start = sentences[0].location
+        var end = start
+
+        func appendRange(_ range: NSRange) {
+            var cursor = range.location
+            while cursor < NSMaxRange(range) {
+                let remaining = NSMaxRange(range) - cursor
+                var length = min(maximumLength, remaining)
+                if remaining > maximumLength {
+                    let window = source.substring(with: NSRange(location: cursor, length: length)) as NSString
+                    let softLength = min(180, length)
+                    let preferredStart = Int(Double(softLength) * 0.55)
+                    let beforeSoft = window.range(
+                        of: " ",
+                        options: .backwards,
+                        range: NSRange(location: preferredStart, length: softLength - preferredStart)
+                    )
+                    if beforeSoft.location != NSNotFound {
+                        length = beforeSoft.location
+                    } else if softLength < window.length {
+                        let afterSoft = window.range(
+                            of: " ",
+                            range: NSRange(location: softLength, length: window.length - softLength)
+                        )
+                        if afterSoft.location != NSNotFound { length = afterSoft.location }
+                    }
+                }
+                let raw = source.substring(with: NSRange(location: cursor, length: length))
+                let piece = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !piece.isEmpty {
+                    let leading = (raw as NSString).range(of: piece).location
+                    result.append((piece, cursor + max(0, leading)))
+                }
+                cursor += max(1, length)
+                while cursor < NSMaxRange(range), source.character(at: cursor) == 32 { cursor += 1 }
+            }
+        }
+
+        for sentence in sentences {
+            if end > start, NSMaxRange(sentence) - start > maximumLength {
+                appendRange(NSRange(location: start, length: end - start))
+                start = sentence.location
+            }
+            end = NSMaxRange(sentence)
+            if end - start > maximumLength {
+                appendRange(NSRange(location: start, length: end - start))
+                start = end
+            }
+        }
+        if end > start { appendRange(NSRange(location: start, length: end - start)) }
+
+        if result.count >= 2,
+           result[result.count - 1].text.split(whereSeparator: \.isWhitespace).count == 1 {
+            let previousIndex = result.count - 2
+            let previous = result[previousIndex]
+            let previousText = previous.text as NSString
+            let moveAt = previousText.range(of: " ", options: .backwards)
+            if moveAt.location != NSNotFound {
+                var movedStart = previous.offset + NSMaxRange(moveAt)
+                let tailEnd = result[result.count - 1].offset + (result[result.count - 1].text as NSString).length
+                while movedStart < tailEnd, source.character(at: movedStart) == 32 { movedStart += 1 }
+                let previousRange = NSRange(location: previous.offset, length: moveAt.location)
+                let tailRange = NSRange(location: movedStart, length: tailEnd - movedStart)
+                let rebalancedPrevious = source.substring(with: previousRange)
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                let rebalancedTail = source.substring(with: tailRange)
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                if !rebalancedPrevious.isEmpty, (rebalancedTail as NSString).length <= maximumLength {
+                    result[previousIndex] = (rebalancedPrevious, previous.offset)
+                    result[result.count - 1] = (rebalancedTail, movedStart)
+                }
+            }
+        }
+        return result
+    }
+}
+
     @MainActor
 final class EPUBReaderController: NSObject, ObservableObject, AVSpeechSynthesizerDelegate {
     @Published var progression = 0.0
@@ -214,39 +302,8 @@ final class EPUBReaderController: NSObject, ObservableObject, AVSpeechSynthesize
             ?? AVSpeechSynthesisVoice(language: Locale.preferredLanguages.first ?? "en")
     }
 
-    private func speechChunks(_ text: String, maximumLength: Int = 700) -> [(text: String, offset: Int)] {
-        let source = text as NSString
-        let fullRange = NSRange(location: 0, length: source.length)
-        var sentences: [NSRange] = []
-        source.enumerateSubstrings(in: fullRange, options: [.bySentences, .substringNotRequired]) { _, range, _, _ in
-            sentences.append(range)
-        }
-        if sentences.isEmpty { sentences = [fullRange] }
-        var result: [(String, Int)] = []
-        var start = sentences[0].location
-        var end = start
-        func appendRange(_ range: NSRange) {
-            var cursor = range.location
-            while cursor < NSMaxRange(range) {
-                let length = min(maximumLength, NSMaxRange(range) - cursor)
-                let piece = NSRange(location: cursor, length: length)
-                result.append((source.substring(with: piece), cursor))
-                cursor += length
-            }
-        }
-        for sentence in sentences {
-            if end > start, NSMaxRange(sentence) - start > maximumLength {
-                appendRange(NSRange(location: start, length: end - start))
-                start = sentence.location
-            }
-            end = NSMaxRange(sentence)
-            if end - start > maximumLength {
-                appendRange(NSRange(location: start, length: end - start))
-                start = end
-            }
-        }
-        if end > start { appendRange(NSRange(location: start, length: end - start)) }
-        return result.filter { !$0.0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+    private func speechChunks(_ text: String, maximumLength: Int = 240) -> [(text: String, offset: Int)] {
+        NativeSpeechFallback.chunks(text, maximumLength: maximumLength)
     }
 
     fileprivate func parseSpeechChunks(_ value: Any?) -> [(text: String, offset: Int, pauseSeconds: Double)] {
@@ -570,13 +627,16 @@ struct EPUBReaderView: UIViewRepresentable {
             let knownArgument = EPUBReaderController.js(knownJSON)
             let loadScript = "setReaderTheme(\(theme)); setKnownWords(\(knownArgument)); " +
                 "loadBook(\(publication), \(cfi), \(theme), \(highlight), \(bookID)); null;"
-            webView.evaluateJavaScript("[typeof window.loadBook, typeof window.ePub, typeof window.JSZip].join('|')") {
+            webView.evaluateJavaScript(
+                "[typeof window.loadBook, typeof window.ePub, typeof window.JSZip, " +
+                    "typeof window.BookstrSpeech?.buildPlan].join('|')"
+            ) {
                 [weak controller, weak webView] value, error in
                 if let error {
                     controller?.errorMessage = "Could not initialize the EPUB reader: \(error.localizedDescription)"
                     return
                 }
-                guard value as? String == "function|function|function" else {
+                guard value as? String == "function|function|function|function" else {
                     controller?.errorMessage = "The EPUB reader resources did not load (\(value as? String ?? "unknown"))."
                     return
                 }
@@ -609,6 +669,9 @@ struct EPUBReaderView: UIViewRepresentable {
                     mimeType = "text/javascript"
                 case "/jszip.min.js":
                     data = try bundled("jszip.min", extension: "js")
+                    mimeType = "text/javascript"
+                case "/reader-speech.js":
+                    data = try bundled("reader-speech", extension: "js")
                     mimeType = "text/javascript"
                 case "/books/current.epub":
                     data = try Data(contentsOf: fileURL, options: .mappedIfSafe)

@@ -15,6 +15,8 @@ targets:
       - path: BookstrIOS/Assets.xcassets
       - path: BookstrIOS/ReaderAssets/reader.html
         buildPhase: resources
+      - path: ../web/reader-speech.js
+        buildPhase: resources
       - path: BookstrIOS/ReaderAssets/epub.min.js
         buildPhase: resources
       - path: BookstrIOS/ReaderAssets/jszip.min.js

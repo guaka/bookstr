@@ -19,7 +19,7 @@ class ReaderTextToSpeechTest {
         assertTrue(chunks.size > 1)
         assertEquals(text, chunks.joinToString(" "))
         assertTrue(chunks.none(String::isBlank))
-        assertTrue(chunks.all { it.length <= 160 })
+        assertTrue(chunks.all { it.length <= 240 })
     }
 
     @Test
@@ -71,12 +71,20 @@ class ReaderTextToSpeechTest {
     }
 
     @Test
+    fun shortFinalWordStaysWithSentenceWhenWithinHardLimit() {
+        val text = List(28) { "word$it" }.joinToString(" ") + "."
+
+        assertEquals(186, text.length)
+        assertEquals(listOf(text), ReaderActivity.speechChunks(text))
+    }
+
+    @Test
     fun unbrokenTextUsesSafeHardLimitsWithoutLoss() {
         val text = "x".repeat(401)
         val chunks = ReaderActivity.speechChunks(text)
 
         assertEquals(text, chunks.joinToString(""))
-        assertTrue(chunks.all { it.length <= 160 })
+        assertTrue(chunks.all { it.length <= 240 })
     }
 
     @Test

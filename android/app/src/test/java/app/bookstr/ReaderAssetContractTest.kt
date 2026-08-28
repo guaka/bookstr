@@ -1,5 +1,6 @@
 package app.bookstr
 
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -85,5 +86,18 @@ class ReaderAssetContractTest {
         assertTrue(html.contains("if (media) return"))
         assertTrue(html.contains("event.preventDefault()"))
         assertFalse(html.contains("book = ePub(base64ToArrayBuffer(base64))"))
+    }
+
+    @Test
+    fun packagedReaderUsesCanonicalSpeechPlanner() {
+        val html = File("src/main/assets/reader.html").readText()
+        val sharedSpeech = File("../../web/reader-speech.js")
+        val scriptTag = "<script src=\"reader-speech.js\"></script>"
+
+        assertTrue(sharedSpeech.isFile)
+        assertTrue(html.contains(scriptTag))
+        assertEquals(1, Regex(Regex.escape(scriptTag)).findAll(html).count())
+        assertTrue(html.contains("window.BookstrSpeech.buildPlan(parts)"))
+        assertTrue(sharedSpeech.readText().contains("paragraphPauseMs: PARAGRAPH_PAUSE_MS"))
     }
 }

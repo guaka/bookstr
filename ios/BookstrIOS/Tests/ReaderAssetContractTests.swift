@@ -1,4 +1,7 @@
 import XCTest
+#if !SWIFT_PACKAGE
+import JavaScriptCore
+#endif
 #if SWIFT_PACKAGE
 @testable import BookstrLogic
 #else
@@ -23,6 +26,84 @@ final class ReaderAssetContractTests: XCTestCase {
         XCTAssertNil(queue.next(), "A completed narration must not restart from the first chunk")
         XCTAssertTrue(queue.isEmpty)
     }
+
+#if !SWIFT_PACKAGE
+    func testEPUBSpeechPlannerKeepsShortTailAndParagraphPause() throws {
+        let html = try bundledReaderHTML()
+        let speechSource = try bundledAsset(named: "reader-speech", extension: "js")
+        let context = try XCTUnwrap(JSContext())
+        context.evaluateScript(speechSource)
+        let sentence = (0..<28).map { "word\($0)" }.joined(separator: " ") + "."
+        let arguments = try JSONSerialization.data(withJSONObject: [sentence, "Second paragraph."])
+        let json = try XCTUnwrap(String(data: arguments, encoding: .utf8))
+        let result = try XCTUnwrap(
+            context.evaluateScript("JSON.stringify(BookstrSpeech.buildPlan(\(json)))").toString()
+        )
+        let data = try XCTUnwrap(result.data(using: .utf8))
+        let plan = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        let chunks = try XCTUnwrap(plan["chunks"] as? [[String: Any]])
+
+        XCTAssertEqual(sentence.count, 186)
+        XCTAssertEqual(chunks.count, 2)
+        XCTAssertEqual(chunks[0]["text"] as? String, sentence)
+        XCTAssertEqual((chunks[0]["pauseMs"] as? NSNumber)?.intValue, 0)
+        XCTAssertEqual(chunks[1]["text"] as? String, "Second paragraph.")
+        XCTAssertEqual((chunks[1]["pauseMs"] as? NSNumber)?.intValue, 400)
+        XCTAssertTrue(html.contains("<script src=\"reader-speech.js\"></script>"))
+        XCTAssertEqual(html.components(separatedBy: "<script src=\"reader-speech.js\"></script>").count - 1, 1)
+        XCTAssertTrue(html.contains("window.BookstrSpeech.buildPlan(parts)"))
+    }
+
+    func testNativeSpeechFallbackPreservesTextOffsetsAndAvoidsFinalWordOrphans() {
+        let text = (0..<75).map { "fallback\($0)" }.joined(separator: " ") + "."
+        let chunks = NativeSpeechFallback.chunks(text)
+
+        XCTAssertGreaterThan(chunks.count, 1)
+        XCTAssertTrue(chunks.allSatisfy { ($0.text as NSString).length <= 240 })
+        XCTAssertNotEqual(chunks.last?.text.split(whereSeparator: \.isWhitespace).count, 1)
+        XCTAssertEqual(chunks.map(\.text).joined(separator: " "), text)
+        for chunk in chunks {
+            XCTAssertEqual((text as NSString).substring(
+                with: NSRange(location: chunk.offset, length: (chunk.text as NSString).length)
+            ), chunk.text)
+        }
+
+        XCTAssertTrue(NativeSpeechFallback.chunks("").isEmpty)
+        XCTAssertTrue(NativeSpeechFallback.chunks("   ").isEmpty)
+
+        let regression = (0..<28).map { "word\($0)" }.joined(separator: " ") + "."
+        XCTAssertEqual(NativeSpeechFallback.chunks(regression).map(\.text), [regression])
+
+        let sentenceBoundary = "A short first sentence. "
+            + (0..<45).map { "sentence\($0)" }.joined(separator: " ") + "."
+        XCTAssertEqual(
+            NativeSpeechFallback.chunks(sentenceBoundary).map(\.text).joined(separator: " "),
+            sentenceBoundary
+        )
+
+        let firstGroupedSentence = String(repeating: "Alpha ", count: 20) + "ends."
+        let secondGroupedSentence = String(repeating: "Beta ", count: 24) + "ends."
+        let groupedSentences = firstGroupedSentence + " " + secondGroupedSentence
+        XCTAssertEqual(
+            NativeSpeechFallback.chunks(groupedSentences).map(\.text),
+            [firstGroupedSentence, secondGroupedSentence]
+        )
+
+        let afterSoftBoundary = "lead " + String(repeating: "x", count: 190)
+            + " tail words continue until this fallback must split the text safely"
+        XCTAssertEqual(
+            NativeSpeechFallback.chunks(afterSoftBoundary).map(\.text).joined(separator: " "),
+            afterSoftBoundary
+        )
+
+        let rebalanced = NativeSpeechFallback.chunks("aaaaa bbbbb ccccc ddddd", maximumLength: 20)
+        XCTAssertEqual(rebalanced.map(\.text), ["aaaaa bbbbb", "ccccc ddddd"])
+        XCTAssertEqual(rebalanced.map(\.offset), [0, 12])
+
+        let unbroken = String(repeating: "z", count: 51)
+        XCTAssertEqual(NativeSpeechFallback.chunks(unbroken, maximumLength: 20).map(\.text).joined(), unbroken)
+    }
+#endif
 
     func testSpeechPlaybackQueueRejectsStaleWebViewResponse() {
         var queue = SpeechPlaybackQueue()

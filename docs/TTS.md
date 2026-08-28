@@ -43,6 +43,31 @@ Each TTS adapter renders this plan for its provider:
 This keeps the reading behavior DRY across platforms and lets us change cloud
 provider without rewriting the readability work.
 
+## Implemented shared speech plan
+
+EPUB narration on Android and iOS, plus EPUB and PDF narration in Electron,
+uses the dependency-free `web/reader-speech.js` planner. `BookstrSpeech.buildPlan`
+normalizes semantic paragraphs into one text string and returns ordered chunks
+with exact `start` offsets and a `pauseMs` delay before each chunk.
+
+- The default soft target is 180 characters, the hard ceiling is 240, and a
+  request is capped at 100,000 characters.
+- Sentences remain intact up to the hard ceiling. Longer material prefers
+  sentence, clause, and whole-word boundaries; only a single overlong token is
+  hard-split.
+- A final one-word tail is merged or rebalanced with the preceding chunk, so
+  narration does not strand the last word of a normal sentence.
+- Continuations use a 35 ms delay, sentence boundaries 180 ms, clauses and
+  ellipses 250–320 ms, and the first chunk of a new paragraph 400 ms.
+- EPUB block elements define paragraphs. PDF pages define paragraphs because
+  PDF text extraction does not provide dependable semantic paragraph markup.
+
+Electron exposes read-aloud controls only inside the desktop bridge and only
+when Chromium reports system speech support. It uses operating-system voices,
+maps generic Portuguese to `pt-PT`, speaks one planned chunk at a time, and
+cancels speech and pending timers when narration stops, navigation changes, a
+new book opens, or the reader closes. The ordinary browser UI remains unchanged.
+
 ## European Portuguese comparison
 
 Legend: green = strong fit, yellow = viable but audition carefully, red = not
