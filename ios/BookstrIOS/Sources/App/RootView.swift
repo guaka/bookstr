@@ -1,12 +1,43 @@
 import SwiftUI
+import Network
+
+final class FavoriteNetworkRecoveryMonitor: ObservableObject {
+    @Published private(set) var recoveryToken = 0
+    private let monitor: NWPathMonitor
+    private let queue = DispatchQueue(label: "app.bookstr.favorite-network-retry")
+    private let lock = NSLock()
+    private var wasUnavailable = false
+
+    init(startMonitoring: Bool = true) {
+        monitor = NWPathMonitor()
+        monitor.pathUpdateHandler = { [weak self] path in
+            self?.recordConnectivity(path.status == .satisfied)
+        }
+        if startMonitoring { monitor.start(queue: queue) }
+    }
+
+    func recordConnectivity(_ connected: Bool) {
+        lock.lock()
+        if !connected { wasUnavailable = true }
+        let recovered = connected && wasUnavailable
+        if recovered { wasUnavailable = false }
+        lock.unlock()
+        guard recovered else { return }
+        DispatchQueue.main.async { [weak self] in self?.recoveryToken += 1 }
+    }
+
+    deinit { monitor.cancel() }
+}
 
 struct RootView: View {
+    @Environment(\.scenePhase) private var scenePhase
     @EnvironmentObject private var container: AppContainer
     @EnvironmentObject private var settings: SettingsRepository
     @State private var selectedTab = 2
     @State private var continuation: CatalogBook?
     @State private var continueError: String?
     @State private var attemptedInitialContinuation = false
+    @StateObject private var favoriteNetwork = FavoriteNetworkRecoveryMonitor()
 
     var body: some View {
         TabView(selection: Binding(
@@ -70,10 +101,18 @@ struct RootView: View {
         .preferredColorScheme(settings.theme.colorScheme)
         .background(settings.theme.background.ignoresSafeArea())
         .task {
+            _ = await container.nostrSyncService.retryPendingFavorites()
             guard !attemptedInitialContinuation else { return }
             attemptedInitialContinuation = true
             guard !ProcessInfo.processInfo.arguments.contains("--ui-testing-library-fixtures") else { return }
             openContinuation(reportMissing: false)
+        }
+        .onChange(of: scenePhase) { _, phase in
+            guard phase == .active else { return }
+            Task { _ = await container.nostrSyncService.retryPendingFavorites() }
+        }
+        .onReceive(favoriteNetwork.$recoveryToken.dropFirst()) { _ in
+            Task { _ = await container.nostrSyncService.retryPendingFavorites() }
         }
         .onReceive(container.wordNavigation.$requestToken) { token in
             guard token > 0 else { return }

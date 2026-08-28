@@ -51,6 +51,24 @@ struct SharedFavorites: Equatable {
     var external: [ExternalFavorite] = []
 }
 
+/// The newest locally saved favorite state.  It is intentionally a complete
+/// snapshot so a retry never replays an earlier tap over a later one.
+struct FavoritePendingSnapshot: Codable, Equatable {
+    var refs: [SharedFavoriteRef]
+    var timestamp: Int64
+}
+
+enum FavoriteSyncState: Equatable {
+    case savedSyncing
+    case synced
+    case savedPending(String)
+}
+
+struct FavoriteUpdateResult: Equatable {
+    var favorites: SharedFavorites
+    var state: FavoriteSyncState
+}
+
 struct BookCollection: Codable, Identifiable, Equatable {
     var id: String
     var title: String
@@ -86,12 +104,17 @@ enum FavoritesParser {
 
     static func collectionTags(refs: [SharedFavoriteRef], updatedAt: Int64? = nil) -> [[String]] {
         let now = updatedAt ?? Int64(Date().timeIntervalSince1970)
-        return [
+        return collectionHeader(title: "Favorites", updatedAt: now)
+            + compactItemTags(refs: refs, fallbackAddedAt: now)
+    }
+
+    static func collectionHeader(title: String, updatedAt: Int64) -> [[String]] {
+        [
             ["bookstr-collection", "2"],
             ["bookstr-publications", "2"],
-            ["title", "Favorites"],
-            ["updated", String(now)],
-        ] + compactItemTags(refs: refs, fallbackAddedAt: now)
+            ["title", title],
+            ["updated", String(updatedAt)],
+        ]
     }
 
     static func compactItemTags(refs: [SharedFavoriteRef], fallbackAddedAt: Int64) -> [[String]] {

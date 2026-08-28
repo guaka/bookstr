@@ -26,6 +26,18 @@ struct FavoritesPullResult {
     var error: String? = nil
 }
 
+private actor FavoritePublishGate {
+    private var publishing = false
+
+    func begin() -> Bool {
+        guard !publishing else { return false }
+        publishing = true
+        return true
+    }
+
+    func end() { publishing = false }
+}
+
 final class NostrSyncService {
     private let settings: SettingsRepository
     private let progress: ProgressRepository
@@ -33,9 +45,11 @@ final class NostrSyncService {
     private let favoriteMetadata: FavoriteMetadataRepository
     private let client: NostrClient
     private let snippetPublisher: NostrEventPublishing
+    private let favoritePublisher: NostrEventPublishing
     private let signerStore: SignerStore
     private let nip46Service: Nip46Service
     private var lastDecryptNote = ""
+    private let favoritePublishGate = FavoritePublishGate()
 
     init(
         settings: SettingsRepository,
@@ -45,7 +59,8 @@ final class NostrSyncService {
         client: NostrClient,
         signerStore: SignerStore,
         nip46Service: Nip46Service,
-        snippetPublisher: NostrEventPublishing? = nil
+        snippetPublisher: NostrEventPublishing? = nil,
+        favoritePublisher: NostrEventPublishing? = nil
     ) {
         self.settings = settings
         self.progress = progress
@@ -53,6 +68,7 @@ final class NostrSyncService {
         self.favoriteMetadata = favoriteMetadata
         self.client = client
         self.snippetPublisher = snippetPublisher ?? client
+        self.favoritePublisher = favoritePublisher ?? client
         self.signerStore = signerStore
         self.nip46Service = nip46Service
     }
@@ -240,12 +256,20 @@ final class NostrSyncService {
         )
     }
 
+    /// Compatibility entry point for callers that only need the updated local
+    /// state. Delivery errors stay in the durable outbox instead of undoing a
+    /// successful local tap.
     func setFavorite(book: CatalogBook, favorite: Bool, books: [CatalogBook]) async throws -> SharedFavorites {
+        await updateFavorite(book: book, favorite: favorite, books: books).favorites
+    }
+
+    func updateFavorite(book: CatalogBook, favorite: Bool, books: [CatalogBook]) async -> FavoriteUpdateResult {
         favoriteMetadata.remember(book: book)
-        await ensureSignerReady()
-        guard let pubkey = settings.pubkeyHex, let signer = signerStore.signer(from: settings) else {
-            throw NSError(domain: "NostrFavorites", code: 1,
-                          userInfo: [NSLocalizedDescriptionKey: "Connect a NIP-46 signer to edit favorites"])
+        guard let pubkey = settings.pubkeyHex, !pubkey.isEmpty else {
+            return FavoriteUpdateResult(
+                favorites: cachedFavorites(seedBooks: books),
+                state: .savedPending("Connect Nostr in Settings before saving favorites.")
+            )
         }
         var plaintext = settings.cachedNostrFavorites(pubkey: pubkey)
         if plaintext == nil {
@@ -255,77 +279,100 @@ final class NostrSyncService {
         var refs = favoriteMetadata.enrich(FavoritesParser.parseSharedFavoriteTags(plaintext ?? "[]"))
         let present = refs.contains { FavoritesParser.matches($0, book: book) }
         if favorite, !present {
-            refs.append(
-                SharedFavoriteRef(
-                    bookstrId: book.id,
-                    libvaultMd5: book.libvaultMd5,
-                    isbn: book.isbn,
-                    url: book.sourceUrl ?? book.epubUrl,
-                    title: book.title,
-                    author: book.author,
-                    year: book.year,
-                    format: book.format.rawValue,
-                    blossomSha256: book.blossomSha256,
-                    blossomUrl: book.blossomSha256 == nil ? nil : book.epubUrl,
-                    addedAt: Int64(Date().timeIntervalSince1970)
-                )
-            )
+            refs.append(favoriteRef(book: book, addedAt: Int64(Date().timeIntervalSince1970)))
         } else if !favorite, present {
             refs.removeAll { FavoritesParser.matches($0, book: book) }
         }
+        let timestamp = settings.nextFavoritePublishTimestamp(
+            pubkey: pubkey, wallClock: Int64(Date().timeIntervalSince1970)
+        )
+        let snapshot = FavoritePendingSnapshot(refs: refs, timestamp: timestamp)
+        let plaintextSnapshot = FavoritesParser.serializeTags(
+            FavoritesParser.collectionHeader(title: "Favorites", updatedAt: timestamp)
+                + FavoritesParser.compactItemTags(refs: refs, fallbackAddedAt: timestamp)
+        )
+        settings.cacheNostrFavorites(pubkey: pubkey, plaintext: plaintextSnapshot)
+        settings.saveFavoriteOutbox(pubkey: pubkey, snapshot: snapshot)
+        return await retryPendingFavorites(seedBooks: books)
+            ?? FavoriteUpdateResult(
+                favorites: FavoritesParser.matchSharedFavorites(refs: refs, books: books),
+                state: .savedSyncing
+            )
+    }
 
-        let now = Int64(Date().timeIntervalSince1970)
+    func retryPendingFavorites(seedBooks: [CatalogBook] = []) async -> FavoriteUpdateResult? {
+        guard let pubkey = settings.pubkeyHex,
+              let snapshot = settings.favoriteOutbox(pubkey: pubkey) else { return nil }
+        guard await favoritePublishGate.begin() else {
+            return FavoriteUpdateResult(
+                favorites: FavoritesParser.matchSharedFavorites(refs: snapshot.refs, books: seedBooks),
+                state: .savedSyncing
+            )
+        }
+        let result = await publishFavoriteSnapshot(snapshot, pubkey: pubkey, seedBooks: seedBooks)
+        await favoritePublishGate.end()
+        if let newest = settings.favoriteOutbox(pubkey: pubkey), newest.timestamp != snapshot.timestamp {
+            Task { [weak self] in _ = await self?.retryPendingFavorites(seedBooks: seedBooks) }
+        }
+        return result
+    }
+
+    private func publishFavoriteSnapshot(
+        _ snapshot: FavoritePendingSnapshot, pubkey: String, seedBooks: [CatalogBook]
+    ) async -> FavoriteUpdateResult {
+        let local = FavoritesParser.matchSharedFavorites(refs: snapshot.refs, books: seedBooks)
+        await ensureSignerReady()
+        guard let signer = signerStore.signer(from: settings) else {
+            return FavoriteUpdateResult(
+                favorites: local,
+                state: .savedPending("Signer is unavailable. Reconnect Nostr, then retry.")
+            )
+        }
         let relays = Array(Set(settings.relays + [NostrClient.defaultInteropRelay]))
-
         func publishEncrypted(dTag: String, privateTags: [[String]]) async throws -> NostrEvent {
             let plaintext = FavoritesParser.serializeTags(privateTags)
             guard plaintext.count <= FavoritesParser.maxChunkPlaintextChars else {
                 throw NSError(domain: "NostrFavorites", code: 3,
-                              userInfo: [NSLocalizedDescriptionKey: "One favorite reference is too large to encrypt safely"])
+                              userInfo: [NSLocalizedDescriptionKey: "A favorite record is too large to encrypt safely."])
             }
             let ciphertext = try await signer.nip44Encrypt(plaintext, to: pubkey)
             let unsigned = NostrEvent(
-                id: nil,
-                pubkey: pubkey,
-                createdAt: now,
-                kind: NostrKinds.favorites,
-                tags: [["d", dTag]],
-                content: ciphertext,
-                sig: nil
+                id: nil, pubkey: pubkey, createdAt: snapshot.timestamp, kind: NostrKinds.favorites,
+                tags: [["d", dTag]], content: ciphertext, sig: nil
             )
             let signed = try await signer.sign(unsigned)
-            guard await client.publishEvent(signed, relays: relays) else {
+            guard await favoritePublisher.publishEvent(signed, relays: relays) else {
                 throw NSError(domain: "NostrFavorites", code: 2,
-                              userInfo: [NSLocalizedDescriptionKey: "Relays did not accept the updated favorites"])
+                              userInfo: [NSLocalizedDescriptionKey: "Relays did not accept the updated favorites."])
             }
             return signed
         }
-
-        let header = [
-            ["bookstr-collection", "2"],
-            ["title", "Favorites"],
-            ["updated", String(now)],
-        ]
-        let itemTags = FavoritesParser.compactItemTags(refs: refs, fallbackAddedAt: now)
+        let header = FavoritesParser.collectionHeader(title: "Favorites", updatedAt: snapshot.timestamp)
+        let itemTags = FavoritesParser.compactItemTags(refs: snapshot.refs, fallbackAddedAt: snapshot.timestamp)
         let completeTags = header + itemTags
-        let completePlaintext = FavoritesParser.serializeTags(completeTags)
-        let root: NostrEvent
-        if completePlaintext.count <= FavoritesParser.maxChunkPlaintextChars {
-            root = try await publishEncrypted(dTag: NostrKinds.favoritesDTag, privateTags: completeTags)
-        } else {
-            let chunks = FavoritesParser.splitItemTags(itemTags)
-            let generation = UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased()
-            let prefix = "\(NostrKinds.collectionChunkPrefix)-\(generation)"
-            for (index, chunk) in chunks.enumerated() {
-                _ = try await publishEncrypted(dTag: "\(prefix)-\(index)", privateTags: chunk)
+        do {
+            let root: NostrEvent
+            if FavoritesParser.serializeTags(completeTags).count <= FavoritesParser.maxChunkPlaintextChars {
+                root = try await publishEncrypted(dTag: NostrKinds.favoritesDTag, privateTags: completeTags)
+            } else {
+                let chunks = FavoritesParser.splitItemTags(itemTags)
+                let prefix = "\(NostrKinds.collectionChunkPrefix)-\(UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased())"
+                for (index, chunk) in chunks.enumerated() {
+                    _ = try await publishEncrypted(dTag: "\(prefix)-\(index)", privateTags: chunk)
+                }
+                root = try await publishEncrypted(
+                    dTag: NostrKinds.favoritesDTag,
+                    privateTags: header + [["bookstr-chunks", String(chunks.count), prefix]]
+                )
             }
-            root = try await publishEncrypted(
-                dTag: NostrKinds.favoritesDTag,
-                privateTags: header + [["bookstr-chunks", String(chunks.count), prefix]]
+            settings.cacheNostrFavorites(
+                pubkey: pubkey, plaintext: FavoritesParser.serializeTags(completeTags), eventId: root.id
             )
+            settings.clearFavoriteOutbox(pubkey: pubkey, timestamp: snapshot.timestamp)
+            return FavoriteUpdateResult(favorites: local, state: .synced)
+        } catch {
+            return FavoriteUpdateResult(favorites: local, state: .savedPending(error.localizedDescription))
         }
-        settings.cacheNostrFavorites(pubkey: pubkey, plaintext: completePlaintext, eventId: root.id)
-        return FavoritesParser.matchSharedFavorites(refs: refs, books: books)
     }
 
     func cachedCollections() -> [BookCollection] {
@@ -461,7 +508,11 @@ final class NostrSyncService {
             format: book.format.rawValue,
             blossomSha256: book.blossomSha256,
             blossomUrl: book.blossomSha256 == nil ? nil : book.epubUrl,
-            addedAt: addedAt
+            addedAt: addedAt,
+            rightsStatus: book.rightsStatus,
+            license: book.license,
+            licenseUrl: book.licenseUrl,
+            rightsSource: book.rightsSource
         )
     }
 
