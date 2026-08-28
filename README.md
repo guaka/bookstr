@@ -35,6 +35,7 @@ Feature details vary by platform while Bookstr moves toward parity.
 | Web | Live early preview; no installation required | [Open books.guaka.org](https://books.guaka.org) |
 | Android | Early-access APK for Android 8.1 and newer | [Download the latest APK](https://github.com/guaka/bookstr/releases/latest) |
 | iPhone and iPad | Native SwiftUI app available from source; no App Store or TestFlight release yet | [Build the iOS app](./ios/README.md) |
+| Desktop (Electron) | Early-access local app for macOS 14+, Windows 10/11, and Linux | [Open the desktop README](./desktop/README.md) |
 
 ### Install on Android
 

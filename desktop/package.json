@@ -1,0 +1,88 @@
+{
+  "name": "bookstr-desktop",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Bookstr Electron desktop shell",
+  "homepage": "https://github.com/guaka/bookstr",
+  "author": {
+    "name": "Bookstr",
+    "email": "support@bookstr.dev"
+  },
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "pack": "electron-builder --dir",
+    "dist": "electron-builder",
+    "dist:linux": "electron-builder --linux",
+    "dist:win": "electron-builder --win",
+    "dist:mac": "electron-builder --mac",
+    "dist:all": "npm run dist:linux && npm run dist:win && npm run dist:mac",
+    "test": "npm run test:unit && npm run test:e2e",
+    "test:unit": "node --experimental-test-coverage --test tests/unit/*.test.js ../web/tests/reader-speech.test.mjs",
+    "test:e2e": "playwright test",
+    "test:e2e:smoke": "playwright test tests/e2e/desktop.smoke.spec.js",
+    "test:e2e:reader": "playwright test tests/e2e/desktop.reader.spec.js",
+    "test:e2e:headed": "playwright test --headed"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.62.1",
+    "electron": "44.0.0",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "app.bookstr.desktop",
+    "productName": "Bookstr",
+    "icon": "../web/public/apple-touch-icon.png",
+    "files": [
+      "../web/**/*",
+      "assets/icon-macos.png",
+      "blossom-proxy.js",
+      "catalog-proxy.js",
+      "dictionary-proxy.js",
+      "main.js",
+      "preload.js",
+      "security-policy.js",
+      "package.json"
+    ],
+    "extraMetadata": {
+      "main": "main.js"
+    },
+    "directories": {
+      "output": "dist"
+    },
+    "mac": {
+      "icon": "assets/icon-macos.png",
+      "artifactName": "bookstr-desktop-${version}-${os}-${arch}.dmg",
+      "category": "public.app-category.productivity",
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        }
+      ]
+    },
+    "win": {
+      "artifactName": "bookstr-desktop-${version}-setup-${arch}.exe",
+      "signAndEditExecutable": false,
+      "target": [
+        "nsis"
+      ]
+    },
+    "linux": {
+      "artifactName": "bookstr-desktop-${version}-${arch}.AppImage",
+      "category": "Office",
+      "maintainer": "Bookstr <support@bookstr.dev>",
+      "target": [
+        "AppImage",
+        "deb"
+      ]
+    }
+  },
+  "dependencies": {
+    "nostr-tools": "^2.25.0",
+    "qrcode": "^1.5.4"
+  }
+}
