@@ -1,6 +1,7 @@
 package app.bookstr.data
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -1550,7 +1551,7 @@ class NostrFavoritesRepositoryTest {
 
         assertEquals(1, result.external.size)
         assertEquals("source:7", result.external.single().key)
-        assertEquals("LibVault favorite", result.external.single().title)
+        assertEquals("source:7", result.external.single().title)
         assertEquals(9L, result.external.single().addedAt)
     }
 
@@ -1585,7 +1586,7 @@ class NostrFavoritesRepositoryTest {
 
         assertEquals(1, result.external.size)
         assertEquals(source, result.external.single().key)
-        assertEquals("LibVault favorite", result.external.single().title)
+        assertEquals(source, result.external.single().title)
         assertEquals(source, result.external.single().url)
     }
 
@@ -1598,7 +1599,7 @@ class NostrFavoritesRepositoryTest {
 
         assertEquals(1, result.external.size)
         assertEquals(md5, result.external.single().key)
-        assertEquals("LibVault favorite", result.external.single().title)
+        assertEquals("MD5 ${md5.take(10)}…", result.external.single().title)
         assertEquals(md5, result.external.single().libvaultMd5)
     }
 
@@ -1611,7 +1612,7 @@ class NostrFavoritesRepositoryTest {
 
         assertEquals(1, result.external.size)
         assertEquals("9780123456789", result.external.single().key)
-        assertEquals("LibVault favorite", result.external.single().title)
+        assertEquals("ISBN 9780123456789", result.external.single().title)
     }
 
     @Test
@@ -1624,7 +1625,7 @@ class NostrFavoritesRepositoryTest {
 
         assertEquals(1, result.external.size)
         assertEquals(sha, result.external.single().key)
-        assertEquals("LibVault favorite", result.external.single().title)
+        assertEquals("Blossom ${sha.take(10)}…", result.external.single().title)
         assertEquals(sha, result.external.single().blossomSha256)
     }
 
@@ -2309,5 +2310,113 @@ class NostrFavoritesRepositoryTest {
         assertEquals(1, refs.size)
         assertEquals(url, refs.single().url)
         assertEquals(1_700_000_001L, refs.single().addedAt)
+    }
+
+    @Test
+    fun fallbackMatchingNormalizesUrlAndIgnoresQueryAndFragment() {
+        val result = NostrFavoritesRepository.matchSharedFavorites(
+            listOf(SharedFavoriteRef(url = "HTTPS://Catalog.Example/books/one?source=nostr#chapter")),
+            listOf(
+                CatalogBook(
+                    id = "catalog-book",
+                    title = "Catalog book",
+                    author = "Author",
+                    epubUrl = "https://catalog.example/books/one?download=1",
+                    coverUrl = null,
+                ),
+            ),
+        )
+
+        assertEquals(setOf("catalog-book"), result.bookIds)
+        assertTrue(result.external.isEmpty())
+    }
+
+    @Test
+    fun stableFavoriteDoesNotMatchDifferentBookThroughFallbackIdentity() {
+        val sharedUrl = "https://catalog.example/books/one"
+        val result = NostrFavoritesRepository.matchSharedFavorites(
+            listOf(
+                SharedFavoriteRef(
+                    bookstrId = "source:expected",
+                    isbn = "9780123456789",
+                    url = sharedUrl,
+                ),
+            ),
+            listOf(
+                CatalogBook(
+                    id = "source:different",
+                    title = "Different edition",
+                    author = "Author",
+                    epubUrl = sharedUrl,
+                    coverUrl = null,
+                    isbn = "9780123456789",
+                ),
+            ),
+        )
+
+        assertTrue(result.bookIds.isEmpty())
+        assertEquals("source:expected", result.external.single().key)
+    }
+
+    @Test
+    fun blankStableIdentifiersStillAllowLegacyFallbackMatching() {
+        val result = NostrFavoritesRepository.matchSharedFavorites(
+            listOf(
+                SharedFavoriteRef(
+                    bookstrId = " ",
+                    libvaultMd5 = "",
+                    isbn = "9780123456789",
+                    blossomSha256 = "\n",
+                ),
+            ),
+            listOf(
+                CatalogBook(
+                    id = "legacy-isbn",
+                    title = "Legacy book",
+                    author = "Author",
+                    epubUrl = "",
+                    coverUrl = null,
+                    isbn = "9780123456789",
+                ),
+            ),
+        )
+
+        assertEquals(setOf("legacy-isbn"), result.bookIds)
+        assertTrue(result.external.isEmpty())
+    }
+
+    @Test
+    fun malformedAndRelativeFallbackUrlsDoNotMatchCatalogBooks() {
+        val result = NostrFavoritesRepository.matchSharedFavorites(
+            listOf(
+                SharedFavoriteRef(url = "https://[broken"),
+                SharedFavoriteRef(url = "relative/path"),
+            ),
+            listOf(
+                CatalogBook(
+                    id = "catalog-book",
+                    title = "Catalog book",
+                    author = "Author",
+                    epubUrl = "https://catalog.example/books/one",
+                    coverUrl = null,
+                ),
+            ),
+        )
+
+        assertTrue(result.bookIds.isEmpty())
+        assertEquals(setOf("https://[broken", "relative/path"), result.external.map { it.key }.toSet())
+    }
+
+    @Test
+    fun unmatchedStableFavoritePrefersBlossomKeyBeforeIsbn() {
+        val sha = "b".repeat(64)
+        val result = NostrFavoritesRepository.matchSharedFavorites(
+            listOf(SharedFavoriteRef(blossomSha256 = sha, isbn = "9780123456789")),
+            emptyList(),
+        )
+
+        assertEquals(sha, result.external.single().key)
+        assertEquals("Blossom ${sha.take(10)}…", result.external.single().title)
+        assertFalse(result.external.single().key.startsWith("978"))
     }
 }
