@@ -40,8 +40,15 @@ class NarrationServiceContractTest {
         assertFalse(source.contains("MediaButtonReceiver.buildMediaButtonPendingIntent"))
         assertTrue(source.contains("Intent(Intent.ACTION_MEDIA_BUTTON)"))
         assertTrue(source.contains("setComponent(ComponentName(this, MediaButtonReceiver::class.java))"))
+        assertTrue(source.contains("Intent(this, NarrationService::class.java).setAction(ACTION_STOP)"))
+        assertTrue(source.contains("Intent(this, MainActivity::class.java).addFlags("))
         assertTrue(source.contains("PendingIntent.getBroadcast"))
         assertTrue(source.contains("PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE"))
+        assertTrue(
+            Regex("PendingIntent\\.FLAG_UPDATE_CURRENT or PendingIntent\\.FLAG_IMMUTABLE")
+                .findAll(source)
+                .count() == 3,
+        )
         assertTrue(Regex("mediaButtonPendingIntent\\(").findAll(source).count() == 4)
         assertTrue(source.contains("Service.START_STICKY"))
         assertTrue(source.contains("abandonAudioFocusRequest"))
