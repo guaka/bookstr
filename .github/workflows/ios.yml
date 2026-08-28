@@ -6,12 +6,16 @@ on:
     paths:
       - 'ios/**'
       - 'shared/reader/**'
+      - 'shared/coverage/**'
+      - 'scripts/coverage-ratchet.mjs'
       - 'scripts/test-overview.mjs'
       - '.github/workflows/ios.yml'
   pull_request:
     paths:
       - 'ios/**'
       - 'shared/reader/**'
+      - 'shared/coverage/**'
+      - 'scripts/coverage-ratchet.mjs'
       - 'scripts/test-overview.mjs'
       - '.github/workflows/ios.yml'
   workflow_dispatch:
@@ -56,6 +60,9 @@ jobs:
         run: |
           KNOWN_TESTS=$(grep -h -E '^[[:space:]]*func test' ios/BookstrIOS/Tests/{DictionaryRepositoryTests,FavoritesParserTests,NostrClientProgressTests,ProgressRepositoryTests,ReaderAssetContractTests,SettingsRepositoryTests,VocabularyRepositoryTests,WordNavigationStateTests}.swift | wc -l | tr -d ' ')
           node scripts/test-overview.mjs record --id ios --suite iOS --status "$TEST_STATUS" --results-format swift --results ios/swift-test-results.log --coverage-format llvm --coverage "$COVERAGE_PATH" --known-tests "$KNOWN_TESTS" --duration-ms "$TEST_DURATION_MS" --output test-overview/ios.json --recorded "$(date -u +%FT%TZ)" --run-url "$RUN_URL" --commit "$GITHUB_SHA"
+      - name: Enforce iOS coverage baseline
+        if: always()
+        run: node scripts/coverage-ratchet.mjs --suite ios --report test-overview/ios.json
       - name: Prepare iOS simulator
         id: simulator
         run: |
