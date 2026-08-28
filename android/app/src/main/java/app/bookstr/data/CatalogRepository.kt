@@ -229,7 +229,7 @@ class CatalogRepository(
         val embedded = when (format) {
             BookFormat.Epub -> readEpubMetadata(file)
             BookFormat.Pdf -> readPdfMetadata(file)
-            BookFormat.Fb2 -> Pair(null, null)
+            BookFormat.Fb2 -> Triple(null, null, null)
         }
         val matched = embedded.first?.let { title ->
             externalFavorites.firstOrNull {
