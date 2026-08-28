@@ -18,6 +18,9 @@ test('EPUB reader provides mouse, keyboard, and swipe navigation', () => {
   assert.doesNotMatch(reader, /event\.key === "PageDown"/);
   assert.doesNotMatch(reader, /event\.key === "PageUp"/);
   assert.match(reader, /installSwipeNavigation/);
+  assert.match(reader, /installWheelNavigation/);
+  assert.match(reader, /scrollBy\(\{ top: event\.deltaY \}\)/);
+  assert.match(reader, /\{ passive: false \}/);
   assert.match(reader, /rendition\.next\(\)/);
   assert.match(reader, /rendition\.prev\(\)/);
   assert.match(reader, /container\.scrollBy\(\{ top: direction \* distance/);

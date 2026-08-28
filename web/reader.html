@@ -407,6 +407,13 @@
       document.head.appendChild(scrollbarStyle);
     }
 
+    function installWheelNavigation(target) {
+      target.addEventListener("wheel", function(event) {
+        document.querySelector(".epub-container").scrollBy({ top: event.deltaY });
+        event.preventDefault();
+      }, { passive: false });
+    }
+
     function openBook(source, cfi, theme, highlightCfi, bookId, desktopPayloadBook = null) {
       const generation = ++bookLoadGeneration;
       desktopReaderBook = desktopPayloadBook && typeof desktopPayloadBook === "object" ? normalizeDesktopBookMetadata(desktopPayloadBook) : null;
@@ -455,7 +462,10 @@
         rendition.hooks.content.register(identifyCoverPage);
         rendition.on("rendered", function(_, view) {
           const contentDocument = view && view.contents && view.contents.document;
-          if (contentDocument) installSwipeNavigation(contentDocument);
+          if (contentDocument) {
+            installSwipeNavigation(contentDocument);
+            installWheelNavigation(contentDocument);
+          }
         });
         rendition.on("selected", function(cfi, contents) {
           const selectedRange = contents && contents.window && contents.window.getSelection();
