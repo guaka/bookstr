@@ -50,6 +50,7 @@
 		A2B4B6FC429B2B515679864D /* KeychainStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6184947FF12712F08EA6E37D /* KeychainStore.swift */; };
 		A36198BE8953B392A5E2BB9E /* SettingsRepositoryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E3F0A3ACD7868D79F4ED96FB /* SettingsRepositoryTests.swift */; };
 		BCC258213EF048015668D4F5 /* NostrClientProgressTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 26093A7C9C6D80009BF573DB /* NostrClientProgressTests.swift */; };
+		BF91A7B21A99F8B7DB9B0036 /* NostrSnippetPublishingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B4A645B2C9889F01FF4BA99 /* NostrSnippetPublishingTests.swift */; };
 		C320DBF9C3F406CCF41EB3EA /* ProgressRepositoryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D59156E29F9A2B48916FA733 /* ProgressRepositoryTests.swift */; };
 		CE6F1C4E93FE6F32A2C3D5C5 /* reader.html in Resources */ = {isa = PBXBuildFile; fileRef = 8ED136CE551E80B83403499E /* reader.html */; };
 		D45FF64C7A261B906AE9EC58 /* ProgressRepository.swift in Sources */ = {isa = PBXBuildFile; fileRef = F78EB46F2E580C92BBC65414 /* ProgressRepository.swift */; };
@@ -93,6 +94,7 @@
 		33D7B6A25C0E4F8D913579BD /* PublicationUtilities.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PublicationUtilities.swift; sourceTree = "<group>"; };
 		34C6A5914B0D4E7C82468ACE /* WordFilterMatching.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WordFilterMatching.swift; sourceTree = "<group>"; };
 		26093A7C9C6D80009BF573DB /* NostrClientProgressTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NostrClientProgressTests.swift; sourceTree = "<group>"; };
+		0B4A645B2C9889F01FF4BA99 /* NostrSnippetPublishingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NostrSnippetPublishingTests.swift; sourceTree = "<group>"; };
 		2A718F05DB6AEEEF49EB989D /* NostrModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NostrModels.swift; sourceTree = "<group>"; };
 		2C78B577A3465B9C049663BC /* WordsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WordsView.swift; sourceTree = "<group>"; };
 		311A9AD188A6B4658AB2C50D /* LibraryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryView.swift; sourceTree = "<group>"; };
@@ -182,6 +184,7 @@
 				4232605E9E8A0830608191B3 /* DictionaryRepositoryTests.swift */,
 				A43E2AB56617F83E901C76A8 /* FavoritesParserTests.swift */,
 				26093A7C9C6D80009BF573DB /* NostrClientProgressTests.swift */,
+				0B4A645B2C9889F01FF4BA99 /* NostrSnippetPublishingTests.swift */,
 				D59156E29F9A2B48916FA733 /* ProgressRepositoryTests.swift */,
 				72EA11CB11F3CEF1440866E6 /* ReaderAssetContractTests.swift */,
 				E3F0A3ACD7868D79F4ED96FB /* SettingsRepositoryTests.swift */,
@@ -520,6 +523,7 @@
 				3293AEF36AE06143583E5FD1 /* DictionaryRepositoryTests.swift in Sources */,
 				3C3CCB5B6B17A6B78CC6B859 /* FavoritesParserTests.swift in Sources */,
 				BCC258213EF048015668D4F5 /* NostrClientProgressTests.swift in Sources */,
+				BF91A7B21A99F8B7DB9B0036 /* NostrSnippetPublishingTests.swift in Sources */,
 				C320DBF9C3F406CCF41EB3EA /* ProgressRepositoryTests.swift in Sources */,
 				5DB889E6F39D4FE4A93EDE88 /* ReaderAssetContractTests.swift in Sources */,
 				A36198BE8953B392A5E2BB9E /* SettingsRepositoryTests.swift in Sources */,

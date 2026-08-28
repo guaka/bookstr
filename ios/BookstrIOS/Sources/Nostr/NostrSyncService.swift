@@ -32,6 +32,7 @@ final class NostrSyncService {
     private let vocabulary: VocabularyRepository
     private let favoriteMetadata: FavoriteMetadataRepository
     private let client: NostrClient
+    private let snippetPublisher: NostrEventPublishing
     private let signerStore: SignerStore
     private let nip46Service: Nip46Service
     private var lastDecryptNote = ""
@@ -43,13 +44,15 @@ final class NostrSyncService {
         favoriteMetadata: FavoriteMetadataRepository,
         client: NostrClient,
         signerStore: SignerStore,
-        nip46Service: Nip46Service
+        nip46Service: Nip46Service,
+        snippetPublisher: NostrEventPublishing? = nil
     ) {
         self.settings = settings
         self.progress = progress
         self.vocabulary = vocabulary
         self.favoriteMetadata = favoriteMetadata
         self.client = client
+        self.snippetPublisher = snippetPublisher ?? client
         self.signerStore = signerStore
         self.nip46Service = nip46Service
     }
@@ -119,7 +122,7 @@ final class NostrSyncService {
             )
         }
         let signed = try await signer.sign(event)
-        guard await client.publishEvent(signed, relays: settings.relays) else {
+        guard await snippetPublisher.publishEvent(signed, relays: settings.relays) else {
             throw NostrSyncError.relayRejected
         }
         return signed
