@@ -756,28 +756,62 @@ class ReaderActivity : ComponentActivity() {
 
         internal fun speechChunks(text: String): List<String> {
             val engineLimit = (TextToSpeech.getMaxSpeechInputLength() - 256).coerceAtLeast(1_000)
-            val maxLength = minOf(engineLimit, 160)
+            val hardLimit = minOf(engineLimit, 240)
+            val softLimit = minOf(hardLimit, 180)
             val chunks = mutableListOf<String>()
             text.split(Regex("\\n+")).map(String::trim).filter(String::isNotBlank).forEach { paragraph ->
-                var remaining = paragraph
-                while (remaining.length > maxLength) {
-                    val window = remaining.take(maxLength)
-                    val sentenceBreak = maxOf(
-                        window.lastIndexOf(". "),
-                        window.lastIndexOf("! "),
-                        window.lastIndexOf("? "),
-                    )
-                    val splitAt = sentenceBreak.takeIf { it >= maxLength / 3 }
-                        ?: window.lastIndexOf("; ").takeIf { it >= maxLength / 2 }
-                        ?: window.lastIndexOf(" ").takeIf { it >= maxLength / 2 }
-                        ?: maxLength
-                    val consumed = splitAt + if (splitAt < maxLength) 1 else 0
-                    chunks += remaining.take(consumed).trim()
-                    remaining = remaining.drop(consumed).trimStart()
+                val paragraphChunks = mutableListOf<String>()
+                var cursor = 0
+                while (cursor < paragraph.length) {
+                    val remaining = paragraph.length - cursor
+                    if (remaining <= hardLimit) {
+                        paragraphChunks += paragraph.substring(cursor).trim()
+                        break
+                    }
+                    val boundary = speechBoundary(paragraph, cursor, softLimit, hardLimit)
+                    paragraph.substring(cursor, boundary).trim().takeIf(String::isNotBlank)?.let(paragraphChunks::add)
+                    cursor = maxOf(boundary, cursor + 1)
+                    while (cursor < paragraph.length && paragraph[cursor].isWhitespace()) cursor += 1
                 }
-                if (remaining.isNotBlank()) chunks += remaining
+                rebalanceSpeechTail(paragraphChunks, hardLimit)
+                chunks += paragraphChunks
             }
             return chunks
+        }
+
+        private fun speechBoundary(text: String, cursor: Int, softLimit: Int, hardLimit: Int): Int {
+            val hardEnd = minOf(cursor + hardLimit, text.length)
+            if (hardEnd >= text.length) return text.length
+            val softEnd = minOf(cursor + softLimit, hardEnd)
+            val preferredStart = cursor + (softLimit * 0.55).toInt()
+            fun isPunctuationBoundary(index: Int): Boolean =
+                text[index] in ".!?…,;:—–" && (index + 1 >= text.length || text[index + 1].isWhitespace())
+
+            for (index in softEnd downTo preferredStart) {
+                if (isPunctuationBoundary(index)) return index + 1
+            }
+            for (index in softEnd + 1 until hardEnd) {
+                if (isPunctuationBoundary(index)) return index + 1
+            }
+            for (index in softEnd downTo preferredStart) {
+                if (text[index].isWhitespace()) return index
+            }
+            for (index in softEnd + 1 until hardEnd) {
+                if (text[index].isWhitespace()) return index
+            }
+            return hardEnd
+        }
+
+        private fun rebalanceSpeechTail(chunks: MutableList<String>, hardLimit: Int) {
+            if (chunks.size < 2 || chunks.last().trim().split(Regex("\\s+")).size != 1) return
+            val previousIndex = chunks.lastIndex - 1
+            val previous = chunks[previousIndex]
+            val moveAt = previous.lastIndexOf(' ')
+            if (moveAt <= 0) return
+            val rebalancedTail = "${previous.substring(moveAt + 1)} ${chunks.last()}"
+            if (rebalancedTail.length > hardLimit) return
+            chunks[previousIndex] = previous.substring(0, moveAt).trimEnd()
+            chunks[chunks.lastIndex] = rebalancedTail
         }
 
         internal fun preferredSpeechLocale(languageTag: String): Locale {

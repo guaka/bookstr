@@ -3,6 +3,7 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 
 import org.gradle.testing.jacoco.tasks.JacocoReport
+import org.gradle.api.tasks.Sync
 import org.gradle.api.tasks.testing.Test
 
 plugins {
@@ -13,9 +14,17 @@ plugins {
     id("jacoco")
 }
 
+val sharedReaderSpeechFile = rootProject.file("../web/reader-speech.js")
+val generatedReaderSpeechAssets = layout.buildDirectory.dir("generated/reader-speech-assets")
+val syncReaderSpeechAsset by tasks.registering(Sync::class) {
+    from(sharedReaderSpeechFile)
+    into(generatedReaderSpeechAssets)
+}
+
 // Keep BuildConfig stable across no-change builds so a displayed timestamp does not invalidate
-// Kotlin compilation. It advances whenever an app source or asset changes.
-val newestSourceChange = fileTree("src/main").files.maxOfOrNull(File::lastModified)
+// Kotlin compilation. It advances whenever an app source or shared reader asset changes.
+val newestSourceChange = (fileTree("src/main").files + sharedReaderSpeechFile)
+    .maxOfOrNull(File::lastModified)
     ?: System.currentTimeMillis()
 val sourceChangeTime = Instant.ofEpochMilli(newestSourceChange)
     .atZone(ZoneId.systemDefault())
@@ -30,13 +39,6 @@ val releaseKeystoreFile = providers.environmentVariable("BOOKSTR_KEYSTORE_FILE")
 val releaseKeystorePassword = providers.environmentVariable("BOOKSTR_KEYSTORE_PASSWORD").orNull
 val releaseKeyAlias = providers.environmentVariable("BOOKSTR_KEY_ALIAS").orNull
 val releaseKeyPassword = providers.environmentVariable("BOOKSTR_KEY_PASSWORD").orNull
-val hasReleaseSigningCredentials = listOf(
-    releaseKeystoreFile,
-    releaseKeystorePassword,
-    releaseKeyAlias,
-    releaseKeyPassword,
-).none { it.isNullOrBlank() }
-val isCodeQLBuild = providers.environmentVariable("CODEQL_ACTION_INIT_HAS_RUN").orNull == "true"
 
 android {
     namespace = "app.bookstr"
@@ -51,6 +53,8 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "BUILD_DATE", "\"$buildDate\"")
     }
+
+    sourceSets.getByName("main").assets.srcDir(generatedReaderSpeechAssets)
 
     signingConfigs {
         create("release") {
@@ -67,9 +71,7 @@ android {
         }
         release {
             isMinifyEnabled = false
-            if (hasReleaseSigningCredentials) {
-                signingConfig = signingConfigs.getByName("release")
-            }
+            signingConfig = signingConfigs.getByName("release")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",
@@ -100,15 +102,14 @@ android {
     testOptions {
         unitTests.isReturnDefaultValues = true
     }
+}
 
-    lint {
-        checkReleaseBuilds = !isCodeQLBuild
-    }
+tasks.named("preBuild").configure {
+    dependsOn(syncReaderSpeechAsset)
 }
 
 tasks.matching { it.name == "packageRelease" }.configureEach {
     doFirst {
-        if (isCodeQLBuild) return@doFirst
         val missing = buildList {
             if (releaseKeystoreFile.isNullOrBlank()) add("BOOKSTR_KEYSTORE_FILE")
             if (releaseKeystorePassword.isNullOrBlank()) add("BOOKSTR_KEYSTORE_PASSWORD")

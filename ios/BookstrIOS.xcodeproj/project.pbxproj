@@ -28,6 +28,7 @@
 		601AF8A79D4831DDC09A645C /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 23A93D9A5855B73ACF116D90 /* RootView.swift */; };
 		6480490A639CE5220CC5DFCB /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6F93448D346ACAB3619DFEB4 /* Theme.swift */; };
 		64A8446D06E025C1156FA1E3 /* epub.min.js in Resources */ = {isa = PBXBuildFile; fileRef = D9C9E1D5DED3BDB22FBCB381 /* epub.min.js */; };
+		A44444444444444444444444 /* reader-speech.js in Resources */ = {isa = PBXBuildFile; fileRef = B44444444444444444444444 /* reader-speech.js */; };
 		6CFA77C5EDBF89E9E2C87904 /* NostrSigner.swift in Sources */ = {isa = PBXBuildFile; fileRef = CBC8C1E2AA5F7475E90DE61A /* NostrSigner.swift */; };
 		6E913BF2A93ECDBAB524A6BF /* JSONFileStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 23275C7851892FD731C80E1F /* JSONFileStore.swift */; };
 		704028FAC63534ADE859A683 /* WordNavigationState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A620E1092146DF465DC2EA6 /* WordNavigationState.swift */; };
@@ -124,6 +125,7 @@
 		D76894FAA6720A468A2AB513 /* VocabularyRepositoryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VocabularyRepositoryTests.swift; sourceTree = "<group>"; };
 		D92A1F44EF6DBC86327645B5 /* AppContainer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppContainer.swift; sourceTree = "<group>"; };
 		D9C9E1D5DED3BDB22FBCB381 /* epub.min.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; path = epub.min.js; sourceTree = "<group>"; };
+		B44444444444444444444444 /* reader-speech.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; path = ../web/reader-speech.js; sourceTree = SOURCE_ROOT; };
 		DB44907013C5BEF3B84AEF4E /* SearchView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SearchView.swift; sourceTree = "<group>"; };
 		E3F0A3ACD7868D79F4ED96FB /* SettingsRepositoryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsRepositoryTests.swift; sourceTree = "<group>"; };
 		E953DE583891B52989473771 /* AppContainerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppContainerTests.swift; sourceTree = "<group>"; };
@@ -303,6 +305,7 @@
 		AA0BA622039A0D274FA42EBA = {
 			isa = PBXGroup;
 			children = (
+				B44444444444444444444444 /* reader-speech.js */,
 				7C7BF4BCDAD578F43296B6EE /* BookstrIOS */,
 				1F43ABCE72CAD11941FFB834 /* ReaderAssets */,
 				512BAA00C48CF1EF52AB3649 /* Sources */,
@@ -451,6 +454,7 @@
 				456ADF4B906E1F7DEDD361C7 /* Assets.xcassets in Resources */,
 				64A8446D06E025C1156FA1E3 /* epub.min.js in Resources */,
 				E03DFCDE0ED1B9DFCF631DDE /* jszip.min.js in Resources */,
+				A44444444444444444444444 /* reader-speech.js in Resources */,
 				CE6F1C4E93FE6F32A2C3D5C5 /* reader.html in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
