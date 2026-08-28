@@ -51,8 +51,14 @@ struct BookRights: Equatable, Hashable, Sendable {
     ) -> BookRights {
         let statement = clean(license)
         let safeURL = safeHTTPURL(clean(licenseURL) ?? firstURL(in: statement))
-        let explicit = RightsStatus(rawValue: clean(status)?.lowercased().replacingOccurrences(of: "-", with: "_")
-            .replacingOccurrences(of: " ", with: "_") ?? "")
+        let normalizedStatus = clean(status)?.lowercased().replacingOccurrences(of: "-", with: "_")
+            .replacingOccurrences(of: " ", with: "_")
+        let explicit: RightsStatus? = switch normalizedStatus {
+        case "pd": .publicDomain
+        case "open": .openLicense
+        case "copyright": .copyrighted
+        default: RightsStatus(rawValue: normalizedStatus ?? "")
+        }
         let combined = [statement, safeURL].compactMap { $0 }.joined(separator: " ").lowercased()
         let detected: RightsStatus
         if let explicit, explicit != .unknown {

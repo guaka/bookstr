@@ -85,6 +85,11 @@
     }
   }
 
+  function cleanRightsValue(value) {
+    const cleaned = String(value || '').trim();
+    return ['null', 'undefined'].includes(cleaned.toLowerCase()) ? '' : cleaned;
+  }
+
   function normalizeRights(ref) {
     const source = ref && typeof ref === 'object' ? ref : {};
     const metadata = metadataObject(source.metadata);
@@ -96,7 +101,7 @@
     let rightsStatus = aliases[String(
       source.rights_status || source.rightsStatus || metadata.rights_status || metadata.rightsStatus || '',
     ).trim().toLowerCase()] || 'unknown';
-    let license = String(source.license || source.rights || metadata.license || metadata.rights || '').trim();
+    let license = cleanRightsValue(source.license || source.rights || metadata.license || metadata.rights);
     let licenseUrl = safeLicenseUrl(
       source.license_url || source.licenseUrl || metadata.license_url || metadata.licenseUrl,
     );
@@ -119,9 +124,9 @@
       rights_status: rightsStatus,
       license,
       license_url: licenseUrl,
-      rights_source: String(
+      rights_source: cleanRightsValue(
         source.rights_source || source.rightsSource || metadata.rights_source || metadata.rightsSource || '',
-      ).trim(),
+      ),
     };
   }
 

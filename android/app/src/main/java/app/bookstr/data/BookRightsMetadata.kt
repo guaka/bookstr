@@ -7,6 +7,15 @@ const val RIGHTS_OPEN_LICENSE = "open_license"
 const val RIGHTS_COPYRIGHTED = "copyrighted"
 const val RIGHTS_UNKNOWN = "unknown"
 
+private val RIGHTS_STATUS_ALIASES = mapOf(
+    RIGHTS_PUBLIC_DOMAIN to RIGHTS_PUBLIC_DOMAIN,
+    "pd" to RIGHTS_PUBLIC_DOMAIN,
+    RIGHTS_OPEN_LICENSE to RIGHTS_OPEN_LICENSE,
+    "open" to RIGHTS_OPEN_LICENSE,
+    RIGHTS_COPYRIGHTED to RIGHTS_COPYRIGHTED,
+    "copyright" to RIGHTS_COPYRIGHTED,
+)
+
 data class BookRights(
     val status: String = RIGHTS_UNKNOWN,
     val license: String? = null,
@@ -39,12 +48,7 @@ object BookRightsMetadata {
     ): BookRights {
         val statement = license.clean()
         val safeUrl = safeHttpUrl(licenseUrl.clean() ?: urlFrom(statement))
-        val explicitStatus = when (status.clean()?.lowercase()?.replace('-', '_')?.replace(' ', '_')) {
-            RIGHTS_PUBLIC_DOMAIN -> RIGHTS_PUBLIC_DOMAIN
-            RIGHTS_OPEN_LICENSE -> RIGHTS_OPEN_LICENSE
-            RIGHTS_COPYRIGHTED -> RIGHTS_COPYRIGHTED
-            else -> null
-        }
+        val explicitStatus = normalizeRightsStatus(status)
         val detected = explicitStatus ?: when {
             copyright == false -> RIGHTS_PUBLIC_DOMAIN
             copyright == true -> RIGHTS_COPYRIGHTED
@@ -90,6 +94,12 @@ object BookRightsMetadata {
         return value.contains("all rights reserved") || value.contains("copyrighted") ||
             value.contains("copyright ") || value.contains("©")
     }
+}
+
+private fun normalizeRightsStatus(value: String?): String? {
+    val cleaned = value.clean() ?: return null
+    val normalized = cleaned.lowercase().replace('-', '_').replace(' ', '_')
+    return RIGHTS_STATUS_ALIASES[normalized]
 }
 
 private fun String?.clean(): String? = this?.trim()?.takeIf {
