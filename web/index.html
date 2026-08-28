@@ -3962,8 +3962,12 @@
 
 	  function applyReaderRightsMetadata(payload) {
 		if (!payload || payload.type !== 'bookstr-reader-metadata') return;
-		const rights = BookMetadata.normalizeRights(payload);
-		const id = String(payload.md5 || activeReadingBook?.md5 || '').toLowerCase();
+		const rights = BookMetadata.normalizeRights({
+		  ...payload,
+		  license: payload.license || payload.rights,
+		  rights_source: payload.rights_source || (payload.rights ? 'epub_opf' : ''),
+		});
+		const id = String(payload.md5 || payload.bookId || activeReadingBook?.md5 || '').toLowerCase();
 		if (!id || (!rights.license && rights.rights_status === 'unknown')) return;
 		const update = item => String(item?.md5 || '').toLowerCase() === id
 		  ? { ...item, ...BookMetadata.preferredRights(item, rights), updatedAt: Date.now() }

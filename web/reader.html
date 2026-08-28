@@ -207,6 +207,28 @@
     let readerSpeechState = "stopped";
     let readerSpeechPlayer = null;
 
+    function metadataText(value) {
+      if (Array.isArray(value)) return value.map(metadataText).filter(Boolean).join(", ");
+      if (value && typeof value === "object") return metadataText(value.name || value.value || value.label);
+      return String(value || "").trim();
+    }
+
+    function reportBookMetadata() {
+      const metadata = book && book.packaging && book.packaging.metadata;
+      if (!metadata) return;
+      const payload = {
+        type: "bookstr-reader-metadata",
+        bookId: currentBookId,
+        title: metadataText(metadata.title),
+        author: metadataText(metadata.creator || metadata.author),
+        rights: metadataText(metadata.rights)
+      };
+      if (window.parent !== window) window.parent.postMessage(payload, window.location.origin);
+      if (window.AndroidBridge && AndroidBridge.onMetadata) {
+        AndroidBridge.onMetadata(JSON.stringify(payload));
+      }
+    }
+
     function normalizeDesktopBookMetadata(payloadBook, readUrl = "") {
       const bookPayload = payloadBook && typeof payloadBook === "object" ? payloadBook : {};
       return {
