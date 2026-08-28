@@ -1,6 +1,10 @@
 import Foundation
 import XCTest
+#if SWIFT_PACKAGE
 @testable import BookstrLogic
+#else
+@testable import BookstrIOS
+#endif
 
 final class CatalogProviderRecordV1ContractTests: XCTestCase {
     func testGeneratedDTORoundTripsEveryCanonicalProviderFixture() throws {
