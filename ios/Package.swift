@@ -43,6 +43,7 @@ let package = Package(
                 "Nostr/Favorites.swift",
                 "Nostr/NostrClient.swift",
                 "Nostr/NostrModels.swift",
+                "Shared/Generated/CatalogProviderRecordV1.swift",
                 "Shared/Models.swift",
                 "Shared/WordNavigationState.swift",
             ],
@@ -55,6 +56,7 @@ let package = Package(
             exclude: ["AppContainerTests.swift"],
             sources: [
                 "DictionaryRepositoryTests.swift",
+                "CatalogProviderRecordV1ContractTests.swift",
                 "FavoritesParserTests.swift",
                 "NostrClientProgressTests.swift",
                 "ProgressRepositoryTests.swift",

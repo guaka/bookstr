@@ -31,6 +31,26 @@
       "languages": ["en"],
       "rights": { "status": "public_domain", "source": "standardebooks-opds" },
       "acquisitions": [{ "format": "epub", "url": "https://standardebooks.org/ebooks/jane-austen/pride-and-prejudice/downloads/epub", "availability": "open" }]
+    },
+    {
+      "provider": "fixture",
+      "recordId": "copyrighted-pdf",
+      "publicationId": "fixture:copyrighted-pdf",
+      "title": "Copyrighted PDF",
+      "authors": [],
+      "languages": ["en"],
+      "rights": { "status": "copyrighted", "source": "fixture" },
+      "acquisitions": [{ "format": "pdf", "url": "https://example.test/copyrighted.pdf", "availability": "buy" }]
+    },
+    {
+      "provider": "fixture",
+      "recordId": "unknown-rights",
+      "publicationId": "fixture:unknown-rights",
+      "title": "Unknown Rights",
+      "authors": [],
+      "languages": [],
+      "rights": { "status": "unknown" },
+      "acquisitions": [{ "format": "epub", "url": "https://example.test/unknown.epub", "availability": "restricted" }]
     }
   ]
 }
