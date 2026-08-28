@@ -1791,6 +1791,7 @@
     <script src="nostr-social.js"></script>
     <script src="desktop-progress.js"></script>
     <script src="nostr-progress.js"></script>
+    <script src="favorite-references.js"></script>
     <script src="vocabulary-wire.js"></script>
     <script src="vendor/sql-wasm.js"></script>
     <script>
@@ -2854,25 +2855,10 @@
           }
           const tag = rawTag.map(parseNostrTagsValue);
           const name = tag[0];
-            if (name === 'book' && tag.length > 3) {
-              const namespace = tag[1];
-              const identifier = tag[2];
-              const favoriteAddedAt = BookMetadata.normalizeFavoriteAddedAt(tag[3]);
-              const locator = tag[4] || '';
-            if (namespace === 'libvault' && isMd5(identifier)) {
-              entries.push({ md5: identifier.toLowerCase(), favoriteAddedAt });
-            } else if (namespace === 'bookstr' && identifier) {
-              const entry = entries.find(item => item.md5 === identifier) || { md5: identifier };
-              if (!entries.includes(entry)) entries.push(entry);
-              entry.url ||= locator;
-              entry.readUrl ||= locator;
-              entry.favoriteAddedAt = BookMetadata.earliestFavoriteAddedAt(entry.favoriteAddedAt, favoriteAddedAt);
-            } else if (namespace === 'isbn' && normalizeIsbnFromTag(identifier)) {
-              entries.push({ md5: pseudoIdForSeed(identifier), isbn: normalizeIsbnFromTag(identifier), url: locator, favoriteAddedAt });
-            } else if (namespace === 'url' && identifier) {
-              entries.push({ md5: pseudoIdForSeed(identifier), url: identifier, readUrl: identifier, favoriteAddedAt });
-            } else if (namespace === 'blossom' && /^[a-f0-9]{64}$/i.test(identifier)) {
-              entries.push({ md5: identifier.toLowerCase(), blossomSha256: identifier.toLowerCase(), blossomUrl: locator, url: locator, favoriteAddedAt });
+          if (name === 'book' && tag.length > 3) {
+            const reference = BookstrFavoriteReferences.parseTag(tag);
+            if (reference) {
+              BookstrFavoriteReferences.appendWebReference(entries, reference, pseudoIdForSeed);
             }
             continue;
           }

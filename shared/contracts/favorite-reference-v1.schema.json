@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bookstr.app/contracts/favorite-reference-v1.schema.json",
+  "title": "Bookstr compact favorite-reference compatibility cases v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "cases"],
+  "properties": {
+    "version": { "const": 1 },
+    "cases": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "tags", "expected"],
+        "properties": {
+          "name": { "type": "string", "minLength": 1 },
+          "tags": { "type": "array" },
+          "expected": { "type": "array" }
+        }
+      }
+    }
+  }
+}
