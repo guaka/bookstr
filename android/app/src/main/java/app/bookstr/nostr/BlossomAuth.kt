@@ -7,7 +7,12 @@ import java.util.Base64
 object BlossomAuth {
     const val KIND = 24242
 
-    fun unsignedGetEvent(hash: String, server: String, nowSeconds: Long): JSONObject {
+    fun unsignedGetEvent(
+        hash: String,
+        server: String,
+        nowSeconds: Long,
+        content: String = "Download a LibVault book",
+    ): JSONObject {
         require(hash.matches(Regex("^[a-fA-F0-9]{64}$"))) { "Invalid Blossom SHA-256" }
         require(server.isNotBlank() && !server.contains("/")) { "Invalid Blossom server name" }
         return JSONObject()
@@ -21,7 +26,7 @@ object BlossomAuth {
                     .put(JSONArray().put("server").put(server))
                     .put(JSONArray().put("x").put(hash.lowercase())),
             )
-            .put("content", "Download a LibVault book")
+            .put("content", content)
     }
 
     suspend fun authorization(

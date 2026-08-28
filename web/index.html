@@ -1792,6 +1792,7 @@
     <script src="desktop-progress.js"></script>
     <script src="nostr-progress.js"></script>
     <script src="favorite-references.js"></script>
+    <script src="blossom-authorization.js"></script>
     <script src="vocabulary-wire.js"></script>
     <script src="vendor/sql-wasm.js"></script>
     <script>
@@ -5368,13 +5369,6 @@
         }
       }
 
-      function encodeBase64Utf8(value) {
-        const bytes = new TextEncoder().encode(value);
-        let binary = '';
-        bytes.forEach(byte => { binary += String.fromCharCode(byte); });
-        return btoa(binary);
-      }
-
       function bytesToHex(bytes) {
         return Array.from(bytes, byte => byte.toString(16).padStart(2, '0')).join('');
       }
@@ -5418,23 +5412,18 @@
         blossomUrl ||= `https://blossom.bfr.ee/${sha256}`;
         const server = new URL(blossomUrl).hostname;
         const now = Math.floor(Date.now() / 1000);
-        const event = await nostrSigner.signEvent({
-          kind: 24242,
-          created_at: now,
-          tags: [
-            ['t', 'get'],
-            ['expiration', String(now + 120)],
-            ['server', server],
-            ['x', sha256]
-          ],
-          content: 'Download a Bookstr book'
-        });
+        const event = await nostrSigner.signEvent(BookstrBlossomAuthorization.unsignedGetEvent(
+          sha256,
+          server,
+          now,
+          'Download a Bookstr book'
+        ));
         const downloadUrl = isDesktopMode
           ? BookMetadata.desktopBlossomProxyUrl(blossomUrl, sha256, window.location.href)
           : blossomUrl;
         if (!downloadUrl) throw new Error('The Blossom download URL is invalid.');
         const response = await fetch(downloadUrl, {
-          headers: { Authorization: `Nostr ${encodeBase64Utf8(JSON.stringify(event))}` }
+          headers: { Authorization: BookstrBlossomAuthorization.authorizationHeader(event) }
         });
         if (!response.ok) throw new Error(`Blossom download failed (${response.status}).`);
         const blob = await response.blob();

@@ -2,12 +2,37 @@ package app.bookstr.nostr
 
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Assert.assertThrows
 import org.junit.Test
+import java.io.File
 import java.util.Base64
 
 class BlossomAuthTest {
+    @Test
+    fun conformsToEverySharedBlossomAuthorizationV1Case() {
+        val fixture = JSONObject(File("../../shared/fixtures/blossom-authorization-v1.json").readText())
+        assertEquals(1, fixture.getInt("version"))
+        val cases = fixture.getJSONArray("cases")
+        repeat(cases.length()) { index ->
+            val entry = cases.getJSONObject(index)
+            val event = runCatching {
+                BlossomAuth.unsignedGetEvent(
+                    entry.getString("hash"),
+                    entry.getString("server"),
+                    entry.getLong("now"),
+                    entry.getString("content"),
+                )
+            }.getOrNull()
+            if (!entry.getBoolean("valid")) {
+                assertNull(entry.getString("name"), event)
+                return@repeat
+            }
+            assertEquals(entry.getString("name"), entry.getJSONObject("expected").toString(), event.toString())
+        }
+    }
+
     @Test
     fun createsShortLivedHashAndServerScopedGetAuthorization() {
         val hash = "ab".repeat(32)
