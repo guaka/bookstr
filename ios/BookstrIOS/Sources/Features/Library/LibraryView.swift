@@ -131,8 +131,13 @@ struct LibraryView: View {
                 .accessibilityIdentifier("library-sort")
             }
         }
-        .fullScreenCover(item: $selectedBook) { book in
-            ReaderHostView(book: book, preparedURL: selectedBookURL)
+        .fullScreenCover(item: $selectedBook, onDismiss: {
+            selectedBookURL = nil
+            Task { await viewModel.load() }
+        }) { book in
+            ReaderHostView(book: book, preparedURL: selectedBookURL) {
+                selectedBook = nil
+            }
                 .id(book.id)
         }
         .alert("Can't open book", isPresented: Binding(
@@ -191,12 +196,8 @@ struct LibraryView: View {
     private func open(_ book: CatalogBook) {
         guard openingBookID == nil else { return }
         let local = container.catalogRepository.localPublication(for: book)
-        var transaction = Transaction(animation: nil)
-        transaction.disablesAnimations = true
-        withTransaction(transaction) {
-            selectedBookURL = local?.url
-            selectedBook = local?.book ?? book
-        }
+        selectedBookURL = local?.url
+        selectedBook = local?.book ?? book
     }
 
     private func publicationLabel(_ favorite: ExternalFavorite) -> String {
