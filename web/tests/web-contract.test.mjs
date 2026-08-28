@@ -4,6 +4,7 @@ import { readFile } from 'node:fs/promises';
 import { inflateSync } from 'node:zlib';
 
 const html = await readFile(new URL('../index.html', import.meta.url), 'utf8');
+const designTokens = await readFile(new URL('../design-tokens.css', import.meta.url), 'utf8');
 const readerHtml = await readFile(new URL('../reader.html', import.meta.url), 'utf8');
 const pdfReaderHtml = await readFile(new URL('../pdf-reader.html', import.meta.url), 'utf8');
 const pdfReaderJs = await readFile(new URL('../pdf-reader.js', import.meta.url), 'utf8');
@@ -625,7 +626,9 @@ test('web chrome uses the shared Bookstr identity', () => {
   assert.doesNotMatch(html, /class="app-title"/);
   assert.match(html, /\.brand-mark\s*\{[\s\S]*?height:\s*2\.4rem/);
   assert.match(html, /public\/apple-touch-icon\.png/);
-  assert.match(html, /--reading-progress:\s*#2f5d50/);
+  assert.match(html, /<link rel="stylesheet" href="design-tokens\.css"/);
+  assert.match(designTokens, /body\.theme-paper\s*\{[\s\S]*?--reading-progress:\s*#2F5D50/);
+  assert.match(designTokens, /body\.theme-dark\s*\{[\s\S]*?--reading-progress:\s*#7FB8A7/);
   assert.match(html, /background:\s*#e7c766/);
 });
 
