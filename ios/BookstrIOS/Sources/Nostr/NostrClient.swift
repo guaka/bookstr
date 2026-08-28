@@ -138,7 +138,8 @@ final class NostrClient {
         }
     }
 
-    static func progressContent(bookId: String, progression: Double, cfi: String, title: String?, author: String?, updatedAt: Int64) -> String {
+    static func progressContent(bookId: String, progression: Double, cfi: String, title: String?, author: String?, updatedAt: Int64,
+                                rights: BookRights = BookRights()) -> String {
         var obj: [String: Any] = [
             "v": 1,
             "bookId": bookId,
@@ -147,6 +148,10 @@ final class NostrClient {
         ]
         if let title, !title.isEmpty { obj["title"] = title }
         if let author, !author.isEmpty { obj["author"] = author }
+        obj["rights_status"] = rights.status.rawValue
+        if let license = rights.license { obj["license"] = license }
+        if let licenseURL = rights.licenseURL { obj["license_url"] = licenseURL }
+        if let source = rights.source { obj["rights_source"] = source }
         let data = (try? JSONSerialization.data(withJSONObject: obj)) ?? Data()
         return String(data: data, encoding: .utf8) ?? "{}"
     }
@@ -169,6 +174,17 @@ final class NostrClient {
                     jsonInt64(obj["updatedAt"]))
         }
         return nil
+    }
+
+    static func parseProgressRights(_ content: String) -> BookRights {
+        guard let data = content.data(using: .utf8),
+              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return BookRights() }
+        return BookRights.normalize(
+            status: obj["rights_status"] as? String,
+            license: (obj["license"] as? String) ?? (obj["rights"] as? String),
+            licenseURL: obj["license_url"] as? String,
+            source: obj["rights_source"] as? String
+        )
     }
 
     private static func jsonNumber(_ value: Any?) -> Double? {

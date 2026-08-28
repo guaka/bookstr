@@ -12,6 +12,14 @@ struct SharedFavoriteRef: Codable, Equatable {
     var blossomSha256: String?
     var blossomUrl: String?
     var addedAt: Int64?
+    var rightsStatus: String? = nil
+    var license: String? = nil
+    var licenseUrl: String? = nil
+    var rightsSource: String? = nil
+
+    var rights: BookRights {
+        BookRights.normalize(status: rightsStatus, license: license, licenseURL: licenseUrl, source: rightsSource)
+    }
 }
 
 struct ExternalFavorite: Identifiable, Equatable {
@@ -26,6 +34,14 @@ struct ExternalFavorite: Identifiable, Equatable {
     let blossomSha256: String?
     let blossomUrl: String?
     var addedAt: Int64? = nil
+    var rightsStatus: String? = nil
+    var license: String? = nil
+    var licenseUrl: String? = nil
+    var rightsSource: String? = nil
+
+    var rights: BookRights {
+        BookRights.normalize(status: rightsStatus, license: license, licenseURL: licenseUrl, source: rightsSource)
+    }
 
     var id: String { key }
 }
@@ -72,7 +88,7 @@ enum FavoritesParser {
         let now = updatedAt ?? Int64(Date().timeIntervalSince1970)
         return [
             ["bookstr-collection", "2"],
-            ["bookstr-publications", "1"],
+            ["bookstr-publications", "2"],
             ["title", "Favorites"],
             ["updated", String(now)],
         ] + compactItemTags(refs: refs, fallbackAddedAt: now)
@@ -84,7 +100,9 @@ enum FavoritesParser {
             if let md5 = ref.libvaultMd5?.lowercased(), isMD5(md5) {
                 var tags = [["book", "libvault", md5, addedAt]]
                 tags.append([
-                    "libvault-book", md5, ref.title ?? "", ref.author ?? "", ref.format ?? "", "0", ref.year ?? ""
+                    "libvault-book", md5, ref.title ?? "", ref.author ?? "", ref.format ?? "", "0", ref.year ?? "",
+                    "", "", "", "", ref.rights.status.rawValue, ref.rights.license ?? "",
+                    ref.rights.licenseURL ?? "", ref.rights.source ?? ""
                 ])
                 if let sha256 = ref.blossomSha256?.lowercased(), isSHA256(sha256),
                    let url = ref.blossomUrl ?? ref.url, url.lowercased().hasPrefix("https://") {
@@ -100,7 +118,15 @@ enum FavoritesParser {
             if let bookstrId = ref.bookstrId, !bookstrId.isEmpty {
                 var tag = ["book", "bookstr", bookstrId, addedAt]
                 if let locator = ref.url, !locator.isEmpty { tag.append(locator) }
-                return [tag]
+                return [
+                    tag,
+                    [
+                        "bookstr", bookstrId, ref.title ?? "", ref.author ?? "", ref.url ?? "",
+                        ref.format ?? "", ref.year ?? "", "", "", "", "",
+                        ref.rights.status.rawValue, ref.rights.license ?? "",
+                        ref.rights.licenseURL ?? "", ref.rights.source ?? ""
+                    ]
+                ]
             }
             let isbn = normalizeISBN(ref.isbn)
             if !isbn.isEmpty {
@@ -192,7 +218,7 @@ enum FavoritesParser {
     static func collectionTags(_ collection: BookCollection) -> [[String]] {
         [
             ["bookstr-collection", "2"],
-            ["bookstr-publications", "1"],
+            ["bookstr-publications", "2"],
             ["title", collection.title],
         ] + (collection.description.isEmpty ? [] : [["description", collection.description]])
             + [["updated", String(collection.updatedAt)]]
@@ -258,6 +284,15 @@ enum FavoritesParser {
                 && ref.isbn == nil && ref.blossomSha256 == nil
         }
 
+        func rights(_ parts: [String], offset: Int) -> BookRights {
+            BookRights.normalize(
+                status: parts.indices.contains(offset) ? parts[offset] : nil,
+                license: parts.indices.contains(offset + 1) ? parts[offset + 1] : nil,
+                licenseURL: parts.indices.contains(offset + 2) ? parts[offset + 2] : nil,
+                source: parts.indices.contains(offset + 3) ? parts[offset + 3] : nil
+            )
+        }
+
         func replaceCurrent(_ transform: (SharedFavoriteRef) -> SharedFavoriteRef) {
             guard let currentIndex, refs.indices.contains(currentIndex) else { return }
             refs[currentIndex] = transform(refs[currentIndex])
@@ -285,6 +320,11 @@ enum FavoritesParser {
                 old.blossomSha256 = old.blossomSha256 ?? ref.blossomSha256
                 old.blossomUrl = old.blossomUrl ?? ref.blossomUrl
                 old.addedAt = [old.addedAt, ref.addedAt].compactMap { $0 }.min()
+                let preferred = BookRights.preferred(current: old.rights, incoming: ref.rights)
+                old.rightsStatus = preferred.status.rawValue
+                old.license = preferred.license
+                old.licenseUrl = preferred.licenseURL
+                old.rightsSource = preferred.source
                 refs[index] = old
                 currentIndex = index
             } else if let currentIndex, refs.indices.contains(currentIndex),
@@ -350,18 +390,22 @@ enum FavoritesParser {
                 }
                 pendingURL = nil
             case "bookstr" where parts.count > 1 && !parts[1].isEmpty:
-                appendOrMerge(
-                    SharedFavoriteRef(
-                        bookstrId: parts[1],
-                        url: validURL(parts.count > 4 ? parts[4] : nil) ?? pendingURL,
-                        title: parts.count > 2 && !parts[2].isEmpty ? parts[2] : nil,
-                        author: parts.count > 3 && !parts[3].isEmpty ? parts[3] : nil
-                    )
-                )
+                let bookRights = rights(parts, offset: 11)
+                appendOrMerge(SharedFavoriteRef(
+                    bookstrId: parts[1],
+                    url: validURL(parts.count > 4 ? parts[4] : nil) ?? pendingURL,
+                    title: parts.count > 2 && !parts[2].isEmpty ? parts[2] : nil,
+                    author: parts.count > 3 && !parts[3].isEmpty ? parts[3] : nil,
+                    year: parts.count > 6 && !parts[6].isEmpty ? parts[6] : nil,
+                    format: parts.count > 5 && (parts[5] == "pdf" || parts[5] == "epub") ? parts[5] : nil,
+                    rightsStatus: bookRights.status.rawValue, license: bookRights.license,
+                    licenseUrl: bookRights.licenseURL, rightsSource: bookRights.source
+                ))
                 pendingURL = nil
             case "libvault-book" where isMD5(parts.dropFirst().first),
                  "bookstr-book" where isMD5(parts.dropFirst().first):
                 let md5 = parts[1].lowercased()
+                let bookRights = rights(parts, offset: name == "libvault-book" ? 11 : 10)
                 if let index = refs.firstIndex(where: { $0.libvaultMd5 == md5 }) {
                     currentIndex = index
                     replaceCurrent { current in
@@ -370,6 +414,11 @@ enum FavoritesParser {
                         if parts.count > 3, !parts[3].isEmpty { next.author = parts[3] }
                         if parts.count > 4, parts[4] == "pdf" || parts[4] == "epub" { next.format = parts[4] }
                         if parts.count > 6, !parts[6].isEmpty { next.year = parts[6] }
+                        let preferred = BookRights.preferred(current: next.rights, incoming: bookRights)
+                        next.rightsStatus = preferred.status.rawValue
+                        next.license = preferred.license
+                        next.licenseUrl = preferred.licenseURL
+                        next.rightsSource = preferred.source
                         return next
                     }
                 } else {
@@ -379,7 +428,9 @@ enum FavoritesParser {
                             title: parts.count > 2 && !parts[2].isEmpty ? parts[2] : nil,
                             author: parts.count > 3 && !parts[3].isEmpty ? parts[3] : nil,
                             year: parts.count > 6 && !parts[6].isEmpty ? parts[6] : nil,
-                            format: parts.count > 4 && (parts[4] == "pdf" || parts[4] == "epub") ? parts[4] : nil
+                            format: parts.count > 4 && (parts[4] == "pdf" || parts[4] == "epub") ? parts[4] : nil,
+                            rightsStatus: bookRights.status.rawValue, license: bookRights.license,
+                            licenseUrl: bookRights.licenseURL, rightsSource: bookRights.source
                         )
                     )
                     currentIndex = refs.count - 1
@@ -484,7 +535,9 @@ enum FavoritesParser {
                 format: ref.format,
                 blossomSha256: ref.blossomSha256,
                 blossomUrl: ref.blossomUrl,
-                addedAt: ref.addedAt
+                addedAt: ref.addedAt,
+                rightsStatus: ref.rightsStatus, license: ref.license,
+                licenseUrl: ref.licenseUrl, rightsSource: ref.rightsSource
             )
         }
         return SharedFavorites(bookIds: matched, external: Array(external.values))

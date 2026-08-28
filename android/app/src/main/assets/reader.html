@@ -306,7 +306,8 @@
       AndroidBridge.onMetadata(JSON.stringify({
         title: metadataText(metadata.title),
         author: metadataText(metadata.creator || metadata.author),
-        year: yearMatch ? yearMatch[1] : ""
+        year: yearMatch ? yearMatch[1] : "",
+        rights: metadataText(metadata.rights)
       }));
     }
 

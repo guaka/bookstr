@@ -47,6 +47,7 @@ import app.bookstr.data.SharedFavoriteRef
 import app.bookstr.data.CatalogRepository
 import app.bookstr.data.BookFormat
 import app.bookstr.data.NostrAuthMode
+import app.bookstr.data.RIGHTS_UNKNOWN
 import app.bookstr.nostr.AmberIntentSession
 import app.bookstr.nostr.ExternalSigner
 import app.bookstr.nostr.Nip55
@@ -108,6 +109,10 @@ class MainActivity : ComponentActivity() {
                                 year = session.year,
                                 initialCfi = session.locator,
                                 theme = settings.theme,
+                                rightsStatus = session.rightsStatus,
+                                license = session.license,
+                                licenseUrl = session.licenseUrl,
+                                rightsSource = session.rightsSource,
                             )
                         },
                     )
@@ -306,6 +311,10 @@ class MainActivity : ComponentActivity() {
                                         initialCfi = localProgress?.cfi,
                                         theme = settings.theme,
                                         coverUrl = book.coverUrl,
+                                        rightsStatus = book.rightsStatus,
+                                        license = book.license,
+                                        licenseUrl = book.licenseUrl,
+                                        rightsSource = book.rightsSource,
                                     ),
                                 )
                             }
@@ -413,6 +422,10 @@ class MainActivity : ComponentActivity() {
                                                             year = session.year,
                                                             initialCfi = session.locator,
                                                             theme = settings.theme,
+                                                            rightsStatus = session.rightsStatus,
+                                                            license = session.license,
+                                                            licenseUrl = session.licenseUrl,
+                                                            rightsSource = session.rightsSource,
                                                         )
                                                     },
                                                 )
@@ -577,6 +590,10 @@ class MainActivity : ComponentActivity() {
                                                 theme = settings.theme,
                                                 highlightCfi = word.cfi.takeIf(String::isNotBlank),
                                                 coverUrl = book?.coverUrl,
+                                                rightsStatus = book?.rightsStatus ?: RIGHTS_UNKNOWN,
+                                                license = book?.license,
+                                                licenseUrl = book?.licenseUrl,
+                                                rightsSource = book?.rightsSource,
                                             )
                                         })
                                     }
@@ -780,6 +797,10 @@ class MainActivity : ComponentActivity() {
                                                         year = result.year,
                                                         format = result.format?.extension,
                                                         url = result.downloadUrl,
+                                                        rightsStatus = result.rightsStatus,
+                                                        license = result.license,
+                                                        licenseUrl = result.licenseUrl,
+                                                        rightsSource = result.rightsSource,
                                                     ),
                                                     allBooks,
                                                 )

@@ -62,7 +62,8 @@ final class NostrSyncService {
             cfi: cfi,
             title: book.title,
             author: book.author,
-            updatedAt: now
+            updatedAt: now,
+            rights: book.rights
         )
         var event = NostrEvent(
             id: nil,
@@ -105,9 +106,15 @@ final class NostrSyncService {
         guard let pubkey = settings.pubkeyHex else { return }
         guard let event = await client.fetchLatestProgress(pubkey: pubkey, bookId: bookId, relays: settings.relays) else { return }
         guard let parsed = NostrClient.parseProgressContent(event.content, fallbackBookId: bookId) else { return }
-        progress.save(bookId: parsed.bookId, progression: parsed.progression, cfi: parsed.cfi)
+        progress.mergeRemote(
+            bookId: parsed.bookId,
+            progression: parsed.progression,
+            cfi: parsed.cfi,
+            updatedAt: parsed.updatedAt ?? event.createdAt * 1000
+        )
         favoriteMetadata.rememberProgress(bookId: parsed.bookId, title: parsed.title, author: parsed.author,
-                                          updatedAt: parsed.updatedAt ?? event.createdAt * 1000)
+                                          updatedAt: parsed.updatedAt ?? event.createdAt * 1000,
+                                          rights: NostrClient.parseProgressRights(event.content))
     }
 
     /// Refreshes the same descriptive cache the web app builds from reading
@@ -121,10 +128,16 @@ final class NostrSyncService {
             guard let dTag = event.dTag, dTag.hasPrefix("app.bookstr.progress.") else { continue }
             let fallback = String(dTag.dropFirst("app.bookstr.progress.".count))
             guard let parsed = NostrClient.parseProgressContent(event.content, fallbackBookId: fallback) else { continue }
-            progress.save(bookId: parsed.bookId, progression: parsed.progression, cfi: parsed.cfi)
+            progress.mergeRemote(
+                bookId: parsed.bookId,
+                progression: parsed.progression,
+                cfi: parsed.cfi,
+                updatedAt: parsed.updatedAt ?? event.createdAt * 1000
+            )
             favoriteMetadata.rememberProgress(
                 bookId: parsed.bookId, title: parsed.title, author: parsed.author,
-                updatedAt: parsed.updatedAt ?? event.createdAt * 1000
+                updatedAt: parsed.updatedAt ?? event.createdAt * 1000,
+                rights: NostrClient.parseProgressRights(event.content)
             )
             if parsed.title?.isEmpty == false { merged += 1 }
         }
@@ -654,11 +667,15 @@ final class NostrSyncService {
                 guard let parsed = NostrClient.parseProgressContent(event.content, fallbackBookId: bookId) else { continue }
                 favoriteMetadata.rememberProgress(
                     bookId: parsed.bookId, title: parsed.title, author: parsed.author,
-                    updatedAt: parsed.updatedAt ?? event.createdAt * 1000
+                    updatedAt: parsed.updatedAt ?? event.createdAt * 1000,
+                    rights: NostrClient.parseProgressRights(event.content)
                 )
-                let local = progress.get(bookId: parsed.bookId)
-                if parsed.cfi != local.cfi || parsed.progression != local.progression || local.updatedAt == 0 {
-                    progress.save(bookId: parsed.bookId, progression: parsed.progression, cfi: parsed.cfi)
+                if progress.mergeRemote(
+                    bookId: parsed.bookId,
+                    progression: parsed.progression,
+                    cfi: parsed.cfi,
+                    updatedAt: parsed.updatedAt ?? event.createdAt * 1000
+                ) {
                     progressMerged += 1
                 }
             }

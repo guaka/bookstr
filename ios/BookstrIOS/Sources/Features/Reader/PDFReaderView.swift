@@ -57,7 +57,12 @@ struct PDFReaderView: UIViewRepresentable {
             let index = document.index(for: page)
             let progression = Double(max(index, 0)) / Double(max(document.pageCount - 1, 1))
             container.progressRepository.save(bookId: book.id, progression: progression, cfi: "page:\(index)")
-            let session = ReaderSession(bookId: book.id, bookTitle: book.title, format: .pdf, author: book.author, year: book.year, locator: nil, pageIndex: index, pageOffset: 0)
+            let session = ReaderSession(
+                bookId: book.id, bookTitle: book.title, format: .pdf, author: book.author,
+                year: book.year, locator: nil, pageIndex: index, pageOffset: 0,
+                rightsStatus: book.rightsStatus, license: book.license,
+                licenseUrl: book.licenseUrl, rightsSource: book.rightsSource
+            )
             container.settingsRepository.saveReaderSession(session)
             Task {
                 await container.nostrSyncService.pushProgress(book: book, progression: progression, cfi: "page:\(index)")

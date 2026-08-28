@@ -44,7 +44,11 @@ enum PublicationUtilities {
             libvaultMd5: favorite.libvaultMd5,
             format: BookFormat.from(format: favorite.format, url: parsed.absoluteString),
             blossomSha256: validSha256,
-            year: favorite.year
+            year: favorite.year,
+            rightsStatus: favorite.rightsStatus,
+            license: favorite.license,
+            licenseUrl: favorite.licenseUrl,
+            rightsSource: favorite.rightsSource
         )
     }
 

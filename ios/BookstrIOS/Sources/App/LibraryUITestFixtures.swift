@@ -40,7 +40,7 @@ enum LibraryUITestFixtures {
         fileStore.save("downloaded-books.json", value: [epub, pdf])
         fileStore.save("book_progress.json", value: [
             BookProgress(bookId: epubID, progression: 0.01, cfi: "", updatedAt: 2),
-            BookProgress(bookId: pdfID, progression: 0.01, cfi: "", updatedAt: 1),
+            BookProgress(bookId: pdfID, progression: 0.8, cfi: "", updatedAt: 1),
         ])
     }
 
