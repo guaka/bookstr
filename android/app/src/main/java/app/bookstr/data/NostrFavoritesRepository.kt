@@ -696,24 +696,26 @@ class NostrFavoritesRepository(
             for (ref in refs) {
                 val isbn = normalizeIsbn(ref.isbn)
                 val book = books.firstOrNull { candidate ->
+                    val hasStableConflict = hasStableIdentityConflict(ref, candidate)
                     candidate.id == ref.bookstrId ||
                         (ref.libvaultMd5 != null &&
                             candidate.libvaultMd5.equals(ref.libvaultMd5, ignoreCase = true)) ||
-                        (isbn.isNotEmpty() && normalizeIsbn(candidate.isbn) == isbn) ||
                         (ref.blossomSha256 != null &&
                             candidate.blossomSha256.equals(ref.blossomSha256, ignoreCase = true)) ||
-                        (ref.url != null && (candidate.sourceUrl == ref.url || candidate.epubUrl == ref.url))
+                        (!hasStableConflict && isbn.isNotEmpty() && normalizeIsbn(candidate.isbn) == isbn) ||
+                        (!hasStableConflict && urlsMatch(ref.url, candidate.sourceUrl)) ||
+                        (!hasStableConflict && urlsMatch(ref.url, candidate.epubUrl))
                 }
                 if (book != null) {
                     matched += book.id
                     continue
                 }
 
-                val key = ref.libvaultMd5 ?: ref.bookstrId ?: isbn.ifEmpty { null }
-                    ?: ref.blossomSha256 ?: ref.url ?: continue
+                val key = ref.libvaultMd5 ?: ref.bookstrId ?: ref.blossomSha256
+                    ?: isbn.ifEmpty { null } ?: ref.url ?: continue
                 external[key] = ExternalFavorite(
                     key = key,
-                    title = ref.title ?: "LibVault favorite",
+                    title = ref.title ?: fallbackExternalFavoriteTitle(ref, key),
                     author = ref.author,
                     year = ref.year,
                     url = ref.url,
@@ -735,6 +737,39 @@ class NostrFavoritesRepository(
         fun normalizeIsbn(value: String?): String {
             val normalized = value.orEmpty().filter { it.isDigit() || it.equals('X', ignoreCase = true) }.uppercase()
             return normalized.takeIf { it.length == 10 || it.length == 13 }.orEmpty()
+        }
+
+        private fun normalizedUrl(value: String?): URI? {
+            if (value.isNullOrBlank()) return null
+            val uri = try {
+                URI(value)
+            } catch (_: Exception) {
+                return null
+            }
+            val scheme = uri.scheme ?: return null
+            val host = uri.host ?: return null
+            return URI(scheme.lowercase(), uri.userInfo, host.lowercase(), uri.port, uri.path, null, null)
+        }
+
+        private fun hasStableIdentityConflict(ref: SharedFavoriteRef, book: CatalogBook): Boolean =
+            (!ref.bookstrId.isNullOrBlank() && book.id != ref.bookstrId) ||
+                (!ref.libvaultMd5.isNullOrBlank() && !book.libvaultMd5.isNullOrBlank() &&
+                    !book.libvaultMd5.equals(ref.libvaultMd5, ignoreCase = true)) ||
+                (!ref.blossomSha256.isNullOrBlank() && !book.blossomSha256.isNullOrBlank() &&
+                    !book.blossomSha256.equals(ref.blossomSha256, ignoreCase = true))
+
+        private fun urlsMatch(left: String?, right: String?): Boolean {
+            if (left.isNullOrBlank() || right.isNullOrBlank()) return false
+            if (left == right) return true
+            return normalizedUrl(left) == normalizedUrl(right)
+        }
+
+        private fun fallbackExternalFavoriteTitle(ref: SharedFavoriteRef, key: String): String {
+            ref.libvaultMd5?.let { return "MD5 ${it.take(10)}…" }
+            ref.blossomSha256?.let { return "Blossom ${it.take(10)}…" }
+            val isbn = normalizeIsbn(ref.isbn)
+            if (isbn.isNotEmpty()) return "ISBN $isbn"
+            return key
         }
 
         private fun rightsFromTag(item: JSONArray, offset: Int): BookRights = BookRightsMetadata.normalize(

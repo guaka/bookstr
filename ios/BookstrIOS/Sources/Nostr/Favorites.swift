@@ -163,10 +163,14 @@ enum FavoritesParser {
     }
 
     static func matches(_ ref: SharedFavoriteRef, book: CatalogBook) -> Bool {
-        ref.bookstrId == book.id
+        let hasStableConflict = hasStableIdentityConflict(ref, book: book)
+        return ref.bookstrId == book.id
             || (ref.libvaultMd5 != nil && ref.libvaultMd5?.lowercased() == book.libvaultMd5?.lowercased())
-            || (!normalizeISBN(ref.isbn).isEmpty && normalizeISBN(ref.isbn) == normalizeISBN(book.isbn))
-            || (ref.url != nil && (urlsMatch(ref.url, book.sourceUrl) || urlsMatch(ref.url, book.epubUrl)))
+            || (ref.blossomSha256 != nil && ref.blossomSha256?.lowercased() == book.blossomSha256?.lowercased())
+            || (!hasStableConflict && !normalizeISBN(ref.isbn).isEmpty
+                && normalizeISBN(ref.isbn) == normalizeISBN(book.isbn))
+            || (!hasStableConflict && ref.url != nil
+                && (urlsMatch(ref.url, book.sourceUrl) || urlsMatch(ref.url, book.epubUrl)))
     }
 
     static func collectionIndexTags(_ snapshot: CollectionSnapshot) -> [[String]] {
@@ -503,11 +507,14 @@ enum FavoritesParser {
         for ref in refs {
             let isbn = normalizeISBN(ref.isbn)
             let book = books.first { candidate in
-                candidate.id == ref.bookstrId
-                    || (ref.libvaultMd5 != nil && candidate.libvaultMd5?.lowercased() == ref.libvaultMd5)
-                    || (!isbn.isEmpty && normalizeISBN(candidate.isbn) == isbn)
+                let hasStableConflict = hasStableIdentityConflict(ref, book: candidate)
+                return candidate.id == ref.bookstrId
+                    || (ref.libvaultMd5 != nil
+                        && candidate.libvaultMd5?.lowercased() == ref.libvaultMd5?.lowercased())
                     || (ref.blossomSha256 != nil && candidate.blossomSha256?.lowercased() == ref.blossomSha256?.lowercased())
-                    || (ref.url != nil && (urlsMatch(ref.url, candidate.sourceUrl) || urlsMatch(ref.url, candidate.epubUrl)))
+                    || (!hasStableConflict && !isbn.isEmpty && normalizeISBN(candidate.isbn) == isbn)
+                    || (!hasStableConflict && ref.url != nil && urlsMatch(ref.url, candidate.sourceUrl))
+                    || (!hasStableConflict && ref.url != nil && urlsMatch(ref.url, candidate.epubUrl))
             }
             if let book {
                 matched.insert(book.id)
@@ -544,12 +551,27 @@ enum FavoritesParser {
         return key
     }
 
+    private static func hasStableIdentityConflict(_ ref: SharedFavoriteRef, book: CatalogBook) -> Bool {
+        let bookstrID = ref.bookstrId?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let md5 = ref.libvaultMd5?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let blossom = ref.blossomSha256?.trimmingCharacters(in: .whitespacesAndNewlines)
+        return (bookstrID?.isEmpty == false && book.id != bookstrID)
+            || (md5?.isEmpty == false && book.libvaultMd5 != nil
+                && book.libvaultMd5?.lowercased() != md5?.lowercased())
+            || (blossom?.isEmpty == false && book.blossomSha256 != nil
+                && book.blossomSha256?.lowercased() != blossom?.lowercased())
+    }
+
     private static func urlsMatch(_ lhs: String?, _ rhs: String?) -> Bool {
         guard let lhs, let rhs else { return false }
         if lhs == rhs { return true }
         guard var left = URLComponents(string: lhs), var right = URLComponents(string: rhs) else { return false }
+        left.scheme = left.scheme?.lowercased()
+        left.host = left.host?.lowercased()
         left.query = nil
         left.fragment = nil
+        right.scheme = right.scheme?.lowercased()
+        right.host = right.host?.lowercased()
         right.query = nil
         right.fragment = nil
         return left == right
