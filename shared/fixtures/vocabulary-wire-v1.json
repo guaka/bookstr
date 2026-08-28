@@ -1,0 +1,107 @@
+{
+  "version": 1,
+  "fields": {
+    "key": true,
+    "word": true,
+    "language": true,
+    "syncId": true,
+    "bookId": true,
+    "bookTitle": true,
+    "cfi": true,
+    "contextSentence": true,
+    "partOfSpeech": true,
+    "definitions": true,
+    "sourceUrl": true,
+    "lookupCount": true,
+    "firstSeenAt": true,
+    "lastSeenAt": true,
+    "deleted": true
+  },
+  "cases": [
+    {
+      "name": "canonical metadata",
+      "payload": {
+        "key": "custom-key",
+        "word": "HELLO",
+        "language": "EN",
+        "syncId": "sync-1",
+        "bookId": "book-1",
+        "bookTitle": "Example",
+        "cfi": "epubcfi(/6/2)",
+        "contextSentence": "Hello world.",
+        "partOfSpeech": "noun",
+        "definitions": ["a greeting"],
+        "sourceUrl": "https://example.org/dictionary",
+        "lookupCount": 3,
+        "firstSeenAt": 100,
+        "lastSeenAt": 200,
+        "updatedAt": 200,
+        "deleted": false
+      },
+      "fallbackUpdatedAt": 9,
+      "valid": true,
+      "expected": {
+        "key": "custom-key", "word": "hello", "language": "en", "syncId": "sync-1",
+        "bookId": "book-1", "bookTitle": "Example", "cfi": "epubcfi(/6/2)",
+        "contextSentence": "Hello world.", "partOfSpeech": "noun", "definitions": ["a greeting"],
+        "sourceUrl": "https://example.org/dictionary", "lookupCount": 3,
+        "firstSeenAt": 100, "lastSeenAt": 200, "deleted": false
+      }
+    },
+    {
+      "name": "legacy updated timestamp",
+      "payload": {
+        "key": "", "word": "Cache", "language": "EN", "syncId": "sync-2",
+        "bookId": "", "bookTitle": "", "updatedAt": 300
+      },
+      "fallbackUpdatedAt": 9,
+      "valid": true,
+      "expected": {
+        "key": "en:cache", "word": "cache", "language": "en", "syncId": "sync-2",
+        "bookId": "", "bookTitle": "", "cfi": "", "contextSentence": "",
+        "partOfSpeech": "", "definitions": [], "sourceUrl": "", "lookupCount": 1,
+        "firstSeenAt": 300, "lastSeenAt": 300, "deleted": false
+      }
+    },
+    {
+      "name": "deleted tombstone",
+      "payload": {
+        "word": "Gone", "language": "PT", "syncId": "sync-3",
+        "bookId": "book-3", "bookTitle": "Book", "firstSeenAt": 10,
+        "lastSeenAt": 20, "deleted": true
+      },
+      "fallbackUpdatedAt": 9,
+      "valid": true,
+      "expected": {
+        "key": "pt:gone", "word": "gone", "language": "pt", "syncId": "sync-3",
+        "bookId": "book-3", "bookTitle": "Book", "cfi": "", "contextSentence": "",
+        "partOfSpeech": "", "definitions": [], "sourceUrl": "", "lookupCount": 1,
+        "firstSeenAt": 10, "lastSeenAt": 20, "deleted": true
+      }
+    },
+    {
+      "name": "missing word",
+      "payload": { "language": "en", "syncId": "bad-1", "bookId": "book", "bookTitle": "Book" },
+      "fallbackUpdatedAt": 0,
+      "valid": false
+    },
+    {
+      "name": "missing sync id",
+      "payload": { "word": "word", "language": "en", "bookId": "book", "bookTitle": "Book" },
+      "fallbackUpdatedAt": 0,
+      "valid": false
+    },
+    {
+      "name": "missing language",
+      "payload": { "word": "word", "syncId": "bad-2", "bookId": "book", "bookTitle": "Book" },
+      "fallbackUpdatedAt": 0,
+      "valid": false
+    },
+    {
+      "name": "missing book fields",
+      "payload": { "word": "word", "language": "en", "syncId": "bad-3" },
+      "fallbackUpdatedAt": 0,
+      "valid": false
+    }
+  ]
+}

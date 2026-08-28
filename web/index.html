@@ -1791,6 +1791,7 @@
     <script src="nostr-social.js"></script>
     <script src="desktop-progress.js"></script>
     <script src="nostr-progress.js"></script>
+    <script src="vocabulary-wire.js"></script>
     <script src="vendor/sql-wasm.js"></script>
     <script>
       const FAVORITES_KEY = 'bookstr_nostr_favorites_v1';
@@ -3169,15 +3170,9 @@
         if (!payload || typeof payload !== 'object') {
           return null;
         }
-        const word = String(payload.word || '').trim().toLowerCase();
-        if (!word) {
-          return null;
-        }
-        return normalizeVocabularyWord({
-          ...payload,
-          word,
-          updatedAt: Number(payload.updatedAt) || Number(event.created_at || 0) * 1000,
-        });
+        const fallbackUpdatedAt = Number(event.created_at || 0) * 1000;
+        return BookstrVocabularyWire.parsePayload(payload, fallbackUpdatedAt)
+          || BookstrVocabularyWire.parseLegacyPayload(payload, fallbackUpdatedAt);
       }
 
       async function pullNostrWords(pubkey) {
