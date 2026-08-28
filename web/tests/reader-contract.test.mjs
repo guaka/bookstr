@@ -58,7 +58,7 @@ test('PDF reader exposes semantic landmarks and keyboard-accessible message regi
   assert.match(pdfReaderHtml, /id="message" role="status"/);
   assert.match(pdfReaderHtml, /id="zoom-in"[^>]*aria-label="Zoom in"/);
   assert.match(pdfReaderHtml, /id="zoom-out"[^>]*aria-label="Zoom out"/);
-  assert.match(pdfReaderJs, /download\.download = filename;/);
+  assert.match(pdfReaderJs, /download\.download = String\(filename \|\| 'Book\.pdf'\)\.replace/);
   assert.match(pdfReaderJs, /download\.href = downloadUrl;/);
 });
 

@@ -1,5 +1,10 @@
 # Bookstr agent instructions
 
+## Development workflow
+
+- Make repository changes on a dedicated branch and deliver them through a pull
+  request. Do not push commits directly to the default branch.
+
 ## Web UI restraint
 
 - Do not add explanatory labels, helper sentences, badges, columns, or status copy unless the user explicitly requests them or they are required for accessibility.

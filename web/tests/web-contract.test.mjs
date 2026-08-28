@@ -1,11 +1,55 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
+import { inflateSync } from 'node:zlib';
 
 const html = await readFile(new URL('../index.html', import.meta.url), 'utf8');
 const readerHtml = await readFile(new URL('../reader.html', import.meta.url), 'utf8');
 const pdfReaderHtml = await readFile(new URL('../pdf-reader.html', import.meta.url), 'utf8');
 const pdfReaderJs = await readFile(new URL('../pdf-reader.js', import.meta.url), 'utf8');
+const desktopMain = await readFile(new URL('../../desktop/main.js', import.meta.url), 'utf8');
+const desktopPreload = await readFile(new URL('../../desktop/preload.js', import.meta.url), 'utf8');
+const coverAssets = await readFile(new URL('../cover-assets.js', import.meta.url), 'utf8');
+const bookMetadata = await readFile(new URL('../book-metadata.js', import.meta.url), 'utf8');
+
+test('Electron megasearch uses the allowlisted app protocol and requires a connected private signer', () => {
+  assert.match(html, /const BOOKS_API_BASE = window\.bookstrDesktop\s*\? 'app:\/\/bookstr\/api'/);
+  assert.match(html, /state\.settings\.useNip7 && state\.nip7\.pubkey && nostrSigner\?\.signEvent/);
+  assert.match(desktopMain, /const \{ proxyCatalogRequest \} = require\('\.\/catalog-proxy'\)/);
+  assert.match(desktopMain, /const catalogResponse = await proxyCatalogRequest\(request, net\.fetch\)/);
+  assert.match(html, /async function searchProjectGutenberg\(query\)/);
+  assert.match(html, /name: 'Project Gutenberg'/);
+  assert.match(html, /name: 'OAPEN'/);
+  assert.match(html, /name: 'Open Textbook Library'/);
+  assert.match(html, /async function searchOapen\(query\)/);
+  assert.match(html, /async function searchOpenTextbookLibrary\(query\)/);
+  assert.match(html, /name: 'DOAB'/);
+  assert.match(html, /name: 'Global Digital Library'/);
+  assert.match(html, /async function searchDoab\(query\)/);
+  assert.match(html, /async function searchGlobalDigitalLibrary\(query\)/);
+  assert.match(html, /\/gdl-epub\?id=/);
+  assert.match(html, /\/oapen-file\?id=/);
+});
+
+test('Search explains active sources and fans out without private-first fallback', () => {
+  assert.match(html, /<h2 class="search-title">Search open books<\/h2>/);
+  assert.match(html, /<table id="search-sources-table" class="search-sources-table">/);
+  assert.match(html, /<th>Source<\/th><th>Coverage<\/th><th>Delivers<\/th><th>Access<\/th>/);
+  assert.match(html, /name: 'all\.books\.party'/);
+  assert.match(html, /name: 'Unglue\.it'/);
+  assert.match(html, /name: 'LibVault'/);
+  assert.match(
+    html,
+    /async function searchAvailableBookSources\(query, onUpdate = \(\) => \{\}\)/,
+  );
+  assert.match(html, /await Promise\.all\(sources\.map/);
+  assert.match(html, /id="search-source-progress" class="search-source-progress hidden"/);
+  assert.match(html, /Done · \$\{Number\(entry\.count \|\| 0\)\} result/);
+  assert.match(html, /onUpdate\([\s\S]*progress\.slice\(\),[\s\S]*dedupeBooks\(arrivedBooks\)/);
+  assert.match(html, /if \(!query\) \{\s*renderSearchSources\(\)/);
+  assert.doesNotMatch(html, /Private search unavailable; trying the HTTP catalog/);
+  assert.match(html, /@media \(max-width: 600px\)[\s\S]*\.search-sources-table td::before/);
+});
 
 test('People loads the connected user follow list and public book lists', () => {
   assert.match(html, /id="people-tab-btn"/);
@@ -14,22 +58,20 @@ test('People loads the connected user follow list and public book lists', () => 
   assert.match(html, /async function pullNostrFollows\(pubkey\)/);
   assert.match(html, /NostrSocial\.latestFollowEvent\(verified, pubkey\)/);
   assert.match(html, /NostrSocial\.followsFromEvent/);
-  assert.match(html, /async function pullFollowedPublicLists\(follows\)/);
-  assert.match(html, /NOSTR_NIP51_LIST_KINDS/);
-  assert.match(html, /NostrSocial\.publicNip51Lists\(verified, pubkeys\)/);
+  assert.match(html, /async function pullFollowedPublicBookLists\(follows\)/);
+  assert.match(html, /NostrSocial\.publicBookLists\(verified, pubkeys\)/);
   assert.match(html, /async function pullFollowedProfiles\(follows\)/);
   assert.match(html, /kinds: \[0\]/);
-  assert.match(html, /NostrSocial\.trustrootsProfiles\(verified, pubkeys, TRUSTROOTS_IMPORT_PUBKEY\)/);
+  assert.match(html, /NostrSocial\.latestProfiles\(verified, pubkeys\)/);
   assert.match(html, /hintedAuthorsByRelay\.get\(follow\.relay\)/);
   assert.match(html, /NostrSocial\.nip05Matches\(document, parts\.name, profile\.pubkey\)/);
   assert.match(html, /profile\?\.verifiedNip05/);
   assert.match(html, /const NOSTR_SOCIAL_RELAYS = \['wss:\/\/relay\.trustroots\.org'\]/);
   assert.match(html, /const NOSTR_TRUSTROOTS_PROFILE_RELAY = 'wss:\/\/nip42\.trustroots\.org'/);
   assert.match(html, /NostrSocial\.nip42AuthTemplate\(relayUrl, id\)/);
+  assert.match(html, /socket\.send\(JSON\.stringify\(\['AUTH', signed\]\)\)/);
   assert.match(html, /socket\.send\(JSON\.stringify\(\['AUTH', signed\]\)\);[\s\S]*?authenticatedRequestSent = true;[\s\S]*?sendRequest\(\)/);
-  assert.match(html, /readRelayEvents\(NOSTR_TRUSTROOTS_PROFILE_RELAY, \[[\s\S]*?kinds: \[0, 10390\][\s\S]*?\], \{ authenticate: true \}/);
-  assert.match(html, /kinds: \[0, 10390\]/);
-  assert.match(html, /kinds: \[30390\],[\s\S]*?'#p': authors/);
+  assert.match(html, /readRelayEvents\(NOSTR_TRUSTROOTS_PROFILE_RELAY,[\s\S]*?kinds: \[0\],[\s\S]*?\{ authenticate: true \}/);
   assert.match(html, /new Set\(\[\.\.\.NOSTR_RELAYS, \.\.\.NOSTR_SOCIAL_RELAYS\]\)/);
   assert.match(html, /tools\.verifyEvent\(event\)/);
   assert.match(html, /setHashRoute\('people'\)/);
@@ -40,23 +82,9 @@ test('served web app remains React- and bundle-free', () => {
   assert.doesNotMatch(html, /node_modules|bookstr-dist/i);
 });
 
-test('Home independently discovers featured and connected-user public NIP-51 reading lists', () => {
-  assert.match(html, /<script src="public-lists\.js"><\/script>/);
-  assert.match(html, /id="public-lists-section"[\s\S]*?<h3>Reading lists<\/h3>[\s\S]*?id="public-lists"/);
-  assert.match(html, /const FEATURED_PUBLIC_LIST_D_TAGS = \['abundance-in-commons', 'hitchwiki-books'\]/);
-  assert.match(html, /async function queryPublicNostrEvents\(filters\)/);
-  assert.match(html, /async function pullNostrPublicLists\(pubkey = ''\)[\s\S]*?'#d': FEATURED_PUBLIC_LIST_D_TAGS[\s\S]*?BookstrPublicLists\.parseEvents/);
-  assert.match(html, /async function revealPrivateNostrList\(pubkey, event\)[\s\S]*?window\.nostr\.nip44\.decrypt\(pubkey, event\.content\)[\s\S]*?privateTags/);
-  assert.match(html, /ownEvents\.map\(event => revealPrivateNostrList\(pubkey, event\)\)/);
-  assert.match(html, /async function syncNostrPublicLists\(pubkey = ''\)/);
-  assert.match(html, /void syncNostrPublicLists\(state\.nip7\.pubkey \|\| ''\);/);
-  assert.match(html, /const \[favorites, reading, words\] = await Promise\.all/);
-  assert.doesNotMatch(html, /const \[favorites, reading, words, publicLists\] = await Promise\.all/);
-  assert.match(html, /function renderPublicLists\(\)[\s\S]*?state\.publicLists[\s\S]*?className = 'public-list'/);
-  assert.match(html, /void openBook\(book, \{ addToReading: false \}\)/);
-});
-
-test('cross-device favorites retain iOS metadata and expose retryable Home sync', () => {
+test('cross-device favorites retain iOS metadata and expose retryable Home sync', async () => {
+  const agents = await readFile(new URL('../../AGENTS.md', import.meta.url), 'utf8');
+  assert.match(agents, /All new and changed executable lines must be covered by automated tests/);
   assert.match(html, /id="home-sync-refresh"/);
   assert.match(html, /id="home-sync-state"/);
   assert.match(html, /name === 'bookstr' && tag\[1\]/);
@@ -65,6 +93,11 @@ test('cross-device favorites retain iOS metadata and expose retryable Home sync'
   assert.match(html, /setTimeout\(\(\) => void connectNip7\(\{ silent: true, quick: false \}\), 1500\)/);
   assert.match(html, /window\.addEventListener\('focus', scheduleFocusedNostrSync\)/);
   assert.match(html, /Nostr library sync failed:/);
+  assert.match(html, /const rootEvents = await verifiedNostrEvents\(rawRootEvents\)/);
+  assert.match(html, /const chunkEvents = await verifiedNostrEvents\(rawChunkEvents\)/);
+  assert.match(html, /syncNostrLibraryFromNip7\(\{ useCache: false \}\)/);
+  assert.match(html, /Showing cached library · sync failed · retry/);
+  assert.match(html, /lastFavoritePullInfo\.id\.slice\(0, 12\)/);
 });
 
 test('footer links to the latest released Android APK', () => {
@@ -73,17 +106,16 @@ test('footer links to the latest released Android APK', () => {
 });
 
 test('browser traffic uses the Cloudflare books API', () => {
-  assert.match(html, /const BOOKS_API_BASE = 'https:\/\/books-api\.guaka\.org\/api'/);
+  assert.match(html, /const BOOKS_API_BASE = window\.bookstrDesktop[\s\S]*?: 'https:\/\/books-api\.guaka\.org\/api'/);
   assert.doesNotMatch(html, /localhost:11111\/api|books\.guaka\.org\/api\/search/);
 });
 
-test('search tries private LibVault NIP-17 before the HTTP catalog fallback', () => {
+test('search includes private LibVault NIP-17 alongside public catalog sources', () => {
   assert.match(html, /async function searchViaNostr\(query\)/);
   assert.match(html, /module\.searchLibVault\(query, searchType\.value \|\| 'all'/);
-  assert.match(html, /books = await searchViaNostr\(query\)/);
-  assert.match(html, /Private search unavailable; trying the HTTP catalog/);
-  assert.match(html, /books = await searchAllBooksParty\(query\)/);
-  assert.match(html, /source = 'HTTP fallback'/);
+  assert.match(html, /id: 'libvault'[\s\S]*?search: searchViaNostr/);
+  assert.match(html, /const outcomes = await Promise\.all\(sources\.map/);
+  assert.match(html, /const books = await source\.search\(query\)/);
   assert.match(html, /const NOSTR_SEARCH_READY_TIMEOUT_MS = 8000/);
   assert.match(html, /const NOSTR_SEARCH_RESPONSE_TIMEOUT_MS = 20000/);
   assert.match(html, /responseTimeoutMs: NOSTR_SEARCH_RESPONSE_TIMEOUT_MS/);
@@ -194,10 +226,10 @@ test('book opening canonicalizes stable Gutenberg IDs', () => {
 test('LibVault books use MD5 hash routes and resolve through Blossom', () => {
   assert.match(html, /return isMd5\(md5\) \? md5/);
   assert.match(html, /legacyMd5 = routeValue\.match/);
-  assert.match(html, /const suppliedUrl = String\(book\.blossomUrl \|\| readPath \|\| ''\)/);
-  assert.match(html, /candidate\.protocol === 'https:' && candidate\.hostname\.toLowerCase\(\) === 'blossom\.bfr\.ee'/);
-  assert.match(html, /blossomUrl \|\|= `https:\/\/blossom\.bfr\.ee\/\$\{sha256\}`/);
-  assert.match(html, /fetch\(blossomUrl/);
+  assert.match(html, /const suppliedUrl = String\(book\.blossomUrl \|\| readPath/);
+  assert.match(html, /fetch\(downloadUrl/);
+  assert.match(html, /BookMetadata\.desktopBlossomProxyUrl\(blossomUrl, sha256, window\.location\.href\)/);
+  assert.match(desktopMain, /const blossomResponse = await proxyBlossomRequest\(request, net\.fetch, BLOSSOM_PROXY_BASE_URL\)/);
   assert.match(html, /BookMetadata\.mergeLibraryState\(state\.reading, state\.favorites\)/);
   assert.match(html, /pendingReadBookId = String\(bookRef\)\.toLowerCase\(\)/);
   assert.match(html, /function bookCacheKey\(book, readUrl\)[\s\S]*?isMd5\(md5\) \? md5/);
@@ -209,8 +241,8 @@ test('reading mode forwards global Left and Right keys to the EPUB reader', () =
 });
 
 test('Home and empty Search use distinct hash routes', () => {
-  assert.match(html, /class="app-header-left app-home" href="#home"/);
-  assert.match(html, /setHashRoute\('home'\)/);
+  assert.match(html, /id="home-tab-btn"/);
+  assert.match(html, /setHashRoute\(homeHashRoute\(\)\)/);
   assert.match(html, /setHashRoute\(query\.length >= 2 \? searchHashRoute\(\{ query \}\) : 'search'\)/);
   assert.match(html, /if \(route === 'search'\)/);
 });
@@ -219,7 +251,16 @@ test('search results expose publication year in a sortable table', () => {
   assert.match(html, /className = 'book-table'/);
   assert.match(html, /\['Year', 'year'\]/);
   assert.match(html, /function renderBookTable\(target, books, options = \{\}\)/);
-  assert.match(html, /escapeHtml\(book\.year \|\| '—'\)/);
+	assert.match(html, /escapeHtml\(book\.year \|\| '—'\).*rightsMarkerMarkup\(book\)/);
+});
+
+test('rights metadata is visible and preserved through library and Nostr flows', () => {
+	assert.match(html, /function rightsMarkerMarkup\(book\)/);
+	assert.match(bookMetadata, /No open license identified/);
+	assert.match(html, /\['bookstr-publications', '2'\]/);
+	assert.match(html, /rights\.rights_status, rights\.license, rights\.license_url, rights\.rights_source/);
+	assert.match(html, /\.\.\.BookMetadata\.normalizeRights\(book\)/);
+	assert.match(html, /bookstr-reader-metadata/);
 });
 
 test('Open Library result metadata links to its canonical record', () => {
@@ -247,8 +288,9 @@ test('Home titles use the same read hash resolver as Search titles', () => {
 
 test('Home and Search share tables with covers and author search links', () => {
   assert.match(html, /renderBookTable\(target, books/);
-  assert.match(html, /bookCoverUrl\(book\)/);
+  assert.match(html, /bookCoverUrls\(book\)/);
   assert.match(html, /const LIBVAULT_COVER_BASE = 'https:\/\/lib\.b\.bfr\.ee\/api\/covers'/);
+  assert.match(html, /CoverAssets\.bookCoverCandidates\(book/);
   assert.match(html, /const cover = payload\?\.covers\?\.\[rawId\] \|\| \{\}/);
   assert.match(html, /coverUrl: item\.cover_url \|\| item\.coverUrl \|\| item\.thumbnail \|\| cover\.url/);
   assert.match(html, /data-action="author-search"/);
@@ -327,10 +369,10 @@ test('EPUBs use persistent IndexedDB caching', () => {
 });
 
 test('PDFs are fetched and displayed inside the Bookstr reader pane', () => {
-  assert.match(html, /async function displayPdf\(blob, book, openGeneration\)/);
+  assert.match(html, /async function displayPdf\(blob, book, readPath, openGeneration\)/);
   assert.match(html, /new Blob\(\[blob\], \{ type: 'application\/pdf' \}\)/);
   assert.match(html, /PDF download failed/);
-  assert.match(html, /await displayPdf\(blob, book, openGeneration\)/);
+  assert.match(html, /await displayPdf\(blob, book, readPath, openGeneration\)/);
   assert.match(html, /const readerPath = kind === 'pdf' \? 'pdf-reader\.html' : 'reader\.html'/);
   assert.match(html, /const readerLoad = await readerFrameLoader\('pdf', openGeneration\)/);
   assert.match(html, /filename: pdfDownloadFilename\(book\)/);
@@ -339,7 +381,49 @@ test('PDFs are fetched and displayed inside the Bookstr reader pane', () => {
   assert.match(html, /const cachedFormat = await bookFormatForBlob\(cached\)/);
   assert.match(html, /const blossomFormat = await bookFormatForBlob\(blossomBlob\)/);
   assert.match(html, /api\\\/files\\\/\[a-f0-9\]\{32\}/);
-  assert.match(html, /if \(format === 'pdf'\) await displayPdf\(blob, book, openGeneration\)/);
+  assert.match(html, /if \(format === 'pdf'\) await displayPdf\(blob, book, readPath, openGeneration\)/);
+  assert.match(html, /const payload = \{\r?\n\s*kind,\r?\n\s*base64,\r?\n\s*readUrl: readPath \|\| ''/);
+});
+
+test('desktop reader launch metadata is routed via a dedicated bridge payload', () => {
+  assert.match(html, /async function openInDesktopReader\(kind, blob, book, readPath, openGeneration, initialCfi\)/);
+  assert.match(html, /readUrl: readPath \|\| book\?\.readUrl \|\| book\?\.url \|\| ''/);
+  assert.match(html, /if \(isDesktopMode\) \{/);
+});
+
+test('desktop main process enforces reader payloads and returns explicit open results', () => {
+  assert.match(desktopMain, /function normalizePayload\(payload\)/);
+  assert.match(desktopMain, /return \{ ok: false, error: 'Invalid reader payload\.' \}/);
+  assert.match(desktopMain, /return \{ ok: true, key, reused: true, kind: requestedKind \}/);
+  assert.match(desktopMain, /return \{ ok: true, key, reused: false, kind: requestedKind \}/);
+  assert.match(desktopMain, /ALLOWED_EXTERNAL_URL_PROTOCOLS/);
+  assert.match(desktopMain, /function focusLibraryWindow\(\)/);
+  assert.match(desktopMain, /function setupApplicationMenu\(\)/);
+  assert.match(desktopMain, /isExternalUrlAllowed\(/);
+  assert.match(desktopMain, /setupApplicationMenu\(\);/);
+  assert.match(desktopMain, /async function loadNostrTools\(\)/);
+  assert.match(desktopMain, /async function resolveNostrSignerSecret\(\)/);
+  assert.match(desktopMain, /async function resolveNostrSignerPublicKey\(\)/);
+  assert.match(desktopMain, /function normalizeNostrEventPayload\(payload\)/);
+  assert.match(desktopMain, /function normalizeNip44Payload\(payload\)/);
+  assert.match(desktopMain, /ipcMain\.handle\('bookstr-desktop-nostr-get-public-key'/);
+  assert.match(desktopMain, /ipcMain\.handle\('bookstr-desktop-nostr-sign-event'/);
+  assert.match(desktopMain, /ipcMain\.handle\('bookstr-desktop-nostr-nip44-encrypt'/);
+  assert.match(desktopMain, /ipcMain\.handle\('bookstr-desktop-nostr-nip44-decrypt'/);
+  assert.match(desktopMain, /ipcMain\.handle\('bookstr-desktop-nostr-nip19-npub'/);
+  assert.doesNotMatch(desktopMain, /Nostr signer is not configured\./);
+});
+
+test('desktop preload exposes a deterministic openReader contract', () => {
+  assert.match(desktopPreload, /const desktopBridge = \{/);
+  assert.match(desktopPreload, /openReader\(payload\) \{/);
+  assert.match(desktopPreload, /ipcRenderer\s*\.invoke\('bookstr-desktop-open-reader', payload\)/);
+  assert.match(desktopPreload, /Boolean\(result && result\.ok\)/);
+  assert.match(desktopPreload, /focusLibrary\(\) \{/);
+  assert.match(desktopPreload, /const desktopSigner = \{/);
+  assert.match(desktopPreload, /getPublicKey\(\)/);
+  assert.match(desktopPreload, /signEvent\(event\)/);
+  assert.match(desktopPreload, /nip19: \{/);
 });
 
 test('EPUB reader destroys the previous rendition without transform flicker', () => {
@@ -351,13 +435,51 @@ test('EPUB reader destroys the previous rendition without transform flicker', ()
   assert.doesNotMatch(readerHtml, /viewer\.offsetWidth/);
 });
 
+test('EPUB reader registers desktop open-reader and progress handlers', () => {
+  assert.match(readerHtml, /const desktopBridge = window\.bookstrDesktop \|\| null;/);
+  assert.match(readerHtml, /desktopBridge\.onOpenReader/);
+  assert.match(readerHtml, /reportDesktopProgress\(/);
+  assert.match(readerHtml, /window\.addEventListener\("beforeunload", function\(\) \{/);
+});
+
+test('EPUB reader exposes read-aloud controls and speech helpers', () => {
+  assert.match(readerHtml, /<script src="reader-speech\.js"><\/script>/);
+  assert.match(readerHtml, /id="reader-speech-controls"/);
+  assert.match(readerHtml, /id="reader-speech-play"/);
+  assert.match(readerHtml, /id="reader-speech-pause"/);
+  assert.match(readerHtml, /id="reader-speech-stop"/);
+  assert.match(readerHtml, /function setReaderSpeechState\(state\)/);
+  assert.match(readerHtml, /function hasSpeechSupport\(\)/);
+  assert.match(readerHtml, /function collectReaderSpeechPlan\(\)/);
+  assert.match(readerHtml, /window\.BookstrSpeech\.buildPlan\(paragraphs\)/);
+  assert.match(readerHtml, /desktopBridge &&/);
+  assert.match(readerHtml, /function stopReaderSpeech\(\)/);
+  assert.match(readerHtml, /function startReaderSpeech\(\)/);
+  assert.match(readerHtml, /function pauseReaderSpeech\(\)/);
+});
+
 test('PDF reader uses local PDF.js, lazy page rendering, and an explicit download name', () => {
   assert.match(pdfReaderHtml, /<main id="pages" aria-label="PDF pages">/);
   assert.match(pdfReaderJs, /from '\.\/vendor\/pdfjs\/pdf\.mjs'/);
   assert.match(pdfReaderJs, /GlobalWorkerOptions\.workerSrc = '\.\/vendor\/pdfjs\/pdf\.worker\.mjs'/);
   assert.match(pdfReaderJs, /new IntersectionObserver/);
-  assert.match(pdfReaderJs, /download\.download = filename/);
+  assert.match(pdfReaderJs, /download\.download = String\(filename \|\| 'Book\.pdf'\)\.replace/);
   assert.match(pdfReaderJs, /pdf\?\.destroy\(\)/);
+  assert.match(pdfReaderJs, /const desktopBridge = window\.bookstrDesktop \|\| null;/);
+  assert.match(pdfReaderJs, /if \(desktopBridge\?\.onOpenReader\)/);
+  assert.match(pdfReaderJs, /desktopBridge\.reportProgress/);
+  assert.match(pdfReaderJs, /normalizeDesktopReaderPayload/);
+  assert.match(pdfReaderJs, /window\.addEventListener\('beforeunload',/);
+  assert.match(pdfReaderJs, /const pdfSpeechControls = document\.getElementById\("pdf-speech-controls"\);/);
+  assert.match(pdfReaderJs, /const pdfSpeechPlayButton = document\.getElementById\("pdf-speech-play"\);/);
+  assert.match(pdfReaderHtml, /id="pdf-speech-controls"/);
+  assert.match(pdfReaderHtml, /<script src="reader-speech\.js"><\/script>/);
+  assert.match(pdfReaderJs, /function startPdfSpeech\(\)/);
+  assert.match(pdfReaderJs, /function setPdfSpeechState\(state\)/);
+  assert.match(pdfReaderJs, /collectPdfSpeechPlan/);
+  assert.match(pdfReaderJs, /window\.BookstrSpeech\.buildPlan\(paragraphs\)/);
+  assert.match(pdfReaderJs, /desktopBridge &&/);
+  assert.match(pdfReaderJs, /pausePdfSpeech/);
 });
 
 test('favorites are not truncated to fifty items', () => {
@@ -390,6 +512,14 @@ test('compact favorites retain Blossom cover descriptors', () => {
   assert.match(html, /favorite\.coverUrl \|\| '', favorite\.coverSha256 \|\| ''/);
   assert.match(html, /entry\.coverUrl = tag\[9\]/);
   assert.match(html, /entry\.coverSha256 = tag\[10\]/);
+});
+
+test('desktop covers skip private HTTP fallbacks and retry public cover candidates', () => {
+  assert.match(html, /CoverAssets\.bookCoverCandidates\(book,[\s\S]*?desktop: isDesktopMode/);
+  assert.match(html, /CoverAssets\.attachImageFallback\(row\.querySelector\('\.result-cover'\), coverUrls\)/);
+  assert.match(coverAssets, /blossom\.bfr\.ee/);
+  assert.ok(coverAssets.includes('lib\\.b\\.bfr\\.ee'));
+  assert.match(coverAssets, /data:image\/svg\+xml/);
 });
 
 test('an incomplete new favorites generation falls back to an older root', () => {
@@ -430,12 +560,6 @@ test('Home uses cached LibVault files while their Blossom copies publish', () =>
   assert.match(html, /favoriteBlossomRefreshRetryCount < 6/);
 });
 
-test('Bookstr does not use authenticated LibVault endpoints as cover image fallbacks', () => {
-  assert.match(html, /function bookCoverUrl\(book\)/);
-  assert.match(html, /new URL\(direct\)\.origin !== new URL\(LIBVAULT_API_BASE\)\.origin/);
-  assert.doesNotMatch(html, /return isMd5\(md5\) \? `\$\{LIBVAULT_COVER_BASE\}/);
-});
-
 test('Home can delete a book locally and across synced clients', () => {
   assert.match(html, /data-action="delete-library"/);
   assert.match(html, /aria-label="Delete \$\{escapeHtml\(book\.title \|\| 'book'\)\} from library"/);
@@ -452,7 +576,6 @@ test('Home can refresh and sync merged LibVault and Open Library metadata', () =
   assert.match(html, /data-action="refresh-library"/);
   assert.match(html, /async function refreshLibraryBookMetadata\(book\)/);
   assert.match(html, /async function libVaultMetadataForBook\(book\)/);
-  assert.match(html, /window\.location\.origin !== new URL\(LIBVAULT_API_BASE\)\.origin/);
   assert.match(html, /`\$\{LIBVAULT_API_BASE\}\/books\/\$\{md5\}`/);
   assert.match(html, /async function openLibraryMetadataForBook\(book\)/);
   assert.match(html, /Refreshing metadata for \$\{title\} from LibVault, Open Library, and all\.books/);
@@ -510,6 +633,85 @@ test('footer APK and GitHub icons stay green', () => {
   assert.match(html, /body \.footer a\.footer-icon-link:any-link[\s\S]*?color: var\(--reading-progress\)/);
   assert.match(html, /body \.footer a\.footer-icon-link:visited/);
   assert.match(html, /body \.footer a\.footer-icon-link:hover/);
+});
+
+test('desktop mode proxies dictionaries and anchors the footer without changing web layout', () => {
+  assert.match(html, /document\.body\.classList\.toggle\('desktop-mode', isDesktopMode\)/);
+  assert.match(html, /isDesktopMode[\s\S]*?\/api\/dictionaries\/\$\{id\}\.sqlite3[\s\S]*?WIKDICT_BASE/);
+  assert.match(html, /body\.desktop-mode \.footer\s*\{[\s\S]*?position:\s*fixed/);
+  assert.match(html, /body\.desktop-mode:not\(\.book-open\) \.wrap/);
+  assert.match(desktopMain, /proxyDictionaryRequest\(request, net\.fetch, DICTIONARY_PROXY_BASE_URL\)/);
+});
+
+test('desktop content security policy permits secure Nostr relay sockets', async () => {
+  const desktopPolicy = await readFile(new URL('../../desktop/security-policy.js', import.meta.url), 'utf8');
+  const desktopPackage = JSON.parse(await readFile(new URL('../../desktop/package.json', import.meta.url), 'utf8'));
+  assert.match(desktopPolicy, /connect-src 'self' https: wss:;/);
+  assert.ok(desktopPackage.build.files.includes('security-policy.js'));
+});
+
+test('desktop pane shortcuts use the constrained preload callback', () => {
+  assert.match(desktopMain, /pane: 'home', accelerator: 'CmdOrCtrl\+1'/);
+  assert.match(desktopMain, /pane: 'reading', accelerator: 'CmdOrCtrl\+2'/);
+  assert.match(desktopMain, /pane: 'search', accelerator: 'CmdOrCtrl\+3'/);
+  assert.match(desktopMain, /pane: 'people', accelerator: 'CmdOrCtrl\+4'/);
+  assert.match(desktopPreload, /const ALLOWED_PANES = new Set\(\['reading', 'home', 'search', 'people'\]\)/);
+  assert.match(desktopPreload, /const PANE_SHORTCUTS = new Map/);
+  assert.match(html, /onOpenPane\?\.\(\(pane\) => activateTab\(pane, \{ updateHash: true \}\)\)/);
+  assert.match(html, /id="home-tab-btn"[\s\S]*?id="reading-tab-btn"[\s\S]*?id="search-tab-btn"[\s\S]*?id="people-tab-btn"/);
+  assert.doesNotMatch(html, /class="app-header-left app-home"/);
+});
+
+test('desktop application menu preserves native editing commands', () => {
+  assert.match(desktopMain, /label: 'Edit',[\s\S]*?role: 'undo'[\s\S]*?role: 'redo'[\s\S]*?role: 'cut'[\s\S]*?role: 'copy'[\s\S]*?role: 'paste'[\s\S]*?role: 'selectAll'/);
+});
+
+test('desktop NIP-46 QR image stays hidden until it has a source', () => {
+  assert.match(html, /id="desktop-nip46-qr-image"[^>]*hidden/);
+  assert.match(html, /\.desktop-signer-qr\.hidden\s*\{\s*display:\s*none/);
+  assert.match(html, /desktopNip46QrImage\.src = qrSession\.qrDataUrl;[\s\S]*?desktopNip46QrImage\.hidden = false/);
+});
+
+test('desktop NIP-46 approval activates and persists the signer with all Bookstr permissions', () => {
+  assert.match(desktopMain, /const NIP46_CONNECTION_RELAYS = \[[\s\S]*?relay\.nomadwiki\.org[\s\S]*?relay\.damus\.io[\s\S]*?relay\.primal\.net/);
+  for (const permission of ['get_public_key', 'nip44_encrypt', 'nip44_decrypt', 'sign_event:3', 'sign_event:5', 'sign_event:22242', 'sign_event:24242', 'sign_event:30003', 'sign_event:30078']) {
+    assert.match(desktopMain, new RegExp(`'${permission}'`));
+  }
+  assert.match(desktopMain, /status: 'authorizing'/);
+  assert.match(desktopMain, /nip46SignerParams\(\{ skipSwitchRelays: true \}\)/);
+  assert.match(html, /function enableDesktopNostrSigner\(\)[\s\S]*?localStorage\.setItem\(SETTINGS_KEY, JSON\.stringify\(state\.settings\)\)/);
+  assert.match(html, /qrState\.status === 'authorizing'[\s\S]*?Signer approved\. Finishing the secure connection/);
+});
+
+test('desktop signer npubs are encoded synchronously without rendering a Promise', () => {
+  assert.doesNotMatch(html, /return nostrSigner\.nip19\.npubEncode\(hex\)/);
+  assert.match(html, /function publicKeyToNpub\(pubkey\)[\s\S]*?const bytes = \[\][\s\S]*?bech32Encode\('npub', values\)/);
+});
+
+test('Electron windows and packages use the Bookstr app icon', async () => {
+  const desktopPackage = JSON.parse(await readFile(new URL('../../desktop/package.json', import.meta.url), 'utf8'));
+  const macIcon = await readFile(new URL('../../desktop/assets/icon-macos.png', import.meta.url));
+  const macIconSvg = await readFile(new URL('../../desktop/assets/icon-macos.svg', import.meta.url), 'utf8');
+  const idatChunks = [];
+  for (let offset = 8; offset < macIcon.length; ) {
+    const length = macIcon.readUInt32BE(offset);
+    const type = macIcon.toString('ascii', offset + 4, offset + 8);
+    if (type === 'IDAT') idatChunks.push(macIcon.subarray(offset + 8, offset + 8 + length));
+    offset += length + 12;
+  }
+  const pixels = inflateSync(Buffer.concat(idatChunks));
+  assert.match(desktopMain, /const APP_ICON_PATH = process\.platform === 'darwin'[\s\S]*?icon-macos\.png[\s\S]*?apple-touch-icon\.png/);
+  assert.match(desktopMain, /title: 'Bookstr',[\s\S]*?icon: APP_ICON_PATH/);
+  assert.match(desktopMain, /title: 'Bookstr Reader',[\s\S]*?icon: APP_ICON_PATH/);
+  assert.match(desktopMain, /app\.dock\.setIcon\(APP_ICON_PATH\)/);
+  assert.equal(desktopPackage.build.icon, '../web/public/apple-touch-icon.png');
+  assert.equal(macIcon.toString('ascii', 1, 4), 'PNG');
+  assert.equal(macIcon.readUInt32BE(16), 1024);
+  assert.equal(macIcon.readUInt32BE(20), 1024);
+  assert.equal(macIcon[25], 6);
+  assert.equal(pixels[4], 0, 'macOS icon corner should be transparent');
+  assert.match(macIconSvg, /linearGradient id="gloss"/);
+  assert.match(macIconSvg, /clip-path="url\(#tile-clip\)"/);
 });
 
 test('settings groups Nostr controls and connection status together', () => {
