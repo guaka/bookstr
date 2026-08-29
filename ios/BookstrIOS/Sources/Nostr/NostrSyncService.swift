@@ -245,8 +245,16 @@ final class NostrSyncService {
     /// Refreshes the same descriptive cache the web app builds from reading
     /// events, without decrypting vocabulary records or contacting LibVault.
     @discardableResult
-    func pullReadingMetadata() async -> Int {
+    func pullReadingMetadata(force: Bool = false) async -> Int {
         guard let pubkey = settings.pubkeyHex, settings.hasNostrIdentity else { return 0 }
+        // Same cooldown as application-data pulls so Library tab opens do not
+        // re-query every relay on each appearance / scene activation.
+        if NostrPullCooldown.shouldSkip(
+            lastSyncs: [settings.lastReadingMetadataSync, settings.lastApplicationDataSync],
+            force: force
+        ) {
+            return 0
+        }
         let events = await client.fetchApplicationData(pubkey: pubkey, relays: settings.relays)
         var merged = 0
         for event in events {
@@ -266,6 +274,7 @@ final class NostrSyncService {
             )
             if parsed.title?.isEmpty == false { merged += 1 }
         }
+        settings.lastReadingMetadataSync = Date()
         return merged
     }
 
@@ -604,7 +613,6 @@ final class NostrSyncService {
         var log: [String] = []
         func line(_ text: String) { log.append(text) }
 
-        await ensureSignerReady()
         let auth = settings.authMode.rawValue
         let pubkey = settings.pubkeyHex
         line("auth: \(auth)")
@@ -633,6 +641,7 @@ final class NostrSyncService {
             line("cached plaintext: none")
         }
 
+        // Query relays before touching Amber. Cache hits never need a signer.
         let query = await client.fetchLatestFavorites(pubkey: pubkey, relays: settings.relays)
         line("fallback untagged query: \(query.fallbackUsed)")
         for report in query.reports {
@@ -687,6 +696,8 @@ final class NostrSyncService {
         }
 
         do {
+            await ensureSignerReady()
+            line("signer ready before decrypt")
             let plaintext = try await decryptFavoritesContent(event: event, pubkey: pubkey, line: line)
             settings.cacheNostrFavorites(pubkey: pubkey, plaintext: plaintext, eventId: event.id)
             let rawRefs = FavoritesParser.parseSharedFavoriteTags(plaintext)
@@ -801,7 +812,7 @@ final class NostrSyncService {
         guard let pubkey = settings.pubkeyHex, settings.hasNostrIdentity else {
             return (0, 0, 0)
         }
-        if !force, let last = settings.lastApplicationDataSync, Date().timeIntervalSince(last) < 120 {
+        if NostrPullCooldown.shouldSkip(lastSync: settings.lastApplicationDataSync, force: force) {
             return (0, 0, 0)
         }
         let events = await client.fetchApplicationData(pubkey: pubkey, relays: settings.relays)
@@ -867,6 +878,7 @@ final class NostrSyncService {
             }
         }
         settings.lastApplicationDataSync = Date()
+        settings.lastReadingMetadataSync = Date()
         return (vocabularyMerged, progressMerged, snippetsMerged)
     }
 

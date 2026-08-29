@@ -146,4 +146,21 @@ final class SettingsRepositoryTests: XCTestCase {
         XCTAssertEqual(repo.speechChoice(for: "en").engine, .apple)
         defaults.removePersistentDomain(forName: suite)
     }
+
+    func testReadingMetadataSyncTimestampPersists() {
+        let suite = "bookstr-reading-meta-sync-\(UUID().uuidString)"
+        guard let defaults = UserDefaults(suiteName: suite) else {
+            XCTFail("Could not create isolated UserDefaults")
+            return
+        }
+        defaults.removePersistentDomain(forName: suite)
+        let stamp = Date(timeIntervalSince1970: 1_700_000_000)
+        let first = SettingsRepository(defaults: defaults)
+        first.lastReadingMetadataSync = stamp
+        first.lastApplicationDataSync = stamp
+        let second = SettingsRepository(defaults: defaults)
+        XCTAssertEqual(second.lastReadingMetadataSync?.timeIntervalSince1970, stamp.timeIntervalSince1970)
+        XCTAssertEqual(second.lastApplicationDataSync?.timeIntervalSince1970, stamp.timeIntervalSince1970)
+        defaults.removePersistentDomain(forName: suite)
+    }
 }

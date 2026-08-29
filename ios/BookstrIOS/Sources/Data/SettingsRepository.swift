@@ -24,6 +24,7 @@ final class SettingsRepository: ObservableObject {
         static let cachedCollectionsPrefix = "nostr_collections_"
         static let keepDownloadedCollections = "keep_downloaded_collections"
         static let lastApplicationDataSync = "last_application_data_sync"
+        static let lastReadingMetadataSync = "last_reading_metadata_sync"
         static let speechVoice = "speech_voice"
         static let speechRate = "speech_rate"
         static let speechEngine = SpeechLanguageSettings.speechEngineKey
@@ -288,5 +289,10 @@ final class SettingsRepository: ObservableObject {
     var lastApplicationDataSync: Date? {
         get { defaults.object(forKey: Keys.lastApplicationDataSync) as? Date }
         set { defaults.set(newValue, forKey: Keys.lastApplicationDataSync) }
+    }
+
+    var lastReadingMetadataSync: Date? {
+        get { defaults.object(forKey: Keys.lastReadingMetadataSync) as? Date }
+        set { defaults.set(newValue, forKey: Keys.lastReadingMetadataSync) }
     }
 }
