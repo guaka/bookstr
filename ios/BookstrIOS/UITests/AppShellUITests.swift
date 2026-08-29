@@ -30,7 +30,9 @@ final class AppShellUITests: XCTestCase {
             englishVoice.tap()
             let kokoroChoice = pickerChoice("Kokoro · English")
             XCTAssertTrue(kokoroChoice.waitForExistence(timeout: 8))
-            kokoroChoice.tap()
+            let systemDefaultChoice = pickerChoice("System default")
+            XCTAssertTrue(systemDefaultChoice.waitForExistence(timeout: 4))
+            systemDefaultChoice.tap()
             XCTAssertTrue(
                 englishVoice.waitForExistence(timeout: 4),
                 "Settings did not return from the English voice picker"

@@ -23,6 +23,9 @@ final class LibraryReaderUITests: XCTestCase {
         let afterLeftY = chapter.frame.minY
 
         app.swipeRight()
+        if !waitForY(chapter, above: afterLeftY + 80) {
+            app.swipeRight()
+        }
         XCTAssertTrue(waitForY(chapter, above: afterLeftY + 80), "Swiping right did not return to the previous EPUB page")
         attachScreenshot(named: "epub-navigation-restored")
 
@@ -79,6 +82,14 @@ final class LibraryReaderUITests: XCTestCase {
         let readerToggle = app.buttons["reader-speech-toggle"]
         XCTAssertTrue(readerToggle.waitForExistence(timeout: 10), "EPUB reader did not expose speech control")
         readerToggle.tap()
+        let speaking = NSPredicate(format: "label CONTAINS[c] %@", "Stop reading aloud")
+        XCTAssertTrue(
+            XCTWaiter.wait(
+                for: [XCTNSPredicateExpectation(predicate: speaking, object: readerToggle)],
+                timeout: 8
+            ) == .completed,
+            "EPUB reader did not start speech before leaving the book"
+        )
 
         back.tap()
         XCTAssertTrue(app.tabBars.buttons["Library"].waitForExistence(timeout: 5))
