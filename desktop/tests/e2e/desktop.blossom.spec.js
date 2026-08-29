@@ -91,9 +91,9 @@ test('Electron opens an authenticated Blossom EPUB through its same-origin proxy
     await library.reload();
     const title = library.getByRole('link', { name: 'Blossom Desktop Book' }).first();
     await expect(title).toBeVisible();
-    const readerPromise = electronApp.waitForEvent('window');
     await title.click();
-    const reader = await readerPromise;
+    expect(await electronApp.windows()).toHaveLength(1);
+    const reader = library.frameLocator('#reader-frame');
     await expect(reader.locator('body')).toHaveAttribute('data-location', /.+/, { timeout: 45_000 });
     expect(requests).toHaveLength(1);
     expect(requests[0].url).toBe(`/${sha256}.epub`);

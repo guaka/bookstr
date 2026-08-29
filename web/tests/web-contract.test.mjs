@@ -400,20 +400,22 @@ test('PDFs are fetched and displayed inside the Bookstr reader pane', () => {
   assert.match(html, /const blossomFormat = await bookFormatForBlob\(blossomBlob\)/);
   assert.match(html, /api\\\/files\\\/\[a-f0-9\]\{32\}/);
   assert.match(html, /if \(format === 'pdf'\) await displayPdf\(blob, book, readPath, openGeneration\)/);
-  assert.match(html, /const payload = \{\r?\n\s*kind,\r?\n\s*base64,\r?\n\s*readUrl: readPath \|\| ''/);
+  assert.doesNotMatch(html, /openInDesktopReader/);
+  assert.doesNotMatch(html, /desktopBridge\.openReader\(payload\)/);
 });
 
-test('desktop reader launch metadata is routed via a dedicated bridge payload', () => {
-  assert.match(html, /async function openInDesktopReader\(kind, blob, book, readPath, openGeneration, initialCfi\)/);
-  assert.match(html, /readUrl: readPath \|\| book\?\.readUrl \|\| book\?\.url \|\| ''/);
-  assert.match(html, /if \(isDesktopMode\) \{/);
+test('desktop EPUB and PDF readers stay inside the main reading pane', () => {
+  assert.match(html, /const readerLoad = await readerFrameLoader\('epub', openGeneration\)/);
+  assert.match(html, /const readerLoad = await readerFrameLoader\('pdf', openGeneration\)/);
+  assert.doesNotMatch(html, /async function openInDesktopReader/);
+  assert.equal((desktopMain.match(/new BrowserWindow\(/g) || []).length, 1);
+  assert.match(desktopMain, /void webContents\.loadURL\(url\);\r?\n\s*return \{ action: 'deny' \}/);
 });
 
 test('desktop main process enforces reader payloads and returns explicit open results', () => {
   assert.match(desktopMain, /function normalizePayload\(payload\)/);
   assert.match(desktopMain, /return \{ ok: false, error: 'Invalid reader payload\.' \}/);
-  assert.match(desktopMain, /return \{ ok: true, key, reused: true, kind: requestedKind \}/);
-  assert.match(desktopMain, /return \{ ok: true, key, reused: false, kind: requestedKind \}/);
+  assert.match(desktopMain, /return \{ ok: true, key, reused: currentURL === readerURL, kind: requestedKind \}/);
   assert.match(desktopMain, /ALLOWED_EXTERNAL_URL_PROTOCOLS/);
   assert.match(desktopMain, /function focusLibraryWindow\(\)/);
   assert.match(desktopMain, /function setupApplicationMenu\(\)/);
@@ -454,7 +456,7 @@ test('EPUB reader destroys the previous rendition without transform flicker', ()
 });
 
 test('EPUB reader registers desktop open-reader and progress handlers', () => {
-  assert.match(readerHtml, /const desktopBridge = window\.bookstrDesktop \|\| null;/);
+  assert.match(readerHtml, /const desktopBridge = window\.bookstrDesktop \|\| window\.parent\?\.bookstrDesktop \|\| null;/);
   assert.match(readerHtml, /desktopBridge\.onOpenReader/);
   assert.match(readerHtml, /reportDesktopProgress\(/);
   assert.match(readerHtml, /window\.addEventListener\("beforeunload", function\(\) \{/);
@@ -483,7 +485,7 @@ test('PDF reader uses local PDF.js, lazy page rendering, and an explicit downloa
   assert.match(pdfReaderJs, /new IntersectionObserver/);
   assert.match(pdfReaderJs, /download\.download = String\(filename \|\| 'Book\.pdf'\)\.replace/);
   assert.match(pdfReaderJs, /pdf\?\.destroy\(\)/);
-  assert.match(pdfReaderJs, /const desktopBridge = window\.bookstrDesktop \|\| null;/);
+  assert.match(pdfReaderJs, /const desktopBridge = window\.bookstrDesktop \|\| window\.parent\?\.bookstrDesktop \|\| null;/);
   assert.match(pdfReaderJs, /if \(desktopBridge\?\.onOpenReader\)/);
   assert.match(pdfReaderJs, /desktopBridge\.reportProgress/);
   assert.match(pdfReaderJs, /normalizeDesktopReaderPayload/);
@@ -728,7 +730,7 @@ test('Electron windows and packages use the Bookstr app icon', async () => {
   const pixels = inflateSync(Buffer.concat(idatChunks));
   assert.match(desktopMain, /const APP_ICON_PATH = process\.platform === 'darwin'[\s\S]*?icon-macos\.png[\s\S]*?apple-touch-icon\.png/);
   assert.match(desktopMain, /title: 'Bookstr',[\s\S]*?icon: APP_ICON_PATH/);
-  assert.match(desktopMain, /title: 'Bookstr Reader',[\s\S]*?icon: APP_ICON_PATH/);
+  assert.equal((desktopMain.match(/new BrowserWindow\(/g) || []).length, 1);
   assert.match(desktopMain, /app\.dock\.setIcon\(APP_ICON_PATH\)/);
   assert.equal(desktopPackage.build.icon, '../web/public/apple-touch-icon.png');
   assert.equal(macIcon.toString('ascii', 1, 4), 'PNG');
@@ -738,6 +740,11 @@ test('Electron windows and packages use the Bookstr app icon', async () => {
   assert.equal(pixels[4], 0, 'macOS icon corner should be transparent');
   assert.match(macIconSvg, /linearGradient id="gloss"/);
   assert.match(macIconSvg, /clip-path="url\(#tile-clip\)"/);
+});
+
+test('Electron identifies development builds with a Bookstr timestamp version', () => {
+  assert.match(desktopMain, /return `0\.1-\$\{now\.getFullYear\(\)\}.*-\$\{part\(now\.getHours\(\)\)\}\$\{part\(now\.getMinutes\(\)\)\}`/s);
+  assert.match(desktopMain, /app\.setVersion\(process\.env\.BOOKSTR_DESKTOP_VERSION \|\| timestampVersion\(\)\)/);
 });
 
 test('settings groups Nostr controls and connection status together', () => {

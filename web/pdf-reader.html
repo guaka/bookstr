@@ -8,6 +8,8 @@
   </head>
   <body>
     <header class="toolbar">
+      <svg class="reader-mark" viewBox="0 0 24 24" aria-label="Bookstr" role="img"><path fill="currentColor" d="M3.5 5.2c3-.8 5.8-.2 8.5 1.8v12c-2.7-2-5.5-2.6-8.5-1.8V5.2Zm17 0c-3-.8-5.8-.2-8.5 1.8v12c2.7-2 5.5-2.6 8.5-1.8V5.2Z"/><path fill="#c74b32" d="M12 6.5c-.8-.6-1.6-1-2.5-1.2v2.1c.9.2 1.7.5 2.5 1.1V6.5Zm0 0c.8-.6 1.6-1 2.5-1.2v2.1c-.9.2-1.7.5-2.5 1.1V6.5Z"/></svg>
+      <button id="back-to-library" type="button" aria-label="Back to library" title="Back to library">‹</button>
       <strong id="title">PDF</strong>
       <span id="page-count" aria-live="polite"></span>
       <div class="actions">
@@ -20,10 +22,33 @@
           <button id="pdf-speech-stop" type="button" aria-label="Stop reading" disabled>⏹</button>
         </div>
         <a id="download" href="#">Download</a>
+        <div class="reader-menu">
+          <button id="reader-menu-toggle" type="button" aria-label="Open menu" aria-expanded="false" title="Menu">☰</button>
+          <div id="reader-menu" hidden>
+            <button type="button" data-reader-pane="home">Home</button>
+            <button type="button" data-reader-pane="reading">Reading</button>
+            <button type="button" data-reader-pane="search">Search</button>
+            <button type="button" data-reader-pane="people">People</button>
+          </div>
+        </div>
       </div>
     </header>
     <main id="pages" aria-label="PDF pages"></main>
     <p id="message" role="status">Opening PDF…</p>
+    <script>
+      const readerDesktopBridge = window.bookstrDesktop || null;
+      document.getElementById('back-to-library').addEventListener('click', () => readerDesktopBridge?.focusLibrary?.());
+      const readerMenuToggle = document.getElementById('reader-menu-toggle');
+      const readerMenu = document.getElementById('reader-menu');
+      readerMenuToggle.addEventListener('click', () => {
+        const open = readerMenu.hidden;
+        readerMenu.hidden = !open;
+        readerMenuToggle.setAttribute('aria-expanded', String(open));
+      });
+      readerMenu.querySelectorAll('[data-reader-pane]').forEach(button => {
+        button.addEventListener('click', () => readerDesktopBridge?.openPane?.(button.dataset.readerPane));
+      });
+    </script>
     <script src="reader-speech.js"></script>
     <script type="module" src="pdf-reader.js"></script>
   </body>

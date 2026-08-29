@@ -245,6 +245,9 @@ test('an unavailable MD5 still shows its known book metadata', async ({ page }) 
   await expect(metadata).toContainText('Known Author');
   await expect(metadata).toContainText('2024');
   await expect(metadata).toContainText('pt');
+  await expect(metadata).toContainText('Local file/cache:');
+  await expect(metadata).toContainText('Source URL: https://unavailable.invalid/book.epub');
+  await expect(metadata).toContainText('Error:');
 });
 
 test('an MD5 route reopens a legacy URL-keyed EPUB cache while offline', async ({ page }) => {

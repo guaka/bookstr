@@ -1176,6 +1176,101 @@
       .settings-tab #settings-close {
         display: none;
       }
+      body.desktop-mode .settings-tab .settings-panel {
+        width: min(900px, calc(100vw - 2.5rem));
+        margin: 1.25rem auto 2.5rem;
+        padding: 1.25rem 1.4rem 1.4rem;
+        border: 1px solid color-mix(in srgb, var(--reading-progress) 18%, var(--card-border, #ddd));
+        border-radius: 1.15rem;
+        background:
+          radial-gradient(circle at 100% 0%, color-mix(in srgb, var(--reading-progress) 10%, transparent), transparent 32%),
+          var(--settings-bg, #faf9f5);
+        box-shadow: 0 18px 50px color-mix(in srgb, var(--card-shadow, #0002) 80%, transparent);
+      }
+      body.desktop-mode .settings-tab .settings-panel-header {
+        align-items: center;
+        padding: 0.25rem 0 1rem;
+        border-bottom: 0;
+      }
+      body.desktop-mode .settings-tab .settings-panel h2 {
+        font-size: clamp(1.45rem, 3vw, 2rem);
+        letter-spacing: -0.05em;
+      }
+      body.desktop-mode .settings-tab .settings-section { padding: 0.9rem 0; }
+      body.desktop-mode .settings-tab .settings-section h3 {
+        margin-bottom: 0.65rem;
+        color: var(--reading-progress);
+        font-family: inherit;
+        font-size: 0.68rem;
+        font-weight: 800;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+      }
+      body.desktop-mode .settings-tab .setting-option,
+      body.desktop-mode .settings-tab .desktop-signer-primary,
+      body.desktop-mode .settings-tab .settings-status,
+      body.desktop-mode .settings-tab .opds-feed-input,
+      body.desktop-mode .settings-tab .dictionary-pack {
+        border: 1px solid color-mix(in srgb, var(--settings-border, #ddd) 78%, transparent);
+        border-radius: 0.7rem;
+        background: color-mix(in srgb, var(--card-bg, #fff) 64%, transparent);
+      }
+      body.desktop-mode .settings-tab .setting-option {
+        min-height: 3.25rem;
+        padding: 0.6rem 0.75rem;
+      }
+      body.desktop-mode .settings-tab .setting-option + .setting-option { margin-top: 0.45rem; }
+      body.desktop-mode .settings-tab .setting-option:hover {
+        border-color: color-mix(in srgb, var(--reading-progress) 42%, var(--settings-border, #ddd));
+        background: color-mix(in srgb, var(--reading-progress) 7%, var(--card-bg, #fff));
+      }
+      body.desktop-mode .settings-tab .settings-nostr {
+        border-left: 1px solid color-mix(in srgb, var(--settings-border, #ddd) 78%, transparent);
+      }
+      body.desktop-mode .settings-tab .desktop-signer-primary { padding: 0.9rem; }
+      body.desktop-mode .settings-tab .desktop-signer-primary strong { font-size: 0.95rem; }
+      body.desktop-mode .settings-tab .settings-status { padding: 0.7rem 0.8rem; }
+      body.desktop-mode .settings-tab select,
+      body.desktop-mode .settings-tab input,
+      body.desktop-mode .settings-tab textarea {
+        border-radius: 0.55rem;
+        border-color: color-mix(in srgb, var(--settings-border, #ddd) 90%, transparent);
+        background: color-mix(in srgb, var(--card-bg, #fff) 84%, transparent);
+      }
+      body.desktop-mode .settings-tab button:not(.icon-btn) {
+        border-radius: 0.55rem;
+        font-weight: 650;
+      }
+      /* Desktop settings stay deliberately single-column: connection forms need room. */
+      body.desktop-mode .settings-tab .settings-panel {
+        display: block;
+        max-width: 46rem;
+      }
+      body.desktop-mode .settings-tab .settings-preferences,
+      body.desktop-mode .settings-tab .settings-appearance,
+      body.desktop-mode .settings-tab .settings-nostr,
+      body.desktop-mode .settings-tab .settings-dictionaries,
+      body.desktop-mode .settings-tab .settings-opds {
+        grid-column: auto;
+        grid-row: auto;
+        margin: 0;
+        padding: 0.9rem 0;
+        border-left: 0;
+      }
+      body.desktop-mode .settings-tab .settings-nostr,
+      body.desktop-mode .settings-tab .settings-dictionaries {
+        border-top: 1px solid color-mix(in srgb, var(--settings-border, #ddd) 78%, transparent);
+      }
+      body.desktop-mode .settings-tab .desktop-signer-row {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+      }
+      body.desktop-mode .settings-tab .desktop-signer-row input { width: 100%; }
+      @media (max-width: 620px) {
+        body.desktop-mode .settings-tab .settings-panel { width: calc(100vw - 1rem); }
+        body.desktop-mode .settings-tab .desktop-signer-row { grid-template-columns: 1fr; }
+        body.desktop-mode .settings-tab .desktop-signer-row button { width: 100%; }
+      }
       .settings-tab .settings-panel {
         position: static;
         display: grid;
@@ -1582,7 +1677,7 @@
         <div class="app-header-right">
           <button id="reading-favorite-btn" type="button" class="hidden" aria-label="Add to favorites" aria-pressed="false" title="Add to favorites">♡</button>
           <button id="npub-button" type="button" class="npub-info hidden" aria-label="Open settings" aria-pressed="false" title="Settings"><span id="npub-display" class="npub-pill">not connected</span></button>
-          <button id="home-tab-btn" class="header-tab" type="button" aria-label="Home, Command 1" aria-selected="true" title="Home · ⌘1"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m3 11 9-8 9 8"/><path d="M5.5 9.5V21h13V9.5M9 21v-7h6v7"/></svg></button>
+          <button id="home-tab-btn" class="header-tab" type="button" aria-label="Home, Command 1" aria-selected="true" title="Home · ⌘1"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4.5h4v15H4zM10 4.5h4v15h-4zM16 4.5h4v15h-4z"/><path d="M3 19.5h18M5.5 7.5h1M11.5 7.5h1M17.5 7.5h1"/></svg></button>
           <button id="reading-tab-btn" class="header-tab" type="button" aria-label="Reading, Command 2" aria-selected="false" title="Reading · ⌘2"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5.5c3.2-.8 5.9-.2 8 1.6v12c-2.1-1.8-4.8-2.4-8-1.6z"/><path d="M20 5.5c-3.2-.8-5.9-.2-8 1.6v12c2.1-1.8 4.8-2.4 8-1.6z"/></svg></button>
           <button id="search-tab-btn" class="header-tab" type="button" aria-label="Search, Command 3" aria-selected="false" title="Search · ⌘3"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m15.5 15.5 5 5"/></svg></button>
           <button id="people-tab-btn" class="header-tab" type="button" aria-label="People, Command 4" aria-selected="false" title="People · ⌘4"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="3"/><circle cx="17" cy="10" r="2.5"/><path d="M3.5 20c.4-4 2.2-6 5.5-6s5.1 2 5.5 6M14 15c3.5-.6 5.5 1 6 5"/></svg></button>
@@ -1712,7 +1807,10 @@
         <div id="settings-backdrop" class="settings-backdrop"></div>
         <section id="settings-panel" class="settings-panel">
           <header class="settings-panel-header">
-            <h2 id="settings-title">Settings</h2>
+            <div>
+              <h2 id="settings-title">Settings</h2>
+              <p class="meta-note">Shape your reading space and connections.</p>
+            </div>
             <button id="settings-close" type="button" class="icon-btn" aria-label="Close settings">✕</button>
           </header>
           <div class="settings-section settings-preferences">
@@ -1814,6 +1912,7 @@
       const WORDS_KEY = 'bookstr_words_v1';
       const WORDS_SORT_KEY = 'bookstr_words_sort_v1';
       const SETTINGS_KEY = 'bookstr_reader_settings_v1';
+      const LOCAL_APPEARANCE_KEY = 'bookstr_local_appearance_v1';
       const NIP7_STATUS_KEY = 'bookstr_nip7_pubkey_v1';
       const NOSTR_FAVORITES_PUBLISH_TIME_KEY = 'bookstr_nostr_favorites_publish_time_v1';
       const NOSTR_RELAYS = ['wss://relay.nomadwiki.org'];
@@ -5008,12 +5107,16 @@
 		if (rights.rights_source) rightsRow.append(document.createTextNode(` · ${rights.rights_source}`));
 		details.append(rightsRow);
         const note = document.createElement('p');
-        note.textContent = 'Book details are available, but the book file could not be loaded.';
-        note.style.cssText = 'margin:1.5rem 0 0;color:var(--muted)';
+        note.id = 'read-metadata-fallback-status';
+        note.style.cssText = 'margin:1.5rem 0 0;color:var(--muted);white-space:pre-line;overflow-wrap:anywhere';
         details.append(note);
         panel.append(details);
         panel.hidden = false;
         panel.style.display = 'grid';
+        updateReadMetadataFallbackDiagnostics(book, {
+          readPath: BookMetadata.canonicalReadUrl(book, BOOKS_API_BASE),
+          cacheStatus: 'Checking local cache…',
+        });
         frame.hidden = false;
         const hideWhenReadable = () => {
           let epubReady = false;
@@ -5038,6 +5141,34 @@
         waitForReadableBook();
       }
 
+      function diagnosticUrl(value) {
+        if (!value) return 'None available';
+        try {
+          const parsed = new URL(value, window.location.href);
+          parsed.username = '';
+          parsed.password = '';
+          parsed.search = '';
+          parsed.hash = '';
+          return parsed.toString();
+        } catch {
+          return String(value);
+        }
+      }
+
+      function updateReadMetadataFallbackDiagnostics(book, { readPath = '', cacheStatus = '', error = '' } = {}) {
+        const note = document.getElementById('read-metadata-fallback-status');
+        if (!note) return;
+        const format = String(book?.extension || book?.format || 'unknown').replace(/^\./, '').toLowerCase();
+        const lines = [
+          'Book details are available, but the book file could not be loaded.',
+          `Format: ${format || 'unknown'}`,
+          `Local file/cache: ${cacheStatus || 'Not checked'}`,
+          `Source URL: ${diagnosticUrl(readPath || book?.readUrl || book?.url || '')}`,
+        ];
+        if (error) lines.push(`Error: ${error?.message || error}`);
+        note.textContent = lines.join('\n');
+      }
+
       let readRouteGeneration = 0;
 
       async function openResolvedReadRoute(bookRef) {
@@ -5046,12 +5177,26 @@
         if (routeGeneration !== readRouteGeneration) return;
         showReadMetadataFallback(book);
         const readPath = BookMetadata.canonicalReadUrl(book, BOOKS_API_BASE);
-        const cached = await cachedBookBlob(book, readPath).catch(() => null);
+        let cacheError = null;
+        const cached = await cachedBookBlob(book, readPath).catch(error => {
+          cacheError = error;
+          return null;
+        });
+        updateReadMetadataFallbackDiagnostics(book, {
+          readPath,
+          cacheStatus: cached ? 'Found a local cached copy' : 'No local cached copy found',
+          error: cacheError,
+        });
         if (routeGeneration !== readRouteGeneration) return;
         const cachedFormat = await bookFormatForBlob(cached);
         if (routeGeneration !== readRouteGeneration) return;
         if (cachedFormat) book = { ...book, extension: cachedFormat, format: cachedFormat };
         if (!readPath && !cached) {
+          updateReadMetadataFallbackDiagnostics(book, {
+            readPath,
+            cacheStatus: 'No local cached copy found',
+            error: 'No readable download or Blossom URL is available for this record.',
+          });
           if (isMd5(bookRef) && state.settings.useNip7 && nostrSigner) {
             pendingReadBookId = String(bookRef).toLowerCase();
             status.textContent = 'Looking for this book in your Nostr library…';
@@ -5851,49 +5996,8 @@
         return typeof loader === 'function' ? loader : null;
       }
 
-      async function openInDesktopReader(kind, blob, book, readPath, openGeneration, initialCfi) {
-        if (!isDesktopMode || !desktopBridge) return false;
-        try {
-          const base64 = await blobToBase64(blob);
-          if (openGeneration !== readerOpenGeneration) return false;
-          const payload = {
-            kind,
-            base64,
-            readUrl: readPath || '',
-            cfi: String(initialCfi || ''),
-            theme: state.settings.theme === 'dark' ? 'night' : state.settings.theme,
-            book: {
-              md5: String(book?.md5 || '').trim().toLowerCase(),
-              title: book?.title || 'Book',
-              authors: book?.authors || book?.author || '',
-              year: book?.year || '',
-              language: book?.language || '',
-              extension: String(book?.extension || (kind === 'pdf' ? 'pdf' : 'epub')).replace(/^\./, '').toLowerCase(),
-              readUrl: readPath || book?.readUrl || book?.url || '',
-              source: book?.source || '',
-              sourceNativeId: book?.sourceNativeId || book?.source_native_id || '',
-              blossomSha256: book?.blossomSha256 || '',
-              blossomUrl: book?.blossomUrl || '',
-			  ...BookMetadata.normalizeRights(book),
-            },
-          };
-          await desktopBridge.openReader(payload);
-          status.textContent = `Opened ${book?.title || 'book'} in a dedicated reader window.`;
-          return true;
-        } catch (error) {
-          console.warn('Desktop reader launch failed:', error);
-          return false;
-        }
-      }
-
       async function displayEpub(blob, book, readPath, openGeneration) {
         const theme = state.settings.theme === 'dark' ? 'night' : state.settings.theme;
-        const startedCfi = book?.cfi || '';
-        if (isDesktopMode) {
-          const opened = await openInDesktopReader('epub', blob, book, readPath, openGeneration, startedCfi);
-          if (opened) return;
-          if (openGeneration !== readerOpenGeneration) return;
-        }
         const base64 = await blobToBase64(blob);
         if (openGeneration !== readerOpenGeneration) return;
         const readerLoad = await readerFrameLoader('epub', openGeneration);
@@ -5924,11 +6028,6 @@
         const pdfBlob = blob.type === 'application/pdf'
           ? blob
           : new Blob([blob], { type: 'application/pdf' });
-        if (isDesktopMode) {
-          const opened = await openInDesktopReader('pdf', pdfBlob, book, readPath, openGeneration);
-          if (opened) return;
-          if (openGeneration !== readerOpenGeneration) return;
-        }
         const base64 = await blobToBase64(pdfBlob);
         if (openGeneration !== readerOpenGeneration) return;
         const options = {
@@ -6049,6 +6148,11 @@
           }
         } catch (error) {
           status.textContent = `Could not open ${book.title || 'book'}: ${error?.message || error}`;
+          updateReadMetadataFallbackDiagnostics(book, {
+            readPath,
+            cacheStatus: cachedBookKeys.has(bookCacheKey(book, readPath)) ? 'A local cache entry exists' : 'No usable local cached copy',
+            error,
+          });
           return;
         }
         if (openGeneration !== readerOpenGeneration) return;
@@ -6567,6 +6671,7 @@
           }
           state.settings.opdsFeeds = normalizePublicOPDSFeedSettings(settings.opdsFeeds);
         }
+        state.settings.theme = localAppearance() || state.settings.theme;
         if (nip7 && typeof nip7.pubkey === 'string') {
           state.nip7.pubkey = nip7.pubkey;
         }
@@ -6579,6 +6684,7 @@
         themeModeInput.value = ['white', 'paper', 'dark'].includes(state.settings.theme) ? state.settings.theme : 'white';
         opdsFeedsInput.value = opdsFeedInputValue();
         applyTheme(themeModeInput.value);
+        saveLocalAppearance(state.settings.theme);
         renderFavorites();
         renderReading();
         renderWords();
@@ -6755,6 +6861,16 @@
         document.body.classList.add(`theme-${normalized}`);
       }
 
+      function localAppearance() {
+        const saved = localStorage.getItem(LOCAL_APPEARANCE_KEY);
+        return ['white', 'paper', 'dark'].includes(saved) ? saved : '';
+      }
+
+      function saveLocalAppearance(theme) {
+        const normalized = ['white', 'paper', 'dark'].includes(theme) ? theme : 'white';
+        localStorage.setItem(LOCAL_APPEARANCE_KEY, normalized);
+      }
+
       async function connectNip7(opts = {}) {
         const previous = safeJSONRead(localStorage.getItem(NIP7_STATUS_KEY), null);
         if (!state.settings.useNip7) {
@@ -6840,6 +6956,7 @@
         state.settings.autoReading = autoReadingInput.checked;
         state.settings.useNip7 = nip7EnabledInput.checked;
         state.settings.theme = themeModeInput.value;
+        saveLocalAppearance(state.settings.theme);
         saveOPDSFeedSettingsFromUI();
         applyTheme(state.settings.theme);
         localStorage.setItem(SETTINGS_KEY, JSON.stringify(state.settings));

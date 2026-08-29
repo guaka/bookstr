@@ -14,6 +14,11 @@ const PANE_SHORTCUTS = new Map([
 
 window.addEventListener('keydown', event => {
   if (event.defaultPrevented || event.altKey || event.shiftKey || (!event.metaKey && !event.ctrlKey)) return;
+  if (event.key === ',') {
+    event.preventDefault();
+    void ipcRenderer.invoke('bookstr-desktop-open-settings');
+    return;
+  }
   const pane = PANE_SHORTCUTS.get(event.key);
   if (!pane) return;
   event.preventDefault();
@@ -145,6 +150,11 @@ const desktopBridge = {
     return ipcRenderer
       .invoke('bookstr-desktop-focus-library')
       .catch(() => false);
+  },
+  openPane(pane) {
+    if (!ALLOWED_PANES.has(pane)) return false;
+    ipcRenderer.send('bookstr-desktop-pane-shortcut', pane);
+    return true;
   },
   openExternal(url) {
     return ipcRenderer.invoke('bookstr-desktop-open-external', url);

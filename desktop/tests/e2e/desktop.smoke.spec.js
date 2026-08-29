@@ -126,7 +126,7 @@ test('Bookstr desktop app opens with preload bridge', async () => {
     await firstWindow.getByRole('button', { name: 'Search' }).click();
     await expect(firstWindow.locator('#search-tab')).toBeVisible();
 
-    await firstWindow.getByRole('button', { name: 'Settings' }).click();
+    await firstWindow.keyboard.press(process.platform === 'darwin' ? 'Meta+,' : 'Control+,');
     await expect(firstWindow.locator('#settings-modal')).toBeVisible();
     await expect(firstWindow.locator('#desktop-signer')).toBeVisible();
     await expect(firstWindow.getByText('NIP-46 remote signer')).toBeVisible();
@@ -189,7 +189,7 @@ test('Bookstr desktop app opens with preload bridge', async () => {
   }
 });
 
-test('desktop pane shortcuts work from controls and reader windows', async () => {
+test('desktop pane shortcuts work from controls and the single reader window', async () => {
   const electronApp = await electron.launch({
     args: electronArgs(),
   });
@@ -209,16 +209,15 @@ test('desktop pane shortcuts work from controls and reader windows', async () =>
     await library.keyboard.press(shortcut(4));
     await expect(library.locator('#people-tab')).toBeVisible();
 
-    const readerPromise = electronApp.waitForEvent('window');
-    await library.evaluate(() => window.bookstrDesktop.openReader({
+    await library.evaluate(() => { void window.bookstrDesktop.openReader({
       kind: 'pdf',
       base64: btoa('%PDF-1.4\n' + 'reader shortcut fixture'.repeat(8)),
       readUrl: 'https://files.test/shortcut.pdf',
       book: { md5: '11111111111111111111111111111111', title: 'Shortcut fixture' },
-    }));
-    const reader = await readerPromise;
-    await reader.bringToFront();
-    await reader.keyboard.press(shortcut(1));
+    }); });
+    await library.waitForURL('app://bookstr/pdf-reader.html');
+    expect(await electronApp.windows()).toHaveLength(1);
+    await library.keyboard.press(shortcut(1));
     await expect(library.locator('#home-tab')).toBeVisible();
     await expect.poll(() => library.evaluate(() => location.hash.startsWith('#home'))).toBe(true);
   } finally {

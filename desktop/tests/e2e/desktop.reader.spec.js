@@ -149,8 +149,7 @@ test('Desktop EPUB reader supports speech control transitions', async () => {
   try {
     const firstWindow = await electronApp.firstWindow();
     await electronApp.context().addInitScript(installReaderSpeechHarness);
-    const readerPromise = electronApp.waitForEvent('window');
-    await firstWindow.evaluate(payload => window.bookstrDesktop.openReader(payload), {
+    await firstWindow.evaluate(payload => { void window.bookstrDesktop.openReader(payload); }, {
       kind: 'epub',
       base64: epub.toString('base64'),
       readUrl,
@@ -161,7 +160,9 @@ test('Desktop EPUB reader supports speech control transitions', async () => {
         extension: 'epub',
       },
     });
-    const reader = await readerPromise;
+    const reader = firstWindow;
+    await reader.waitForURL('app://bookstr/reader.html');
+    expect(await electronApp.windows()).toHaveLength(1);
     await expect.poll(() => reader.evaluate(() => ({
       desktop: Boolean(window.bookstrDesktop),
       planner: Boolean(window.BookstrSpeech),
@@ -201,8 +202,7 @@ test('Desktop PDF reader supports speech control transitions', async () => {
     const firstWindow = await electronApp.firstWindow();
     await electronApp.context().addInitScript(installReaderSpeechHarness);
     const pdf = minimalPdf(Array.from({ length: 55 }, (_, index) => 'pdfword' + index).join(' ') + '.');
-    const readerPromise = electronApp.waitForEvent('window');
-    await firstWindow.evaluate(payload => window.bookstrDesktop.openReader(payload), {
+    await firstWindow.evaluate(payload => { void window.bookstrDesktop.openReader(payload); }, {
       kind: 'pdf',
       base64: pdf.toString('base64'),
       readUrl: pdfUrl,
@@ -213,7 +213,9 @@ test('Desktop PDF reader supports speech control transitions', async () => {
         extension: 'pdf',
       },
     });
-    const pdfReader = await readerPromise;
+    const pdfReader = firstWindow;
+    await pdfReader.waitForURL('app://bookstr/pdf-reader.html');
+    expect(await electronApp.windows()).toHaveLength(1);
     await expect(pdfReader.locator('.pdf-page canvas').first()).toHaveAttribute('data-rendered', 'true', { timeout: 45_000 });
     await expect(pdfReader.locator('#pdf-speech-controls')).toBeVisible({ timeout: 45_000 });
     await ensureReaderControls(pdfReader, {
