@@ -46,6 +46,65 @@ final class VocabularyRepositoryTests: XCTestCase {
             .appendingPathComponent("shared/fixtures/vocabulary-wire-v1.json")
     }
 
+    func testSaveSelectionPreservesFirstSeenAndUpdatesLastSeen() {
+        let store = JSONFileStore(subdirectory: "bookstr-test-\(UUID().uuidString)")
+        let repo = VocabularyRepository(fileStore: store)
+        let first = repo.saveSelection(
+            word: "hello",
+            language: "en",
+            bookId: "book",
+            bookTitle: "Book",
+            cfi: "cfi-1",
+            context: "hello world"
+        )
+        Thread.sleep(forTimeInterval: 0.02)
+        let second = repo.saveSelection(
+            word: "hello",
+            language: "en",
+            bookId: "book",
+            bookTitle: "Book",
+            cfi: "cfi-2",
+            context: "hello again"
+        )
+        XCTAssertEqual(first.firstSeenAt, second.firstSeenAt)
+        XCTAssertGreaterThan(second.lastSeenAt, first.lastSeenAt)
+        XCTAssertEqual(second.lookupCount, 2)
+    }
+
+    func testRecordSeenBumpsLastSeenWithoutChangingFirstSeen() throws {
+        let store = JSONFileStore(subdirectory: "bookstr-test-\(UUID().uuidString)")
+        let repo = VocabularyRepository(fileStore: store)
+        let saved = repo.saveSelection(
+            word: "seen",
+            language: "en",
+            bookId: "book",
+            bookTitle: "Book",
+            cfi: "cfi",
+            context: "seen once"
+        )
+        Thread.sleep(forTimeInterval: 0.02)
+        let touched = try XCTUnwrap(repo.recordSeen(key: saved.key))
+        XCTAssertEqual(touched.firstSeenAt, saved.firstSeenAt)
+        XCTAssertGreaterThan(touched.lastSeenAt, saved.lastSeenAt)
+        XCTAssertEqual(touched.lookupCount, saved.lookupCount)
+    }
+
+    func testSaveSelectionAppearsInAllForWordsList() throws {
+        let store = JSONFileStore(subdirectory: "bookstr-test-\(UUID().uuidString)")
+        let repo = VocabularyRepository(fileStore: store)
+        XCTAssertTrue(repo.all().isEmpty)
+        let phrase = try XCTUnwrap(ReaderSelectionActions.phraseForVocabulary(from: "  Hello  "))
+        _ = repo.saveSelection(
+            word: phrase,
+            language: "en",
+            bookId: "book",
+            bookTitle: "Title",
+            cfi: "epubcfi(/6/2)",
+            context: "Hello there"
+        )
+        XCTAssertEqual(repo.all().map(\.word), ["Hello"])
+    }
+
     func testSaveSelectionIncrementsLookupCount() {
         let store = JSONFileStore(subdirectory: "bookstr-test-\(UUID().uuidString)")
         let repo = VocabularyRepository(fileStore: store)

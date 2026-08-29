@@ -7,10 +7,28 @@ import XCTest
 #endif
 
 final class SnippetRepositoryTests: XCTestCase {
+    func testSaveMarkAppearsInAllForMarksList() throws {
+        let store = JSONFileStore(subdirectory: "bookstr-snippet-test-\(UUID().uuidString)")
+        let repo = SnippetRepository(fileStore: store)
+        let text = ReaderSelectionActions.normalizedText("  A longer marked passage from the book.  ")
+        XCTAssertFalse(text.isEmpty)
+        let saved = try XCTUnwrap(repo.saveMark(
+            text: text,
+            bookId: "book",
+            bookTitle: "Title",
+            author: "Author",
+            isbn: nil,
+            format: .epub,
+            locator: "epubcfi(/6/4)"
+        ))
+        XCTAssertEqual(repo.all().map(\.text), [saved.text])
+        XCTAssertEqual(repo.all().first?.locator, "epubcfi(/6/4)")
+    }
+
     func testSaveMarkAndTombstoneHideFromAll() throws {
         let store = JSONFileStore(subdirectory: "bookstr-snippet-test-\(UUID().uuidString)")
         let repo = SnippetRepository(fileStore: store)
-        let saved = repo.saveMark(
+        let saved = try XCTUnwrap(repo.saveMark(
             text: "A longer marked passage from the book.",
             bookId: "book",
             bookTitle: "Title",
@@ -18,8 +36,17 @@ final class SnippetRepositoryTests: XCTestCase {
             isbn: "9781234567897",
             format: .epub,
             locator: "epubcfi(/6/2)"
-        )
+        ))
         XCTAssertEqual(repo.all().map(\.syncId), [saved.syncId])
+        XCTAssertNil(repo.saveMark(
+            text: "   ",
+            bookId: "book",
+            bookTitle: "Title",
+            author: "Author",
+            isbn: nil,
+            format: .epub,
+            locator: "x"
+        ))
         let tombstone = try XCTUnwrap(repo.remove(syncId: saved.syncId))
         XCTAssertTrue(tombstone.deleted)
         XCTAssertTrue(repo.all().isEmpty)

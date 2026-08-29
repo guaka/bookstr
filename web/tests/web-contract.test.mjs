@@ -386,6 +386,20 @@ test('EPUBs use persistent IndexedDB caching', () => {
   assert.match(html, /if \(routeGeneration !== readRouteGeneration\) return/);
 });
 
+test('settings persist Arial and justified reader typography by default', () => {
+  assert.match(html, /id="reader-font"/);
+  assert.match(html, /id="reader-alignment"/);
+  assert.match(html, /<option value="arial">Arial<\/option>/);
+  assert.match(html, /<option value="justified">Justified<\/option>/);
+  assert.match(html, /readerFont: 'arial'/);
+  assert.match(html, /readerAlignment: 'justified'/);
+  assert.match(html, /<script src="reader-typography\.js"><\/script>/);
+  assert.match(html, /function applyOpenReaderTypography\(\)/);
+  assert.match(html, /applyOpenReaderTypography\(\)/);
+  assert.match(html, /BookstrTypography\.normalizeFont\(state\.settings\.readerFont\)/);
+  assert.match(html, /BookstrTypography\.normalizeAlignment\(state\.settings\.readerAlignment\)/);
+});
+
 test('PDFs are fetched and displayed inside the Bookstr reader pane', () => {
   assert.match(html, /async function displayPdf\(blob, book, readPath, openGeneration\)/);
   assert.match(html, /new Blob\(\[blob\], \{ type: 'application\/pdf' \}\)/);
@@ -414,6 +428,8 @@ test('desktop EPUB and PDF readers stay inside the main reading pane', () => {
 
 test('desktop main process enforces reader payloads and returns explicit open results', () => {
   assert.match(desktopMain, /function normalizePayload\(payload\)/);
+  assert.match(desktopMain, /font: String\(payload\.font \|\| 'arial'\)\.toLowerCase\(\)/);
+  assert.match(desktopMain, /alignment: String\(payload\.alignment \|\| 'justified'\)\.toLowerCase\(\)/);
   assert.match(desktopMain, /return \{ ok: false, error: 'Invalid reader payload\.' \}/);
   assert.match(desktopMain, /return \{ ok: true, key, reused: currentURL === readerURL, kind: requestedKind \}/);
   assert.match(desktopMain, /ALLOWED_EXTERNAL_URL_PROTOCOLS/);
@@ -471,6 +487,13 @@ test('EPUB reader exposes read-aloud controls and speech helpers', () => {
   assert.match(readerHtml, /function setReaderSpeechState\(state\)/);
   assert.match(readerHtml, /function hasSpeechSupport\(\)/);
   assert.match(readerHtml, /function collectReaderSpeechPlan\(\)/);
+  assert.match(readerHtml, /window\.BookstrSpeech\.visibleText\(element\)/);
+  assert.match(readerHtml, /window\.setReaderTypography/);
+  assert.match(readerHtml, /locatorSkipDecision/);
+  assert.match(readerHtml, /lastSpeechCfi/);
+  assert.match(readerHtml, /<script src="reader-typography\.js"><\/script>/);
+  assert.match(readerHtml, /BookstrTypography\.css/);
+  assert.match(readerHtml, /Arial, Helvetica, sans-serif/);
   assert.match(readerHtml, /window\.BookstrSpeech\.buildPlan\(paragraphs\)/);
   assert.match(readerHtml, /desktopBridge &&/);
   assert.match(readerHtml, /function stopReaderSpeech\(\)/);
@@ -776,12 +799,12 @@ test('Electron settings expose opt-in language voices and reader typography', ()
   assert.match(html, /desktop-reader-settings settings-speech[\s\S]*?id="speech-voice-en"[\s\S]*?id="speech-voice-pt"[\s\S]*?id="speech-rate"/);
   assert.match(html, /Kokoro for English[\s\S]*?Tugão for Portuguese/);
   assert.match(html, /Optional voices are never downloaded or selected automatically/);
-  assert.match(html, /id="reader-font-family"[\s\S]*?<option value="arial">Arial<\/option>[\s\S]*?id="reader-text-align"[\s\S]*?<option value="justify">Justified<\/option>[\s\S]*?id="reader-font-size"/);
+  assert.match(html, /id="reader-font"[\s\S]*?<option value="arial">Arial<\/option>[\s\S]*?id="reader-alignment"[\s\S]*?<option value="justified">Justified<\/option>[\s\S]*?id="reader-font-size"/);
   assert.match(html, /speechVoiceEnglish:[\s\S]*?speechVoicePortuguese:[\s\S]*?speechRate:/);
   assert.match(html, /notifyOpenReaderSettings\(\)/);
   assert.match(readerHtml, /voiceIdentifier: selectedSpeechVoice\(plan\.language\)/);
-  assert.match(readerHtml, /readerFontFamily === "arial"[\s\S]*?Arial, Helvetica, sans-serif/);
-  assert.match(readerHtml, /readerTextAlign === "justify"[\s\S]*?rendition\.themes\.override\("--bookstr-text-align"/);
+  assert.match(readerHtml, /BookstrTypography\.normalizeFont\([\s\S]*?currentReaderSettings\.readerFont/);
+  assert.match(readerHtml, /BookstrTypography\.css\(readerFontFamily, readerAlignment\)/);
   assert.match(pdfReaderJs, /voiceIdentifier: selectedPdfSpeechVoice\(plan\.language\)/);
 });
 

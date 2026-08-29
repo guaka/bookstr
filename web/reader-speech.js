@@ -8,12 +8,15 @@
   const DEFAULT_SOFT_LIMIT = 180;
   const DEFAULT_HARD_LIMIT = 240;
   const DEFAULT_MAX_CHARACTERS = 100000;
-  const CONTINUATION_PAUSE_MS = 35;
-  const SENTENCE_PAUSE_MS = 180;
-  const CLAUSE_PAUSE_MS = 250;
-  const ELLIPSIS_PAUSE_MS = 280;
-  const EMPHATIC_PAUSE_MS = 320;
-  const PARAGRAPH_PAUSE_MS = 400;
+  const CONTINUATION_PAUSE_MS = 40;
+  const SENTENCE_PAUSE_MS = 220;
+  const COMMA_PAUSE_MS = 340;
+  const CLAUSE_PAUSE_MS = 300;
+  const PAREN_PAUSE_MS = 380;
+  const DASH_PAUSE_MS = 520;
+  const ELLIPSIS_PAUSE_MS = 360;
+  const EMPHATIC_PAUSE_MS = 380;
+  const PARAGRAPH_PAUSE_MS = 750;
 
   function normalizeText(value) {
     return String(value || "")
@@ -21,7 +24,10 @@
       .replace(/\u200B/g, "")
       .replace(/\r/g, " ")
       .replace(/\s+/g, " ")
-      .replace(/(\.\.\.|[.,;:!?…])\s*/g, "$1 ")
+      .replace(/(\.\.\.|[.,;:!?…])(?!["”’'])\s*/g, "$1 ")
+      .replace(/(\d{1,3}(?:, \d{3})+)/g, function(match) {
+        return match.replace(/, /g, ",");
+      })
       .trim();
   }
 
@@ -109,8 +115,110 @@
         // The deterministic fallback below is used when a platform segmenter fails.
       }
     }
-    const fallback = text.match(/[^.!?…]+(?:\.\.\.|[.!?…]+)(?:\s+|$)|[^.!?…]+$/g) || [];
+    const fallback = text.match(/[^.!?…]+(?:\.\.\.|[.!?…]+)["”’']*(?:\s+|$)|[^.!?…]+$/g) || [];
     return fallback.map(normalizeText).filter(Boolean);
+  }
+
+  function spokenText(text) {
+    return String(text || "")
+      .replace(/\d{1,3}(?:,\d{3})+(?:\.\d+)?/g, function(match) {
+        return match.replace(/,/g, "");
+      })
+      .replace(/\d{1,3}(?:[\u00A0\u202F ]\d{3})+(?:[.,]\d+)?/g, function(match) {
+        return match.replace(/[\u00A0\u202F ]/g, "");
+      })
+      .replace(/\[\d{1,3}\]/g, "")
+      .replace(/[\u00B9\u00B2\u00B3\u2070\u2074-\u2079]+/g, "")
+      .replace(/(?<=\S)\(\d{1,3}\)/g, "")
+      .replace(/[“”«»„"]/g, "")
+      .replace(/[ \t]+\n/g, "\n")
+      .replace(/[ ]{2,}/g, " ")
+      .replace(/ ([,.;:!?])/g, "$1")
+      .trim();
+  }
+
+  function compareLocators(left, right, compare) {
+    const a = String(left || "").trim();
+    const b = String(right || "").trim();
+    if (!a && !b) return 0;
+    if (!a) return -1;
+    if (!b) return 1;
+    if (typeof compare === "function") {
+      const result = compare(a, b);
+      if (Number.isFinite(result)) return result;
+    }
+    if (a === b) return 0;
+    return a < b ? -1 : 1;
+  }
+
+  function relocationProgression(locationsPercentage, viewportPercentage) {
+    if (Number.isFinite(locationsPercentage)) {
+      return Math.max(0, Math.min(1, locationsPercentage));
+    }
+    if (Number.isFinite(viewportPercentage)) {
+      return Math.max(0, Math.min(1, viewportPercentage));
+    }
+    return null;
+  }
+
+  function selectionKind(selection) {
+    const text = String(selection || "").replace(/\s+/g, " ").trim();
+    if (!text) return "empty";
+    const tokens = text.split(" ");
+    if (tokens.length > 2) return "mark";
+    const wordToken = /^\p{L}+(?:['’\-]\p{L}+)*$/u;
+    return tokens.every(function(token) { return wordToken.test(token); }) ? "words" : "mark";
+  }
+
+  function locatorSkipDecision(blockStart, blockEnd, resume, compare) {
+    const at = String(resume || "").trim();
+    if (!at) return "include";
+    const start = String(blockStart || "").trim();
+    const end = String(blockEnd || "").trim();
+    if (end && compareLocators(end, at, compare) <= 0) return "skip";
+    if (start && compareLocators(start, at, compare) < 0) return "resume";
+    return "include";
+  }
+
+  function mappedIndexAtPoint(positions, node, offset) {
+    if (!positions || !positions.length) return 0;
+    for (let index = 0; index < positions.length; index += 1) {
+      const pos = positions[index];
+      if (pos.node !== node) continue;
+      if (offset <= pos.start) return index;
+      if (offset < pos.end) return index;
+      if (offset === pos.end) return Math.min(index + 1, positions.length);
+    }
+    return 0;
+  }
+
+  function isSilentSpeechParent(element) {
+    if (!element || typeof element.closest !== "function") return false;
+    if (element.closest("script, style, noscript, sup, sub, small")) return true;
+    const link = element.closest("a");
+    if (!link) return false;
+    const type = String(link.getAttribute("epub:type") || link.getAttribute("role") || "").toLowerCase();
+    if (/\b(noteref|footnote|endnote|rearnote)\b/.test(type)) return true;
+    return /\b(noteref|footnote-ref|endnote-ref)\b/.test(String(link.className || "").toLowerCase());
+  }
+
+  function visibleText(element) {
+    if (!element || !element.ownerDocument || typeof element.ownerDocument.createTreeWalker !== "function") {
+      return "";
+    }
+    const walker = element.ownerDocument.createTreeWalker(element, 4);
+    const parts = [];
+    let node;
+    while ((node = walker.nextNode())) {
+      if (isSilentSpeechParent(node.parentElement)) continue;
+      parts.push(node.nodeValue || "");
+    }
+    return parts.join("");
+  }
+
+  function isGroupedThousandsComma(text, commaIndex) {
+    if (commaIndex < 1 || !/\d/.test(text.charAt(commaIndex - 1))) return false;
+    return /^\d{3}(?:,\d{3})*(?:\.\d+)?(?:\D|$)/.test(text.slice(commaIndex + 1));
   }
 
   function wordCount(text) {
@@ -118,10 +226,119 @@
     return clean ? clean.split(/\s+/).length : 0;
   }
 
-  function boundaryAfterPunctuation(text, index) {
+  function dashRunEnd(text, index) {
     const character = text.charAt(index);
-    if (!/[,;:—–]/.test(character)) return false;
-    return index + 1 >= text.length || /\s/.test(text.charAt(index + 1));
+    if (character === "—" || character === "–") return index + 1;
+    if (character !== "-") return 0;
+    if (text.charAt(index + 1) === "-") {
+      let end = index + 2;
+      while (text.charAt(end) === "-") end += 1;
+      return end;
+    }
+    if (index > 0 && text.charAt(index - 1) === "-") return index + 1;
+    return 0;
+  }
+
+  function matchingParenClose(text, openIndex) {
+    let depth = 0;
+    for (let index = openIndex; index < text.length; index += 1) {
+      const character = text.charAt(index);
+      if (character === "(") depth += 1;
+      else if (character === ")") {
+        depth -= 1;
+        if (depth === 0) return index;
+      }
+    }
+    return -1;
+  }
+
+  function absorbTrailingPunctuation(text, end) {
+    let index = end;
+    while (index < text.length && /[)"'”’\]»]/.test(text.charAt(index))) index += 1;
+    if (text.slice(index, index + 3) === "...") return index + 3;
+    if (/[.!?…]/.test(text.charAt(index))) return index + 1;
+    return end;
+  }
+
+  function boundaryAfterPunctuation(text, index) {
+    const dashEnd = dashRunEnd(text, index);
+    if (dashEnd) return dashEnd;
+    const character = text.charAt(index);
+    if (character === ")") {
+      return absorbTrailingPunctuation(text, index + 1);
+    }
+    if (!/[,;:]/.test(character)) return false;
+    if (character === "," && isGroupedThousandsComma(text, index)) return false;
+    return index + 1 >= text.length || /\s/.test(text.charAt(index + 1)) ? index + 1 : 0;
+  }
+
+  function shouldSplitComma(text, start, commaIndex) {
+    const left = text.slice(start, commaIndex);
+    const right = text.slice(commaIndex + 1);
+    const leftWords = wordCount(left);
+    const rightWords = wordCount(right);
+    if (leftWords >= 4 && rightWords >= 2) return true;
+    if (leftWords >= 3 && rightWords >= 4) return true;
+    return left.length >= 72 && rightWords >= 2;
+  }
+
+  function splitSentenceAtPhrases(text) {
+    const ranges = [];
+    let start = 0;
+    let index = 0;
+    while (index < text.length) {
+      if (text.charAt(index) === "(") {
+        const close = matchingParenClose(text, index);
+        if (close > index) {
+          if (index > start) {
+            const before = trimRange(text, start, index);
+            if (before.end > before.start) ranges.push(before);
+          }
+          const afterParen = absorbTrailingPunctuation(text, close + 1);
+          const inner = trimRange(text, index, afterParen);
+          if (inner.end > inner.start) ranges.push(inner);
+          start = afterParen;
+          index = afterParen;
+          continue;
+        }
+      }
+
+      const dashEnd = dashRunEnd(text, index);
+      if (dashEnd && wordCount(text.slice(start, dashEnd)) >= 1 && wordCount(text.slice(dashEnd)) >= 1) {
+        const piece = trimRange(text, start, dashEnd);
+        if (piece.end > piece.start) ranges.push(piece);
+        start = dashEnd;
+        index = dashEnd;
+        continue;
+      }
+
+      if (text.charAt(index) === "," && (index + 1 >= text.length || /\s/.test(text.charAt(index + 1)))) {
+        if (!isGroupedThousandsComma(text, index) && shouldSplitComma(text, start, index)) {
+          const piece = trimRange(text, start, index + 1);
+          if (piece.end > piece.start) ranges.push(piece);
+          start = index + 1;
+          index += 1;
+          continue;
+        }
+      }
+
+      if (text.charAt(index) === ";" && (index + 1 >= text.length || /\s/.test(text.charAt(index + 1)))) {
+        const piece = trimRange(text, start, index + 1);
+        if (piece.end > piece.start) ranges.push(piece);
+        start = index + 1;
+        index += 1;
+        continue;
+      }
+
+      index += 1;
+    }
+    const tail = trimRange(text, start, text.length);
+    if (tail.end > tail.start) ranges.push(tail);
+    return ranges;
+  }
+
+  function isSentenceFinal(text) {
+    return /(?:\.\.\.|[.!?…])["'”’)\]]*$/.test(String(text || "").trim());
   }
 
   function findBoundary(text, cursor, softLimit, hardLimit) {
@@ -131,10 +348,12 @@
     const preferredStart = cursor + Math.floor(softLimit * 0.55);
 
     for (let index = softEnd; index >= preferredStart; index -= 1) {
-      if (boundaryAfterPunctuation(text, index)) return index + 1;
+      const boundary = boundaryAfterPunctuation(text, index);
+      if (boundary) return boundary;
     }
     for (let index = softEnd + 1; index < hardEnd; index += 1) {
-      if (boundaryAfterPunctuation(text, index)) return index + 1;
+      const boundary = boundaryAfterPunctuation(text, index);
+      if (boundary) return boundary;
     }
     for (let index = softEnd; index >= preferredStart; index -= 1) {
       if (/\s/.test(text.charAt(index))) return index;
@@ -203,24 +422,41 @@
       if (sentenceStart < 0) continue;
       const sentenceEnd = sentenceStart + sentenceText.length;
       searchFrom = sentenceEnd;
-      if (sentenceText.length > hardLimit) {
-        flushActive();
-        for (const range of splitLongSentence(sentenceText, softLimit, hardLimit)) {
-          chunks.push({ start: sentenceStart + range.start, end: sentenceStart + range.end });
+      const phraseRanges = [];
+      for (const phrase of splitSentenceAtPhrases(sentenceText)) {
+        const piece = sentenceText.slice(phrase.start, phrase.end);
+        if (piece.length > hardLimit) {
+          for (const range of splitLongSentence(piece, softLimit, hardLimit)) {
+            phraseRanges.push({
+              start: sentenceStart + phrase.start + range.start,
+              end: sentenceStart + phrase.start + range.end,
+            });
+          }
+        } else {
+          phraseRanges.push({
+            start: sentenceStart + phrase.start,
+            end: sentenceStart + phrase.end,
+          });
         }
-        continue;
       }
 
-      if (!active) {
-        active = { start: sentenceStart, end: sentenceEnd };
-        continue;
-      }
-      const joinedLength = sentenceEnd - active.start;
-      if (joinedLength <= softLimit || (wordCount(sentenceText) === 1 && joinedLength <= hardLimit)) {
-        active.end = sentenceEnd;
-      } else {
-        flushActive();
-        active = { start: sentenceStart, end: sentenceEnd };
+      for (const range of phraseRanges) {
+        if (!active) {
+          active = { start: range.start, end: range.end };
+          continue;
+        }
+        const activeText = paragraph.slice(active.start, active.end);
+        const nextText = paragraph.slice(range.start, range.end);
+        const joinedLength = range.end - active.start;
+        const canJoinSentences = isSentenceFinal(activeText)
+          && isSentenceFinal(nextText)
+          && (joinedLength <= softLimit || (wordCount(nextText) === 1 && joinedLength <= hardLimit));
+        if (canJoinSentences) {
+          active.end = range.end;
+        } else {
+          flushActive();
+          active = { start: range.start, end: range.end };
+        }
       }
     }
     flushActive();
@@ -231,10 +467,13 @@
   function pauseAfter(text) {
     const clean = String(text || "").trim();
     if (!clean) return CONTINUATION_PAUSE_MS;
-    if (/\.\.\.$/.test(clean)) return ELLIPSIS_PAUSE_MS;
-    if (/[!?…]$/.test(clean)) return EMPHATIC_PAUSE_MS;
-    if (/[,;:—–]$/.test(clean)) return CLAUSE_PAUSE_MS;
-    if (/\.$/.test(clean)) return SENTENCE_PAUSE_MS;
+    if (/\.\.\.["'”’)\]]*$/.test(clean)) return ELLIPSIS_PAUSE_MS;
+    if (/[!?…]["'”’)\]]*$/.test(clean)) return EMPHATIC_PAUSE_MS;
+    if (/(?:--|[—–])$/.test(clean)) return DASH_PAUSE_MS;
+    if (/^\(/.test(clean) || /\)[.!?…"”’']*$/.test(clean)) return PAREN_PAUSE_MS;
+    if (/,$/.test(clean)) return COMMA_PAUSE_MS;
+    if (/[;:]$/.test(clean)) return CLAUSE_PAUSE_MS;
+    if (/\.["'”’)\]]*$/.test(clean)) return SENTENCE_PAUSE_MS;
     return CONTINUATION_PAUSE_MS;
   }
 
@@ -253,6 +492,8 @@
       const ranges = chunkParagraph(paragraph, softLimit, hardLimit, settings.segmenterFactory);
       ranges.forEach(function(range, rangeIndex) {
         const chunkText = paragraph.slice(range.start, range.end);
+        const spoken = spokenText(chunkText);
+        if (!/[\p{L}\p{N}]/u.test(spoken)) return;
         let pauseMs = 0;
         if (chunks.length) {
           pauseMs = rangeIndex === 0 && paragraphIndex > 0
@@ -261,6 +502,7 @@
         }
         const chunk = {
           text: chunkText,
+          spoken,
           start: paragraphStart + range.start,
           pauseMs,
         };
@@ -331,7 +573,7 @@
       const chunk = chunks[index];
       remainingDelay = 0;
       phase = "speaking";
-      const nextUtterance = new Utterance(chunk.text);
+      const nextUtterance = new Utterance(chunk.spoken || chunk.text);
       nextUtterance.lang = language;
       nextUtterance.rate = rate;
       const voices = synthesis && typeof synthesis.getVoices === "function" ? synthesis.getVoices() : [];
@@ -428,16 +670,27 @@
   return {
     buildPlan,
     createPlayer,
+    compareLocators,
+    selectionKind,
+    relocationProgression,
+    locatorSkipDecision,
+    mappedIndexAtPoint,
+    isSilentSpeechParent,
+    visibleText,
     normalizeLocale,
     selectVoice,
     normalizeText,
+    spokenText,
     defaults: Object.freeze({
       softLimit: DEFAULT_SOFT_LIMIT,
       hardLimit: DEFAULT_HARD_LIMIT,
       maximumCharacters: DEFAULT_MAX_CHARACTERS,
       continuationPauseMs: CONTINUATION_PAUSE_MS,
       sentencePauseMs: SENTENCE_PAUSE_MS,
+      commaPauseMs: COMMA_PAUSE_MS,
       clausePauseMs: CLAUSE_PAUSE_MS,
+      parenPauseMs: PAREN_PAUSE_MS,
+      dashPauseMs: DASH_PAUSE_MS,
       ellipsisPauseMs: ELLIPSIS_PAUSE_MS,
       emphaticPauseMs: EMPHATIC_PAUSE_MS,
       paragraphPauseMs: PARAGRAPH_PAUSE_MS,

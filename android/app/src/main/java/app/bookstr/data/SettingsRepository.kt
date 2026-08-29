@@ -16,6 +16,30 @@ enum class ReaderTheme(val key: String) {
     }
 }
 
+enum class ReaderFont(val key: String, val label: String) {
+    Arial("arial", "Arial"),
+    Georgia("georgia", "Georgia"),
+    Palatino("palatino", "Palatino"),
+    System("system", "System"),
+    ;
+
+    companion object {
+        fun fromKey(key: String?): ReaderFont =
+            entries.firstOrNull { it.key == key?.trim() } ?: Arial
+    }
+}
+
+enum class ReaderAlignment(val key: String, val label: String) {
+    Justified("justified", "Justified"),
+    Left("left", "Left"),
+    ;
+
+    companion object {
+        fun fromKey(key: String?): ReaderAlignment =
+            entries.firstOrNull { it.key == key?.trim() } ?: Justified
+    }
+}
+
 enum class NostrAuthMode(val key: String) {
     None("none"),
     Nsec("nsec"),
@@ -64,6 +88,14 @@ class SettingsRepository(context: Context) {
     var theme: ReaderTheme
         get() = ReaderTheme.fromKey(plainPrefs.getString(KEY_THEME, ReaderTheme.Paper.key))
         set(value) = plainPrefs.edit().putString(KEY_THEME, value.key).apply()
+
+    var readerFont: ReaderFont
+        get() = ReaderFont.fromKey(plainPrefs.getString(KEY_READER_FONT, ReaderFont.Arial.key))
+        set(value) = plainPrefs.edit().putString(KEY_READER_FONT, value.key).apply()
+
+    var readerAlignment: ReaderAlignment
+        get() = ReaderAlignment.fromKey(plainPrefs.getString(KEY_READER_ALIGNMENT, ReaderAlignment.Justified.key))
+        set(value) = plainPrefs.edit().putString(KEY_READER_ALIGNMENT, value.key).apply()
 
     var keepReadingOnLockScreen: Boolean
         get() = plainPrefs.getBoolean(KEY_KEEP_ON_LOCK, true)
@@ -257,6 +289,8 @@ class SettingsRepository(context: Context) {
 
         private const val KEY_RELAYS = "relays"
         private const val KEY_THEME = "theme"
+        private const val KEY_READER_FONT = "reader_font"
+        private const val KEY_READER_ALIGNMENT = "reader_alignment"
         private const val KEY_KEEP_ON_LOCK = "keep_on_lock"
         private const val KEY_WORD_SORT = "word_sort"
         private const val KEY_DICTIONARY_SOURCE = "dictionary_source"

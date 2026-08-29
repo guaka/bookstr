@@ -63,6 +63,18 @@ final class PDFReaderController: ObservableObject {
         furthestProgression = max(furthestProgression, progression)
     }
 
+    func highlightCurrentSelection() {
+        guard let pdfView, let selection = pdfView.currentSelection else { return }
+        let color = UIColor(red: 231 / 255, green: 199 / 255, blue: 102 / 255, alpha: 0.55)
+        for page in selection.pages {
+            let bounds = selection.bounds(for: page)
+            guard !bounds.isNull, bounds.width > 1, bounds.height > 1 else { continue }
+            let annotation = PDFAnnotation(bounds: bounds, forType: .highlight, withProperties: nil)
+            annotation.color = color
+            page.addAnnotation(annotation)
+        }
+    }
+
     func reloadTableOfContents() {
         guard let document = pdfView?.document, let root = document.outlineRoot else {
             tableOfContents = []
@@ -99,20 +111,24 @@ private extension String {
 }
 
 final class VocabularyPDFView: PDFView {
+    var editMenuSelection: () -> String = { "" }
+    var onEditMenuAddWord: (() -> Void)?
+    var onEditMenuMark: (() -> Void)?
+
     static func selectedWord(from value: String?) -> String? {
         ReaderSelectionActions.phraseForVocabulary(from: value ?? "")
     }
 
-    override func canPerformAction(_ action: Selector, withSender sender: Any?) -> Bool {
-        false
-    }
-
     override func buildMenu(with builder: UIMenuBuilder) {
         super.buildMenu(with: builder)
-        builder.remove(menu: .standardEdit)
-        builder.remove(menu: .lookup)
-        builder.remove(menu: .share)
-        builder.remove(menu: .replace)
+        ReaderEditMenu.configure(
+            builder,
+            selection: editMenuSelection(),
+            allowsSpeech: false,
+            addWord: { [weak self] in self?.onEditMenuAddWord?() },
+            mark: { [weak self] in self?.onEditMenuMark?() },
+            readFromHere: {}
+        )
     }
 }
 
@@ -144,6 +160,15 @@ struct PDFReaderView: UIViewRepresentable {
         pdfView.accessibilityLabel = "PDF reader: \(book.title)"
         pdfView.accessibilityValue = "\(pdfView.document?.pageCount ?? 0) rendered pages"
         pdfView.isAccessibilityElement = true
+        pdfView.editMenuSelection = { [weak coordinator = context.coordinator] in
+            coordinator?.textSelection.wrappedValue?.text ?? pdfView.currentSelection?.string ?? ""
+        }
+        pdfView.onEditMenuAddWord = { [weak coordinator = context.coordinator] in
+            coordinator?.addWordFromEditMenu()
+        }
+        pdfView.onEditMenuMark = { [weak coordinator = context.coordinator] in
+            coordinator?.markFromEditMenu()
+        }
         let progress = container.progressRepository.get(bookId: book.id)
         if progress.cfi.hasPrefix("page:"),
            let pageIndex = Int(progress.cfi.dropFirst("page:".count)),
@@ -241,6 +266,39 @@ struct PDFReaderView: UIViewRepresentable {
             let page = pdfView.currentSelection?.pages.first ?? pdfView.currentPage
             let index = page.flatMap { pdfView.document?.index(for: $0) } ?? 0
             textSelection.wrappedValue = PDFTextSelection(text: String(text.prefix(2_000)), pageIndex: max(index, 0))
+        }
+
+        fileprivate func addWordFromEditMenu() {
+            guard let selection = textSelection.wrappedValue,
+                  let phrase = ReaderSelectionActions.phraseForVocabulary(from: selection.text)
+            else { return }
+            _ = container.vocabularyRepository.saveSelection(
+                word: phrase,
+                language: "en",
+                bookId: book.id,
+                bookTitle: book.title,
+                cfi: selection.locator,
+                context: selection.text
+            )
+            controller?.highlightCurrentSelection()
+            NotificationCenter.default.post(name: .bookstrVocabularyDidChange, object: nil)
+        }
+
+        fileprivate func markFromEditMenu() {
+            guard let selection = textSelection.wrappedValue else { return }
+            let text = ReaderSelectionActions.normalizedText(selection.text)
+            guard !text.isEmpty else { return }
+            guard container.snippetRepository.saveMark(
+                text: text,
+                bookId: book.id,
+                bookTitle: book.title,
+                author: book.author,
+                isbn: NostrSyncService.normalizedISBN(book.isbn),
+                format: .pdf,
+                locator: selection.locator
+            ) != nil else { return }
+            controller?.highlightCurrentSelection()
+            NotificationCenter.default.post(name: .bookstrSnippetsDidChange, object: nil)
         }
     }
 }

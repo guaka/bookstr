@@ -203,6 +203,7 @@
   <script src="jszip.min.js"></script>
   <script src="epub.min.js"></script>
   <script src="reader-speech.js"></script>
+  <script src="reader-typography.js"></script>
 </head>
 <body>
   <header class="reader-header" aria-label="Reader controls">
@@ -251,6 +252,7 @@
     let book = null;
     let rendition = null;
     let currentBookId = "";
+    let lastSpeechCfi = "";
     let activeDictionary = null;
     let bookLoadGeneration = 0;
     const READER_SETTINGS_KEY = "bookstr_reader_settings_v1";
@@ -266,12 +268,13 @@
     let readerFontPercent = Number(currentReaderSettings.readerFontPercent)
       || Number(localStorage.getItem("bookstr-reader-font-percent"))
       || 100;
-    let readerFontFamily = ["serif", "arial", "sans", "system"].includes(currentReaderSettings.readerFontFamily)
-      ? currentReaderSettings.readerFontFamily
-      : "serif";
-    let readerTextAlign = ["book", "left", "justify"].includes(currentReaderSettings.readerTextAlign)
-      ? currentReaderSettings.readerTextAlign
-      : "book";
+    let readerFontFamily = window.BookstrTypography.normalizeFont(
+      currentReaderSettings.readerFont || currentReaderSettings.readerFontFamily,
+    );
+    let readerAlignment = window.BookstrTypography.normalizeAlignment(
+      currentReaderSettings.readerAlignment
+        || (currentReaderSettings.readerTextAlign === "justify" ? "justified" : currentReaderSettings.readerTextAlign),
+    );
     let desktopReaderBook = null;
     let desktopReaderFurthestProgress = 0;
     let desktopReaderProgress = null;
@@ -285,17 +288,6 @@
     let readerSpeechState = "stopped";
     let readerSpeechPlayer = null;
 
-    function readerFontStack() {
-      if (readerFontFamily === "arial") return 'Arial, Helvetica, sans-serif';
-      if (readerFontFamily === "sans") return '"Avenir Next", Avenir, "Gill Sans", sans-serif';
-      if (readerFontFamily === "system") return '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
-      return '"Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua", Georgia, serif';
-    }
-
-    function readerTextAlignment() {
-      return readerTextAlign === "justify" ? "justify" : readerTextAlign === "left" ? "left" : "revert";
-    }
-
     function selectedSpeechVoice(language) {
       const normalized = String(language || "").toLowerCase();
       return normalized === "pt" || normalized.startsWith("pt-")
@@ -307,16 +299,16 @@
       currentReaderSettings = settings && typeof settings === "object" ? { ...settings } : {};
       const nextPercent = Number(currentReaderSettings.readerFontPercent);
       if (Number.isFinite(nextPercent)) readerFontPercent = Math.max(75, Math.min(180, nextPercent));
-      readerFontFamily = ["serif", "arial", "sans", "system"].includes(currentReaderSettings.readerFontFamily)
-        ? currentReaderSettings.readerFontFamily
-        : "serif";
-      readerTextAlign = ["book", "left", "justify"].includes(currentReaderSettings.readerTextAlign)
-        ? currentReaderSettings.readerTextAlign
-        : "book";
+      readerFontFamily = window.BookstrTypography.normalizeFont(
+        currentReaderSettings.readerFont || currentReaderSettings.readerFontFamily,
+      );
+      readerAlignment = window.BookstrTypography.normalizeAlignment(
+        currentReaderSettings.readerAlignment
+          || (currentReaderSettings.readerTextAlign === "justify" ? "justified" : currentReaderSettings.readerTextAlign),
+      );
       if (rendition) {
-        rendition.themes.font(readerFontStack());
         rendition.themes.fontSize(readerFontPercent + "%");
-        rendition.themes.override("--bookstr-text-align", readerTextAlignment());
+        applyTypography();
       }
       if (readerSpeechState !== "stopped") stopReaderSpeech();
     }
@@ -405,6 +397,8 @@
       return {
         base64,
         theme: String(payload.theme || "paper").toLowerCase(),
+        font: String(payload.font || "arial").toLowerCase(),
+        alignment: String(payload.alignment || "justified").toLowerCase(),
         cfi: String(payload.cfi || ""),
         readUrl: String(payload.readUrl || ""),
         book: normalizeDesktopBookMetadata(payload.book, String(payload.readUrl || "")),
@@ -464,14 +458,36 @@
       if (rendition) {
         rendition.themes.select(theme === "night" ? "night" : (theme === "white" ? "white" : "paper"));
       }
+      applyTypography();
+    }
+
+    function typographyCSS() {
+      return window.BookstrTypography.css(readerFontFamily, readerAlignment);
+    }
+
+    function applyTypographyToDocument(contentDocument) {
+      if (!contentDocument) return;
+      let style = contentDocument.getElementById("bookstr-typography");
+      if (!style) {
+        style = contentDocument.createElement("style");
+        style.id = "bookstr-typography";
+        (contentDocument.head || contentDocument.documentElement).appendChild(style);
+      }
+      style.textContent = typographyCSS();
+    }
+
+    function applyTypography() {
+      if (!rendition || typeof rendition.getContents !== "function") return;
+      rendition.getContents().forEach(function(contents) {
+        applyTypographyToDocument(contents && contents.document);
+      });
     }
 
     function registerThemes() {
       const shared = {
-        "font-family": readerFontStack() + " !important",
+        "font-family": "Arial, Helvetica, sans-serif !important",
         "font-size": "1.04em !important",
         "line-height": "1.6 !important",
-        "text-align": "var(--bookstr-text-align, revert) !important",
         "box-sizing": "border-box",
         "width": "100% !important",
         "max-width": "none !important",
@@ -570,6 +586,7 @@
       desktopReaderProgress = null;
       stopReaderSpeech();
       currentBookId = String(bookId || "");
+      lastSpeechCfi = String(cfi || "").trim();
       document.body.dataset.bookId = currentBookId;
       applyTheme(theme || "paper");
       if (rendition) rendition.destroy();
@@ -614,6 +631,7 @@
           if (contentDocument) {
             installSwipeNavigation(contentDocument);
             installWheelNavigation(contentDocument);
+            applyTypographyToDocument(contentDocument);
           }
         });
         rendition.on("selected", function(cfi, contents) {
@@ -626,9 +644,7 @@
         });
         registerThemes();
         applyTheme(theme || "paper");
-        rendition.themes.font(readerFontStack());
         rendition.themes.fontSize(readerFontPercent + "%");
-        rendition.themes.override("--bookstr-text-align", readerTextAlignment());
         rendition.on("relocated", function(location) {
           reportLocation(location);
         });
@@ -658,6 +674,7 @@
         console.warn("Could not calculate EPUB progress", error);
       }
       if (!Number.isFinite(progression)) progression = 0;
+      lastSpeechCfi = start.cfi;
       updateReaderProgress(progression);
       reportDesktopProgress(start.cfi, progression, progression);
       if (!window.AndroidBridge) return;
@@ -712,6 +729,7 @@
       const paragraphs = [];
       let language = "";
       let foundVisibleText = false;
+      const resumeCfi = String(lastSpeechCfi || "").trim();
       const contentViews = rendition.getContents();
       for (const view of contentViews) {
         const contentDocument = view && view.document;
@@ -724,12 +742,53 @@
           elements = [contentDocument.body];
         }
         for (const element of elements) {
-          const text = String(element.innerText || element.textContent || "")
+          let text = String(
+            window.BookstrSpeech && window.BookstrSpeech.visibleText
+              ? window.BookstrSpeech.visibleText(element)
+              : (element.innerText || element.textContent || "")
+          )
             .replace(/\s+/g, " ")
             .trim();
           if (!text) continue;
-          const rect = element.getBoundingClientRect ? element.getBoundingClientRect() : { bottom: 1 };
-          if (!foundVisibleText && frameTop + rect.bottom <= 0) continue;
+          if (resumeCfi && typeof view.cfiFromRange === "function" && window.BookstrSpeech.locatorSkipDecision) {
+            const startRange = contentDocument.createRange();
+            const endRange = contentDocument.createRange();
+            startRange.selectNodeContents(element);
+            startRange.collapse(true);
+            endRange.selectNodeContents(element);
+            endRange.collapse(false);
+            let startCfi = "";
+            let endCfi = "";
+            try { startCfi = String(view.cfiFromRange(startRange) || ""); } catch (_) {}
+            try { endCfi = String(view.cfiFromRange(endRange) || ""); } catch (_) {}
+            const decision = window.BookstrSpeech.locatorSkipDecision(startCfi, endCfi, resumeCfi);
+            if (decision === "skip") continue;
+            if (decision === "resume" && typeof view.range === "function") {
+              try {
+                const point = view.range(resumeCfi);
+                if (point && element.contains(point.startContainer)) {
+                  const walker = contentDocument.createTreeWalker(element, NodeFilter.SHOW_TEXT);
+                  let remaining = "";
+                  let seen = false;
+                  let node;
+                  while ((node = walker.nextNode())) {
+                    if (!seen) {
+                      if (node !== point.startContainer) continue;
+                      seen = true;
+                      remaining += String(node.nodeValue || "").slice(point.startOffset);
+                      continue;
+                    }
+                    remaining += String(node.nodeValue || "");
+                  }
+                  text = remaining.replace(/\s+/g, " ").trim();
+                  if (!text) continue;
+                }
+              } catch (_) {}
+            }
+          } else {
+            const rect = element.getBoundingClientRect ? element.getBoundingClientRect() : { bottom: 1 };
+            if (!foundVisibleText && frameTop + rect.bottom <= 0) continue;
+          }
           foundVisibleText = true;
           paragraphs.push(text);
         }
@@ -781,6 +840,7 @@
       desktopReaderFurthestProgress = 0;
       desktopReaderProgress = null;
       const bookId = desktopReaderBook ? desktopReaderBook.md5 : "";
+      window.setReaderTypography(normalized.font, normalized.alignment);
       void reportPromise(window.loadBook(
         normalized.base64,
         normalized.cfi,
@@ -1228,6 +1288,12 @@
 
     window.setReaderTheme = function(theme) {
       applyTheme(theme);
+    };
+
+    window.setReaderTypography = function(font, alignment) {
+      readerFontFamily = window.BookstrTypography.normalizeFont(font);
+      readerAlignment = window.BookstrTypography.normalizeAlignment(alignment);
+      applyTypography();
     };
 
     function flushDesktopProgress() {

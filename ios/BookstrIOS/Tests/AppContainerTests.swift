@@ -9,6 +9,23 @@ final class AppContainerTests: XCTestCase {
         XCTAssertNotNil(container.wordNavigation)
     }
 
+    func testBootstrapProvidesReaderPlaybackSession() {
+        let container = AppContainer.bootstrap()
+        let book = CatalogBook(
+            id: "alice", title: "Alice", author: "Carroll", epubUrl: "https://example.org/a.epub",
+            coverUrl: nil, sourceUrl: nil, isbn: nil, libvaultMd5: nil, format: .epub,
+            blossomSha256: nil, year: nil
+        )
+
+        container.readerPlayback.present(book: book)
+        container.readerPlayback.updateSpeechState(retained: true, playing: true)
+        container.readerPlayback.requestClose()
+
+        XCTAssertEqual(container.readerPlayback.item?.book.id, "alice")
+        XCTAssertFalse(container.readerPlayback.isVisible)
+        XCTAssertTrue(container.readerPlayback.showsBackgroundSpeechControl)
+    }
+
     func testWordNavigationStateCanBeUsedFromContainer() {
         let container = AppContainer.bootstrap()
 

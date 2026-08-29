@@ -100,6 +100,34 @@ final class VocabularyRepository {
     }
 
     @discardableResult
+    func recordSeen(key: String) -> VocabularyWord? {
+        guard let existing = cache[key], !existing.deleted else { return nil }
+        let now = Int64(Date().timeIntervalSince1970 * 1000)
+        guard now > existing.lastSeenAt else { return existing }
+        let updated = VocabularyWord(
+            key: existing.key,
+            word: existing.word,
+            language: existing.language,
+            syncId: existing.syncId,
+            bookId: existing.bookId,
+            bookTitle: existing.bookTitle,
+            cfi: existing.cfi,
+            contextSentence: existing.contextSentence,
+            partOfSpeech: existing.partOfSpeech,
+            definitions: existing.definitions,
+            translation: existing.translation,
+            sourceUrl: existing.sourceUrl,
+            lookupCount: existing.lookupCount,
+            firstSeenAt: existing.firstSeenAt,
+            lastSeenAt: now,
+            deleted: false
+        )
+        cache[key] = updated
+        flush()
+        return updated
+    }
+
+    @discardableResult
     func saveDefinition(
         key: String,
         partOfSpeech: String,

@@ -10,14 +10,14 @@ private enum WordsPaneMode: String, CaseIterable, Identifiable {
 
 struct WordsView: View {
     @EnvironmentObject private var container: AppContainer
+    @EnvironmentObject private var playback: ReaderPlaybackSession
     @State private var mode: WordsPaneMode = .words
     @State private var words: [VocabularyWord] = []
     @State private var marks: [BookSnippet] = []
     @State private var errorMessage: String?
-    @State private var destination: WordDestination?
     @State private var openingWordKey: String?
     @State private var query = ""
-    @State private var sort = WordSort.recent
+    @State private var sort = WordSortKey.recent
     @State private var installedMatches: [String: [DictionaryLookup]] = [:]
 
     var body: some View {
@@ -45,7 +45,7 @@ struct WordsView: View {
                 ToolbarItem(placement: .topBarTrailing) {
                     Menu {
                         Picker("Sort words", selection: $sort) {
-                            ForEach(WordSort.allCases) { option in
+                            ForEach(WordSortKey.allCases) { option in
                                 Text(option.label).tag(option)
                             }
                         }
@@ -54,10 +54,6 @@ struct WordsView: View {
                     }
                 }
             }
-        }
-        .navigationDestination(item: $destination) { item in
-            ReaderHostView(book: item.book, initialLocator: item.locator, highlightLocator: item.locator)
-                .id("\(item.book.id):\(item.locator)")
         }
         .overlay(alignment: .bottom) {
             if let errorMessage {
@@ -83,8 +79,11 @@ struct WordsView: View {
                 refreshInstalledMatches()
             }
         }
-        .onChange(of: mode) { _, _ in
+        .onChange(of: mode) { _, newMode in
             showCached()
+            if newMode == .marks {
+                marks = container.snippetRepository.all()
+            }
             Task { await refreshFromNetwork(force: false) }
         }
         .onReceive(container.wordNavigation.$requestToken) { _ in
@@ -195,15 +194,11 @@ struct WordsView: View {
     }
 
     private var wordsEmptyCopy: String {
-        container.settingsRepository.hasNostrIdentity
-            ? "Words you look up while reading will appear here."
-            : "Connect Nostr in Settings to sync saved words."
+        "Words you save while reading appear here."
     }
 
     private var marksEmptyCopy: String {
-        container.settingsRepository.hasNostrIdentity
-            ? "Passages you mark while reading will appear here."
-            : "Connect Nostr in Settings to sync marked passages."
+        "Passages you mark while reading appear here."
     }
 
     private var visibleWords: [VocabularyWord] {
@@ -214,23 +209,7 @@ struct WordsView: View {
                 || entry.contextSentence.lowercased().contains(needle)
                 || displayedDefinitions(for: entry).contains { $0.lowercased().contains(needle) }
         }
-        switch sort {
-        case .recent:
-            return filtered.sorted { $0.lastSeenAt > $1.lastSeenAt }
-        case .alphabetical:
-            return filtered.sorted { $0.word.localizedCaseInsensitiveCompare($1.word) == .orderedAscending }
-        case .book:
-            return filtered.sorted {
-                let books = $0.bookTitle.localizedCaseInsensitiveCompare($1.bookTitle)
-                return books == .orderedSame
-                    ? $0.word.localizedCaseInsensitiveCompare($1.word) == .orderedAscending
-                    : books == .orderedAscending
-            }
-        case .mostSeen:
-            return filtered.sorted { $0.lookupCount > $1.lookupCount }
-        case .firstSaved:
-            return filtered.sorted { $0.firstSeenAt < $1.firstSeenAt }
-        }
+        return sortVocabularyWords(filtered, by: sort)
     }
 
     private var visibleMarks: [BookSnippet] {
@@ -308,6 +287,8 @@ struct WordsView: View {
 
     @MainActor
     private func openWord(_ entry: VocabularyWord) async {
+        _ = container.vocabularyRepository.recordSeen(key: entry.key)
+        showCached()
         await openBook(id: entry.bookId, title: entry.bookTitle, locator: entry.cfi, openingKey: entry.key)
     }
 
@@ -339,7 +320,7 @@ struct WordsView: View {
             errorMessage = "Book open failed: \(error.localizedDescription)"
             return
         }
-        destination = WordDestination(book: openedBook, locator: locator)
+        playback.present(book: openedBook, initialLocator: locator, highlightLocator: locator)
     }
 
     private func highlightedContext(_ context: String, word: String) -> AttributedString {
@@ -482,42 +463,6 @@ struct WordsView: View {
     }
 }
 
-private enum WordSort: String, CaseIterable, Identifiable {
-    case recent
-    case alphabetical
-    case book
-    case mostSeen
-    case firstSaved
-
-    var id: String { rawValue }
-
-    var label: String {
-        switch self {
-        case .recent: "Recently seen"
-        case .alphabetical: "Alphabetical (A–Z)"
-        case .book: "Book, then word"
-        case .mostSeen: "Most frequently seen"
-        case .firstSaved: "First saved"
-        }
-    }
-
-    var shortLabel: String {
-        switch self {
-        case .recent: "Recent"
-        case .alphabetical: "A–Z"
-        case .book: "Book"
-        case .mostSeen: "Count"
-        case .firstSaved: "First"
-        }
-    }
-}
-
 private extension Optional where Wrapped: Collection {
     var isNilOrEmpty: Bool { self?.isEmpty != false }
-}
-
-private struct WordDestination: Identifiable, Hashable {
-    let book: CatalogBook
-    let locator: String
-    var id: String { "\(book.id):\(locator)" }
 }

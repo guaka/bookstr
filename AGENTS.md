@@ -17,8 +17,17 @@
 ## Testing and coverage
 
 - All new and changed executable lines must be covered by automated tests.
+- Every added or changed source file must ship with unit, integration, or contract
+  tests in the same change (or an explicit update to an existing suite that
+  exercises the new behavior). Do not land production code without matching tests.
+- When adding an iOS `BookstrLogic` source or test file, update `ios/Package.swift`
+  sources lists and `.github/workflows/ios.yml` `KNOWN_TESTS` globs so CI counts
+  and coverage include them.
 - Every changed behavior and branch must have unit or integration coverage.
-- User-visible workflows must also receive end-to-end coverage.
+- User-visible workflows must also receive end-to-end coverage (UI tests or
+  Playwright) when the change alters navigation, settings controls, or reader
+  flows; give interactive controls stable accessibility identifiers and assert
+  those identifiers from e2e tests instead of brittle `firstMatch` queries.
 - Generate the relevant web, iOS, or Android coverage report and verify changed-line coverage before declaring work complete. Passing tests without coverage is insufficient.
 - Do not use exclusions, ignore annotations, unreachable test-only paths, or reduced thresholds to satisfy this requirement.
 - Documentation and other non-executable changes must receive an appropriate validation or contract test when applicable.

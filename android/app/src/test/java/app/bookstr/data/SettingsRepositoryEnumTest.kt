@@ -18,9 +18,15 @@ class SettingsRepositoryEnumTest {
     }
 
     @Test
-    fun readerThemeDefaultsToPaperForBlankOrWhitespaceKey() {
-        assertEquals(ReaderTheme.Paper, ReaderTheme.fromKey(""))
-        assertEquals(ReaderTheme.Paper, ReaderTheme.fromKey("   "))
+    fun readerFontAndAlignmentDefaultToArialAndJustified() {
+        assertEquals(ReaderFont.Arial, ReaderFont.fromKey(null))
+        assertEquals(ReaderFont.Arial, ReaderFont.fromKey("nope"))
+        assertEquals(ReaderFont.Arial, ReaderFont.fromKey("arial"))
+        assertEquals(ReaderFont.Georgia, ReaderFont.fromKey("georgia"))
+        assertEquals(ReaderFont.Palatino, ReaderFont.fromKey("palatino"))
+        assertEquals(ReaderFont.System, ReaderFont.fromKey("system"))
+        assertEquals(ReaderAlignment.Justified, ReaderAlignment.fromKey("justified"))
+        assertEquals(ReaderAlignment.Left, ReaderAlignment.fromKey("left"))
     }
 
     @Test

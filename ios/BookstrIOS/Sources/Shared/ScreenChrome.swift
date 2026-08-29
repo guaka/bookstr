@@ -96,6 +96,26 @@ struct TopSafeAreaCollapser: UIViewRepresentable {
     }
 }
 
+private struct BackgroundSpeechToolbarModifier: ViewModifier {
+    @EnvironmentObject private var playback: ReaderPlaybackSession
+
+    func body(content: Content) -> some View {
+        content.toolbar {
+            if playback.showsBackgroundSpeechControl {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        playback.toggleSpeech()
+                    } label: {
+                        Image(systemName: playback.isSpeechPlaying ? "stop.fill" : "play.fill")
+                    }
+                    .accessibilityLabel(playback.isSpeechPlaying ? "Stop reading aloud" : "Read aloud")
+                    .accessibilityIdentifier("app-speech-toggle")
+                }
+            }
+        }
+    }
+}
+
 extension View {
     func bookstrScreenTitle(_ title: String) -> some View {
         self
@@ -103,5 +123,6 @@ extension View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbarRole(.editor)
             .toolbarBackground(.visible, for: .navigationBar)
+            .modifier(BackgroundSpeechToolbarModifier())
     }
 }

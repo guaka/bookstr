@@ -33,11 +33,12 @@ class ReaderTextToSpeechTest {
     fun voiceSelectionPrefersQualityThenRequestedRegionWithinTheLanguage() {
         val source = File("src/main/java/app/bookstr/NarrationService.kt").readText()
 
-        assertTrue(source.contains("val sameLanguageOfflineVoices"))
-        assertTrue(source.contains("val exactRegionOfflineVoices"))
-        assertTrue(source.contains("sameLanguageOfflineVoices.maxWithOrNull"))
-        assertTrue(source.contains("compareBy<Voice> { it.quality }"))
-        assertTrue(source.contains("exactRegionOfflineVoices.any"))
+        assertTrue(source.contains("SpeechVoiceSelection.resolve("))
+        assertTrue(source.contains("SpeechVoiceDecision.UseVoice"))
+        assertTrue(source.contains("SpeechVoiceDecision.UseLocale"))
+        assertTrue(source.contains("SpeechVoiceDecision.KeepEngineDefault"))
+        assertTrue(source.contains("engine.isLanguageAvailable(requestedLocale)"))
+        assertTrue(source.contains("Using engine language settings for"))
     }
 
     @Test
@@ -49,12 +50,12 @@ class ReaderTextToSpeechTest {
         assertTrue(readerSource.contains("showSpeechProgress("))
         assertTrue(serviceSource.contains("engine.setSpeechRate(1.0f)"))
         assertTrue(serviceSource.contains("engine.voices"))
-        assertTrue(serviceSource.contains("it.quality"))
+        assertTrue(serviceSource.contains("SpeechVoiceSelection.resolve("))
         assertTrue(serviceSource.contains("synthesizeToFile"))
         assertTrue(serviceSource.contains("MediaPlayer()"))
         assertTrue(serviceSource.contains("player.currentPosition"))
         assertTrue(serviceSource.contains("SENTENCE_PAUSE_MILLIS = 240L"))
-        assertTrue(serviceSource.contains("val resolvedVoice = sameLanguageOfflineVoices.maxWithOrNull"))
+        assertTrue(serviceSource.contains("KeepEngineDefault"))
     }
 
     @Test

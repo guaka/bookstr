@@ -1799,6 +1799,7 @@
           <input id="words-filter" placeholder="Filter words" aria-label="Filter words" />
           <select id="words-sort" aria-label="Sort words">
             <option value="recent">Recent</option>
+            <option value="added">Recently added</option>
             <option value="first">First saved</option>
             <option value="alphabetical">Alphabetical</option>
             <option value="book">Book</option>
@@ -1837,7 +1838,7 @@
           <div class="settings-section settings-appearance">
             <h3>Reader</h3>
             <label class="setting-option theme-option">
-              <span class="setting-copy"><strong>Appearance</strong><small>Choose the light you want to read in.</small></span>
+              <span class="setting-copy"><strong>Appearance</strong></span>
             <select id="theme-mode">
               <option value="white">White</option>
               <option value="paper">Paper</option>
@@ -1846,19 +1847,18 @@
             </label>
             <label class="setting-option settings-control-row desktop-reader-settings">
               <span class="setting-copy"><strong>Typeface</strong><small>Choose the shape of EPUB and FB2 text.</small></span>
-              <select id="reader-font-family">
-                <option value="serif">Book serif</option>
+              <select id="reader-font">
                 <option value="arial">Arial</option>
-                <option value="sans">Clean sans serif</option>
+                <option value="georgia">Georgia</option>
+                <option value="palatino">Palatino</option>
                 <option value="system">System</option>
               </select>
             </label>
             <label class="setting-option settings-control-row desktop-reader-settings">
-              <span class="setting-copy"><strong>Text alignment</strong><small>Keep the book layout or align paragraph edges.</small></span>
-              <select id="reader-text-align">
-                <option value="book">Book default</option>
+              <span class="setting-copy"><strong>Text alignment</strong><small>Choose left-aligned or justified paragraphs.</small></span>
+              <select id="reader-alignment">
+                <option value="justified">Justified</option>
                 <option value="left">Left aligned</option>
-                <option value="justify">Justified</option>
               </select>
             </label>
             <label class="setting-option settings-range desktop-reader-settings">
@@ -1960,6 +1960,7 @@
     <script src="favorite-references.js"></script>
     <script src="blossom-authorization.js"></script>
     <script src="vocabulary-wire.js"></script>
+    <script src="reader-typography.js"></script>
     <script src="vendor/sql-wasm.js"></script>
     <script>
       const FAVORITES_KEY = 'bookstr_nostr_favorites_v1';
@@ -2139,8 +2140,8 @@
       const desktopSignerDisconnect = document.getElementById('desktop-signer-disconnect');
       const desktopSignerStatus = document.getElementById('desktop-signer-status');
       const themeModeInput = document.getElementById('theme-mode');
-      const readerFontFamilyInput = document.getElementById('reader-font-family');
-      const readerTextAlignInput = document.getElementById('reader-text-align');
+      const readerFontInput = document.getElementById('reader-font');
+      const readerAlignmentInput = document.getElementById('reader-alignment');
       const readerFontSizeInput = document.getElementById('reader-font-size');
       const readerFontSizeValue = document.getElementById('reader-font-size-value');
       const speechVoiceEnglishInput = document.getElementById('speech-voice-en');
@@ -2169,8 +2170,8 @@
           autoReading: true,
           useNip7: true,
           theme: 'white',
-          readerFontFamily: 'serif',
-          readerTextAlign: 'book',
+          readerFont: 'arial',
+          readerAlignment: 'justified',
           readerFontPercent: 100,
           speechVoiceEnglish: '',
           speechVoicePortuguese: '',
@@ -4715,6 +4716,7 @@
         words.sort((a, b) => {
           if (sort === 'alphabetical') return a.word.localeCompare(b.word);
           if (sort === 'first') return a.firstSeenAt - b.firstSeenAt;
+          if (sort === 'added') return b.firstSeenAt - a.firstSeenAt;
           if (sort === 'book') return a.bookTitle.localeCompare(b.bookTitle) || a.word.localeCompare(b.word);
           if (sort === 'seen') return b.lookupCount - a.lookupCount;
           return b.lastSeenAt - a.lastSeenAt;
@@ -6293,6 +6295,7 @@
           book.md5 || BookMetadata.bookIdentity(book),
           { ...book, readUrl: readPath || book.readUrl || book.url || '' },
         );
+        applyOpenReaderTypography();
         if (openGeneration === readerOpenGeneration) status.textContent = `Opened ${book.title || 'book'}.`;
       }
 
@@ -6303,6 +6306,7 @@
         const readerLoad = await readerFrameLoader('fb2', openGeneration);
         if (!readerLoad) return;
         await readerLoad(base64, book.cfi || '', state.settings.theme === 'dark' ? 'night' : state.settings.theme, book.md5 || BookMetadata.bookIdentity(book));
+        applyOpenReaderTypography();
         if (openGeneration === readerOpenGeneration) status.textContent = `Opened ${book.title || 'book'}.`;
       }
 
@@ -7096,7 +7100,7 @@
         const favorites = safeJSONRead(localStorage.getItem(FAVORITES_KEY), []);
         const reading = safeJSONRead(localStorage.getItem(READING_KEY), []);
         const words = safeJSONRead(localStorage.getItem(WORDS_KEY), []);
-        const settings = safeJSONRead(localStorage.getItem(SETTINGS_KEY), { autoReading: true, useNip7: true, theme: 'white', opdsFeeds: [] });
+        const settings = safeJSONRead(localStorage.getItem(SETTINGS_KEY), { autoReading: true, useNip7: true, theme: 'white', readerFont: 'arial', readerAlignment: 'justified', opdsFeeds: [] });
         const nip7 = safeJSONRead(localStorage.getItem(NIP7_STATUS_KEY), { pubkey: '', npub: '', ts: 0 });
         const hasFreshNip7Status = Date.now() - Number(nip7.ts || 0) < NIP7_CACHE_TTL_MS;
 
@@ -7132,12 +7136,10 @@
           if (typeof settings.theme === 'string') {
             state.settings.theme = settings.theme;
           }
-          if (['serif', 'arial', 'sans', 'system'].includes(settings.readerFontFamily)) {
-            state.settings.readerFontFamily = settings.readerFontFamily;
-          }
-          if (['book', 'left', 'justify'].includes(settings.readerTextAlign)) {
-            state.settings.readerTextAlign = settings.readerTextAlign;
-          }
+          state.settings.readerFont = BookstrTypography.normalizeFont(settings.readerFont || settings.readerFontFamily);
+          state.settings.readerAlignment = BookstrTypography.normalizeAlignment(
+            settings.readerAlignment || (settings.readerTextAlign === 'justify' ? 'justified' : settings.readerTextAlign),
+          );
           const readerFontPercent = Number(settings.readerFontPercent);
           if (Number.isFinite(readerFontPercent)) {
             state.settings.readerFontPercent = Math.max(75, Math.min(180, readerFontPercent));
@@ -7165,8 +7167,8 @@
         autoReadingInput.checked = Boolean(state.settings.autoReading);
         nip7EnabledInput.checked = Boolean(state.settings.useNip7);
         themeModeInput.value = ['white', 'paper', 'dark'].includes(state.settings.theme) ? state.settings.theme : 'white';
-        readerFontFamilyInput.value = state.settings.readerFontFamily;
-        readerTextAlignInput.value = state.settings.readerTextAlign;
+        readerFontInput.value = state.settings.readerFont;
+        readerAlignmentInput.value = state.settings.readerAlignment;
         readerFontSizeInput.value = String(state.settings.readerFontPercent);
         speechRateInput.value = String(state.settings.speechRate);
         refreshSpeechVoiceMenus();
@@ -7360,6 +7362,15 @@
         localStorage.setItem(LOCAL_APPEARANCE_KEY, normalized);
       }
 
+      function applyOpenReaderTypography() {
+        const win = readerFrame?.contentWindow;
+        if (typeof win?.setReaderTypography !== 'function') return;
+        win.setReaderTypography(
+          BookstrTypography.normalizeFont(state.settings.readerFont),
+          BookstrTypography.normalizeAlignment(state.settings.readerAlignment),
+        );
+      }
+
       async function connectNip7(opts = {}) {
         const previous = safeJSONRead(localStorage.getItem(NIP7_STATUS_KEY), null);
         if (!state.settings.useNip7) {
@@ -7445,8 +7456,8 @@
         state.settings.autoReading = autoReadingInput.checked;
         state.settings.useNip7 = nip7EnabledInput.checked;
         state.settings.theme = themeModeInput.value;
-        state.settings.readerFontFamily = readerFontFamilyInput.value;
-        state.settings.readerTextAlign = readerTextAlignInput.value;
+        state.settings.readerFont = BookstrTypography.normalizeFont(readerFontInput.value);
+        state.settings.readerAlignment = BookstrTypography.normalizeAlignment(readerAlignmentInput.value);
         state.settings.readerFontPercent = Number(readerFontSizeInput.value);
         state.settings.speechVoiceEnglish = speechVoiceEnglishInput.value;
         state.settings.speechVoicePortuguese = speechVoicePortugueseInput.value;
@@ -7455,6 +7466,7 @@
         saveLocalAppearance(state.settings.theme);
         saveOPDSFeedSettingsFromUI();
         applyTheme(state.settings.theme);
+        applyOpenReaderTypography();
         localStorage.setItem(SETTINGS_KEY, JSON.stringify(state.settings));
         localStorage.setItem('bookstr-reader-font-percent', String(state.settings.readerFontPercent));
         notifyOpenReaderSettings();
@@ -7636,8 +7648,8 @@
       });
       desktopSignerDisconnect.addEventListener('click', () => void disconnectDesktopNostrSigner());
       themeModeInput.addEventListener('change', applySettingsFromUI);
-      readerFontFamilyInput.addEventListener('change', applySettingsFromUI);
-      readerTextAlignInput.addEventListener('change', applySettingsFromUI);
+      readerFontInput.addEventListener('change', applySettingsFromUI);
+      readerAlignmentInput.addEventListener('change', applySettingsFromUI);
       readerFontSizeInput.addEventListener('input', applySettingsFromUI);
       speechVoiceEnglishInput.addEventListener('change', applySettingsFromUI);
       speechVoicePortugueseInput.addEventListener('change', applySettingsFromUI);
