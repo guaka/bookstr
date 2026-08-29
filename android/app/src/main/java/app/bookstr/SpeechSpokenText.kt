@@ -10,12 +10,12 @@ internal object SpeechSpokenText {
     private val attachedParens = Regex("""(?<=\S)\(\d{1,3}\)""")
 
     fun normalize(text: String): String {
-        val withoutCommas = grouped.replace(text) { match -> match.value.replace(",", "") }
-        val withoutSpaces = spaced.replace(withoutCommas) { match -> groupingSpace.replace(match.value, "") }
-        return attachedParens.replace(
-            superscripts.replace(footnoteBrackets.replace(withoutSpaces, "")),
-            "",
-        )
+        val withoutCommas = text.replace(grouped) { match -> match.value.replace(",", "") }
+        val withoutSpaces = withoutCommas.replace(spaced) { match -> groupingSpace.replace(match.value, "") }
+        return withoutSpaces
+            .replace(footnoteBrackets, "")
+            .replace(superscripts, "")
+            .replace(attachedParens, "")
             .replace(Regex(""" {2,}"""), " ")
             .replace(" ,", ",")
             .replace(" .", ".")
