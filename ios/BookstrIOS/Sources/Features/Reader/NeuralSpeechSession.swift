@@ -26,8 +26,8 @@ enum NeuralSpeechAudio {
         return Array(repeating: 0, count: count) + samples
     }
 
-    /// Quiet pad that keeps the audio session alive while the next phrase synthesizes.
-    static func keepAliveSilence(sampleRate: Double, seconds: Double = 0.35) -> [Float] {
+    /// Looping pad for a side-channel keep-alive node (not inserted into spoken audio).
+    static func keepAliveSilence(sampleRate: Double, seconds: Double = 0.25) -> [Float] {
         let rate = sampleRate > 0 ? sampleRate : 24_000
         let count = max(1, Int((max(0.05, seconds) * rate).rounded(.down)))
         return Array(repeating: 0, count: count)
@@ -49,6 +49,8 @@ protocol NeuralSpeechScheduling: AnyObject {
     func pause()
     func resume()
     func stop()
+    /// Side-channel silence so iOS does not suspend the app without delaying spoken phrases.
+    func setKeepAliveActive(_ active: Bool, sampleRate: Double)
     func schedule(
         samples: [Float],
         sampleRate: Double,
@@ -58,9 +60,8 @@ protocol NeuralSpeechScheduling: AnyObject {
 
 @MainActor
 final class NeuralSpeechSession {
-    /// Keep only a couple of spoken buffers ahead so Kokoro PCM cannot jetsam the app
-    /// when the screen is locked and iOS tightens the memory budget.
-    static let maxSpokenAhead = 2
+    /// Keep a few spoken buffers ahead for smooth playback without unbounded PCM growth.
+    static let maxSpokenAhead = 3
 
     private let synthesizer: NeuralSpeechSynthesizing
     private let player: NeuralSpeechScheduling
@@ -110,12 +111,8 @@ final class NeuralSpeechSession {
         synthesizing = false
         ready = [:]
         player.reset()
+        player.setKeepAliveActive(true, sampleRate: sampleRate)
         prefetch()
-        // Start quiet audio immediately so locking the screen / AirPods do not
-        // suspend the app before the first phrase has finished synthesizing.
-        if queuedOnPlayer == 0 {
-            enqueueKeepAlive()
-        }
     }
 
     func pause() { player.pause() }
@@ -130,6 +127,7 @@ final class NeuralSpeechSession {
         chunks.removeAll()
         onPhrase = nil
         onComplete = nil
+        player.setKeepAliveActive(false, sampleRate: sampleRate)
         player.stop()
     }
 
@@ -148,7 +146,13 @@ final class NeuralSpeechSession {
                 case .failure(let error):
                     self.fail(error)
                 case .success(let audio):
-                    self.sampleRate = audio.sampleRate > 0 ? audio.sampleRate : self.sampleRate
+                    let rate = audio.sampleRate > 0 ? audio.sampleRate : self.sampleRate
+                    if rate != self.sampleRate {
+                        self.sampleRate = rate
+                        self.player.setKeepAliveActive(true, sampleRate: rate)
+                    } else {
+                        self.sampleRate = rate
+                    }
                     self.ready[index] = audio
                     self.nextRender = index + 1
                     self.scheduleReady()
@@ -203,32 +207,7 @@ final class NeuralSpeechSession {
                 return
             }
         }
-        // Screen-off / AirPods: if synthesis lags, keep a quiet buffer playing so iOS
-        // does not suspend the app and kill the remaining render queue.
-        if nextSchedule < chunks.count, queuedOnPlayer == 0 {
-            enqueueKeepAlive()
-        }
         prefetch()
-    }
-
-    private func enqueueKeepAlive() {
-        queuedOnPlayer += 1
-        let active = generation
-        let rate = sampleRate
-        let silence = NeuralSpeechAudio.keepAliveSilence(sampleRate: rate)
-        do {
-            try player.schedule(samples: silence, sampleRate: rate) { [weak self] in
-                DispatchQueue.main.async {
-                    guard let self, self.generation == active else { return }
-                    self.queuedOnPlayer -= 1
-                    self.scheduleReady()
-                    self.prefetch()
-                }
-            }
-        } catch {
-            queuedOnPlayer -= 1
-            fail(error)
-        }
     }
 
     private func finish() {

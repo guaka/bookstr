@@ -99,23 +99,31 @@ enum NeuralSpeechError: LocalizedError {
 private final class NeuralAudioPlayer: NeuralSpeechScheduling {
     private let audioEngine = AVAudioEngine()
     private let player = AVAudioPlayerNode()
+    private let keepAlive = AVAudioPlayerNode()
     private var connectedRate: Double = 0
+    private var keepAliveRate: Double = 0
+    private var keepAliveEnabled = false
 
-    var isPlaying: Bool { player.isPlaying }
+    var isPlaying: Bool { player.isPlaying || keepAlive.isPlaying }
 
     init() {
         audioEngine.attach(player)
+        audioEngine.attach(keepAlive)
     }
 
     func reset() {}
 
     func pause() {
         player.pause()
+        keepAlive.pause()
     }
 
     func resume() {
         if audioEngine.isRunning == false {
             try? audioEngine.start()
+        }
+        if keepAliveEnabled, keepAlive.isPlaying == false {
+            keepAlive.play()
         }
         if player.isPlaying == false {
             player.play()
@@ -123,11 +131,54 @@ private final class NeuralAudioPlayer: NeuralSpeechScheduling {
     }
 
     func stop() {
+        keepAliveEnabled = false
+        keepAliveRate = 0
+        keepAlive.stop()
         player.stop()
         if audioEngine.isRunning {
             audioEngine.stop()
         }
         connectedRate = 0
+    }
+
+    func setKeepAliveActive(_ active: Bool, sampleRate: Double) {
+        guard active else {
+            keepAliveEnabled = false
+            keepAlive.stop()
+            keepAliveRate = 0
+            return
+        }
+        let rate = sampleRate > 0 ? sampleRate : 24_000
+        if keepAliveEnabled, keepAliveRate == rate, keepAlive.isPlaying {
+            return
+        }
+        keepAliveEnabled = true
+        keepAliveRate = rate
+        keepAlive.stop()
+        do {
+            try prepare(sampleRate: rate)
+            let silence = NeuralSpeechAudio.keepAliveSilence(sampleRate: rate)
+            guard let format = AVAudioFormat(
+                commonFormat: .pcmFormatFloat32,
+                sampleRate: rate,
+                channels: 1,
+                interleaved: false
+            ),
+                  let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: AVAudioFrameCount(silence.count)),
+                  let channel = buffer.floatChannelData?[0]
+            else { return }
+            buffer.frameLength = AVAudioFrameCount(silence.count)
+            silence.withUnsafeBufferPointer { source in
+                guard let address = source.baseAddress else { return }
+                channel.update(from: address, count: silence.count)
+            }
+            keepAlive.scheduleBuffer(buffer, at: nil, options: .loops)
+            if keepAlive.isPlaying == false {
+                keepAlive.play()
+            }
+        } catch {
+            keepAliveEnabled = false
+        }
     }
 
     func schedule(
@@ -161,6 +212,7 @@ private final class NeuralAudioPlayer: NeuralSpeechScheduling {
     private func prepare(sampleRate: Double) throws {
         if connectedRate != sampleRate {
             audioEngine.disconnectNodeOutput(player)
+            audioEngine.disconnectNodeOutput(keepAlive)
             guard let format = AVAudioFormat(
                 commonFormat: .pcmFormatFloat32,
                 sampleRate: sampleRate,
@@ -168,6 +220,7 @@ private final class NeuralAudioPlayer: NeuralSpeechScheduling {
                 interleaved: false
             ) else { throw NeuralSpeechError.generationFailed }
             audioEngine.connect(player, to: audioEngine.mainMixerNode, format: format)
+            audioEngine.connect(keepAlive, to: audioEngine.mainMixerNode, format: format)
             connectedRate = sampleRate
         }
         if audioEngine.isRunning == false {

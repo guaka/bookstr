@@ -467,7 +467,7 @@ final class ReaderAssetContractTests: XCTestCase {
             .deletingLastPathComponent()
             .appendingPathComponent("Sources/Features/Reader/NeuralSpeechSession.swift")
         let sessionSource = try String(contentsOf: sessionURL, encoding: .utf8)
-        XCTAssertTrue(sessionSource.contains("enqueueKeepAlive()"))
+        XCTAssertTrue(sessionSource.contains("setKeepAliveActive(true"))
         XCTAssertTrue(sessionSource.contains("keepAliveSilence"))
         XCTAssertTrue(sessionSource.contains("maxSpokenAhead"))
         let playbackURL = URL(fileURLWithPath: #filePath)
@@ -476,6 +476,7 @@ final class ReaderAssetContractTests: XCTestCase {
             .appendingPathComponent("Sources/Features/Reader/NeuralSpeechPlayback.swift")
         let playbackSource = try String(contentsOf: playbackURL, encoding: .utf8)
         XCTAssertTrue(playbackSource.contains("beginBackgroundTask(withName: \"bookstr-neural-tts\""))
+        XCTAssertTrue(playbackSource.contains("options: .loops"))
     }
 
     func testBundledVendorAssetsMatchCanonicalSourcesAndLockedHashes() throws {

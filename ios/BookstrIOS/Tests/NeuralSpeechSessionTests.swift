@@ -88,26 +88,24 @@ final class NeuralSpeechSessionTests: XCTestCase {
             }
         )
         XCTAssertEqual(synthesizer.texts, ["One."])
-        XCTAssertEqual(player.scheduledCount, 1, "keep-alive silence starts before the first render finishes")
+        XCTAssertTrue(player.keepAliveActive)
         XCTAssertTrue(phrases.isEmpty)
+        XCTAssertEqual(player.scheduledCount, 0)
 
         synthesizer.complete()
         await settle()
         XCTAssertEqual(phrases, [first])
         XCTAssertEqual(phrases[0].spokenEnd, 4)
-        XCTAssertEqual(player.scheduledCount, 2)
+        XCTAssertEqual(player.scheduledCount, 1)
         XCTAssertTrue(session.isPlaying)
-        XCTAssertEqual(player.scheduledSampleCounts[1], 20)
+        XCTAssertEqual(player.scheduledSampleCounts[0], 20)
         XCTAssertEqual(synthesizer.texts, ["One.", "Two!"], "the next phrase must start synthesizing before the current audio finishes")
         synthesizer.complete()
         await settle()
-        XCTAssertEqual(player.scheduledCount, 3)
-        XCTAssertEqual(player.scheduledSampleCounts[2], 420)
+        XCTAssertEqual(player.scheduledCount, 2)
+        XCTAssertEqual(player.scheduledSampleCounts[1], 420)
         XCTAssertEqual(phrases, [first], "the highlight stays on the playing phrase until its audio ends")
 
-        // Drain keep-alive, then the first spoken buffer.
-        player.finishNext()
-        await settle()
         player.finishNext()
         await settle()
         XCTAssertEqual(phrases, [first, second])
@@ -117,9 +115,10 @@ final class NeuralSpeechSessionTests: XCTestCase {
         player.finishNext()
         await settle()
         XCTAssertTrue(finished)
+        XCTAssertFalse(player.keepAliveActive)
     }
 
-    func testKeepAliveSilenceBridgesSynthesisUnderruns() async {
+    func testSideChannelKeepAliveDoesNotDelaySpokenAudio() async {
         let synthesizer = MockNeuralSynthesizer()
         synthesizer.sampleCount = 8
         let player = MockNeuralPlayer()
@@ -137,25 +136,19 @@ final class NeuralSpeechSessionTests: XCTestCase {
                 if case .success = result { finished = true }
             }
         )
-        XCTAssertEqual(player.scheduledSampleCounts.first, NeuralSpeechAudio.keepAliveSilence(sampleRate: 24_000).count)
+        XCTAssertTrue(player.keepAliveActive)
+        XCTAssertEqual(player.scheduledCount, 0)
         synthesizer.complete()
         await settle()
-        XCTAssertEqual(player.scheduledCount, 2)
+        XCTAssertEqual(player.scheduledCount, 1)
+        XCTAssertEqual(player.scheduledSampleCounts[0], 8)
 
-        // Finish keep-alive + first spoken buffer before the second phrase is ready.
         player.finishNext()
         await settle()
-        player.finishNext()
-        await settle()
-        XCTAssertGreaterThanOrEqual(player.scheduledCount, 3, "silence must keep audio alive while synthesis catches up")
-        XCTAssertTrue(session.isPlaying)
-
         synthesizer.complete()
         await settle()
-        while !finished, !player.completions.isEmpty {
-            player.finishNext()
-            await settle()
-        }
+        player.finishNext()
+        await settle()
         XCTAssertTrue(finished)
     }
 
@@ -167,6 +160,7 @@ final class NeuralSpeechSessionTests: XCTestCase {
             SpeechQueueChunk(text: "One.", offset: 0, pauseSeconds: 0),
             SpeechQueueChunk(text: "Two.", offset: 5, pauseSeconds: 0),
             SpeechQueueChunk(text: "Three.", offset: 10, pauseSeconds: 0),
+            SpeechQueueChunk(text: "Four.", offset: 17, pauseSeconds: 0),
         ]
         session.start(
             chunks: chunks,
@@ -179,21 +173,20 @@ final class NeuralSpeechSessionTests: XCTestCase {
         await settle()
         synthesizer.complete()
         await settle()
-        XCTAssertEqual(synthesizer.texts, ["One.", "Two."], "must not synthesize far ahead of playback")
-        XCTAssertEqual(NeuralSpeechSession.maxSpokenAhead, 2)
+        synthesizer.complete()
+        await settle()
+        XCTAssertEqual(synthesizer.texts, ["One.", "Two.", "Three."], "must not synthesize far ahead of playback")
+        XCTAssertEqual(NeuralSpeechSession.maxSpokenAhead, 3)
 
-        // Drain keep-alive + first spoken buffer so another render slot opens.
         player.finishNext()
         await settle()
-        player.finishNext()
-        await settle()
-        XCTAssertEqual(synthesizer.texts, ["One.", "Two.", "Three."])
+        XCTAssertEqual(synthesizer.texts, ["One.", "Two.", "Three.", "Four."])
         session.stop()
     }
 
     func testKeepAliveSilenceUsesSampleRate() {
-        XCTAssertEqual(NeuralSpeechAudio.keepAliveSilence(sampleRate: 1_000, seconds: 0.35).count, 350)
-        XCTAssertEqual(NeuralSpeechAudio.keepAliveSilence(sampleRate: 0, seconds: 0.35).count, 8_400)
+        XCTAssertEqual(NeuralSpeechAudio.keepAliveSilence(sampleRate: 1_000, seconds: 0.25).count, 250)
+        XCTAssertEqual(NeuralSpeechAudio.keepAliveSilence(sampleRate: 0, seconds: 0.25).count, 6_000)
         XCTAssertEqual(NeuralSpeechAudio.keepAliveSilence(sampleRate: 1_000, seconds: 0).count, 50)
     }
 
@@ -214,8 +207,8 @@ final class NeuralSpeechSessionTests: XCTestCase {
         synthesizer.fail(NSError(domain: "test", code: 1))
         await settle()
         XCTAssertTrue(failed)
-        XCTAssertEqual(player.scheduledCount, 1, "only the keep-alive pad is queued before render fails")
-        XCTAssertTrue(player.completions.isEmpty)
+        XCTAssertEqual(player.scheduledCount, 0)
+        XCTAssertFalse(player.keepAliveActive)
     }
 
     func testStopIgnoresInFlightSynthesis() async {
@@ -272,9 +265,9 @@ final class NeuralSpeechSessionTests: XCTestCase {
                 if case .failure = result { failed = true }
             }
         )
-        // Keep-alive silence is scheduled first and surfaces the player error.
+        synthesizer.complete()
+        await settle()
         XCTAssertTrue(failed)
-        XCTAssertEqual(player.scheduledCount, 0)
     }
 
     private func settle() async {
@@ -315,9 +308,10 @@ private final class MockNeuralPlayer: NeuralSpeechScheduling {
     private(set) var scheduledSampleCounts: [Int] = []
     private(set) var pauseCount = 0
     private(set) var resumeCount = 0
+    private(set) var keepAliveActive = false
     private(set) var completions: [() -> Void] = []
     var scheduleError: Error?
-    var isPlaying: Bool { !completions.isEmpty }
+    var isPlaying: Bool { !completions.isEmpty || keepAliveActive }
 
     func reset() {
         scheduledCount = 0
@@ -328,6 +322,9 @@ private final class MockNeuralPlayer: NeuralSpeechScheduling {
     func pause() { pauseCount += 1 }
     func resume() { resumeCount += 1 }
     func stop() { completions.removeAll() }
+    func setKeepAliveActive(_ active: Bool, sampleRate: Double) {
+        keepAliveActive = active
+    }
 
     func schedule(
         samples: [Float],
