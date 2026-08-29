@@ -39,6 +39,10 @@ final class ReaderAssetContractTests: XCTestCase {
         XCTAssertEqual(SpeechSpokenText.normalize("See chapter 12."), "See chapter 12.")
         XCTAssertEqual(SpeechSpokenText.normalize("word(1) next"), "word next")
         XCTAssertEqual(SpeechSpokenText.normalize("(1) First item"), "(1) First item")
+        XCTAssertEqual(SpeechSpokenText.normalize("He walked home.\""), "He walked home.")
+        XCTAssertEqual(SpeechSpokenText.normalize("\"Hello,\" she said."), "Hello, she said.")
+        XCTAssertEqual(SpeechSpokenText.normalize("\""), "")
+        XCTAssertEqual(SpeechSpokenText.normalize(".\""), ".")
         XCTAssertEqual(SpeechQueueChunk(text: "He left[1].", offset: 0, pauseSeconds: 0).speak, "He left.")
         XCTAssertEqual(
             SpeechQueueChunk(text: "100,000", offset: 0, pauseSeconds: 0, speak: "one hundred thousand").speak,
@@ -725,6 +729,14 @@ final class ReaderAssetContractTests: XCTestCase {
         let logView = try String(contentsOf: logViewURL, encoding: .utf8)
         XCTAssertTrue(logView.contains("BookstrDebugLog.shared.exportText"))
         XCTAssertTrue(logView.contains("scrollTo(\"log-bottom\""))
+        let uiTestURL = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent("UITests/AppShellUITests.swift")
+        let uiTest = try String(contentsOf: uiTestURL, encoding: .utf8)
+        XCTAssertTrue(uiTest.contains("buttons[\"Back\"]"))
+        XCTAssertTrue(uiTest.contains("app-speech-toggle"))
+        XCTAssertTrue(uiTest.contains("Settings did not return from the English voice picker"))
     }
 
     func testBundledVendorAssetsMatchCanonicalSourcesAndLockedHashes() throws {

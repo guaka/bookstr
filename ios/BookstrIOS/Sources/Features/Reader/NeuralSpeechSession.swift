@@ -7,10 +7,10 @@ enum NeuralSpeechInput {
     static let kokoroCharacterLimit = 140
 
     static func speakable(_ text: String) -> String? {
-        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return nil }
-        guard trimmed.contains(where: { $0.isLetter || $0.isNumber }) else { return nil }
-        return trimmed
+        let spoken = SpeechSpokenText.normalize(text)
+        guard !spoken.isEmpty else { return nil }
+        guard spoken.contains(where: { $0.isLetter || $0.isNumber }) else { return nil }
+        return spoken
     }
 
     static func synthesisPhrases(_ text: String, engine: SpeechEngineID) -> [String] {

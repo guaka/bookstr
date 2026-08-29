@@ -30,6 +30,10 @@ final class AppShellUITests: XCTestCase {
             englishVoice.tap()
             XCTAssertTrue(pickerChoice("Kokoro · English").waitForExistence(timeout: 8))
             dismissSettingsPicker()
+            XCTAssertTrue(
+                englishVoice.waitForExistence(timeout: 4),
+                "Settings did not return from the English voice picker"
+            )
         }
         reveal(app.buttons["speech-model-kokoro_en"])
         XCTAssertTrue(app.buttons["speech-model-kokoro_en"].waitForExistence(timeout: 4), "Settings did not expose the Kokoro download control")
@@ -86,7 +90,8 @@ final class AppShellUITests: XCTestCase {
     }
 
     private func reveal(_ element: XCUIElement) {
-        for _ in 0..<8 where !element.isHittable {
+        for _ in 0..<24 {
+            if element.exists { return }
             app.swipeUp()
         }
     }
@@ -96,10 +101,19 @@ final class AppShellUITests: XCTestCase {
     }
 
     private func dismissSettingsPicker() {
-        if app.navigationBars.buttons["Settings"].waitForExistence(timeout: 2) {
-            app.navigationBars.buttons["Settings"].tap()
-        } else {
-            app.swipeDown()
+        let bar = app.navigationBars.firstMatch
+        if bar.buttons["Settings"].waitForExistence(timeout: 1), bar.buttons["Settings"].isHittable {
+            bar.buttons["Settings"].tap()
+            return
         }
+        if bar.buttons["Back"].waitForExistence(timeout: 1), bar.buttons["Back"].isHittable {
+            bar.buttons["Back"].tap()
+            return
+        }
+        // toolbarRole(.editor) hides the previous title, leaving a unlabeled chevron.
+        let back = bar.buttons.allElementsBoundByIndex.first { button in
+            button.identifier != "app-speech-toggle" && button.isHittable
+        }
+        back?.tap()
     }
 }

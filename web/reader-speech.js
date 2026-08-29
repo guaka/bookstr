@@ -24,7 +24,7 @@
       .replace(/\u200B/g, "")
       .replace(/\r/g, " ")
       .replace(/\s+/g, " ")
-      .replace(/(\.\.\.|[.,;:!?…])\s*/g, "$1 ")
+      .replace(/(\.\.\.|[.,;:!?…])(?!["”’'])\s*/g, "$1 ")
       .replace(/(\d{1,3}(?:, \d{3})+)/g, function(match) {
         return match.replace(/, /g, ",");
       })
@@ -86,7 +86,7 @@
         // The deterministic fallback below is used when a platform segmenter fails.
       }
     }
-    const fallback = text.match(/[^.!?…]+(?:\.\.\.|[.!?…]+)(?:\s+|$)|[^.!?…]+$/g) || [];
+    const fallback = text.match(/[^.!?…]+(?:\.\.\.|[.!?…]+)["”’']*(?:\s+|$)|[^.!?…]+$/g) || [];
     return fallback.map(normalizeText).filter(Boolean);
   }
 
@@ -101,6 +101,7 @@
       .replace(/\[\d{1,3}\]/g, "")
       .replace(/[\u00B9\u00B2\u00B3\u2070\u2074-\u2079]+/g, "")
       .replace(/(?<=\S)\(\d{1,3}\)/g, "")
+      .replace(/[“”«»„"]/g, "")
       .replace(/[ \t]+\n/g, "\n")
       .replace(/[ ]{2,}/g, " ")
       .replace(/ ([,.;:!?])/g, "$1")
@@ -437,13 +438,13 @@
   function pauseAfter(text) {
     const clean = String(text || "").trim();
     if (!clean) return CONTINUATION_PAUSE_MS;
-    if (/\.\.\.$/.test(clean)) return ELLIPSIS_PAUSE_MS;
-    if (/[!?…]$/.test(clean)) return EMPHATIC_PAUSE_MS;
+    if (/\.\.\.["'”’)\]]*$/.test(clean)) return ELLIPSIS_PAUSE_MS;
+    if (/[!?…]["'”’)\]]*$/.test(clean)) return EMPHATIC_PAUSE_MS;
     if (/(?:--|[—–])$/.test(clean)) return DASH_PAUSE_MS;
     if (/^\(/.test(clean) || /\)[.!?…"”’']*$/.test(clean)) return PAREN_PAUSE_MS;
     if (/,$/.test(clean)) return COMMA_PAUSE_MS;
     if (/[;:]$/.test(clean)) return CLAUSE_PAUSE_MS;
-    if (/\.$/.test(clean)) return SENTENCE_PAUSE_MS;
+    if (/\.["'”’)\]]*$/.test(clean)) return SENTENCE_PAUSE_MS;
     return CONTINUATION_PAUSE_MS;
   }
 
@@ -462,6 +463,8 @@
       const ranges = chunkParagraph(paragraph, softLimit, hardLimit, settings.segmenterFactory);
       ranges.forEach(function(range, rangeIndex) {
         const chunkText = paragraph.slice(range.start, range.end);
+        const spoken = spokenText(chunkText);
+        if (!/[\p{L}\p{N}]/u.test(spoken)) return;
         let pauseMs = 0;
         if (chunks.length) {
           pauseMs = rangeIndex === 0 && paragraphIndex > 0
@@ -470,7 +473,7 @@
         }
         const chunk = {
           text: chunkText,
-          spoken: spokenText(chunkText),
+          spoken,
           start: paragraphStart + range.start,
           pauseMs,
         };

@@ -35,6 +35,7 @@ enum SpeechSpokenText {
         replace(pattern: #"\[\d{1,3}\]"#, in: output) { _ in "" }
         replace(pattern: #"[\u00B9\u00B2\u00B3\u2070\u2074-\u2079]+"#, in: output) { _ in "" }
         replace(pattern: #"(?<=\S)\(\d{1,3}\)"#, in: output) { _ in "" }
+        replace(pattern: #"["“”«»„]"#, in: output) { _ in "" }
         var spoken = output as String
         while spoken.contains("  ") {
             spoken = spoken.replacingOccurrences(of: "  ", with: " ")
