@@ -23,6 +23,7 @@ struct SettingsView: View {
     @State private var dictionaryPacks: [DictionaryPack] = []
     @State private var dictionarySelection = DictionaryPairSelection()
     @State private var dictionaryBusy = false
+    @StateObject private var speechModels = SpeechModelStore()
     @FocusState private var focusedField: SettingsField?
 
     var body: some View {
@@ -33,12 +34,40 @@ struct SettingsView: View {
                         Text(item.rawValue.capitalized).tag(item)
                     }
                 }
-                Picker("Reading voice", selection: $settings.speechVoiceIdentifier) {
-                    Text("Best installed voice").tag("")
-                    ForEach(speechVoices, id: \.identifier) { voice in
-                        Text("\(voice.name) · \(voice.language) · \(voiceQuality(voice))")
-                            .tag(voice.identifier)
+                Picker("Font", selection: $settings.readerFont) {
+                    ForEach(ReaderFont.allCases, id: \.self) { item in
+                        Text(item.label).tag(item)
                     }
+                }
+                .accessibilityIdentifier("reader-font")
+                Picker("Alignment", selection: $settings.readerAlignment) {
+                    ForEach(ReaderAlignment.allCases, id: \.self) { item in
+                        Text(item.label).tag(item)
+                    }
+                }
+                .accessibilityIdentifier("reader-alignment")
+                Picker("English", selection: englishVoice) {
+                    Text("System default").tag(SpeechVoiceID.systemDefault)
+                    ForEach(SpeechVoiceID.speakers(for: "en"), id: \.id) { speaker in
+                        Text(speaker.name).tag(speaker.id)
+                    }
+                    ForEach(speechVoices(for: "en"), id: \.identifier) { voice in
+                        Text("\(voice.name) · \(voiceQuality(voice))").tag(voice.identifier)
+                    }
+                }
+                .accessibilityIdentifier("speech-voice-en")
+                Picker("Portuguese", selection: portugueseVoice) {
+                    Text("System default").tag(SpeechVoiceID.systemDefault)
+                    ForEach(SpeechVoiceID.speakers(for: "pt"), id: \.id) { speaker in
+                        Text(speaker.name).tag(speaker.id)
+                    }
+                    ForEach(speechVoices(for: "pt"), id: \.identifier) { voice in
+                        Text("\(voice.name) · \(voice.language) · \(voiceQuality(voice))").tag(voice.identifier)
+                    }
+                }
+                .accessibilityIdentifier("speech-voice-pt")
+                ForEach(SpeechEngineID.allCases.filter(\.isNeural)) { engine in
+                    speechModelControl(engine)
                 }
                 VStack(alignment: .leading) {
                     HStack {
@@ -138,6 +167,7 @@ struct SettingsView: View {
                 TextEditor(text: $relaysRaw)
                     .frame(minHeight: 80)
                     .focused($focusedField, equals: .relays)
+                    .accessibilityIdentifier("settings-relays-editor")
                 Button("Save relays") {
                     container.settingsRepository.relays = relaysRaw
                         .split(whereSeparator: \.isNewline)
@@ -146,6 +176,14 @@ struct SettingsView: View {
                         .filter { !$0.isEmpty }
                     status = "Relays saved"
                 }
+                .accessibilityIdentifier("settings-save-relays")
+            }
+
+            Section {
+                NavigationLink("Speech logs") {
+                    SpeechDebugLogView()
+                }
+                .accessibilityIdentifier("speech-debug-logs")
             }
 
             Section {
@@ -292,12 +330,29 @@ struct SettingsView: View {
         return code.uppercased()
     }
 
-    private var speechVoices: [AVSpeechSynthesisVoice] {
-        AVSpeechSynthesisVoice.speechVoices().sorted {
-            if $0.language != $1.language { return $0.language < $1.language }
-            if $0.quality != $1.quality { return $0.quality.rawValue > $1.quality.rawValue }
-            return $0.name < $1.name
-        }
+    private var englishVoice: Binding<String> {
+        languageVoiceBinding("en")
+    }
+
+    private var portugueseVoice: Binding<String> {
+        languageVoiceBinding("pt-pt")
+    }
+
+    private func languageVoiceBinding(_ language: String) -> Binding<String> {
+        Binding(
+            get: { settings.speechChoice(for: language).voiceIdentifier },
+            set: { settings.setSpeechVoice($0, for: language) }
+        )
+    }
+
+    private func speechVoices(for language: String) -> [AVSpeechSynthesisVoice] {
+        let base = SpeechLanguageSettings.baseLanguage(language)
+        return AVSpeechSynthesisVoice.speechVoices()
+            .filter { SpeechLanguageSettings.baseLanguage($0.language) == base }
+            .sorted {
+                if $0.quality != $1.quality { return $0.quality.rawValue > $1.quality.rawValue }
+                return $0.name < $1.name
+            }
     }
 
     private func voiceQuality(_ voice: AVSpeechSynthesisVoice) -> String {
@@ -305,6 +360,47 @@ struct SettingsView: View {
         case .premium: return "Premium"
         case .enhanced: return "Enhanced"
         default: return "Standard"
+        }
+    }
+
+    @ViewBuilder
+    private func speechModelControl(_ engine: SpeechEngineID) -> some View {
+        if let model = SpeechModelCatalog.model(engine) {
+            if speechModels.isInstalled(engine) {
+                HStack {
+                    Text(engine.label)
+                    Spacer()
+                    Text(ByteCountFormatter.string(fromByteCount: model.approximateBytes, countStyle: .file))
+                        .foregroundStyle(.secondary)
+                    Button(role: .destructive) {
+                        speechModels.remove(engine)
+                        if settings.speechChoice(for: engine.preferredLanguageTag).neuralEngine == engine {
+                            settings.setSpeechVoice(SpeechVoiceID.systemDefault, for: engine.preferredLanguageTag)
+                        }
+                    } label: {
+                        Image(systemName: "trash")
+                    }
+                    .accessibilityLabel("Remove \(engine.label)")
+                    .accessibilityIdentifier("speech-model-remove-\(engine.rawValue)")
+                }
+            } else if speechModels.installing == engine {
+                HStack {
+                    ProgressView()
+                    Text("Downloading…")
+                    Spacer()
+                    Text("\(speechModels.completedFiles)/\(model.files.count)")
+                        .foregroundStyle(.secondary)
+                }
+                .accessibilityIdentifier("speech-model-progress-\(engine.rawValue)")
+            } else {
+                Button("Download \(engine.label) · \(ByteCountFormatter.string(fromByteCount: model.approximateBytes, countStyle: .file))") {
+                    Task { await speechModels.install(engine) }
+                }
+                .accessibilityIdentifier("speech-model-\(engine.rawValue)")
+            }
+            if speechModels.lastErrorEngine == engine, let error = speechModels.errorMessage {
+                Text(error).foregroundStyle(.red)
+            }
         }
     }
 

@@ -33,8 +33,8 @@ struct RootView: View {
     @Environment(\.scenePhase) private var scenePhase
     @EnvironmentObject private var container: AppContainer
     @EnvironmentObject private var settings: SettingsRepository
+    @EnvironmentObject private var playback: ReaderPlaybackSession
     @State private var selectedTab = 2
-    @State private var continuation: CatalogBook?
     @State private var continueError: String?
     @State private var attemptedInitialContinuation = false
     @StateObject private var favoriteNetwork = FavoriteNetworkRecoveryMonitor()
@@ -100,6 +100,24 @@ struct RootView: View {
         .tint(settings.theme.primary)
         .preferredColorScheme(settings.theme.colorScheme)
         .background(settings.theme.background.ignoresSafeArea())
+        .overlay {
+            if let item = playback.item {
+                ReaderHostView(
+                    book: item.book,
+                    preparedURL: item.preparedURL,
+                    initialLocator: item.initialLocator,
+                    highlightLocator: item.highlightLocator,
+                    showsReaderChrome: playback.isVisible,
+                    onClose: { playback.requestClose() }
+                )
+                .id(playback.presentationNonce)
+                .environmentObject(container)
+                .environmentObject(playback)
+                .opacity(playback.isVisible ? 1 : 0)
+                .allowsHitTesting(playback.isVisible)
+                .accessibilityHidden(!playback.isVisible)
+            }
+        }
         .task {
             _ = await container.nostrSyncService.retryPendingFavorites()
             guard !attemptedInitialContinuation else { return }
@@ -118,12 +136,6 @@ struct RootView: View {
             guard token > 0 else { return }
             selectedTab = 3
         }
-        .fullScreenCover(item: $continuation) { book in
-            ReaderHostView(book: book) {
-                continuation = nil
-            }
-                .environmentObject(container)
-        }
         .alert("Continue reading", isPresented: Binding(
             get: { continueError != nil },
             set: { if !$0 { continueError = nil } }
@@ -135,13 +147,22 @@ struct RootView: View {
     }
 
     private func openContinuation(reportMissing: Bool) {
+        if let current = playback.item {
+            presentWithoutAnimation(
+                current.book,
+                preparedURL: current.preparedURL,
+                initialLocator: current.initialLocator,
+                highlightLocator: current.highlightLocator
+            )
+            return
+        }
         guard let session = settings.readerSession() else {
             if reportMissing { continueError = "No recent book to continue." }
             return
         }
         let downloaded = container.catalogRepository.downloadedBooks()
         if let book = downloaded.first(where: { $0.id == session.bookId }) {
-            presentWithoutAnimation(book)
+            presentWithoutAnimation(book, initialLocator: continuationLocator(for: book))
             return
         }
         let fallback = CatalogBook(
@@ -162,14 +183,33 @@ struct RootView: View {
             if reportMissing { continueError = "The recent book is no longer downloaded." }
             return
         }
-        presentWithoutAnimation(fallback)
+        presentWithoutAnimation(fallback, initialLocator: continuationLocator(for: fallback))
     }
 
-    private func presentWithoutAnimation(_ book: CatalogBook) {
+    private func continuationLocator(for book: CatalogBook) -> String? {
+        let saved = container.progressRepository.get(bookId: book.id).cfi
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        if saved.isEmpty == false { return saved }
+        let session = container.settingsRepository.readerSession()?.locator?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return session?.isEmpty == false ? session : nil
+    }
+
+    private func presentWithoutAnimation(
+        _ book: CatalogBook,
+        preparedURL: URL? = nil,
+        initialLocator: String? = nil,
+        highlightLocator: String? = nil
+    ) {
         var transaction = Transaction(animation: nil)
         transaction.disablesAnimations = true
         withTransaction(transaction) {
-            continuation = book
+            playback.present(
+                book: book,
+                preparedURL: preparedURL,
+                initialLocator: initialLocator,
+                highlightLocator: highlightLocator
+            )
         }
     }
 }

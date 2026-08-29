@@ -2,9 +2,8 @@ import SwiftUI
 
 struct LibraryView: View {
     @EnvironmentObject private var container: AppContainer
+    @EnvironmentObject private var playback: ReaderPlaybackSession
     @StateObject private var viewModel = LibraryViewModel()
-    @State private var selectedBook: CatalogBook?
-    @State private var selectedBookURL: URL?
     @State private var openError: String?
     @State private var openingBookID: String?
     @State private var rightsDetails: RightsDetailsItem?
@@ -131,14 +130,8 @@ struct LibraryView: View {
                 .accessibilityIdentifier("library-sort")
             }
         }
-        .fullScreenCover(item: $selectedBook, onDismiss: {
-            selectedBookURL = nil
-            Task { await viewModel.load() }
-        }) { book in
-            ReaderHostView(book: book, preparedURL: selectedBookURL) {
-                selectedBook = nil
-            }
-                .id(book.id)
+        .onChange(of: playback.isVisible) { _, visible in
+            if !visible { Task { await viewModel.load() } }
         }
         .alert("Can't open book", isPresented: Binding(
             get: { openError != nil },
@@ -196,8 +189,7 @@ struct LibraryView: View {
     private func open(_ book: CatalogBook) {
         guard openingBookID == nil else { return }
         let local = container.catalogRepository.localPublication(for: book)
-        selectedBookURL = local?.url
-        selectedBook = local?.book ?? book
+        playback.present(book: local?.book ?? book, preparedURL: local?.url)
     }
 
     private func publicationLabel(_ favorite: ExternalFavorite) -> String {

@@ -13,6 +13,7 @@ struct BookstrIOSApp: App {
             RootView()
                 .environmentObject(container)
                 .environmentObject(container.settingsRepository)
+                .environmentObject(container.readerPlayback)
                 .statusBarHidden(true)
                 .persistentSystemOverlays(.hidden)
                 .background(TopSafeAreaCollapser())

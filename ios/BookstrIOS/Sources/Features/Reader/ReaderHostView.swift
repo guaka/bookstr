@@ -5,11 +5,13 @@ import UIKit
 
 struct ReaderHostView: View {
     @EnvironmentObject private var container: AppContainer
+    @EnvironmentObject private var playback: ReaderPlaybackSession
     @Environment(\.dismiss) private var dismiss
     let book: CatalogBook
     var preparedURL: URL? = nil
     var initialLocator: String? = nil
     var highlightLocator: String? = nil
+    var showsReaderChrome: Bool = true
     var onClose: (() -> Void)? = nil
     @State private var localURL: URL?
     // The host must render a concrete view on its first frame. Starting with
@@ -20,8 +22,6 @@ struct ReaderHostView: View {
     @State private var showSections = false
     @State private var showRightsDetails = false
     @State private var pdfSelection: PDFTextSelection?
-    @State private var readerNotice: String?
-    @State private var snippetBusy = false
     @State private var showSearch = false
     @State private var searchQuery = ""
     @StateObject private var epubController = EPUBReaderController()
@@ -68,10 +68,10 @@ struct ReaderHostView: View {
         }
         .background(container.settingsRepository.theme.background)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .toolbar(.hidden, for: .navigationBar)
-        .toolbar(.hidden, for: .tabBar)
-        .statusBarHidden(true)
-        .persistentSystemOverlays(.hidden)
+        .toolbar(showsReaderChrome ? .hidden : .automatic, for: .navigationBar)
+        .toolbar(showsReaderChrome ? .hidden : .automatic, for: .tabBar)
+        .statusBarHidden(showsReaderChrome)
+        .persistentSystemOverlays(showsReaderChrome ? .hidden : .automatic)
         .overlay {
             if book.format == .epub, let readerError = epubController.errorMessage {
                 VStack(spacing: 12) {
@@ -91,23 +91,9 @@ struct ReaderHostView: View {
             }
         }
         .overlay(alignment: .top) {
-            VStack(spacing: 0) {
-                readerTopBar
-                selectionActionBar
-            }
+            readerTopBar
         }
         .overlay(alignment: .bottom) { readerBottomBar }
-        .overlay(alignment: .bottom) {
-            if let readerNotice {
-                Text(readerNotice)
-                    .font(.footnote)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
-                    .background(.regularMaterial, in: Capsule())
-                    .padding(.bottom, 26)
-                    .onTapGesture { self.readerNotice = nil }
-            }
-        }
         .ignoresSafeArea(.all, edges: .all)
         .sheet(isPresented: $showSections) {
             NavigationStack {
@@ -183,21 +169,49 @@ struct ReaderHostView: View {
         }
         .sheet(isPresented: $showSearch) { readerSearchSheet }
         .task { await openBook() }
-        .onAppear { UIApplication.shared.isIdleTimerDisabled = true }
+        .onAppear {
+            updateIdleTimer()
+            syncPlaybackSpeech()
+        }
         .onDisappear {
             UIApplication.shared.isIdleTimerDisabled = false
-            if epubController.isSpeaking { epubController.toggleSpeech() }
-            if fb2Controller.isSpeaking { fb2Controller.toggleSpeech() }
+            if epubController.isSpeechRetained { epubController.toggleSpeech() }
+            if fb2Controller.isSpeechRetained { fb2Controller.toggleSpeech(playback: fb2SpeechChoice) }
             epubController.endNowPlaying()
+        }
+        .onChange(of: showsReaderChrome) { _, _ in updateIdleTimer() }
+        .onChange(of: epubController.isSpeechRetained) { _, _ in syncPlaybackSpeech() }
+        .onChange(of: epubController.isSpeaking) { _, _ in syncPlaybackSpeech() }
+        .onChange(of: fb2Controller.isSpeechRetained) { _, _ in syncPlaybackSpeech() }
+        .onChange(of: fb2Controller.isSpeaking) { _, _ in syncPlaybackSpeech() }
+        .onReceive(
+            NotificationCenter.default.publisher(
+                for: ReaderPlaybackSession.toggleSpeechNotification,
+                object: playback
+            )
+        ) { _ in
+            toggleActiveSpeech()
         }
         .onChange(of: container.settingsRepository.theme) { _, theme in
             epubController.apply(theme: theme)
+        }
+        .onChange(of: container.settingsRepository.readerFont) { _, _ in
+            epubController.applyTypography(
+                font: container.settingsRepository.readerFont,
+                alignment: container.settingsRepository.readerAlignment
+            )
+        }
+        .onChange(of: container.settingsRepository.readerAlignment) { _, _ in
+            epubController.applyTypography(
+                font: container.settingsRepository.readerFont,
+                alignment: container.settingsRepository.readerAlignment
+            )
         }
     }
 
     @ViewBuilder
     private var readerTopBar: some View {
-        HStack(spacing: 0) {
+        HStack(alignment: .top, spacing: 0) {
             Button(action: closeReader) {
                 Image(systemName: "arrow.left")
                     .font(.system(size: 18, weight: .medium))
@@ -208,17 +222,22 @@ struct ReaderHostView: View {
 
             VStack(alignment: .leading, spacing: 1) {
                 Text(book.title)
-                    .font(.system(size: 8, weight: .semibold))
+                    .font(.system(size: 10, weight: .semibold))
                     .lineLimit(1)
+                    .accessibilityIdentifier("reader-title")
                 if !readerByline.isEmpty {
                     Text(readerByline)
-                        .font(.system(size: 10))
+                        .font(.system(size: 8))
                         .lineLimit(1)
                         .opacity(0.82)
                 }
             }
-            .padding(.top, 1)
-            .frame(maxWidth: .infinity, alignment: .topLeading)
+            .padding(.top, 2)
+            .containerRelativeFrame(.horizontal, alignment: .topLeading) { width, _ in
+                ReaderTopBarLayout.metadataWidth(containerWidth: width)
+            }
+
+            Spacer(minLength: 0)
 
             Button { showRightsDetails = true } label: {
                 RightsBadge(rights: book.format == .epub ? epubController.rights : book.rights)
@@ -227,21 +246,29 @@ struct ReaderHostView: View {
             .accessibilityHint("Shows the complete rights statement and source")
 
             if book.format == .epub {
-                Button { epubController.toggleSpeech() } label: {
+                Button {
+                    epubController.toggleSpeech()
+                    syncPlaybackSpeech()
+                } label: {
                     Image(systemName: epubController.isSpeaking ? "stop.fill" : "play.fill")
                         .font(.system(size: 16))
                         .frame(width: 24, height: 24)
                 }
                 .accessibilityLabel(epubController.isSpeaking ? "Stop reading aloud" : "Read aloud")
+                .accessibilityIdentifier("reader-speech-toggle")
             }
 
             if book.format == .fb2 {
-                Button { fb2Controller.toggleSpeech() } label: {
+                Button {
+                    fb2Controller.toggleSpeech(playback: fb2SpeechChoice)
+                    syncPlaybackSpeech()
+                } label: {
                     Image(systemName: fb2Controller.isSpeaking ? "stop.fill" : "play.fill")
                         .font(.system(size: 16))
                         .frame(width: 24, height: 24)
                 }
                 .accessibilityLabel(fb2Controller.isSpeaking ? "Stop reading aloud" : "Read aloud")
+                .accessibilityIdentifier("reader-speech-toggle")
             }
 
             if hasTableOfContents {
@@ -254,18 +281,26 @@ struct ReaderHostView: View {
             }
 
             searchButton
-            ReaderClockLabel(format: book.format)
         }
         .foregroundStyle(container.settingsRepository.theme.background)
         .padding(.leading, 6)
         .frame(height: 48)
         .background(container.settingsRepository.theme.primary.opacity(0.98))
+        .overlay(alignment: .top) {
+            ReaderClockLabel()
+                .padding(.top, 1)
+                .allowsHitTesting(false)
+        }
     }
 
     private var hasTableOfContents: Bool {
         if book.format == .epub { return epubController.hasTableOfContents }
         if book.format == .fb2 { return !fb2Controller.sections.isEmpty }
         return !pdfController.tableOfContents.isEmpty
+    }
+
+    private var fb2SpeechChoice: SpeechPlaybackChoice {
+        container.settingsRepository.speechChoice(for: fb2Controller.document?.language ?? "en")
     }
 
     private var searchButton: some View {
@@ -287,6 +322,39 @@ struct ReaderHostView: View {
         }
     }
 
+    private func updateIdleTimer() {
+        UIApplication.shared.isIdleTimerDisabled = showsReaderChrome
+    }
+
+    private func syncPlaybackSpeech() {
+        switch book.format {
+        case .epub:
+            playback.updateSpeechState(
+                retained: epubController.isSpeechRetained,
+                playing: epubController.isSpeaking
+            )
+        case .fb2:
+            playback.updateSpeechState(
+                retained: fb2Controller.isSpeechRetained,
+                playing: fb2Controller.isSpeaking
+            )
+        case .pdf:
+            playback.updateSpeechState(retained: false, playing: false)
+        }
+    }
+
+    private func toggleActiveSpeech() {
+        switch book.format {
+        case .epub:
+            epubController.toggleSpeech()
+        case .fb2:
+            fb2Controller.toggleSpeech(playback: fb2SpeechChoice)
+        case .pdf:
+            break
+        }
+        syncPlaybackSpeech()
+    }
+
     private var readerSearchSheet: some View {
         NavigationStack {
             VStack(spacing: 12) {
@@ -306,7 +374,11 @@ struct ReaderHostView: View {
                     ProgressView("Searching…")
                     Spacer()
                 } else if searchResultCount == 0 {
-                    ContentUnavailableView.search(text: searchQuery)
+                    ContentUnavailableView(
+                        "Search this book",
+                        systemImage: "text.magnifyingglass",
+                        description: Text("Every section of “\(book.title)”")
+                    )
                 } else {
                     searchResultsList
                 }
@@ -321,6 +393,7 @@ struct ReaderHostView: View {
             }
         }
         .preferredColorScheme(container.settingsRepository.theme.colorScheme)
+        .ignoresSafeArea(.keyboard, edges: .bottom)
     }
 
     @ViewBuilder
@@ -392,133 +465,6 @@ struct ReaderHostView: View {
 
     private func epubSectionLabel(_ index: Int) -> String {
         epubController.sections.first(where: { $0.index == index })?.label ?? "Section \(index + 1)"
-    }
-
-    @ViewBuilder
-    private var selectionActionBar: some View {
-        if let selection = epubController.textSelection, book.format == .epub {
-            selectionActions(
-                text: selection.text,
-                language: selection.language,
-                locator: selection.locator,
-                context: selection.context
-            )
-        } else if let selection = pdfSelection, book.format == .pdf {
-            selectionActions(
-                text: selection.text,
-                language: "en",
-                locator: selection.locator,
-                context: selection.text
-            )
-        } else if let selection = fb2Controller.textSelection, book.format == .fb2 {
-            selectionActions(
-                text: selection.text,
-                language: selection.language,
-                locator: selection.locator,
-                context: selection.context
-            )
-        }
-    }
-
-    private func selectionActions(
-        text: String,
-        language: String,
-        locator: String,
-        context: String
-    ) -> some View {
-        let kind = ReaderSelectionActions.kind(for: text)
-        return HStack(spacing: 8) {
-            Text(ReaderSelectionActions.normalizedText(text))
-                .font(.caption)
-                .lineLimit(1)
-                .frame(maxWidth: .infinity, alignment: .leading)
-            Button {
-                UIPasteboard.general.string = ReaderSelectionActions.normalizedText(text)
-                readerNotice = "Copied"
-            } label: {
-                Label("Copy", systemImage: "doc.on.doc")
-            }
-            .accessibilityIdentifier("reader-selection-copy")
-            if case let .words(phrase) = kind {
-                Button {
-                    addWord(phrase, language: language, locator: locator, context: context)
-                } label: {
-                    Label("Add word", systemImage: "text.badge.plus")
-                }
-                .accessibilityIdentifier("reader-add-word")
-            }
-            if kind == .mark {
-                Button {
-                    markSelection(text: text, locator: locator)
-                } label: {
-                    Label("Mark", systemImage: "bookmark")
-                }
-                .accessibilityIdentifier("reader-mark-selection")
-            }
-        }
-        .font(.caption.weight(.medium))
-        .labelStyle(.iconOnly)
-        .buttonStyle(.bordered)
-        .tint(container.settingsRepository.theme.primary)
-        .padding(.horizontal, 10)
-        .padding(.vertical, 6)
-        .background(.regularMaterial)
-        .disabled(snippetBusy)
-        .accessibilityElement(children: .contain)
-        .accessibilityIdentifier("reader-selection-actions")
-    }
-
-    private func addWord(_ word: String, language: String, locator: String, context: String) {
-        let entry = container.vocabularyRepository.saveSelection(
-            word: word,
-            language: language,
-            bookId: book.id,
-            bookTitle: book.title,
-            cfi: locator,
-            context: context
-        )
-        NotificationCenter.default.post(name: .bookstrVocabularyDidChange, object: nil)
-        readerNotice = "Added “\(word)” to Words"
-        Task { @MainActor in
-            if let result = try? await container.dictionaryRepository.lookup(
-                word: word,
-                language: language,
-                context: context
-            ) {
-                _ = container.vocabularyRepository.saveDefinition(
-                    key: entry.key,
-                    partOfSpeech: result.partOfSpeech,
-                    definitions: result.definitions,
-                    translation: result.translation,
-                    sourceUrl: result.sourceUrl
-                )
-                NotificationCenter.default.post(name: .bookstrVocabularyDidChange, object: nil)
-            }
-            _ = await container.nostrSyncService.pushVocabularyWord(entry)
-        }
-    }
-
-    private func markSelection(text: String, locator: String) {
-        let entry = container.snippetRepository.saveMark(
-            text: text,
-            bookId: book.id,
-            bookTitle: book.title,
-            author: book.author,
-            isbn: NostrSyncService.normalizedISBN(book.isbn),
-            format: book.format,
-            locator: locator
-        )
-        NotificationCenter.default.post(name: .bookstrSnippetsDidChange, object: nil)
-        readerNotice = "Marked"
-        snippetBusy = true
-        Task { @MainActor in
-            defer { snippetBusy = false }
-            if !(await container.nostrSyncService.pushSnippet(entry)) {
-                readerNotice = container.settingsRepository.hasNostrIdentity
-                    ? "Marked locally; Nostr sync failed."
-                    : "Marked locally. Connect Nostr to sync."
-            }
-        }
     }
 
     @ViewBuilder
@@ -615,17 +561,26 @@ private struct BottomScreenCurve: Shape {
     }
 }
 
+enum ReaderTopBarLayout {
+    static func metadataWidth(containerWidth: CGFloat) -> CGFloat {
+        min(100, max(70, containerWidth * 0.20))
+    }
+}
+
 struct ReaderClockLabel: View {
-    let format: BookFormat
 
     var body: some View {
         TimelineView(.periodic(from: .now, by: 30)) { context in
-            Text("\(Self.formattedTime(context.date))  \(format.rawValue.uppercased())")
+            Text(Self.labelText(for: context.date))
                 .font(.system(size: 9, weight: .medium, design: .monospaced))
                 .opacity(0.78)
-                .padding(.horizontal, 8)
+                .padding(.horizontal, 2)
                 .accessibilityIdentifier("reader-clock")
         }
+    }
+
+    static func labelText(for date: Date) -> String {
+        formattedTime(date)
     }
 
     static func formattedTime(_ date: Date) -> String {
@@ -836,8 +791,10 @@ final class FB2ReaderController: NSObject, ObservableObject {
     @Published var searchResults: [FB2SearchResult] = []
     @Published var searching = false
     @Published var isSpeaking = false
+    @Published private(set) var isSpeechRetained = false
     @Published var textSelection: ReaderTextSelection?
     private let speech = AVSpeechSynthesizer()
+    private let neuralSpeech = NeuralSpeechPlayback()
 
     override init() {
         super.init()
@@ -905,16 +862,88 @@ final class FB2ReaderController: NSObject, ObservableObject {
         searching = false
     }
 
-    func toggleSpeech() {
-        if speech.isSpeaking || isSpeaking {
+    func toggleSpeech(playback: SpeechPlaybackChoice) {
+        if isSpeechSessionActive {
+            neuralSpeech.stop()
             speech.stopSpeaking(at: .immediate)
-            isSpeaking = false
+            setSpeaking(false)
             return
         }
-        let text = sections.flatMap(\.paragraphs).map(\.text).joined(separator: "\n\n")
+        startSpeaking(text: sections.flatMap(\.paragraphs).map(\.text).joined(separator: "\n\n"), playback: playback)
+    }
+
+    func speakFromSelection(_ selected: String, playback: SpeechPlaybackChoice) {
+        if isSpeechSessionActive {
+            neuralSpeech.stop()
+            speech.stopSpeaking(at: .immediate)
+            setSpeaking(false)
+        }
+        let all = sections.flatMap(\.paragraphs).map(\.text).joined(separator: "\n\n")
+        let needle = selected.trimmingCharacters(in: .whitespacesAndNewlines)
+        let spoken: String
+        if needle.isEmpty {
+            spoken = all
+        } else if let range = all.range(of: needle) {
+            spoken = String(all[range.lowerBound...])
+        } else {
+            spoken = needle
+        }
+        startSpeaking(text: spoken, playback: playback)
+    }
+
+    private var isSpeechSessionActive: Bool {
+        ReaderSpeechRetention.isRetained(
+            speaking: isSpeaking,
+            systemSpeaking: speech.isSpeaking,
+            systemPaused: speech.isPaused,
+            neuralPlaying: neuralSpeech.isPlaying,
+            neuralPaused: neuralSpeech.isPaused
+        )
+    }
+
+    private func setSpeaking(_ speaking: Bool) {
+        isSpeaking = speaking
+        refreshSpeechRetention()
+    }
+
+    private func refreshSpeechRetention() {
+        isSpeechRetained = isSpeechSessionActive
+    }
+
+    private func startSpeaking(text: String, playback: SpeechPlaybackChoice) {
         guard !text.isEmpty else { return }
-        speech.speak(AVSpeechUtterance(string: text))
-        isSpeaking = true
+        do {
+            let session = AVAudioSession.sharedInstance()
+            try session.setCategory(.playback, mode: .spokenAudio, options: [])
+            try session.setActive(true)
+        } catch {
+            return
+        }
+        setSpeaking(true)
+        switch playback.engine {
+        case .neural(let engine):
+            guard engine.supports(language: playback.languageTag) else {
+                setSpeaking(false)
+                return
+            }
+            neuralSpeech.play(
+                text: text,
+                engine: engine,
+                speed: Float(min(max(playback.rate / SpeechLanguageSettings.defaultRate, 0.73), 1.25))
+            ) { [weak self] result in
+                self?.setSpeaking(false)
+                if case .failure = result { return }
+            }
+        case .apple:
+            let utterance = AVSpeechUtterance(string: text)
+            if !playback.voiceIdentifier.isEmpty {
+                utterance.voice = AVSpeechSynthesisVoice(identifier: playback.voiceIdentifier)
+            } else {
+                utterance.voice = AVSpeechSynthesisVoice(language: playback.languageTag)
+            }
+            utterance.rate = Float(playback.rate)
+            speech.speak(utterance)
+        }
     }
 
     private func progress(for index: Int) -> Double {
@@ -938,10 +967,10 @@ final class FB2ReaderController: NSObject, ObservableObject {
 
 extension FB2ReaderController: AVSpeechSynthesizerDelegate {
     nonisolated func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {
-        Task { @MainActor in isSpeaking = false }
+        Task { @MainActor in self.setSpeaking(false) }
     }
     nonisolated func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didCancel utterance: AVSpeechUtterance) {
-        Task { @MainActor in isSpeaking = false }
+        Task { @MainActor in self.setSpeaking(false) }
     }
 }
 
@@ -978,6 +1007,43 @@ struct FB2ReaderView: View {
                                                     paragraph: paragraphIndex
                                                 )
                                                 controller.setSelection(text: selected, locator: locator)
+                                            },
+                                            onAddWord: {
+                                                guard let selection = controller.textSelection,
+                                                      let phrase = ReaderSelectionActions.phraseForVocabulary(from: selection.text)
+                                                else { return }
+                                                _ = container.vocabularyRepository.saveSelection(
+                                                    word: phrase,
+                                                    language: selection.language,
+                                                    bookId: book.id,
+                                                    bookTitle: book.title,
+                                                    cfi: selection.locator,
+                                                    context: selection.context
+                                                )
+                                                NotificationCenter.default.post(name: .bookstrVocabularyDidChange, object: nil)
+                                            },
+                                            onMark: {
+                                                guard let selection = controller.textSelection else { return }
+                                                let text = ReaderSelectionActions.normalizedText(selection.text)
+                                                guard !text.isEmpty else { return }
+                                                guard container.snippetRepository.saveMark(
+                                                    text: text,
+                                                    bookId: book.id,
+                                                    bookTitle: book.title,
+                                                    author: book.author,
+                                                    isbn: NostrSyncService.normalizedISBN(book.isbn),
+                                                    format: .fb2,
+                                                    locator: selection.locator
+                                                ) != nil else { return }
+                                                NotificationCenter.default.post(name: .bookstrSnippetsDidChange, object: nil)
+                                            },
+                                            onReadFromHere: {
+                                                controller.speakFromSelection(
+                                                    controller.textSelection?.text ?? "",
+                                                    playback: container.settingsRepository.speechChoice(
+                                                        for: controller.document?.language ?? "en"
+                                                    )
+                                                )
                                             }
                                         )
                                         .onAppear {
@@ -1017,12 +1083,32 @@ struct FB2ReaderView: View {
     }
 }
 
+private final class FB2ParagraphTextView: UITextView {
+    var onAddWord: (() -> Void)?
+    var onMark: (() -> Void)?
+    var onReadFromHere: (() -> Void)?
+
+    override func editMenu(for textRange: UITextRange, suggestedActions: [UIMenuElement]) -> UIMenu? {
+        ReaderEditMenu.menu(
+            defaultActions: ReaderEditMenu.copyOnly(from: suggestedActions),
+            selection: text(in: textRange) ?? "",
+            allowsSpeech: true,
+            addWord: { [weak self] in self?.onAddWord?() },
+            mark: { [weak self] in self?.onMark?() },
+            readFromHere: { [weak self] in self?.onReadFromHere?() }
+        )
+    }
+}
+
 private struct FB2SelectableParagraph: UIViewRepresentable {
     let text: String
     let onSelectionChange: (String) -> Void
+    let onAddWord: () -> Void
+    let onMark: () -> Void
+    let onReadFromHere: () -> Void
 
-    func makeUIView(context: Context) -> UITextView {
-        let view = UITextView()
+    func makeUIView(context: Context) -> FB2ParagraphTextView {
+        let view = FB2ParagraphTextView()
         view.isEditable = false
         view.isScrollEnabled = false
         view.backgroundColor = .clear
@@ -1032,17 +1118,23 @@ private struct FB2SelectableParagraph: UIViewRepresentable {
         view.delegate = context.coordinator
         view.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         view.text = text
+        view.onAddWord = onAddWord
+        view.onMark = onMark
+        view.onReadFromHere = onReadFromHere
         return view
     }
 
-    func updateUIView(_ uiView: UITextView, context: Context) {
+    func updateUIView(_ uiView: FB2ParagraphTextView, context: Context) {
         if uiView.text != text {
             uiView.text = text
         }
         context.coordinator.onSelectionChange = onSelectionChange
+        uiView.onAddWord = onAddWord
+        uiView.onMark = onMark
+        uiView.onReadFromHere = onReadFromHere
     }
 
-    func sizeThatFits(_ proposal: ProposedViewSize, uiView: UITextView, context: Context) -> CGSize? {
+    func sizeThatFits(_ proposal: ProposedViewSize, uiView: FB2ParagraphTextView, context: Context) -> CGSize? {
         let width = proposal.width ?? uiView.bounds.width
         let size = uiView.sizeThatFits(CGSize(width: width, height: .greatestFiniteMagnitude))
         return CGSize(width: width, height: size.height)
@@ -1065,6 +1157,17 @@ private struct FB2SelectableParagraph: UIViewRepresentable {
                 return
             }
             onSelectionChange(textView.text(in: range) ?? "")
+        }
+    }
+}
+
+private extension ReaderFont {
+    var readingFont: Font {
+        switch self {
+        case .arial: .custom("Arial", size: 17, relativeTo: .body)
+        case .georgia: .custom("Georgia", size: 17, relativeTo: .body)
+        case .palatino: .custom("Palatino", size: 17, relativeTo: .body)
+        case .system: .body
         }
     }
 }

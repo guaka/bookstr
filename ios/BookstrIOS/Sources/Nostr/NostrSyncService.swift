@@ -123,6 +123,7 @@ final class NostrSyncService {
                 format: book.format,
                 locator: locator
             )
+            guard let entry else { throw NostrSyncError.relayRejected }
             guard let published = await publishSnippetEvent(entry) else {
                 throw NostrSyncError.relayRejected
             }

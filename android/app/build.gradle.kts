@@ -16,12 +16,14 @@ plugins {
 
 val sharedReaderDirectory = rootProject.file("../shared/reader")
 val sharedReaderSpeechFile = rootProject.file("../web/reader-speech.js")
+val sharedReaderTypographyFile = rootProject.file("../web/reader-typography.js")
 val generatedReaderAssets = layout.buildDirectory.dir("generated/reader-assets")
 val syncReaderAssets by tasks.registering(Sync::class) {
     from(sharedReaderDirectory) {
         include("reader.html", "epub.min.js", "jszip.min.js")
     }
     from(sharedReaderSpeechFile)
+    from(sharedReaderTypographyFile)
     into(generatedReaderAssets)
 }
 
@@ -30,7 +32,8 @@ val syncReaderAssets by tasks.registering(Sync::class) {
 val newestSourceChange = (
     fileTree("src/main").files +
         fileTree(sharedReaderDirectory).files +
-        sharedReaderSpeechFile
+        sharedReaderSpeechFile +
+        sharedReaderTypographyFile
 )
     .maxOfOrNull(File::lastModified)
     ?: System.currentTimeMillis()

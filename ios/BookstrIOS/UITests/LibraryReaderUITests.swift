@@ -23,15 +23,32 @@ final class LibraryReaderUITests: XCTestCase {
         let afterLeftY = chapter.frame.minY
 
         app.swipeRight()
+        if !waitForY(chapter, above: afterLeftY + 80) {
+            app.swipeRight()
+        }
         XCTAssertTrue(waitForY(chapter, above: afterLeftY + 80), "Swiping right did not return to the previous EPUB page")
         attachScreenshot(named: "epub-navigation-restored")
 
-        XCTAssertTrue(app.descendants(matching: .any)["reader-clock"].waitForExistence(timeout: 4))
+        let clock = app.descendants(matching: .any)["reader-clock"]
+        XCTAssertTrue(clock.waitForExistence(timeout: 4))
+        XCTAssertFalse(clock.label.localizedCaseInsensitiveContains("epub"))
+        let title = app.staticTexts["reader-title"]
+        XCTAssertTrue(title.waitForExistence(timeout: 4))
+        XCTAssertLessThan(title.frame.maxX, app.frame.width * 0.36)
+        XCTAssertLessThan(title.frame.minY, back.frame.midY)
         XCTAssertTrue(app.descendants(matching: .any)["reader-progress-epub"].waitForExistence(timeout: 4))
         app.buttons["reader-search"].tap()
+        let searchScope = app.staticTexts.matching(
+            NSPredicate(format: "label CONTAINS[c] %@", "Every section of")
+        ).firstMatch
+        XCTAssertTrue(searchScope.waitForExistence(timeout: 4))
+        XCTAssertTrue(searchScope.label.localizedCaseInsensitiveContains("alice epub fixture"))
         let epubQuery = app.textFields["reader-search-query"]
         XCTAssertTrue(epubQuery.waitForExistence(timeout: 4))
+        let queryYBeforeFocus = epubQuery.frame.minY
         epubQuery.tap()
+        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 4))
+        XCTAssertEqual(epubQuery.frame.minY, queryYBeforeFocus, accuracy: 2)
         epubQuery.typeText("final page marker")
         app.buttons["reader-search-submit"].tap()
         let epubResult = app.buttons.matching(
@@ -58,6 +75,38 @@ final class LibraryReaderUITests: XCTestCase {
         pdfResult.tap()
         XCTAssertTrue(waitForDisappearance(pdfQuery, timeout: 4))
         attachScreenshot(named: "pdf-visible")
+    }
+
+    func testSpeechKeepsPlayingAndHeaderToggleStaysAfterLeavingReader() throws {
+        let (back, _) = openEPUB()
+        let readerToggle = app.buttons["reader-speech-toggle"]
+        XCTAssertTrue(readerToggle.waitForExistence(timeout: 10), "EPUB reader did not expose speech control")
+        readerToggle.tap()
+        let speaking = NSPredicate(format: "label CONTAINS[c] %@", "Stop reading aloud")
+        XCTAssertTrue(
+            XCTWaiter.wait(
+                for: [XCTNSPredicateExpectation(predicate: speaking, object: readerToggle)],
+                timeout: 8
+            ) == .completed,
+            "EPUB reader did not start speech before leaving the book"
+        )
+
+        back.tap()
+        XCTAssertTrue(app.tabBars.buttons["Library"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["library-book-ui-test-alice-epub"].waitForExistence(timeout: 5))
+        XCTAssertTrue(
+            app.buttons["app-speech-toggle"].waitForExistence(timeout: 5),
+            "Library header did not keep the speech control after leaving a playing book"
+        )
+
+        let search = app.tabBars.buttons["Search"]
+        XCTAssertTrue(search.waitForExistence(timeout: 5))
+        search.tap()
+        XCTAssertTrue(search.isSelected)
+        XCTAssertTrue(
+            app.buttons["app-speech-toggle"].waitForExistence(timeout: 5),
+            "Search header did not keep the speech control while the book kept playing"
+        )
     }
 
     func testLibrarySortControlReordersFixtureBooks() {

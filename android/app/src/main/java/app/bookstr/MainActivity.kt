@@ -137,6 +137,8 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             var theme by remember { mutableStateOf(settings.theme) }
+            var readerFont by remember { mutableStateOf(settings.readerFont) }
+            var readerAlignment by remember { mutableStateOf(settings.readerAlignment) }
             BookstrThemeFromSettings(readerTheme = theme) {
                 var selectedTab by remember { mutableStateOf(if (requestedWord.isNullOrBlank()) 0 else 1) }
                 var books by remember { mutableStateOf<List<CatalogBook>>(emptyList()) }
@@ -676,6 +678,8 @@ class MainActivity : ComponentActivity() {
                                 showNsec = showNsec,
                                 relays = relays,
                                 theme = theme,
+                                readerFont = readerFont,
+                                readerAlignment = readerAlignment,
                                 keepOnLockScreen = keepOnLock,
                                 syncing = syncing,
                                 connectingAmber = connectingAmber,
@@ -747,6 +751,14 @@ class MainActivity : ComponentActivity() {
                                 onThemeChange = {
                                     theme = it
                                     settings.theme = it
+                                },
+                                onReaderFontChange = {
+                                    readerFont = it
+                                    settings.readerFont = it
+                                },
+                                onReaderAlignmentChange = {
+                                    readerAlignment = it
+                                    settings.readerAlignment = it
                                 },
                                 onKeepOnLockScreenChange = {
                                     keepOnLock = it

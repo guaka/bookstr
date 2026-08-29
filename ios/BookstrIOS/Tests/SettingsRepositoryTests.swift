@@ -34,6 +34,32 @@ final class SettingsRepositoryTests: XCTestCase {
         defaults.removePersistentDomain(forName: suite)
     }
 
+    func testReaderTypographyDefaultsToArialAndJustified() {
+        let suite = "bookstr-type-\(UUID().uuidString)"
+        guard let defaults = UserDefaults(suiteName: suite) else {
+            XCTFail("Could not create isolated UserDefaults")
+            return
+        }
+        defaults.removePersistentDomain(forName: suite)
+        let first = SettingsRepository(defaults: defaults)
+        XCTAssertEqual(first.readerFont, .arial)
+        XCTAssertEqual(first.readerAlignment, .justified)
+        XCTAssertEqual(ReaderFont.arial.label, "Arial")
+        XCTAssertEqual(ReaderFont.georgia.label, "Georgia")
+        XCTAssertEqual(ReaderFont.palatino.label, "Palatino")
+        XCTAssertEqual(ReaderFont.system.label, "System")
+        XCTAssertEqual(ReaderAlignment.justified.label, "Justified")
+        XCTAssertEqual(ReaderAlignment.left.label, "Left")
+        first.readerFont = .georgia
+        first.readerAlignment = .left
+        let second = SettingsRepository(defaults: defaults)
+        XCTAssertEqual(second.readerFont, .georgia)
+        XCTAssertEqual(second.readerAlignment, .left)
+        XCTAssertEqual(ReaderFont(rawValue: "unknown") ?? .arial, .arial)
+        XCTAssertEqual(ReaderAlignment(rawValue: "unknown") ?? .justified, .justified)
+        defaults.removePersistentDomain(forName: suite)
+    }
+
     func testFavoritesCacheStoresEventId() {
         let suite = "bookstr-fav-cache-\(UUID().uuidString)"
         guard let defaults = UserDefaults(suiteName: suite) else {
@@ -78,6 +104,46 @@ final class SettingsRepositoryTests: XCTestCase {
         XCTAssertEqual(repo.nip46ClientSecret, "legacy-secret")
         XCTAssertEqual(secureStore.values["nip46_client_secret"], "legacy-secret")
         XCTAssertNil(defaults.string(forKey: "nip46_client_secret"))
+        defaults.removePersistentDomain(forName: suite)
+    }
+
+    func testSpeechLanguageSettingsPersistAndResolvePerLanguage() {
+        let suite = "bookstr-speech-lang-\(UUID().uuidString)"
+        guard let defaults = UserDefaults(suiteName: suite) else {
+            XCTFail("Could not create isolated UserDefaults")
+            return
+        }
+        defaults.removePersistentDomain(forName: suite)
+        let first = SettingsRepository(defaults: defaults)
+        XCTAssertEqual(first.speechChoice(for: "en").voiceIdentifier, SpeechVoiceID.systemDefault)
+        XCTAssertNil(first.speechChoice(for: "en").neuralEngine)
+        XCTAssertEqual(first.speechChoice(for: "pt").voiceIdentifier, SpeechVoiceID.systemDefault)
+        first.setSpeechVoice(SpeechEngineID.portuguesePortugal.rawValue, for: "pt-PT")
+        first.setSpeechVoice(SpeechEngineID.kokoroEnglish.rawValue, for: "en")
+        let second = SettingsRepository(defaults: defaults)
+        XCTAssertEqual(second.speechChoice(for: "pt").voiceIdentifier, SpeechEngineID.portuguesePortugal.rawValue)
+        XCTAssertEqual(second.speechChoice(for: "pt").neuralEngine, .portuguesePortugal)
+        XCTAssertEqual(second.speechChoice(for: "en").voiceIdentifier, SpeechEngineID.kokoroEnglish.rawValue)
+        XCTAssertEqual(second.speechChoice(for: "en").engine, .neural(.kokoroEnglish))
+        second.setSpeechVoice("", for: "en")
+        XCTAssertEqual(
+            SettingsRepository(defaults: defaults).speechChoice(for: "en").voiceIdentifier,
+            SpeechVoiceID.systemDefault
+        )
+        defaults.removePersistentDomain(forName: suite)
+    }
+
+    func testLegacySpeechEngineMigratesIntoLanguageSettings() {
+        let suite = "bookstr-speech-legacy-\(UUID().uuidString)"
+        guard let defaults = UserDefaults(suiteName: suite) else {
+            XCTFail("Could not create isolated UserDefaults")
+            return
+        }
+        defaults.removePersistentDomain(forName: suite)
+        defaults.set("piper_pt_pt", forKey: "speech_engine")
+        let repo = SettingsRepository(defaults: defaults)
+        XCTAssertEqual(repo.speechChoice(for: "pt").neuralEngine, .portuguesePortugal)
+        XCTAssertEqual(repo.speechChoice(for: "en").engine, .apple)
         defaults.removePersistentDomain(forName: suite)
     }
 

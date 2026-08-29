@@ -19,17 +19,46 @@ final class AppShellUITests: XCTestCase {
         selectTab("Words")
         selectTab("Settings")
 
-        let relays = app.textViews.firstMatch
+        let englishVoice = app.descendants(matching: .any)["speech-voice-en"]
+        let portugueseVoice = app.descendants(matching: .any)["speech-voice-pt"]
+        XCTAssertTrue(englishVoice.waitForExistence(timeout: 5), "Settings did not expose the English voice picker")
+        XCTAssertTrue(portugueseVoice.waitForExistence(timeout: 5), "Settings did not expose the Portuguese voice picker")
+        XCTAssertTrue(app.descendants(matching: .any)["reader-font"].waitForExistence(timeout: 4))
+        XCTAssertTrue(app.descendants(matching: .any)["reader-alignment"].waitForExistence(timeout: 4))
+        reveal(englishVoice)
+        if englishVoice.isHittable {
+            englishVoice.tap()
+            let kokoroChoice = pickerChoice("Kokoro · English")
+            XCTAssertTrue(kokoroChoice.waitForExistence(timeout: 8))
+            let systemDefaultChoice = pickerChoice("System default")
+            XCTAssertTrue(systemDefaultChoice.waitForExistence(timeout: 4))
+            systemDefaultChoice.tap()
+            XCTAssertTrue(
+                englishVoice.waitForExistence(timeout: 4),
+                "Settings did not return from the English voice picker"
+            )
+        }
+        reveal(app.buttons["speech-model-kokoro_en"])
+        XCTAssertTrue(app.buttons["speech-model-kokoro_en"].waitForExistence(timeout: 4), "Settings did not expose the Kokoro download control")
+        XCTAssertTrue(app.buttons["speech-model-piper_pt_pt"].waitForExistence(timeout: 4), "Settings did not expose the Tugão download control")
+
+        let relays = app.descendants(matching: .any)["settings-relays-editor"]
+        reveal(relays)
         XCTAssertTrue(relays.waitForExistence(timeout: 5), "Settings did not expose the relay editor")
         relays.tap()
         relays.typeText("wss://relay.example\nwss://backup.example")
         let done = app.buttons["Done"]
         if done.waitForExistence(timeout: 2) { done.tap() }
 
-        let save = app.buttons["Save relays"]
+        let save = app.buttons["settings-save-relays"]
+        reveal(save)
         XCTAssertTrue(save.waitForExistence(timeout: 4))
         save.tap()
         XCTAssertTrue(app.staticTexts["Relays saved"].waitForExistence(timeout: 4))
+
+        let speechLogs = app.descendants(matching: .any)["speech-debug-logs"]
+        reveal(speechLogs)
+        XCTAssertTrue(speechLogs.waitForExistence(timeout: 4), "Settings did not expose speech logs at the bottom")
 
         selectTab("Library")
         let epub = app.buttons["library-book-ui-test-alice-epub"]
@@ -61,5 +90,16 @@ final class AppShellUITests: XCTestCase {
         XCTAssertTrue(tab.waitForExistence(timeout: 5), "Missing " + label + " tab")
         tab.tap()
         XCTAssertTrue(tab.isSelected, label + " tab was not selected")
+    }
+
+    private func reveal(_ element: XCUIElement) {
+        for _ in 0..<24 {
+            if element.exists { return }
+            app.swipeUp()
+        }
+    }
+
+    private func pickerChoice(_ label: String) -> XCUIElement {
+        app.descendants(matching: .any)[label]
     }
 }

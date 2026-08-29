@@ -6,6 +6,7 @@ final class AppContainer: ObservableObject {
     let vocabularyRepository: VocabularyRepository
     let snippetRepository: SnippetRepository
     let wordNavigation: WordNavigationState
+    let readerPlayback: ReaderPlaybackSession
     let dictionaryRepository: DictionaryRepository
     let favoriteMetadataRepository: FavoriteMetadataRepository
     let catalogRepository: CatalogRepository
@@ -20,6 +21,7 @@ final class AppContainer: ObservableObject {
         vocabularyRepository: VocabularyRepository,
         snippetRepository: SnippetRepository,
         wordNavigation: WordNavigationState = WordNavigationState(),
+        readerPlayback: ReaderPlaybackSession = ReaderPlaybackSession(),
         dictionaryRepository: DictionaryRepository,
         favoriteMetadataRepository: FavoriteMetadataRepository,
         catalogRepository: CatalogRepository,
@@ -33,6 +35,7 @@ final class AppContainer: ObservableObject {
         self.vocabularyRepository = vocabularyRepository
         self.snippetRepository = snippetRepository
         self.wordNavigation = wordNavigation
+        self.readerPlayback = readerPlayback
         self.dictionaryRepository = dictionaryRepository
         self.favoriteMetadataRepository = favoriteMetadataRepository
         self.catalogRepository = catalogRepository

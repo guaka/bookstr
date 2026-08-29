@@ -8,6 +8,8 @@ final class SettingsRepository: ObservableObject {
     private enum Keys {
         static let relays = "relays"
         static let theme = "theme"
+        static let readerFont = "reader_font"
+        static let readerAlignment = "reader_alignment"
         static let authMode = "auth_mode"
         static let pubkey = "pubkey_hex"
         static let signerPackage = "signer_package"
@@ -25,6 +27,8 @@ final class SettingsRepository: ObservableObject {
         static let lastReadingMetadataSync = "last_reading_metadata_sync"
         static let speechVoice = "speech_voice"
         static let speechRate = "speech_rate"
+        static let speechEngine = SpeechLanguageSettings.speechEngineKey
+        static let speechLanguageSettings = "speech_language_settings"
         static let keepReadingOnLockScreen = "keep_reading_on_lock_screen"
         static let wordSort = "word_sort"
         static let dictionarySource = "dictionary_source"
@@ -35,12 +39,42 @@ final class SettingsRepository: ObservableObject {
         didSet { defaults.set(theme.rawValue, forKey: Keys.theme) }
     }
 
+    @Published var readerFont: ReaderFont {
+        didSet { defaults.set(readerFont.rawValue, forKey: Keys.readerFont) }
+    }
+
+    @Published var readerAlignment: ReaderAlignment {
+        didSet { defaults.set(readerAlignment.rawValue, forKey: Keys.readerAlignment) }
+    }
+
     @Published var speechVoiceIdentifier: String {
         didSet { defaults.set(speechVoiceIdentifier, forKey: Keys.speechVoice) }
     }
 
+    @Published var speechLanguageSettings: [String: SpeechLanguageSetting] {
+        didSet { defaults.set(SpeechLanguageSettings.encodeSettings(speechLanguageSettings), forKey: Keys.speechLanguageSettings) }
+    }
+
     @Published var speechRate: Double {
         didSet { defaults.set(speechRate, forKey: Keys.speechRate) }
+    }
+
+    func speechChoice(for bookLanguage: String) -> SpeechPlaybackChoice {
+        SpeechLanguageSettings.resolve(
+            bookLanguage: bookLanguage,
+            settingsByLanguage: speechLanguageSettings,
+            defaultRate: speechRate
+        )
+    }
+
+    func setSpeechVoice(_ identifier: String, for language: String) {
+        let tag = SpeechLanguageSettings.preferredLanguageTag(language)
+        var next = speechLanguageSettings
+        next[tag] = SpeechLanguageSetting(
+            voiceIdentifier: identifier,
+            rate: next[tag]?.rate
+        )
+        speechLanguageSettings = next
     }
 
     init(
@@ -50,9 +84,17 @@ final class SettingsRepository: ObservableObject {
         self.defaults = defaults
         self.keychain = keychain
         self.theme = ReaderTheme(rawValue: defaults.string(forKey: Keys.theme) ?? "") ?? .paper
+        self.readerFont = ReaderFont(rawValue: defaults.string(forKey: Keys.readerFont) ?? "") ?? .arial
+        self.readerAlignment = ReaderAlignment(rawValue: defaults.string(forKey: Keys.readerAlignment) ?? "") ?? .justified
         self.speechVoiceIdentifier = defaults.string(forKey: Keys.speechVoice) ?? ""
+        self.speechLanguageSettings = SpeechLanguageSettings.migrateLegacyEngine(
+            defaults.string(forKey: Keys.speechEngine),
+            into: SpeechLanguageSettings.decodeSettings(
+                defaults.data(forKey: Keys.speechLanguageSettings)
+            )
+        )
         let savedRate = defaults.double(forKey: Keys.speechRate)
-        self.speechRate = savedRate == 0 ? 0.48 : min(max(savedRate, 0.35), 0.60)
+        self.speechRate = savedRate == 0 ? SpeechLanguageSettings.defaultRate : SpeechLanguageSettings.clampRate(savedRate)
     }
 
     var relays: [String] {

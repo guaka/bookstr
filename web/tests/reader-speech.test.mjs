@@ -47,12 +47,13 @@ test('speech planner uses short continuation, sentence, and paragraph pauses', (
     longSentence + ' A following sentence remains separate because the first sentence is already long.',
     'A new paragraph begins here!',
   ]);
+  const pauses = BookstrSpeech.defaults;
 
   assert.equal(plan.chunks[0].pauseMs, 0);
-  assert.ok(plan.chunks.some((chunk, index) => index > 0 && chunk.pauseMs === 35));
-  assert.ok(plan.chunks.some((chunk, index) => index > 0 && chunk.pauseMs === 180));
+  assert.ok(plan.chunks.some((chunk, index) => index > 0 && chunk.pauseMs === pauses.continuationPauseMs));
+  assert.ok(plan.chunks.some((chunk, index) => index > 0 && chunk.pauseMs === pauses.sentencePauseMs));
   const paragraphStart = plan.text.indexOf('A new paragraph');
-  assert.equal(plan.chunks.find(chunk => chunk.start === paragraphStart)?.pauseMs, 400);
+  assert.equal(plan.chunks.find(chunk => chunk.start === paragraphStart)?.pauseMs, pauses.paragraphPauseMs);
   assertPlanIntegrity(plan);
 });
 
@@ -65,8 +66,192 @@ test('speech planner fallback segmentation keeps punctuation pauses deterministi
     segmenterFactory: null,
   });
 
-  assert.deepEqual(plan.chunks.map(chunk => chunk.pauseMs), [0, 320, 320, 250, 280]);
+  assert.deepEqual(plan.chunks.map(chunk => chunk.pauseMs), [
+    0,
+    BookstrSpeech.defaults.emphaticPauseMs,
+    BookstrSpeech.defaults.emphaticPauseMs,
+    BookstrSpeech.defaults.clausePauseMs,
+    BookstrSpeech.defaults.ellipsisPauseMs,
+  ]);
   assertPlanIntegrity(plan);
+});
+
+test('speech planner chunks clauses on commas, dashes, and parentheses', () => {
+  const pauses = BookstrSpeech.defaults;
+  const plan = BookstrSpeech.buildPlan([
+    'After walking for hours through rain, we reached the old mill by the river -- then the door opened (or so it seemed) without a sound.',
+  ]);
+
+  assert.deepEqual(plan.chunks.map(chunk => chunk.text), [
+    'After walking for hours through rain,',
+    'we reached the old mill by the river --',
+    'then the door opened',
+    '(or so it seemed)',
+    'without a sound.',
+  ]);
+  assert.deepEqual(plan.chunks.map(chunk => chunk.pauseMs), [
+    0,
+    pauses.commaPauseMs,
+    pauses.dashPauseMs,
+    pauses.continuationPauseMs,
+    pauses.parenPauseMs,
+  ]);
+  assertPlanIntegrity(plan);
+
+  const list = BookstrSpeech.buildPlan(['Red, white, and blue flags waved.']);
+  assert.deepEqual(list.chunks.map(chunk => chunk.text), ['Red, white, and blue flags waved.']);
+
+  const longLeft = `${'x'.repeat(72)}, then four more spoken words.`;
+  const longComma = BookstrSpeech.buildPlan([longLeft]);
+  assert.equal(longComma.chunks[0].text.endsWith(','), true);
+  assert.equal(longComma.chunks[1].text, 'then four more spoken words.');
+
+  const unmatched = BookstrSpeech.buildPlan(['Wait (this never closes and the rest continues.']);
+  assert.equal(unmatched.chunks.length, 1);
+
+  const emDash = BookstrSpeech.buildPlan([
+    'Several spoken words on the left—several spoken words on the right.',
+  ]);
+  assert.deepEqual(emDash.chunks.map(chunk => chunk.text), [
+    'Several spoken words on the left—',
+    'several spoken words on the right.',
+  ]);
+  assert.equal(emDash.chunks[1].pauseMs, BookstrSpeech.defaults.dashPauseMs);
+});
+
+test('speech planner speaks grouped thousands without comma pauses', () => {
+  assert.equal(BookstrSpeech.spokenText('100,000'), '100000');
+  assert.equal(BookstrSpeech.spokenText('There were 1,000,000.5 people.'), 'There were 1000000.5 people.');
+  assert.equal(BookstrSpeech.spokenText('Wait, then go.'), 'Wait, then go.');
+  assert.equal(BookstrSpeech.spokenText('100\u00A0000'), '100000');
+  assert.equal(BookstrSpeech.spokenText('100\u202F000'), '100000');
+  assert.equal(BookstrSpeech.normalizeText('There were 1,000,000 people.'), 'There were 1,000,000 people.');
+  assert.equal(BookstrSpeech.normalizeText('Wait, then go.'), 'Wait, then go.');
+
+  const plan = BookstrSpeech.buildPlan(['There were 100,000 people.']);
+  assert.equal(plan.chunks.length, 1);
+  assert.equal(plan.chunks[0].text, 'There were 100,000 people.');
+  assert.equal(plan.chunks[0].spoken, 'There were 100000 people.');
+  assertPlanIntegrity(plan);
+
+  const clause = BookstrSpeech.buildPlan([
+    'After collecting 100,000 samples, we left the old mill by the river.',
+  ]);
+  assert.equal(clause.chunks[0].text, 'After collecting 100,000 samples,');
+  assert.equal(clause.chunks[0].spoken, 'After collecting 100000 samples,');
+
+  const hyphenated = BookstrSpeech.buildPlan(['A well-known fact remains well-known.']);
+  assert.equal(hyphenated.chunks[0].text, 'A well-known fact remains well-known.');
+
+  const thousandsBoundary = BookstrSpeech.buildPlan([
+    `${'word '.repeat(22)}counted 1,000 extra ${'word '.repeat(22)}.`,
+  ], { softLimit: 80, hardLimit: 120, segmenterFactory: null });
+  assert.ok(thousandsBoundary.chunks.some(chunk => chunk.text.includes('1,000')));
+  assertPlanIntegrity(thousandsBoundary);
+
+  const closingParen = BookstrSpeech.buildPlan([
+    `${'w'.repeat(70)}) ${'x'.repeat(180)}`,
+  ], { softLimit: 80, hardLimit: 120, segmenterFactory: null });
+  assert.ok(closingParen.chunks.some(chunk => chunk.text.includes(')')));
+  assertPlanIntegrity(closingParen);
+});
+
+test('speech planner omits footnote markers from spoken text', () => {
+  assert.equal(BookstrSpeech.spokenText('He left[1] at dawn.'), 'He left at dawn.');
+  assert.equal(BookstrSpeech.spokenText('He left\u00B9 at dawn.'), 'He left at dawn.');
+  assert.equal(BookstrSpeech.spokenText('See chapter 12.'), 'See chapter 12.');
+  assert.equal(BookstrSpeech.spokenText('word(1) next'), 'word next');
+  assert.equal(BookstrSpeech.spokenText('(1) First item'), '(1) First item');
+  assert.equal(BookstrSpeech.spokenText(''), '');
+  assert.equal(BookstrSpeech.visibleText(null), '');
+  assert.equal(BookstrSpeech.isSilentSpeechParent(null), false);
+  assert.equal(BookstrSpeech.isSilentSpeechParent({
+    closest() { return null; },
+    getAttribute() { return ''; },
+    className: '',
+  }), false);
+  assert.equal(BookstrSpeech.isSilentSpeechParent({
+    closest(selector) { return String(selector).includes('sup') ? this : null; },
+    getAttribute() { return ''; },
+    className: '',
+  }), true);
+  assert.equal(BookstrSpeech.isSilentSpeechParent({
+    closest(selector) { return selector === 'a' ? this : null; },
+    getAttribute(name) { return name === 'epub:type' ? 'noteref' : ''; },
+    className: '',
+  }), true);
+  assert.equal(BookstrSpeech.isSilentSpeechParent({
+    closest(selector) { return selector === 'a' ? this : null; },
+    getAttribute() { return ''; },
+    className: 'footnote-ref',
+  }), true);
+  assert.equal(BookstrSpeech.isSilentSpeechParent({
+    closest(selector) { return selector === 'a' ? this : null; },
+    getAttribute() { return ''; },
+    className: 'regular-link',
+  }), false);
+  assert.equal(BookstrSpeech.visibleText({ ownerDocument: {} }), '');
+  const document = {
+    createTreeWalker() {
+      const nodes = [
+        { parentElement: { closest() { return null; }, getAttribute() { return ''; }, className: '' }, nodeValue: 'Hello ' },
+        { parentElement: { closest(selector) { return String(selector).includes('sup') ? this : null; }, getAttribute() { return ''; }, className: '' }, nodeValue: '1' },
+        { parentElement: { closest() { return null; }, getAttribute() { return ''; }, className: '' }, nodeValue: 'world' },
+      ];
+      let index = 0;
+      return {
+        nextNode() { return index < nodes.length ? nodes[index++] : null; },
+      };
+    },
+  };
+  assert.equal(BookstrSpeech.visibleText({ ownerDocument: document }), 'Hello world');
+});
+
+test('relocation progression prefers generated locations over a stale viewport', () => {
+  assert.equal(BookstrSpeech.relocationProgression(0.42, 0.1), 0.42);
+  assert.equal(BookstrSpeech.relocationProgression(1.4, 0.1), 1);
+  assert.equal(BookstrSpeech.relocationProgression(Number.NaN, 0.25), 0.25);
+  assert.equal(BookstrSpeech.relocationProgression(undefined, Number.NaN), null);
+  assert.equal(BookstrSpeech.relocationProgression(0, 0.9), 0);
+});
+
+test('selection kind matches copy, word, and mark actions', () => {
+  assert.equal(BookstrSpeech.selectionKind('   '), 'empty');
+  assert.equal(BookstrSpeech.selectionKind('hello'), 'words');
+  assert.equal(BookstrSpeech.selectionKind("don't worry"), 'words');
+  assert.equal(BookstrSpeech.selectionKind('one two three'), 'mark');
+  assert.equal(BookstrSpeech.selectionKind('hello 123'), 'mark');
+});
+
+test('speech locators skip completed blocks and resume inside the current one', () => {
+  const order = { a: 1, b: 2, c: 3 };
+  const compare = (left, right) => order[left] - order[right];
+  assert.equal(BookstrSpeech.locatorSkipDecision('a', 'a', '', compare), 'include');
+  assert.equal(BookstrSpeech.locatorSkipDecision('a', 'a', 'b', compare), 'skip');
+  assert.equal(BookstrSpeech.locatorSkipDecision('b', 'c', 'b', compare), 'include');
+  assert.equal(BookstrSpeech.locatorSkipDecision('a', 'c', 'b', compare), 'resume');
+  assert.equal(BookstrSpeech.locatorSkipDecision('', '', 'z', compare), 'include');
+  assert.equal(BookstrSpeech.compareLocators('', '', compare), 0);
+  assert.equal(BookstrSpeech.compareLocators('b', 'a', compare), 1);
+  assert.equal(BookstrSpeech.compareLocators('', 'a', compare), -1);
+  assert.equal(BookstrSpeech.compareLocators('a', '', compare), 1);
+  assert.equal(BookstrSpeech.compareLocators('same', 'same'), 0);
+  assert.equal(BookstrSpeech.compareLocators('m', 'z', () => Number.NaN), -1);
+  assert.equal(BookstrSpeech.compareLocators('z', 'm', () => Number.NaN), 1);
+  const node = { id: 'n' };
+  const other = { id: 'o' };
+  const positions = [
+    { node, start: 0, end: 1 },
+    { node, start: 1, end: 2 },
+    { node, start: 2, end: 3 },
+  ];
+  assert.equal(BookstrSpeech.mappedIndexAtPoint(positions, node, 0), 0);
+  assert.equal(BookstrSpeech.mappedIndexAtPoint(positions, node, 2), 2);
+  assert.equal(BookstrSpeech.mappedIndexAtPoint(positions, node, 3), 3);
+  assert.equal(BookstrSpeech.mappedIndexAtPoint(positions, node, 1), 1);
+  assert.equal(BookstrSpeech.mappedIndexAtPoint([{ node, start: 2, end: 5 }], node, 4), 0);
+  assert.equal(BookstrSpeech.mappedIndexAtPoint(positions, other, 1), 0);
+  assert.equal(BookstrSpeech.mappedIndexAtPoint([], node, 0), 0);
 });
 
 test('speech planner recovers from a failing platform segmenter', () => {
@@ -207,6 +392,14 @@ test('speech player speaks sequential chunks with language and timed pauses', ()
 
   assert.equal(harness.player.state, 'stopped');
   assert.deepEqual(harness.states, ['playing', 'stopped']);
+});
+
+test('speech player speaks grouped thousands from the spoken field', () => {
+  const harness = playerHarness();
+  assert.equal(harness.player.start({
+    chunks: [{ text: '100,000', spoken: '100000', pauseMs: 0 }],
+  }), true);
+  assert.equal(harness.spoken[0].text, '100000');
 });
 
 test('speech player pauses and resumes both utterances and pending delays', () => {

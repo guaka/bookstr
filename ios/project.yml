@@ -5,17 +5,22 @@ packages:
   swift-nostr:
     url: https://github.com/yysskk/swift-nostr
     from: 0.7.0
+  sherpa-onnx:
+    url: https://github.com/k2-fsa/sherpa-onnx
+    exactVersion: 1.13.6
 targets:
   BookstrIOS:
     type: application
     platform: iOS
-    deploymentTarget: "17.0"
+    deploymentTarget: "18.0"
     sources:
       - path: BookstrIOS/Sources
       - path: BookstrIOS/Assets.xcassets
       - path: ../shared/reader/reader.html
         buildPhase: resources
       - path: ../web/reader-speech.js
+        buildPhase: resources
+      - path: ../web/reader-typography.js
         buildPhase: resources
       - path: ../shared/reader/epub.min.js
         buildPhase: resources
@@ -26,6 +31,8 @@ targets:
         product: NostrConnect
       - package: swift-nostr
         product: NostrCore
+      - package: sherpa-onnx
+        product: sherpa-onnx
     settings:
       ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
       ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS: YES
@@ -61,7 +68,7 @@ targets:
   BookstrIOSTests:
     type: bundle.unit-test
     platform: iOS
-    deploymentTarget: "17.0"
+    deploymentTarget: "18.0"
     sources:
       - path: BookstrIOS/Tests
     settings:
@@ -73,7 +80,7 @@ targets:
   BookstrIOSUITests:
     type: bundle.ui-testing
     platform: iOS
-    deploymentTarget: "17.0"
+    deploymentTarget: "18.0"
     sources:
       - path: BookstrIOS/UITests
     settings:
