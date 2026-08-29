@@ -20,6 +20,8 @@ targets:
         buildPhase: resources
       - path: ../web/reader-speech.js
         buildPhase: resources
+      - path: ../web/reader-typography.js
+        buildPhase: resources
       - path: ../shared/reader/epub.min.js
         buildPhase: resources
       - path: ../shared/reader/jszip.min.js

@@ -659,15 +659,14 @@
       desktopReaderFurthestProgress = 0;
       desktopReaderProgress = null;
       const bookId = desktopReaderBook ? desktopReaderBook.md5 : "";
+      window.setReaderTypography(normalized.font, normalized.alignment);
       void reportPromise(window.loadBook(
         normalized.base64,
         normalized.cfi,
         normalized.theme,
         bookId,
         desktopReaderBook
-      ).then(function() {
-        window.setReaderTypography(normalized.font, normalized.alignment);
-      }));
+      ));
     }
 
     if (desktopBridge?.onOpenReader) {
