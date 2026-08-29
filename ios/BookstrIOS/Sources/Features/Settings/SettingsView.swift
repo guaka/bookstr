@@ -167,6 +167,7 @@ struct SettingsView: View {
                 TextEditor(text: $relaysRaw)
                     .frame(minHeight: 80)
                     .focused($focusedField, equals: .relays)
+                    .accessibilityIdentifier("settings-relays-editor")
                 Button("Save relays") {
                     container.settingsRepository.relays = relaysRaw
                         .split(whereSeparator: \.isNewline)
@@ -175,6 +176,14 @@ struct SettingsView: View {
                         .filter { !$0.isEmpty }
                     status = "Relays saved"
                 }
+                .accessibilityIdentifier("settings-save-relays")
+            }
+
+            Section {
+                NavigationLink("Speech logs") {
+                    SpeechDebugLogView()
+                }
+                .accessibilityIdentifier("speech-debug-logs")
             }
 
             Section {

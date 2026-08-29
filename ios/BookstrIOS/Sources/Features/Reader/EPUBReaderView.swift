@@ -272,8 +272,10 @@ final class EPUBReaderController: NSObject, ObservableObject, AVSpeechSynthesize
                 options: []
             )
             try audioSession.setActive(true)
+            BookstrDebugLog.shared.record("session playback/spokenAudio active")
         } catch {
             stopSpeech()
+            BookstrDebugLog.shared.record("session fail \(error.localizedDescription)")
             errorMessage = "Could not start text-to-speech audio: \(error.localizedDescription)"
             return
         }
@@ -305,7 +307,9 @@ final class EPUBReaderController: NSObject, ObservableObject, AVSpeechSynthesize
                 speed: Float(min(max(playback.rate / SpeechLanguageSettings.defaultRate, 0.73), 1.25)),
                 onPhrase: { [weak self] chunk in
                     self?.neuralChunkOffset = chunk.offset
-                    self?.updateSpeechProgress(start: chunk.offset, end: chunk.spokenEnd)
+                },
+                onProgress: { [weak self] start, end in
+                    self?.updateSpeechProgress(start: start, end: end)
                 },
                 completion: { [weak self] result in
                     guard let self else { return }
@@ -491,6 +495,7 @@ final class EPUBReaderController: NSObject, ObservableObject, AVSpeechSynthesize
         else { return }
         switch type {
         case .began:
+            BookstrDebugLog.shared.record("interrupt began")
             if speech.isSpeaking {
                 speech.pauseSpeaking(at: .word)
                 isSpeaking = false
@@ -503,6 +508,9 @@ final class EPUBReaderController: NSObject, ObservableObject, AVSpeechSynthesize
         case .ended:
             let options = (info[AVAudioSessionInterruptionOptionKey] as? UInt)
                 .map(AVAudioSession.InterruptionOptions.init(rawValue:)) ?? []
+            BookstrDebugLog.shared.record(
+                "interrupt ended shouldResume=\(options.contains(.shouldResume))"
+            )
             guard options.contains(.shouldResume) else { return }
             resumeSpeechAfterInterruption()
         @unknown default:
@@ -517,6 +525,7 @@ final class EPUBReaderController: NSObject, ObservableObject, AVSpeechSynthesize
         else { return }
         // AirPods reconnect / headset plug: keep the session active if we were speaking.
         if reason == .newDeviceAvailable || reason == .categoryChange {
+            BookstrDebugLog.shared.record("route \(reason.rawValue)")
             guard isSpeaking || neuralSpeech.isPaused || speech.isPaused else { return }
             try? AVAudioSession.sharedInstance().setActive(true)
             if neuralSpeech.isPaused {

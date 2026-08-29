@@ -22,7 +22,13 @@ private final class NeuralSpeechRenderer: NeuralSpeechSynthesizing, @unchecked S
                 task = .invalid
             }
         }
-        task = UIApplication.shared.beginBackgroundTask(withName: "bookstr-neural-tts", expirationHandler: endTask)
+        task = UIApplication.shared.beginBackgroundTask(withName: "bookstr-neural-tts", expirationHandler: {
+            BookstrDebugLog.shared.record("bgTask synth expired")
+            endTask()
+        })
+        BookstrDebugLog.shared.record(
+            "synth begin engine=\(engine.rawValue) chars=\(text.count)"
+        )
         queue.async {
             defer { DispatchQueue.main.async(execute: endTask) }
             do {
@@ -39,6 +45,7 @@ private final class NeuralSpeechRenderer: NeuralSpeechSynthesizing, @unchecked S
                 }
                 completion(.success((audio.samples, Double(audio.sampleRate))))
             } catch {
+                BookstrDebugLog.shared.record("synth error \(error.localizedDescription)")
                 completion(.failure(error))
             }
         }
@@ -78,6 +85,7 @@ private final class NeuralSpeechRenderer: NeuralSpeechSynthesizing, @unchecked S
         guard created.sampleRate > 0 else { throw NeuralSpeechError.modelCouldNotLoad }
         engineID = spec.id
         synthesizer = created
+        BookstrDebugLog.shared.record("model loaded \(spec.id.rawValue) rate=\(created.sampleRate)")
         return created
     }
 }
@@ -100,6 +108,7 @@ private final class NeuralAudioPlayer: NeuralSpeechScheduling {
     private let audioEngine = AVAudioEngine()
     private let player = AVAudioPlayerNode()
     private let keepAlive = AVAudioPlayerNode()
+    private let keepAliveMixer = AVAudioMixerNode()
     private var connectedRate: Double = 0
     private var keepAliveRate: Double = 0
     private var keepAliveEnabled = false
@@ -109,6 +118,8 @@ private final class NeuralAudioPlayer: NeuralSpeechScheduling {
     init() {
         audioEngine.attach(player)
         audioEngine.attach(keepAlive)
+        audioEngine.attach(keepAliveMixer)
+        keepAliveMixer.outputVolume = 1
     }
 
     func reset() {}
@@ -119,8 +130,11 @@ private final class NeuralAudioPlayer: NeuralSpeechScheduling {
     }
 
     func resume() {
-        if audioEngine.isRunning == false {
-            try? audioEngine.start()
+        do {
+            try ensureEngineRunning()
+            try AVAudioSession.sharedInstance().setActive(true)
+        } catch {
+            return
         }
         if keepAliveEnabled, keepAlive.isPlaying == false {
             keepAlive.play()
@@ -143,41 +157,27 @@ private final class NeuralAudioPlayer: NeuralSpeechScheduling {
 
     func setKeepAliveActive(_ active: Bool, sampleRate: Double) {
         guard active else {
+            if keepAliveEnabled {
+                BookstrDebugLog.shared.record("keepAlive off")
+            }
             keepAliveEnabled = false
             keepAlive.stop()
             keepAliveRate = 0
             return
         }
         let rate = sampleRate > 0 ? sampleRate : 24_000
-        if keepAliveEnabled, keepAliveRate == rate, keepAlive.isPlaying {
+        if keepAliveEnabled, keepAliveRate == rate, keepAlive.isPlaying, connectedRate == rate {
             return
         }
         keepAliveEnabled = true
         keepAliveRate = rate
-        keepAlive.stop()
         do {
-            try prepare(sampleRate: rate)
-            let silence = NeuralSpeechAudio.keepAliveSilence(sampleRate: rate)
-            guard let format = AVAudioFormat(
-                commonFormat: .pcmFormatFloat32,
-                sampleRate: rate,
-                channels: 1,
-                interleaved: false
-            ),
-                  let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: AVAudioFrameCount(silence.count)),
-                  let channel = buffer.floatChannelData?[0]
-            else { return }
-            buffer.frameLength = AVAudioFrameCount(silence.count)
-            silence.withUnsafeBufferPointer { source in
-                guard let address = source.baseAddress else { return }
-                channel.update(from: address, count: silence.count)
-            }
-            keepAlive.scheduleBuffer(buffer, at: nil, options: .loops)
-            if keepAlive.isPlaying == false {
-                keepAlive.play()
-            }
+            try installKeepAlive(sampleRate: rate)
+            BookstrDebugLog.shared.record("keepAlive on rate=\(Int(rate))")
         } catch {
             keepAliveEnabled = false
+            keepAliveRate = 0
+            BookstrDebugLog.shared.record("keepAlive fail \(error.localizedDescription)")
         }
     }
 
@@ -204,6 +204,9 @@ private final class NeuralAudioPlayer: NeuralSpeechScheduling {
         player.scheduleBuffer(buffer, completionCallbackType: .dataPlayedBack) { _ in
             DispatchQueue.main.async(execute: completion)
         }
+        if keepAliveEnabled, keepAliveRate == sampleRate, keepAlive.isPlaying == false {
+            try? installKeepAlive(sampleRate: sampleRate)
+        }
         if player.isPlaying == false {
             player.play()
         }
@@ -211,8 +214,19 @@ private final class NeuralAudioPlayer: NeuralSpeechScheduling {
 
     private func prepare(sampleRate: Double) throws {
         if connectedRate != sampleRate {
+            BookstrDebugLog.shared.record(
+                "engine reconfigure \(Int(connectedRate))->\(Int(sampleRate))"
+            )
+            // Never disconnect while nodes are playing — that hard-crashes AVAudioEngine.
+            let resumeKeepAlive = keepAliveEnabled
+            keepAlive.stop()
+            player.stop()
+            if audioEngine.isRunning {
+                audioEngine.stop()
+            }
             audioEngine.disconnectNodeOutput(player)
             audioEngine.disconnectNodeOutput(keepAlive)
+            audioEngine.disconnectNodeOutput(keepAliveMixer)
             guard let format = AVAudioFormat(
                 commonFormat: .pcmFormatFloat32,
                 sampleRate: sampleRate,
@@ -220,13 +234,47 @@ private final class NeuralAudioPlayer: NeuralSpeechScheduling {
                 interleaved: false
             ) else { throw NeuralSpeechError.generationFailed }
             audioEngine.connect(player, to: audioEngine.mainMixerNode, format: format)
-            audioEngine.connect(keepAlive, to: audioEngine.mainMixerNode, format: format)
+            audioEngine.connect(keepAlive, to: keepAliveMixer, format: format)
+            audioEngine.connect(keepAliveMixer, to: audioEngine.mainMixerNode, format: format)
             connectedRate = sampleRate
+            try ensureEngineRunning()
+            if resumeKeepAlive {
+                try installKeepAlive(sampleRate: sampleRate)
+            }
+        } else {
+            try ensureEngineRunning()
         }
+        try AVAudioSession.sharedInstance().setActive(true)
+    }
+
+    private func installKeepAlive(sampleRate: Double) throws {
+        try prepare(sampleRate: sampleRate)
+        keepAlive.stop()
+        let silence = NeuralSpeechAudio.keepAliveSilence(sampleRate: sampleRate)
+        guard let format = AVAudioFormat(
+            commonFormat: .pcmFormatFloat32,
+            sampleRate: sampleRate,
+            channels: 1,
+            interleaved: false
+        ),
+              let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: AVAudioFrameCount(silence.count)),
+              let channel = buffer.floatChannelData?[0]
+        else { throw NeuralSpeechError.generationFailed }
+        buffer.frameLength = AVAudioFrameCount(silence.count)
+        silence.withUnsafeBufferPointer { source in
+            guard let address = source.baseAddress else { return }
+            channel.update(from: address, count: silence.count)
+        }
+        keepAlive.scheduleBuffer(buffer, at: nil, options: .loops)
+        if keepAlive.isPlaying == false {
+            keepAlive.play()
+        }
+    }
+
+    private func ensureEngineRunning() throws {
         if audioEngine.isRunning == false {
             try audioEngine.start()
         }
-        try AVAudioSession.sharedInstance().setActive(true)
     }
 }
 
@@ -235,6 +283,7 @@ final class NeuralSpeechPlayback {
     private let renderer = NeuralSpeechRenderer()
     private let audioPlayer = NeuralAudioPlayer()
     private let session: NeuralSpeechSession
+    private var playbackTask = UIBackgroundTaskIdentifier.invalid
     private(set) var isPaused = false
 
     var isPlaying: Bool { session.isPlaying }
@@ -248,15 +297,21 @@ final class NeuralSpeechPlayback {
         engine: SpeechEngineID,
         speed: Float,
         onPhrase: @escaping (SpeechQueueChunk) -> Void,
+        onProgress: @escaping (Int, Int) -> Void,
         completion: @escaping (Result<Void, Error>) -> Void
     ) {
         isPaused = false
+        beginPlaybackTask()
         session.start(
             chunks: chunks,
             engine: engine,
             speed: speed,
             onPhrase: onPhrase,
-            completion: completion
+            onProgress: onProgress,
+            completion: { [weak self] result in
+                self?.endPlaybackTask()
+                completion(result)
+            }
         )
     }
 
@@ -271,6 +326,7 @@ final class NeuralSpeechPlayback {
             engine: engine,
             speed: speed,
             onPhrase: { _ in },
+            onProgress: { _, _ in },
             completion: completion
         )
     }
@@ -282,11 +338,29 @@ final class NeuralSpeechPlayback {
 
     func resume() {
         isPaused = false
+        beginPlaybackTask()
         session.resume()
     }
 
     func stop() {
         isPaused = false
         session.stop()
+        endPlaybackTask()
+    }
+
+    private func beginPlaybackTask() {
+        endPlaybackTask()
+        playbackTask = UIApplication.shared.beginBackgroundTask(withName: "bookstr-neural-playback") { [weak self] in
+            BookstrDebugLog.shared.record("bgTask playback expired")
+            self?.endPlaybackTask()
+        }
+        BookstrDebugLog.shared.record("bgTask playback begin")
+    }
+
+    private func endPlaybackTask() {
+        guard playbackTask != .invalid else { return }
+        UIApplication.shared.endBackgroundTask(playbackTask)
+        playbackTask = .invalid
+        BookstrDebugLog.shared.record("bgTask playback end")
     }
 }

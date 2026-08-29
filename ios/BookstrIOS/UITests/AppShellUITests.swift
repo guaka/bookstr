@@ -35,17 +35,23 @@ final class AppShellUITests: XCTestCase {
         XCTAssertTrue(app.buttons["speech-model-kokoro_en"].waitForExistence(timeout: 4), "Settings did not expose the Kokoro download control")
         XCTAssertTrue(app.buttons["speech-model-piper_pt_pt"].waitForExistence(timeout: 4), "Settings did not expose the Tugão download control")
 
-        let relays = app.textViews.firstMatch
+        let relays = app.descendants(matching: .any)["settings-relays-editor"]
+        reveal(relays)
         XCTAssertTrue(relays.waitForExistence(timeout: 5), "Settings did not expose the relay editor")
         relays.tap()
         relays.typeText("wss://relay.example\nwss://backup.example")
         let done = app.buttons["Done"]
         if done.waitForExistence(timeout: 2) { done.tap() }
 
-        let save = app.buttons["Save relays"]
+        let save = app.buttons["settings-save-relays"]
+        reveal(save)
         XCTAssertTrue(save.waitForExistence(timeout: 4))
         save.tap()
         XCTAssertTrue(app.staticTexts["Relays saved"].waitForExistence(timeout: 4))
+
+        let speechLogs = app.descendants(matching: .any)["speech-debug-logs"]
+        reveal(speechLogs)
+        XCTAssertTrue(speechLogs.waitForExistence(timeout: 4), "Settings did not expose speech logs at the bottom")
 
         selectTab("Library")
         let epub = app.buttons["library-book-ui-test-alice-epub"]

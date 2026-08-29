@@ -27,10 +27,13 @@ enum NeuralSpeechAudio {
     }
 
     /// Looping pad for a side-channel keep-alive node (not inserted into spoken audio).
-    static func keepAliveSilence(sampleRate: Double, seconds: Double = 0.25) -> [Float] {
+    /// Uses inaudible dither — pure zeros are treated as silence and iOS suspends/jetsams the app.
+    static func keepAliveSilence(sampleRate: Double, seconds: Double = 0.35) -> [Float] {
         let rate = sampleRate > 0 ? sampleRate : 24_000
         let count = max(1, Int((max(0.05, seconds) * rate).rounded(.down)))
-        return Array(repeating: 0, count: count)
+        // ~-80 dBFS alternating dither: enough for AVAudioSession, not audible on earbuds.
+        let amplitude: Float = 1e-4
+        return (0..<count).map { ($0 & 1) == 0 ? amplitude : -amplitude }
     }
 }
 
@@ -58,6 +61,24 @@ protocol NeuralSpeechScheduling: AnyObject {
     ) throws
 }
 
+enum NeuralSpeechProgress {
+    static let tickNanoseconds: UInt64 = 750_000_000
+
+    /// Maps elapsed playback into a short highlight window so saved CFIs advance during a phrase.
+    static func highlightRange(
+        offset: Int,
+        textLength: Int,
+        elapsed: TimeInterval,
+        duration: TimeInterval
+    ) -> (start: Int, end: Int) {
+        let length = max(1, textLength)
+        let fraction = duration > 0 ? min(1, max(0, elapsed / duration)) : 0
+        let cursor = offset + min(length - 1, max(0, Int((Double(length) * fraction).rounded(.down))))
+        let end = min(offset + length, cursor + max(1, min(12, offset + length - cursor)))
+        return (cursor, max(end, cursor + 1))
+    }
+}
+
 @MainActor
 final class NeuralSpeechSession {
     /// Keep a few spoken buffers ahead for smooth playback without unbounded PCM growth.
@@ -76,8 +97,16 @@ final class NeuralSpeechSession {
     private var synthesizing = false
     private var sampleRate: Double = 24_000
     private var ready: [Int: (samples: [Float], sampleRate: Double)] = [:]
+    private var phraseDurations: [Int: TimeInterval] = [:]
     private var onPhrase: ((SpeechQueueChunk) -> Void)?
+    private var onProgress: ((Int, Int) -> Void)?
     private var onComplete: ((Result<Void, Error>) -> Void)?
+    private var progressTask: Task<Void, Never>?
+    private var activePhrase: SpeechQueueChunk?
+    private var phraseDuration: TimeInterval = 0
+    private var phraseElapsed: TimeInterval = 0
+    private var phraseAnchor = Date()
+    private var phrasePaused = false
 
     var isPlaying: Bool { player.isPlaying || queuedOnPlayer > 0 || synthesizing }
 
@@ -91,6 +120,7 @@ final class NeuralSpeechSession {
         engine: SpeechEngineID,
         speed: Float,
         onPhrase: @escaping (SpeechQueueChunk) -> Void,
+        onProgress: @escaping (Int, Int) -> Void,
         completion: @escaping (Result<Void, Error>) -> Void
     ) {
         stop()
@@ -103,6 +133,7 @@ final class NeuralSpeechSession {
         self.engine = engine
         self.speed = speed
         self.onPhrase = onPhrase
+        self.onProgress = onProgress
         self.onComplete = completion
         nextRender = 0
         nextSchedule = 0
@@ -110,25 +141,53 @@ final class NeuralSpeechSession {
         spokenQueued = 0
         synthesizing = false
         ready = [:]
+        phraseDurations = [:]
         player.reset()
-        player.setKeepAliveActive(true, sampleRate: sampleRate)
+        // Keep-alive starts after the first buffer so the engine graph matches the model rate.
+        BookstrDebugLog.shared.record(
+            "start engine=\(engine.rawValue) chunks=\(chunks.count) speed=\(String(format: "%.2f", speed))"
+        )
         prefetch()
     }
 
-    func pause() { player.pause() }
-    func resume() { player.resume() }
+    func pause() {
+        if !phrasePaused {
+            phraseElapsed += Date().timeIntervalSince(phraseAnchor)
+            phrasePaused = true
+        }
+        BookstrDebugLog.shared.record("pause")
+        player.pause()
+    }
+
+    func resume() {
+        if phrasePaused {
+            phraseAnchor = Date()
+            phrasePaused = false
+        }
+        BookstrDebugLog.shared.record("resume")
+        player.resume()
+    }
 
     func stop() {
+        let hadWork = !chunks.isEmpty || synthesizing || queuedOnPlayer > 0
         generation += 1
+        progressTask?.cancel()
+        progressTask = nil
+        activePhrase = nil
         synthesizing = false
         queuedOnPlayer = 0
         spokenQueued = 0
         ready.removeAll()
+        phraseDurations.removeAll()
         chunks.removeAll()
         onPhrase = nil
+        onProgress = nil
         onComplete = nil
         player.setKeepAliveActive(false, sampleRate: sampleRate)
         player.stop()
+        if hadWork {
+            BookstrDebugLog.shared.record("stop")
+        }
     }
 
     private func prefetch() {
@@ -147,12 +206,11 @@ final class NeuralSpeechSession {
                     self.fail(error)
                 case .success(let audio):
                     let rate = audio.sampleRate > 0 ? audio.sampleRate : self.sampleRate
-                    if rate != self.sampleRate {
-                        self.sampleRate = rate
-                        self.player.setKeepAliveActive(true, sampleRate: rate)
-                    } else {
-                        self.sampleRate = rate
-                    }
+                    self.sampleRate = rate
+                    self.player.setKeepAliveActive(true, sampleRate: rate)
+                    BookstrDebugLog.shared.record(
+                        "synth ok #\(index) samples=\(audio.samples.count) rate=\(Int(rate))"
+                    )
                     self.ready[index] = audio
                     self.nextRender = index + 1
                     self.scheduleReady()
@@ -172,9 +230,6 @@ final class NeuralSpeechSession {
             let startsNow = spokenQueued == 0
             queuedOnPlayer += 1
             spokenQueued += 1
-            if startsNow {
-                onPhrase?(chunks[index])
-            }
             let active = generation
             do {
                 let voiced = NeuralSpeechAudio.trimTrailingSilence(
@@ -186,13 +241,18 @@ final class NeuralSpeechSession {
                     sampleRate: audio.sampleRate,
                     pauseSeconds: chunks[index].pauseSeconds
                 )
+                let duration = Double(samples.count) / max(audio.sampleRate, 1)
+                phraseDurations[index] = duration
+                if startsNow {
+                    announcePhrase(index)
+                }
                 try player.schedule(samples: samples, sampleRate: audio.sampleRate) { [weak self] in
                     DispatchQueue.main.async {
                         guard let self, self.generation == active else { return }
                         self.queuedOnPlayer -= 1
                         self.spokenQueued -= 1
                         if index + 1 < self.chunks.count, self.spokenQueued > 0 {
-                            self.onPhrase?(self.chunks[index + 1])
+                            self.announcePhrase(index + 1)
                         }
                         if index == self.chunks.count - 1 {
                             self.finish()
@@ -203,6 +263,7 @@ final class NeuralSpeechSession {
                     }
                 }
             } catch {
+                BookstrDebugLog.shared.record("schedule fail #\(index) \(error.localizedDescription)")
                 fail(error)
                 return
             }
@@ -210,15 +271,57 @@ final class NeuralSpeechSession {
         prefetch()
     }
 
+    private func announcePhrase(_ index: Int) {
+        guard chunks.indices.contains(index) else { return }
+        let chunk = chunks[index]
+        onPhrase?(chunk)
+        beginPhraseProgress(chunk, duration: phraseDurations[index] ?? 0.05)
+    }
+
+    private func beginPhraseProgress(_ chunk: SpeechQueueChunk, duration: TimeInterval) {
+        activePhrase = chunk
+        phraseDuration = max(0.05, duration)
+        phraseElapsed = 0
+        phraseAnchor = Date()
+        phrasePaused = false
+        emitProgress()
+        progressTask?.cancel()
+        let active = generation
+        progressTask = Task { @MainActor [weak self] in
+            while let self, self.generation == active, !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: NeuralSpeechProgress.tickNanoseconds)
+                guard self.generation == active, !Task.isCancelled else { return }
+                self.emitProgress()
+            }
+        }
+    }
+
+    private func emitProgress() {
+        guard let chunk = activePhrase else { return }
+        let elapsed = phrasePaused
+            ? phraseElapsed
+            : phraseElapsed + Date().timeIntervalSince(phraseAnchor)
+        let range = NeuralSpeechProgress.highlightRange(
+            offset: chunk.offset,
+            textLength: (chunk.text as NSString).length,
+            elapsed: elapsed,
+            duration: phraseDuration
+        )
+        onProgress?(range.start, range.end)
+    }
+
     private func finish() {
+        BookstrDebugLog.shared.record("finish")
         let completion = onComplete
         stop()
         completion?(.success(()))
     }
 
     private func fail(_ error: Error) {
+        BookstrDebugLog.shared.record("fail \(error.localizedDescription)")
         let completion = onComplete
         stop()
         completion?(.failure(error))
     }
 }
+

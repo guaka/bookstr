@@ -45,6 +45,7 @@ final class NeuralSpeechSessionTests: XCTestCase {
             engine: .kokoroEnglish,
             speed: 1,
             onPhrase: { _ in },
+            onProgress: { _, _ in },
             completion: { _ in }
         )
         XCTAssertEqual(synthesizer.texts, ["100000"])
@@ -61,6 +62,7 @@ final class NeuralSpeechSessionTests: XCTestCase {
             engine: .kokoroEnglish,
             speed: 1,
             onPhrase: { _ in XCTFail("empty narration has no phrases") },
+            onProgress: { _, _ in XCTFail("empty narration has no progress") },
             completion: { result in
                 if case .success = result { finished = true }
             }
@@ -83,17 +85,19 @@ final class NeuralSpeechSessionTests: XCTestCase {
             engine: .kokoroEnglish,
             speed: 1,
             onPhrase: { phrases.append($0) },
+            onProgress: { _, _ in },
             completion: { result in
                 if case .success = result { finished = true }
             }
         )
         XCTAssertEqual(synthesizer.texts, ["One."])
-        XCTAssertTrue(player.keepAliveActive)
+        XCTAssertFalse(player.keepAliveActive, "keep-alive waits for the first model sample rate")
         XCTAssertTrue(phrases.isEmpty)
         XCTAssertEqual(player.scheduledCount, 0)
 
         synthesizer.complete()
         await settle()
+        XCTAssertTrue(player.keepAliveActive)
         XCTAssertEqual(phrases, [first])
         XCTAssertEqual(phrases[0].spokenEnd, 4)
         XCTAssertEqual(player.scheduledCount, 1)
@@ -132,14 +136,16 @@ final class NeuralSpeechSessionTests: XCTestCase {
             engine: .kokoroEnglish,
             speed: 1,
             onPhrase: { _ in },
+            onProgress: { _, _ in },
             completion: { result in
                 if case .success = result { finished = true }
             }
         )
-        XCTAssertTrue(player.keepAliveActive)
+        XCTAssertFalse(player.keepAliveActive)
         XCTAssertEqual(player.scheduledCount, 0)
         synthesizer.complete()
         await settle()
+        XCTAssertTrue(player.keepAliveActive)
         XCTAssertEqual(player.scheduledCount, 1)
         XCTAssertEqual(player.scheduledSampleCounts[0], 8)
 
@@ -167,6 +173,7 @@ final class NeuralSpeechSessionTests: XCTestCase {
             engine: .kokoroEnglish,
             speed: 1,
             onPhrase: { _ in },
+            onProgress: { _, _ in },
             completion: { _ in }
         )
         synthesizer.complete()
@@ -184,8 +191,45 @@ final class NeuralSpeechSessionTests: XCTestCase {
         session.stop()
     }
 
+    func testHighlightRangeAdvancesThroughPhrase() {
+        let start = NeuralSpeechProgress.highlightRange(offset: 10, textLength: 100, elapsed: 0, duration: 10)
+        XCTAssertEqual(start.start, 10)
+        XCTAssertGreaterThan(start.end, start.start)
+        let mid = NeuralSpeechProgress.highlightRange(offset: 10, textLength: 100, elapsed: 5, duration: 10)
+        XCTAssertEqual(mid.start, 60)
+        let end = NeuralSpeechProgress.highlightRange(offset: 10, textLength: 100, elapsed: 10, duration: 10)
+        XCTAssertEqual(end.start, 109)
+    }
+
+    func testEmitsProgressOffsetsWhilePhrasePlays() async {
+        let synthesizer = MockNeuralSynthesizer()
+        synthesizer.sampleCount = 2_000
+        let player = MockNeuralPlayer()
+        let session = NeuralSpeechSession(synthesizer: synthesizer, player: player)
+        var progress: [(Int, Int)] = []
+        session.start(
+            chunks: [SpeechQueueChunk(text: "Hello there friend.", offset: 0, pauseSeconds: 0)],
+            engine: .kokoroEnglish,
+            speed: 1,
+            onPhrase: { _ in },
+            onProgress: { start, end in progress.append((start, end)) },
+            completion: { _ in }
+        )
+        synthesizer.complete()
+        await settle()
+        XCTAssertFalse(progress.isEmpty, "phrase start must report a progress window")
+        XCTAssertEqual(progress[0].0, 0)
+        XCTAssertGreaterThan(progress[0].1, progress[0].0)
+        try? await Task.sleep(nanoseconds: NeuralSpeechProgress.tickNanoseconds + 50_000_000)
+        await settle()
+        XCTAssertGreaterThan(progress.count, 1, "progress must tick during playback")
+        session.stop()
+    }
+
     func testKeepAliveSilenceUsesSampleRate() {
-        XCTAssertEqual(NeuralSpeechAudio.keepAliveSilence(sampleRate: 1_000, seconds: 0.25).count, 250)
+        let pad = NeuralSpeechAudio.keepAliveSilence(sampleRate: 1_000, seconds: 0.25)
+        XCTAssertEqual(pad.count, 250)
+        XCTAssertTrue(pad.contains { abs($0) > 0 }, "dither must not be pure silence")
         XCTAssertEqual(NeuralSpeechAudio.keepAliveSilence(sampleRate: 0, seconds: 0.25).count, 6_000)
         XCTAssertEqual(NeuralSpeechAudio.keepAliveSilence(sampleRate: 1_000, seconds: 0).count, 50)
     }
@@ -200,6 +244,7 @@ final class NeuralSpeechSessionTests: XCTestCase {
             engine: .kokoroEnglish,
             speed: 1,
             onPhrase: { _ in XCTFail("failed render must not start a phrase") },
+            onProgress: { _, _ in XCTFail("failed render must not report progress") },
             completion: { result in
                 if case .failure = result { failed = true }
             }
@@ -221,6 +266,7 @@ final class NeuralSpeechSessionTests: XCTestCase {
             engine: .kokoroEnglish,
             speed: 1,
             onPhrase: { _ in XCTFail("stopped narration must not start a phrase") },
+            onProgress: { _, _ in },
             completion: { _ in completed = true }
         )
         session.stop()
@@ -239,6 +285,7 @@ final class NeuralSpeechSessionTests: XCTestCase {
             engine: .kokoroEnglish,
             speed: 1,
             onPhrase: { _ in },
+            onProgress: { _, _ in },
             completion: { _ in }
         )
         synthesizer.complete()
@@ -261,6 +308,7 @@ final class NeuralSpeechSessionTests: XCTestCase {
             engine: .kokoroEnglish,
             speed: 1,
             onPhrase: { _ in },
+            onProgress: { _, _ in },
             completion: { result in
                 if case .failure = result { failed = true }
             }

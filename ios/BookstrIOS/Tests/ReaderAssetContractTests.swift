@@ -475,8 +475,36 @@ final class ReaderAssetContractTests: XCTestCase {
             .deletingLastPathComponent()
             .appendingPathComponent("Sources/Features/Reader/NeuralSpeechPlayback.swift")
         let playbackSource = try String(contentsOf: playbackURL, encoding: .utf8)
+        XCTAssertTrue(sessionSource.contains("NeuralSpeechProgress.highlightRange"))
+        XCTAssertTrue(sessionSource.contains("tickNanoseconds"))
+        XCTAssertTrue(sessionSource.contains("onProgress"))
         XCTAssertTrue(playbackSource.contains("beginBackgroundTask(withName: \"bookstr-neural-tts\""))
+        XCTAssertTrue(playbackSource.contains("beginBackgroundTask(withName: \"bookstr-neural-playback\""))
+        XCTAssertTrue(playbackSource.contains("keepAliveMixer"))
+        XCTAssertTrue(sessionSource.contains("1e-4"))
         XCTAssertTrue(playbackSource.contains("options: .loops"))
+    }
+
+    func testSettingsExposesSpeechLogsAndStableRelayIdentifiers() throws {
+        let settingsURL = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent("Sources/Features/Settings/SettingsView.swift")
+        let settings = try String(contentsOf: settingsURL, encoding: .utf8)
+        XCTAssertTrue(settings.contains("accessibilityIdentifier(\"speech-debug-logs\")"))
+        XCTAssertTrue(settings.contains("accessibilityIdentifier(\"settings-relays-editor\")"))
+        XCTAssertTrue(settings.contains("accessibilityIdentifier(\"settings-save-relays\")"))
+        XCTAssertTrue(settings.contains("SpeechDebugLogView()"))
+        let relaysIndex = try XCTUnwrap(settings.range(of: "settings-relays-editor")?.lowerBound)
+        let logsIndex = try XCTUnwrap(settings.range(of: "speech-debug-logs")?.lowerBound)
+        XCTAssertLessThan(relaysIndex, logsIndex, "speech logs must sit below the relays editor")
+        let logViewURL = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent("Sources/Features/Settings/SpeechDebugLogView.swift")
+        let logView = try String(contentsOf: logViewURL, encoding: .utf8)
+        XCTAssertTrue(logView.contains("BookstrDebugLog.shared.exportText"))
+        XCTAssertTrue(logView.contains("scrollTo(\"log-bottom\""))
     }
 
     func testBundledVendorAssetsMatchCanonicalSourcesAndLockedHashes() throws {
