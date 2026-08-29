@@ -1,6 +1,7 @@
 import SwiftUI
 import Foundation
 import AVFoundation
+import UIKit
 
 struct ReaderHostView: View {
     @EnvironmentObject private var container: AppContainer
@@ -398,7 +399,6 @@ struct ReaderHostView: View {
         if let selection = epubController.textSelection, book.format == .epub {
             selectionActions(
                 text: selection.text,
-                word: VocabularyPDFView.selectedWord(from: selection.text),
                 language: selection.language,
                 locator: selection.locator,
                 context: selection.context
@@ -406,45 +406,55 @@ struct ReaderHostView: View {
         } else if let selection = pdfSelection, book.format == .pdf {
             selectionActions(
                 text: selection.text,
-                word: selection.word,
                 language: "en",
                 locator: selection.locator,
                 context: selection.text
+            )
+        } else if let selection = fb2Controller.textSelection, book.format == .fb2 {
+            selectionActions(
+                text: selection.text,
+                language: selection.language,
+                locator: selection.locator,
+                context: selection.context
             )
         }
     }
 
     private func selectionActions(
         text: String,
-        word: String?,
         language: String,
         locator: String,
         context: String
     ) -> some View {
-        HStack(spacing: 8) {
-            Text(text.replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression))
+        let kind = ReaderSelectionActions.kind(for: text)
+        return HStack(spacing: 8) {
+            Text(ReaderSelectionActions.normalizedText(text))
                 .font(.caption)
                 .lineLimit(1)
                 .frame(maxWidth: .infinity, alignment: .leading)
-            if let word {
+            Button {
+                UIPasteboard.general.string = ReaderSelectionActions.normalizedText(text)
+                readerNotice = "Copied"
+            } label: {
+                Label("Copy", systemImage: "doc.on.doc")
+            }
+            .accessibilityIdentifier("reader-selection-copy")
+            if case let .words(phrase) = kind {
                 Button {
-                    addWord(word, language: language, locator: locator, context: context)
+                    addWord(phrase, language: language, locator: locator, context: context)
                 } label: {
                     Label("Add word", systemImage: "text.badge.plus")
                 }
                 .accessibilityIdentifier("reader-add-word")
             }
-            Button {
-                publishSnippet(text: text, locator: locator, visibility: .privateNote)
-            } label: {
-                Label("Private", systemImage: "lock")
+            if kind == .mark {
+                Button {
+                    markSelection(text: text, locator: locator)
+                } label: {
+                    Label("Mark", systemImage: "bookmark")
+                }
+                .accessibilityIdentifier("reader-mark-selection")
             }
-            Button {
-                publishSnippet(text: text, locator: locator, visibility: .publicPost)
-            } label: {
-                Label("Public", systemImage: "globe")
-            }
-            .disabled(NostrSyncService.normalizedISBN(book.isbn) == nil)
         }
         .font(.caption.weight(.medium))
         .labelStyle(.iconOnly)
@@ -488,20 +498,25 @@ struct ReaderHostView: View {
         }
     }
 
-    private func publishSnippet(text: String, locator: String, visibility: SnippetVisibility) {
+    private func markSelection(text: String, locator: String) {
+        let entry = container.snippetRepository.saveMark(
+            text: text,
+            bookId: book.id,
+            bookTitle: book.title,
+            author: book.author,
+            isbn: NostrSyncService.normalizedISBN(book.isbn),
+            format: book.format,
+            locator: locator
+        )
+        NotificationCenter.default.post(name: .bookstrSnippetsDidChange, object: nil)
+        readerNotice = "Marked"
         snippetBusy = true
         Task { @MainActor in
             defer { snippetBusy = false }
-            do {
-                _ = try await container.nostrSyncService.publishSnippet(
-                    text: text,
-                    book: book,
-                    locator: locator,
-                    visibility: visibility
-                )
-                readerNotice = visibility == .publicPost ? "Public snippet posted" : "Private snippet saved"
-            } catch {
-                readerNotice = error.localizedDescription
+            if !(await container.nostrSyncService.pushSnippet(entry)) {
+                readerNotice = container.settingsRepository.hasNostrIdentity
+                    ? "Marked locally; Nostr sync failed."
+                    : "Marked locally. Connect Nostr to sync."
             }
         }
     }
@@ -821,11 +836,26 @@ final class FB2ReaderController: NSObject, ObservableObject {
     @Published var searchResults: [FB2SearchResult] = []
     @Published var searching = false
     @Published var isSpeaking = false
+    @Published var textSelection: ReaderTextSelection?
     private let speech = AVSpeechSynthesizer()
 
     override init() {
         super.init()
         speech.delegate = self
+    }
+
+    func setSelection(text: String, locator: String) {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            textSelection = nil
+            return
+        }
+        textSelection = ReaderTextSelection(
+            text: String(trimmed.prefix(2_000)),
+            locator: locator,
+            language: document?.language ?? "en",
+            context: String(trimmed.prefix(2_000))
+        )
     }
 
     func load(fileURL: URL, initialLocator: String?) async {
@@ -939,16 +969,24 @@ struct FB2ReaderView: View {
                                         Text(section.title).font(.title2.bold()).padding(.top, section.index == 0 ? 12 : 24)
                                     }
                                     ForEach(section.paragraphs) { paragraph in
-                                        Text(paragraph.text)
-                                            .font(.body)
-                                            .textSelection(.enabled)
-                                            .onAppear {
+                                        let paragraphIndex = section.paragraphs.firstIndex(of: paragraph) ?? 0
+                                        FB2SelectableParagraph(
+                                            text: paragraph.text,
+                                            onSelectionChange: { selected in
                                                 let locator = controller.update(
                                                     section: section.index,
-                                                    paragraph: section.paragraphs.firstIndex(of: paragraph) ?? 0
+                                                    paragraph: paragraphIndex
                                                 )
-                                                onProgress(controller.progression, locator)
+                                                controller.setSelection(text: selected, locator: locator)
                                             }
+                                        )
+                                        .onAppear {
+                                            let locator = controller.update(
+                                                section: section.index,
+                                                paragraph: paragraphIndex
+                                            )
+                                            onProgress(controller.progression, locator)
+                                        }
                                     }
                                 }
                                 .id(section.id)
@@ -972,6 +1010,61 @@ struct FB2ReaderView: View {
             }
         }
         .task { await controller.load(fileURL: fileURL, initialLocator: initialLocator) }
-        .onDisappear { controller.requestedSectionID = nil }
+        .onDisappear {
+            controller.requestedSectionID = nil
+            controller.textSelection = nil
+        }
+    }
+}
+
+private struct FB2SelectableParagraph: UIViewRepresentable {
+    let text: String
+    let onSelectionChange: (String) -> Void
+
+    func makeUIView(context: Context) -> UITextView {
+        let view = UITextView()
+        view.isEditable = false
+        view.isScrollEnabled = false
+        view.backgroundColor = .clear
+        view.textContainerInset = .zero
+        view.textContainer.lineFragmentPadding = 0
+        view.font = .preferredFont(forTextStyle: .body)
+        view.delegate = context.coordinator
+        view.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        view.text = text
+        return view
+    }
+
+    func updateUIView(_ uiView: UITextView, context: Context) {
+        if uiView.text != text {
+            uiView.text = text
+        }
+        context.coordinator.onSelectionChange = onSelectionChange
+    }
+
+    func sizeThatFits(_ proposal: ProposedViewSize, uiView: UITextView, context: Context) -> CGSize? {
+        let width = proposal.width ?? uiView.bounds.width
+        let size = uiView.sizeThatFits(CGSize(width: width, height: .greatestFiniteMagnitude))
+        return CGSize(width: width, height: size.height)
+    }
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(onSelectionChange: onSelectionChange)
+    }
+
+    final class Coordinator: NSObject, UITextViewDelegate {
+        var onSelectionChange: (String) -> Void
+
+        init(onSelectionChange: @escaping (String) -> Void) {
+            self.onSelectionChange = onSelectionChange
+        }
+
+        func textViewDidChangeSelection(_ textView: UITextView) {
+            guard let range = textView.selectedTextRange else {
+                onSelectionChange("")
+                return
+            }
+            onSelectionChange(textView.text(in: range) ?? "")
+        }
     }
 }

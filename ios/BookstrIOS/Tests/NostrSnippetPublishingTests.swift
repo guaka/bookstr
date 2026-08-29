@@ -158,18 +158,17 @@ final class NostrSnippetPublishingTests: XCTestCase {
         let dTag = try XCTUnwrap(published.dTag)
         XCTAssertTrue(dTag.hasPrefix(NostrKinds.snippetPrefix))
         let plaintext = try await signer.nip44Decrypt(published.content, from: signer.publicKeyHex)
-        let payload = try JSONDecoder().decode(BookSnippetPayload.self, from: Data(plaintext.utf8))
-        XCTAssertEqual(payload.version, 1)
-        XCTAssertEqual(payload.id, String(dTag.dropFirst(NostrKinds.snippetPrefix.count)))
+        let payload = try JSONDecoder().decode(BookSnippet.self, from: Data(plaintext.utf8))
+        XCTAssertEqual(payload.syncId, String(dTag.dropFirst(NostrKinds.snippetPrefix.count)))
         XCTAssertEqual(payload.text, "Private passage")
         XCTAssertEqual(payload.bookId, "book-id")
-        XCTAssertEqual(payload.title, "Book title")
+        XCTAssertEqual(payload.bookTitle, "Book title")
         XCTAssertEqual(payload.author, "Book author")
         XCTAssertEqual(payload.isbn, "9781234567897")
         XCTAssertEqual(payload.format, .epub)
         XCTAssertEqual(payload.locator, "epubcfi(/6/4)")
         XCTAssertGreaterThan(payload.createdAt, 0)
-    }
+        XCTAssertFalse(payload.deleted)
 
     func testRejectedPublisherReturnsRelayRejectedAfterSigning() async throws {
         let publisher = StubPublisher(accepted: false)
@@ -204,6 +203,7 @@ final class NostrSnippetPublishingTests: XCTestCase {
             settings: settings,
             progress: progress,
             vocabulary: vocabulary,
+            snippets: SnippetRepository(fileStore: fileStore),
             favoriteMetadata: favoriteMetadata,
             client: NostrClient(),
             signerStore: SignerStore(nip46Service: nip46),

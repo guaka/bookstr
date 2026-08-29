@@ -4,6 +4,7 @@ final class AppContainer: ObservableObject {
     let settingsRepository: SettingsRepository
     let progressRepository: ProgressRepository
     let vocabularyRepository: VocabularyRepository
+    let snippetRepository: SnippetRepository
     let wordNavigation: WordNavigationState
     let dictionaryRepository: DictionaryRepository
     let favoriteMetadataRepository: FavoriteMetadataRepository
@@ -17,6 +18,7 @@ final class AppContainer: ObservableObject {
         settingsRepository: SettingsRepository,
         progressRepository: ProgressRepository,
         vocabularyRepository: VocabularyRepository,
+        snippetRepository: SnippetRepository,
         wordNavigation: WordNavigationState = WordNavigationState(),
         dictionaryRepository: DictionaryRepository,
         favoriteMetadataRepository: FavoriteMetadataRepository,
@@ -29,6 +31,7 @@ final class AppContainer: ObservableObject {
         self.settingsRepository = settingsRepository
         self.progressRepository = progressRepository
         self.vocabularyRepository = vocabularyRepository
+        self.snippetRepository = snippetRepository
         self.wordNavigation = wordNavigation
         self.dictionaryRepository = dictionaryRepository
         self.favoriteMetadataRepository = favoriteMetadataRepository
@@ -49,6 +52,7 @@ final class AppContainer: ObservableObject {
 #endif
         let progress = ProgressRepository(fileStore: fileStore)
         let words = VocabularyRepository(fileStore: fileStore)
+        let snippets = SnippetRepository(fileStore: fileStore)
         let dictionary = DictionaryRepository()
         let favoriteMetadata = FavoriteMetadataRepository(fileStore: fileStore)
         let nostr = NostrClient()
@@ -59,6 +63,7 @@ final class AppContainer: ObservableObject {
             settings: settings,
             progress: progress,
             vocabulary: words,
+            snippets: snippets,
             favoriteMetadata: favoriteMetadata,
             client: nostr,
             signerStore: signerStore,
@@ -68,6 +73,7 @@ final class AppContainer: ObservableObject {
             settingsRepository: settings,
             progressRepository: progress,
             vocabularyRepository: words,
+            snippetRepository: snippets,
             dictionaryRepository: dictionary,
             favoriteMetadataRepository: favoriteMetadata,
             catalogRepository: catalog,
