@@ -28,8 +28,9 @@ final class AppShellUITests: XCTestCase {
         reveal(englishVoice)
         if englishVoice.isHittable {
             englishVoice.tap()
-            XCTAssertTrue(pickerChoice("Kokoro · English").waitForExistence(timeout: 8))
-            dismissSettingsPicker()
+            let kokoroChoice = pickerChoice("Kokoro · English")
+            XCTAssertTrue(kokoroChoice.waitForExistence(timeout: 8))
+            kokoroChoice.tap()
             XCTAssertTrue(
                 englishVoice.waitForExistence(timeout: 4),
                 "Settings did not return from the English voice picker"
@@ -98,22 +99,5 @@ final class AppShellUITests: XCTestCase {
 
     private func pickerChoice(_ label: String) -> XCUIElement {
         app.descendants(matching: .any)[label]
-    }
-
-    private func dismissSettingsPicker() {
-        let bar = app.navigationBars.firstMatch
-        if bar.buttons["Settings"].waitForExistence(timeout: 1), bar.buttons["Settings"].isHittable {
-            bar.buttons["Settings"].tap()
-            return
-        }
-        if bar.buttons["Back"].waitForExistence(timeout: 1), bar.buttons["Back"].isHittable {
-            bar.buttons["Back"].tap()
-            return
-        }
-        // toolbarRole(.editor) hides the previous title, leaving a unlabeled chevron.
-        let back = bar.buttons.allElementsBoundByIndex.first { button in
-            button.identifier != "app-speech-toggle" && button.isHittable
-        }
-        back?.tap()
     }
 }
