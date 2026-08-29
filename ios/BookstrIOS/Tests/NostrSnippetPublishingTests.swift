@@ -169,6 +169,7 @@ final class NostrSnippetPublishingTests: XCTestCase {
         XCTAssertEqual(payload.locator, "epubcfi(/6/4)")
         XCTAssertGreaterThan(payload.createdAt, 0)
         XCTAssertFalse(payload.deleted)
+    }
 
     func testRejectedPublisherReturnsRelayRejectedAfterSigning() async throws {
         let publisher = StubPublisher(accepted: false)
