@@ -35,6 +35,8 @@ test('cover pages retain the full reader viewport', () => {
 
 test('reader exposes its current EPUB location for browser progress and E2E checks', () => {
   assert.match(reader, /document\.body\.dataset\.location = start\.cfi/);
+  assert.match(reader, /type: "bookstr-reader-progress"/);
+  assert.match(reader, /window\.parent\.postMessage\(payload, window\.location\.origin\)/);
   assert.match(reader, /if \(!window\.AndroidBridge\) return/);
 });
 
@@ -69,7 +71,8 @@ test('reader keyboard handlers and zoom UI are present', () => {
   assert.match(reader, /document\.addEventListener\("keydown", function\(event\) \{/);
   assert.match(reader, /id="reader-prev"/);
   assert.match(reader, /id="reader-next"/);
-  assert.match(reader, /let readerFontPercent = Number\(localStorage\.getItem\("bookstr-reader-font-percent"\)\) \|\| 100;/);
+  assert.match(reader, /let readerFontPercent = Number\(currentReaderSettings\.readerFontPercent\)[\s\S]*?localStorage\.getItem\("bookstr-reader-font-percent"\)[\s\S]*?100;/);
+  assert.match(reader, /rendition\.themes\.font\(readerFontStack\(\)\);/);
   assert.match(reader, /rendition\.themes\.fontSize\(readerFontPercent \+ "%"\);/);
   assert.match(reader, /window\.prevPage/);
   assert.match(reader, /window\.nextPage/);

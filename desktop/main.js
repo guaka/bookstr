@@ -66,6 +66,7 @@ const LIBRARY_PANES = [
   { label: 'Reading', pane: 'reading', accelerator: 'CmdOrCtrl+2' },
   { label: 'Search', pane: 'search', accelerator: 'CmdOrCtrl+3' },
   { label: 'People', pane: 'people', accelerator: 'CmdOrCtrl+4' },
+  { label: 'Words', pane: 'words', accelerator: 'CmdOrCtrl+5' },
 ];
 const DICTIONARY_PROXY_BASE_URL = process.env.NODE_ENV === 'test'
   ? process.env.BOOKSTR_DESKTOP_TEST_DICTIONARY_BASE_URL

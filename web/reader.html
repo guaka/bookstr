@@ -253,7 +253,25 @@
     let currentBookId = "";
     let activeDictionary = null;
     let bookLoadGeneration = 0;
-    let readerFontPercent = Number(localStorage.getItem("bookstr-reader-font-percent")) || 100;
+    const READER_SETTINGS_KEY = "bookstr_reader_settings_v1";
+    function storedReaderSettings() {
+      try {
+        const parsed = JSON.parse(localStorage.getItem(READER_SETTINGS_KEY) || "{}");
+        return parsed && typeof parsed === "object" ? parsed : {};
+      } catch (_) {
+        return {};
+      }
+    }
+    let currentReaderSettings = storedReaderSettings();
+    let readerFontPercent = Number(currentReaderSettings.readerFontPercent)
+      || Number(localStorage.getItem("bookstr-reader-font-percent"))
+      || 100;
+    let readerFontFamily = ["serif", "arial", "sans", "system"].includes(currentReaderSettings.readerFontFamily)
+      ? currentReaderSettings.readerFontFamily
+      : "serif";
+    let readerTextAlign = ["book", "left", "justify"].includes(currentReaderSettings.readerTextAlign)
+      ? currentReaderSettings.readerTextAlign
+      : "book";
     let desktopReaderBook = null;
     let desktopReaderFurthestProgress = 0;
     let desktopReaderProgress = null;
@@ -266,6 +284,43 @@
     const readerHeaderRights = document.getElementById("reader-header-rights");
     let readerSpeechState = "stopped";
     let readerSpeechPlayer = null;
+
+    function readerFontStack() {
+      if (readerFontFamily === "arial") return 'Arial, Helvetica, sans-serif';
+      if (readerFontFamily === "sans") return '"Avenir Next", Avenir, "Gill Sans", sans-serif';
+      if (readerFontFamily === "system") return '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+      return '"Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua", Georgia, serif';
+    }
+
+    function readerTextAlignment() {
+      return readerTextAlign === "justify" ? "justify" : readerTextAlign === "left" ? "left" : "revert";
+    }
+
+    function selectedSpeechVoice(language) {
+      const normalized = String(language || "").toLowerCase();
+      return normalized === "pt" || normalized.startsWith("pt-")
+        ? String(currentReaderSettings.speechVoicePortuguese || "")
+        : String(currentReaderSettings.speechVoiceEnglish || "");
+    }
+
+    function applyReaderSettings(settings = storedReaderSettings()) {
+      currentReaderSettings = settings && typeof settings === "object" ? { ...settings } : {};
+      const nextPercent = Number(currentReaderSettings.readerFontPercent);
+      if (Number.isFinite(nextPercent)) readerFontPercent = Math.max(75, Math.min(180, nextPercent));
+      readerFontFamily = ["serif", "arial", "sans", "system"].includes(currentReaderSettings.readerFontFamily)
+        ? currentReaderSettings.readerFontFamily
+        : "serif";
+      readerTextAlign = ["book", "left", "justify"].includes(currentReaderSettings.readerTextAlign)
+        ? currentReaderSettings.readerTextAlign
+        : "book";
+      if (rendition) {
+        rendition.themes.font(readerFontStack());
+        rendition.themes.fontSize(readerFontPercent + "%");
+        rendition.themes.override("--bookstr-text-align", readerTextAlignment());
+      }
+      if (readerSpeechState !== "stopped") stopReaderSpeech();
+    }
+    window.applyReaderSettings = applyReaderSettings;
 
     document.getElementById("reader-back").addEventListener("click", () => {
       desktopBridge?.focusLibrary?.();
@@ -357,34 +412,41 @@
     }
 
     function reportDesktopProgress(cfi, progression, furthestProgression) {
-      if (!desktopBridge || !desktopReaderBook || !desktopReaderBook.md5) return;
+      const bookId = String(desktopReaderBook?.md5 || currentBookId || "").trim().toLowerCase();
+      if (!bookId) return;
       const normalizedProgress = clampProgress(progression);
       const safeFurthest = Number.isFinite(Number(furthestProgression)) ? clampProgress(Number(furthestProgression)) : normalizedProgress;
       const payload = {
-        md5: desktopReaderBook.md5,
-        readUrl: String(desktopReaderBook.readUrl || ""),
+        type: "bookstr-reader-progress",
+        bookId,
+        md5: bookId,
+        readUrl: String(desktopReaderBook?.readUrl || ""),
         progression: normalizedProgress,
         furthestProgression: Math.max(clampProgress(safeFurthest), desktopReaderFurthestProgress),
         cfi: String(cfi || ""),
-        title: String(desktopReaderBook.title || ""),
-        authors: String(desktopReaderBook.authors || ""),
-        year: String(desktopReaderBook.year || ""),
-        extension: String(desktopReaderBook.extension || "epub"),
-        language: String(desktopReaderBook.language || ""),
-        source: String(desktopReaderBook.source || ""),
-        sourceNativeId: String(desktopReaderBook.sourceNativeId || ""),
-        sourceUrl: String(desktopReaderBook.sourceUrl || ""),
-        blossomUrl: String(desktopReaderBook.blossomUrl || ""),
-        blossomSha256: String(desktopReaderBook.blossomSha256 || ""),
-		rights_status: String(desktopReaderBook.rights_status || "unknown"),
-		license: String(desktopReaderBook.license || ""),
-		license_url: String(desktopReaderBook.license_url || ""),
-		rights_source: String(desktopReaderBook.rights_source || ""),
+        title: String(desktopReaderBook?.title || ""),
+        authors: String(desktopReaderBook?.authors || ""),
+        year: String(desktopReaderBook?.year || ""),
+        extension: String(desktopReaderBook?.extension || "epub"),
+        language: String(desktopReaderBook?.language || ""),
+        source: String(desktopReaderBook?.source || ""),
+        sourceNativeId: String(desktopReaderBook?.sourceNativeId || ""),
+        sourceUrl: String(desktopReaderBook?.sourceUrl || ""),
+        blossomUrl: String(desktopReaderBook?.blossomUrl || ""),
+        blossomSha256: String(desktopReaderBook?.blossomSha256 || ""),
+		rights_status: String(desktopReaderBook?.rights_status || "unknown"),
+		license: String(desktopReaderBook?.license || ""),
+		license_url: String(desktopReaderBook?.license_url || ""),
+		rights_source: String(desktopReaderBook?.rights_source || ""),
       };
       payload.furthestProgression = Math.max(payload.furthestProgression, desktopReaderFurthestProgress);
       desktopReaderFurthestProgress = payload.furthestProgression;
       desktopReaderProgress = payload;
-      if (desktopBridge.reportProgress) desktopBridge.reportProgress(payload);
+      if (window.parent !== window) {
+        window.parent.postMessage(payload, window.location.origin);
+      } else if (desktopBridge?.reportProgress) {
+        desktopBridge.reportProgress(payload);
+      }
     }
 
     function base64ToArrayBuffer(base64) {
@@ -406,9 +468,10 @@
 
     function registerThemes() {
       const shared = {
-        "font-family": "'Iowan Old Style', 'Palatino Linotype', Palatino, 'Book Antiqua', Georgia, serif !important",
+        "font-family": readerFontStack() + " !important",
         "font-size": "1.04em !important",
         "line-height": "1.6 !important",
+        "text-align": "var(--bookstr-text-align, revert) !important",
         "box-sizing": "border-box",
         "width": "100% !important",
         "max-width": "none !important",
@@ -563,7 +626,9 @@
         });
         registerThemes();
         applyTheme(theme || "paper");
+        rendition.themes.font(readerFontStack());
         rendition.themes.fontSize(readerFontPercent + "%");
+        rendition.themes.override("--bookstr-text-align", readerTextAlignment());
         rendition.on("relocated", function(location) {
           reportLocation(location);
         });
@@ -686,7 +751,11 @@
       if (!hasSpeechSupport() || !readerSpeechPlayer) return;
       stopReaderSpeech();
       const plan = collectReaderSpeechPlan();
-      readerSpeechPlayer.start(plan, { language: plan.language, rate: 1 });
+      readerSpeechPlayer.start(plan, {
+        language: plan.language,
+        rate: Number(currentReaderSettings.speechRate) || 1,
+        voiceIdentifier: selectedSpeechVoice(plan.language),
+      });
     }
 
     function pauseReaderSpeech() {
@@ -1162,7 +1231,10 @@
     };
 
     function flushDesktopProgress() {
-      if (desktopReaderProgress && desktopBridge?.reportProgress) {
+      if (!desktopReaderProgress) return;
+      if (window.parent !== window) {
+        window.parent.postMessage(desktopReaderProgress, window.location.origin);
+      } else if (desktopBridge?.reportProgress) {
         desktopBridge.reportProgress(desktopReaderProgress);
       }
     }

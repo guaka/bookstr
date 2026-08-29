@@ -34,6 +34,35 @@
     }).join("-");
   }
 
+  function voiceIdentity(voice) {
+    return [voice && voice.voiceURI, voice && voice.name]
+      .map(function(value) { return String(value || "").trim().toLowerCase(); })
+      .filter(Boolean)
+      .join(" ");
+  }
+
+  function selectVoice(voices, language, identifier) {
+    const requested = String(identifier || "").trim().toLowerCase();
+    if (!requested) return null;
+    const available = Array.isArray(voices) ? voices : [];
+    const requestedLanguage = normalizeLocale(language).toLowerCase();
+    const languagePrefix = requestedLanguage.split("-")[0];
+    const matchesLanguage = function(voice) {
+      const voiceLanguage = normalizeLocale(voice && voice.lang).toLowerCase();
+      return voiceLanguage === requestedLanguage || voiceLanguage.split("-")[0] === languagePrefix;
+    };
+    const exact = available.find(function(voice) {
+      return matchesLanguage(voice) && (
+        String(voice && voice.voiceURI || "").trim().toLowerCase() === requested
+        || String(voice && voice.name || "").trim().toLowerCase() === requested
+      );
+    });
+    if (exact) return exact;
+    return available.find(function(voice) {
+      return voiceIdentity(voice).includes(requested) && matchesLanguage(voice);
+    }) || null;
+  }
+
   function normalizedParagraphs(values, maximumCharacters) {
     const source = Array.isArray(values) ? values : [values];
     const paragraphs = [];
@@ -257,6 +286,7 @@
     let index = 0;
     let language = "en";
     let rate = 1;
+    let voiceIdentifier = "";
     let utterance = null;
     let timer = null;
     let timerDeadline = 0;
@@ -304,6 +334,9 @@
       const nextUtterance = new Utterance(chunk.text);
       nextUtterance.lang = language;
       nextUtterance.rate = rate;
+      const voices = synthesis && typeof synthesis.getVoices === "function" ? synthesis.getVoices() : [];
+      const selectedVoice = selectVoice(voices, language, voiceIdentifier);
+      if (selectedVoice) nextUtterance.voice = selectedVoice;
       nextUtterance.onend = function() {
         if (activeGeneration !== generation || nextUtterance !== utterance) return;
         utterance = null;
@@ -356,6 +389,7 @@
         index = 0;
         language = normalizeLocale(options && options.language);
         rate = Math.max(0.1, Math.min(10, Number(options && options.rate) || 1));
+        voiceIdentifier = String(options && options.voiceIdentifier || "").trim();
         const activeGeneration = generation;
         publish("playing");
         speak(activeGeneration);
@@ -395,6 +429,7 @@
     buildPlan,
     createPlayer,
     normalizeLocale,
+    selectVoice,
     normalizeText,
     defaults: Object.freeze({
       softLimit: DEFAULT_SOFT_LIMIT,

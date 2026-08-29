@@ -346,6 +346,8 @@ test('pdf-reader supports desktop payload normalization, rendering, and speech c
   assert.equal(readerPayload.theme, 'solarized');
   assert.equal(readerPayload.book.extension, 'pdf');
   assert.equal(readerPayload.base64, 'VGVzdC1wZGY=');
+  assert.equal(PdfReaderTest.pdfPageFromLocator('page:2', 3), 2);
+  assert.equal(PdfReaderTest.pdfPageFromLocator('page:99', 3), 3);
 
   const fallbackPayload = PdfReaderTest.normalizeDesktopReaderPayload({
     base64: 'VGVzdA==',
@@ -363,8 +365,12 @@ test('pdf-reader supports desktop payload normalization, rendering, and speech c
   assert.equal(env.pageCount.textContent, '3 pages');
   assert.equal(env.window.document.body.dataset.theme, 'solarized');
   assert.equal(env.zoomLabel.textContent, '100%');
-  assert.equal(env.progress.length >= 4, true);
-  assert.equal(env.progress.some((entry) => entry.furthestProgression === 1), true);
+  assert.equal(env.progress.length >= 2, true);
+  assert.equal(env.progress.at(-1).cfi, 'page:1');
+
+  await env.window.loadPdf({ ...prepared, initialCfi: 'page:3' });
+  assert.equal(env.progress.at(-1).cfi, 'page:3');
+  assert.equal(env.progress.at(-1).progression, 1);
 
   const firstUrl = env.createdObjectURLs[0].value;
   await env.window.loadPdf({
@@ -372,7 +378,7 @@ test('pdf-reader supports desktop payload normalization, rendering, and speech c
     filename: 'Reader-Second.pdf',
     base64: 'VGVzdC1wZGY=',
   });
-  assert.equal(env.createdObjectURLs.length, 2);
+  assert.equal(env.createdObjectURLs.length, 3);
   assert.equal(env.revokedObjectURLs.includes(firstUrl), true);
 
   const reportedBefore = env.progress.length;

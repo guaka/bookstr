@@ -683,11 +683,23 @@ test('desktop pane shortcuts use the constrained preload callback', () => {
   assert.match(desktopMain, /pane: 'reading', accelerator: 'CmdOrCtrl\+2'/);
   assert.match(desktopMain, /pane: 'search', accelerator: 'CmdOrCtrl\+3'/);
   assert.match(desktopMain, /pane: 'people', accelerator: 'CmdOrCtrl\+4'/);
-  assert.match(desktopPreload, /const ALLOWED_PANES = new Set\(\['reading', 'home', 'search', 'people'\]\)/);
+  assert.match(desktopMain, /pane: 'words', accelerator: 'CmdOrCtrl\+5'/);
+  assert.match(desktopPreload, /const ALLOWED_PANES = new Set\(\['reading', 'home', 'search', 'people', 'words'\]\)/);
   assert.match(desktopPreload, /const PANE_SHORTCUTS = new Map/);
+  assert.match(desktopPreload, /\['5', 'words'\]/);
   assert.match(html, /onOpenPane\?\.\(\(pane\) => activateTab\(pane, \{ updateHash: true \}\)\)/);
-  assert.match(html, /id="home-tab-btn"[\s\S]*?id="reading-tab-btn"[\s\S]*?id="search-tab-btn"[\s\S]*?id="people-tab-btn"/);
+  assert.match(html, /id="home-tab-btn"[\s\S]*?id="reading-tab-btn"[\s\S]*?id="search-tab-btn"[\s\S]*?id="people-tab-btn"[\s\S]*?id="words-tab-btn"[^>]*Command 5/);
   assert.doesNotMatch(html, /class="app-header-left app-home"/);
+});
+
+test('embedded readers persist progress and debounce Nostr publication with a remote-ahead guard', () => {
+  assert.match(html, /event\.data\?\.type === 'bookstr-reader-progress'/);
+  assert.match(html, /queueReadingProgressPublish\(merged\)/);
+  assert.match(html, /}, 2000\)/);
+  assert.match(html, /const remoteIsAhead = remote/);
+  assert.match(html, /reason: 'remote-ahead'/);
+  assert.match(html, /bookWithSavedReadingState\(book\)/);
+  assert.match(html, /initialCfi: book\.cfi \|\| ''/);
 });
 
 test('desktop application menu preserves native editing commands', () => {
@@ -750,6 +762,19 @@ test('Electron identifies development builds with a Bookstr timestamp version', 
 
 test('settings groups Nostr controls and connection status together', () => {
   assert.match(html, /settings-section settings-nostr[\s\S]*?<h3>Nostr<\/h3>[\s\S]*?id="nip7-enabled"[\s\S]*?id="nip7-status"/);
+});
+
+test('Electron settings expose opt-in language voices and reader typography', () => {
+  assert.match(html, /desktop-reader-settings settings-speech[\s\S]*?id="speech-voice-en"[\s\S]*?id="speech-voice-pt"[\s\S]*?id="speech-rate"/);
+  assert.match(html, /Kokoro for English[\s\S]*?Tugão for Portuguese/);
+  assert.match(html, /Optional voices are never downloaded or selected automatically/);
+  assert.match(html, /id="reader-font-family"[\s\S]*?<option value="arial">Arial<\/option>[\s\S]*?id="reader-text-align"[\s\S]*?<option value="justify">Justified<\/option>[\s\S]*?id="reader-font-size"/);
+  assert.match(html, /speechVoiceEnglish:[\s\S]*?speechVoicePortuguese:[\s\S]*?speechRate:/);
+  assert.match(html, /notifyOpenReaderSettings\(\)/);
+  assert.match(readerHtml, /voiceIdentifier: selectedSpeechVoice\(plan\.language\)/);
+  assert.match(readerHtml, /readerFontFamily === "arial"[\s\S]*?Arial, Helvetica, sans-serif/);
+  assert.match(readerHtml, /readerTextAlign === "justify"[\s\S]*?rendition\.themes\.override\("--bookstr-text-align"/);
+  assert.match(pdfReaderJs, /voiceIdentifier: selectedPdfSpeechVoice\(plan\.language\)/);
 });
 
 test('vocabulary deletion publishes a durable encrypted tombstone before best-effort NIP-09 cleanup', () => {

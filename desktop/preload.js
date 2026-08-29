@@ -4,12 +4,13 @@ const readerOpenCallbacks = new Set();
 const progressCallbacks = new Set();
 const settingsOpenCallbacks = new Set();
 const paneOpenCallbacks = new Set();
-const ALLOWED_PANES = new Set(['reading', 'home', 'search', 'people']);
+const ALLOWED_PANES = new Set(['reading', 'home', 'search', 'people', 'words']);
 const PANE_SHORTCUTS = new Map([
   ['1', 'home'],
   ['2', 'reading'],
   ['3', 'search'],
   ['4', 'people'],
+  ['5', 'words'],
 ]);
 
 window.addEventListener('keydown', event => {

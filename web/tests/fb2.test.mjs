@@ -41,7 +41,8 @@ test('FB2 reader asset is wired to structural parsing and safe progress reportin
   assert.match(reader, /import\s*\{\s*parseFB2\s*\}\s*from ['"]\.\/fb2\.js['"]/);
   assert.match(reader, /window\.loadFB2\s*=\s*async/);
   assert.match(reader, /parseFB2\(decode\(base64\),document\)/);
-  assert.match(reader, /type:'bookstr-fb2-progress'/);
+  assert.match(reader, /type:'bookstr-reader-progress'/);
+  assert.match(reader, /furthestProgression:furthest/);
   assert.match(reader, /cfi:locator\(\)/);
   assert.match(reader, /window\.nextPage/);
   assert.match(reader, /window\.prevPage/);
