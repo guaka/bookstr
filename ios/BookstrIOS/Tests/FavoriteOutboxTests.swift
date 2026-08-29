@@ -166,17 +166,20 @@ final class FavoriteOutboxTests: XCTestCase {
         context.settings.pubkeyHex = String(repeating: "e", count: 64)
 
         context.settings.lastReadingMetadataSync = Date()
-        XCTAssertEqual(await context.service.pullReadingMetadata(), 0)
+        let skippedByReading = await context.service.pullReadingMetadata()
+        XCTAssertEqual(skippedByReading, 0)
 
         context.settings.lastReadingMetadataSync = nil
         context.settings.lastApplicationDataSync = Date()
-        XCTAssertEqual(await context.service.pullReadingMetadata(), 0)
+        let skippedByApplication = await context.service.pullReadingMetadata()
+        XCTAssertEqual(skippedByApplication, 0)
     }
 
     func testPullReadingMetadataSkipsWithoutIdentity() async {
         let context = makeContext()
         defer { context.defaults.removePersistentDomain(forName: context.suite) }
-        XCTAssertEqual(await context.service.pullReadingMetadata(force: true), 0)
+        let merged = await context.service.pullReadingMetadata(force: true)
+        XCTAssertEqual(merged, 0)
     }
 
     func testPullApplicationDataSkipsWhenRecentlySynced() async throws {
