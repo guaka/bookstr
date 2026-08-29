@@ -60,6 +60,14 @@ test('libstr desktop app opens with preload bridge', async () => {
     await expect(firstWindow).toHaveTitle('libstr');
     const appVersion = await electronApp.evaluate(({ app }) => app.getVersion());
     expect(appVersion).toMatch(/^0\.1-\d{8}-\d{4}$/);
+    const windowState = await electronApp.evaluate(({ BrowserWindow }) => {
+      const [window] = BrowserWindow.getAllWindows();
+      return {
+        maximized: window?.isMaximized(),
+        fullScreen: window?.isFullScreen(),
+      };
+    });
+    expect(windowState).toEqual({ maximized: true, fullScreen: false });
 
     const contentSecurityPolicy = await firstWindow.evaluate(async () => (
       await fetch(window.location.href)

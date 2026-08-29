@@ -753,7 +753,10 @@ async function createLibraryWindow() {
     event.preventDefault();
     mainWindow?.setTitle('libstr');
   });
-  mainWindow.once('ready-to-show', () => mainWindow.show());
+  mainWindow.once('ready-to-show', () => {
+    mainWindow.maximize();
+    mainWindow.show();
+  });
   await mainWindow.loadURL(`${APP_ORIGIN}/index.html`);
 
   mainWindow.on('resize', async () => {
