@@ -30,8 +30,13 @@ final class AppShellUITests: XCTestCase {
             englishVoice.tap()
             let kokoroChoice = pickerChoice("Kokoro · English")
             XCTAssertTrue(kokoroChoice.waitForExistence(timeout: 8))
-            let systemDefaultChoice = pickerChoice("System default")
-            XCTAssertTrue(systemDefaultChoice.waitForExistence(timeout: 4))
+            let systemDefaultChoices = app.descendants(matching: .any).matching(
+                NSPredicate(format: "label == %@", "System default")
+            )
+            let systemDefaultChoice = try XCTUnwrap(
+                systemDefaultChoices.allElementsBoundByIndex.first { $0.isHittable },
+                "English voice picker did not expose a visible System default choice"
+            )
             systemDefaultChoice.tap()
             XCTAssertTrue(
                 englishVoice.waitForExistence(timeout: 4),

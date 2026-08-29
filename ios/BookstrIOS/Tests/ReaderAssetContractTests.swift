@@ -734,6 +734,7 @@ final class ReaderAssetContractTests: XCTestCase {
             .deletingLastPathComponent()
             .appendingPathComponent("UITests/AppShellUITests.swift")
         let uiTest = try String(contentsOf: uiTestURL, encoding: .utf8)
+        XCTAssertTrue(uiTest.contains("allElementsBoundByIndex.first { $0.isHittable }"))
         XCTAssertTrue(uiTest.contains("systemDefaultChoice.tap()"))
         XCTAssertTrue(uiTest.contains("Settings did not return from the English voice picker"))
     }
