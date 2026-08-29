@@ -35,6 +35,8 @@ test('reopening an EPUB does not let location generation overwrite the restored 
 test('speech progress and reading progress share the spoken CFI after locations exist', () => {
   assert.match(reader, /if \(speechActive\) \{\s*reportSpeechLocator\(lastSpeechCfi, false\);/s);
   assert.match(reader, /function cfiProgression\(cfi\)/);
+  assert.match(reader, /function spinePositionForCfi\(cfi, fallbackIndex\)/);
+  assert.match(reader, /sectionCount: spine\.sectionCount/);
   assert.match(reader, /BookstrSpeech\.relocationProgression/);
   assert.match(reader, /rangeToCfi\(spokenRange\) \|\| elementBoundaryCfi\(block\.element, false\)/);
 });

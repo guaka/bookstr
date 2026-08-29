@@ -518,6 +518,8 @@ final class ReaderAssetContractTests: XCTestCase {
         XCTAssertTrue(html.contains("BookstrSpeech.relocationProgression"))
         XCTAssertTrue(html.contains("rangeToCfi(spokenRange) || elementBoundaryCfi(block.element, false)"))
         XCTAssertTrue(html.contains("if (!restore) reportLocation(rendition.currentLocation())"))
+        XCTAssertTrue(html.contains("function spinePositionForCfi(cfi, fallbackIndex)"))
+        XCTAssertTrue(html.contains("sectionCount: spine.sectionCount"))
         XCTAssertTrue(html.contains("box-shadow:inset 3px 0 0 #7fb8a7"))
         XCTAssertTrue(html.contains("::highlight(bookstr-speaking-word){background:rgba(47,93,80,.32)"))
         XCTAssertFalse(html.contains("::highlight(bookstr-speaking-word){background:#e7c766"))
