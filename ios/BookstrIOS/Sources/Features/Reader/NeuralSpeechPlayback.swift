@@ -1,6 +1,7 @@
 import AVFoundation
 import Foundation
 import SherpaOnnx
+import UIKit
 
 private final class NeuralSpeechRenderer: NeuralSpeechSynthesizing, @unchecked Sendable {
     private let queue = DispatchQueue(label: "app.bookstr.neural-speech", qos: .userInitiated)
@@ -13,7 +14,17 @@ private final class NeuralSpeechRenderer: NeuralSpeechSynthesizing, @unchecked S
         speed: Float,
         completion: @escaping (Result<(samples: [Float], sampleRate: Double), Error>) -> Void
     ) {
+        // beginBackgroundTask must run on the main thread; callers are MainActor.
+        var task = UIBackgroundTaskIdentifier.invalid
+        let endTask = {
+            if task != .invalid {
+                UIApplication.shared.endBackgroundTask(task)
+                task = .invalid
+            }
+        }
+        task = UIApplication.shared.beginBackgroundTask(withName: "bookstr-neural-tts", expirationHandler: endTask)
         queue.async {
+            defer { DispatchQueue.main.async(execute: endTask) }
             do {
                 let spec = try self.spec(for: engine)
                 let synthesizer = try self.synthesizer(for: spec)
@@ -140,7 +151,7 @@ private final class NeuralAudioPlayer: NeuralSpeechScheduling {
             channel.update(from: address, count: samples.count)
         }
         player.scheduleBuffer(buffer, completionCallbackType: .dataPlayedBack) { _ in
-            completion()
+            DispatchQueue.main.async(execute: completion)
         }
         if player.isPlaying == false {
             player.play()
@@ -162,6 +173,7 @@ private final class NeuralAudioPlayer: NeuralSpeechScheduling {
         if audioEngine.isRunning == false {
             try audioEngine.start()
         }
+        try AVAudioSession.sharedInstance().setActive(true)
     }
 }
 

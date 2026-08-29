@@ -181,10 +181,16 @@ final class EPUBReaderController: NSObject, ObservableObject, AVSpeechSynthesize
     private var nowPlayingArtwork: MPMediaItemArtwork?
     private var nowPlayingIsPlaying = false
     private var remoteCommandsConfigured = false
+    private var audioSessionObservers: [NSObjectProtocol] = []
 
     override init() {
         super.init()
         speech.delegate = self
+        observeAudioSession()
+    }
+
+    deinit {
+        audioSessionObservers.forEach(NotificationCenter.default.removeObserver)
     }
 
     func nextPage() { evaluate("window.nextPage && window.nextPage()") }
@@ -341,26 +347,27 @@ final class EPUBReaderController: NSObject, ObservableObject, AVSpeechSynthesize
     }
 
     nonisolated func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, willSpeakRangeOfSpeechString characterRange: NSRange, utterance: AVSpeechUtterance) {
-        Task { @MainActor in
-            guard let offset = utteranceOffsets[ObjectIdentifier(utterance)] else { return }
-            if utteranceMapsSpokenRanges[ObjectIdentifier(utterance)] == false,
-               let length = utteranceHighlightLengths[ObjectIdentifier(utterance)] {
-                updateSpeechProgress(start: offset, end: offset + max(1, length))
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            guard let offset = self.utteranceOffsets[ObjectIdentifier(utterance)] else { return }
+            if self.utteranceMapsSpokenRanges[ObjectIdentifier(utterance)] == false,
+               let length = self.utteranceHighlightLengths[ObjectIdentifier(utterance)] {
+                self.updateSpeechProgress(start: offset, end: offset + max(1, length))
                 return
             }
-            updateSpeechProgress(start: offset + characterRange.location, end: offset + NSMaxRange(characterRange))
+            self.updateSpeechProgress(start: offset + characterRange.location, end: offset + NSMaxRange(characterRange))
         }
     }
 
     nonisolated func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {
-        Task { @MainActor in
-            finishUtterance(utterance)
+        DispatchQueue.main.async { [weak self] in
+            self?.finishUtterance(utterance)
         }
     }
 
     nonisolated func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didCancel utterance: AVSpeechUtterance) {
-        Task { @MainActor in
-            finishUtterance(utterance)
+        DispatchQueue.main.async { [weak self] in
+            self?.finishUtterance(utterance)
         }
     }
 
@@ -457,6 +464,88 @@ final class EPUBReaderController: NSObject, ObservableObject, AVSpeechSynthesize
             return parsed
         }
         return []
+    }
+
+    private func observeAudioSession() {
+        let center = NotificationCenter.default
+        audioSessionObservers.append(center.addObserver(
+            forName: AVAudioSession.interruptionNotification,
+            object: AVAudioSession.sharedInstance(),
+            queue: .main
+        ) { [weak self] notification in
+            self?.handleAudioInterruption(notification)
+        })
+        audioSessionObservers.append(center.addObserver(
+            forName: AVAudioSession.routeChangeNotification,
+            object: AVAudioSession.sharedInstance(),
+            queue: .main
+        ) { [weak self] notification in
+            self?.handleRouteChange(notification)
+        })
+    }
+
+    private func handleAudioInterruption(_ notification: Notification) {
+        guard let info = notification.userInfo,
+              let typeValue = info[AVAudioSessionInterruptionTypeKey] as? UInt,
+              let type = AVAudioSession.InterruptionType(rawValue: typeValue)
+        else { return }
+        switch type {
+        case .began:
+            if speech.isSpeaking {
+                speech.pauseSpeaking(at: .word)
+                isSpeaking = false
+                updateNowPlaying(isPlaying: false)
+            } else if neuralSpeech.isPlaying {
+                neuralSpeech.pause()
+                isSpeaking = false
+                updateNowPlaying(isPlaying: false)
+            }
+        case .ended:
+            let options = (info[AVAudioSessionInterruptionOptionKey] as? UInt)
+                .map(AVAudioSession.InterruptionOptions.init(rawValue:)) ?? []
+            guard options.contains(.shouldResume) else { return }
+            resumeSpeechAfterInterruption()
+        @unknown default:
+            break
+        }
+    }
+
+    private func handleRouteChange(_ notification: Notification) {
+        guard let info = notification.userInfo,
+              let reasonValue = info[AVAudioSessionRouteChangeReasonKey] as? UInt,
+              let reason = AVAudioSession.RouteChangeReason(rawValue: reasonValue)
+        else { return }
+        // AirPods reconnect / headset plug: keep the session active if we were speaking.
+        if reason == .newDeviceAvailable || reason == .categoryChange {
+            guard isSpeaking || neuralSpeech.isPaused || speech.isPaused else { return }
+            try? AVAudioSession.sharedInstance().setActive(true)
+            if neuralSpeech.isPaused {
+                neuralSpeech.resume()
+                isSpeaking = true
+                updateNowPlaying(isPlaying: true)
+            } else if speech.isPaused {
+                speech.continueSpeaking()
+                isSpeaking = true
+                updateNowPlaying(isPlaying: true)
+            }
+        }
+    }
+
+    private func resumeSpeechAfterInterruption() {
+        do {
+            try AVAudioSession.sharedInstance().setActive(true)
+        } catch {
+            return
+        }
+        if speech.isPaused {
+            speech.continueSpeaking()
+            isSpeaking = true
+            updateNowPlaying(isPlaying: true)
+        } else if neuralSpeech.isPaused || neuralChunkOffset != nil {
+            neuralSpeech.resume()
+            isSpeaking = true
+            updateNowPlaying(isPlaying: true)
+        }
     }
 
     private func deactivateAudioSession() {

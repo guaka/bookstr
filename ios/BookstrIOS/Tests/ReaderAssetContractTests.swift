@@ -460,6 +460,22 @@ final class ReaderAssetContractTests: XCTestCase {
         XCTAssertTrue(source.contains("window.setReaderTypography && window.setReaderTypography"))
         XCTAssertTrue(source.contains("window.requestSpeechText && window.requestSpeechText(true, \\(Self.js(requestID)), \\(Self.js(speechLocator)))"))
         XCTAssertTrue(source.contains("if item[\"source\"] as? String == \"speech\" { return }"))
+        XCTAssertTrue(source.contains("observeAudioSession()"))
+        XCTAssertTrue(source.contains("AVAudioSession.interruptionNotification"))
+        let sessionURL = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent("Sources/Features/Reader/NeuralSpeechSession.swift")
+        let sessionSource = try String(contentsOf: sessionURL, encoding: .utf8)
+        XCTAssertTrue(sessionSource.contains("enqueueKeepAlive()"))
+        XCTAssertTrue(sessionSource.contains("keepAliveSilence"))
+        XCTAssertTrue(sessionSource.contains("maxSpokenAhead"))
+        let playbackURL = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent("Sources/Features/Reader/NeuralSpeechPlayback.swift")
+        let playbackSource = try String(contentsOf: playbackURL, encoding: .utf8)
+        XCTAssertTrue(playbackSource.contains("beginBackgroundTask(withName: \"bookstr-neural-tts\""))
     }
 
     func testBundledVendorAssetsMatchCanonicalSourcesAndLockedHashes() throws {
