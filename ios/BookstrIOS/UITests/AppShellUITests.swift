@@ -23,11 +23,15 @@ final class AppShellUITests: XCTestCase {
         let portugueseVoice = app.descendants(matching: .any)["speech-voice-pt"]
         XCTAssertTrue(englishVoice.waitForExistence(timeout: 5), "Settings did not expose the English voice picker")
         XCTAssertTrue(portugueseVoice.waitForExistence(timeout: 5), "Settings did not expose the Portuguese voice picker")
+        XCTAssertTrue(app.descendants(matching: .any)["reader-font"].waitForExistence(timeout: 4))
+        XCTAssertTrue(app.descendants(matching: .any)["reader-alignment"].waitForExistence(timeout: 4))
+        reveal(englishVoice)
         englishVoice.tap()
-        XCTAssertTrue(app.staticTexts["Kokoro · English"].waitForExistence(timeout: 4))
+        XCTAssertTrue(pickerChoice("Kokoro · English").waitForExistence(timeout: 8))
         dismissSettingsPicker()
+        reveal(portugueseVoice)
         portugueseVoice.tap()
-        XCTAssertTrue(app.staticTexts["Tugão · Português (Portugal)"].waitForExistence(timeout: 4))
+        XCTAssertTrue(pickerChoice("Tugão · Português (Portugal)").waitForExistence(timeout: 8))
         dismissSettingsPicker()
         XCTAssertTrue(app.buttons["speech-model-kokoro_en"].waitForExistence(timeout: 4), "Settings did not expose the Kokoro download control")
         XCTAssertTrue(app.buttons["speech-model-piper_pt_pt"].waitForExistence(timeout: 4), "Settings did not expose the Tugão download control")
@@ -74,6 +78,16 @@ final class AppShellUITests: XCTestCase {
         XCTAssertTrue(tab.waitForExistence(timeout: 5), "Missing " + label + " tab")
         tab.tap()
         XCTAssertTrue(tab.isSelected, label + " tab was not selected")
+    }
+
+    private func reveal(_ element: XCUIElement) {
+        for _ in 0..<8 where !element.isHittable {
+            app.swipeUp()
+        }
+    }
+
+    private func pickerChoice(_ label: String) -> XCUIElement {
+        app.descendants(matching: .any)[label]
     }
 
     private func dismissSettingsPicker() {
