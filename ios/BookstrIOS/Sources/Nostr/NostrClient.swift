@@ -19,22 +19,45 @@ struct FavoritesQueryResult {
     var fallbackUsed: Bool
 }
 
+enum NostrPullCooldown {
+    static let interval: TimeInterval = 120
+
+    static func shouldSkip(lastSync: Date?, now: Date = Date(), force: Bool = false) -> Bool {
+        guard !force else { return false }
+        guard let lastSync else { return false }
+        return now.timeIntervalSince(lastSync) < interval
+    }
+
+    static func shouldSkip(lastSyncs: [Date?], now: Date = Date(), force: Bool = false) -> Bool {
+        lastSyncs.contains { shouldSkip(lastSync: $0, now: now, force: force) }
+    }
+}
+
 protocol NostrEventPublishing {
     func publishEvent(_ event: NostrEvent, relays: [String]) async -> Bool
 }
 
 final class NostrClient: NostrEventPublishing {
     static let defaultInteropRelay = "wss://relay.nomadwiki.org"
+    /// Query sockets fail fast instead of parking for minutes when a relay is unreachable.
+    static let queryRequestTimeout: TimeInterval = 12
+    static let queryResourceTimeout: TimeInterval = 15
 
     /// Isolated from `URLSession.shared` so closing a catalog/favorites socket cannot
     /// tear down Amber's NIP-46 WebSocket on the same relay.
     private static let relaySession: URLSession = {
-        let config = URLSessionConfiguration.ephemeral
-        config.waitsForConnectivity = true
-        config.timeoutIntervalForRequest = 30
-        config.timeoutIntervalForResource = 60
-        return URLSession(configuration: config)
+        URLSession(configuration: makeRelaySessionConfiguration())
     }()
+
+    static func makeRelaySessionConfiguration() -> URLSessionConfiguration {
+        let config = URLSessionConfiguration.ephemeral
+        // Waiting for connectivity can stall the whole app when Library/Words refresh
+        // on a flaky network; queries already have their own 8–10s receive deadlines.
+        config.waitsForConnectivity = false
+        config.timeoutIntervalForRequest = queryRequestTimeout
+        config.timeoutIntervalForResource = queryResourceTimeout
+        return config
+    }
 
     private static func close(_ socket: URLSessionWebSocketTask) {
         socket.cancel(with: .normalClosure, reason: nil)
@@ -104,7 +127,8 @@ final class NostrClient: NostrEventPublishing {
     func fetchApplicationData(pubkey: String, relays: [String]) async -> [NostrEvent] {
         let filter: [String: Any] = [
             "kinds": [NostrKinds.progress],
-            "authors": [pubkey]
+            "authors": [pubkey],
+            "limit": 500
         ]
         let collected = await queryRelays(relays: relays, subscriptionId: "bookstr-app-data", filter: filter)
         var byID: [String: NostrEvent] = [:]

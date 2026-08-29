@@ -158,4 +158,37 @@ final class FavoriteOutboxTests: XCTestCase {
         try await Task.sleep(nanoseconds: 20_000_000)
         XCTAssertEqual(monitor.recoveryToken, 1)
     }
+
+    func testPullReadingMetadataSkipsWhenReadingOrApplicationSyncIsRecent() async {
+        let context = makeContext()
+        defer { context.defaults.removePersistentDomain(forName: context.suite) }
+        context.settings.authMode = .nsec
+        context.settings.pubkeyHex = String(repeating: "e", count: 64)
+
+        context.settings.lastReadingMetadataSync = Date()
+        XCTAssertEqual(await context.service.pullReadingMetadata(), 0)
+
+        context.settings.lastReadingMetadataSync = nil
+        context.settings.lastApplicationDataSync = Date()
+        XCTAssertEqual(await context.service.pullReadingMetadata(), 0)
+    }
+
+    func testPullReadingMetadataSkipsWithoutIdentity() async {
+        let context = makeContext()
+        defer { context.defaults.removePersistentDomain(forName: context.suite) }
+        XCTAssertEqual(await context.service.pullReadingMetadata(force: true), 0)
+    }
+
+    func testPullApplicationDataSkipsWhenRecentlySynced() async throws {
+        let context = makeContext()
+        defer { context.defaults.removePersistentDomain(forName: context.suite) }
+        context.settings.authMode = .nsec
+        context.settings.pubkeyHex = String(repeating: "f", count: 64)
+        context.settings.lastApplicationDataSync = Date()
+
+        let merged = try await context.service.pullApplicationData()
+        XCTAssertEqual(merged.vocabularyMerged, 0)
+        XCTAssertEqual(merged.progressMerged, 0)
+        XCTAssertEqual(merged.snippetsMerged, 0)
+    }
 }

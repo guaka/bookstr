@@ -10,6 +10,19 @@ enum LibrarySort: String, CaseIterable, Identifiable {
     var label: String { rawValue.capitalized }
 }
 
+/// Cache-first Library load: never block the foreground path on relay/Amber work.
+struct LibraryForegroundLoadPlan: Equatable {
+    var applyCachedFavorites: Bool
+    var scheduleBackgroundNostrRefresh: Bool
+
+    static func make(hasNostrIdentity: Bool) -> Self {
+        Self(
+            applyCachedFavorites: true,
+            scheduleBackgroundNostrRefresh: hasNostrIdentity
+        )
+    }
+}
+
 @MainActor
 final class LibraryViewModel: ObservableObject {
     @Published var reading: [CatalogBook] = []
@@ -23,9 +36,16 @@ final class LibraryViewModel: ObservableObject {
     private var container: AppContainer?
     private var isLoading = false
     private var pendingReload = false
+    private var networkRefreshTask: Task<Void, Never>?
 
     func attach(_ container: AppContainer) {
         self.container = container
+    }
+
+    /// Cancels an in-flight background Nostr refresh (used by tests and teardown).
+    func cancelPendingNetworkRefresh() {
+        networkRefreshTask?.cancel()
+        networkRefreshTask = nil
     }
 
     func load() async {
@@ -45,7 +65,7 @@ final class LibraryViewModel: ObservableObject {
         guard let container else { return }
         errorMessage = nil
         hasNostrIdentity = container.settingsRepository.hasNostrIdentity
-        debugText = "Fetching favorites… Open Amber if it asks to decrypt."
+        let plan = LibraryForegroundLoadPlan.make(hasNostrIdentity: hasNostrIdentity)
         var debug: [String] = ["=== library load ==="]
 
         var localBooks = container.catalogRepository.downloadedBooks()
@@ -53,33 +73,62 @@ final class LibraryViewModel: ObservableObject {
         debug.append("downloaded books: \(localBooks.count)")
         debug.append("words cached: \(container.vocabularyRepository.all().count)")
 
-        var shared = container.nostrSyncService.cachedFavorites(seedBooks: localBooks)
-        localBooks = container.catalogRepository.downloadedBooks(externalFavorites: shared.external)
-        apply(shared: shared, seed: localBooks, container: container)
-
-        if container.settingsRepository.hasNostrIdentity {
-            let readingMetadata = await container.nostrSyncService.pullReadingMetadata()
-            debug.append("reading metadata cached: \(readingMetadata)")
-            let pulled = await container.nostrSyncService.pullFavorites(seedBooks: localBooks)
-            shared = pulled.favorites
+        if plan.applyCachedFavorites {
+            let shared = container.nostrSyncService.cachedFavorites(seedBooks: localBooks)
             localBooks = container.catalogRepository.downloadedBooks(externalFavorites: shared.external)
+            apply(shared: shared, seed: localBooks, container: container)
+        }
+
+        if plan.scheduleBackgroundNostrRefresh {
+            debug.append("showing cache; nostr refresh scheduled")
+            debugText = debug.joined(separator: "\n")
+            scheduleNetworkRefresh(seedBooks: localBooks, container: container)
+        } else {
+            debug.append("skipped favorites pull: no nostr identity")
+            debug.append("=== shown ===")
+            debug.append("favorites: \(favorites.count)")
+            debug.append("external leftover: \(externalFavorites.count)")
+            debug.append("reading: \(reading.count)")
+            debugText = debug.joined(separator: "\n")
+        }
+    }
+
+    /// Relay pulls and Amber decrypt must not sit on the foreground load path.
+    /// Cache is already applied; network results merge when they arrive.
+    private func scheduleNetworkRefresh(seedBooks: [CatalogBook], container: AppContainer) {
+        networkRefreshTask?.cancel()
+        networkRefreshTask = Task { [weak self] in
+            guard let self else { return }
+            var debug: [String] = [
+                "=== library load ===",
+                "downloaded books: \(seedBooks.count)",
+                "=== nostr refresh ==="
+            ]
+            debugText = "Fetching favorites… Open Amber if it asks to decrypt."
+
+            let readingMetadata = await container.nostrSyncService.pullReadingMetadata()
+            guard !Task.isCancelled else { return }
+            debug.append("reading metadata cached: \(readingMetadata)")
+
+            let pulled = await container.nostrSyncService.pullFavorites(seedBooks: seedBooks)
+            guard !Task.isCancelled else { return }
+
+            let localBooks = container.catalogRepository.downloadedBooks(externalFavorites: pulled.favorites.external)
             debug.append("=== favorites pull ===")
             debug.append(pulled.debug)
-            apply(shared: shared, seed: localBooks, container: container)
+            apply(shared: pulled.favorites, seed: localBooks, container: container)
             if let pullError = pulled.error {
                 errorMessage = pullError
             } else if favorites.isEmpty && externalFavorites.isEmpty {
                 errorMessage = "No Bookstr favorites found on relays. Pull to refresh, and approve the decrypt request if asked."
             }
-        } else {
-            debug.append("skipped favorites pull: no nostr identity")
-        }
 
-        debug.append("=== shown ===")
-        debug.append("favorites: \(favorites.count)")
-        debug.append("external leftover: \(externalFavorites.count)")
-        debug.append("reading: \(reading.count)")
-        debugText = debug.joined(separator: "\n")
+            debug.append("=== shown ===")
+            debug.append("favorites: \(favorites.count)")
+            debug.append("external leftover: \(externalFavorites.count)")
+            debug.append("reading: \(reading.count)")
+            debugText = debug.joined(separator: "\n")
+        }
     }
 
     private func apply(

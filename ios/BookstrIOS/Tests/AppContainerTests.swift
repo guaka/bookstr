@@ -74,4 +74,104 @@ final class AppContainerTests: XCTestCase {
         XCTAssertEqual(LibraryViewModel.sorted(untimed, by: .recent).map(\.id), ["alpha-untimed", "beta-untimed"])
         XCTAssertEqual(LibraryViewModel.sorted(untimed, by: .author).map(\.id), ["alpha-untimed", "beta-untimed"])
     }
+
+    func testLibraryForegroundLoadPlanAlwaysAppliesCacheAndDefersNetworkWithIdentity() {
+        let withIdentity = LibraryForegroundLoadPlan.make(hasNostrIdentity: true)
+        XCTAssertTrue(withIdentity.applyCachedFavorites)
+        XCTAssertTrue(withIdentity.scheduleBackgroundNostrRefresh)
+
+        let withoutIdentity = LibraryForegroundLoadPlan.make(hasNostrIdentity: false)
+        XCTAssertTrue(withoutIdentity.applyCachedFavorites)
+        XCTAssertFalse(withoutIdentity.scheduleBackgroundNostrRefresh)
+    }
+
+    @MainActor
+    func testLibraryLoadReturnsImmediatelyFromCacheWhenNostrIdentityExists() async {
+        let suite = "bookstr-library-load-\(UUID().uuidString)"
+        guard let defaults = UserDefaults(suiteName: suite) else {
+            return XCTFail("Could not create isolated UserDefaults")
+        }
+        defaults.removePersistentDomain(forName: suite)
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        let fileStore = JSONFileStore(subdirectory: suite)
+        let settings = SettingsRepository(defaults: defaults)
+        let pubkey = String(repeating: "d", count: 64)
+        settings.authMode = .nsec
+        settings.pubkeyHex = pubkey
+        settings.relays = []
+        settings.lastReadingMetadataSync = Date()
+        settings.lastApplicationDataSync = Date()
+        let plaintext = FavoritesParser.serializeTags(
+            FavoritesParser.collectionHeader(title: "Favorites", updatedAt: 1_700_000_000)
+                + FavoritesParser.compactItemTags(
+                    refs: [
+                        SharedFavoriteRef(
+                            bookstrId: "cached-book",
+                            libvaultMd5: nil,
+                            isbn: nil,
+                            url: nil,
+                            title: "Cached Book",
+                            author: "Author",
+                            year: nil,
+                            format: "epub",
+                            blossomSha256: nil,
+                            blossomUrl: nil,
+                            addedAt: 1_700_000_000
+                        )
+                    ],
+                    fallbackAddedAt: 1_700_000_000
+                )
+        )
+        settings.cacheNostrFavorites(pubkey: pubkey, plaintext: plaintext, eventId: "evt-cache")
+
+        let progress = ProgressRepository(fileStore: fileStore)
+        let words = VocabularyRepository(fileStore: fileStore)
+        let snippets = SnippetRepository(fileStore: fileStore)
+        let favoriteMetadata = FavoriteMetadataRepository(fileStore: fileStore)
+        let nip46 = Nip46Service()
+        let signerStore = SignerStore(nip46Service: nip46)
+        let sync = NostrSyncService(
+            settings: settings,
+            progress: progress,
+            vocabulary: words,
+            snippets: snippets,
+            favoriteMetadata: favoriteMetadata,
+            client: NostrClient(),
+            signerStore: signerStore,
+            nip46Service: nip46
+        )
+        let container = AppContainer(
+            settingsRepository: settings,
+            progressRepository: progress,
+            vocabularyRepository: words,
+            snippetRepository: snippets,
+            dictionaryRepository: DictionaryRepository(),
+            favoriteMetadataRepository: favoriteMetadata,
+            catalogRepository: CatalogRepository(
+                fileStore: fileStore,
+                settings: settings,
+                signerStore: signerStore,
+                nip46Service: nip46
+            ),
+            nostrClient: NostrClient(),
+            signerStore: signerStore,
+            nostrSyncService: sync,
+            nip46Service: nip46
+        )
+
+        let viewModel = LibraryViewModel()
+        viewModel.attach(container)
+        let started = Date()
+        await viewModel.load()
+        let elapsed = Date().timeIntervalSince(started)
+        viewModel.cancelPendingNetworkRefresh()
+
+        XCTAssertLessThan(elapsed, 1.5, "Foreground load must not await relay pulls")
+        XCTAssertTrue(viewModel.hasNostrIdentity)
+        XCTAssertTrue(
+            viewModel.debugText.contains("showing cache; nostr refresh scheduled"),
+            viewModel.debugText
+        )
+    }
 }
