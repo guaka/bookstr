@@ -692,13 +692,21 @@ test('desktop pane shortcuts use the constrained preload callback', () => {
   assert.doesNotMatch(html, /class="app-header-left app-home"/);
 });
 
-test('embedded readers persist progress and debounce Nostr publication with a remote-ahead guard', () => {
+test('embedded readers persist progress, debounce Nostr publication, and ask before advancing to Nostr', () => {
   assert.match(html, /event\.data\?\.type === 'bookstr-reader-progress'/);
   assert.match(html, /queueReadingProgressPublish\(merged\)/);
   assert.match(html, /}, 2000\)/);
   assert.match(html, /const remoteIsAhead = remote/);
   assert.match(html, /reason: 'remote-ahead'/);
+  assert.match(html, /const nostrAheadReadingByBook = new Map\(\)/);
+  assert.match(html, /BookstrDesktopProgress\.isProgressAhead\(existing, normalized\)/);
+  assert.match(html, /function bookWithChosenNostrReadingState\(book\)/);
+  assert.match(html, /Nostr has a further position/);
+  assert.match(html, /Continue from the Nostr position\?/);
+  assert.match(html, /if \(!useRemote\) return book/);
+  assert.match(html, /applyDesktopReadingProgress\(\{ \.\.\.local, \.\.\.remote/);
   assert.match(html, /bookWithSavedReadingState\(book\)/);
+  assert.match(html, /bookWithChosenNostrReadingState\(book\)/);
   assert.match(html, /initialCfi: book\.cfi \|\| ''/);
 });
 

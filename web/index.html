@@ -3464,6 +3464,29 @@
         return enriched;
       }
 
+      const nostrAheadReadingByBook = new Map();
+
+      function rememberNostrReadingCandidate(candidate, localReading) {
+        const id = String(candidate?.md5 || '').trim().toLowerCase();
+        if (!id) return false;
+        if (!localReading || !BookstrDesktopProgress.isProgressAhead(candidate, localReading)) {
+          nostrAheadReadingByBook.delete(id);
+          return false;
+        }
+        nostrAheadReadingByBook.set(id, { ...candidate, md5: id });
+        return true;
+      }
+
+      function readingSnapshotForNostrCache() {
+        const merged = new Map();
+        state.reading.forEach(item => {
+          const id = String(item?.md5 || '').trim().toLowerCase();
+          if (id) merged.set(id, item);
+        });
+        nostrAheadReadingByBook.forEach((item, id) => merged.set(id, item));
+        return [...merged.values()];
+      }
+
       function mergeReadingSnapshot(localReading, incomingReading) {
         const merged = new Map();
         BookMetadata.dedupeLibraryBooks(Array.isArray(localReading) ? localReading : []).forEach(item => {
@@ -3477,10 +3500,19 @@
           const incomingUpdatedAt = Number(incoming.updatedAt || 0);
           const existingUpdatedAt = Number(existing?.updatedAt || 0);
           if (incoming.deleted) {
-            if (!existing || incomingUpdatedAt >= existingUpdatedAt) merged.delete(id);
+            if (!existing || incomingUpdatedAt >= existingUpdatedAt) {
+              merged.delete(id);
+              nostrAheadReadingByBook.delete(id);
+            }
             continue;
           }
           const normalized = { ...normalizeFavoriteFromRemote(incoming), md5: id };
+          if (existing && rememberNostrReadingCandidate(normalized, existing)) {
+            continue;
+          }
+          if (existing && BookstrDesktopProgress.isProgressAhead(existing, normalized)) {
+            continue;
+          }
           if (!existing || incomingUpdatedAt >= existingUpdatedAt) {
             merged.set(id, { ...(existing || {}), ...normalized });
           }
@@ -3575,7 +3607,7 @@
             }, { authoritativeFavorites: Array.isArray(favorites) });
             saveNostrSyncCache(pubkey, {
               favorites: state.favorites,
-              reading: state.reading,
+              reading: readingSnapshotForNostrCache(),
               words: state.words,
             });
             await refreshFavoriteBlossomCopies();
@@ -4466,17 +4498,13 @@
           furthestProgression: localFurthest,
         });
         if (remoteIsAhead) {
-          applyNostrSnapshot({ reading: [{ ...remote, updatedAt: Date.now() }] });
-          const adopted = state.reading.find(item => String(item?.md5 || '').toLowerCase() === bookId);
-          if (activeReadingBook && String(activeReadingBook.md5 || '').toLowerCase() === bookId && adopted) {
-            activeReadingBook = { ...activeReadingBook, ...adopted };
-          }
+          rememberNostrReadingCandidate(remote, book);
           saveNostrSyncCache(pubkey, {
             favorites: state.favorites,
-            reading: state.reading,
+            reading: readingSnapshotForNostrCache(),
             words: state.words,
           });
-          return { published: false, reason: 'remote-ahead', progress: adopted || remote };
+          return { published: false, reason: 'remote-ahead', progress: remote };
         }
         const now = Math.max(
           Math.floor(Date.now() / 1000),
@@ -4515,6 +4543,7 @@
         });
         const accepted = await Promise.all(NOSTR_RELAYS.map(relay => publishRelayEvent(relay, event)));
         if (!accepted.some(Boolean)) throw new Error('Nostr relays did not accept refreshed reading metadata.');
+        nostrAheadReadingByBook.delete(bookId);
         return { published: true, event };
       }
 
@@ -6332,6 +6361,27 @@
         };
       }
 
+      function bookWithChosenNostrReadingState(book) {
+        const bookId = String(book?.md5 || '').trim().toLowerCase();
+        const remote = nostrAheadReadingByBook.get(bookId);
+        if (!remote) return book;
+        const local = state.reading.find(item => String(item?.md5 || '').trim().toLowerCase() === bookId);
+        if (!local || !BookstrDesktopProgress.isProgressAhead(remote, local)) {
+          nostrAheadReadingByBook.delete(bookId);
+          return book;
+        }
+        const localPercent = Math.round(BookMetadata.readingProgressForBook(local) * 100);
+        const remotePercent = Math.round(BookMetadata.readingProgressForBook(remote) * 100);
+        const title = BookMetadata.resolveTitle(book) || 'this book';
+        const useRemote = window.confirm(
+          `Nostr has a further position for ${title} (${remotePercent}%, local ${localPercent}%). Continue from the Nostr position?`,
+        );
+        if (!useRemote) return book;
+        nostrAheadReadingByBook.delete(bookId);
+        const adopted = applyDesktopReadingProgress({ ...local, ...remote, md5: bookId, updatedAt: Date.now() });
+        return adopted ? { ...book, ...adopted } : book;
+      }
+
       async function openBook(book, { updateHash = true, addToReading = true } = {}) {
         if (!book) {
           status.textContent = `${book?.title || 'This book'} has metadata only; no readable copy is available.`;
@@ -6342,6 +6392,7 @@
         const nextBookId = String(book.md5 || '').trim().toLowerCase();
         if (previousBookId && previousBookId !== nextBookId) void flushReadingProgressPublish(previousBookId);
         book = bookWithSavedReadingState(book);
+        book = bookWithChosenNostrReadingState(book);
 
         const openGeneration = ++readerOpenGeneration;
         const readPath = BookMetadata.canonicalReadUrl(book, BOOKS_API_BASE);
