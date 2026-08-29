@@ -265,6 +265,8 @@
       return {
         base64,
         theme: String(payload.theme || "paper").toLowerCase(),
+        font: String(payload.font || "arial").toLowerCase(),
+        alignment: String(payload.alignment || "justified").toLowerCase(),
         cfi: String(payload.cfi || ""),
         readUrl: String(payload.readUrl || ""),
         book: normalizeDesktopBookMetadata(payload.book, String(payload.readUrl || "")),
@@ -663,7 +665,9 @@
         normalized.theme,
         bookId,
         desktopReaderBook
-      ));
+      ).then(function() {
+        window.setReaderTypography(normalized.font, normalized.alignment);
+      }));
     }
 
     if (desktopBridge?.onOpenReader) {

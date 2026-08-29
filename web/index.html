@@ -6783,6 +6783,25 @@
         document.body.classList.add(`theme-${normalized}`);
       }
 
+      function normalizeReaderFont(value) {
+        return ['arial', 'georgia', 'palatino', 'system'].includes(String(value || '').trim().toLowerCase())
+          ? String(value).trim().toLowerCase()
+          : 'arial';
+      }
+
+      function normalizeReaderAlignment(value) {
+        return String(value || '').trim().toLowerCase() === 'left' ? 'left' : 'justified';
+      }
+
+      function applyOpenReaderTypography() {
+        const win = readerFrame?.contentWindow;
+        if (typeof win?.setReaderTypography !== 'function') return;
+        win.setReaderTypography(
+          normalizeReaderFont(state.settings.readerFont),
+          normalizeReaderAlignment(state.settings.readerAlignment),
+        );
+      }
+
       async function connectNip7(opts = {}) {
         const previous = safeJSONRead(localStorage.getItem(NIP7_STATUS_KEY), null);
         if (!state.settings.useNip7) {

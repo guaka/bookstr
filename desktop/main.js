@@ -622,6 +622,8 @@ function normalizePayload(payload) {
     kind: String(payload.kind || '').toLowerCase() === 'pdf' ? 'pdf' : 'epub',
     base64,
     theme: String(payload.theme || 'paper').toLowerCase(),
+    font: String(payload.font || 'arial').toLowerCase(),
+    alignment: String(payload.alignment || 'justified').toLowerCase(),
     readUrl: String(payload.readUrl || ''),
     cfi: String(payload.cfi || ''),
     book: payload.book && typeof payload.book === 'object' ? payload.book : {},
