@@ -390,9 +390,6 @@
           });
         }
       }
-      if (!phraseRanges.length) {
-        phraseRanges.push({ start: sentenceStart, end: sentenceEnd });
-      }
 
       for (const range of phraseRanges) {
         if (!active) {

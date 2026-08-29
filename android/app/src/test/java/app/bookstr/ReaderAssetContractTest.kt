@@ -124,7 +124,7 @@ class ReaderAssetContractTest {
     fun readerAppliesSavedFontAndAlignmentWhenOpeningAnEpub() {
         val readerSource = File("src/main/java/app/bookstr/ReaderActivity.kt").readText()
         val settingsSource = File("src/main/java/app/bookstr/ui/SettingsScreen.kt").readText()
-        assertTrue(readerSource.contains("setReaderTypography($fontJs, $alignmentJs)"))
+        assertTrue(readerSource.contains("setReaderTypography(\$fontJs, \$alignmentJs)"))
         assertTrue(readerSource.contains("readerFont = app.settingsRepository.readerFont"))
         assertTrue(settingsSource.contains("onReaderFontChange"))
         assertTrue(readerSource.contains("fun speechRequestScript"))

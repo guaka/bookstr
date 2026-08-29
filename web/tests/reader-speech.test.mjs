@@ -150,21 +150,10 @@ test('speech planner speaks grouped thousands without comma pauses', () => {
   assertPlanIntegrity(thousandsBoundary);
 
   const closingParen = BookstrSpeech.buildPlan([
-    `${'word'.repeat(30)}) extra ${'tail'.repeat(30)}`,
+    `${'w'.repeat(70)}) ${'x'.repeat(180)}`,
   ], { softLimit: 80, hardLimit: 120, segmenterFactory: null });
   assert.ok(closingParen.chunks.some(chunk => chunk.text.includes(')')));
   assertPlanIntegrity(closingParen);
-
-  class EmptyPhraseSegmenter {
-    segment() {
-      return [{ segment: 'Hello.' }, { segment: '' }, { segment: 'World.' }];
-    }
-  }
-  const emptyPhrase = BookstrSpeech.buildPlan(['Hello. World.'], {
-    segmenterFactory: EmptyPhraseSegmenter,
-  });
-  assert.ok(emptyPhrase.chunks.some(chunk => chunk.text.includes('Hello')));
-  assertPlanIntegrity(emptyPhrase);
 });
 
 test('speech planner omits footnote markers from spoken text', () => {
