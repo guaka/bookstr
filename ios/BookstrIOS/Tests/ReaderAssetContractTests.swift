@@ -28,6 +28,8 @@ final class ReaderAssetContractTests: XCTestCase {
         XCTAssertEqual(queue.next(), chunks[2])
         XCTAssertNil(queue.next(), "A completed narration must not restart from the first chunk")
         XCTAssertTrue(queue.isEmpty)
+        XCTAssertEqual(chunks[0].spokenEnd, 6)
+        XCTAssertEqual(SpeechQueueChunk(text: "", offset: 12, pauseSeconds: 0).spokenEnd, 13)
     }
 
 #if !SWIFT_PACKAGE
@@ -377,6 +379,14 @@ final class ReaderAssetContractTests: XCTestCase {
             year: 2026, month: 1, day: 15, hour: 13, minute: 7
         )))
         XCTAssertEqual(ReaderClockLabel.formattedTime(date), "13:07")
+        XCTAssertEqual(ReaderClockLabel.labelText(for: date), "13:07")
+    }
+
+    func testReaderHeaderKeepsMetadataLeftOfTheCameraIsland() {
+        XCTAssertEqual(ReaderTopBarLayout.metadataWidth(containerWidth: 320), 70)
+        XCTAssertEqual(ReaderTopBarLayout.metadataWidth(containerWidth: 393), 78.6, accuracy: 0.001)
+        XCTAssertEqual(ReaderTopBarLayout.metadataWidth(containerWidth: 430), 86, accuracy: 0.001)
+        XCTAssertEqual(ReaderTopBarLayout.metadataWidth(containerWidth: 600), 100)
     }
 #endif
 

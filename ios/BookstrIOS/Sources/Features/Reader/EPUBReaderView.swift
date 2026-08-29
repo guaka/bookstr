@@ -132,9 +132,13 @@ final class EPUBReaderController: NSObject, ObservableObject, AVSpeechSynthesize
 
     fileprivate weak var webView: WKWebView?
     private let speech = AVSpeechSynthesizer()
+    private let neuralSpeech = NeuralSpeechPlayback()
     private var utteranceOffsets: [ObjectIdentifier: Int] = [:]
     private var playbackQueue = SpeechPlaybackQueue()
     private var activeUtterance: ObjectIdentifier?
+    private var activeSpeechEngine = SpeechEngineID.system
+    private var neuralSpeechRate = SpeechLanguageSettings.defaultRate
+    private var neuralChunkOffset: Int?
     private var nowPlayingTitle = "Bookstr"
     private var nowPlayingAuthor = ""
     private var nowPlayingParagraph = ""
@@ -184,7 +188,7 @@ final class EPUBReaderController: NSObject, ObservableObject, AVSpeechSynthesize
     }
 
     func toggleSpeech() {
-        if isSpeaking || speech.isSpeaking || speech.isPaused || playbackQueue.hasPendingRequest {
+        if isSpeaking || speech.isSpeaking || speech.isPaused || neuralSpeech.isPlaying || playbackQueue.hasPendingRequest {
             stopSpeech()
         } else {
             guard ready else {
@@ -197,9 +201,7 @@ final class EPUBReaderController: NSObject, ObservableObject, AVSpeechSynthesize
 
     fileprivate func speak(
         text: String,
-        language: String,
-        voiceIdentifier: String,
-        rate: Double,
+        playback: SpeechPlaybackChoice,
         chunks: [(text: String, offset: Int, pauseSeconds: Double)]? = nil,
         requestID: String? = nil
     ) {
@@ -228,12 +230,50 @@ final class EPUBReaderController: NSObject, ObservableObject, AVSpeechSynthesize
             return
         }
         speech.stopSpeaking(at: .immediate)
+        neuralSpeech.stop()
+        neuralChunkOffset = nil
         utteranceOffsets.removeAll()
         activeUtterance = nil
         isSpeaking = true
         updateNowPlaying(isPlaying: true)
-        let selectedVoice = bestVoice(language: language, identifier: voiceIdentifier)
-        speakNextUtterance(voice: selectedVoice, rate: rate, isFirst: true)
+        switch playback.engine {
+        case .neural(let engine):
+            guard engine.supports(language: playback.languageTag) else {
+                stopSpeech()
+                errorMessage = "\(engine.label) does not support this book's language."
+                return
+            }
+            activeSpeechEngine = engine
+            neuralSpeechRate = playback.rate
+            var neuralChunks: [SpeechQueueChunk] = []
+            while let chunk = playbackQueue.next() {
+                neuralChunks.append(chunk)
+            }
+            neuralSpeech.play(
+                chunks: neuralChunks,
+                engine: engine,
+                speed: Float(min(max(playback.rate / SpeechLanguageSettings.defaultRate, 0.73), 1.25)),
+                onPhrase: { [weak self] chunk in
+                    self?.neuralChunkOffset = chunk.offset
+                    self?.updateSpeechProgress(start: chunk.offset, end: chunk.spokenEnd)
+                },
+                completion: { [weak self] result in
+                    guard let self else { return }
+                    self.neuralChunkOffset = nil
+                    switch result {
+                    case .success:
+                        self.finishSpeech()
+                    case .failure(let error):
+                        self.stopSpeech()
+                        self.errorMessage = error.localizedDescription
+                    }
+                }
+            )
+        case .apple:
+            activeSpeechEngine = .system
+            let selectedVoice = bestVoice(language: playback.languageTag, identifier: playback.voiceIdentifier)
+            speakNextUtterance(voice: selectedVoice, rate: playback.rate, isFirst: true)
+        }
         errorMessage = nil
     }
 
@@ -296,6 +336,8 @@ final class EPUBReaderController: NSObject, ObservableObject, AVSpeechSynthesize
         playbackQueue.cancel()
         activeUtterance = nil
         utteranceOffsets.removeAll()
+        neuralChunkOffset = nil
+        neuralSpeech.stop()
         speech.stopSpeaking(at: .immediate)
         isSpeaking = false
         updateNowPlaying(isPlaying: false)
@@ -318,13 +360,8 @@ final class EPUBReaderController: NSObject, ObservableObject, AVSpeechSynthesize
 
     private func bestVoice(language: String, identifier: String) -> AVSpeechSynthesisVoice? {
         if !identifier.isEmpty, let selected = AVSpeechSynthesisVoice(identifier: identifier) { return selected }
-        let requested = language.replacingOccurrences(of: "_", with: "-").lowercased()
-        let base = requested.split(separator: "-").first.map(String.init) ?? "en"
-        let matches = AVSpeechSynthesisVoice.speechVoices().filter {
-            $0.language.lowercased() == requested || $0.language.lowercased().hasPrefix(base + "-")
-        }
-        return matches.max { left, right in left.quality.rawValue < right.quality.rawValue }
-            ?? AVSpeechSynthesisVoice(language: language)
+        return AVSpeechSynthesisVoice(language: language)
+            ?? AVSpeechSynthesisVoice(language: SpeechLanguageSettings.baseLanguage(language))
             ?? AVSpeechSynthesisVoice(language: Locale.preferredLanguages.first ?? "en")
     }
 
@@ -380,6 +417,10 @@ final class EPUBReaderController: NSObject, ObservableObject, AVSpeechSynthesize
                     self.speech.continueSpeaking()
                     self.isSpeaking = true
                     self.updateNowPlaying(isPlaying: true)
+                } else if self.activeSpeechEngine != .system, !self.neuralSpeech.isPlaying, self.neuralChunkOffset != nil {
+                    self.neuralSpeech.resume()
+                    self.isSpeaking = true
+                    self.updateNowPlaying(isPlaying: true)
                 } else if !self.isSpeaking && !self.playbackQueue.hasPendingRequest {
                     self.requestSpeechText()
                 }
@@ -388,10 +429,16 @@ final class EPUBReaderController: NSObject, ObservableObject, AVSpeechSynthesize
         }
         commands.pauseCommand.addTarget { [weak self] _ in
             Task { @MainActor in
-                guard let self, self.speech.isSpeaking else { return }
-                self.speech.pauseSpeaking(at: .word)
-                self.isSpeaking = false
-                self.updateNowPlaying(isPlaying: false)
+                guard let self else { return }
+                if self.speech.isSpeaking {
+                    self.speech.pauseSpeaking(at: .word)
+                    self.isSpeaking = false
+                    self.updateNowPlaying(isPlaying: false)
+                } else if self.neuralSpeech.isPlaying {
+                    self.neuralSpeech.pause()
+                    self.isSpeaking = false
+                    self.updateNowPlaying(isPlaying: false)
+                }
             }
             return .success
         }
@@ -413,6 +460,8 @@ final class EPUBReaderController: NSObject, ObservableObject, AVSpeechSynthesize
         playbackQueue.cancel()
         activeUtterance = nil
         utteranceOffsets.removeAll()
+        neuralChunkOffset = nil
+        neuralSpeech.stop()
         speech.stopSpeaking(at: .immediate)
         nowPlayingParagraph = ""
         let move = direction > 0
@@ -945,11 +994,12 @@ struct EPUBReaderView: UIViewRepresentable {
         private func handleSpeech(_ json: String?) {
             guard let item = object(from: json), let text = item["text"] as? String else { return }
             let chunks = controller.parseSpeechChunks(item["chunks"])
-            controller.speak(text: text, language: item["language"] as? String ?? "en",
-                             voiceIdentifier: container.settingsRepository.speechVoiceIdentifier,
-                             rate: container.settingsRepository.speechRate,
-                             chunks: chunks.isEmpty ? nil : chunks,
-                             requestID: item["requestID"] as? String)
+            controller.speak(
+                text: text,
+                playback: container.settingsRepository.speechChoice(for: item["language"] as? String ?? "en"),
+                chunks: chunks.isEmpty ? nil : chunks,
+                requestID: item["requestID"] as? String
+            )
         }
     }
 }

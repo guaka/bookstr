@@ -4,6 +4,11 @@ struct SpeechQueueChunk: Equatable {
     let text: String
     let offset: Int
     let pauseSeconds: Double
+
+    var spokenEnd: Int {
+        let end = offset + (text as NSString).length
+        return max(end, offset + 1)
+    }
 }
 
 struct SpeechPlaybackQueue {

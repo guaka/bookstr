@@ -80,4 +80,44 @@ final class SettingsRepositoryTests: XCTestCase {
         XCTAssertNil(defaults.string(forKey: "nip46_client_secret"))
         defaults.removePersistentDomain(forName: suite)
     }
+
+    func testSpeechLanguageSettingsPersistAndResolvePerLanguage() {
+        let suite = "bookstr-speech-lang-\(UUID().uuidString)"
+        guard let defaults = UserDefaults(suiteName: suite) else {
+            XCTFail("Could not create isolated UserDefaults")
+            return
+        }
+        defaults.removePersistentDomain(forName: suite)
+        let first = SettingsRepository(defaults: defaults)
+        XCTAssertEqual(first.speechChoice(for: "en").voiceIdentifier, SpeechVoiceID.systemDefault)
+        XCTAssertNil(first.speechChoice(for: "en").neuralEngine)
+        XCTAssertEqual(first.speechChoice(for: "pt").voiceIdentifier, SpeechVoiceID.systemDefault)
+        first.setSpeechVoice(SpeechEngineID.portuguesePortugal.rawValue, for: "pt-PT")
+        first.setSpeechVoice(SpeechEngineID.kokoroEnglish.rawValue, for: "en")
+        let second = SettingsRepository(defaults: defaults)
+        XCTAssertEqual(second.speechChoice(for: "pt").voiceIdentifier, SpeechEngineID.portuguesePortugal.rawValue)
+        XCTAssertEqual(second.speechChoice(for: "pt").neuralEngine, .portuguesePortugal)
+        XCTAssertEqual(second.speechChoice(for: "en").voiceIdentifier, SpeechEngineID.kokoroEnglish.rawValue)
+        XCTAssertEqual(second.speechChoice(for: "en").engine, .neural(.kokoroEnglish))
+        second.setSpeechVoice("", for: "en")
+        XCTAssertEqual(
+            SettingsRepository(defaults: defaults).speechChoice(for: "en").voiceIdentifier,
+            SpeechVoiceID.systemDefault
+        )
+        defaults.removePersistentDomain(forName: suite)
+    }
+
+    func testLegacySpeechEngineMigratesIntoLanguageSettings() {
+        let suite = "bookstr-speech-legacy-\(UUID().uuidString)"
+        guard let defaults = UserDefaults(suiteName: suite) else {
+            XCTFail("Could not create isolated UserDefaults")
+            return
+        }
+        defaults.removePersistentDomain(forName: suite)
+        defaults.set("piper_pt_pt", forKey: "speech_engine")
+        let repo = SettingsRepository(defaults: defaults)
+        XCTAssertEqual(repo.speechChoice(for: "pt").neuralEngine, .portuguesePortugal)
+        XCTAssertEqual(repo.speechChoice(for: "en").engine, .apple)
+        defaults.removePersistentDomain(forName: suite)
+    }
 }

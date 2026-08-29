@@ -19,6 +19,19 @@ final class AppShellUITests: XCTestCase {
         selectTab("Words")
         selectTab("Settings")
 
+        let englishVoice = app.descendants(matching: .any)["speech-voice-en"]
+        let portugueseVoice = app.descendants(matching: .any)["speech-voice-pt"]
+        XCTAssertTrue(englishVoice.waitForExistence(timeout: 5), "Settings did not expose the English voice picker")
+        XCTAssertTrue(portugueseVoice.waitForExistence(timeout: 5), "Settings did not expose the Portuguese voice picker")
+        englishVoice.tap()
+        XCTAssertTrue(app.staticTexts["Kokoro · English"].waitForExistence(timeout: 4))
+        dismissSettingsPicker()
+        portugueseVoice.tap()
+        XCTAssertTrue(app.staticTexts["Tugão · Português (Portugal)"].waitForExistence(timeout: 4))
+        dismissSettingsPicker()
+        XCTAssertTrue(app.buttons["speech-model-kokoro_en"].waitForExistence(timeout: 4), "Settings did not expose the Kokoro download control")
+        XCTAssertTrue(app.buttons["speech-model-piper_pt_pt"].waitForExistence(timeout: 4), "Settings did not expose the Tugão download control")
+
         let relays = app.textViews.firstMatch
         XCTAssertTrue(relays.waitForExistence(timeout: 5), "Settings did not expose the relay editor")
         relays.tap()
@@ -61,5 +74,13 @@ final class AppShellUITests: XCTestCase {
         XCTAssertTrue(tab.waitForExistence(timeout: 5), "Missing " + label + " tab")
         tab.tap()
         XCTAssertTrue(tab.isSelected, label + " tab was not selected")
+    }
+
+    private func dismissSettingsPicker() {
+        if app.navigationBars.buttons["Settings"].waitForExistence(timeout: 2) {
+            app.navigationBars.buttons["Settings"].tap()
+        } else {
+            app.swipeDown()
+        }
     }
 }

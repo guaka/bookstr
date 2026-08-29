@@ -186,7 +186,7 @@ struct ReaderHostView: View {
         .onDisappear {
             UIApplication.shared.isIdleTimerDisabled = false
             if epubController.isSpeaking { epubController.toggleSpeech() }
-            if fb2Controller.isSpeaking { fb2Controller.toggleSpeech() }
+            if fb2Controller.isSpeaking { fb2Controller.toggleSpeech(playback: fb2SpeechChoice) }
             epubController.endNowPlaying()
         }
         .onChange(of: container.settingsRepository.theme) { _, theme in
@@ -196,7 +196,7 @@ struct ReaderHostView: View {
 
     @ViewBuilder
     private var readerTopBar: some View {
-        HStack(spacing: 0) {
+        HStack(alignment: .top, spacing: 0) {
             Button(action: closeReader) {
                 Image(systemName: "arrow.left")
                     .font(.system(size: 18, weight: .medium))
@@ -207,17 +207,22 @@ struct ReaderHostView: View {
 
             VStack(alignment: .leading, spacing: 1) {
                 Text(book.title)
-                    .font(.system(size: 8, weight: .semibold))
+                    .font(.system(size: 10, weight: .semibold))
                     .lineLimit(1)
+                    .accessibilityIdentifier("reader-title")
                 if !readerByline.isEmpty {
                     Text(readerByline)
-                        .font(.system(size: 10))
+                        .font(.system(size: 8))
                         .lineLimit(1)
                         .opacity(0.82)
                 }
             }
-            .padding(.top, 1)
-            .frame(maxWidth: .infinity, alignment: .topLeading)
+            .padding(.top, 2)
+            .containerRelativeFrame(.horizontal, alignment: .topLeading) { width, _ in
+                ReaderTopBarLayout.metadataWidth(containerWidth: width)
+            }
+
+            Spacer(minLength: 0)
 
             Button { showRightsDetails = true } label: {
                 RightsBadge(rights: book.format == .epub ? epubController.rights : book.rights)
@@ -235,7 +240,7 @@ struct ReaderHostView: View {
             }
 
             if book.format == .fb2 {
-                Button { fb2Controller.toggleSpeech() } label: {
+                Button { fb2Controller.toggleSpeech(playback: fb2SpeechChoice) } label: {
                     Image(systemName: fb2Controller.isSpeaking ? "stop.fill" : "play.fill")
                         .font(.system(size: 16))
                         .frame(width: 24, height: 24)
@@ -253,18 +258,26 @@ struct ReaderHostView: View {
             }
 
             searchButton
-            ReaderClockLabel(format: book.format)
         }
         .foregroundStyle(container.settingsRepository.theme.background)
         .padding(.leading, 6)
         .frame(height: 48)
         .background(container.settingsRepository.theme.primary.opacity(0.98))
+        .overlay(alignment: .top) {
+            ReaderClockLabel()
+                .padding(.top, 1)
+                .allowsHitTesting(false)
+        }
     }
 
     private var hasTableOfContents: Bool {
         if book.format == .epub { return epubController.hasTableOfContents }
         if book.format == .fb2 { return !fb2Controller.sections.isEmpty }
         return !pdfController.tableOfContents.isEmpty
+    }
+
+    private var fb2SpeechChoice: SpeechPlaybackChoice {
+        container.settingsRepository.speechChoice(for: fb2Controller.document?.language ?? "en")
     }
 
     private var searchButton: some View {
@@ -305,7 +318,11 @@ struct ReaderHostView: View {
                     ProgressView("Searching…")
                     Spacer()
                 } else if searchResultCount == 0 {
-                    ContentUnavailableView.search(text: searchQuery)
+                    ContentUnavailableView(
+                        "Search this book",
+                        systemImage: "text.magnifyingglass",
+                        description: Text("Every section of “\(book.title)”")
+                    )
                 } else {
                     searchResultsList
                 }
@@ -320,6 +337,7 @@ struct ReaderHostView: View {
             }
         }
         .preferredColorScheme(container.settingsRepository.theme.colorScheme)
+        .ignoresSafeArea(.keyboard, edges: .bottom)
     }
 
     @ViewBuilder
@@ -600,17 +618,26 @@ private struct BottomScreenCurve: Shape {
     }
 }
 
+enum ReaderTopBarLayout {
+    static func metadataWidth(containerWidth: CGFloat) -> CGFloat {
+        min(100, max(70, containerWidth * 0.20))
+    }
+}
+
 struct ReaderClockLabel: View {
-    let format: BookFormat
 
     var body: some View {
         TimelineView(.periodic(from: .now, by: 30)) { context in
-            Text("\(Self.formattedTime(context.date))  \(format.rawValue.uppercased())")
+            Text(Self.labelText(for: context.date))
                 .font(.system(size: 9, weight: .medium, design: .monospaced))
                 .opacity(0.78)
-                .padding(.horizontal, 8)
+                .padding(.horizontal, 2)
                 .accessibilityIdentifier("reader-clock")
         }
+    }
+
+    static func labelText(for date: Date) -> String {
+        formattedTime(date)
     }
 
     static func formattedTime(_ date: Date) -> String {
@@ -822,6 +849,7 @@ final class FB2ReaderController: NSObject, ObservableObject {
     @Published var searching = false
     @Published var isSpeaking = false
     private let speech = AVSpeechSynthesizer()
+    private let neuralSpeech = NeuralSpeechPlayback()
 
     override init() {
         super.init()
@@ -875,16 +903,47 @@ final class FB2ReaderController: NSObject, ObservableObject {
         searching = false
     }
 
-    func toggleSpeech() {
-        if speech.isSpeaking || isSpeaking {
+    func toggleSpeech(playback: SpeechPlaybackChoice) {
+        if speech.isSpeaking || neuralSpeech.isPlaying || isSpeaking {
+            neuralSpeech.stop()
             speech.stopSpeaking(at: .immediate)
             isSpeaking = false
             return
         }
         let text = sections.flatMap(\.paragraphs).map(\.text).joined(separator: "\n\n")
         guard !text.isEmpty else { return }
-        speech.speak(AVSpeechUtterance(string: text))
+        do {
+            let session = AVAudioSession.sharedInstance()
+            try session.setCategory(.playback, mode: .spokenAudio, options: [])
+            try session.setActive(true)
+        } catch {
+            return
+        }
         isSpeaking = true
+        switch playback.engine {
+        case .neural(let engine):
+            guard engine.supports(language: playback.languageTag) else {
+                isSpeaking = false
+                return
+            }
+            neuralSpeech.play(
+                text: text,
+                engine: engine,
+                speed: Float(min(max(playback.rate / SpeechLanguageSettings.defaultRate, 0.73), 1.25))
+            ) { [weak self] result in
+                self?.isSpeaking = false
+                if case .failure = result { return }
+            }
+        case .apple:
+            let utterance = AVSpeechUtterance(string: text)
+            if !playback.voiceIdentifier.isEmpty {
+                utterance.voice = AVSpeechSynthesisVoice(identifier: playback.voiceIdentifier)
+            } else {
+                utterance.voice = AVSpeechSynthesisVoice(language: playback.languageTag)
+            }
+            utterance.rate = Float(playback.rate)
+            speech.speak(utterance)
+        }
     }
 
     private func progress(for index: Int) -> Double {

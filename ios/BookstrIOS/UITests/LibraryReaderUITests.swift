@@ -26,12 +26,26 @@ final class LibraryReaderUITests: XCTestCase {
         XCTAssertTrue(waitForY(chapter, above: afterLeftY + 80), "Swiping right did not return to the previous EPUB page")
         attachScreenshot(named: "epub-navigation-restored")
 
-        XCTAssertTrue(app.descendants(matching: .any)["reader-clock"].waitForExistence(timeout: 4))
+        let clock = app.descendants(matching: .any)["reader-clock"]
+        XCTAssertTrue(clock.waitForExistence(timeout: 4))
+        XCTAssertFalse(clock.label.localizedCaseInsensitiveContains("epub"))
+        let title = app.staticTexts["reader-title"]
+        XCTAssertTrue(title.waitForExistence(timeout: 4))
+        XCTAssertLessThan(title.frame.maxX, app.frame.width * 0.36)
+        XCTAssertLessThan(title.frame.minY, back.frame.midY)
         XCTAssertTrue(app.descendants(matching: .any)["reader-progress-epub"].waitForExistence(timeout: 4))
         app.buttons["reader-search"].tap()
+        let searchScope = app.staticTexts.matching(
+            NSPredicate(format: "label CONTAINS[c] %@", "Every section of")
+        ).firstMatch
+        XCTAssertTrue(searchScope.waitForExistence(timeout: 4))
+        XCTAssertTrue(searchScope.label.localizedCaseInsensitiveContains("alice epub fixture"))
         let epubQuery = app.textFields["reader-search-query"]
         XCTAssertTrue(epubQuery.waitForExistence(timeout: 4))
+        let queryYBeforeFocus = epubQuery.frame.minY
         epubQuery.tap()
+        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 4))
+        XCTAssertEqual(epubQuery.frame.minY, queryYBeforeFocus, accuracy: 2)
         epubQuery.typeText("final page marker")
         app.buttons["reader-search-submit"].tap()
         let epubResult = app.buttons.matching(

@@ -21,7 +21,6 @@ import android.os.Looper
 import android.os.SystemClock
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
-import android.speech.tts.Voice
 import android.util.Log
 import android.view.KeyEvent
 import androidx.core.app.NotificationCompat
@@ -393,7 +392,7 @@ class NarrationService : MediaBrowserServiceCompat(), TextToSpeech.OnInitListene
             return
         }
         selectVoice(engine, speechLanguage)
-        // Piper voices are trained at their natural cadence. Slowing them down exaggerates
+        // Neural voices are trained at their natural cadence. Slowing them down exaggerates
         // vocoder grain and room noise, so keep synthesis at the model's native rate.
         engine.setSpeechRate(1.0f)
         engine.setPitch(1.0f)
@@ -533,30 +532,44 @@ class NarrationService : MediaBrowserServiceCompat(), TextToSpeech.OnInitListene
 
     private fun selectVoice(engine: TextToSpeech, languageTag: String) {
         val requestedLocale = ReaderActivity.preferredSpeechLocale(languageTag)
-        val sameLanguageOfflineVoices = engine.voices.orEmpty().filter { voice ->
-            !voice.isNetworkConnectionRequired &&
-                voice.locale.language.equals(requestedLocale.language, ignoreCase = true)
-        }
-        val exactRegionOfflineVoices = sameLanguageOfflineVoices.filter { voice ->
-            requestedLocale.country.isNotBlank() &&
-                voice.locale.country.equals(requestedLocale.country, ignoreCase = true)
-        }
-        val currentVoiceName = engine.voice?.name
-        val resolvedVoice = sameLanguageOfflineVoices.maxWithOrNull(
-            compareBy<Voice> { it.quality }
-                .thenBy { voice -> exactRegionOfflineVoices.any { it.name == voice.name } }
-                .thenBy { it.name == currentVoiceName },
+        val languageAvailable = engine.isLanguageAvailable(requestedLocale) >= TextToSpeech.LANG_AVAILABLE
+        val decision = SpeechVoiceSelection.resolve(
+            voices = engine.voices.orEmpty().map { voice ->
+                SpeechVoiceCandidate(
+                    name = voice.name,
+                    language = voice.locale.language,
+                    country = voice.locale.country,
+                    quality = voice.quality,
+                    networkRequired = voice.isNetworkConnectionRequired,
+                )
+            },
+            requestedLocale = requestedLocale,
+            currentVoiceName = engine.voice?.name,
+            languageAvailable = languageAvailable,
         )
-        if (resolvedVoice != null) {
-            engine.voice = resolvedVoice
-            Log.i(
-                LOG_TAG,
-                "Selected voice ${resolvedVoice.name} (${resolvedVoice.locale.toLanguageTag()}, " +
-                    "quality=${resolvedVoice.quality})",
-            )
-        } else {
-            engine.language = requestedLocale
-            Log.i(LOG_TAG, "Using engine locale ${requestedLocale.toLanguageTag()}")
+        when (decision) {
+            is SpeechVoiceDecision.UseVoice -> {
+                val resolvedVoice = engine.voices.orEmpty().firstOrNull { it.name == decision.name }
+                if (resolvedVoice != null) {
+                    engine.voice = resolvedVoice
+                    Log.i(
+                        LOG_TAG,
+                        "Selected voice ${resolvedVoice.name} (${resolvedVoice.locale.toLanguageTag()}, " +
+                            "quality=${resolvedVoice.quality})",
+                    )
+                }
+            }
+            is SpeechVoiceDecision.UseLocale -> {
+                engine.language = requestedLocale
+                Log.i(LOG_TAG, "Using engine language settings for ${requestedLocale.toLanguageTag()}")
+            }
+            SpeechVoiceDecision.KeepEngineDefault -> {
+                val current = engine.voice
+                Log.i(
+                    LOG_TAG,
+                    "Keeping engine voice ${current?.name ?: "default"} for ${requestedLocale.toLanguageTag()}",
+                )
+            }
         }
     }
 
