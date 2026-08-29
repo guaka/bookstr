@@ -145,8 +145,8 @@ test('libstr desktop app opens with preload bridge', async () => {
     await expect(firstWindow.locator('#speech-voice-en')).toContainText(/Kokoro|Best installed voice/);
     await expect(firstWindow.locator('#speech-voice-pt')).toContainText(/Tugão|Best installed voice/);
     await expect(firstWindow.getByText('Optional voices are never downloaded or selected automatically.')).toBeVisible();
-    await firstWindow.locator('#reader-font-family').selectOption('arial');
-    await firstWindow.locator('#reader-text-align').selectOption('justify');
+    await firstWindow.locator('#reader-font').selectOption('arial');
+    await firstWindow.locator('#reader-alignment').selectOption('justified');
     await firstWindow.locator('#reader-font-size').evaluate(input => {
       input.value = '125';
       input.dispatchEvent(new Event('input', { bubbles: true }));
@@ -158,8 +158,8 @@ test('libstr desktop app opens with preload bridge', async () => {
     await expect(firstWindow.locator('#reader-font-size-value')).toHaveText('125%');
     await expect(firstWindow.locator('#speech-rate-value')).toHaveText('1.10×');
     expect(await firstWindow.evaluate(() => JSON.parse(localStorage.getItem('bookstr_reader_settings_v1')))).toMatchObject({
-      readerFontFamily: 'arial',
-      readerTextAlign: 'justify',
+      readerFont: 'arial',
+      readerAlignment: 'justified',
       readerFontPercent: 125,
       speechRate: 1.1,
       speechVoiceEnglish: '',

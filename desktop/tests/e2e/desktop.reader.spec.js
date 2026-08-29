@@ -160,8 +160,8 @@ test('Desktop EPUB reader supports speech control transitions', async () => {
       speechVoiceEnglish: 'kokoro-heart',
       speechVoicePortuguese: '',
       speechRate: 1.1,
-      readerFontFamily: 'arial',
-      readerTextAlign: 'justify',
+      readerFont: 'arial',
+      readerAlignment: 'justified',
       readerFontPercent: 125,
     })));
     await firstWindow.evaluate(payload => { void window.bookstrDesktop.openReader(payload); }, {
