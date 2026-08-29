@@ -44,6 +44,12 @@ final class SettingsRepositoryTests: XCTestCase {
         let first = SettingsRepository(defaults: defaults)
         XCTAssertEqual(first.readerFont, .arial)
         XCTAssertEqual(first.readerAlignment, .justified)
+        XCTAssertEqual(ReaderFont.arial.label, "Arial")
+        XCTAssertEqual(ReaderFont.georgia.label, "Georgia")
+        XCTAssertEqual(ReaderFont.palatino.label, "Palatino")
+        XCTAssertEqual(ReaderFont.system.label, "System")
+        XCTAssertEqual(ReaderAlignment.justified.label, "Justified")
+        XCTAssertEqual(ReaderAlignment.left.label, "Left")
         first.readerFont = .georgia
         first.readerAlignment = .left
         let second = SettingsRepository(defaults: defaults)

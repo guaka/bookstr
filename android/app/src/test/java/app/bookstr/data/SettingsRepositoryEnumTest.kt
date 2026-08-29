@@ -21,8 +21,11 @@ class SettingsRepositoryEnumTest {
     fun readerFontAndAlignmentDefaultToArialAndJustified() {
         assertEquals(ReaderFont.Arial, ReaderFont.fromKey(null))
         assertEquals(ReaderFont.Arial, ReaderFont.fromKey("nope"))
+        assertEquals(ReaderFont.Arial, ReaderFont.fromKey("arial"))
         assertEquals(ReaderFont.Georgia, ReaderFont.fromKey("georgia"))
-        assertEquals(ReaderAlignment.Justified, ReaderAlignment.fromKey(null))
+        assertEquals(ReaderFont.Palatino, ReaderFont.fromKey("palatino"))
+        assertEquals(ReaderFont.System, ReaderFont.fromKey("system"))
+        assertEquals(ReaderAlignment.Justified, ReaderAlignment.fromKey("justified"))
         assertEquals(ReaderAlignment.Left, ReaderAlignment.fromKey("left"))
     }
 

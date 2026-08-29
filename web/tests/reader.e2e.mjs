@@ -681,17 +681,23 @@ test('settings persist the selected reading theme after reopening the app', asyn
   await page.goto('/#home');
   await page.locator('#settings-btn').click();
   await expect(page.locator('#settings-title')).toBeVisible();
+  await expect(page.locator('#reader-font')).toHaveValue('arial');
+  await expect(page.locator('#reader-alignment')).toHaveValue('justified');
 
   await page.locator('#theme-mode').selectOption('dark');
+  await page.locator('#reader-font').selectOption('georgia');
+  await page.locator('#reader-alignment').selectOption('left');
   await expect(page.locator('body')).toHaveClass(/theme-dark/);
   await expect.poll(async () => page.evaluate(() => JSON.parse(
     localStorage.getItem('bookstr_reader_settings_v1') || '{}',
-  ).theme)).toBe('dark');
+  ))).toMatchObject({ theme: 'dark', readerFont: 'georgia', readerAlignment: 'left' });
 
   await page.goto('/#home');
   await page.reload();
   await page.locator('#settings-btn').click();
   await expect(page.locator('#theme-mode')).toHaveValue('dark');
+  await expect(page.locator('#reader-font')).toHaveValue('georgia');
+  await expect(page.locator('#reader-alignment')).toHaveValue('left');
   await expect(page.locator('body')).toHaveClass(/theme-dark/);
 });
 

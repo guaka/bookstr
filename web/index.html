@@ -1823,6 +1823,7 @@
     <script src="favorite-references.js"></script>
     <script src="blossom-authorization.js"></script>
     <script src="vocabulary-wire.js"></script>
+    <script src="reader-typography.js"></script>
     <script src="vendor/sql-wasm.js"></script>
     <script>
       const FAVORITES_KEY = 'bookstr_nostr_favorites_v1';
@@ -5882,8 +5883,8 @@
             readUrl: readPath || '',
             cfi: String(initialCfi || ''),
             theme: state.settings.theme === 'dark' ? 'night' : state.settings.theme,
-            font: normalizeReaderFont(state.settings.readerFont),
-            alignment: normalizeReaderAlignment(state.settings.readerAlignment),
+            font: BookstrTypography.normalizeFont(state.settings.readerFont),
+            alignment: BookstrTypography.normalizeAlignment(state.settings.readerAlignment),
             book: {
               md5: String(book?.md5 || '').trim().toLowerCase(),
               title: book?.title || 'Book',
@@ -6589,8 +6590,8 @@
           if (typeof settings.theme === 'string') {
             state.settings.theme = settings.theme;
           }
-          state.settings.readerFont = normalizeReaderFont(settings.readerFont);
-          state.settings.readerAlignment = normalizeReaderAlignment(settings.readerAlignment);
+          state.settings.readerFont = BookstrTypography.normalizeFont(settings.readerFont);
+          state.settings.readerAlignment = BookstrTypography.normalizeAlignment(settings.readerAlignment);
           state.settings.opdsFeeds = normalizePublicOPDSFeedSettings(settings.opdsFeeds);
         }
         if (nip7 && typeof nip7.pubkey === 'string') {
@@ -6783,22 +6784,12 @@
         document.body.classList.add(`theme-${normalized}`);
       }
 
-      function normalizeReaderFont(value) {
-        return ['arial', 'georgia', 'palatino', 'system'].includes(String(value || '').trim().toLowerCase())
-          ? String(value).trim().toLowerCase()
-          : 'arial';
-      }
-
-      function normalizeReaderAlignment(value) {
-        return String(value || '').trim().toLowerCase() === 'left' ? 'left' : 'justified';
-      }
-
       function applyOpenReaderTypography() {
         const win = readerFrame?.contentWindow;
         if (typeof win?.setReaderTypography !== 'function') return;
         win.setReaderTypography(
-          normalizeReaderFont(state.settings.readerFont),
-          normalizeReaderAlignment(state.settings.readerAlignment),
+          BookstrTypography.normalizeFont(state.settings.readerFont),
+          BookstrTypography.normalizeAlignment(state.settings.readerAlignment),
         );
       }
 
@@ -6887,8 +6878,8 @@
         state.settings.autoReading = autoReadingInput.checked;
         state.settings.useNip7 = nip7EnabledInput.checked;
         state.settings.theme = themeModeInput.value;
-        state.settings.readerFont = normalizeReaderFont(readerFontInput.value);
-        state.settings.readerAlignment = normalizeReaderAlignment(readerAlignmentInput.value);
+        state.settings.readerFont = BookstrTypography.normalizeFont(readerFontInput.value);
+        state.settings.readerAlignment = BookstrTypography.normalizeAlignment(readerAlignmentInput.value);
         saveOPDSFeedSettingsFromUI();
         applyTheme(state.settings.theme);
         applyOpenReaderTypography();
