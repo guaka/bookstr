@@ -121,6 +121,25 @@
     return a < b ? -1 : 1;
   }
 
+  function relocationProgression(locationsPercentage, viewportPercentage) {
+    if (Number.isFinite(locationsPercentage)) {
+      return Math.max(0, Math.min(1, locationsPercentage));
+    }
+    if (Number.isFinite(viewportPercentage)) {
+      return Math.max(0, Math.min(1, viewportPercentage));
+    }
+    return null;
+  }
+
+  function selectionKind(selection) {
+    const text = String(selection || "").replace(/\s+/g, " ").trim();
+    if (!text) return "empty";
+    const tokens = text.split(" ");
+    if (tokens.length > 2) return "mark";
+    const wordToken = /^\p{L}+(?:['’\-]\p{L}+)*$/u;
+    return tokens.every(function(token) { return wordToken.test(token); }) ? "words" : "mark";
+  }
+
   function locatorSkipDecision(blockStart, blockEnd, resume, compare) {
     const at = String(resume || "").trim();
     if (!at) return "include";
@@ -615,6 +634,8 @@
     buildPlan,
     createPlayer,
     compareLocators,
+    selectionKind,
+    relocationProgression,
     locatorSkipDecision,
     mappedIndexAtPoint,
     isSilentSpeechParent,

@@ -383,18 +383,70 @@ final class ReaderAssetContractTests: XCTestCase {
         XCTAssertTrue(html.contains("AndroidBridge.onTextSelected(JSON.stringify({"))
         XCTAssertTrue(html.contains("text: cleanDictionaryText(selection).slice(0, 2000)"))
         XCTAssertTrue(html.contains("contextSentence: selectionContext(selectedRange)"))
+        XCTAssertTrue(html.contains("if (window.bookstrNativeSwipeNavigation) return"))
         XCTAssertTrue(html.contains("event.preventDefault();"))
         XCTAssertTrue(html.contains("event.stopPropagation();"))
+        XCTAssertFalse(html.contains("id=\"selection-actions\""))
     }
 
 #if !SWIFT_PACKAGE
     @MainActor
-    func testReaderViewsSuppressNativeEditActions() {
+    func testReaderViewsKeepTheSystemSelectionBubble() {
         let webView = BookstrReaderWebView(frame: .zero, configuration: WKWebViewConfiguration())
         let pdfView = VocabularyPDFView()
 
-        XCTAssertFalse(webView.canPerformAction(#selector(UIResponderStandardEditActions.copy(_:)), withSender: nil))
-        XCTAssertFalse(pdfView.canPerformAction(#selector(UIResponderStandardEditActions.copy(_:)), withSender: nil))
+        let paste = UIAction(title: "Paste", handler: { _ in })
+        let copy = UIAction(title: "Copy", handler: { _ in })
+        let lookUp = UIMenu(title: "Look Up", children: [UIAction(title: "Look Up", handler: { _ in })])
+        XCTAssertEqual(
+            ReaderEditMenu.copyOnly(from: [paste, copy, lookUp]).compactMap { ($0 as? UIAction)?.title },
+            ["Copy"]
+        )
+
+        webView.editMenuSelection = { "hello" }
+        XCTAssertEqual(
+            ReaderEditMenu.extraActions(
+                for: webView.editMenuSelection(),
+                allowsSpeech: true,
+                addWord: {},
+                mark: {},
+                readFromHere: {}
+            ).compactMap { ($0 as? UIAction)?.title },
+            ["Add Word", "Read from here"]
+        )
+        pdfView.editMenuSelection = { "a longer marked passage here" }
+        XCTAssertEqual(
+            ReaderEditMenu.extraActions(
+                for: pdfView.editMenuSelection(),
+                allowsSpeech: false,
+                addWord: {},
+                mark: {},
+                readFromHere: {}
+            ).compactMap { ($0 as? UIAction)?.title },
+            ["Mark"]
+        )
+        XCTAssertEqual(
+            ReaderEditMenu.menu(
+                defaultActions: [paste, copy, lookUp],
+                selection: "hello",
+                allowsSpeech: true,
+                addWord: {},
+                mark: {},
+                readFromHere: {}
+            ).children.compactMap { ($0 as? UIAction)?.title },
+            ["Copy", "Add Word", "Read from here"]
+        )
+        var added = false
+        let addActions = ReaderEditMenu.extraActions(
+            for: "hello",
+            allowsSpeech: false,
+            addWord: { added = true },
+            mark: {},
+            readFromHere: {}
+        )
+        XCTAssertEqual((addActions.first as? UIAction)?.title, "Add Word")
+        (addActions.first as? UIAction)?.performWithSender(nil, target: nil)
+        XCTAssertTrue(added)
     }
 
     @MainActor
@@ -439,6 +491,16 @@ final class ReaderAssetContractTests: XCTestCase {
         XCTAssertTrue(html.contains("locatorSkipDecision"))
         XCTAssertTrue(html.contains("payload.source = \"speech\""))
         XCTAssertTrue(html.contains("window.requestSpeechText = function(notifyNative, requestID, fromCfi)"))
+        XCTAssertTrue(html.contains("if (speechActive) return"))
+        XCTAssertTrue(html.contains("function reportRestoredLocation()"))
+        XCTAssertTrue(html.contains("if (speechActive) {"))
+        XCTAssertTrue(html.contains("reportSpeechLocator(lastSpeechCfi, false);"))
+        XCTAssertTrue(html.contains("BookstrSpeech.relocationProgression"))
+        XCTAssertTrue(html.contains("rangeToCfi(spokenRange) || elementBoundaryCfi(block.element, false)"))
+        XCTAssertTrue(html.contains("if (!restore) reportLocation(rendition.currentLocation())"))
+        XCTAssertTrue(html.contains("box-shadow:inset 3px 0 0 #7fb8a7"))
+        XCTAssertTrue(html.contains("::highlight(bookstr-speaking-word){background:rgba(47,93,80,.32)"))
+        XCTAssertFalse(html.contains("::highlight(bookstr-speaking-word){background:#e7c766"))
     }
 
     func testReaderReportsWhetherARealTableOfContentsExists() throws {
@@ -459,7 +521,51 @@ final class ReaderAssetContractTests: XCTestCase {
         XCTAssertTrue(source.contains("setReaderTypography(\\(font), \\(alignment))"))
         XCTAssertTrue(source.contains("window.setReaderTypography && window.setReaderTypography"))
         XCTAssertTrue(source.contains("window.requestSpeechText && window.requestSpeechText(true, \\(Self.js(requestID)), \\(Self.js(speechLocator)))"))
-        XCTAssertTrue(source.contains("if item[\"source\"] as? String == \"speech\" { return }"))
+        XCTAssertTrue(source.contains("func speakFromLocator"))
+        XCTAssertTrue(source.contains("buildMenu(with builder"))
+        XCTAssertTrue(source.contains("writingToolsBehavior = .none"))
+        XCTAssertTrue(source.contains("ReaderEditMenu.configure("))
+        XCTAssertFalse(source.contains("UIMenuController.shared"))
+        let editMenuURL = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent("Sources/Features/Reader/ReaderEditMenu.swift")
+        let editMenu = try String(contentsOf: editMenuURL, encoding: .utf8)
+        XCTAssertTrue(editMenu.contains("builder.remove(menu: .lookup)"))
+        XCTAssertTrue(editMenu.contains("builder.remove(menu: .share)"))
+        XCTAssertTrue(editMenu.contains("replaceChildren(ofMenu: .standardEdit)"))
+        XCTAssertTrue(editMenu.contains("title: \"Add Word\""))
+        XCTAssertTrue(editMenu.contains("title: \"Mark\""))
+        XCTAssertTrue(editMenu.contains("ReaderSelectionActions.readFromHereLabel"))
+        XCTAssertTrue(editMenu.contains("copyOnly(from:"))
+        let hostURL = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent("Sources/Features/Reader/ReaderHostView.swift")
+        let host = try String(contentsOf: hostURL, encoding: .utf8)
+        XCTAssertTrue(host.contains("override func editMenu(for textRange"))
+        XCTAssertTrue(host.contains("ReaderEditMenu.copyOnly(from: suggestedActions)"))
+        XCTAssertTrue(host.contains("allowsSpeech: true"))
+        let pdfURL = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent("Sources/Features/Reader/PDFReaderView.swift")
+        let pdf = try String(contentsOf: pdfURL, encoding: .utf8)
+        XCTAssertTrue(pdf.contains("buildMenu(with builder"))
+        XCTAssertTrue(pdf.contains("allowsSpeech: false"))
+        XCTAssertFalse(source.contains("item[\"progression\"] as? Double"))
+        XCTAssertTrue(source.contains("ReaderRelocation.parse"))
+        XCTAssertTrue(source.contains("willResignActiveNotification"))
+        XCTAssertTrue(source.contains("persistCurrentLocator"))
+        XCTAssertTrue(source.contains("controller.progression = item.progression"))
+        XCTAssertTrue(source.contains("if item.source == \"speech\" { return }"))
+        let rootURL = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent("Sources/App/RootView.swift")
+        let rootSource = try String(contentsOf: rootURL, encoding: .utf8)
+        XCTAssertTrue(rootSource.contains("continuationLocator(for: book)"))
+        XCTAssertTrue(rootSource.contains("progressRepository.get(bookId: book.id).cfi"))
         XCTAssertTrue(source.contains("observeAudioSession()"))
         XCTAssertTrue(source.contains("AVAudioSession.interruptionNotification"))
         let sessionURL = URL(fileURLWithPath: #filePath)
@@ -483,6 +589,18 @@ final class ReaderAssetContractTests: XCTestCase {
         XCTAssertTrue(playbackSource.contains("keepAliveMixer"))
         XCTAssertTrue(sessionSource.contains("1e-4"))
         XCTAssertTrue(playbackSource.contains("options: .loops"))
+        XCTAssertTrue(playbackSource.contains("NeuralSpeechBudget.onnxThreads"))
+        XCTAssertTrue(playbackSource.contains("releaseSynthesizer()"))
+        XCTAssertTrue(playbackSource.contains("synthesizer = nil"))
+        XCTAssertTrue(playbackSource.contains("engineID = nil"))
+        XCTAssertTrue(sessionSource.contains("func unload()"))
+        XCTAssertTrue(sessionSource.contains("synthesizer.unload()"))
+        XCTAssertTrue(playbackSource.contains("didEnterBackgroundNotification"))
+        XCTAssertTrue(playbackSource.contains("qos=userInitiated"))
+        XCTAssertTrue(sessionSource.contains("backgroundLookahead = 4"))
+        XCTAssertTrue(sessionSource.contains("foregroundLookahead = 4"))
+        XCTAssertTrue(sessionSource.contains("onnxThreads = 4"))
+        XCTAssertTrue(sessionSource.contains(".userInitiated"))
     }
 
     func testSettingsExposesSpeechLogsAndStableRelayIdentifiers() throws {

@@ -7,6 +7,15 @@ private final class NeuralSpeechRenderer: NeuralSpeechSynthesizing, @unchecked S
     private let queue = DispatchQueue(label: "app.bookstr.neural-speech", qos: .userInitiated)
     private var engineID: SpeechEngineID?
     private var synthesizer: SherpaOnnxOfflineTtsWrapper?
+    private var constrained = false
+
+    func setConstrained(_ constrained: Bool) {
+        self.constrained = constrained
+    }
+
+    func unload() {
+        queue.async { self.releaseSynthesizer() }
+    }
 
     func synthesize(
         text: String,
@@ -27,7 +36,7 @@ private final class NeuralSpeechRenderer: NeuralSpeechSynthesizing, @unchecked S
             endTask()
         })
         BookstrDebugLog.shared.record(
-            "synth begin engine=\(engine.rawValue) chars=\(text.count)"
+            "synth begin engine=\(engine.rawValue) chars=\(text.count) qos=userInitiated constrained=\(constrained)"
         )
         queue.async {
             defer { DispatchQueue.main.async(execute: endTask) }
@@ -58,8 +67,15 @@ private final class NeuralSpeechRenderer: NeuralSpeechSynthesizing, @unchecked S
         return spec
     }
 
+    private func releaseSynthesizer() {
+        synthesizer = nil
+        engineID = nil
+    }
+
     private func synthesizer(for spec: SpeechModelSpec) throws -> SherpaOnnxOfflineTtsWrapper {
         if engineID == spec.id, let synthesizer { return synthesizer }
+        // DestroyOfflineTts must run before another ONNX session is constructed.
+        releaseSynthesizer()
         let created: SherpaOnnxOfflineTtsWrapper
         switch spec.kind {
         case .kokoro(let model, let voices, _):
@@ -69,7 +85,7 @@ private final class NeuralSpeechRenderer: NeuralSpeechSynthesizing, @unchecked S
                 tokens: spec.tokensURL.path,
                 dataDir: spec.dataDirectory.path
             )
-            let modelConfig = sherpaOnnxOfflineTtsModelConfig(kokoro: kokoro, numThreads: 2)
+            let modelConfig = sherpaOnnxOfflineTtsModelConfig(kokoro: kokoro, numThreads: NeuralSpeechBudget.onnxThreads)
             var config = sherpaOnnxOfflineTtsConfig(model: modelConfig, maxNumSentences: 1)
             created = SherpaOnnxOfflineTtsWrapper(config: &config)
         case .vits(let model):
@@ -78,7 +94,7 @@ private final class NeuralSpeechRenderer: NeuralSpeechSynthesizing, @unchecked S
                 tokens: spec.tokensURL.path,
                 dataDir: spec.dataDirectory.path
             )
-            let modelConfig = sherpaOnnxOfflineTtsModelConfig(vits: vits, numThreads: 2)
+            let modelConfig = sherpaOnnxOfflineTtsModelConfig(vits: vits, numThreads: NeuralSpeechBudget.onnxThreads)
             var config = sherpaOnnxOfflineTtsConfig(model: modelConfig, maxNumSentences: 1)
             created = SherpaOnnxOfflineTtsWrapper(config: &config)
         }
@@ -290,6 +306,23 @@ final class NeuralSpeechPlayback {
 
     init() {
         session = NeuralSpeechSession(synthesizer: renderer, player: audioPlayer)
+        NotificationCenter.default.addObserver(
+            forName: UIApplication.didEnterBackgroundNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.session.setConstrained(true)
+        }
+        NotificationCenter.default.addObserver(
+            forName: UIApplication.willEnterForegroundNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.session.setConstrained(false)
+        }
+        if UIApplication.shared.applicationState != .active {
+            session.setConstrained(true)
+        }
     }
 
     func play(

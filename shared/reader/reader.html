@@ -273,17 +273,22 @@
           const selection = selectedRange ? selectedRange.toString() : "";
           const language = (contents && contents.document && contents.document.documentElement.lang) ||
             (book.packaging && book.packaging.metadata && book.packaging.metadata.language) || "en";
+          const payload = {
+            text: cleanDictionaryText(selection).slice(0, 2000),
+            language: language,
+            cfi: cfi || "",
+            contextSentence: selectionContext(selectedRange)
+          };
+          window.__bookstrTextSelection = payload;
           keepHighlight(cfi);
           if (window.AndroidBridge && AndroidBridge.onTextSelected) {
-            AndroidBridge.onTextSelected(JSON.stringify({
-              text: cleanDictionaryText(selection).slice(0, 2000),
-              language: language,
-              cfi: cfi || "",
-              contextSentence: selectionContext(selectedRange)
-            }));
+            AndroidBridge.onTextSelected(JSON.stringify(payload));
           }
           showDictionary(selection, language, cfi, selectionContext(selectedRange));
         });
+        window.bookstrCurrentTextSelection = function() {
+          return window.__bookstrTextSelection || null;
+        };
         registerThemes();
         applyTheme(theme || "paper");
         rendition.themes.fontSize(readerFontPercent + "%");
@@ -295,33 +300,71 @@
         restoredHighlights(highlightCfi).forEach(applyHighlight);
         if (highlightCfi) positionReferenceBelowTop();
         if (window.AndroidBridge) AndroidBridge.onReaderReady();
-        reportLocation(rendition.currentLocation());
+        const restore = String(cfi || "").trim();
+        function reportRestoredLocation() {
+          if (speechActive) {
+            reportSpeechLocator(lastSpeechCfi, false);
+            return Promise.resolve();
+          }
+          const shown = restore && rendition && typeof rendition.display === "function"
+            ? rendition.display(restore)
+            : Promise.resolve();
+          return Promise.resolve(shown).then(function() {
+            reportLocation(rendition.currentLocation());
+          }).catch(function() {
+            reportLocation(rendition.currentLocation());
+          });
+        }
+        if (!restore) reportLocation(rendition.currentLocation());
         book.locations.generate(100).then(function() {
-          reportLocation(rendition.currentLocation());
+          return reportRestoredLocation();
         }).catch(function(error) {
           console.warn("Could not generate EPUB locations", error);
+          reportRestoredLocation();
         });
       });
     }
 
-    function reportLocation(location) {
-      const start = location && location.start;
-      if (!start || !start.cfi || !window.AndroidBridge) return;
-      let progression = Number.isFinite(start.percentage) ? start.percentage : 0;
+    function cfiProgression(cfi) {
       try {
-        const generated = book && book.locations && book.locations.length() > 0;
-        if (generated) progression = book.locations.percentageFromCfi(start.cfi);
+        if (book && book.locations && book.locations.length() > 0) {
+          return book.locations.percentageFromCfi(cfi);
+        }
       } catch (error) {
         console.warn("Could not calculate EPUB progress", error);
       }
-      if (!Number.isFinite(progression)) progression = 0;
-      if (!speechActive) lastSpeechCfi = start.cfi;
+      return Number.NaN;
+    }
+
+    function spinePositionForCfi(cfi, fallbackIndex) {
+      try {
+        const item = book && book.spine && typeof book.spine.get === "function" ? book.spine.get(cfi) : null;
+        const items = book && book.spine && book.spine.spineItems;
+        const index = item && Number.isFinite(item.index) ? item.index : fallbackIndex;
+        return {
+          sectionIndex: Number.isFinite(index) ? index : 0,
+          sectionCount: items && items.length ? items.length : 1
+        };
+      } catch (_) {
+        return { sectionIndex: Number.isFinite(fallbackIndex) ? fallbackIndex : 0, sectionCount: 1 };
+      }
+    }
+
+    function reportLocation(location) {
+      if (speechActive) return;
+      const start = location && location.start;
+      if (!start || !start.cfi || !window.AndroidBridge) return;
+      lastSpeechCfi = start.cfi;
+      const progression = window.BookstrSpeech && window.BookstrSpeech.relocationProgression
+        ? window.BookstrSpeech.relocationProgression(cfiProgression(start.cfi), start.percentage)
+        : (Number.isFinite(start.percentage) ? start.percentage : 0);
+      if (!Number.isFinite(progression)) return;
+      const spine = spinePositionForCfi(start.cfi, start.index);
       AndroidBridge.onRelocated(JSON.stringify({
         cfi: start.cfi,
-        progression: Math.max(0, Math.min(1, progression)),
-        sectionIndex: Number.isFinite(start.index) ? start.index : 0,
-        sectionCount: book && book.spine && book.spine.spineItems
-          ? book.spine.spineItems.length : 1
+        progression: progression,
+        sectionIndex: spine.sectionIndex,
+        sectionCount: spine.sectionCount
       }));
     }
 
@@ -695,6 +738,7 @@
         const media = event.target && event.target.closest
           ? event.target.closest("img, svg") : null;
         if (media) return;
+        if (window.bookstrNativeSwipeNavigation) return;
         event.preventDefault();
         event.stopPropagation();
         const selection = contentDocument.defaultView && contentDocument.defaultView.getSelection
@@ -1260,23 +1304,20 @@
       const locator = String(cfi || lastSpeechCfi || "").trim();
       if (!locator || !window.AndroidBridge || !AndroidBridge.onRelocated) return;
       lastSpeechCfi = locator;
-      let progression = 0;
-      try {
-        if (book && book.locations && book.locations.length() > 0) {
-          progression = book.locations.percentageFromCfi(locator);
-        }
-      } catch (_) {}
       const location = rendition && typeof rendition.currentLocation === "function"
         ? rendition.currentLocation()
         : null;
       const start = location && location.start;
-      if (!Number.isFinite(progression)) progression = Number.isFinite(start && start.percentage) ? start.percentage : 0;
+      const progression = window.BookstrSpeech && window.BookstrSpeech.relocationProgression
+        ? window.BookstrSpeech.relocationProgression(cfiProgression(locator), start && start.percentage)
+        : cfiProgression(locator);
+      if (!Number.isFinite(progression)) return;
+      const spine = spinePositionForCfi(locator, start && start.index);
       const payload = {
         cfi: locator,
-        progression: Math.max(0, Math.min(1, progression)),
-        sectionIndex: Number.isFinite(start && start.index) ? start.index : 0,
-        sectionCount: book && book.spine && book.spine.spineItems
-          ? book.spine.spineItems.length : 1
+        progression: progression,
+        sectionIndex: spine.sectionIndex,
+        sectionCount: spine.sectionCount
       };
       if (!publishRemote) payload.source = "speech";
       AndroidBridge.onRelocated(JSON.stringify(payload));
@@ -1433,9 +1474,9 @@
       if (!style) {
         style = block.element.ownerDocument.createElement("style");
         style.id = "bookstr-speech-style";
-        style.textContent = ".bookstr-speaking{background:rgba(255,213,79,.38)!important;" +
-          "box-shadow:0 0 0 .16em rgba(255,213,79,.38)!important;border-radius:.12em!important}" +
-          "::highlight(bookstr-speaking-word){background:#e7c766;color:#1c1916}";
+        style.textContent = ".bookstr-speaking{background:rgba(127,184,167,.18)!important;" +
+          "box-shadow:inset 3px 0 0 #7fb8a7;border-radius:0 .1em .1em 0}" +
+          "::highlight(bookstr-speaking-word){background:rgba(47,93,80,.32);color:inherit}";
         (block.element.ownerDocument.head || block.element.ownerDocument.documentElement).appendChild(style);
       }
       showSpeechWord(block, start, end);
@@ -1448,7 +1489,7 @@
           const finalPosition = mapped.positions[Math.max(first, last - 1)];
           spokenRange.setStart(mapped.positions[first].node, mapped.positions[first].start);
           spokenRange.setEnd(finalPosition.node, finalPosition.end);
-          const spokenCfi = rangeToCfi(spokenRange);
+          const spokenCfi = rangeToCfi(spokenRange) || elementBoundaryCfi(block.element, false);
           if (spokenCfi) reportSpeechLocator(spokenCfi, false);
         }
       } catch (_) {}

@@ -207,6 +207,22 @@ test('speech planner omits footnote markers from spoken text', () => {
   assert.equal(BookstrSpeech.visibleText({ ownerDocument: document }), 'Hello world');
 });
 
+test('relocation progression prefers generated locations over a stale viewport', () => {
+  assert.equal(BookstrSpeech.relocationProgression(0.42, 0.1), 0.42);
+  assert.equal(BookstrSpeech.relocationProgression(1.4, 0.1), 1);
+  assert.equal(BookstrSpeech.relocationProgression(Number.NaN, 0.25), 0.25);
+  assert.equal(BookstrSpeech.relocationProgression(undefined, Number.NaN), null);
+  assert.equal(BookstrSpeech.relocationProgression(0, 0.9), 0);
+});
+
+test('selection kind matches copy, word, and mark actions', () => {
+  assert.equal(BookstrSpeech.selectionKind('   '), 'empty');
+  assert.equal(BookstrSpeech.selectionKind('hello'), 'words');
+  assert.equal(BookstrSpeech.selectionKind("don't worry"), 'words');
+  assert.equal(BookstrSpeech.selectionKind('one two three'), 'mark');
+  assert.equal(BookstrSpeech.selectionKind('hello 123'), 'mark');
+});
+
 test('speech locators skip completed blocks and resume inside the current one', () => {
   const order = { a: 1, b: 2, c: 3 };
   const compare = (left, right) => order[left] - order[right];

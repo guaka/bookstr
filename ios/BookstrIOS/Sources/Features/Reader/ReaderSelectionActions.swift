@@ -33,7 +33,38 @@ enum ReaderSelectionActions {
         kind(for: selection) == .mark
     }
 
+    static func offersSpeech(for selection: String) -> Bool {
+        kind(for: selection) != .empty
+    }
+
+    static func extraItems(for selection: String, allowsSpeech: Bool) -> [ReaderSelectionMenuItem] {
+        switch kind(for: selection) {
+        case .empty:
+            return []
+        case .words:
+            return allowsSpeech ? [.addWord, .readFromHere] : [.addWord]
+        case .mark:
+            return allowsSpeech ? [.mark, .readFromHere] : [.mark]
+        }
+    }
+
+    /// Items for the edit-menu chrome. When selection text has not arrived yet from
+    /// the EPUB bridge, still offer every action so the bubble is not Copy-only.
+    static func menuItems(for selection: String, allowsSpeech: Bool) -> [ReaderSelectionMenuItem] {
+        let extras = extraItems(for: selection, allowsSpeech: allowsSpeech)
+        if !extras.isEmpty { return extras }
+        return allowsSpeech ? [.addWord, .mark, .readFromHere] : [.addWord, .mark]
+    }
+
+    static let readFromHereLabel = "Read from here"
+
     private static func isWordToken(_ token: String) -> Bool {
         token.range(of: wordToken, options: .regularExpression) != nil
     }
+}
+
+enum ReaderSelectionMenuItem: String, Equatable {
+    case addWord
+    case mark
+    case readFromHere
 }

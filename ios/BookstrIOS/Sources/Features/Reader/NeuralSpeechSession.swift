@@ -38,6 +38,8 @@ enum NeuralSpeechAudio {
 }
 
 protocol NeuralSpeechSynthesizing: AnyObject {
+    func setConstrained(_ constrained: Bool)
+    func unload()
     func synthesize(
         text: String,
         engine: SpeechEngineID,
@@ -61,6 +63,26 @@ protocol NeuralSpeechScheduling: AnyObject {
     ) throws
 }
 
+enum NeuralSpeechBudget {
+    /// Four IntraOp threads so Kokoro stays ahead of playback. Two threads made
+    /// some phrases slower than the remaining audio, which opened long gaps.
+    static let onnxThreads = 4
+    static let foregroundLookahead = 4
+    /// Same depth as foreground. A shallower background queue underruns on short
+    /// phrases while the next one is still synthesizing.
+    static let backgroundLookahead = 4
+
+    static func maxSpokenAhead(constrained: Bool) -> Int {
+        constrained ? backgroundLookahead : foregroundLookahead
+    }
+
+    /// Synthesis must stay user-initiated even with the screen off. Utility QoS
+    /// lets iOS defer the next phrase until after the current buffer underruns.
+    static func synthesisQoS(constrained _: Bool) -> DispatchQoS.QoSClass {
+        .userInitiated
+    }
+}
+
 enum NeuralSpeechProgress {
     static let tickNanoseconds: UInt64 = 750_000_000
 
@@ -81,8 +103,7 @@ enum NeuralSpeechProgress {
 
 @MainActor
 final class NeuralSpeechSession {
-    /// Keep a few spoken buffers ahead for smooth playback without unbounded PCM growth.
-    static let maxSpokenAhead = 3
+    static var maxSpokenAhead: Int { NeuralSpeechBudget.foregroundLookahead }
 
     private let synthesizer: NeuralSpeechSynthesizing
     private let player: NeuralSpeechScheduling
@@ -107,8 +128,11 @@ final class NeuralSpeechSession {
     private var phraseElapsed: TimeInterval = 0
     private var phraseAnchor = Date()
     private var phrasePaused = false
+    private var constrained = false
 
     var isPlaying: Bool { player.isPlaying || queuedOnPlayer > 0 || synthesizing }
+
+    private var lookahead: Int { NeuralSpeechBudget.maxSpokenAhead(constrained: constrained) }
 
     init(synthesizer: NeuralSpeechSynthesizing, player: NeuralSpeechScheduling) {
         self.synthesizer = synthesizer
@@ -150,6 +174,16 @@ final class NeuralSpeechSession {
         prefetch()
     }
 
+    func setConstrained(_ constrained: Bool) {
+        guard self.constrained != constrained else { return }
+        self.constrained = constrained
+        synthesizer.setConstrained(constrained)
+        BookstrDebugLog.shared.record(
+            "budget constrained=\(constrained) ahead=\(lookahead) threads=\(NeuralSpeechBudget.onnxThreads)"
+        )
+        prefetch()
+    }
+
     func pause() {
         if !phrasePaused {
             phraseElapsed += Date().timeIntervalSince(phraseAnchor)
@@ -185,6 +219,7 @@ final class NeuralSpeechSession {
         onComplete = nil
         player.setKeepAliveActive(false, sampleRate: sampleRate)
         player.stop()
+        synthesizer.unload()
         if hadWork {
             BookstrDebugLog.shared.record("stop")
         }
@@ -192,7 +227,7 @@ final class NeuralSpeechSession {
 
     private func prefetch() {
         guard !synthesizing, nextRender < chunks.count else { return }
-        guard spokenQueued + ready.count < Self.maxSpokenAhead else { return }
+        guard spokenQueued + ready.count < lookahead else { return }
         synthesizing = true
         let index = nextRender
         let active = generation
@@ -222,7 +257,7 @@ final class NeuralSpeechSession {
 
     private func scheduleReady() {
         while nextSchedule < chunks.count,
-              spokenQueued < Self.maxSpokenAhead,
+              spokenQueued < lookahead,
               let audio = ready[nextSchedule] {
             let index = nextSchedule
             nextSchedule += 1

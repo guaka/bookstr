@@ -235,6 +235,16 @@ final class EPUBReaderController: NSObject, ObservableObject, AVSpeechSynthesize
         )
     }
 
+    func speakFromLocator(_ locator: String) {
+        let cfi = locator.trimmingCharacters(in: .whitespacesAndNewlines)
+        if cfi.isEmpty == false { speechLocator = cfi }
+        evaluate("window.setSpeechResumeCfi && window.setSpeechResumeCfi(\(Self.js(speechLocator)))")
+        if isSpeaking || speech.isSpeaking || speech.isPaused || neuralSpeech.isPlaying || playbackQueue.hasPendingRequest {
+            stopSpeech()
+        }
+        requestSpeechText()
+    }
+
     func toggleSpeech() {
         if isSpeaking || speech.isSpeaking || speech.isPaused || neuralSpeech.isPlaying || playbackQueue.hasPendingRequest {
             stopSpeech()
@@ -716,16 +726,22 @@ final class EPUBReaderController: NSObject, ObservableObject, AVSpeechSynthesize
 }
 
 final class BookstrReaderWebView: WKWebView {
-    override func canPerformAction(_ action: Selector, withSender sender: Any?) -> Bool {
-        false
-    }
+    var editMenuSelection: () -> String = { "" }
+    var allowsSpeechInEditMenu = true
+    var onEditMenuAddWord: (() -> Void)?
+    var onEditMenuMark: (() -> Void)?
+    var onEditMenuReadFromHere: (() -> Void)?
 
     override func buildMenu(with builder: UIMenuBuilder) {
         super.buildMenu(with: builder)
-        builder.remove(menu: .standardEdit)
-        builder.remove(menu: .lookup)
-        builder.remove(menu: .share)
-        builder.remove(menu: .replace)
+        ReaderEditMenu.configure(
+            builder,
+            selection: editMenuSelection(),
+            allowsSpeech: allowsSpeechInEditMenu,
+            addWord: { [weak self] in self?.onEditMenuAddWord?() },
+            mark: { [weak self] in self?.onEditMenuMark?() },
+            readFromHere: { [weak self] in self?.onEditMenuReadFromHere?() }
+        )
     }
 }
 
@@ -745,6 +761,7 @@ struct EPUBReaderView: UIViewRepresentable {
     func makeUIView(context: Context) -> WKWebView {
         let configuration = WKWebViewConfiguration()
         configuration.websiteDataStore = .default()
+        configuration.writingToolsBehavior = .none
         configuration.setURLSchemeHandler(context.coordinator, forURLScheme: "bookstr-reader")
         configuration.userContentController.add(context.coordinator, name: "bookstrReader")
         configuration.userContentController.addUserScript(
@@ -766,6 +783,18 @@ struct EPUBReaderView: UIViewRepresentable {
         webView.accessibilityLabel = "EPUB reader"
         webView.allowsBackForwardNavigationGestures = false
         webView.allowsLinkPreview = false
+        webView.editMenuSelection = { [weak coordinator = context.coordinator] in
+            coordinator?.currentEditMenuText() ?? ""
+        }
+        webView.onEditMenuAddWord = { [weak coordinator = context.coordinator] in
+            coordinator?.addWordFromEditMenu()
+        }
+        webView.onEditMenuMark = { [weak coordinator = context.coordinator] in
+            coordinator?.markFromEditMenu()
+        }
+        webView.onEditMenuReadFromHere = { [weak coordinator = context.coordinator] in
+            coordinator?.readFromHereFromEditMenu()
+        }
         let gesture = UIPanGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handlePagePan(_:)))
         gesture.cancelsTouchesInView = false
         gesture.delegate = context.coordinator
@@ -825,6 +854,8 @@ struct EPUBReaderView: UIViewRepresentable {
         private let initialCFI: String?
         private let highlightCFI: String?
 
+        private var resignObserver: NSObjectProtocol?
+
         init(container: AppContainer, book: CatalogBook, fileURL: URL, controller: EPUBReaderController,
              initialCFI: String?, highlightCFI: String?) {
             self.container = container
@@ -833,6 +864,20 @@ struct EPUBReaderView: UIViewRepresentable {
             self.controller = controller
             self.initialCFI = initialCFI
             self.highlightCFI = highlightCFI
+            super.init()
+            resignObserver = NotificationCenter.default.addObserver(
+                forName: UIApplication.willResignActiveNotification,
+                object: nil,
+                queue: .main
+            ) { [weak self] _ in
+                self?.persistCurrentLocator()
+            }
+        }
+
+        deinit {
+            if let resignObserver {
+                NotificationCenter.default.removeObserver(resignObserver)
+            }
         }
 
         @objc func handlePagePan(_ gesture: UIPanGestureRecognizer) {
@@ -1023,36 +1068,100 @@ struct EPUBReaderView: UIViewRepresentable {
             }
         }
 
+        fileprivate func currentEditMenuText() -> String {
+            controller.textSelection?.text ?? ""
+        }
+
+        fileprivate func addWordFromEditMenu() {
+            guard let selection = controller.textSelection,
+                  let phrase = ReaderSelectionActions.phraseForVocabulary(from: selection.text)
+            else { return }
+            _ = container.vocabularyRepository.saveSelection(
+                word: phrase,
+                language: selection.language,
+                bookId: book.id,
+                bookTitle: book.title,
+                cfi: selection.locator,
+                context: selection.context
+            )
+            NotificationCenter.default.post(name: .bookstrVocabularyDidChange, object: nil)
+        }
+
+        fileprivate func markFromEditMenu() {
+            guard let selection = controller.textSelection,
+                  ReaderSelectionActions.offersMark(for: selection.text)
+            else { return }
+            _ = container.snippetRepository.saveMark(
+                text: ReaderSelectionActions.normalizedText(selection.text),
+                bookId: book.id,
+                bookTitle: book.title,
+                author: book.author,
+                isbn: NostrSyncService.normalizedISBN(book.isbn),
+                format: .epub,
+                locator: selection.locator
+            )
+            NotificationCenter.default.post(name: .bookstrSnippetsDidChange, object: nil)
+        }
+
+        fileprivate func readFromHereFromEditMenu() {
+            guard let selection = controller.textSelection else { return }
+            controller.speakFromLocator(selection.locator)
+        }
+
         private func object(from json: String?) -> [String: Any]? {
             guard let json, let data = json.data(using: .utf8) else { return nil }
             return try? JSONSerialization.jsonObject(with: data) as? [String: Any]
         }
 
+        private func persistCurrentLocator() {
+            let cfi = controller.speechLocator.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard cfi.isEmpty == false else { return }
+            container.progressRepository.save(
+                bookId: book.id,
+                progression: controller.progression,
+                cfi: cfi
+            )
+            container.settingsRepository.saveReaderSession(
+                ReaderSession(
+                    bookId: book.id,
+                    bookTitle: book.title,
+                    format: .epub,
+                    author: book.author,
+                    year: book.year,
+                    locator: cfi,
+                    pageIndex: 0,
+                    pageOffset: 0,
+                    rightsStatus: controller.rights.status.rawValue,
+                    license: controller.rights.license,
+                    licenseUrl: controller.rights.licenseURL,
+                    rightsSource: controller.rights.source
+                )
+            )
+            controller.evaluate("window.persistSpeechLocation && window.persistSpeechLocation()")
+        }
+
         private func handleRelocation(_ json: String?) {
-            guard let item = object(from: json),
-                  let progression = item["progression"] as? Double,
-                  let cfi = item["cfi"] as? String
-            else { return }
-            controller.progression = min(max(progression, 0), 1)
+            guard let item = ReaderRelocation.parse(json) else { return }
+            controller.progression = item.progression
             controller.furthestProgression = max(controller.furthestProgression, controller.progression)
-            controller.sectionIndex = item["sectionIndex"] as? Int ?? 0
-            controller.sectionCount = max(item["sectionCount"] as? Int ?? 1, 1)
-            controller.speechLocator = cfi
-            container.progressRepository.save(bookId: book.id, progression: progression, cfi: cfi)
+            controller.sectionIndex = item.sectionIndex
+            controller.sectionCount = item.sectionCount
+            controller.speechLocator = item.cfi
+            container.progressRepository.save(bookId: book.id, progression: item.progression, cfi: item.cfi)
             container.settingsRepository.saveReaderSession(
                 ReaderSession(bookId: book.id, bookTitle: book.title, format: .epub, author: book.author,
-                              year: book.year, locator: cfi, pageIndex: 0, pageOffset: 0,
+                              year: book.year, locator: item.cfi, pageIndex: 0, pageOffset: 0,
                               rightsStatus: controller.rights.status.rawValue,
                               license: controller.rights.license, licenseUrl: controller.rights.licenseURL,
                               rightsSource: controller.rights.source)
             )
-            if item["source"] as? String == "speech" { return }
+            if item.source == "speech" { return }
             var progressBook = book
             progressBook.rightsStatus = controller.rights.status.rawValue
             progressBook.license = controller.rights.license
             progressBook.licenseUrl = controller.rights.licenseURL
             progressBook.rightsSource = controller.rights.source
-            Task { await container.nostrSyncService.pushProgress(book: progressBook, progression: progression, cfi: cfi) }
+            Task { await container.nostrSyncService.pushProgress(book: progressBook, progression: item.progression, cfi: item.cfi) }
         }
 
         private func handleMetadata(_ json: String?) {

@@ -52,6 +52,7 @@ test('every client enforces the shared coverage baseline', async () => {
   assert.match(ios, /- 'shared\/coverage\/\*\*'/);
   assert.match(ios, /coverage-ratchet\.mjs --suite ios --report test-overview\/ios\.json/);
   assert.match(ios, /BookstrDebugLogTests/);
+  assert.match(ios, /ReaderRelocationTests/);
   assert.match(ios, /NeuralSpeechSessionTests/);
   assert.match(ios, /SnippetRepositoryTests/);
 });

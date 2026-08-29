@@ -99,20 +99,24 @@ private extension String {
 }
 
 final class VocabularyPDFView: PDFView {
+    var editMenuSelection: () -> String = { "" }
+    var onEditMenuAddWord: (() -> Void)?
+    var onEditMenuMark: (() -> Void)?
+
     static func selectedWord(from value: String?) -> String? {
         ReaderSelectionActions.phraseForVocabulary(from: value ?? "")
     }
 
-    override func canPerformAction(_ action: Selector, withSender sender: Any?) -> Bool {
-        false
-    }
-
     override func buildMenu(with builder: UIMenuBuilder) {
         super.buildMenu(with: builder)
-        builder.remove(menu: .standardEdit)
-        builder.remove(menu: .lookup)
-        builder.remove(menu: .share)
-        builder.remove(menu: .replace)
+        ReaderEditMenu.configure(
+            builder,
+            selection: editMenuSelection(),
+            allowsSpeech: false,
+            addWord: { [weak self] in self?.onEditMenuAddWord?() },
+            mark: { [weak self] in self?.onEditMenuMark?() },
+            readFromHere: {}
+        )
     }
 }
 
@@ -144,6 +148,15 @@ struct PDFReaderView: UIViewRepresentable {
         pdfView.accessibilityLabel = "PDF reader: \(book.title)"
         pdfView.accessibilityValue = "\(pdfView.document?.pageCount ?? 0) rendered pages"
         pdfView.isAccessibilityElement = true
+        pdfView.editMenuSelection = { [weak coordinator = context.coordinator] in
+            coordinator?.textSelection.wrappedValue?.text ?? pdfView.currentSelection?.string ?? ""
+        }
+        pdfView.onEditMenuAddWord = { [weak coordinator = context.coordinator] in
+            coordinator?.addWordFromEditMenu()
+        }
+        pdfView.onEditMenuMark = { [weak coordinator = context.coordinator] in
+            coordinator?.markFromEditMenu()
+        }
         let progress = container.progressRepository.get(bookId: book.id)
         if progress.cfi.hasPrefix("page:"),
            let pageIndex = Int(progress.cfi.dropFirst("page:".count)),
@@ -241,6 +254,37 @@ struct PDFReaderView: UIViewRepresentable {
             let page = pdfView.currentSelection?.pages.first ?? pdfView.currentPage
             let index = page.flatMap { pdfView.document?.index(for: $0) } ?? 0
             textSelection.wrappedValue = PDFTextSelection(text: String(text.prefix(2_000)), pageIndex: max(index, 0))
+        }
+
+        fileprivate func addWordFromEditMenu() {
+            guard let selection = textSelection.wrappedValue,
+                  let phrase = ReaderSelectionActions.phraseForVocabulary(from: selection.text)
+            else { return }
+            _ = container.vocabularyRepository.saveSelection(
+                word: phrase,
+                language: "en",
+                bookId: book.id,
+                bookTitle: book.title,
+                cfi: selection.locator,
+                context: selection.text
+            )
+            NotificationCenter.default.post(name: .bookstrVocabularyDidChange, object: nil)
+        }
+
+        fileprivate func markFromEditMenu() {
+            guard let selection = textSelection.wrappedValue,
+                  ReaderSelectionActions.offersMark(for: selection.text)
+            else { return }
+            _ = container.snippetRepository.saveMark(
+                text: ReaderSelectionActions.normalizedText(selection.text),
+                bookId: book.id,
+                bookTitle: book.title,
+                author: book.author,
+                isbn: NostrSyncService.normalizedISBN(book.isbn),
+                format: .pdf,
+                locator: selection.locator
+            )
+            NotificationCenter.default.post(name: .bookstrSnippetsDidChange, object: nil)
         }
     }
 }

@@ -167,6 +167,7 @@ final class NeuralSpeechSessionTests: XCTestCase {
             SpeechQueueChunk(text: "Two.", offset: 5, pauseSeconds: 0),
             SpeechQueueChunk(text: "Three.", offset: 10, pauseSeconds: 0),
             SpeechQueueChunk(text: "Four.", offset: 17, pauseSeconds: 0),
+            SpeechQueueChunk(text: "Five.", offset: 23, pauseSeconds: 0),
         ]
         session.start(
             chunks: chunks,
@@ -182,12 +183,55 @@ final class NeuralSpeechSessionTests: XCTestCase {
         await settle()
         synthesizer.complete()
         await settle()
-        XCTAssertEqual(synthesizer.texts, ["One.", "Two.", "Three."], "must not synthesize far ahead of playback")
-        XCTAssertEqual(NeuralSpeechSession.maxSpokenAhead, 3)
+        synthesizer.complete()
+        await settle()
+        XCTAssertEqual(synthesizer.texts, ["One.", "Two.", "Three.", "Four."], "must not synthesize far ahead of playback")
+        XCTAssertEqual(NeuralSpeechSession.maxSpokenAhead, 4)
+        XCTAssertEqual(NeuralSpeechBudget.onnxThreads, 4)
+        XCTAssertEqual(NeuralSpeechBudget.maxSpokenAhead(constrained: false), 4)
+        XCTAssertEqual(NeuralSpeechBudget.maxSpokenAhead(constrained: true), 4)
+        XCTAssertEqual(NeuralSpeechBudget.synthesisQoS(constrained: false), .userInitiated)
+        XCTAssertEqual(NeuralSpeechBudget.synthesisQoS(constrained: true), .userInitiated)
 
         player.finishNext()
         await settle()
+        XCTAssertEqual(synthesizer.texts, ["One.", "Two.", "Three.", "Four.", "Five."])
+        session.stop()
+    }
+
+    func testBackgroundLookaheadKeepsTheSamePhrasePipelineAsForeground() async {
+        let synthesizer = MockNeuralSynthesizer()
+        let player = MockNeuralPlayer()
+        let session = NeuralSpeechSession(synthesizer: synthesizer, player: player)
+        session.setConstrained(true)
+        XCTAssertTrue(synthesizer.constrained)
+        session.start(
+            chunks: [
+                SpeechQueueChunk(text: "One.", offset: 0, pauseSeconds: 0),
+                SpeechQueueChunk(text: "Two.", offset: 5, pauseSeconds: 0),
+                SpeechQueueChunk(text: "Three.", offset: 10, pauseSeconds: 0),
+                SpeechQueueChunk(text: "Four.", offset: 17, pauseSeconds: 0),
+                SpeechQueueChunk(text: "Five.", offset: 23, pauseSeconds: 0),
+            ],
+            engine: .kokoroEnglish,
+            speed: 1,
+            onPhrase: { _ in },
+            onProgress: { _, _ in },
+            completion: { _ in }
+        )
+        synthesizer.complete()
+        await settle()
+        synthesizer.complete()
+        await settle()
+        synthesizer.complete()
+        await settle()
+        synthesizer.complete()
+        await settle()
         XCTAssertEqual(synthesizer.texts, ["One.", "Two.", "Three.", "Four."])
+        XCTAssertEqual(player.scheduledCount, 4)
+        player.finishNext()
+        await settle()
+        XCTAssertEqual(synthesizer.texts, ["One.", "Two.", "Three.", "Four.", "Five."])
         session.stop()
     }
 
@@ -318,6 +362,34 @@ final class NeuralSpeechSessionTests: XCTestCase {
         XCTAssertTrue(failed)
     }
 
+    func testStopUnloadsTheEngineBeforeAnotherSessionStarts() async {
+        let synthesizer = MockNeuralSynthesizer()
+        let player = MockNeuralPlayer()
+        let session = NeuralSpeechSession(synthesizer: synthesizer, player: player)
+        session.start(
+            chunks: [SpeechQueueChunk(text: "Hello.", offset: 0, pauseSeconds: 0)],
+            engine: .kokoroEnglish,
+            speed: 1,
+            onPhrase: { _ in },
+            onProgress: { _, _ in },
+            completion: { _ in }
+        )
+        XCTAssertEqual(synthesizer.unloadCount, 1)
+        XCTAssertEqual(synthesizer.texts, ["Hello."])
+        session.start(
+            chunks: [SpeechQueueChunk(text: "Olá.", offset: 0, pauseSeconds: 0)],
+            engine: .portuguesePortugal,
+            speed: 1,
+            onPhrase: { _ in },
+            onProgress: { _, _ in },
+            completion: { _ in }
+        )
+        XCTAssertEqual(synthesizer.unloadCount, 2)
+        XCTAssertEqual(synthesizer.texts, ["Hello.", "Olá."])
+        session.stop()
+        XCTAssertEqual(synthesizer.unloadCount, 3)
+    }
+
     private func settle() async {
         await Task.yield()
         await MainActor.run {}
@@ -330,6 +402,16 @@ private final class MockNeuralSynthesizer: NeuralSpeechSynthesizing {
     private(set) var texts: [String] = []
     private var pending: [(Result<(samples: [Float], sampleRate: Double), Error>) -> Void] = []
     var sampleCount = 82
+    private(set) var constrained = false
+    private(set) var unloadCount = 0
+
+    func setConstrained(_ constrained: Bool) {
+        self.constrained = constrained
+    }
+
+    func unload() {
+        unloadCount += 1
+    }
 
     func synthesize(
         text: String,

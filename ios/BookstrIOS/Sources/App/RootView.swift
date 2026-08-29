@@ -119,7 +119,7 @@ struct RootView: View {
             selectedTab = 3
         }
         .fullScreenCover(item: $continuation) { book in
-            ReaderHostView(book: book) {
+            ReaderHostView(book: book, initialLocator: continuationLocator(for: book)) {
                 continuation = nil
             }
                 .environmentObject(container)
@@ -163,6 +163,15 @@ struct RootView: View {
             return
         }
         presentWithoutAnimation(fallback)
+    }
+
+    private func continuationLocator(for book: CatalogBook) -> String? {
+        let saved = container.progressRepository.get(bookId: book.id).cfi
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        if saved.isEmpty == false { return saved }
+        let session = container.settingsRepository.readerSession()?.locator?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return session?.isEmpty == false ? session : nil
     }
 
     private func presentWithoutAnimation(_ book: CatalogBook) {
