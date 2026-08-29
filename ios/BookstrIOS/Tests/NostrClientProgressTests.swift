@@ -232,4 +232,26 @@ final class NostrClientProgressTests: XCTestCase {
 
         XCTAssertEqual(parsed?.author, "Primary Author")
     }
+
+    func testRelaySessionFailsFastWithoutWaitingForConnectivity() {
+        let config = NostrClient.makeRelaySessionConfiguration()
+        XCTAssertFalse(config.waitsForConnectivity)
+        XCTAssertEqual(config.timeoutIntervalForRequest, NostrClient.queryRequestTimeout)
+        XCTAssertEqual(config.timeoutIntervalForResource, NostrClient.queryResourceTimeout)
+        XCTAssertLessThanOrEqual(config.timeoutIntervalForRequest, 15)
+        XCTAssertLessThanOrEqual(config.timeoutIntervalForResource, 20)
+    }
+
+    func testPullCooldownSkipsRecentSyncsUnlessForced() {
+        let now = Date(timeIntervalSince1970: 2_000)
+        let recent = Date(timeIntervalSince1970: 1_950)
+        let stale = Date(timeIntervalSince1970: 1_000)
+
+        XCTAssertTrue(NostrPullCooldown.shouldSkip(lastSync: recent, now: now))
+        XCTAssertFalse(NostrPullCooldown.shouldSkip(lastSync: recent, now: now, force: true))
+        XCTAssertFalse(NostrPullCooldown.shouldSkip(lastSync: stale, now: now))
+        XCTAssertFalse(NostrPullCooldown.shouldSkip(lastSync: nil, now: now))
+        XCTAssertTrue(NostrPullCooldown.shouldSkip(lastSyncs: [stale, recent], now: now))
+        XCTAssertFalse(NostrPullCooldown.shouldSkip(lastSyncs: [stale, nil], now: now))
+    }
 }
