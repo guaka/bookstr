@@ -343,6 +343,14 @@ final class ReaderAssetContractTests: XCTestCase {
         let html = try bundledReaderHTML()
 
         XCTAssertTrue(html.contains("window.setKnownWords = function(wordsJson) {"))
+        XCTAssertTrue(html.contains("window.highlightReaderCfi = function(cfi)"))
+        XCTAssertTrue(html.contains("window.highlightCurrentSelection = function()"))
+        XCTAssertTrue(html.contains("window.setReaderHighlights = function(cfisJson)"))
+        XCTAssertTrue(html.contains("bookstr-word-highlight"))
+        XCTAssertTrue(html.contains("::highlight(bookstr-mark)"))
+        XCTAssertTrue(html.contains("fill: \"#e7c766\""))
+        XCTAssertTrue(html.contains("function captureLiveTextSelection()"))
+        XCTAssertTrue(html.contains("function paintCurrentSelectionHighlight()"))
         XCTAssertTrue(html.contains("knownWordSet = new Set(words.map(function(word) {"))
         XCTAssertTrue(html.contains("return String(word || \"\").normalize(\"NFC\").toLocaleLowerCase();"))
         XCTAssertTrue(html.contains("if (rendition && rendition.getContents) {"))
@@ -380,7 +388,9 @@ final class ReaderAssetContractTests: XCTestCase {
     func testReaderReportsSelectedPassagesForSnippetActions() throws {
         let html = try bundledReaderHTML()
 
-        XCTAssertTrue(html.contains("AndroidBridge.onTextSelected(JSON.stringify({"))
+        XCTAssertTrue(html.contains("AndroidBridge.onTextSelected(JSON.stringify(payload))"))
+        XCTAssertTrue(html.contains("function captureLiveTextSelection()"))
+        XCTAssertTrue(html.contains("function installSelectionBridge(contentDocument)"))
         XCTAssertTrue(html.contains("text: cleanDictionaryText(selection).slice(0, 2000)"))
         XCTAssertTrue(html.contains("contextSentence: selectionContext(selectedRange)"))
         XCTAssertTrue(html.contains("if (window.bookstrNativeSwipeNavigation) return"))
@@ -412,7 +422,17 @@ final class ReaderAssetContractTests: XCTestCase {
                 mark: {},
                 readFromHere: {}
             ).compactMap { ($0 as? UIAction)?.title },
-            ["Add Word", "Read from here"]
+            ["Add Word", "Mark", "Read from here"]
+        )
+        XCTAssertEqual(
+            ReaderEditMenu.extraActions(
+                for: "",
+                allowsSpeech: true,
+                addWord: {},
+                mark: {},
+                readFromHere: {}
+            ).compactMap { ($0 as? UIAction)?.title },
+            ["Add Word", "Mark", "Read from here"]
         )
         pdfView.editMenuSelection = { "a longer marked passage here" }
         XCTAssertEqual(
@@ -434,7 +454,7 @@ final class ReaderAssetContractTests: XCTestCase {
                 mark: {},
                 readFromHere: {}
             ).children.compactMap { ($0 as? UIAction)?.title },
-            ["Copy", "Add Word", "Read from here"]
+            ["Copy", "Add Word", "Mark", "Read from here"]
         )
         var added = false
         let addActions = ReaderEditMenu.extraActions(
@@ -534,10 +554,21 @@ final class ReaderAssetContractTests: XCTestCase {
         XCTAssertTrue(editMenu.contains("builder.remove(menu: .lookup)"))
         XCTAssertTrue(editMenu.contains("builder.remove(menu: .share)"))
         XCTAssertTrue(editMenu.contains("replaceChildren(ofMenu: .standardEdit)"))
+        XCTAssertTrue(editMenu.contains("copyOnly(from: children) + extras"))
         XCTAssertTrue(editMenu.contains("title: \"Add Word\""))
         XCTAssertTrue(editMenu.contains("title: \"Mark\""))
         XCTAssertTrue(editMenu.contains("ReaderSelectionActions.readFromHereLabel"))
         XCTAssertTrue(editMenu.contains("copyOnly(from:"))
+        XCTAssertTrue(editMenu.contains("menuItems(for:"))
+        XCTAssertTrue(source.contains("bookstrCurrentTextSelection"))
+        XCTAssertTrue(source.contains("withCurrentSelection"))
+        XCTAssertTrue(source.contains("preferWeb: true"))
+        XCTAssertTrue(source.contains("highlightCurrentSelectionInReader"))
+        let html = try bundledReaderHTML()
+        XCTAssertTrue(html.contains("window.bookstrCurrentTextSelection = function()"))
+        XCTAssertTrue(html.contains("captureLiveTextSelection()"))
+        XCTAssertTrue(html.contains("window.highlightCurrentSelection = function()"))
+        XCTAssertTrue(html.contains("window.__bookstrTextSelection = payload"))
         let hostURL = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
             .deletingLastPathComponent()
@@ -553,6 +584,30 @@ final class ReaderAssetContractTests: XCTestCase {
         let pdf = try String(contentsOf: pdfURL, encoding: .utf8)
         XCTAssertTrue(pdf.contains("buildMenu(with builder"))
         XCTAssertTrue(pdf.contains("allowsSpeech: false"))
+        XCTAssertTrue(pdf.contains("highlightCurrentSelection"))
+        XCTAssertTrue(source.contains("highlightReaderCfi"))
+        XCTAssertTrue(source.contains("refreshKnownWordsInReader"))
+        XCTAssertTrue(source.contains("applySavedHighlightsForBook"))
+        XCTAssertTrue(source.contains("setReaderHighlights"))
+        let wordsURL = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent("Sources/Features/Words/WordsView.swift")
+        let words = try String(contentsOf: wordsURL, encoding: .utf8)
+        XCTAssertTrue(words.contains("WordSortKey"))
+        XCTAssertTrue(words.contains("sortVocabularyWords"))
+        XCTAssertTrue(words.contains("recordSeen(key:"))
+        XCTAssertTrue(words.contains("Words you save while reading appear here."))
+        XCTAssertTrue(words.contains("Passages you mark while reading appear here."))
+        let sortURL = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent("Sources/Features/Words/WordSortOrdering.swift")
+        let sortSource = try String(contentsOf: sortURL, encoding: .utf8)
+        XCTAssertTrue(sortSource.contains("case recentlyAdded"))
+        XCTAssertTrue(sortSource.contains("\"Recently added\""))
+        XCTAssertTrue(sortSource.contains("firstSeenAt > $1.firstSeenAt"))
+        XCTAssertTrue(sortSource.contains("lastSeenAt > $1.lastSeenAt"))
         XCTAssertFalse(source.contains("item[\"progression\"] as? Double"))
         XCTAssertTrue(source.contains("ReaderRelocation.parse"))
         XCTAssertTrue(source.contains("willResignActiveNotification"))
@@ -566,6 +621,42 @@ final class ReaderAssetContractTests: XCTestCase {
         let rootSource = try String(contentsOf: rootURL, encoding: .utf8)
         XCTAssertTrue(rootSource.contains("continuationLocator(for: book)"))
         XCTAssertTrue(rootSource.contains("progressRepository.get(bookId: book.id).cfi"))
+        XCTAssertTrue(rootSource.contains("playback.item"))
+        XCTAssertTrue(rootSource.contains("showsReaderChrome: playback.isVisible"))
+        XCTAssertTrue(rootSource.contains("playback.requestClose()"))
+        XCTAssertFalse(rootSource.contains("fullScreenCover(item: $continuation)"))
+        XCTAssertTrue(source.contains("ReaderSpeechRetention.isRetained"))
+        XCTAssertTrue(source.contains("refreshSpeechRetention()"))
+        XCTAssertTrue(source.contains("neuralPaused: neuralSpeech.isPaused"))
+        XCTAssertTrue(host.contains("reader-speech-toggle"))
+        XCTAssertTrue(host.contains("showsReaderChrome"))
+        XCTAssertTrue(host.contains("syncPlaybackSpeech()"))
+        XCTAssertTrue(host.contains("epubController.isSpeechRetained"))
+        XCTAssertTrue(host.contains("fb2Controller.isSpeechRetained"))
+        XCTAssertTrue(host.contains("ReaderPlaybackSession.toggleSpeechNotification"))
+        let libraryURL = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent("Sources/Features/Library/LibraryView.swift")
+        let library = try String(contentsOf: libraryURL, encoding: .utf8)
+        XCTAssertTrue(library.contains("playback.present(book:"))
+        XCTAssertFalse(library.contains("fullScreenCover(item: $selectedBook"))
+        let searchURL = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent("Sources/Features/Search/SearchView.swift")
+        let search = try String(contentsOf: searchURL, encoding: .utf8)
+        XCTAssertTrue(search.contains("playback.present(book: openedBook)"))
+        XCTAssertFalse(search.contains("fullScreenCover(item: $openedBook)"))
+        XCTAssertTrue(words.contains("playback.present(book: openedBook, initialLocator: locator, highlightLocator: locator)"))
+        XCTAssertFalse(words.contains("navigationDestination(item: $destination)"))
+        let chromeURL = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent("Sources/Shared/ScreenChrome.swift")
+        let chrome = try String(contentsOf: chromeURL, encoding: .utf8)
+        XCTAssertTrue(chrome.contains("app-speech-toggle"))
+        XCTAssertTrue(chrome.contains("showsBackgroundSpeechControl"))
         XCTAssertTrue(source.contains("observeAudioSession()"))
         XCTAssertTrue(source.contains("AVAudioSession.interruptionNotification"))
         let sessionURL = URL(fileURLWithPath: #filePath)
@@ -593,6 +684,15 @@ final class ReaderAssetContractTests: XCTestCase {
         XCTAssertTrue(playbackSource.contains("releaseSynthesizer()"))
         XCTAssertTrue(playbackSource.contains("synthesizer = nil"))
         XCTAssertTrue(playbackSource.contains("engineID = nil"))
+        XCTAssertTrue(playbackSource.contains("autoreleasepool"))
+        XCTAssertTrue(playbackSource.contains("generated.audio != nil"))
+        XCTAssertTrue(playbackSource.contains("Array(generated.samples)"))
+        XCTAssertTrue(playbackSource.contains("synthesisPhrases"))
+        XCTAssertTrue(playbackSource.contains("withCString"))
+        XCTAssertTrue(sessionSource.contains("NeuralSpeechInput.speakable"))
+        XCTAssertTrue(sessionSource.contains("kokoroCharacterLimit"))
+        XCTAssertTrue(sessionSource.contains("splitForKokoro"))
+        XCTAssertTrue(sessionSource.contains("synth skip empty"))
         XCTAssertTrue(sessionSource.contains("func unload()"))
         XCTAssertTrue(sessionSource.contains("synthesizer.unload()"))
         XCTAssertTrue(playbackSource.contains("didEnterBackgroundNotification"))

@@ -5,11 +5,13 @@ import UIKit
 
 struct ReaderHostView: View {
     @EnvironmentObject private var container: AppContainer
+    @EnvironmentObject private var playback: ReaderPlaybackSession
     @Environment(\.dismiss) private var dismiss
     let book: CatalogBook
     var preparedURL: URL? = nil
     var initialLocator: String? = nil
     var highlightLocator: String? = nil
+    var showsReaderChrome: Bool = true
     var onClose: (() -> Void)? = nil
     @State private var localURL: URL?
     // The host must render a concrete view on its first frame. Starting with
@@ -66,10 +68,10 @@ struct ReaderHostView: View {
         }
         .background(container.settingsRepository.theme.background)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .toolbar(.hidden, for: .navigationBar)
-        .toolbar(.hidden, for: .tabBar)
-        .statusBarHidden(true)
-        .persistentSystemOverlays(.hidden)
+        .toolbar(showsReaderChrome ? .hidden : .automatic, for: .navigationBar)
+        .toolbar(showsReaderChrome ? .hidden : .automatic, for: .tabBar)
+        .statusBarHidden(showsReaderChrome)
+        .persistentSystemOverlays(showsReaderChrome ? .hidden : .automatic)
         .overlay {
             if book.format == .epub, let readerError = epubController.errorMessage {
                 VStack(spacing: 12) {
@@ -167,12 +169,28 @@ struct ReaderHostView: View {
         }
         .sheet(isPresented: $showSearch) { readerSearchSheet }
         .task { await openBook() }
-        .onAppear { UIApplication.shared.isIdleTimerDisabled = true }
+        .onAppear {
+            updateIdleTimer()
+            syncPlaybackSpeech()
+        }
         .onDisappear {
             UIApplication.shared.isIdleTimerDisabled = false
-            if epubController.isSpeaking { epubController.toggleSpeech() }
-            if fb2Controller.isSpeaking { fb2Controller.toggleSpeech(playback: fb2SpeechChoice) }
+            if epubController.isSpeechRetained { epubController.toggleSpeech() }
+            if fb2Controller.isSpeechRetained { fb2Controller.toggleSpeech(playback: fb2SpeechChoice) }
             epubController.endNowPlaying()
+        }
+        .onChange(of: showsReaderChrome) { _, _ in updateIdleTimer() }
+        .onChange(of: epubController.isSpeechRetained) { _, _ in syncPlaybackSpeech() }
+        .onChange(of: epubController.isSpeaking) { _, _ in syncPlaybackSpeech() }
+        .onChange(of: fb2Controller.isSpeechRetained) { _, _ in syncPlaybackSpeech() }
+        .onChange(of: fb2Controller.isSpeaking) { _, _ in syncPlaybackSpeech() }
+        .onReceive(
+            NotificationCenter.default.publisher(
+                for: ReaderPlaybackSession.toggleSpeechNotification,
+                object: playback
+            )
+        ) { _ in
+            toggleActiveSpeech()
         }
         .onChange(of: container.settingsRepository.theme) { _, theme in
             epubController.apply(theme: theme)
@@ -228,21 +246,29 @@ struct ReaderHostView: View {
             .accessibilityHint("Shows the complete rights statement and source")
 
             if book.format == .epub {
-                Button { epubController.toggleSpeech() } label: {
+                Button {
+                    epubController.toggleSpeech()
+                    syncPlaybackSpeech()
+                } label: {
                     Image(systemName: epubController.isSpeaking ? "stop.fill" : "play.fill")
                         .font(.system(size: 16))
                         .frame(width: 24, height: 24)
                 }
                 .accessibilityLabel(epubController.isSpeaking ? "Stop reading aloud" : "Read aloud")
+                .accessibilityIdentifier("reader-speech-toggle")
             }
 
             if book.format == .fb2 {
-                Button { fb2Controller.toggleSpeech(playback: fb2SpeechChoice) } label: {
+                Button {
+                    fb2Controller.toggleSpeech(playback: fb2SpeechChoice)
+                    syncPlaybackSpeech()
+                } label: {
                     Image(systemName: fb2Controller.isSpeaking ? "stop.fill" : "play.fill")
                         .font(.system(size: 16))
                         .frame(width: 24, height: 24)
                 }
                 .accessibilityLabel(fb2Controller.isSpeaking ? "Stop reading aloud" : "Read aloud")
+                .accessibilityIdentifier("reader-speech-toggle")
             }
 
             if hasTableOfContents {
@@ -294,6 +320,39 @@ struct ReaderHostView: View {
         } else {
             dismiss()
         }
+    }
+
+    private func updateIdleTimer() {
+        UIApplication.shared.isIdleTimerDisabled = showsReaderChrome
+    }
+
+    private func syncPlaybackSpeech() {
+        switch book.format {
+        case .epub:
+            playback.updateSpeechState(
+                retained: epubController.isSpeechRetained,
+                playing: epubController.isSpeaking
+            )
+        case .fb2:
+            playback.updateSpeechState(
+                retained: fb2Controller.isSpeechRetained,
+                playing: fb2Controller.isSpeaking
+            )
+        case .pdf:
+            playback.updateSpeechState(retained: false, playing: false)
+        }
+    }
+
+    private func toggleActiveSpeech() {
+        switch book.format {
+        case .epub:
+            epubController.toggleSpeech()
+        case .fb2:
+            fb2Controller.toggleSpeech(playback: fb2SpeechChoice)
+        case .pdf:
+            break
+        }
+        syncPlaybackSpeech()
     }
 
     private var readerSearchSheet: some View {
@@ -732,6 +791,7 @@ final class FB2ReaderController: NSObject, ObservableObject {
     @Published var searchResults: [FB2SearchResult] = []
     @Published var searching = false
     @Published var isSpeaking = false
+    @Published private(set) var isSpeechRetained = false
     @Published var textSelection: ReaderTextSelection?
     private let speech = AVSpeechSynthesizer()
     private let neuralSpeech = NeuralSpeechPlayback()
@@ -803,20 +863,20 @@ final class FB2ReaderController: NSObject, ObservableObject {
     }
 
     func toggleSpeech(playback: SpeechPlaybackChoice) {
-        if speech.isSpeaking || neuralSpeech.isPlaying || isSpeaking {
+        if isSpeechSessionActive {
             neuralSpeech.stop()
             speech.stopSpeaking(at: .immediate)
-            isSpeaking = false
+            setSpeaking(false)
             return
         }
         startSpeaking(text: sections.flatMap(\.paragraphs).map(\.text).joined(separator: "\n\n"), playback: playback)
     }
 
     func speakFromSelection(_ selected: String, playback: SpeechPlaybackChoice) {
-        if speech.isSpeaking || neuralSpeech.isPlaying || isSpeaking {
+        if isSpeechSessionActive {
             neuralSpeech.stop()
             speech.stopSpeaking(at: .immediate)
-            isSpeaking = false
+            setSpeaking(false)
         }
         let all = sections.flatMap(\.paragraphs).map(\.text).joined(separator: "\n\n")
         let needle = selected.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -831,6 +891,25 @@ final class FB2ReaderController: NSObject, ObservableObject {
         startSpeaking(text: spoken, playback: playback)
     }
 
+    private var isSpeechSessionActive: Bool {
+        ReaderSpeechRetention.isRetained(
+            speaking: isSpeaking,
+            systemSpeaking: speech.isSpeaking,
+            systemPaused: speech.isPaused,
+            neuralPlaying: neuralSpeech.isPlaying,
+            neuralPaused: neuralSpeech.isPaused
+        )
+    }
+
+    private func setSpeaking(_ speaking: Bool) {
+        isSpeaking = speaking
+        refreshSpeechRetention()
+    }
+
+    private func refreshSpeechRetention() {
+        isSpeechRetained = isSpeechSessionActive
+    }
+
     private func startSpeaking(text: String, playback: SpeechPlaybackChoice) {
         guard !text.isEmpty else { return }
         do {
@@ -840,11 +919,11 @@ final class FB2ReaderController: NSObject, ObservableObject {
         } catch {
             return
         }
-        isSpeaking = true
+        setSpeaking(true)
         switch playback.engine {
         case .neural(let engine):
             guard engine.supports(language: playback.languageTag) else {
-                isSpeaking = false
+                setSpeaking(false)
                 return
             }
             neuralSpeech.play(
@@ -852,7 +931,7 @@ final class FB2ReaderController: NSObject, ObservableObject {
                 engine: engine,
                 speed: Float(min(max(playback.rate / SpeechLanguageSettings.defaultRate, 0.73), 1.25))
             ) { [weak self] result in
-                self?.isSpeaking = false
+                self?.setSpeaking(false)
                 if case .failure = result { return }
             }
         case .apple:
@@ -888,10 +967,10 @@ final class FB2ReaderController: NSObject, ObservableObject {
 
 extension FB2ReaderController: AVSpeechSynthesizerDelegate {
     nonisolated func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {
-        Task { @MainActor in isSpeaking = false }
+        Task { @MainActor in self.setSpeaking(false) }
     }
     nonisolated func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didCancel utterance: AVSpeechUtterance) {
-        Task { @MainActor in isSpeaking = false }
+        Task { @MainActor in self.setSpeaking(false) }
     }
 }
 
@@ -944,18 +1023,18 @@ struct FB2ReaderView: View {
                                                 NotificationCenter.default.post(name: .bookstrVocabularyDidChange, object: nil)
                                             },
                                             onMark: {
-                                                guard let selection = controller.textSelection,
-                                                      ReaderSelectionActions.offersMark(for: selection.text)
-                                                else { return }
-                                                _ = container.snippetRepository.saveMark(
-                                                    text: ReaderSelectionActions.normalizedText(selection.text),
+                                                guard let selection = controller.textSelection else { return }
+                                                let text = ReaderSelectionActions.normalizedText(selection.text)
+                                                guard !text.isEmpty else { return }
+                                                guard container.snippetRepository.saveMark(
+                                                    text: text,
                                                     bookId: book.id,
                                                     bookTitle: book.title,
                                                     author: book.author,
                                                     isbn: NostrSyncService.normalizedISBN(book.isbn),
                                                     format: .fb2,
                                                     locator: selection.locator
-                                                )
+                                                ) != nil else { return }
                                                 NotificationCenter.default.post(name: .bookstrSnippetsDidChange, object: nil)
                                             },
                                             onReadFromHere: {

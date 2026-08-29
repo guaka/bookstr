@@ -83,6 +83,8 @@ class ReaderAssetContractTest {
         assertTrue(html.contains("AndroidBridge.onSpeechText"))
         assertTrue(html.contains("document.documentElement.lang"))
         assertTrue(html.contains("window.showSpeechProgress"))
+        assertTrue(html.contains("window.highlightReaderCfi"))
+        assertTrue(html.contains("window.setReaderHighlights"))
         assertTrue(html.contains("bookstr-speaking"))
         assertTrue(html.contains("bookstr-speaking-word"))
         assertTrue(html.contains("box-shadow:inset 3px 0 0 #7fb8a7"))

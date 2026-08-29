@@ -27,8 +27,9 @@ final class SnippetRepository {
         isbn: String?,
         format: BookFormat,
         locator: String
-    ) -> BookSnippet {
+    ) -> BookSnippet? {
         let snippet = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !snippet.isEmpty else { return nil }
         let now = Int64(Date().timeIntervalSince1970 * 1000)
         let entry = BookSnippet(
             syncId: UUID().uuidString.lowercased(),

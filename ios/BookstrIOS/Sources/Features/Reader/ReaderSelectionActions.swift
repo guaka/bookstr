@@ -42,7 +42,7 @@ enum ReaderSelectionActions {
         case .empty:
             return []
         case .words:
-            return allowsSpeech ? [.addWord, .readFromHere] : [.addWord]
+            return allowsSpeech ? [.addWord, .mark, .readFromHere] : [.addWord, .mark]
         case .mark:
             return allowsSpeech ? [.mark, .readFromHere] : [.mark]
         }

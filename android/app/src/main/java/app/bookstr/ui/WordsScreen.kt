@@ -80,6 +80,7 @@ fun WordsScreen(
         }
         when (sort) {
             WordSort.Recent -> filtered.sortedByDescending(VocabularyWord::lastSeenAt)
+            WordSort.RecentlyAdded -> filtered.sortedByDescending(VocabularyWord::firstSeenAt)
             WordSort.FirstSaved -> filtered.sortedBy(VocabularyWord::firstSeenAt)
             WordSort.Alphabetical -> filtered.sortedBy { it.word.lowercase() }
             WordSort.Book -> filtered.sortedWith(
@@ -270,6 +271,7 @@ internal fun shouldClearWordFilter(query: String, deletedWord: String): Boolean 
 
 private enum class WordSort(val key: String, val label: String, val shortLabel: String) {
     Recent("recent", "Recently seen", "Recent"),
+    RecentlyAdded("added", "Recently added", "Added"),
     Alphabetical("alphabetical", "Alphabetical (A–Z)", "A–Z"),
     Book("book", "Book, then word", "Book"),
     MostSeen("count", "Most frequently seen", "Count"),

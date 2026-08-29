@@ -63,6 +63,18 @@ final class PDFReaderController: ObservableObject {
         furthestProgression = max(furthestProgression, progression)
     }
 
+    func highlightCurrentSelection() {
+        guard let pdfView, let selection = pdfView.currentSelection else { return }
+        let color = UIColor(red: 231 / 255, green: 199 / 255, blue: 102 / 255, alpha: 0.55)
+        for page in selection.pages {
+            let bounds = selection.bounds(for: page)
+            guard !bounds.isNull, bounds.width > 1, bounds.height > 1 else { continue }
+            let annotation = PDFAnnotation(bounds: bounds, forType: .highlight, withProperties: nil)
+            annotation.color = color
+            page.addAnnotation(annotation)
+        }
+    }
+
     func reloadTableOfContents() {
         guard let document = pdfView?.document, let root = document.outlineRoot else {
             tableOfContents = []
@@ -268,22 +280,24 @@ struct PDFReaderView: UIViewRepresentable {
                 cfi: selection.locator,
                 context: selection.text
             )
+            controller?.highlightCurrentSelection()
             NotificationCenter.default.post(name: .bookstrVocabularyDidChange, object: nil)
         }
 
         fileprivate func markFromEditMenu() {
-            guard let selection = textSelection.wrappedValue,
-                  ReaderSelectionActions.offersMark(for: selection.text)
-            else { return }
-            _ = container.snippetRepository.saveMark(
-                text: ReaderSelectionActions.normalizedText(selection.text),
+            guard let selection = textSelection.wrappedValue else { return }
+            let text = ReaderSelectionActions.normalizedText(selection.text)
+            guard !text.isEmpty else { return }
+            guard container.snippetRepository.saveMark(
+                text: text,
                 bookId: book.id,
                 bookTitle: book.title,
                 author: book.author,
                 isbn: NostrSyncService.normalizedISBN(book.isbn),
                 format: .pdf,
                 locator: selection.locator
-            )
+            ) != nil else { return }
+            controller?.highlightCurrentSelection()
             NotificationCenter.default.post(name: .bookstrSnippetsDidChange, object: nil)
         }
     }

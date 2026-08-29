@@ -14,7 +14,9 @@ private final class NeuralSpeechRenderer: NeuralSpeechSynthesizing, @unchecked S
     }
 
     func unload() {
-        queue.async { self.releaseSynthesizer() }
+        queue.async {
+            autoreleasepool { self.releaseSynthesizer() }
+        }
     }
 
     func synthesize(
@@ -40,22 +42,50 @@ private final class NeuralSpeechRenderer: NeuralSpeechSynthesizing, @unchecked S
         )
         queue.async {
             defer { DispatchQueue.main.async(execute: endTask) }
-            do {
-                let spec = try self.spec(for: engine)
-                let synthesizer = try self.synthesizer(for: spec)
-                let speaker: Int
-                switch spec.kind {
-                case .kokoro(_, _, let configuredSpeaker): speaker = configuredSpeaker
-                case .vits: speaker = 0
+            // sherpa-onnx's toCPointer uses NSString.utf8String, which is only
+            // valid until the current autorelease pool pops. This queue has no
+            // pool unless we install one, so Kokoro/espeak would read freed text
+            // after a phrase or two.
+            autoreleasepool {
+                do {
+                    let phrases = NeuralSpeechInput.synthesisPhrases(text, engine: engine)
+                    guard !phrases.isEmpty else {
+                        completion(.success((NeuralSpeechInput.silenceSamples, 24_000)))
+                        return
+                    }
+                    let spec = try self.spec(for: engine)
+                    let synthesizer = try self.synthesizer(for: spec)
+                    let speaker: Int
+                    switch spec.kind {
+                    case .kokoro(_, _, let configuredSpeaker): speaker = configuredSpeaker
+                    case .vits: speaker = 0
+                    }
+                    var collected: [Float] = []
+                    var rate: Double = 0
+                    for phrase in phrases {
+                        // Nested pool so each NSString.utf8String dies with that generate,
+                        // and withCString keeps Swift's UTF-8 buffer alive for the C call.
+                        autoreleasepool {
+                            let generated = phrase.withCString { _ in
+                                synthesizer.generate(text: phrase, sid: speaker, speed: speed)
+                            }
+                            guard generated.audio != nil else { return }
+                            let samples = Array(generated.samples)
+                            let phraseRate = Double(generated.sampleRate)
+                            guard !samples.isEmpty, phraseRate > 0 else { return }
+                            if collected.isEmpty { rate = phraseRate }
+                            collected.append(contentsOf: samples)
+                        }
+                    }
+                    if collected.isEmpty || rate <= 0 {
+                        completion(.success((NeuralSpeechInput.silenceSamples, 24_000)))
+                    } else {
+                        completion(.success((collected, rate)))
+                    }
+                } catch {
+                    BookstrDebugLog.shared.record("synth error \(error.localizedDescription)")
+                    completion(.failure(error))
                 }
-                let audio = synthesizer.generate(text: text, sid: speaker, speed: speed)
-                guard !audio.samples.isEmpty, audio.sampleRate > 0 else {
-                    throw NeuralSpeechError.generationFailed
-                }
-                completion(.success((audio.samples, Double(audio.sampleRate))))
-            } catch {
-                BookstrDebugLog.shared.record("synth error \(error.localizedDescription)")
-                completion(.failure(error))
             }
         }
     }

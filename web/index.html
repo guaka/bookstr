@@ -1689,6 +1689,7 @@
           <input id="words-filter" placeholder="Filter words" aria-label="Filter words" />
           <select id="words-sort" aria-label="Sort words">
             <option value="recent">Recent</option>
+            <option value="added">Recently added</option>
             <option value="first">First saved</option>
             <option value="alphabetical">Alphabetical</option>
             <option value="book">Book</option>
@@ -4355,6 +4356,7 @@
         words.sort((a, b) => {
           if (sort === 'alphabetical') return a.word.localeCompare(b.word);
           if (sort === 'first') return a.firstSeenAt - b.firstSeenAt;
+          if (sort === 'added') return b.firstSeenAt - a.firstSeenAt;
           if (sort === 'book') return a.bookTitle.localeCompare(b.bookTitle) || a.word.localeCompare(b.word);
           if (sort === 'seen') return b.lookupCount - a.lookupCount;
           return b.lastSeenAt - a.lastSeenAt;

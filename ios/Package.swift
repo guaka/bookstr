@@ -41,6 +41,7 @@ let package = Package(
                 "Data/SnippetRepository.swift",
                 "Data/SpeechModelStore.swift",
                 "Data/VocabularyRepository.swift",
+                "Features/Reader/ReaderPlaybackSession.swift",
                 "Features/Reader/ReaderSelectionActions.swift",
                 "Features/Reader/SpeechLanguageSettings.swift",
                 "Features/Reader/ReaderRelocation.swift",
@@ -48,6 +49,7 @@ let package = Package(
                 "Features/Reader/NeuralSpeechSession.swift",
                 "Features/Search/SearchFavoriteMatcher.swift",
                 "Features/Words/WordFilterMatching.swift",
+                "Features/Words/WordSortOrdering.swift",
                 "Nostr/Favorites.swift",
                 "Nostr/NostrClient.swift",
                 "Nostr/NostrModels.swift",
@@ -73,6 +75,7 @@ let package = Package(
                 "NostrClientProgressTests.swift",
                 "ProgressRepositoryTests.swift",
                 "ReaderRelocationTests.swift",
+                "ReaderPlaybackSessionTests.swift",
                 "ReaderAssetContractTests.swift",
                 "ReaderSelectionActionsTests.swift",
                 "ReadingProgressV2ContractTests.swift",
@@ -83,6 +86,7 @@ let package = Package(
                 "SnippetRepositoryTests.swift",
                 "VocabularyRepositoryTests.swift",
                 "WordNavigationStateTests.swift",
+                "WordSortOrderingTests.swift",
             ]
         ),
     ]

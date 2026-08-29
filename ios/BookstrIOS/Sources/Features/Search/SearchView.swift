@@ -2,11 +2,11 @@ import SwiftUI
 
 struct SearchView: View {
     @EnvironmentObject private var container: AppContainer
+    @EnvironmentObject private var playback: ReaderPlaybackSession
     @State private var query = ""
     @State private var results: [BookSearchResult] = []
     @State private var searching = false
     @State private var message: String?
-    @State private var openedBook: CatalogBook?
     @State private var knownBooks: [CatalogBook] = []
     @State private var favoriteIDs = Set<String>()
     @State private var openingBookID: String?
@@ -79,7 +79,6 @@ struct SearchView: View {
                     .onTapGesture { self.actionMessage = nil }
             }
         }
-        .fullScreenCover(item: $openedBook) { ReaderHostView(book: $0) }
         .sheet(item: $rightsDetails) { RightsDetailsView(item: $0) }
         .task {
             knownBooks = container.catalogRepository.downloadedBooks()
@@ -112,7 +111,7 @@ struct SearchView: View {
             var transaction = Transaction(animation: nil)
             transaction.disablesAnimations = true
             withTransaction(transaction) {
-                self.openedBook = openedBook
+                playback.present(book: openedBook)
             }
         } catch {
             message = "Could not open: \(error.localizedDescription)"

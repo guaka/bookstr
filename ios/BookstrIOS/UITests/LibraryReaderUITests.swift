@@ -74,6 +74,30 @@ final class LibraryReaderUITests: XCTestCase {
         attachScreenshot(named: "pdf-visible")
     }
 
+    func testSpeechKeepsPlayingAndHeaderToggleStaysAfterLeavingReader() throws {
+        let (back, _) = openEPUB()
+        let readerToggle = app.buttons["reader-speech-toggle"]
+        XCTAssertTrue(readerToggle.waitForExistence(timeout: 10), "EPUB reader did not expose speech control")
+        readerToggle.tap()
+
+        back.tap()
+        XCTAssertTrue(app.tabBars.buttons["Library"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["library-book-ui-test-alice-epub"].waitForExistence(timeout: 5))
+        XCTAssertTrue(
+            app.buttons["app-speech-toggle"].waitForExistence(timeout: 5),
+            "Library header did not keep the speech control after leaving a playing book"
+        )
+
+        let search = app.tabBars.buttons["Search"]
+        XCTAssertTrue(search.waitForExistence(timeout: 5))
+        search.tap()
+        XCTAssertTrue(search.isSelected)
+        XCTAssertTrue(
+            app.buttons["app-speech-toggle"].waitForExistence(timeout: 5),
+            "Search header did not keep the speech control while the book kept playing"
+        )
+    }
+
     func testLibrarySortControlReordersFixtureBooks() {
         let epub = app.buttons["library-book-ui-test-alice-epub"]
         let pdf = app.buttons["library-book-ui-test-alice-pdf"]

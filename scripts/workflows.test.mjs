@@ -54,6 +54,7 @@ test('every client enforces the shared coverage baseline', async () => {
   assert.match(ios, /BookstrDebugLogTests/);
   assert.match(ios, /ReaderRelocationTests/);
   assert.match(ios, /NeuralSpeechSessionTests/);
+  assert.match(ios, /ReaderPlaybackSessionTests/);
   assert.match(ios, /SnippetRepositoryTests/);
 });
 

@@ -241,6 +241,16 @@ class ReaderActivity : ComponentActivity() {
                                     cfi = cfi,
                                     contextSentence = contextSentence,
                                 )
+                                knownWords = app.vocabularyRepository.all()
+                                    .map { it.word.trim().lowercase() }
+                                    .filter(String::isNotBlank)
+                                    .distinct()
+                                if (cfi.isNotBlank()) {
+                                    webView?.evaluateJavascript(
+                                        "window.highlightReaderCfi && window.highlightReaderCfi(${JSONObject.quote(cfi)});",
+                                        null,
+                                    )
+                                }
                                 delay(1_000)
                                 val latest = app.vocabularyRepository.all().firstOrNull {
                                     it.language == saved.language && it.word == saved.word

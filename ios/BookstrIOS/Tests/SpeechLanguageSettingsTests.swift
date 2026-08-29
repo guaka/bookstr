@@ -10,6 +10,9 @@ final class SpeechLanguageSettingsTests: XCTestCase {
         XCTAssertEqual(SpeechLanguageSettings.preferredLanguageTag("  "), "en")
         XCTAssertEqual(SpeechLanguageSettings.preferredLanguageTag("pt"), "pt-pt")
         XCTAssertEqual(SpeechLanguageSettings.preferredLanguageTag("PT-BR"), "pt-br")
+        XCTAssertEqual(SpeechLanguageSettings.preferredLanguageTag("por"), "pt-pt")
+        XCTAssertEqual(SpeechLanguageSettings.preferredLanguageTag("por-BR"), "pt-br")
+        XCTAssertEqual(SpeechLanguageSettings.preferredLanguageTag("Português"), "pt-pt")
         XCTAssertEqual(SpeechLanguageSettings.preferredLanguageTag("en_US"), "en-us")
         XCTAssertEqual(SpeechLanguageSettings.preferredLanguageTag(" FR-fr "), "fr-fr")
     }
@@ -103,8 +106,10 @@ final class SpeechLanguageSettingsTests: XCTestCase {
         XCTAssertFalse(SpeechEngineID.kokoroEnglish.supports(language: "pt-PT"))
         XCTAssertTrue(SpeechEngineID.portuguesePortugal.supports(language: "pt_PT"))
         XCTAssertTrue(SpeechEngineID.portuguesePortugal.supports(language: "pt"))
-        XCTAssertFalse(SpeechEngineID.portuguesePortugal.supports(language: "pt-BR"))
+        XCTAssertTrue(SpeechEngineID.portuguesePortugal.supports(language: "pt-BR"))
+        XCTAssertTrue(SpeechEngineID.portuguesePortugal.supports(language: "por"))
         XCTAssertFalse(SpeechEngineID.portuguesePortugal.supports(language: "en"))
+        XCTAssertEqual(SpeechVoiceID.speakers(for: "pt-br").map(\.id), [SpeechEngineID.portuguesePortugal.rawValue])
         XCTAssertTrue(SpeechEngineID.system.supports(language: "fr"))
         XCTAssertEqual(SpeechEngineID.kokoroEnglish.label, "Kokoro · English")
         XCTAssertEqual(SpeechEngineID.portuguesePortugal.label, "Tugão · Português (Portugal)")
@@ -127,6 +132,14 @@ final class SpeechLanguageSettingsTests: XCTestCase {
             ).engine,
             .neural(.portuguesePortugal)
         )
+        let brazilian = SpeechLanguageSettings.resolve(
+            bookLanguage: "pt-BR",
+            settingsByLanguage: ["pt-pt": SpeechLanguageSetting(voiceIdentifier: SpeechEngineID.portuguesePortugal.rawValue)]
+        )
+        XCTAssertEqual(brazilian.engine, .neural(.portuguesePortugal))
+        XCTAssertTrue(SpeechEngineID.portuguesePortugal.supports(language: brazilian.languageTag))
+        XCTAssertTrue(SpeechLanguageSettings.isPortuguese("pt-BR"))
+        XCTAssertTrue(SpeechLanguageSettings.isPortuguese("por"))
         XCTAssertEqual(
             SpeechPlaybackChoice(languageTag: "en", voiceIdentifier: "system", rate: 0.48).engine,
             .apple

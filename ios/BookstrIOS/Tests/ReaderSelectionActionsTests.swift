@@ -17,14 +17,19 @@ final class ReaderSelectionActionsTests: XCTestCase {
         XCTAssertTrue(ReaderSelectionActions.offersSpeech(for: "hello"))
         XCTAssertTrue(ReaderSelectionActions.offersSpeech(for: "A longer marked passage here."))
         XCTAssertFalse(ReaderSelectionActions.offersSpeech(for: "   "))
-        XCTAssertEqual(ReaderSelectionActions.extraItems(for: "hello", allowsSpeech: true), [.addWord, .readFromHere])
-        XCTAssertEqual(ReaderSelectionActions.extraItems(for: "hello", allowsSpeech: false), [.addWord])
+        XCTAssertEqual(ReaderSelectionActions.extraItems(for: "hello", allowsSpeech: true), [.addWord, .mark, .readFromHere])
+        XCTAssertEqual(ReaderSelectionActions.extraItems(for: "hello", allowsSpeech: false), [.addWord, .mark])
         XCTAssertEqual(
             ReaderSelectionActions.extraItems(for: "one two three", allowsSpeech: true),
             [.mark, .readFromHere]
         )
         XCTAssertEqual(ReaderSelectionActions.extraItems(for: "one two three", allowsSpeech: false), [.mark])
         XCTAssertEqual(ReaderSelectionActions.extraItems(for: "   ", allowsSpeech: true), [])
+        XCTAssertEqual(
+            ReaderSelectionActions.menuItems(for: "   ", allowsSpeech: true),
+            [.addWord, .mark, .readFromHere]
+        )
+        XCTAssertEqual(ReaderSelectionActions.menuItems(for: "   ", allowsSpeech: false), [.addWord, .mark])
         XCTAssertEqual(ReaderSelectionActions.phraseForVocabulary(from: "  Hello  World  "), "Hello World")
         XCTAssertNil(ReaderSelectionActions.phraseForVocabulary(from: "one two three"))
     }

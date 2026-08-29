@@ -34,6 +34,77 @@ final class NeuralSpeechSessionTests: XCTestCase {
             NeuralSpeechAudio.withLeadingPause([0.2], sampleRate: 1_000, pauseSeconds: 0.003),
             [0, 0, 0, 0.2]
         )
+        XCTAssertEqual(NeuralSpeechInput.speakable("  Hello.  "), "Hello.")
+        XCTAssertNil(NeuralSpeechInput.speakable("   "))
+        XCTAssertNil(NeuralSpeechInput.speakable("\n\t"))
+        XCTAssertNil(NeuralSpeechInput.speakable("..."))
+        XCTAssertNil(NeuralSpeechInput.speakable("—"))
+        XCTAssertNil(NeuralSpeechInput.speakable("[*]"))
+        XCTAssertEqual(NeuralSpeechInput.speakable("100000"), "100000")
+        XCTAssertEqual(NeuralSpeechInput.silenceSamples.count, 8)
+        XCTAssertTrue(NeuralSpeechInput.silenceSamples.allSatisfy { $0 == 0 })
+        XCTAssertEqual(NeuralSpeechInput.kokoroCharacterLimit, 140)
+        XCTAssertEqual(
+            NeuralSpeechInput.synthesisPhrases("Hello there.", engine: .portuguesePortugal),
+            ["Hello there."]
+        )
+        XCTAssertEqual(NeuralSpeechInput.synthesisPhrases("   ", engine: .kokoroEnglish), [])
+        XCTAssertEqual(NeuralSpeechInput.synthesisPhrases("...", engine: .kokoroEnglish), [])
+        let short = NeuralSpeechInput.synthesisPhrases("A short English sentence.", engine: .kokoroEnglish)
+        XCTAssertEqual(short, ["A short English sentence."])
+        let long = String(repeating: "word ", count: 80) + "end."
+        let phrases = NeuralSpeechInput.splitForKokoro(long, limit: 40)
+        XCTAssertGreaterThan(phrases.count, 1)
+        XCTAssertTrue(phrases.allSatisfy { $0.count <= 40 })
+        XCTAssertEqual(phrases.joined(separator: " ").replacingOccurrences(of: "  ", with: " "), long.trimmingCharacters(in: .whitespaces))
+        XCTAssertEqual(NeuralSpeechInput.splitForKokoro("short", limit: 40), ["short"])
+        XCTAssertEqual(NeuralSpeechInput.splitForKokoro(String(repeating: "a", count: 12), limit: 5).count, 3)
+        XCTAssertEqual(NeuralSpeechInput.splitForKokoro("hello     world", limit: 5), ["hello", "world"])
+        XCTAssertEqual(NeuralSpeechInput.splitForKokoro("... ...", limit: 2), ["... ..."])
+        XCTAssertEqual(NeuralSpeechInput.splitForKokoro("ok", limit: 0), ["o", "k"])
+    }
+
+    func testEmptySpokenChunksAreSkippedWithoutCallingTheEngine() async {
+        let synthesizer = MockNeuralSynthesizer()
+        let player = MockNeuralPlayer()
+        let session = NeuralSpeechSession(synthesizer: synthesizer, player: player)
+        var phrases: [SpeechQueueChunk] = []
+        var finished = false
+        let blank = SpeechQueueChunk(text: "   ", offset: 0, pauseSeconds: 0, speak: "   ")
+        let marks = SpeechQueueChunk(text: "...", offset: 3, pauseSeconds: 0, speak: "...")
+        let spoken = SpeechQueueChunk(text: "Hello.", offset: 4, pauseSeconds: 0)
+
+        session.start(
+            chunks: [blank, marks, spoken],
+            engine: .kokoroEnglish,
+            speed: 1,
+            onPhrase: { phrases.append($0) },
+            onProgress: { _, _ in },
+            completion: { result in
+                if case .success = result { finished = true }
+            }
+        )
+        XCTAssertEqual(synthesizer.texts, ["Hello."])
+        XCTAssertEqual(player.scheduledCount, 2)
+        XCTAssertEqual(player.scheduledSampleCounts, [
+            NeuralSpeechInput.silenceSamples.count,
+            NeuralSpeechInput.silenceSamples.count,
+        ])
+        XCTAssertEqual(phrases, [blank])
+
+        synthesizer.complete()
+        await settle()
+        XCTAssertEqual(player.scheduledCount, 3)
+        player.finishNext()
+        await settle()
+        XCTAssertEqual(phrases, [blank, marks])
+        player.finishNext()
+        await settle()
+        player.finishNext()
+        await settle()
+        XCTAssertEqual(phrases, [blank, marks, spoken])
+        XCTAssertTrue(finished)
+        session.stop()
     }
 
     func testSynthesizesGroupedThousandsWithoutCommas() async {

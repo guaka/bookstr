@@ -157,6 +157,7 @@ final class EPUBReaderController: NSObject, ObservableObject, AVSpeechSynthesize
     @Published var errorMessage: String?
     @Published var ready = false
     @Published var isSpeaking = false
+    @Published private(set) var isSpeechRetained = false
     @Published var loadingStage = "Starting reader"
     @Published var rights = BookRights()
     @Published var textSelection: ReaderTextSelection?
@@ -239,14 +240,14 @@ final class EPUBReaderController: NSObject, ObservableObject, AVSpeechSynthesize
         let cfi = locator.trimmingCharacters(in: .whitespacesAndNewlines)
         if cfi.isEmpty == false { speechLocator = cfi }
         evaluate("window.setSpeechResumeCfi && window.setSpeechResumeCfi(\(Self.js(speechLocator)))")
-        if isSpeaking || speech.isSpeaking || speech.isPaused || neuralSpeech.isPlaying || playbackQueue.hasPendingRequest {
+        if isSpeechSessionActive {
             stopSpeech()
         }
         requestSpeechText()
     }
 
     func toggleSpeech() {
-        if isSpeaking || speech.isSpeaking || speech.isPaused || neuralSpeech.isPlaying || playbackQueue.hasPendingRequest {
+        if isSpeechSessionActive {
             stopSpeech()
         } else {
             guard ready else {
@@ -255,6 +256,26 @@ final class EPUBReaderController: NSObject, ObservableObject, AVSpeechSynthesize
             }
             requestSpeechText()
         }
+    }
+
+    private var isSpeechSessionActive: Bool {
+        ReaderSpeechRetention.isRetained(
+            speaking: isSpeaking,
+            systemSpeaking: speech.isSpeaking,
+            systemPaused: speech.isPaused,
+            neuralPlaying: neuralSpeech.isPlaying,
+            neuralPaused: neuralSpeech.isPaused,
+            pendingRequest: playbackQueue.hasPendingRequest
+        )
+    }
+
+    private func setSpeaking(_ speaking: Bool) {
+        isSpeaking = speaking
+        refreshSpeechRetention()
+    }
+
+    private func refreshSpeechRetention() {
+        isSpeechRetained = isSpeechSessionActive
     }
 
     fileprivate func speak(
@@ -296,7 +317,7 @@ final class EPUBReaderController: NSObject, ObservableObject, AVSpeechSynthesize
         utteranceHighlightLengths.removeAll()
         utteranceMapsSpokenRanges.removeAll()
         activeUtterance = nil
-        isSpeaking = true
+        setSpeaking(true)
         updateNowPlaying(isPlaying: true)
         switch playback.engine {
         case .neural(let engine):
@@ -400,7 +421,7 @@ final class EPUBReaderController: NSObject, ObservableObject, AVSpeechSynthesize
     }
 
     private func finishSpeech() {
-        isSpeaking = false
+        setSpeaking(false)
         updateNowPlaying(isPlaying: false)
         deactivateAudioSession()
         evaluate("window.clearSpeechProgress && window.clearSpeechProgress()")
@@ -415,7 +436,7 @@ final class EPUBReaderController: NSObject, ObservableObject, AVSpeechSynthesize
         neuralChunkOffset = nil
         neuralSpeech.stop()
         speech.stopSpeaking(at: .immediate)
-        isSpeaking = false
+        setSpeaking(false)
         updateNowPlaying(isPlaying: false)
         deactivateAudioSession()
         evaluate("window.clearSpeechProgress && window.clearSpeechProgress()")
@@ -424,7 +445,7 @@ final class EPUBReaderController: NSObject, ObservableObject, AVSpeechSynthesize
     private func requestSpeechText(after delayMilliseconds: Int = 0) {
         let requestID = UUID().uuidString
         playbackQueue.beginRequest(id: requestID)
-        isSpeaking = true
+        setSpeaking(true)
         updateNowPlaying(isPlaying: true)
         let request = "window.requestSpeechText && window.requestSpeechText(true, \(Self.js(requestID)), \(Self.js(speechLocator)))"
         if delayMilliseconds > 0 {
@@ -508,11 +529,11 @@ final class EPUBReaderController: NSObject, ObservableObject, AVSpeechSynthesize
             BookstrDebugLog.shared.record("interrupt began")
             if speech.isSpeaking {
                 speech.pauseSpeaking(at: .word)
-                isSpeaking = false
+                setSpeaking(false)
                 updateNowPlaying(isPlaying: false)
             } else if neuralSpeech.isPlaying {
                 neuralSpeech.pause()
-                isSpeaking = false
+                setSpeaking(false)
                 updateNowPlaying(isPlaying: false)
             }
         case .ended:
@@ -536,15 +557,15 @@ final class EPUBReaderController: NSObject, ObservableObject, AVSpeechSynthesize
         // AirPods reconnect / headset plug: keep the session active if we were speaking.
         if reason == .newDeviceAvailable || reason == .categoryChange {
             BookstrDebugLog.shared.record("route \(reason.rawValue)")
-            guard isSpeaking || neuralSpeech.isPaused || speech.isPaused else { return }
+            guard isSpeechRetained else { return }
             try? AVAudioSession.sharedInstance().setActive(true)
             if neuralSpeech.isPaused {
                 neuralSpeech.resume()
-                isSpeaking = true
+                setSpeaking(true)
                 updateNowPlaying(isPlaying: true)
             } else if speech.isPaused {
                 speech.continueSpeaking()
-                isSpeaking = true
+                setSpeaking(true)
                 updateNowPlaying(isPlaying: true)
             }
         }
@@ -558,11 +579,11 @@ final class EPUBReaderController: NSObject, ObservableObject, AVSpeechSynthesize
         }
         if speech.isPaused {
             speech.continueSpeaking()
-            isSpeaking = true
+            setSpeaking(true)
             updateNowPlaying(isPlaying: true)
         } else if neuralSpeech.isPaused || neuralChunkOffset != nil {
             neuralSpeech.resume()
-            isSpeaking = true
+            setSpeaking(true)
             updateNowPlaying(isPlaying: true)
         }
     }
@@ -584,11 +605,11 @@ final class EPUBReaderController: NSObject, ObservableObject, AVSpeechSynthesize
                 guard let self else { return }
                 if self.speech.isPaused {
                     self.speech.continueSpeaking()
-                    self.isSpeaking = true
+                    self.setSpeaking(true)
                     self.updateNowPlaying(isPlaying: true)
                 } else if self.activeSpeechEngine != .system, !self.neuralSpeech.isPlaying, self.neuralChunkOffset != nil {
                     self.neuralSpeech.resume()
-                    self.isSpeaking = true
+                    self.setSpeaking(true)
                     self.updateNowPlaying(isPlaying: true)
                 } else if !self.isSpeaking && !self.playbackQueue.hasPendingRequest {
                     self.requestSpeechText()
@@ -601,11 +622,11 @@ final class EPUBReaderController: NSObject, ObservableObject, AVSpeechSynthesize
                 guard let self else { return }
                 if self.speech.isSpeaking {
                     self.speech.pauseSpeaking(at: .word)
-                    self.isSpeaking = false
+                    self.setSpeaking(false)
                     self.updateNowPlaying(isPlaying: false)
                 } else if self.neuralSpeech.isPlaying {
                     self.neuralSpeech.pause()
-                    self.isSpeaking = false
+                    self.setSpeaking(false)
                     self.updateNowPlaying(isPlaying: false)
                 }
             }
@@ -1047,6 +1068,7 @@ struct EPUBReaderView: UIViewRepresentable {
             case "onReaderReady":
                 controller.ready = true
                 controller.errorMessage = nil
+                applySavedHighlightsForBook()
             case "onReaderStage":
                 controller.loadingStage = value as? String ?? "Preparing EPUB"
             case "onReaderError":
@@ -1073,39 +1095,120 @@ struct EPUBReaderView: UIViewRepresentable {
         }
 
         fileprivate func addWordFromEditMenu() {
-            guard let selection = controller.textSelection,
-                  let phrase = ReaderSelectionActions.phraseForVocabulary(from: selection.text)
-            else { return }
-            _ = container.vocabularyRepository.saveSelection(
-                word: phrase,
-                language: selection.language,
-                bookId: book.id,
-                bookTitle: book.title,
-                cfi: selection.locator,
-                context: selection.context
-            )
-            NotificationCenter.default.post(name: .bookstrVocabularyDidChange, object: nil)
+            withCurrentSelection(preferWeb: true) { [self] selection in
+                guard let phrase = ReaderSelectionActions.phraseForVocabulary(from: selection.text)
+                else { return }
+                _ = self.container.vocabularyRepository.saveSelection(
+                    word: phrase,
+                    language: selection.language,
+                    bookId: self.book.id,
+                    bookTitle: self.book.title,
+                    cfi: selection.locator,
+                    context: selection.context
+                )
+                self.highlightCurrentSelectionInReader()
+                self.highlightReaderLocator(selection.locator)
+                self.refreshKnownWordsInReader()
+                NotificationCenter.default.post(name: .bookstrVocabularyDidChange, object: nil)
+            }
         }
 
         fileprivate func markFromEditMenu() {
-            guard let selection = controller.textSelection,
-                  ReaderSelectionActions.offersMark(for: selection.text)
-            else { return }
-            _ = container.snippetRepository.saveMark(
-                text: ReaderSelectionActions.normalizedText(selection.text),
-                bookId: book.id,
-                bookTitle: book.title,
-                author: book.author,
-                isbn: NostrSyncService.normalizedISBN(book.isbn),
-                format: .epub,
-                locator: selection.locator
+            withCurrentSelection(preferWeb: true) { [self] selection in
+                let text = ReaderSelectionActions.normalizedText(selection.text)
+                guard !text.isEmpty else { return }
+                guard self.container.snippetRepository.saveMark(
+                    text: text,
+                    bookId: self.book.id,
+                    bookTitle: self.book.title,
+                    author: self.book.author,
+                    isbn: NostrSyncService.normalizedISBN(self.book.isbn),
+                    format: .epub,
+                    locator: selection.locator
+                ) != nil else { return }
+                self.highlightCurrentSelectionInReader()
+                self.highlightReaderLocator(selection.locator)
+                NotificationCenter.default.post(name: .bookstrSnippetsDidChange, object: nil)
+            }
+        }
+
+        fileprivate func refreshKnownWordsInReader() {
+            let knownWords = container.vocabularyRepository.all().map(\.word)
+            let knownData = (try? JSONSerialization.data(withJSONObject: knownWords)) ?? Data("[]".utf8)
+            let knownJSON = String(data: knownData, encoding: .utf8) ?? "[]"
+            controller.evaluate(
+                "window.setKnownWords && window.setKnownWords(\(EPUBReaderController.js(knownJSON))); null;"
             )
-            NotificationCenter.default.post(name: .bookstrSnippetsDidChange, object: nil)
+        }
+
+        fileprivate func highlightCurrentSelectionInReader() {
+            controller.evaluate(
+                "window.highlightCurrentSelection && window.highlightCurrentSelection(); null;"
+            )
+        }
+
+        fileprivate func highlightReaderLocator(_ locator: String) {
+            let cfi = locator.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !cfi.isEmpty else { return }
+            controller.evaluate(
+                "window.highlightReaderCfi && window.highlightReaderCfi(\(EPUBReaderController.js(cfi))); null;"
+            )
+        }
+
+        fileprivate func applySavedHighlightsForBook() {
+            refreshKnownWordsInReader()
+            var locators = container.vocabularyRepository.all()
+                .filter { $0.bookId == book.id && !$0.cfi.isEmpty }
+                .map(\.cfi)
+            locators += container.snippetRepository.all()
+                .filter { $0.bookId == book.id && !$0.locator.isEmpty }
+                .map(\.locator)
+            let unique = Array(Set(locators))
+            let data = (try? JSONSerialization.data(withJSONObject: unique)) ?? Data("[]".utf8)
+            let json = String(data: data, encoding: .utf8) ?? "[]"
+            controller.evaluate(
+                "window.setReaderHighlights && window.setReaderHighlights(\(EPUBReaderController.js(json))); null;"
+            )
         }
 
         fileprivate func readFromHereFromEditMenu() {
-            guard let selection = controller.textSelection else { return }
-            controller.speakFromLocator(selection.locator)
+            withCurrentSelection { [self] selection in
+                self.controller.speakFromLocator(selection.locator)
+            }
+        }
+
+        private func withCurrentSelection(
+            preferWeb: Bool = false,
+            _ body: @escaping (ReaderTextSelection) -> Void
+        ) {
+            let run: (ReaderTextSelection) -> Void = { selection in
+                DispatchQueue.main.async { body(selection) }
+            }
+            let cached = controller.textSelection
+            if !preferWeb, let selection = cached, !selection.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                run(selection)
+                return
+            }
+            controller.webView?.evaluateJavaScript(
+                """
+                (function() {
+                  if (window.bookstrCurrentTextSelection) {
+                    var current = window.bookstrCurrentTextSelection();
+                    if (current && current.text) return JSON.stringify(current);
+                  }
+                  return null;
+                })()
+                """
+            ) { [weak self] value, _ in
+                guard let self else { return }
+                if let json = value as? String {
+                    self.handleTextSelection(json)
+                }
+                if let selection = self.controller.textSelection ?? cached,
+                   !selection.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    run(selection)
+                }
+            }
         }
 
         private func object(from json: String?) -> [String: Any]? {
@@ -1187,11 +1290,14 @@ struct EPUBReaderView: UIViewRepresentable {
 
         private func handleWordSelection(_ json: String?) {
             guard let item = object(from: json), let word = item["word"] as? String, !word.isEmpty else { return }
+            let cfi = item["cfi"] as? String ?? ""
             _ = container.vocabularyRepository.saveSelection(
                 word: word, language: item["language"] as? String ?? "en", bookId: book.id,
-                bookTitle: book.title, cfi: item["cfi"] as? String ?? "",
+                bookTitle: book.title, cfi: cfi,
                 context: item["contextSentence"] as? String ?? ""
             )
+            refreshKnownWordsInReader()
+            highlightReaderLocator(cfi)
             NotificationCenter.default.post(name: .bookstrVocabularyDidChange, object: nil)
         }
 
@@ -1227,7 +1333,14 @@ struct EPUBReaderView: UIViewRepresentable {
         }
 
         private func requestKnownWord(_ json: String?) {
-            container.wordNavigation.request(word: json ?? "")
+            let word = (json ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            if let match = container.vocabularyRepository.all().first(where: {
+                $0.word.caseInsensitiveCompare(word) == .orderedSame
+            }) {
+                _ = container.vocabularyRepository.recordSeen(key: match.key)
+                NotificationCenter.default.post(name: .bookstrVocabularyDidChange, object: nil)
+            }
+            container.wordNavigation.request(word: word)
         }
 
         private func lookupDictionary(_ json: String?) {

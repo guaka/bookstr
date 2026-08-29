@@ -26,13 +26,10 @@ enum SpeechEngineID: String, CaseIterable, Identifiable {
     }
 
     func supports(language: String) -> Bool {
-        let parts = language.replacingOccurrences(of: "_", with: "-")
-            .split(separator: "-").map { $0.lowercased() }
-        let base = parts.first ?? ""
-        return switch self {
+        switch self {
         case .system: true
-        case .kokoroEnglish: base == "en"
-        case .portuguesePortugal: base == "pt" && !parts.dropFirst().contains("br")
+        case .kokoroEnglish: SpeechLanguageSettings.isEnglish(language)
+        case .portuguesePortugal: SpeechLanguageSettings.isPortuguese(language)
         }
     }
 }

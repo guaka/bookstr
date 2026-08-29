@@ -263,6 +263,7 @@
             installSwipeNavigation(contentDocument);
             installImageZoom(contentDocument);
             installReaderContextMenu(contentDocument);
+            installSelectionBridge(contentDocument);
             installKnownWordNavigation(contentDocument);
             highlightKnownWords(contentDocument);
             applyTypographyToDocument(contentDocument);
@@ -280,14 +281,18 @@
             contextSentence: selectionContext(selectedRange)
           };
           window.__bookstrTextSelection = payload;
-          keepHighlight(cfi);
           if (window.AndroidBridge && AndroidBridge.onTextSelected) {
             AndroidBridge.onTextSelected(JSON.stringify(payload));
           }
           showDictionary(selection, language, cfi, selectionContext(selectedRange));
         });
         window.bookstrCurrentTextSelection = function() {
-          return window.__bookstrTextSelection || null;
+          return captureLiveTextSelection() || window.__bookstrTextSelection || null;
+        };
+        window.highlightCurrentSelection = function() {
+          paintCurrentSelectionHighlight();
+          const live = captureLiveTextSelection() || window.__bookstrTextSelection;
+          if (live && live.cfi) keepHighlight(live.cfi);
         };
         registerThemes();
         applyTheme(theme || "paper");
@@ -849,6 +854,97 @@
         );
       } catch (error) { console.warn("Could not highlight word", error); }
     }
+
+    function readerLanguageForDocument(contentDocument) {
+      return (contentDocument && contentDocument.documentElement && contentDocument.documentElement.lang) ||
+        (book && book.packaging && book.packaging.metadata && book.packaging.metadata.language) || "en";
+    }
+
+    function captureLiveTextSelection() {
+      if (!rendition || typeof rendition.getContents !== "function") return null;
+      const list = rendition.getContents() || [];
+      for (let index = 0; index < list.length; index += 1) {
+        const contents = list[index];
+        const win = contents && contents.window;
+        const doc = contents && contents.document;
+        const selection = win && win.getSelection ? win.getSelection() : null;
+        if (!selection || selection.rangeCount === 0 || selection.isCollapsed) continue;
+        const text = cleanDictionaryText(selection.toString()).slice(0, 2000);
+        if (!text) continue;
+        let cfi = "";
+        try { cfi = rangeToCfi(selection.getRangeAt(0)); } catch (_) {}
+        const payload = {
+          text: text,
+          language: readerLanguageForDocument(doc),
+          cfi: cfi,
+          contextSentence: selectionContext(selection)
+        };
+        window.__bookstrTextSelection = payload;
+        return payload;
+      }
+      return null;
+    }
+
+    function installSelectionBridge(contentDocument) {
+      if (!contentDocument || contentDocument.__bookstrSelectionBridge) return;
+      contentDocument.__bookstrSelectionBridge = true;
+      const publish = function() {
+        const payload = captureLiveTextSelection();
+        if (!payload || !window.AndroidBridge || !AndroidBridge.onTextSelected) return;
+        AndroidBridge.onTextSelected(JSON.stringify(payload));
+      };
+      contentDocument.addEventListener("selectionchange", publish);
+      contentDocument.addEventListener("mouseup", publish);
+      contentDocument.addEventListener("touchend", publish);
+    }
+
+    function ensureMarkHighlightStyle(contentDocument) {
+      if (!contentDocument) return;
+      let style = contentDocument.getElementById("bookstr-mark-style");
+      if (!style) {
+        style = contentDocument.createElement("style");
+        style.id = "bookstr-mark-style";
+        style.textContent = "::highlight(bookstr-mark){background:#e7c766;color:#1c1916;text-decoration:none}";
+        (contentDocument.head || contentDocument.documentElement).appendChild(style);
+      }
+    }
+
+    function paintCurrentSelectionHighlight() {
+      if (!rendition || typeof rendition.getContents !== "function") return;
+      const list = rendition.getContents() || [];
+      for (let index = 0; index < list.length; index += 1) {
+        const contents = list[index];
+        const doc = contents && contents.document;
+        const win = contents && contents.window;
+        if (!doc || !win || !win.CSS || !win.CSS.highlights || typeof win.Highlight !== "function") continue;
+        const selection = win.getSelection && win.getSelection();
+        if (!selection || selection.rangeCount === 0 || selection.isCollapsed) continue;
+        const ranges = [];
+        for (let rangeIndex = 0; rangeIndex < selection.rangeCount; rangeIndex += 1) {
+          try { ranges.push(selection.getRangeAt(rangeIndex).cloneRange()); } catch (_) {}
+        }
+        if (!ranges.length) continue;
+        ensureMarkHighlightStyle(doc);
+        const existing = [];
+        try {
+          const previous = win.CSS.highlights.get("bookstr-mark");
+          if (previous) {
+            for (const range of previous) existing.push(range);
+          }
+        } catch (_) {}
+        win.CSS.highlights.set("bookstr-mark", new win.Highlight(...existing, ...ranges));
+      }
+    }
+
+    window.highlightReaderCfi = function(cfi) {
+      keepHighlight(cfi);
+    };
+
+    window.setReaderHighlights = function(cfisJson) {
+      let cfis = [];
+      try { cfis = JSON.parse(cfisJson || "[]"); } catch (_) {}
+      cfis.forEach(function(cfi) { applyHighlight(cfi); });
+    };
 
     window.setKnownWords = function(wordsJson) {
       let words = [];

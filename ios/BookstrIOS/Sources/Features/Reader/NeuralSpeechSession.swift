@@ -1,5 +1,53 @@
 import Foundation
 
+enum NeuralSpeechInput {
+    static let silenceSamples: [Float] = [0, 0, 0, 0, 0, 0, 0, 0]
+    /// Kokoro v0.19 aborts the process when phoneme IDs reach `style_dim[0]` (510).
+    /// English expands past that after a long sentence, so keep phrases short.
+    static let kokoroCharacterLimit = 140
+
+    static func speakable(_ text: String) -> String? {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        guard trimmed.contains(where: { $0.isLetter || $0.isNumber }) else { return nil }
+        return trimmed
+    }
+
+    static func synthesisPhrases(_ text: String, engine: SpeechEngineID) -> [String] {
+        guard let spoken = speakable(text) else { return [] }
+        guard engine == .kokoroEnglish else { return [spoken] }
+        return splitForKokoro(spoken)
+    }
+
+    static func splitForKokoro(_ text: String, limit: Int = kokoroCharacterLimit) -> [String] {
+        let limit = max(1, limit)
+        guard text.count > limit else { return [text] }
+        var phrases: [String] = []
+        var cursor = text.startIndex
+        while cursor < text.endIndex {
+            if text.distance(from: cursor, to: text.endIndex) <= limit {
+                if let tail = speakable(String(text[cursor...])) {
+                    phrases.append(tail)
+                }
+                break
+            }
+            let windowEnd = text.index(cursor, offsetBy: limit)
+            let window = text[cursor..<windowEnd]
+            let breakIndex = window.lastIndex(where: {
+                $0.isWhitespace || $0 == "." || $0 == "!" || $0 == "?" || $0 == ";" || $0 == ":" || $0 == ","
+            }) ?? text.index(before: windowEnd)
+            if let piece = speakable(String(text[cursor...breakIndex])) {
+                phrases.append(piece)
+            }
+            cursor = text.index(after: breakIndex)
+            while cursor < text.endIndex, text[cursor].isWhitespace {
+                cursor = text.index(after: cursor)
+            }
+        }
+        return phrases.isEmpty ? [text] : phrases
+    }
+}
+
 enum NeuralSpeechAudio {
     static func trimTrailingSilence(
         _ samples: [Float],
@@ -228,11 +276,19 @@ final class NeuralSpeechSession {
     private func prefetch() {
         guard !synthesizing, nextRender < chunks.count else { return }
         guard spokenQueued + ready.count < lookahead else { return }
-        synthesizing = true
         let index = nextRender
-        let active = generation
         let chunk = chunks[index]
-        synthesizer.synthesize(text: chunk.speak, engine: engine, speed: speed) { [weak self] result in
+        guard let text = NeuralSpeechInput.speakable(chunk.speak) else {
+            ready[index] = (NeuralSpeechInput.silenceSamples, sampleRate)
+            nextRender = index + 1
+            BookstrDebugLog.shared.record("synth skip empty #\(index)")
+            scheduleReady()
+            prefetch()
+            return
+        }
+        synthesizing = true
+        let active = generation
+        synthesizer.synthesize(text: text, engine: engine, speed: speed) { [weak self] result in
             DispatchQueue.main.async {
                 guard let self, self.generation == active else { return }
                 self.synthesizing = false

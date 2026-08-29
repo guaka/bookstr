@@ -53,9 +53,26 @@ enum SpeechLanguageSettings {
         let normalized = raw.trimmingCharacters(in: .whitespacesAndNewlines)
             .replacingOccurrences(of: "_", with: "-")
             .lowercased()
+            .folding(options: .diacriticInsensitive, locale: Locale(identifier: "en"))
         if normalized.isEmpty { return "en" }
-        if normalized == "pt" { return "pt-pt" }
-        return normalized
+        if normalized.hasPrefix("portugu") { return "pt-pt" }
+        let parts = normalized.split(separator: "-").map(String.init)
+        let base = iso639Base(parts.first ?? normalized)
+        let region = parts.dropFirst().first
+        if base == "pt" {
+            if region == "br" { return "pt-br" }
+            return "pt-pt"
+        }
+        if let region { return "\(base)-\(region)" }
+        return base
+    }
+
+    static func iso639Base(_ code: String) -> String {
+        switch code {
+        case "por": "pt"
+        case "eng": "en"
+        default: code
+        }
     }
 
     static func resolve(
@@ -102,7 +119,11 @@ enum SpeechLanguageSettings {
     }
 
     static func isEnglish(_ languageTag: String) -> Bool {
-        baseLanguage(preferredLanguageTag(languageTag)) == "en"
+        baseLanguage(languageTag) == "en"
+    }
+
+    static func isPortuguese(_ languageTag: String) -> Bool {
+        baseLanguage(languageTag) == "pt"
     }
 
     static func baseLanguage(_ languageTag: String) -> String {
