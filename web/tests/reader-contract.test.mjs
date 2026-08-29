@@ -70,7 +70,9 @@ test('reader keyboard handlers and zoom UI are present', () => {
   assert.match(reader, /id="reader-prev"/);
   assert.match(reader, /id="reader-next"/);
   assert.match(reader, /let readerFontPercent = Number\(localStorage\.getItem\("bookstr-reader-font-percent"\)\) \|\| 100;/);
-  assert.match(reader, /rendition\.themes\.fontSize\(readerFontPercent \+ "%"\);/);
+  assert.match(reader, /<script src="reader-typography.js"><\/script>/);
+  assert.match(reader, /BookstrTypography.css/);
+  assert.match(reader, /window.setReaderTypography/);
   assert.match(reader, /window\.prevPage/);
   assert.match(reader, /window\.nextPage/);
 });

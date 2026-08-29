@@ -124,6 +124,7 @@ test('speech planner speaks grouped thousands without comma pauses', () => {
   assert.equal(BookstrSpeech.spokenText('There were 1,000,000.5 people.'), 'There were 1000000.5 people.');
   assert.equal(BookstrSpeech.spokenText('Wait, then go.'), 'Wait, then go.');
   assert.equal(BookstrSpeech.spokenText('100\u00A0000'), '100000');
+  assert.equal(BookstrSpeech.spokenText('100\u202F000'), '100000');
   assert.equal(BookstrSpeech.normalizeText('There were 1,000,000 people.'), 'There were 1,000,000 people.');
   assert.equal(BookstrSpeech.normalizeText('Wait, then go.'), 'Wait, then go.');
 
@@ -138,6 +139,32 @@ test('speech planner speaks grouped thousands without comma pauses', () => {
   ]);
   assert.equal(clause.chunks[0].text, 'After collecting 100,000 samples,');
   assert.equal(clause.chunks[0].spoken, 'After collecting 100000 samples,');
+
+  const hyphenated = BookstrSpeech.buildPlan(['A well-known fact remains well-known.']);
+  assert.equal(hyphenated.chunks[0].text, 'A well-known fact remains well-known.');
+
+  const thousandsBoundary = BookstrSpeech.buildPlan([
+    `${'word '.repeat(22)}counted 1,000 extra ${'word '.repeat(22)}.`,
+  ], { softLimit: 80, hardLimit: 120, segmenterFactory: null });
+  assert.ok(thousandsBoundary.chunks.some(chunk => chunk.text.includes('1,000')));
+  assertPlanIntegrity(thousandsBoundary);
+
+  const closingParen = BookstrSpeech.buildPlan([
+    `${'word'.repeat(30)}) extra ${'tail'.repeat(30)}`,
+  ], { softLimit: 80, hardLimit: 120, segmenterFactory: null });
+  assert.ok(closingParen.chunks.some(chunk => chunk.text.includes(')')));
+  assertPlanIntegrity(closingParen);
+
+  class EmptyPhraseSegmenter {
+    segment() {
+      return [{ segment: 'Hello.' }, { segment: '' }, { segment: 'World.' }];
+    }
+  }
+  const emptyPhrase = BookstrSpeech.buildPlan(['Hello. World.'], {
+    segmenterFactory: EmptyPhraseSegmenter,
+  });
+  assert.ok(emptyPhrase.chunks.some(chunk => chunk.text.includes('Hello')));
+  assertPlanIntegrity(emptyPhrase);
 });
 
 test('speech planner omits footnote markers from spoken text', () => {
@@ -189,6 +216,37 @@ test('speech planner omits footnote markers from spoken text', () => {
     },
   };
   assert.equal(BookstrSpeech.visibleText({ ownerDocument: document }), 'Hello world');
+});
+
+test('speech locators skip completed blocks and resume inside the current one', () => {
+  const order = { a: 1, b: 2, c: 3 };
+  const compare = (left, right) => order[left] - order[right];
+  assert.equal(BookstrSpeech.locatorSkipDecision('a', 'a', '', compare), 'include');
+  assert.equal(BookstrSpeech.locatorSkipDecision('a', 'a', 'b', compare), 'skip');
+  assert.equal(BookstrSpeech.locatorSkipDecision('b', 'c', 'b', compare), 'include');
+  assert.equal(BookstrSpeech.locatorSkipDecision('a', 'c', 'b', compare), 'resume');
+  assert.equal(BookstrSpeech.locatorSkipDecision('', '', 'z', compare), 'include');
+  assert.equal(BookstrSpeech.compareLocators('', '', compare), 0);
+  assert.equal(BookstrSpeech.compareLocators('b', 'a', compare), 1);
+  assert.equal(BookstrSpeech.compareLocators('', 'a', compare), -1);
+  assert.equal(BookstrSpeech.compareLocators('a', '', compare), 1);
+  assert.equal(BookstrSpeech.compareLocators('same', 'same'), 0);
+  assert.equal(BookstrSpeech.compareLocators('m', 'z', () => Number.NaN), -1);
+  assert.equal(BookstrSpeech.compareLocators('z', 'm', () => Number.NaN), 1);
+  const node = { id: 'n' };
+  const other = { id: 'o' };
+  const positions = [
+    { node, start: 0, end: 1 },
+    { node, start: 1, end: 2 },
+    { node, start: 2, end: 3 },
+  ];
+  assert.equal(BookstrSpeech.mappedIndexAtPoint(positions, node, 0), 0);
+  assert.equal(BookstrSpeech.mappedIndexAtPoint(positions, node, 2), 2);
+  assert.equal(BookstrSpeech.mappedIndexAtPoint(positions, node, 3), 3);
+  assert.equal(BookstrSpeech.mappedIndexAtPoint(positions, node, 1), 1);
+  assert.equal(BookstrSpeech.mappedIndexAtPoint([{ node, start: 2, end: 5 }], node, 4), 0);
+  assert.equal(BookstrSpeech.mappedIndexAtPoint(positions, other, 1), 0);
+  assert.equal(BookstrSpeech.mappedIndexAtPoint([], node, 0), 0);
 });
 
 test('speech planner recovers from a failing platform segmenter', () => {

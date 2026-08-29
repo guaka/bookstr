@@ -132,6 +132,8 @@
     let speechBlocks = [];
     let activeSpeechBlock = null;
     let activeSpeechHighlightWindow = null;
+    let lastSpeechCfi = "";
+    let speechActive = false;
 
     function base64ToArrayBuffer(base64) {
       const binary = atob(base64);
@@ -227,6 +229,8 @@
     function openBook(source, cfi, theme, highlightCfi, bookId) {
       if (window.AndroidBridge && AndroidBridge.onReaderStage) AndroidBridge.onReaderStage("Opening archive");
       currentBookId = String(bookId || "");
+      lastSpeechCfi = String(cfi || "").trim();
+      speechActive = false;
       applyTheme(theme || "paper");
       try {
         book = ePub(source);
@@ -311,6 +315,7 @@
         console.warn("Could not calculate EPUB progress", error);
       }
       if (!Number.isFinite(progression)) progression = 0;
+      if (!speechActive) lastSpeechCfi = start.cfi;
       AndroidBridge.onRelocated(JSON.stringify({
         cfi: start.cfi,
         progression: Math.max(0, Math.min(1, progression)),
@@ -1175,14 +1180,127 @@
       if (!document.getElementById("dictionary-card").contains(event.target)) closeDictionary();
     });
 
-    window.requestSpeechText = function(notifyNative, requestID) {
+    function epubCompare(left, right) {
+      try {
+        const CFI = window.ePub && (ePub.CFI || ePub.EpubCFI);
+        if (typeof CFI === "function") {
+          const result = new CFI().compare(left, right);
+          if (Number.isFinite(result)) return result;
+        }
+      } catch (_) {}
+      return undefined;
+    }
+
+    function contentsForDocument(doc) {
+      if (!rendition || typeof rendition.getContents !== "function" || !doc) return null;
+      const list = rendition.getContents() || [];
+      for (let index = 0; index < list.length; index += 1) {
+        if (list[index] && list[index].document === doc) return list[index];
+      }
+      return null;
+    }
+
+    function rangeToCfi(range) {
+      if (!range) return "";
+      const owner = range.startContainer && range.startContainer.ownerDocument
+        ? range.startContainer.ownerDocument
+        : range.commonAncestorContainer && range.commonAncestorContainer.ownerDocument;
+      const contents = contentsForDocument(owner);
+      if (!contents || typeof contents.cfiFromRange !== "function") return "";
+      try {
+        return String(contents.cfiFromRange(range) || "").trim();
+      } catch (_) {
+        return "";
+      }
+    }
+
+    function elementBoundaryCfi(element, atEnd) {
+      if (!element || !element.ownerDocument) return "";
+      const range = element.ownerDocument.createRange();
+      try {
+        range.selectNodeContents(element);
+        range.collapse(Boolean(atEnd));
+      } catch (_) {
+        return "";
+      }
+      return rangeToCfi(range);
+    }
+
+    function textAfterResumeCfi(element, cfi) {
+      const rawText = window.BookstrSpeech && window.BookstrSpeech.visibleText
+        ? window.BookstrSpeech.visibleText(element)
+        : String(element.innerText || element.textContent || "");
+      const full = window.BookstrSpeech
+        ? window.BookstrSpeech.normalizeText(rawText)
+        : rawText.replace(/\s+/g, " ").trim();
+      const contents = contentsForDocument(element.ownerDocument);
+      if (!contents || typeof contents.range !== "function" || !cfi) return full;
+      let point;
+      try {
+        point = contents.range(cfi);
+      } catch (_) {
+        return full;
+      }
+      if (!point || !point.startContainer) return full;
+      const root = element.contains(point.startContainer) || point.startContainer === element;
+      if (!root) return full;
+      const mapped = speechTextMap(element);
+      const index = window.BookstrSpeech.mappedIndexAtPoint(
+        mapped.positions,
+        point.startContainer,
+        point.startOffset
+      );
+      const remaining = mapped.text.slice(index);
+      return window.BookstrSpeech
+        ? window.BookstrSpeech.normalizeText(remaining)
+        : remaining.replace(/\s+/g, " ").trim();
+    }
+
+    function reportSpeechLocator(cfi, publishRemote) {
+      const locator = String(cfi || lastSpeechCfi || "").trim();
+      if (!locator || !window.AndroidBridge || !AndroidBridge.onRelocated) return;
+      lastSpeechCfi = locator;
+      let progression = 0;
+      try {
+        if (book && book.locations && book.locations.length() > 0) {
+          progression = book.locations.percentageFromCfi(locator);
+        }
+      } catch (_) {}
+      const location = rendition && typeof rendition.currentLocation === "function"
+        ? rendition.currentLocation()
+        : null;
+      const start = location && location.start;
+      if (!Number.isFinite(progression)) progression = Number.isFinite(start && start.percentage) ? start.percentage : 0;
+      const payload = {
+        cfi: locator,
+        progression: Math.max(0, Math.min(1, progression)),
+        sectionIndex: Number.isFinite(start && start.index) ? start.index : 0,
+        sectionCount: book && book.spine && book.spine.spineItems
+          ? book.spine.spineItems.length : 1
+      };
+      if (!publishRemote) payload.source = "speech";
+      AndroidBridge.onRelocated(JSON.stringify(payload));
+    }
+
+    window.persistSpeechLocation = function() {
+      reportSpeechLocator(lastSpeechCfi, true);
+    };
+
+    window.setSpeechResumeCfi = function(cfi) {
+      lastSpeechCfi = String(cfi || "").trim();
+    };
+
+    window.requestSpeechText = function(notifyNative, requestID, fromCfi) {
       if (!rendition) return;
+      const resumeCfi = String(fromCfi || lastSpeechCfi || "").trim();
+      if (resumeCfi) lastSpeechCfi = resumeCfi;
       const contentsList = rendition.getContents ? rendition.getContents() : [];
       const parts = [];
       let language = "";
       let foundVisibleText = false;
       let totalLength = 0;
-      clearSpeechProgress();
+      speechActive = true;
+      clearSpeechProgress(false);
       contentsList.forEach(function(contents) {
         if (totalLength >= 100000 || !contents || !contents.document) return;
         const contentDocument = contents.document;
@@ -1195,16 +1313,30 @@
         if (!blocks.length && contentDocument.body) blocks = [contentDocument.body];
         blocks.forEach(function(block) {
           if (totalLength >= 100000) return;
-          const rawText = window.BookstrSpeech && window.BookstrSpeech.visibleText
+          let text = window.BookstrSpeech && window.BookstrSpeech.visibleText
             ? window.BookstrSpeech.visibleText(block)
             : String(block.innerText || block.textContent || "");
-          const text = window.BookstrSpeech
-            ? window.BookstrSpeech.normalizeText(rawText)
-            : rawText.replace(/\s+/g, " ").trim();
+          text = window.BookstrSpeech
+            ? window.BookstrSpeech.normalizeText(text)
+            : text.replace(/\s+/g, " ").trim();
           if (!text) return;
-          const rect = block.getBoundingClientRect ? block.getBoundingClientRect() : { top: 0, bottom: 1 };
-          const bottom = frameTop + rect.bottom;
-          if (!foundVisibleText && bottom <= 0) return;
+          if (resumeCfi && window.BookstrSpeech && window.BookstrSpeech.locatorSkipDecision) {
+            const decision = window.BookstrSpeech.locatorSkipDecision(
+              elementBoundaryCfi(block, false),
+              elementBoundaryCfi(block, true),
+              resumeCfi,
+              epubCompare
+            );
+            if (decision === "skip") return;
+            if (decision === "resume") {
+              text = textAfterResumeCfi(block, resumeCfi);
+              if (!text) return;
+            }
+          } else {
+            const rect = block.getBoundingClientRect ? block.getBoundingClientRect() : { top: 0, bottom: 1 };
+            const bottom = frameTop + rect.bottom;
+            if (!foundVisibleText && bottom <= 0) return;
+          }
           foundVisibleText = true;
           const start = totalLength + (parts.length ? 1 : 0);
           parts.push(text);
@@ -1307,6 +1439,19 @@
         (block.element.ownerDocument.head || block.element.ownerDocument.documentElement).appendChild(style);
       }
       showSpeechWord(block, start, end);
+      const spokenRange = block.element.ownerDocument.createRange();
+      try {
+        const mapped = speechTextMap(block.element);
+        if (mapped.positions.length) {
+          let first = Math.max(0, Math.min(mapped.text.length - 1, start - block.start));
+          let last = Math.max(first + 1, Math.min(mapped.text.length, end - block.start));
+          const finalPosition = mapped.positions[Math.max(first, last - 1)];
+          spokenRange.setStart(mapped.positions[first].node, mapped.positions[first].start);
+          spokenRange.setEnd(finalPosition.node, finalPosition.end);
+          const spokenCfi = rangeToCfi(spokenRange);
+          if (spokenCfi) reportSpeechLocator(spokenCfi, false);
+        }
+      } catch (_) {}
       if (block !== activeSpeechBlock) {
         if (activeSpeechBlock && activeSpeechBlock.element) {
           activeSpeechBlock.element.classList.remove("bookstr-speaking");
@@ -1315,20 +1460,21 @@
         block.element.classList.add("bookstr-speaking");
         block.element.scrollIntoView({ block: "center", behavior: "smooth" });
         reportReaderInteraction();
-        setTimeout(function() {
-          if (rendition) reportLocation(rendition.currentLocation());
-        }, 350);
       }
       return paragraph;
     };
 
-    window.clearSpeechProgress = function() {
+    window.clearSpeechProgress = function(keepLocation) {
       if (activeSpeechBlock && activeSpeechBlock.element) {
         activeSpeechBlock.element.classList.remove("bookstr-speaking");
       }
       clearSpeechWordHighlight();
       activeSpeechBlock = null;
       speechBlocks = [];
+      if (keepLocation !== false) {
+        speechActive = false;
+        reportSpeechLocator(lastSpeechCfi, true);
+      }
     };
 
     window.nextPage = function() {

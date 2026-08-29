@@ -195,6 +195,7 @@
     let book = null;
     let rendition = null;
     let currentBookId = "";
+    let lastSpeechCfi = "";
     let activeDictionary = null;
     let bookLoadGeneration = 0;
     let readerFontPercent = Number(localStorage.getItem("bookstr-reader-font-percent")) || 100;
@@ -450,6 +451,7 @@
       desktopReaderProgress = null;
       stopReaderSpeech();
       currentBookId = String(bookId || "");
+      lastSpeechCfi = String(cfi || "").trim();
       document.body.dataset.bookId = currentBookId;
       applyTheme(theme || "paper");
       if (rendition) rendition.destroy();
@@ -537,6 +539,7 @@
         console.warn("Could not calculate EPUB progress", error);
       }
       if (!Number.isFinite(progression)) progression = 0;
+      lastSpeechCfi = start.cfi;
       updateReaderProgress(progression);
       reportDesktopProgress(start.cfi, progression, progression);
       if (!window.AndroidBridge) return;
@@ -591,6 +594,7 @@
       const paragraphs = [];
       let language = "";
       let foundVisibleText = false;
+      const resumeCfi = String(lastSpeechCfi || "").trim();
       const contentViews = rendition.getContents();
       for (const view of contentViews) {
         const contentDocument = view && view.document;
@@ -603,7 +607,7 @@
           elements = [contentDocument.body];
         }
         for (const element of elements) {
-          const text = String(
+          let text = String(
             window.BookstrSpeech && window.BookstrSpeech.visibleText
               ? window.BookstrSpeech.visibleText(element)
               : (element.innerText || element.textContent || "")
@@ -611,8 +615,45 @@
             .replace(/\s+/g, " ")
             .trim();
           if (!text) continue;
-          const rect = element.getBoundingClientRect ? element.getBoundingClientRect() : { bottom: 1 };
-          if (!foundVisibleText && frameTop + rect.bottom <= 0) continue;
+          if (resumeCfi && typeof view.cfiFromRange === "function" && window.BookstrSpeech.locatorSkipDecision) {
+            const startRange = contentDocument.createRange();
+            const endRange = contentDocument.createRange();
+            startRange.selectNodeContents(element);
+            startRange.collapse(true);
+            endRange.selectNodeContents(element);
+            endRange.collapse(false);
+            let startCfi = "";
+            let endCfi = "";
+            try { startCfi = String(view.cfiFromRange(startRange) || ""); } catch (_) {}
+            try { endCfi = String(view.cfiFromRange(endRange) || ""); } catch (_) {}
+            const decision = window.BookstrSpeech.locatorSkipDecision(startCfi, endCfi, resumeCfi);
+            if (decision === "skip") continue;
+            if (decision === "resume" && typeof view.range === "function") {
+              try {
+                const point = view.range(resumeCfi);
+                if (point && element.contains(point.startContainer)) {
+                  const walker = contentDocument.createTreeWalker(element, NodeFilter.SHOW_TEXT);
+                  let remaining = "";
+                  let seen = false;
+                  let node;
+                  while ((node = walker.nextNode())) {
+                    if (!seen) {
+                      if (node !== point.startContainer) continue;
+                      seen = true;
+                      remaining += String(node.nodeValue || "").slice(point.startOffset);
+                      continue;
+                    }
+                    remaining += String(node.nodeValue || "");
+                  }
+                  text = remaining.replace(/\s+/g, " ").trim();
+                  if (!text) continue;
+                }
+              } catch (_) {}
+            }
+          } else {
+            const rect = element.getBoundingClientRect ? element.getBoundingClientRect() : { bottom: 1 };
+            if (!foundVisibleText && frameTop + rect.bottom <= 0) continue;
+          }
           foundVisibleText = true;
           paragraphs.push(text);
         }

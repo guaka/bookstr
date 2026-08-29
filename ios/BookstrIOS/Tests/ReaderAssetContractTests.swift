@@ -116,7 +116,15 @@ final class ReaderAssetContractTests: XCTestCase {
         XCTAssertEqual((chunks[1]["pauseMs"] as? NSNumber)?.intValue, 750)
         XCTAssertTrue(html.contains("<script src=\"reader-speech.js\"></script>"))
         XCTAssertEqual(html.components(separatedBy: "<script src=\"reader-speech.js\"></script>").count - 1, 1)
+        XCTAssertTrue(html.contains("<script src=\"reader-typography.js\"></script>"))
         XCTAssertTrue(html.contains("window.BookstrSpeech.buildPlan(parts)"))
+#if !SWIFT_PACKAGE
+        let typographySource = try bundledAsset(named: "reader-typography", extension: "js")
+        context.evaluateScript(typographySource)
+        XCTAssertEqual(context.evaluateScript("BookstrTypography.normalizeFont('nope')").toString(), "arial")
+        XCTAssertEqual(context.evaluateScript("BookstrTypography.normalizeAlignment(null)").toString(), "justified")
+        XCTAssertTrue(context.evaluateScript("BookstrTypography.css()").toString()?.contains("text-align:justify") == true)
+#endif
     }
 
     func testNativeSpeechFallbackPreservesTextOffsetsAndAvoidsFinalWordOrphans() {
@@ -219,6 +227,8 @@ final class ReaderAssetContractTests: XCTestCase {
 
         XCTAssertTrue(html.contains("window.BookstrSpeech.visibleText(block)"))
         XCTAssertTrue(html.contains("window.setReaderTypography"))
+        XCTAssertTrue(html.contains("<script src=\"reader-typography.js\"></script>"))
+        XCTAssertTrue(html.contains("BookstrTypography.css"))
         XCTAssertTrue(html.contains("Arial, Helvetica, sans-serif"))
         XCTAssertTrue(html.contains("isSilentSpeechParent"))
         XCTAssertTrue(html.contains("requestID: requestID || null"))
@@ -424,6 +434,11 @@ final class ReaderAssetContractTests: XCTestCase {
         XCTAssertTrue(html.contains("const matches = section.find(needle) || [];"))
         XCTAssertTrue(html.contains("AndroidBridge.onSearchResults(JSON.stringify(results));"))
         XCTAssertTrue(html.contains("window.displaySearchResult = function(cfi) {"))
+        XCTAssertTrue(html.contains("window.persistSpeechLocation"))
+        XCTAssertTrue(html.contains("window.setSpeechResumeCfi"))
+        XCTAssertTrue(html.contains("locatorSkipDecision"))
+        XCTAssertTrue(html.contains("payload.source = \"speech\""))
+        XCTAssertTrue(html.contains("window.requestSpeechText = function(notifyNative, requestID, fromCfi)"))
     }
 
     func testReaderReportsWhetherARealTableOfContentsExists() throws {
@@ -431,6 +446,20 @@ final class ReaderAssetContractTests: XCTestCase {
 
         XCTAssertTrue(html.contains("collect(navigation && navigation.toc);"))
         XCTAssertTrue(html.contains("hasToc: labels.size > 0"))
+    }
+
+    func testEPUBReaderLoadsTypographySettingsIntoTheWebView() throws {
+        let sourceURL = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent("Sources/Features/Reader/EPUBReaderView.swift")
+        let source = try String(contentsOf: sourceURL, encoding: .utf8)
+        XCTAssertTrue(source.contains("case \"/reader-typography.js\":"))
+        XCTAssertTrue(source.contains("bundled(\"reader-typography\", extension: \"js\")"))
+        XCTAssertTrue(source.contains("setReaderTypography(\\(font), \\(alignment))"))
+        XCTAssertTrue(source.contains("window.setReaderTypography && window.setReaderTypography"))
+        XCTAssertTrue(source.contains("window.requestSpeechText && window.requestSpeechText(true, \\(Self.js(requestID)), \\(Self.js(speechLocator)))"))
+        XCTAssertTrue(source.contains("if item[\"source\"] as? String == \"speech\" { return }"))
     }
 
     func testBundledVendorAssetsMatchCanonicalSourcesAndLockedHashes() throws {
@@ -469,11 +498,15 @@ final class ReaderAssetContractTests: XCTestCase {
     }
 
     private func canonicalAssetURL(named name: String, extension fileExtension: String) -> URL {
-        URL(fileURLWithPath: #filePath)
+        let root = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
             .deletingLastPathComponent()
             .deletingLastPathComponent()
             .deletingLastPathComponent()
+        if fileExtension == "js" && (name == "reader-speech" || name == "reader-typography") {
+            return root.appendingPathComponent("web").appendingPathComponent("\(name).\(fileExtension)")
+        }
+        return root
             .appendingPathComponent("shared/reader")
             .appendingPathComponent("\(name).\(fileExtension)")
     }

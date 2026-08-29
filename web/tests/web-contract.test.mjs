@@ -386,6 +386,20 @@ test('EPUBs use persistent IndexedDB caching', () => {
   assert.match(html, /if \(routeGeneration !== readRouteGeneration\) return/);
 });
 
+test('settings persist Arial and justified reader typography by default', () => {
+  assert.match(html, /id="reader-font"/);
+  assert.match(html, /id="reader-alignment"/);
+  assert.match(html, /<option value="arial">Arial<\/option>/);
+  assert.match(html, /<option value="justified">Justified<\/option>/);
+  assert.match(html, /readerFont: 'arial'/);
+  assert.match(html, /readerAlignment: 'justified'/);
+  assert.match(html, /<script src="reader-typography\.js"><\/script>/);
+  assert.match(html, /function applyOpenReaderTypography\(\)/);
+  assert.match(html, /applyOpenReaderTypography\(\)/);
+  assert.match(html, /BookstrTypography\.normalizeFont\(state\.settings\.readerFont\)/);
+  assert.match(html, /BookstrTypography\.normalizeAlignment\(state\.settings\.readerAlignment\)/);
+});
+
 test('PDFs are fetched and displayed inside the Bookstr reader pane', () => {
   assert.match(html, /async function displayPdf\(blob, book, readPath, openGeneration\)/);
   assert.match(html, /new Blob\(\[blob\], \{ type: 'application\/pdf' \}\)/);
@@ -411,6 +425,8 @@ test('desktop reader launch metadata is routed via a dedicated bridge payload', 
 
 test('desktop main process enforces reader payloads and returns explicit open results', () => {
   assert.match(desktopMain, /function normalizePayload\(payload\)/);
+  assert.match(desktopMain, /font: String\(payload\.font \|\| 'arial'\)\.toLowerCase\(\)/);
+  assert.match(desktopMain, /alignment: String\(payload\.alignment \|\| 'justified'\)\.toLowerCase\(\)/);
   assert.match(desktopMain, /return \{ ok: false, error: 'Invalid reader payload\.' \}/);
   assert.match(desktopMain, /return \{ ok: true, key, reused: true, kind: requestedKind \}/);
   assert.match(desktopMain, /return \{ ok: true, key, reused: false, kind: requestedKind \}/);
@@ -471,6 +487,10 @@ test('EPUB reader exposes read-aloud controls and speech helpers', () => {
   assert.match(readerHtml, /function collectReaderSpeechPlan\(\)/);
   assert.match(readerHtml, /window\.BookstrSpeech\.visibleText\(element\)/);
   assert.match(readerHtml, /window\.setReaderTypography/);
+  assert.match(readerHtml, /locatorSkipDecision/);
+  assert.match(readerHtml, /lastSpeechCfi/);
+  assert.match(readerHtml, /<script src="reader-typography\.js"><\/script>/);
+  assert.match(readerHtml, /BookstrTypography\.css/);
   assert.match(readerHtml, /Arial, Helvetica, sans-serif/);
   assert.match(readerHtml, /window\.BookstrSpeech\.buildPlan\(paragraphs\)/);
   assert.match(readerHtml, /desktopBridge &&/);

@@ -206,7 +206,7 @@ class ReaderActivity : ComponentActivity() {
                         readerAlignment = readerAlignment,
                         onReaderReady = {
                             readerLoading = false
-                            webView?.evaluateJavascript("requestSpeechText(false);", null)
+                            webView?.evaluateJavascript(speechRequestScript(notifyNative = false), null)
                             NarrationService.sync(this@ReaderActivity)
                         },
                         onMetadata = { title, author, year, rightsStatement ->
@@ -308,7 +308,7 @@ class ReaderActivity : ComponentActivity() {
                             }
                         },
                         onSpeechText = { text, language, chunks -> speakText(text, language, chunks) },
-                        onProgress = { progression, cfi, sectionIndex, sectionCount ->
+                        onProgress = { progression, cfi, sectionIndex, sectionCount, fromSpeech ->
                             readerProgress = progression.coerceIn(0.0, 1.0).toFloat()
                             readerSectionIndex = sectionIndex.coerceAtLeast(0)
                             readerSectionCount = sectionCount.coerceAtLeast(1)
@@ -332,6 +332,7 @@ class ReaderActivity : ComponentActivity() {
                             lifecycleScope.launch {
                                 val saved = app.catalogRepository.saveProgress(bookId, progression, cfi)
                                 readerFurthestProgress = saved.furthestProgression.toFloat()
+                                if (fromSpeech) return@launch
                                 app.nostrRepository.publishProgress(
                                     bookId = bookId,
                                     progression = progression,
@@ -583,6 +584,7 @@ class ReaderActivity : ComponentActivity() {
     }
 
     override fun onPause() {
+        webView?.evaluateJavascript("window.persistSpeechLocation && window.persistSpeechLocation()", null)
         if (!closingReader && (!referenceJump || readerInteracted)) {
             (application as BookstrApp).settingsRepository.saveReaderSession(
                 ReaderSession(
@@ -633,7 +635,7 @@ class ReaderActivity : ComponentActivity() {
         if (pageDirection != 0) {
             val move = if (pageDirection > 0) "nextPage();" else "prevPage();"
             webView?.evaluateJavascript(
-                "$move setTimeout(function(){ requestSpeechText(); }, 340);",
+                "window.setSpeechResumeCfi && window.setSpeechResumeCfi(''); $move setTimeout(function(){ ${speechRequestScript()} }, 340);",
                 null,
             )
             return
@@ -641,7 +643,7 @@ class ReaderActivity : ComponentActivity() {
 
         if (intent.getBooleanExtra(NarrationService.EXTRA_REQUEST_TEXT, false)) {
             speechMessage = "Preparing text…"
-            webView?.evaluateJavascript("requestSpeechText();", null)
+            webView?.evaluateJavascript(speechRequestScript(), null)
         }
 
         val offset = intent.getIntExtra(NarrationService.EXTRA_OFFSET, -1)
@@ -658,6 +660,11 @@ class ReaderActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    private fun speechRequestScript(notifyNative: Boolean = true): String {
+        val cfiJs = JSONObject.quote(lastCfi.orEmpty())
+        return "requestSpeechText(${if (notifyNative) "true" else "false"}, null, $cfiJs);"
     }
 
     private fun toggleTextToSpeech() {
@@ -1008,7 +1015,7 @@ private fun ReaderWebView(
     onKnownWordTapped: (String) -> Unit,
     onReaderInteracted: () -> Unit,
     onSpeechText: (String, String, String) -> Unit,
-    onProgress: (Double, String, Int, Int) -> Unit,
+    onProgress: (Double, String, Int, Int, Boolean) -> Unit,
 ) {
     val context = LocalContext.current
     val app = context.applicationContext as BookstrApp
@@ -1190,8 +1197,9 @@ private fun ReaderWebView(
                                 val cfi = obj.optString("cfi", "")
                                 val sectionIndex = obj.optInt("sectionIndex", 0)
                                 val sectionCount = obj.optInt("sectionCount", 1)
+                                val fromSpeech = obj.optString("source") == "speech"
                                 (ctx as? ComponentActivity)?.runOnUiThread {
-                                    onProgress(progression, cfi, sectionIndex, sectionCount)
+                                    onProgress(progression, cfi, sectionIndex, sectionCount, fromSpeech)
                                 }
                             } catch (_: Exception) {
                             }

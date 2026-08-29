@@ -52,6 +52,7 @@ class ReaderAssetContractTest {
         assertTrue(html.contains("bookstr-highlights:"))
         assertTrue(html.contains("window.setKnownWords"))
         assertTrue(html.contains("window.setReaderTypography"))
+        assertTrue(html.contains("<script src=\"reader-typography.js\"></script>"))
         assertTrue(html.contains("CSS.highlights.set(\"bookstr-known-word\""))
         assertTrue(html.contains("ranges.length < 5000"))
         assertTrue(html.contains("AndroidBridge.onKnownWordTapped"))
@@ -70,6 +71,10 @@ class ReaderAssetContractTest {
         assertTrue(html.contains("AndroidBridge.onReaderError"))
         assertTrue(html.contains("AndroidBridge.onReaderReady"))
         assertTrue(html.contains("window.requestSpeechText"))
+        assertTrue(html.contains("window.persistSpeechLocation"))
+        assertTrue(html.contains("window.setSpeechResumeCfi"))
+        assertTrue(html.contains("locatorSkipDecision"))
+        assertTrue(html.contains("payload.source = \"speech\""))
         assertTrue(html.contains("AndroidBridge.onSpeechText"))
         assertTrue(html.contains("document.documentElement.lang"))
         assertTrue(html.contains("window.showSpeechProgress"))
@@ -97,17 +102,35 @@ class ReaderAssetContractTest {
     fun packagedReaderUsesCanonicalSpeechPlanner() {
         val html = generatedAsset("reader.html").readText()
         val sharedSpeech = File("../../web/reader-speech.js")
+        val sharedTypography = File("../../web/reader-typography.js")
         val scriptTag = "<script src=\"reader-speech.js\"></script>"
+        val typographyTag = "<script src=\"reader-typography.js\"></script>"
 
         assertTrue(sharedSpeech.isFile)
+        assertTrue(sharedTypography.isFile)
         assertTrue(generatedAsset("reader-speech.js").readBytes().contentEquals(sharedSpeech.readBytes()))
+        assertTrue(generatedAsset("reader-typography.js").readBytes().contentEquals(sharedTypography.readBytes()))
         assertTrue(html.contains(scriptTag))
         assertEquals(1, Regex(Regex.escape(scriptTag)).findAll(html).count())
+        assertTrue(html.contains(typographyTag))
         assertTrue(html.contains("window.BookstrSpeech.buildPlan(parts)"))
         assertTrue(html.contains("window.setReaderTypography"))
+        assertTrue(html.contains("BookstrTypography.css"))
         assertTrue(html.contains("Arial, Helvetica, sans-serif"))
-        assertTrue(html.contains("text-align:\" + align"))
         assertTrue(sharedSpeech.readText().contains("paragraphPauseMs: PARAGRAPH_PAUSE_MS"))
+    }
+
+    @Test
+    fun readerAppliesSavedFontAndAlignmentWhenOpeningAnEpub() {
+        val readerSource = File("src/main/java/app/bookstr/ReaderActivity.kt").readText()
+        val settingsSource = File("src/main/java/app/bookstr/ui/SettingsScreen.kt").readText()
+        assertTrue(readerSource.contains("setReaderTypography($fontJs, $alignmentJs)"))
+        assertTrue(readerSource.contains("readerFont = app.settingsRepository.readerFont"))
+        assertTrue(settingsSource.contains("onReaderFontChange"))
+        assertTrue(readerSource.contains("fun speechRequestScript"))
+        assertTrue(readerSource.contains("requestSpeechText("))
+        assertTrue(readerSource.contains("fromSpeech"))
+        assertTrue(readerSource.contains("persistSpeechLocation"))
     }
 
     @Test

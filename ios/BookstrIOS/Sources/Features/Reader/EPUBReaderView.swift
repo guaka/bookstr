@@ -162,6 +162,7 @@ final class EPUBReaderController: NSObject, ObservableObject, AVSpeechSynthesize
     @Published var textSelection: ReaderTextSelection?
     @Published var searchResults: [EPUBSearchResult] = []
     @Published var searching = false
+    fileprivate var speechLocator = ""
 
     fileprivate weak var webView: WKWebView?
     private let speech = AVSpeechSynthesizer()
@@ -404,7 +405,7 @@ final class EPUBReaderController: NSObject, ObservableObject, AVSpeechSynthesize
         playbackQueue.beginRequest(id: requestID)
         isSpeaking = true
         updateNowPlaying(isPlaying: true)
-        let request = "window.requestSpeechText && window.requestSpeechText(true, \(Self.js(requestID)))"
+        let request = "window.requestSpeechText && window.requestSpeechText(true, \(Self.js(requestID)), \(Self.js(speechLocator)))"
         if delayMilliseconds > 0 {
             evaluate("setTimeout(function(){\(request);}, \(delayMilliseconds))")
         } else {
@@ -526,9 +527,10 @@ final class EPUBReaderController: NSObject, ObservableObject, AVSpeechSynthesize
         neuralSpeech.stop()
         speech.stopSpeaking(at: .immediate)
         nowPlayingParagraph = ""
+        speechLocator = ""
         let move = direction > 0
-            ? "window.nextPage && window.nextPage()"
-            : "window.prevPage && window.prevPage()"
+            ? "window.setSpeechResumeCfi && window.setSpeechResumeCfi(''); window.nextPage && window.nextPage()"
+            : "window.setSpeechResumeCfi && window.setSpeechResumeCfi(''); window.prevPage && window.prevPage()"
         evaluate(move)
         requestSpeechText(after: 340)
     }
@@ -785,6 +787,7 @@ struct EPUBReaderView: UIViewRepresentable {
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
             let progress = container.progressRepository.get(bookId: book.id)
             let requestedCFI = initialCFI?.isEmpty == false ? initialCFI! : progress.cfi
+            controller.speechLocator = requestedCFI
             let cfi = requestedCFI.isEmpty ? "null" : EPUBReaderController.js(requestedCFI)
             let highlight = highlightCFI?.isEmpty == false ? EPUBReaderController.js(highlightCFI!) : "null"
             let theme = EPUBReaderController.js(container.settingsRepository.theme.rawValue)
@@ -936,6 +939,7 @@ struct EPUBReaderView: UIViewRepresentable {
             controller.furthestProgression = max(controller.furthestProgression, controller.progression)
             controller.sectionIndex = item["sectionIndex"] as? Int ?? 0
             controller.sectionCount = max(item["sectionCount"] as? Int ?? 1, 1)
+            controller.speechLocator = cfi
             container.progressRepository.save(bookId: book.id, progression: progression, cfi: cfi)
             container.settingsRepository.saveReaderSession(
                 ReaderSession(bookId: book.id, bookTitle: book.title, format: .epub, author: book.author,
@@ -944,6 +948,7 @@ struct EPUBReaderView: UIViewRepresentable {
                               license: controller.rights.license, licenseUrl: controller.rights.licenseURL,
                               rightsSource: controller.rights.source)
             )
+            if item["source"] as? String == "speech" { return }
             var progressBook = book
             progressBook.rightsStatus = controller.rights.status.rawValue
             progressBook.license = controller.rights.license

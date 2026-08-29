@@ -107,6 +107,42 @@
       .trim();
   }
 
+  function compareLocators(left, right, compare) {
+    const a = String(left || "").trim();
+    const b = String(right || "").trim();
+    if (!a && !b) return 0;
+    if (!a) return -1;
+    if (!b) return 1;
+    if (typeof compare === "function") {
+      const result = compare(a, b);
+      if (Number.isFinite(result)) return result;
+    }
+    if (a === b) return 0;
+    return a < b ? -1 : 1;
+  }
+
+  function locatorSkipDecision(blockStart, blockEnd, resume, compare) {
+    const at = String(resume || "").trim();
+    if (!at) return "include";
+    const start = String(blockStart || "").trim();
+    const end = String(blockEnd || "").trim();
+    if (end && compareLocators(end, at, compare) <= 0) return "skip";
+    if (start && compareLocators(start, at, compare) < 0) return "resume";
+    return "include";
+  }
+
+  function mappedIndexAtPoint(positions, node, offset) {
+    if (!positions || !positions.length) return 0;
+    for (let index = 0; index < positions.length; index += 1) {
+      const pos = positions[index];
+      if (pos.node !== node) continue;
+      if (offset <= pos.start) return index;
+      if (offset < pos.end) return index;
+      if (offset === pos.end) return Math.min(index + 1, positions.length);
+    }
+    return 0;
+  }
+
   function isSilentSpeechParent(element) {
     if (!element || typeof element.closest !== "function") return false;
     if (element.closest("script, style, noscript, sup, sub, small")) return true;
@@ -581,6 +617,9 @@
   return {
     buildPlan,
     createPlayer,
+    compareLocators,
+    locatorSkipDecision,
+    mappedIndexAtPoint,
     isSilentSpeechParent,
     visibleText,
     normalizeLocale,
