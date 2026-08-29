@@ -69,6 +69,8 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import androidx.webkit.WebViewAssetLoader
 import app.bookstr.data.ReaderTheme
+import app.bookstr.data.ReaderAlignment
+import app.bookstr.data.ReaderFont
 import app.bookstr.data.BookFormat
 import app.bookstr.data.ReaderSession
 import app.bookstr.data.BookRights
@@ -120,6 +122,8 @@ class ReaderActivity : ComponentActivity() {
     private var isSpeaking by mutableStateOf(false)
     private var speechMessage by mutableStateOf<String?>(null)
     private var readerTheme: ReaderTheme = ReaderTheme.Paper
+    private var readerFont: ReaderFont = ReaderFont.Arial
+    private var readerAlignment: ReaderAlignment = ReaderAlignment.Justified
     private lateinit var amberSession: AmberIntentSession
     private val narrationReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -151,6 +155,8 @@ class ReaderActivity : ComponentActivity() {
         readerTheme = ReaderTheme.fromKey(intent.getStringExtra(EXTRA_THEME))
 
         val app = application as BookstrApp
+        readerFont = app.settingsRepository.readerFont
+        readerAlignment = app.settingsRepository.readerAlignment
         if (!referenceJump) app.settingsRepository.saveReaderSession(
             ReaderSession(
                 bookId,
@@ -196,6 +202,8 @@ class ReaderActivity : ComponentActivity() {
                         highlightCfi = highlightCfi,
                         knownWords = knownWords,
                         theme = readerTheme,
+                        readerFont = readerFont,
+                        readerAlignment = readerAlignment,
                         onReaderReady = {
                             readerLoading = false
                             webView?.evaluateJavascript("requestSpeechText(false);", null)
@@ -986,6 +994,8 @@ private fun ReaderWebView(
     highlightCfi: String?,
     knownWords: List<String>,
     theme: ReaderTheme,
+    readerFont: ReaderFont,
+    readerAlignment: ReaderAlignment,
     onReaderReady: () -> Unit,
     onMetadata: (String?, String?, String?, String?) -> Unit,
     onSections: (List<ReaderSection>) -> Unit,
@@ -1083,6 +1093,8 @@ private fun ReaderWebView(
                         val cfiJs = initialCfi?.let(JSONObject::quote) ?: "null"
                         val highlightCfiJs = highlightCfi?.let(JSONObject::quote) ?: "null"
                         val themeJs = JSONObject.quote(theme.key)
+                        val fontJs = JSONObject.quote(readerFont.key)
+                        val alignmentJs = JSONObject.quote(readerAlignment.key)
                         val bookIdJs = JSONObject.quote(bookId)
                         val knownWordsJs = JSONObject.quote(JSONArray(latestKnownWords).toString())
                         val bookUrlJs = JSONObject.quote(
@@ -1090,6 +1102,7 @@ private fun ReaderWebView(
                         )
                         view.evaluateJavascript(
                             "setReaderTheme($themeJs); " +
+                                "setReaderTypography($fontJs, $alignmentJs); " +
                                 "setKnownWords($knownWordsJs); " +
                                 "loadBookUrl($bookUrlJs, $cfiJs, $themeJs, $highlightCfiJs, $bookIdJs);",
                             null,

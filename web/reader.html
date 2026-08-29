@@ -165,6 +165,7 @@
   <script src="jszip.min.js"></script>
   <script src="epub.min.js"></script>
   <script src="reader-speech.js"></script>
+  <script src="reader-typography.js"></script>
 </head>
 <body>
   <div id="viewer"></div>
@@ -316,11 +317,37 @@
       if (rendition) {
         rendition.themes.select(theme === "night" ? "night" : (theme === "white" ? "white" : "paper"));
       }
+      applyTypography();
+    }
+
+    let readerFontFamily = "arial";
+    let readerAlignment = "justified";
+
+    function typographyCSS() {
+      return window.BookstrTypography.css(readerFontFamily, readerAlignment);
+    }
+
+    function applyTypographyToDocument(contentDocument) {
+      if (!contentDocument) return;
+      let style = contentDocument.getElementById("bookstr-typography");
+      if (!style) {
+        style = contentDocument.createElement("style");
+        style.id = "bookstr-typography";
+        (contentDocument.head || contentDocument.documentElement).appendChild(style);
+      }
+      style.textContent = typographyCSS();
+    }
+
+    function applyTypography() {
+      if (!rendition || typeof rendition.getContents !== "function") return;
+      rendition.getContents().forEach(function(contents) {
+        applyTypographyToDocument(contents && contents.document);
+      });
     }
 
     function registerThemes() {
       const shared = {
-        "font-family": "'Iowan Old Style', 'Palatino Linotype', Palatino, 'Book Antiqua', Georgia, serif !important",
+        "font-family": "Arial, Helvetica, sans-serif !important",
         "font-size": "1.04em !important",
         "line-height": "1.6 !important",
         "box-sizing": "border-box",
@@ -465,6 +492,7 @@
           if (contentDocument) {
             installSwipeNavigation(contentDocument);
             installWheelNavigation(contentDocument);
+            applyTypographyToDocument(contentDocument);
           }
         });
         rendition.on("selected", function(cfi, contents) {
@@ -573,7 +601,11 @@
           elements = [contentDocument.body];
         }
         for (const element of elements) {
-          const text = String(element.innerText || element.textContent || "")
+          const text = String(
+            window.BookstrSpeech && window.BookstrSpeech.visibleText
+              ? window.BookstrSpeech.visibleText(element)
+              : (element.innerText || element.textContent || "")
+          )
             .replace(/\s+/g, " ")
             .trim();
           if (!text) continue;
@@ -1072,6 +1104,12 @@
 
     window.setReaderTheme = function(theme) {
       applyTheme(theme);
+    };
+
+    window.setReaderTypography = function(font, alignment) {
+      readerFontFamily = window.BookstrTypography.normalizeFont(font);
+      readerAlignment = window.BookstrTypography.normalizeAlignment(alignment);
+      applyTypography();
     };
 
     function flushDesktopProgress() {

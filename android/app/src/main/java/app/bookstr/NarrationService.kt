@@ -349,6 +349,7 @@ class NarrationService : MediaBrowserServiceCompat(), TextToSpeech.OnInitListene
                 chunks += NarrationChunk(
                     id = synthesisId(activeGeneration, chunks.size),
                     text = chunkText,
+                    speak = entry.speak.ifBlank { SpeechSpokenText.normalize(chunkText) },
                     offset = chunkOffset,
                     generation = activeGeneration,
                     isFinal = false,
@@ -376,6 +377,7 @@ class NarrationService : MediaBrowserServiceCompat(), TextToSpeech.OnInitListene
                 NarrationChunk(
                     id = synthesisId(activeGeneration, index),
                     text = text,
+                    speak = SpeechSpokenText.normalize(text),
                     offset = chunkOffset,
                     generation = activeGeneration,
                     isFinal = index == chunkTexts.lastIndex,
@@ -407,7 +409,7 @@ class NarrationService : MediaBrowserServiceCompat(), TextToSpeech.OnInitListene
         val file = File(directory, "${chunk.id}.wav")
         audioFiles[index] = file
         synthesizingIndex = index
-        val result = engine.synthesizeToFile(chunk.text, Bundle(), file, chunk.id)
+        val result = engine.synthesizeToFile(chunk.speak, Bundle(), file, chunk.id)
         if (result == TextToSpeech.ERROR) {
             synthesizingIndex = -1
             audioFiles.remove(index)
@@ -433,7 +435,13 @@ class NarrationService : MediaBrowserServiceCompat(), TextToSpeech.OnInitListene
             if (text.isBlank()) continue
             val pause = chunk.optLong("pauseMs", SENTENCE_PAUSE_MILLIS)
             val start = chunk.optInt("start", -1)
-            chunks += IncomingNarrationChunk(text = text, pauseMillis = pause, start = start)
+            val spoken = chunk.optString("spoken").trim()
+            chunks += IncomingNarrationChunk(
+                text = text,
+                speak = spoken.ifBlank { SpeechSpokenText.normalize(text) },
+                pauseMillis = pause,
+                start = start,
+            )
         }
         return chunks
     }
@@ -966,6 +974,7 @@ class NarrationService : MediaBrowserServiceCompat(), TextToSpeech.OnInitListene
 private data class NarrationChunk(
     val id: String,
     val text: String,
+    val speak: String,
     val offset: Int,
     val pauseMillis: Long,
     val generation: Int,
@@ -974,6 +983,7 @@ private data class NarrationChunk(
 
 private data class IncomingNarrationChunk(
     val text: String,
+    val speak: String,
     val pauseMillis: Long,
     val start: Int,
 )

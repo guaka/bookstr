@@ -9,7 +9,7 @@ test('desktop speech planner keeps complete sentences and paragraph timing', () 
 
   assert.equal(plan.chunks[0].text, sentence);
   assert.equal(plan.chunks[0].pauseMs, 0);
-  assert.equal(plan.chunks[1].pauseMs, 400);
+  assert.equal(plan.chunks[1].pauseMs, BookstrSpeech.defaults.paragraphPauseMs);
   assert.equal(plan.text.slice(plan.chunks[1].start), 'Next paragraph.');
 });
 

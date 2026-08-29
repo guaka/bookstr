@@ -7,6 +7,50 @@ import XCTest
 
 @MainActor
 final class NeuralSpeechSessionTests: XCTestCase {
+    func testTrimTrailingSilenceKeepsSpokenTailAndDropsPadding() {
+        let spoken: [Float] = [0.4, -0.3, 0.02]
+        let padding = Array(repeating: Float(0.001), count: 48)
+        let trimmed = NeuralSpeechAudio.trimTrailingSilence(
+            spoken + padding,
+            sampleRate: 1_000,
+            threshold: 0.012,
+            keepMilliseconds: 5
+        )
+        XCTAssertEqual(trimmed, spoken + Array(repeating: Float(0.001), count: 5))
+        XCTAssertEqual(NeuralSpeechAudio.trimTrailingSilence([0.2], sampleRate: 24_000), [0.2])
+        XCTAssertEqual(NeuralSpeechAudio.trimTrailingSilence([0, 0, 0], sampleRate: 24_000), [0, 0, 0])
+        XCTAssertEqual(NeuralSpeechAudio.trimTrailingSilence([0.5, 0.4], sampleRate: 0), [0.5, 0.4])
+        XCTAssertEqual(
+            NeuralSpeechAudio.trimTrailingSilence([0.5, 0.001], sampleRate: 1_000, keepMilliseconds: 50),
+            [0.5, 0.001]
+        )
+        XCTAssertEqual(NeuralSpeechAudio.withLeadingPause([0.2], sampleRate: 1_000, pauseSeconds: 0), [0.2])
+        XCTAssertEqual(NeuralSpeechAudio.withLeadingPause([0.2], sampleRate: 0, pauseSeconds: 0.4), [0.2])
+        XCTAssertEqual(
+            NeuralSpeechAudio.withLeadingPause([0.2], sampleRate: 1_000, pauseSeconds: 0.0004),
+            [0.2]
+        )
+        XCTAssertEqual(
+            NeuralSpeechAudio.withLeadingPause([0.2], sampleRate: 1_000, pauseSeconds: 0.003),
+            [0, 0, 0, 0.2]
+        )
+    }
+
+    func testSynthesizesGroupedThousandsWithoutCommas() async {
+        let synthesizer = MockNeuralSynthesizer()
+        let player = MockNeuralPlayer()
+        let session = NeuralSpeechSession(synthesizer: synthesizer, player: player)
+        session.start(
+            chunks: [SpeechQueueChunk(text: "100,000", offset: 0, pauseSeconds: 0)],
+            engine: .kokoroEnglish,
+            speed: 1,
+            onPhrase: { _ in },
+            completion: { _ in }
+        )
+        XCTAssertEqual(synthesizer.texts, ["100000"])
+        session.stop()
+    }
+
     func testEmptyChunksFinishImmediately() async {
         let synthesizer = MockNeuralSynthesizer()
         let player = MockNeuralPlayer()
@@ -29,7 +73,7 @@ final class NeuralSpeechSessionTests: XCTestCase {
         let synthesizer = MockNeuralSynthesizer()
         let player = MockNeuralPlayer()
         let session = NeuralSpeechSession(synthesizer: synthesizer, player: player)
-        let first = SpeechQueueChunk(text: "One.", offset: 0, pauseSeconds: 0.4)
+        let first = SpeechQueueChunk(text: "One.", offset: 0, pauseSeconds: 0)
         let second = SpeechQueueChunk(text: "Two!", offset: 5, pauseSeconds: 0.4)
         var phrases: [SpeechQueueChunk] = []
         var finished = false
@@ -51,11 +95,13 @@ final class NeuralSpeechSessionTests: XCTestCase {
         XCTAssertEqual(phrases, [first])
         XCTAssertEqual(phrases[0].spokenEnd, 4)
         XCTAssertEqual(player.scheduledCount, 1)
+        XCTAssertTrue(session.isPlaying)
+        XCTAssertEqual(player.scheduledSampleCounts[0], 20)
         XCTAssertEqual(synthesizer.texts, ["One.", "Two!"], "the next phrase must start synthesizing before the current audio finishes")
-
         synthesizer.complete()
         await settle()
         XCTAssertEqual(player.scheduledCount, 2)
+        XCTAssertEqual(player.scheduledSampleCounts[1], 420)
         XCTAssertEqual(phrases, [first], "the highlight stays on the playing phrase until its audio ends")
 
         player.finishNext()
@@ -170,7 +216,7 @@ private final class MockNeuralSynthesizer: NeuralSpeechSynthesizing {
     }
 
     func complete() {
-        pending.removeFirst()(.success(([0.2, 0.1], 24_000)))
+        pending.removeFirst()(.success(([0.2, 0.1] + Array(repeating: Float(0.001), count: 80), 1_000)))
     }
 
     func fail(_ error: Error) {
@@ -180,6 +226,7 @@ private final class MockNeuralSynthesizer: NeuralSpeechSynthesizing {
 
 private final class MockNeuralPlayer: NeuralSpeechScheduling {
     private(set) var scheduledCount = 0
+    private(set) var scheduledSampleCounts: [Int] = []
     private(set) var pauseCount = 0
     private(set) var resumeCount = 0
     private var completions: [() -> Void] = []
@@ -188,6 +235,7 @@ private final class MockNeuralPlayer: NeuralSpeechScheduling {
 
     func reset() {
         scheduledCount = 0
+        scheduledSampleCounts.removeAll()
         completions.removeAll()
     }
 
@@ -202,6 +250,7 @@ private final class MockNeuralPlayer: NeuralSpeechScheduling {
     ) throws {
         if let scheduleError { throw scheduleError }
         scheduledCount += 1
+        scheduledSampleCounts.append(samples.count)
         completions.append(completion)
     }
 

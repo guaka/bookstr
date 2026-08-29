@@ -192,6 +192,18 @@ struct ReaderHostView: View {
         .onChange(of: container.settingsRepository.theme) { _, theme in
             epubController.apply(theme: theme)
         }
+        .onChange(of: container.settingsRepository.readerFont) { _, _ in
+            epubController.applyTypography(
+                font: container.settingsRepository.readerFont,
+                alignment: container.settingsRepository.readerAlignment
+            )
+        }
+        .onChange(of: container.settingsRepository.readerAlignment) { _, _ in
+            epubController.applyTypography(
+                font: container.settingsRepository.readerFont,
+                alignment: container.settingsRepository.readerAlignment
+            )
+        }
     }
 
     @ViewBuilder
@@ -999,7 +1011,7 @@ struct FB2ReaderView: View {
                                     }
                                     ForEach(section.paragraphs) { paragraph in
                                         Text(paragraph.text)
-                                            .font(.body)
+                                            .font(container.settingsRepository.readerFont.readingFont)
                                             .textSelection(.enabled)
                                             .onAppear {
                                                 let locator = controller.update(
@@ -1032,5 +1044,16 @@ struct FB2ReaderView: View {
         }
         .task { await controller.load(fileURL: fileURL, initialLocator: initialLocator) }
         .onDisappear { controller.requestedSectionID = nil }
+    }
+}
+
+private extension ReaderFont {
+    var readingFont: Font {
+        switch self {
+        case .arial: .custom("Arial", size: 17, relativeTo: .body)
+        case .georgia: .custom("Georgia", size: 17, relativeTo: .body)
+        case .palatino: .custom("Palatino", size: 17, relativeTo: .body)
+        case .system: .body
+        }
     }
 }

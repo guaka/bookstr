@@ -469,6 +469,9 @@ test('EPUB reader exposes read-aloud controls and speech helpers', () => {
   assert.match(readerHtml, /function setReaderSpeechState\(state\)/);
   assert.match(readerHtml, /function hasSpeechSupport\(\)/);
   assert.match(readerHtml, /function collectReaderSpeechPlan\(\)/);
+  assert.match(readerHtml, /window\.BookstrSpeech\.visibleText\(element\)/);
+  assert.match(readerHtml, /window\.setReaderTypography/);
+  assert.match(readerHtml, /Arial, Helvetica, sans-serif/);
   assert.match(readerHtml, /window\.BookstrSpeech\.buildPlan\(paragraphs\)/);
   assert.match(readerHtml, /desktopBridge &&/);
   assert.match(readerHtml, /function stopReaderSpeech\(\)/);

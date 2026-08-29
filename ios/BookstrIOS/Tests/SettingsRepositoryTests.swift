@@ -34,6 +34,26 @@ final class SettingsRepositoryTests: XCTestCase {
         defaults.removePersistentDomain(forName: suite)
     }
 
+    func testReaderTypographyDefaultsToArialAndJustified() {
+        let suite = "bookstr-type-\(UUID().uuidString)"
+        guard let defaults = UserDefaults(suiteName: suite) else {
+            XCTFail("Could not create isolated UserDefaults")
+            return
+        }
+        defaults.removePersistentDomain(forName: suite)
+        let first = SettingsRepository(defaults: defaults)
+        XCTAssertEqual(first.readerFont, .arial)
+        XCTAssertEqual(first.readerAlignment, .justified)
+        first.readerFont = .georgia
+        first.readerAlignment = .left
+        let second = SettingsRepository(defaults: defaults)
+        XCTAssertEqual(second.readerFont, .georgia)
+        XCTAssertEqual(second.readerAlignment, .left)
+        XCTAssertEqual(ReaderFont(rawValue: "unknown") ?? .arial, .arial)
+        XCTAssertEqual(ReaderAlignment(rawValue: "unknown") ?? .justified, .justified)
+        defaults.removePersistentDomain(forName: suite)
+    }
+
     func testFavoritesCacheStoresEventId() {
         let suite = "bookstr-fav-cache-\(UUID().uuidString)"
         guard let defaults = UserDefaults(suiteName: suite) else {

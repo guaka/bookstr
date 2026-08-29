@@ -50,6 +50,8 @@ import androidx.compose.ui.unit.dp
 import app.bookstr.BuildConfig
 import app.bookstr.R
 import app.bookstr.data.NostrAuthMode
+import app.bookstr.data.ReaderAlignment
+import app.bookstr.data.ReaderFont
 import app.bookstr.data.ReaderTheme
 import app.bookstr.data.DictionaryPack
 
@@ -63,6 +65,8 @@ fun SettingsScreen(
     showNsec: Boolean,
     relays: String,
     theme: ReaderTheme,
+    readerFont: ReaderFont,
+    readerAlignment: ReaderAlignment,
     keepOnLockScreen: Boolean,
     syncing: Boolean,
     connectingAmber: Boolean,
@@ -80,6 +84,8 @@ fun SettingsScreen(
     onNsecChange: (String) -> Unit,
     onRelaysChange: (String) -> Unit,
     onThemeChange: (ReaderTheme) -> Unit,
+    onReaderFontChange: (ReaderFont) -> Unit,
+    onReaderAlignmentChange: (ReaderAlignment) -> Unit,
     onKeepOnLockScreenChange: (Boolean) -> Unit,
     onInstallDictionaryPack: (DictionaryPack) -> Unit,
     onRemoveDictionaryPack: (DictionaryPack) -> Unit,
@@ -115,6 +121,30 @@ fun SettingsScreen(
                             selected = theme == option,
                             onClick = { onThemeChange(option) },
                             label = { Text(option.key.replaceFirstChar { it.uppercase() }) },
+                        )
+                    }
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    ReaderFont.entries.forEach { option ->
+                        FilterChip(
+                            selected = readerFont == option,
+                            onClick = { onReaderFontChange(option) },
+                            label = { Text(option.label) },
+                        )
+                    }
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    ReaderAlignment.entries.forEach { option ->
+                        FilterChip(
+                            selected = readerAlignment == option,
+                            onClick = { onReaderAlignmentChange(option) },
+                            label = { Text(option.label) },
                         )
                     }
                 }

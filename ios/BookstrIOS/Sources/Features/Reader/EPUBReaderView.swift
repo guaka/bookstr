@@ -34,19 +34,52 @@ enum NativeSpeechFallback {
                     let window = source.substring(with: NSRange(location: cursor, length: length)) as NSString
                     let softLength = min(180, length)
                     let preferredStart = Int(Double(softLength) * 0.55)
-                    let beforeSoft = window.range(
-                        of: " ",
-                        options: .backwards,
-                        range: NSRange(location: preferredStart, length: softLength - preferredStart)
-                    )
-                    if beforeSoft.location != NSNotFound {
-                        length = beforeSoft.location
-                    } else if softLength < window.length {
-                        let afterSoft = window.range(
+                    func phraseBreak(from startIndex: Int, to endIndex: Int, step: Int) -> Int? {
+                        var index = startIndex
+                        while (step < 0 && index >= endIndex) || (step > 0 && index < endIndex) {
+                            let character = window.character(at: index)
+                            if index + 1 < window.length, character == 0x2D, window.character(at: index + 1) == 0x2D {
+                                return index + 2
+                            }
+                            if character == 0x2014 || character == 0x2013 || character == 0x29 {
+                                return index + 1
+                            }
+                            if character == 0x2C || character == 0x3B || character == 0x3A {
+                                if character == 0x2C,
+                                   index > 0,
+                                   (48...57).contains(window.character(at: index - 1)),
+                                   index + 3 < window.length,
+                                   (1...3).allSatisfy({ (48...57).contains(window.character(at: index + $0)) }) {
+                                    index += step
+                                    continue
+                                }
+                                let next = index + 1
+                                if next >= window.length || window.character(at: next) == 32 {
+                                    return next
+                                }
+                            }
+                            index += step
+                        }
+                        return nil
+                    }
+                    if let breakAt = phraseBreak(from: softLength - 1, to: preferredStart, step: -1)
+                        ?? phraseBreak(from: softLength, to: window.length, step: 1) {
+                        length = breakAt
+                    } else {
+                        let beforeSoft = window.range(
                             of: " ",
-                            range: NSRange(location: softLength, length: window.length - softLength)
+                            options: .backwards,
+                            range: NSRange(location: preferredStart, length: max(0, softLength - preferredStart))
                         )
-                        if afterSoft.location != NSNotFound { length = afterSoft.location }
+                        if beforeSoft.location != NSNotFound {
+                            length = beforeSoft.location
+                        } else if softLength < window.length {
+                            let afterSoft = window.range(
+                                of: " ",
+                                range: NSRange(location: softLength, length: window.length - softLength)
+                            )
+                            if afterSoft.location != NSNotFound { length = afterSoft.location }
+                        }
                     }
                 }
                 let raw = source.substring(with: NSRange(location: cursor, length: length))
@@ -134,6 +167,8 @@ final class EPUBReaderController: NSObject, ObservableObject, AVSpeechSynthesize
     private let speech = AVSpeechSynthesizer()
     private let neuralSpeech = NeuralSpeechPlayback()
     private var utteranceOffsets: [ObjectIdentifier: Int] = [:]
+    private var utteranceHighlightLengths: [ObjectIdentifier: Int] = [:]
+    private var utteranceMapsSpokenRanges: [ObjectIdentifier: Bool] = [:]
     private var playbackQueue = SpeechPlaybackQueue()
     private var activeUtterance: ObjectIdentifier?
     private var activeSpeechEngine = SpeechEngineID.system
@@ -187,6 +222,12 @@ final class EPUBReaderController: NSObject, ObservableObject, AVSpeechSynthesize
         evaluate("window.setReaderTheme && window.setReaderTheme(\(Self.js(theme.rawValue)))")
     }
 
+    func applyTypography(font: ReaderFont, alignment: ReaderAlignment) {
+        evaluate(
+            "window.setReaderTypography && window.setReaderTypography(\(Self.js(font.rawValue)), \(Self.js(alignment.rawValue)))"
+        )
+    }
+
     func toggleSpeech() {
         if isSpeaking || speech.isSpeaking || speech.isPaused || neuralSpeech.isPlaying || playbackQueue.hasPendingRequest {
             stopSpeech()
@@ -202,13 +243,13 @@ final class EPUBReaderController: NSObject, ObservableObject, AVSpeechSynthesize
     fileprivate func speak(
         text: String,
         playback: SpeechPlaybackChoice,
-        chunks: [(text: String, offset: Int, pauseSeconds: Double)]? = nil,
+        chunks: [(text: String, offset: Int, pauseSeconds: Double, speak: String)]? = nil,
         requestID: String? = nil
     ) {
         let preparedChunks = (chunks?.isEmpty == false ? chunks! : speechChunks(text).map {
-            (text: $0.text, offset: $0.offset, pauseSeconds: 0.035)
+            (text: $0.text, offset: $0.offset, pauseSeconds: 0.035, speak: SpeechSpokenText.normalize($0.text))
         }).map {
-            SpeechQueueChunk(text: $0.text, offset: $0.offset, pauseSeconds: $0.pauseSeconds)
+            SpeechQueueChunk(text: $0.text, offset: $0.offset, pauseSeconds: $0.pauseSeconds, speak: $0.speak)
         }
         guard playbackQueue.accept(requestID: requestID, chunks: preparedChunks) else { return }
         guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
@@ -233,6 +274,8 @@ final class EPUBReaderController: NSObject, ObservableObject, AVSpeechSynthesize
         neuralSpeech.stop()
         neuralChunkOffset = nil
         utteranceOffsets.removeAll()
+        utteranceHighlightLengths.removeAll()
+        utteranceMapsSpokenRanges.removeAll()
         activeUtterance = nil
         isSpeaking = true
         updateNowPlaying(isPlaying: true)
@@ -283,7 +326,7 @@ final class EPUBReaderController: NSObject, ObservableObject, AVSpeechSynthesize
             return
         }
         guard let chunk = playbackQueue.next() else { return }
-        let utterance = AVSpeechUtterance(string: chunk.text)
+        let utterance = AVSpeechUtterance(string: chunk.speak)
         utterance.voice = voice
         utterance.rate = Float(min(max(rate, 0.35), 0.60))
         utterance.volume = 1
@@ -291,12 +334,19 @@ final class EPUBReaderController: NSObject, ObservableObject, AVSpeechSynthesize
         let identifier = ObjectIdentifier(utterance)
         activeUtterance = identifier
         utteranceOffsets[identifier] = chunk.offset
+        utteranceHighlightLengths[identifier] = (chunk.text as NSString).length
+        utteranceMapsSpokenRanges[identifier] = chunk.speak == chunk.text
         speech.speak(utterance)
     }
 
     nonisolated func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, willSpeakRangeOfSpeechString characterRange: NSRange, utterance: AVSpeechUtterance) {
         Task { @MainActor in
             guard let offset = utteranceOffsets[ObjectIdentifier(utterance)] else { return }
+            if utteranceMapsSpokenRanges[ObjectIdentifier(utterance)] == false,
+               let length = utteranceHighlightLengths[ObjectIdentifier(utterance)] {
+                updateSpeechProgress(start: offset, end: offset + max(1, length))
+                return
+            }
             updateSpeechProgress(start: offset + characterRange.location, end: offset + NSMaxRange(characterRange))
         }
     }
@@ -318,6 +368,8 @@ final class EPUBReaderController: NSObject, ObservableObject, AVSpeechSynthesize
         guard activeUtterance == identifier else { return }
         activeUtterance = nil
         utteranceOffsets.removeValue(forKey: identifier)
+        utteranceHighlightLengths.removeValue(forKey: identifier)
+        utteranceMapsSpokenRanges.removeValue(forKey: identifier)
         if !playbackQueue.isEmpty {
             speakNextUtterance(voice: utterance.voice, rate: Double(utterance.rate))
             return
@@ -336,6 +388,8 @@ final class EPUBReaderController: NSObject, ObservableObject, AVSpeechSynthesize
         playbackQueue.cancel()
         activeUtterance = nil
         utteranceOffsets.removeAll()
+        utteranceHighlightLengths.removeAll()
+        utteranceMapsSpokenRanges.removeAll()
         neuralChunkOffset = nil
         neuralSpeech.stop()
         speech.stopSpeaking(at: .immediate)
@@ -369,10 +423,10 @@ final class EPUBReaderController: NSObject, ObservableObject, AVSpeechSynthesize
         NativeSpeechFallback.chunks(text, maximumLength: maximumLength)
     }
 
-    fileprivate func parseSpeechChunks(_ value: Any?) -> [(text: String, offset: Int, pauseSeconds: Double)] {
+    fileprivate func parseSpeechChunks(_ value: Any?) -> [(text: String, offset: Int, pauseSeconds: Double, speak: String)] {
         let chunks = (value as? [[String: Any]]) ?? (value as? [Any] ?? [])
             .compactMap { $0 as? [String: Any] }
-        var parsed: [(text: String, offset: Int, pauseSeconds: Double)] = []
+        var parsed: [(text: String, offset: Int, pauseSeconds: Double, speak: String)] = []
         for chunk in chunks {
             guard let text = chunk["text"] as? String else { continue }
             let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -390,7 +444,13 @@ final class EPUBReaderController: NSObject, ObservableObject, AVSpeechSynthesize
                 ?? (chunk["offset"] as? Int)
                 ?? (chunk["start"] as? Int)
                 ?? 0
-            parsed.append((text: trimmed, offset: max(0, offset), pauseSeconds: pauseSeconds))
+            let spoken = (chunk["spoken"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            parsed.append((
+                text: trimmed,
+                offset: max(0, offset),
+                pauseSeconds: pauseSeconds,
+                speak: spoken.isEmpty ? SpeechSpokenText.normalize(trimmed) : spoken
+            ))
         }
         if !parsed.isEmpty {
             return parsed
@@ -460,6 +520,8 @@ final class EPUBReaderController: NSObject, ObservableObject, AVSpeechSynthesize
         playbackQueue.cancel()
         activeUtterance = nil
         utteranceOffsets.removeAll()
+        utteranceHighlightLengths.removeAll()
+        utteranceMapsSpokenRanges.removeAll()
         neuralChunkOffset = nil
         neuralSpeech.stop()
         speech.stopSpeaking(at: .immediate)
@@ -726,6 +788,8 @@ struct EPUBReaderView: UIViewRepresentable {
             let cfi = requestedCFI.isEmpty ? "null" : EPUBReaderController.js(requestedCFI)
             let highlight = highlightCFI?.isEmpty == false ? EPUBReaderController.js(highlightCFI!) : "null"
             let theme = EPUBReaderController.js(container.settingsRepository.theme.rawValue)
+            let font = EPUBReaderController.js(container.settingsRepository.readerFont.rawValue)
+            let alignment = EPUBReaderController.js(container.settingsRepository.readerAlignment.rawValue)
             let bookID = EPUBReaderController.js(book.id)
             guard let publicationData = try? Data(contentsOf: fileURL, options: .mappedIfSafe),
                   !publicationData.isEmpty else {
@@ -737,7 +801,7 @@ struct EPUBReaderView: UIViewRepresentable {
             let knownData = (try? JSONSerialization.data(withJSONObject: knownWords)) ?? Data("[]".utf8)
             let knownJSON = String(data: knownData, encoding: .utf8) ?? "[]"
             let knownArgument = EPUBReaderController.js(knownJSON)
-            let loadScript = "setReaderTheme(\(theme)); setKnownWords(\(knownArgument)); " +
+            let loadScript = "setReaderTheme(\(theme)); setReaderTypography(\(font), \(alignment)); setKnownWords(\(knownArgument)); " +
                 "loadBook(\(publication), \(cfi), \(theme), \(highlight), \(bookID)); null;"
             webView.evaluateJavaScript(
                 "[typeof window.loadBook, typeof window.ePub, typeof window.JSZip, " +

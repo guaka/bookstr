@@ -100,6 +100,7 @@
   <script src="jszip.min.js"></script>
   <script src="epub.min.js"></script>
   <script src="reader-speech.js"></script>
+  <script src="reader-typography.js"></script>
 </head>
 <body>
   <div id="viewer"></div>
@@ -147,11 +148,37 @@
       if (rendition) {
         rendition.themes.select(theme === "night" ? "night" : (theme === "white" ? "white" : "paper"));
       }
+      applyTypography();
+    }
+
+    let readerFontFamily = "arial";
+    let readerAlignment = "justified";
+
+    function typographyCSS() {
+      return window.BookstrTypography.css(readerFontFamily, readerAlignment);
+    }
+
+    function applyTypographyToDocument(contentDocument) {
+      if (!contentDocument) return;
+      let style = contentDocument.getElementById("bookstr-typography");
+      if (!style) {
+        style = contentDocument.createElement("style");
+        style.id = "bookstr-typography";
+        (contentDocument.head || contentDocument.documentElement).appendChild(style);
+      }
+      style.textContent = typographyCSS();
+    }
+
+    function applyTypography() {
+      if (!rendition || typeof rendition.getContents !== "function") return;
+      rendition.getContents().forEach(function(contents) {
+        applyTypographyToDocument(contents && contents.document);
+      });
     }
 
     function registerThemes() {
       const shared = {
-        "font-family": "Georgia, 'Times New Roman', serif !important",
+        "font-family": "Arial, Helvetica, sans-serif !important",
         "line-height": "1.6 !important",
         "box-sizing": "border-box",
         "width": "100% !important",
@@ -234,6 +261,7 @@
             installReaderContextMenu(contentDocument);
             installKnownWordNavigation(contentDocument);
             highlightKnownWords(contentDocument);
+            applyTypographyToDocument(contentDocument);
           }
         });
         rendition.on("selected", function(cfi, contents) {
@@ -1167,7 +1195,9 @@
         if (!blocks.length && contentDocument.body) blocks = [contentDocument.body];
         blocks.forEach(function(block) {
           if (totalLength >= 100000) return;
-          const rawText = String(block.innerText || block.textContent || "");
+          const rawText = window.BookstrSpeech && window.BookstrSpeech.visibleText
+            ? window.BookstrSpeech.visibleText(block)
+            : String(block.innerText || block.textContent || "");
           const text = window.BookstrSpeech
             ? window.BookstrSpeech.normalizeText(rawText)
             : rawText.replace(/\s+/g, " ").trim();
@@ -1216,7 +1246,9 @@
       let node;
       while ((node = walker.nextNode())) {
         const parent = node.parentElement;
-        if (parent && parent.closest("script, style, noscript")) continue;
+        if (parent && (window.BookstrSpeech && window.BookstrSpeech.isSilentSpeechParent
+            ? window.BookstrSpeech.isSilentSpeechParent(parent)
+            : parent.closest("script, style, noscript"))) continue;
         const raw = node.nodeValue || "";
         for (let index = 0; index < raw.length; index += 1) {
           if (/\s/.test(raw[index])) {
@@ -1447,6 +1479,12 @@
 
     window.setReaderTheme = function(theme) {
       applyTheme(theme);
+    };
+
+    window.setReaderTypography = function(font, alignment) {
+      readerFontFamily = window.BookstrTypography.normalizeFont(font);
+      readerAlignment = window.BookstrTypography.normalizeAlignment(alignment);
+      applyTypography();
     };
 
   </script>

@@ -1,5 +1,32 @@
 import Foundation
 
+enum NeuralSpeechAudio {
+    static func trimTrailingSilence(
+        _ samples: [Float],
+        sampleRate: Double,
+        threshold: Float = 0.012,
+        keepMilliseconds: Double = 18
+    ) -> [Float] {
+        guard samples.count > 1, sampleRate > 0 else { return samples }
+        var last = samples.count - 1
+        while last >= 0, abs(samples[last]) < threshold {
+            last -= 1
+        }
+        guard last >= 0 else { return samples }
+        let keep = max(0, Int((keepMilliseconds / 1000.0) * sampleRate))
+        let end = min(samples.count, last + 1 + keep)
+        if end >= samples.count { return samples }
+        return Array(samples[..<end])
+    }
+
+    static func withLeadingPause(_ samples: [Float], sampleRate: Double, pauseSeconds: Double) -> [Float] {
+        guard pauseSeconds > 0, sampleRate > 0 else { return samples }
+        let count = Int((pauseSeconds * sampleRate).rounded(.down))
+        guard count > 0 else { return samples }
+        return Array(repeating: 0, count: count) + samples
+    }
+}
+
 protocol NeuralSpeechSynthesizing: AnyObject {
     func synthesize(
         text: String,
@@ -92,7 +119,7 @@ final class NeuralSpeechSession {
         let index = nextRender
         let active = generation
         let chunk = chunks[index]
-        synthesizer.synthesize(text: chunk.text, engine: engine, speed: speed) { [weak self] result in
+        synthesizer.synthesize(text: chunk.speak, engine: engine, speed: speed) { [weak self] result in
             Task { @MainActor in
                 guard let self, self.generation == active else { return }
                 self.synthesizing = false
@@ -121,7 +148,16 @@ final class NeuralSpeechSession {
             }
             let active = generation
             do {
-                try player.schedule(samples: audio.samples, sampleRate: audio.sampleRate) { [weak self] in
+                let voiced = NeuralSpeechAudio.trimTrailingSilence(
+                    audio.samples,
+                    sampleRate: audio.sampleRate
+                )
+                let samples = NeuralSpeechAudio.withLeadingPause(
+                    voiced,
+                    sampleRate: audio.sampleRate,
+                    pauseSeconds: chunks[index].pauseSeconds
+                )
+                try player.schedule(samples: samples, sampleRate: audio.sampleRate) { [weak self] in
                     Task { @MainActor in
                         guard let self, self.generation == active else { return }
                         self.queuedOnPlayer -= 1

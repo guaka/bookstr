@@ -34,6 +34,18 @@ struct SettingsView: View {
                         Text(item.rawValue.capitalized).tag(item)
                     }
                 }
+                Picker("Font", selection: $settings.readerFont) {
+                    ForEach(ReaderFont.allCases, id: \.self) { item in
+                        Text(item.label).tag(item)
+                    }
+                }
+                .accessibilityIdentifier("reader-font")
+                Picker("Alignment", selection: $settings.readerAlignment) {
+                    ForEach(ReaderAlignment.allCases, id: \.self) { item in
+                        Text(item.label).tag(item)
+                    }
+                }
+                .accessibilityIdentifier("reader-alignment")
                 Picker("English", selection: englishVoice) {
                     Text("System default").tag(SpeechVoiceID.systemDefault)
                     ForEach(SpeechVoiceID.speakers(for: "en"), id: \.id) { speaker in

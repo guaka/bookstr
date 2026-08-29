@@ -8,6 +8,8 @@ final class SettingsRepository: ObservableObject {
     private enum Keys {
         static let relays = "relays"
         static let theme = "theme"
+        static let readerFont = "reader_font"
+        static let readerAlignment = "reader_alignment"
         static let authMode = "auth_mode"
         static let pubkey = "pubkey_hex"
         static let signerPackage = "signer_package"
@@ -34,6 +36,14 @@ final class SettingsRepository: ObservableObject {
 
     @Published var theme: ReaderTheme {
         didSet { defaults.set(theme.rawValue, forKey: Keys.theme) }
+    }
+
+    @Published var readerFont: ReaderFont {
+        didSet { defaults.set(readerFont.rawValue, forKey: Keys.readerFont) }
+    }
+
+    @Published var readerAlignment: ReaderAlignment {
+        didSet { defaults.set(readerAlignment.rawValue, forKey: Keys.readerAlignment) }
     }
 
     @Published var speechVoiceIdentifier: String {
@@ -73,6 +83,8 @@ final class SettingsRepository: ObservableObject {
         self.defaults = defaults
         self.keychain = keychain
         self.theme = ReaderTheme(rawValue: defaults.string(forKey: Keys.theme) ?? "") ?? .paper
+        self.readerFont = ReaderFont(rawValue: defaults.string(forKey: Keys.readerFont) ?? "") ?? .arial
+        self.readerAlignment = ReaderAlignment(rawValue: defaults.string(forKey: Keys.readerAlignment) ?? "") ?? .justified
         self.speechVoiceIdentifier = defaults.string(forKey: Keys.speechVoice) ?? ""
         self.speechLanguageSettings = SpeechLanguageSettings.migrateLegacyEngine(
             defaults.string(forKey: Keys.speechEngine),

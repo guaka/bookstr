@@ -30,6 +30,24 @@ final class ReaderAssetContractTests: XCTestCase {
         XCTAssertTrue(queue.isEmpty)
         XCTAssertEqual(chunks[0].spokenEnd, 6)
         XCTAssertEqual(SpeechQueueChunk(text: "", offset: 12, pauseSeconds: 0).spokenEnd, 13)
+        XCTAssertEqual(SpeechSpokenText.normalize("100,000"), "100000")
+        XCTAssertEqual(SpeechSpokenText.normalize("There were 1,000,000.5 people."), "There were 1000000.5 people.")
+        XCTAssertEqual(SpeechSpokenText.normalize("Wait, then go."), "Wait, then go.")
+        XCTAssertEqual(SpeechSpokenText.normalize("100\u{00A0}000"), "100000")
+        XCTAssertEqual(SpeechSpokenText.normalize("He left[1] at dawn."), "He left at dawn.")
+        XCTAssertEqual(SpeechSpokenText.normalize("He left\u{00B9} at dawn."), "He left at dawn.")
+        XCTAssertEqual(SpeechSpokenText.normalize("See chapter 12."), "See chapter 12.")
+        XCTAssertEqual(SpeechSpokenText.normalize("word(1) next"), "word next")
+        XCTAssertEqual(SpeechSpokenText.normalize("(1) First item"), "(1) First item")
+        XCTAssertEqual(SpeechQueueChunk(text: "He left[1].", offset: 0, pauseSeconds: 0).speak, "He left.")
+        XCTAssertEqual(
+            SpeechQueueChunk(text: "100,000", offset: 0, pauseSeconds: 0, speak: "one hundred thousand").speak,
+            "one hundred thousand"
+        )
+        XCTAssertEqual(
+            SpeechQueueChunk(text: "100,000", offset: 0, pauseSeconds: 0, speak: "   ").speak,
+            "100000"
+        )
     }
 
 #if !SWIFT_PACKAGE
@@ -95,7 +113,7 @@ final class ReaderAssetContractTests: XCTestCase {
         XCTAssertEqual(chunks[0]["text"] as? String, sentence)
         XCTAssertEqual((chunks[0]["pauseMs"] as? NSNumber)?.intValue, 0)
         XCTAssertEqual(chunks[1]["text"] as? String, "Second paragraph.")
-        XCTAssertEqual((chunks[1]["pauseMs"] as? NSNumber)?.intValue, 400)
+        XCTAssertEqual((chunks[1]["pauseMs"] as? NSNumber)?.intValue, 750)
         XCTAssertTrue(html.contains("<script src=\"reader-speech.js\"></script>"))
         XCTAssertEqual(html.components(separatedBy: "<script src=\"reader-speech.js\"></script>").count - 1, 1)
         XCTAssertTrue(html.contains("window.BookstrSpeech.buildPlan(parts)"))
@@ -149,6 +167,11 @@ final class ReaderAssetContractTests: XCTestCase {
 
         let unbroken = String(repeating: "z", count: 51)
         XCTAssertEqual(NativeSpeechFallback.chunks(unbroken, maximumLength: 20).map(\.text).joined(), unbroken)
+
+        let clause = String(repeating: "before ", count: 22) + "break, " + String(repeating: "after ", count: 22) + "end."
+        let clauseChunks = NativeSpeechFallback.chunks(clause)
+        XCTAssertGreaterThan(clauseChunks.count, 1)
+        XCTAssertTrue(clauseChunks.contains { $0.text.hasSuffix(",") || $0.text.contains("break,") })
     }
 #endif
 
@@ -194,7 +217,10 @@ final class ReaderAssetContractTests: XCTestCase {
     func testSpeechBridgeCarriesRequestIdentityBackToNativeCode() throws {
         let html = try bundledReaderHTML()
 
-        XCTAssertTrue(html.contains("window.requestSpeechText = function(notifyNative, requestID)"))
+        XCTAssertTrue(html.contains("window.BookstrSpeech.visibleText(block)"))
+        XCTAssertTrue(html.contains("window.setReaderTypography"))
+        XCTAssertTrue(html.contains("Arial, Helvetica, sans-serif"))
+        XCTAssertTrue(html.contains("isSilentSpeechParent"))
         XCTAssertTrue(html.contains("requestID: requestID || null"))
     }
 

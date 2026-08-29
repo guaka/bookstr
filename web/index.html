@@ -1723,12 +1723,28 @@
           </div>
           <div class="settings-section settings-appearance">
             <label class="setting-option theme-option">
-              <span class="setting-copy"><strong>Appearance</strong><small>Choose the light you want to read in.</small></span>
+              <span class="setting-copy"><strong>Appearance</strong></span>
             <select id="theme-mode">
               <option value="white">White</option>
               <option value="paper">Paper</option>
               <option value="dark">Night</option>
             </select>
+            </label>
+            <label class="setting-option theme-option">
+              <span class="setting-copy"><strong>Font</strong></span>
+              <select id="reader-font">
+                <option value="arial">Arial</option>
+                <option value="georgia">Georgia</option>
+                <option value="palatino">Palatino</option>
+                <option value="system">System</option>
+              </select>
+            </label>
+            <label class="setting-option theme-option">
+              <span class="setting-copy"><strong>Alignment</strong></span>
+              <select id="reader-alignment">
+                <option value="justified">Justified</option>
+                <option value="left">Left</option>
+              </select>
             </label>
           </div>
           <div class="settings-section settings-nostr">
@@ -1976,6 +1992,8 @@
       const desktopSignerDisconnect = document.getElementById('desktop-signer-disconnect');
       const desktopSignerStatus = document.getElementById('desktop-signer-status');
       const themeModeInput = document.getElementById('theme-mode');
+      const readerFontInput = document.getElementById('reader-font');
+      const readerAlignmentInput = document.getElementById('reader-alignment');
       const npubButton = document.getElementById('npub-button');
       const npubDisplay = document.getElementById('npub-display');
       const nip7Status = document.getElementById('nip7-status');
@@ -1998,6 +2016,8 @@
           autoReading: true,
           useNip7: true,
           theme: 'white',
+          readerFont: 'arial',
+          readerAlignment: 'justified',
           opdsFeeds: []
         },
         nip7: {
@@ -5862,6 +5882,8 @@
             readUrl: readPath || '',
             cfi: String(initialCfi || ''),
             theme: state.settings.theme === 'dark' ? 'night' : state.settings.theme,
+            font: normalizeReaderFont(state.settings.readerFont),
+            alignment: normalizeReaderAlignment(state.settings.readerAlignment),
             book: {
               md5: String(book?.md5 || '').trim().toLowerCase(),
               title: book?.title || 'Book',
@@ -5899,6 +5921,7 @@
         const readerLoad = await readerFrameLoader('epub', openGeneration);
         if (!readerLoad) return;
         await readerLoad(base64, book.cfi || '', theme, book.md5 || BookMetadata.bookIdentity(book));
+        applyOpenReaderTypography();
         if (openGeneration === readerOpenGeneration) status.textContent = `Opened ${book.title || 'book'}.`;
       }
 
@@ -5909,6 +5932,7 @@
         const readerLoad = await readerFrameLoader('fb2', openGeneration);
         if (!readerLoad) return;
         await readerLoad(base64, book.cfi || '', state.settings.theme === 'dark' ? 'night' : state.settings.theme, book.md5 || BookMetadata.bookIdentity(book));
+        applyOpenReaderTypography();
         if (openGeneration === readerOpenGeneration) status.textContent = `Opened ${book.title || 'book'}.`;
       }
 
@@ -6529,7 +6553,7 @@
         const favorites = safeJSONRead(localStorage.getItem(FAVORITES_KEY), []);
         const reading = safeJSONRead(localStorage.getItem(READING_KEY), []);
         const words = safeJSONRead(localStorage.getItem(WORDS_KEY), []);
-        const settings = safeJSONRead(localStorage.getItem(SETTINGS_KEY), { autoReading: true, useNip7: true, theme: 'white', opdsFeeds: [] });
+        const settings = safeJSONRead(localStorage.getItem(SETTINGS_KEY), { autoReading: true, useNip7: true, theme: 'white', readerFont: 'arial', readerAlignment: 'justified', opdsFeeds: [] });
         const nip7 = safeJSONRead(localStorage.getItem(NIP7_STATUS_KEY), { pubkey: '', npub: '', ts: 0 });
         const hasFreshNip7Status = Date.now() - Number(nip7.ts || 0) < NIP7_CACHE_TTL_MS;
 
@@ -6565,6 +6589,8 @@
           if (typeof settings.theme === 'string') {
             state.settings.theme = settings.theme;
           }
+          state.settings.readerFont = normalizeReaderFont(settings.readerFont);
+          state.settings.readerAlignment = normalizeReaderAlignment(settings.readerAlignment);
           state.settings.opdsFeeds = normalizePublicOPDSFeedSettings(settings.opdsFeeds);
         }
         if (nip7 && typeof nip7.pubkey === 'string') {
@@ -6577,6 +6603,8 @@
         autoReadingInput.checked = Boolean(state.settings.autoReading);
         nip7EnabledInput.checked = Boolean(state.settings.useNip7);
         themeModeInput.value = ['white', 'paper', 'dark'].includes(state.settings.theme) ? state.settings.theme : 'white';
+        readerFontInput.value = state.settings.readerFont;
+        readerAlignmentInput.value = state.settings.readerAlignment;
         opdsFeedsInput.value = opdsFeedInputValue();
         applyTheme(themeModeInput.value);
         renderFavorites();
@@ -6840,8 +6868,11 @@
         state.settings.autoReading = autoReadingInput.checked;
         state.settings.useNip7 = nip7EnabledInput.checked;
         state.settings.theme = themeModeInput.value;
+        state.settings.readerFont = normalizeReaderFont(readerFontInput.value);
+        state.settings.readerAlignment = normalizeReaderAlignment(readerAlignmentInput.value);
         saveOPDSFeedSettingsFromUI();
         applyTheme(state.settings.theme);
+        applyOpenReaderTypography();
         localStorage.setItem(SETTINGS_KEY, JSON.stringify(state.settings));
         if (previousOPDSFeeds !== JSON.stringify(state.settings.opdsFeeds)) {
           renderSearchSources();
@@ -7021,6 +7052,8 @@
       });
       desktopSignerDisconnect.addEventListener('click', () => void disconnectDesktopNostrSigner());
       themeModeInput.addEventListener('change', applySettingsFromUI);
+      readerFontInput.addEventListener('change', applySettingsFromUI);
+      readerAlignmentInput.addEventListener('change', applySettingsFromUI);
       opdsFeedsInput.addEventListener('change', applySettingsFromUI);
 
       searchForm.addEventListener('submit', (event) => {

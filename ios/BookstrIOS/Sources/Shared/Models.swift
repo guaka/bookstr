@@ -236,6 +236,29 @@ enum ReaderTheme: String, Codable, CaseIterable {
     case night
 }
 
+enum ReaderFont: String, Codable, CaseIterable {
+    case arial
+    case georgia
+    case palatino
+    case system
+
+    var label: String {
+        switch self {
+        case .arial: "Arial"
+        case .georgia: "Georgia"
+        case .palatino: "Palatino"
+        case .system: "System"
+        }
+    }
+}
+
+enum ReaderAlignment: String, Codable, CaseIterable {
+    case justified
+    case left
+
+    var label: String { self == .justified ? "Justified" : "Left" }
+}
+
 enum NostrAuthMode: String, Codable, CaseIterable {
     case none
     case nsec

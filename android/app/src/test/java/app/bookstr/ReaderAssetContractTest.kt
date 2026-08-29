@@ -51,6 +51,7 @@ class ReaderAssetContractTest {
         assertTrue(html.contains("window.receiveDictionaryResult"))
         assertTrue(html.contains("bookstr-highlights:"))
         assertTrue(html.contains("window.setKnownWords"))
+        assertTrue(html.contains("window.setReaderTypography"))
         assertTrue(html.contains("CSS.highlights.set(\"bookstr-known-word\""))
         assertTrue(html.contains("ranges.length < 5000"))
         assertTrue(html.contains("AndroidBridge.onKnownWordTapped"))
@@ -103,6 +104,9 @@ class ReaderAssetContractTest {
         assertTrue(html.contains(scriptTag))
         assertEquals(1, Regex(Regex.escape(scriptTag)).findAll(html).count())
         assertTrue(html.contains("window.BookstrSpeech.buildPlan(parts)"))
+        assertTrue(html.contains("window.setReaderTypography"))
+        assertTrue(html.contains("Arial, Helvetica, sans-serif"))
+        assertTrue(html.contains("text-align:\" + align"))
         assertTrue(sharedSpeech.readText().contains("paragraphPauseMs: PARAGRAPH_PAUSE_MS"))
     }
 
