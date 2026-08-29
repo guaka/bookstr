@@ -38,6 +38,7 @@ final class FavoriteOutboxTests: XCTestCase {
             settings: settings,
             progress: ProgressRepository(fileStore: fileStore),
             vocabulary: VocabularyRepository(fileStore: fileStore),
+            snippets: SnippetRepository(fileStore: fileStore),
             favoriteMetadata: FavoriteMetadataRepository(fileStore: fileStore),
             client: NostrClient(),
             signerStore: SignerStore(nip46Service: nip46),

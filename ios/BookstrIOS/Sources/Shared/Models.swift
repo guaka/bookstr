@@ -230,6 +230,22 @@ struct VocabularyWord: Codable, Identifiable, Hashable {
     var id: String { key }
 }
 
+struct BookSnippet: Codable, Identifiable, Hashable {
+    let syncId: String
+    let text: String
+    let bookId: String
+    let bookTitle: String
+    let author: String
+    let isbn: String?
+    let format: BookFormat
+    let locator: String
+    let createdAt: Int64
+    let updatedAt: Int64
+    let deleted: Bool
+
+    var id: String { syncId }
+}
+
 enum ReaderTheme: String, Codable, CaseIterable {
     case white
     case paper
@@ -269,6 +285,7 @@ enum NostrAuthMode: String, Codable, CaseIterable {
 extension Notification.Name {
     static let bookstrIdentityDidChange = Notification.Name("bookstrIdentityDidChange")
     static let bookstrVocabularyDidChange = Notification.Name("bookstrVocabularyDidChange")
+    static let bookstrSnippetsDidChange = Notification.Name("bookstrSnippetsDidChange")
     static let bookstrDictionariesDidChange = Notification.Name("bookstrDictionariesDidChange")
     static let bookstrAmberAuth = Notification.Name("bookstrAmberAuth")
 }

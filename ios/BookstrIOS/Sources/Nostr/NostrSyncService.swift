@@ -42,6 +42,7 @@ final class NostrSyncService {
     private let settings: SettingsRepository
     private let progress: ProgressRepository
     private let vocabulary: VocabularyRepository
+    private let snippets: SnippetRepository
     private let favoriteMetadata: FavoriteMetadataRepository
     private let client: NostrClient
     private let snippetPublisher: NostrEventPublishing
@@ -55,6 +56,7 @@ final class NostrSyncService {
         settings: SettingsRepository,
         progress: ProgressRepository,
         vocabulary: VocabularyRepository,
+        snippets: SnippetRepository,
         favoriteMetadata: FavoriteMetadataRepository,
         client: NostrClient,
         signerStore: SignerStore,
@@ -65,6 +67,7 @@ final class NostrSyncService {
         self.settings = settings
         self.progress = progress
         self.vocabulary = vocabulary
+        self.snippets = snippets
         self.favoriteMetadata = favoriteMetadata
         self.client = client
         self.snippetPublisher = snippetPublisher ?? client
@@ -111,31 +114,22 @@ final class NostrSyncService {
                 sig: nil
             )
         case .privateNote:
-            let id = UUID().uuidString.lowercased()
-            let payload = BookSnippetPayload(
-                version: 1,
-                id: id,
+            let entry = snippets.saveMark(
                 text: snippet,
                 bookId: book.id,
-                title: book.title,
+                bookTitle: book.title,
                 author: book.author,
                 isbn: Self.normalizedISBN(book.isbn),
                 format: book.format,
-                locator: locator,
-                createdAt: now * 1000
+                locator: locator
             )
-            let data = try JSONEncoder().encode(payload)
-            let plaintext = String(decoding: data, as: UTF8.self)
-            let encrypted = try await signer.nip44Encrypt(plaintext, to: signer.publicKeyHex)
-            event = NostrEvent(
-                id: nil,
-                pubkey: signer.publicKeyHex,
-                createdAt: now,
-                kind: NostrKinds.progress,
-                tags: [["d", NostrKinds.snippetPrefix + id]],
-                content: encrypted,
-                sig: nil
-            )
+            guard let published = await publishSnippetEvent(entry) else {
+                throw NostrSyncError.relayRejected
+            }
+            await MainActor.run {
+                NotificationCenter.default.post(name: .bookstrSnippetsDidChange, object: nil)
+            }
+            return published
         }
         let signed = try await signer.sign(event)
         guard await snippetPublisher.publishEvent(signed, relays: settings.relays) else {
@@ -202,6 +196,34 @@ final class NostrSyncService {
         )
         guard let signed = try? await signer.sign(event) else { return false }
         return await client.publishEvent(signed, relays: settings.relays)
+    }
+
+    @discardableResult
+    func pushSnippet(_ snippet: BookSnippet) async -> Bool {
+        await publishSnippetEvent(snippet) != nil
+    }
+
+    @discardableResult
+    private func publishSnippetEvent(_ snippet: BookSnippet) async -> NostrEvent? {
+        await ensureSignerReady()
+        guard let pubkey = settings.pubkeyHex,
+              let signer = signerStore.signer(from: settings),
+              let plaintextData = try? JSONEncoder().encode(snippet),
+              let plaintext = String(data: plaintextData, encoding: .utf8),
+              let content = try? await signer.nip44Encrypt(plaintext, to: pubkey)
+        else { return nil }
+        let event = NostrEvent(
+            id: nil,
+            pubkey: signer.publicKeyHex,
+            createdAt: snippet.updatedAt / 1000,
+            kind: NostrKinds.progress,
+            tags: [["d", NostrKinds.snippetPrefix + snippet.syncId]],
+            content: content,
+            sig: nil
+        )
+        guard let signed = try? await signer.sign(event) else { return nil }
+        guard await snippetPublisher.publishEvent(signed, relays: settings.relays) else { return nil }
+        return signed
     }
 
     func pullProgress(bookId: String) async {
@@ -773,17 +795,18 @@ final class NostrSyncService {
     }
 
     @discardableResult
-    func pullApplicationData(force: Bool = false) async throws -> (vocabularyMerged: Int, progressMerged: Int) {
+    func pullApplicationData(force: Bool = false) async throws -> (vocabularyMerged: Int, progressMerged: Int, snippetsMerged: Int) {
         await ensureSignerReady()
         guard let pubkey = settings.pubkeyHex, settings.hasNostrIdentity else {
-            return (0, 0)
+            return (0, 0, 0)
         }
         if !force, let last = settings.lastApplicationDataSync, Date().timeIntervalSince(last) < 120 {
-            return (0, 0)
+            return (0, 0, 0)
         }
         let events = await client.fetchApplicationData(pubkey: pubkey, relays: settings.relays)
         var vocabularyMerged = 0
         var progressMerged = 0
+        var snippetsMerged = 0
         for event in events {
             guard let dTag = event.dTag else { continue }
             if dTag.hasPrefix(NostrKinds.vocabularyPrefix) {
@@ -798,6 +821,19 @@ final class NostrSyncService {
                 else { continue }
                 if vocabulary.mergeRemote(word) {
                     vocabularyMerged += 1
+                }
+            } else if dTag.hasPrefix(NostrKinds.snippetPrefix) {
+                let syncId = String(dTag.dropFirst(NostrKinds.snippetPrefix.count))
+                if let local = snippets.snippet(syncId: syncId), local.updatedAt >= event.createdAt * 1000 {
+                    continue
+                }
+                guard let plaintext = try? await decryptFromSelf(pubkey: pubkey, ciphertext: event.content),
+                      let data = plaintext.data(using: .utf8),
+                      let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                      let snippet = SnippetRepository.parseRemote(json)
+                else { continue }
+                if snippets.mergeRemote(snippet) {
+                    snippetsMerged += 1
                 }
             } else if dTag.hasPrefix("app.bookstr.progress.") {
                 let bookId = String(dTag.dropFirst("app.bookstr.progress.".count))
@@ -823,8 +859,14 @@ final class NostrSyncService {
                 NotificationCenter.default.post(name: .bookstrVocabularyDidChange, object: nil)
             }
         }
+        if snippetsMerged > 0 {
+            snippets.persist()
+            await MainActor.run {
+                NotificationCenter.default.post(name: .bookstrSnippetsDidChange, object: nil)
+            }
+        }
         settings.lastApplicationDataSync = Date()
-        return (vocabularyMerged, progressMerged)
+        return (vocabularyMerged, progressMerged, snippetsMerged)
     }
 
     private func decryptFromSelf(pubkey: String, ciphertext: String) async throws -> String {

@@ -100,13 +100,7 @@ private extension String {
 
 final class VocabularyPDFView: PDFView {
     static func selectedWord(from value: String?) -> String? {
-        guard let value else { return nil }
-        let word = value.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard word.range(
-            of: #"^\p{L}+(?:['’-]\p{L}+)*$"#,
-            options: .regularExpression
-        ) != nil else { return nil }
-        return word
+        ReaderSelectionActions.phraseForVocabulary(from: value ?? "")
     }
 
     override func canPerformAction(_ action: Selector, withSender sender: Any?) -> Bool {
