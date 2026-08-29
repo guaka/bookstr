@@ -2,10 +2,10 @@
   "name": "bookstr-desktop",
   "private": true,
   "version": "0.1.0",
-  "description": "Bookstr Electron desktop shell",
+  "description": "libstr Electron desktop shell",
   "homepage": "https://github.com/guaka/bookstr",
   "author": {
-    "name": "Bookstr",
+    "name": "libstr",
     "email": "support@bookstr.dev"
   },
   "main": "main.js",
@@ -39,7 +39,7 @@
   },
   "build": {
     "appId": "app.bookstr.desktop",
-    "productName": "Bookstr",
+    "productName": "libstr",
     "icon": "../web/public/apple-touch-icon.png",
     "files": [
       "../web/**/*",
@@ -60,7 +60,7 @@
     },
     "mac": {
       "icon": "assets/icon-macos.png",
-      "artifactName": "bookstr-desktop-${version}-${os}-${arch}.dmg",
+      "artifactName": "libstr-desktop-${version}-${os}-${arch}.dmg",
       "category": "public.app-category.productivity",
       "target": [
         {
@@ -73,16 +73,16 @@
       ]
     },
     "win": {
-      "artifactName": "bookstr-desktop-${version}-setup-${arch}.exe",
+      "artifactName": "libstr-desktop-${version}-setup-${arch}.exe",
       "signAndEditExecutable": false,
       "target": [
         "nsis"
       ]
     },
     "linux": {
-      "artifactName": "bookstr-desktop-${version}-${arch}.AppImage",
+      "artifactName": "libstr-desktop-${version}-${arch}.AppImage",
       "category": "Office",
-      "maintainer": "Bookstr <support@bookstr.dev>",
+      "maintainer": "libstr <support@bookstr.dev>",
       "target": [
         "AppImage",
         "deb"

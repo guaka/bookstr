@@ -6,6 +6,7 @@ const OAPEN_BITSTREAM_BASE_URL = 'https://library.oapen.org/rest/bitstreams';
 const OPEN_TEXTBOOKS_BASE_URL = 'https://open.umn.edu/opentextbooks/textbooks.json';
 const DOAB_SEARCH_BASE_URL = 'https://directory.doabooks.org/rest/search';
 const GDL_BASE_URL = 'https://content.digitallibrary.io';
+const INTERNET_ARCHIVE_BASE_URL = 'https://archive.org';
 
 const CATALOG_PATHS = [
   /^\/api\/search$/,
@@ -17,6 +18,9 @@ const CATALOG_PATHS = [
   /^\/api\/doab$/,
   /^\/api\/gdl$/,
   /^\/api\/gdl-epub$/,
+  /^\/api\/internet-archive\/search$/,
+  /^\/api\/internet-archive\/metadata$/,
+  /^\/api\/internet-archive\/download$/,
   /^\/api\/litres\/search$/,
   /^\/api\/books\/\d+$/,
   /^\/api\/books\/\d+\/download$/,
@@ -78,6 +82,30 @@ function catalogUpstreamUrl(
     if (!/^\d+$/.test(id)) return '';
     return `${GDL_BASE_URL}/wp-json/epub-generator/v1/book/${id}`;
   }
+  if (parsed.pathname === '/api/internet-archive/search') {
+    const query = String(parsed.searchParams.get('query') || '').trim();
+    if (!query) return '';
+    const upstream = new URL(`${INTERNET_ARCHIVE_BASE_URL}/advancedsearch.php`);
+    upstream.searchParams.set('q', `(${query}) AND mediatype:texts`);
+    for (const field of ['identifier', 'title', 'creator', 'date', 'year', 'language', 'licenseurl']) {
+      upstream.searchParams.append('fl[]', field);
+    }
+    upstream.searchParams.set('rows', '20');
+    upstream.searchParams.set('page', '1');
+    upstream.searchParams.set('output', 'json');
+    return upstream.href;
+  }
+  if (parsed.pathname === '/api/internet-archive/metadata') {
+    const id = String(parsed.searchParams.get('id') || '').trim();
+    if (!/^[a-z0-9._-]{1,128}$/i.test(id)) return '';
+    return `${INTERNET_ARCHIVE_BASE_URL}/metadata/${encodeURIComponent(id)}`;
+  }
+  if (parsed.pathname === '/api/internet-archive/download') {
+    const id = String(parsed.searchParams.get('id') || '').trim();
+    const name = String(parsed.searchParams.get('name') || '').trim();
+    if (!/^[a-z0-9._-]{1,128}$/i.test(id) || !name || name.length > 512 || /[\\/\0]/.test(name)) return '';
+    return `${INTERNET_ARCHIVE_BASE_URL}/download/${encodeURIComponent(id)}/${encodeURIComponent(name)}`;
+  }
   if (parsed.pathname === '/api/gutendex') {
     const query = String(parsed.searchParams.get('query') || '').trim();
     if (!query) return '';
@@ -111,7 +139,7 @@ async function proxyCatalogRequest(request, fetchImpl, baseUrl = CATALOG_BASE_UR
     const pathname = new URL(request.url).pathname;
     const accept = pathname === '/api/opds'
       ? 'application/atom+xml;profile=opds-catalog'
-      : ['/api/oapen', '/api/open-textbooks', '/api/doab', '/api/gdl'].includes(pathname)
+      : ['/api/oapen', '/api/open-textbooks', '/api/doab', '/api/gdl', '/api/internet-archive/search', '/api/internet-archive/metadata'].includes(pathname)
         ? 'application/json'
         : request.headers.get('Accept') || '*/*';
     const upstream = await fetchImpl(upstreamUrl, {
@@ -143,6 +171,7 @@ module.exports = {
   OPEN_TEXTBOOKS_BASE_URL,
   DOAB_SEARCH_BASE_URL,
   GDL_BASE_URL,
+  INTERNET_ARCHIVE_BASE_URL,
   UNGLUE_OPDS_BASE_URL,
   catalogUpstreamUrl,
   proxyCatalogRequest,

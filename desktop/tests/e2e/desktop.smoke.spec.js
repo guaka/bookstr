@@ -50,14 +50,16 @@ function electronArgs() {
   return [path.join(__dirname, '../..'), `--user-data-dir=${userData}`];
 }
 
-test('Bookstr desktop app opens with preload bridge', async () => {
+test('libstr desktop app opens with preload bridge', async () => {
   const electronApp = await electron.launch({
     args: electronArgs(),
   });
 
   try {
     const firstWindow = await electronApp.firstWindow();
-    await expect(firstWindow).toHaveTitle(/Bookstr/i);
+    await expect(firstWindow).toHaveTitle('libstr');
+    const appVersion = await electronApp.evaluate(({ app }) => app.getVersion());
+    expect(appVersion).toMatch(/^0\.1-\d{8}-\d{4}$/);
 
     const contentSecurityPolicy = await firstWindow.evaluate(async () => (
       await fetch(window.location.href)
@@ -327,7 +329,7 @@ test('desktop footer stays in the viewport bottom-right without covering content
 
     await assertFooterPosition();
     await electronApp.evaluate(({ BrowserWindow }) => {
-      BrowserWindow.getAllWindows().find(window => window.getTitle() === 'Bookstr')?.setSize(950, 620);
+      BrowserWindow.getAllWindows().find(window => window.getTitle() === 'libstr')?.setSize(950, 620);
     });
     await assertFooterPosition();
   } finally {

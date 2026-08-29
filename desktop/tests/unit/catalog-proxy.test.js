@@ -46,10 +46,26 @@ test('catalog proxy allowlists only Bookstr search and acquisition routes', () =
     'https://content.digitallibrary.io/wp-json/epub-generator/v1/book/14165',
   );
   assert.equal(
+    catalogUpstreamUrl('app://bookstr/api/internet-archive/metadata?id=the-wealth-of-networks'),
+    'https://archive.org/metadata/the-wealth-of-networks',
+  );
+  assert.equal(
+    catalogUpstreamUrl('app://bookstr/api/internet-archive/download?id=the-wealth-of-networks&name=The_Wealth_of_Networks.epub'),
+    'https://archive.org/download/the-wealth-of-networks/The_Wealth_of_Networks.epub',
+  );
+  const archiveSearch = new URL(catalogUpstreamUrl('app://bookstr/api/internet-archive/search?query=Yochai%20Benkler'));
+  assert.equal(archiveSearch.origin + archiveSearch.pathname, 'https://archive.org/advancedsearch.php');
+  assert.equal(archiveSearch.searchParams.get('q'), '(Yochai Benkler) AND mediatype:texts');
+  assert.deepEqual(archiveSearch.searchParams.getAll('fl[]'), [
+    'identifier', 'title', 'creator', 'date', 'year', 'language', 'licenseurl',
+  ]);
+  assert.equal(
     catalogUpstreamUrl('app://bookstr/api/litres/search?q=tolstoy&limit=20', base),
     'https://catalog.test/api/litres/search?q=tolstoy&limit=20',
   );
   assert.equal(catalogUpstreamUrl('app://bookstr/api/gdl-epub?id=not-a-number'), '');
+  assert.equal(catalogUpstreamUrl('app://bookstr/api/internet-archive/metadata?id=../private'), '');
+  assert.equal(catalogUpstreamUrl('app://bookstr/api/internet-archive/download?id=book&name=../private.epub'), '');
   assert.equal(catalogUpstreamUrl('app://bookstr/api/oapen-file?id=not-a-uuid'), '');
   assert.equal(catalogUpstreamUrl('app://bookstr/api/gutendex', base), '');
   assert.equal(catalogUpstreamUrl('app://bookstr/api/oapen', base), '');

@@ -729,7 +729,7 @@ test('Electron windows and packages use the Bookstr app icon', async () => {
   }
   const pixels = inflateSync(Buffer.concat(idatChunks));
   assert.match(desktopMain, /const APP_ICON_PATH = process\.platform === 'darwin'[\s\S]*?icon-macos\.png[\s\S]*?apple-touch-icon\.png/);
-  assert.match(desktopMain, /title: 'Bookstr',[\s\S]*?icon: APP_ICON_PATH/);
+  assert.match(desktopMain, /title: 'libstr',[\s\S]*?icon: APP_ICON_PATH/);
   assert.equal((desktopMain.match(/new BrowserWindow\(/g) || []).length, 1);
   assert.match(desktopMain, /app\.dock\.setIcon\(APP_ICON_PATH\)/);
   assert.equal(desktopPackage.build.icon, '../web/public/apple-touch-icon.png');
@@ -744,7 +744,8 @@ test('Electron windows and packages use the Bookstr app icon', async () => {
 
 test('Electron identifies development builds with a Bookstr timestamp version', () => {
   assert.match(desktopMain, /return `0\.1-\$\{now\.getFullYear\(\)\}.*-\$\{part\(now\.getHours\(\)\)\}\$\{part\(now\.getMinutes\(\)\)\}`/s);
-  assert.match(desktopMain, /app\.setVersion\(process\.env\.BOOKSTR_DESKTOP_VERSION \|\| timestampVersion\(\)\)/);
+  assert.match(desktopMain, /const DESKTOP_VERSION = process\.env\.BOOKSTR_DESKTOP_VERSION \|\| timestampVersion\(\)/);
+  assert.match(desktopMain, /app\.setAboutPanelOptions\(\{[\s\S]*applicationName: 'libstr',[\s\S]*applicationVersion: DESKTOP_VERSION,[\s\S]*version: DESKTOP_VERSION/);
 });
 
 test('settings groups Nostr controls and connection status together', () => {

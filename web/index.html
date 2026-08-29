@@ -1838,7 +1838,7 @@
                 <button id="desktop-nip46-qr-start" type="button">Connect with QR code</button>
                 <div id="desktop-nip46-qr" class="desktop-signer-qr hidden">
                   <img id="desktop-nip46-qr-image" alt="NIP-46 connection QR code" hidden />
-                  <small>Scan this with your remote signer and approve Bookstr.</small>
+                  <small id="nip46-approval-copy">Scan this with your remote signer and approve Bookstr.</small>
                   <div class="desktop-signer-qr-actions">
                     <button id="desktop-nip46-qr-copy" type="button">Copy connection link</button>
                     <button id="desktop-nip46-qr-cancel" type="button">Cancel</button>
@@ -1941,6 +1941,9 @@
       const BOOK_CACHE_STORAGE_LIMIT = 300 * 1024 * 1024;
       const BOOK_METADATA_CACHE_KEY = 'bookstr_metadata_cache_v1';
       const BOOK_METADATA_CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+      const SEARCH_CACHE_KEY = 'bookstr_search_cache_v1';
+      const SEARCH_CACHE_TTL_MS = 10 * 60 * 1000;
+      const SEARCH_CACHE_MAX_ENTRIES = 6;
       const DICTIONARY_LANGUAGES = {
         bg: 'Bulgarian', ca: 'Catalan', cs: 'Czech', da: 'Danish', de: 'German', el: 'Greek',
         en: 'English', es: 'Spanish', fi: 'Finnish', fr: 'French', ga: 'Irish', id: 'Indonesian',
@@ -2043,7 +2046,13 @@
       const desktopBridge = window.bookstrDesktop || null;
       const isDesktopMode = Boolean(desktopBridge?.openReader);
       document.body.classList.toggle('desktop-mode', isDesktopMode);
-      if (isDesktopMode) document.querySelector('.brand-mark').src = 'public/apple-touch-icon.png';
+      if (isDesktopMode) {
+        document.title = 'libstr';
+        const brandMark = document.querySelector('.brand-mark');
+        brandMark.src = 'public/apple-touch-icon.png';
+        brandMark.alt = 'libstr';
+        document.getElementById('nip46-approval-copy').textContent = 'Scan this with your remote signer and approve libstr.';
+      }
       const nostrSignerName = isDesktopMode ? 'Nostr signer' : 'NIP-07';
       const nostrSigner = isDesktopMode ? desktopBridge?.signer : globalThis.nostr;
       const desktopBridgeVersion = Number(desktopBridge?.version || 0);
@@ -3661,7 +3670,7 @@
           const ext = String(item.extension || item.format || item.media_type || item.type || (provider === 'gutenberg' ? 'epub' : '')).replace(/^\./, '').toLowerCase();
           const directReadUrl = provider === 'gutenberg' && item.id
             ? `${BOOKS_API_BASE}/books/${encodeURIComponent(item.id)}/download`
-            : item.readUrl || item.url || item.link || blossom.url || '';
+            : item.readUrl || item.read_url || item.url || item.link || blossom.url || '';
           const rights = BookMetadata.normalizeRights(item);
           if (!rights.rights_source && (
             rights.rights_status !== 'unknown' || rights.license || rights.license_url
@@ -3718,6 +3727,20 @@
           byId.add(key);
           return true;
         });
+      }
+
+      function defaultSearchResultRank(book) {
+        if (cachedBookKeys.has(bookCacheKey(book, book.readUrl || book.url))) return 0;
+        if (/^https:\/\//i.test(String(book.blossomUrl || ''))) return 1;
+        if (BookMetadata.canonicalReadUrl(book, BOOKS_API_BASE)) return 2;
+        return 3;
+      }
+
+      function rankSearchResults(books) {
+        return books.map((book, index) => ({ book, index }))
+          .sort((left, right) => defaultSearchResultRank(left.book) - defaultSearchResultRank(right.book)
+            || left.index - right.index)
+          .map(entry => entry.book);
       }
 
       async function searchUnglueIt(query) {
@@ -3921,6 +3944,51 @@
           };
         }).filter(Boolean);
         return dedupeBooks(normalizeSearchBooks({ books }, 'global-digital-library'));
+      }
+
+      function internetArchiveFile(files) {
+        const available = (Array.isArray(files) ? files : []).filter(file => (
+          file?.name && file.private !== 'true' && !/[\\/]_?meta\.xml$/i.test(file.name)
+        ));
+        return available.find(file => /epub/i.test(file.format || '') || /\.epub$/i.test(file.name))
+          || available.find(file => /pdf/i.test(file.format || '') || /\.pdf$/i.test(file.name))
+          || null;
+      }
+
+      async function searchInternetArchive(query) {
+        const response = await fetch(`${BOOKS_API_BASE}/internet-archive/search?query=${encodeURIComponent(query)}`);
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(`Internet Archive search failed (${response.status})`);
+        const docs = Array.isArray(payload?.response?.docs) ? payload.response.docs : [];
+        const books = await Promise.all(docs.map(async doc => {
+          const id = String(doc?.identifier || '').trim();
+          if (!id) return null;
+          const metadataResponse = await fetch(`${BOOKS_API_BASE}/internet-archive/metadata?id=${encodeURIComponent(id)}`);
+          const metadataPayload = await metadataResponse.json().catch(() => ({}));
+          if (!metadataResponse.ok) return null;
+          const file = internetArchiveFile(metadataPayload.files);
+          if (!file) return null;
+          const metadata = metadataPayload.metadata || {};
+          const extension = /\.epub$/i.test(file.name) || /epub/i.test(file.format || '') ? 'epub' : 'pdf';
+          return {
+            id,
+            source: 'internet-archive',
+            source_native_id: id,
+            source_url: `https://archive.org/details/${encodeURIComponent(id)}`,
+            title: metadata.title || doc.title || '',
+            authors: metadata.creator || doc.creator || '',
+            year: metadata.date || metadata.year || doc.date || doc.year || '',
+            language: metadata.language || doc.language || '',
+            description: metadata.description || '',
+            license: metadata.licenseurl || doc.licenseurl || '',
+            license_url: metadata.licenseurl || doc.licenseurl || '',
+            rights_status: metadata.licenseurl || doc.licenseurl ? 'open_license' : 'unknown',
+            extension,
+            filesize: Number(file.size || 0),
+            read_url: `${BOOKS_API_BASE}/internet-archive/download?id=${encodeURIComponent(id)}&name=${encodeURIComponent(file.name)}`,
+          };
+        }));
+        return dedupeBooks(normalizeSearchBooks({ books: books.filter(Boolean) }, 'internet-archive'));
       }
 
       function formatBuildDate(date) {
@@ -4656,7 +4724,7 @@
               ? 'Blossom'
               : availabilitySources.includes('Gutenberg')
                 ? 'Gutenberg'
-                : '—';
+                : availabilitySources.find(item => item !== 'Metadata only') || '—';
           const readableNow = isBookReadableNow(book);
           const titleAvailabilityClass = readableNow ? 'readable' : 'unavailable';
           const rawLanguage = BookMetadata.languageForBook(book);
@@ -4785,7 +4853,7 @@
             filteredBooks, searchResultSort.key, searchResultSort.direction,
             book => cachedBookKeys.has(bookCacheKey(book, book.readUrl || book.url))
           )
-          : filteredBooks.slice();
+          : rankSearchResults(filteredBooks);
         const totalPages = Math.max(1, Math.ceil(sortedBooks.length / SEARCH_RESULT_PAGE_SIZE));
         searchResultPage = Math.min(Math.max(1, searchResultPage), totalPages);
         const start = (searchResultPage - 1) * SEARCH_RESULT_PAGE_SIZE;
@@ -5011,6 +5079,8 @@
           if (cachedMetadata) return { ...cachedMetadata, md5: bookId };
           return { md5: bookId, title: 'Untitled book', extension: 'epub' };
         }
+        const searchBook = BookMetadata.findBookByReadUrl(readUrl, searchResultBooks);
+        if (searchBook) return searchBook;
         const saved = BookMetadata.findBookByReadUrl(readUrl, state.reading, state.favorites);
         if (saved) return saved;
         try {
@@ -6300,6 +6370,10 @@
             id: 'global-digital-library', name: 'Global Digital Library', coverage: 'Multilingual children’s and learning books',
             deliveries: ['Metadata', 'EPUB', 'Licenses', 'Covers'], access: 'Public', search: searchGlobalDigitalLibrary,
           },
+          {
+            id: 'internet-archive', name: 'Internet Archive', coverage: 'Publicly downloadable digitized and born-digital books',
+            deliveries: ['Metadata', 'EPUB', 'PDF'], access: 'Public', search: searchInternetArchive,
+          },
         ];
         for (const feed of normalizePublicOPDSFeedSettings(state.settings.opdsFeeds)) {
           sources.push({
@@ -6393,6 +6467,41 @@
           : `${outcome.source.name}: ${outcome.books.length}`).join(' · ');
       }
 
+      function searchCacheIdentity(query) {
+        return JSON.stringify({
+          query: String(query || '').trim().toLocaleLowerCase(),
+          type: searchType.value || 'all',
+          pubkey: privateBookSearchAvailable() ? state.nip7.pubkey : '',
+          opdsFeeds: normalizePublicOPDSFeedSettings(state.settings.opdsFeeds),
+        });
+      }
+
+      function freshSearchCacheEntries() {
+        const entries = safeJSONRead(localStorage.getItem(SEARCH_CACHE_KEY), []);
+        return (Array.isArray(entries) ? entries : [])
+          .filter(entry => entry?.key && Array.isArray(entry.books)
+            && Date.now() - Number(entry.ts || 0) < SEARCH_CACHE_TTL_MS)
+          .sort((left, right) => Number(right.ts || 0) - Number(left.ts || 0))
+          .slice(0, SEARCH_CACHE_MAX_ENTRIES);
+      }
+
+      function cachedSearchBooks(query) {
+        const entries = freshSearchCacheEntries();
+        try { localStorage.setItem(SEARCH_CACHE_KEY, JSON.stringify(entries)); } catch {}
+        return entries.find(entry => entry.key === searchCacheIdentity(query))?.books || null;
+      }
+
+      function cacheSearchBooks(query, books) {
+        const key = searchCacheIdentity(query);
+        const entries = [
+          { key, ts: Date.now(), books: books.slice(0, SEARCH_RESULT_LIMIT) },
+          ...freshSearchCacheEntries().filter(entry => entry.key !== key),
+        ].slice(0, SEARCH_CACHE_MAX_ENTRIES);
+        try { localStorage.setItem(SEARCH_CACHE_KEY, JSON.stringify(entries)); } catch {
+          try { localStorage.setItem(SEARCH_CACHE_KEY, JSON.stringify(entries.slice(0, 1))); } catch {}
+        }
+      }
+
       async function startSearch({ updateHash = true, routeState = null } = {}) {
         const query = queryInput.value.trim();
         if (!query) {
@@ -6433,6 +6542,20 @@
           }
           return;
         }
+        const cachedBooks = cachedSearchBooks(query);
+        if (cachedBooks) {
+          renderSearchSourceProgress([]);
+          const books = cachedBooks.filter(book => matchesExactSearchTokens(
+            book,
+            query,
+            searchType.value || 'all',
+          ));
+          renderResults(books, { routeState });
+          status.textContent = `Showing ${books.length} cached result${books.length === 1 ? '' : 's'} · refreshes after 10 minutes.`;
+          replaceSearchHash();
+          renderButtonsState();
+          return;
+        }
         status.textContent = 'Searching privately through LibVault…';
         try {
           const searchResponse = await searchAvailableBookSources(query, (progress, arrivedBooks) => {
@@ -6448,6 +6571,7 @@
           });
           let books = searchResponse.books;
           books = books.filter(book => matchesExactSearchTokens(book, query, searchType.value || 'all'));
+          cacheSearchBooks(query, books);
           status.textContent = `${searchOutcomeSummary(searchResponse.outcomes)} · ${books.length} result(s).`;
           renderResults(books, { routeState });
           replaceSearchHash();

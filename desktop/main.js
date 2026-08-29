@@ -79,7 +79,14 @@ function timestampVersion(now = new Date()) {
   return `0.1-${now.getFullYear()}${part(now.getMonth() + 1)}${part(now.getDate())}-${part(now.getHours())}${part(now.getMinutes())}`;
 }
 
-app.setVersion(process.env.BOOKSTR_DESKTOP_VERSION || timestampVersion());
+const DESKTOP_VERSION = process.env.BOOKSTR_DESKTOP_VERSION || timestampVersion();
+app.setName('libstr');
+app.setVersion(DESKTOP_VERSION);
+app.setAboutPanelOptions({
+  applicationName: 'libstr',
+  applicationVersion: DESKTOP_VERSION,
+  version: DESKTOP_VERSION,
+});
 
 function nip46ConnectionRelays() {
   if (process.env.NODE_ENV === 'test') {
@@ -382,7 +389,7 @@ async function configureNip46(rawInput) {
     bunkerPointer,
     nip46SignerParams(),
   );
-  await signer.connect({ name: 'Bookstr Desktop', url: 'https://github.com/guaka/bookstr' });
+  await signer.connect({ name: 'libstr Desktop', url: 'https://github.com/guaka/bookstr' });
   return activateNip46Signer(signer, clientSecretBytes);
 }
 
@@ -443,7 +450,7 @@ async function startNip46QrSession() {
     relays: connectedRelays,
     secret,
     perms: NIP46_PERMISSIONS,
-    name: 'Bookstr Desktop',
+    name: 'libstr Desktop',
     url: 'https://github.com/guaka/bookstr',
   });
   const qrDataUrl = await QRCode.toDataURL(uri, { errorCorrectionLevel: 'M', margin: 1, width: 280 });
@@ -729,7 +736,7 @@ async function createLibraryWindow() {
     ...bounds,
     minWidth: 950,
     minHeight: 620,
-    title: 'Bookstr',
+    title: 'libstr',
     icon: APP_ICON_PATH,
     backgroundColor: '#f7f3ea',
     show: false,
@@ -742,6 +749,10 @@ async function createLibraryWindow() {
   });
 
   attachSecurity(mainWindow.webContents);
+  mainWindow.on('page-title-updated', event => {
+    event.preventDefault();
+    mainWindow?.setTitle('libstr');
+  });
   mainWindow.once('ready-to-show', () => mainWindow.show());
   await mainWindow.loadURL(`${APP_ORIGIN}/index.html`);
 
@@ -788,7 +799,7 @@ function ensureReaderWindowForPayload(payload) {
     return normalized;
   }
   if (!mainWindow || mainWindow.isDestroyed()) {
-    return { ok: false, error: 'Bookstr window is not available.' };
+    return { ok: false, error: 'libstr window is not available.' };
   }
 
   const requestedKind = normalized.kind;
@@ -909,7 +920,7 @@ function setupApplicationMenu() {
       },
     ] : []),
     {
-      label: 'Bookstr',
+      label: 'libstr',
       submenu: [
         ...LIBRARY_PANES.map(({ label, pane, accelerator }) => ({
           label,
