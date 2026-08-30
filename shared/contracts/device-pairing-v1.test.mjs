@@ -42,3 +42,13 @@ test('only authorized, unexpired devices may deliver control messages', () => {
   assert.equal(acceptDeviceMessage(registry, key, expired, { now: 130 }), null);
   assert.equal(acceptDeviceMessage(registry, key, { ...expired, expires_at: 200, device_id: 'other' }, { now: 100 }), null);
 });
+
+test('pairing builders normalize defaults and reject untrusted control messages', () => {
+  assert.equal(createDeviceAnnouncement(device, { now: 100, ttl: 2 }).expires_at, 130);
+  assert.equal(createDeviceAnnouncement(device, { now: 100, ttl: 1000 }).expires_at, 700);
+  assert.equal(createManifestRequest({ requestId: 'm', cursor: '  ', limit: -2 }).limit, 1);
+  assert.equal(createTransferRequest({ requestId: 't', sha256: 'bad' }), null);
+  const registry = revokeDevice(registerDevice({}, device, { now: 10 }), 'phone', { now: 20 });
+  assert.equal(acceptDeviceMessage(registry, key, createManifestRequest({ requestId: 'm' }), { now: 21 }), null);
+  assert.equal(acceptDeviceMessage(registerDevice({}, device, { now: 10 }), key, { type: 'unknown' }, { now: 21 }), null);
+});
