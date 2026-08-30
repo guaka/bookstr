@@ -37,3 +37,14 @@ test('web adapter resolves the active browser signer without persisting a secret
     globalThis.nostr = previousNostr;
   }
 });
+
+test('web adapter loads the bundled tools when a native shell only supplies a signer', async () => {
+  const secret = nostrTools.generateSecretKey();
+  const pairing = await createWebPairing({
+    signer: {
+      getPublicKey: async () => nostrTools.getPublicKey(secret),
+      nip44: { decrypt: async () => { throw new Error('not used'); } },
+    },
+  });
+  assert.equal((await pairing.status()).accountPubkey, nostrTools.getPublicKey(secret));
+});
