@@ -83,6 +83,11 @@ test('metadataObject parses object payloads and ignores invalid payloads', () =>
   assert.deepEqual(metadataObject('{ invalid json }'), {});
 });
 
+test('metadata helpers safely retain malformed URL text without deriving a title', () => {
+  assert.equal(resolveTitle({ title: 'Untitled book' }, 'https://%', 'https://books.example/'), 'Untitled book');
+  assert.equal(normalizeReadUrl('https://%', 'https://books.example/'), 'https://%');
+});
+
 test('normalizes and preserves the earliest favorite addition time', () => {
   assert.equal(normalizeFavoriteAddedAt(1_700_000_000_123), 1_700_000_000);
   assert.equal(normalizeFavoriteAddedAt('2023-11-14T22:13:20Z'), 1_700_000_000);
