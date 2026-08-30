@@ -772,7 +772,7 @@ class NarrationService : MediaBrowserServiceCompat(), TextToSpeech.OnInitListene
         val stop = PendingIntent.getService(
             this,
             4,
-            Intent(this, NarrationService::class.java).setAction(ACTION_STOP),
+            Intent(ACTION_STOP).setComponent(ComponentName(this, NarrationService::class.java)),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
         return NotificationCompat.Builder(this, CHANNEL_ID)
@@ -820,9 +820,11 @@ class NarrationService : MediaBrowserServiceCompat(), TextToSpeech.OnInitListene
     private fun mainActivityPendingIntent(): PendingIntent = PendingIntent.getActivity(
         this,
         0,
-        Intent(this, MainActivity::class.java).addFlags(
-            Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP,
-        ),
+        Intent()
+            .setComponent(ComponentName(this, MainActivity::class.java))
+            .addFlags(
+                Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP,
+            ),
         PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
     )
 
