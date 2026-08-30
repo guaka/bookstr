@@ -70,6 +70,49 @@ test('default downloader streams bytes and validates the HTTP response and size'
   assert.deepEqual(updates.at(-1), [4, 4]);
   global.fetch = async () => new Response('missing', { status: 404 });
   await assert.rejects(store.download('https://example.test/missing', destination, 7, () => {}), /404/);
+  global.fetch = async () => ({ ok: true, body: null, status: 200 });
+  await assert.rejects(store.download('https://example.test/bodyless', destination, 0, () => {}), /200/);
   global.fetch = async () => new Response('no', { status: 200 });
   await assert.rejects(store.download('https://example.test/short', destination, 4, () => {}), /expected 4/);
+});
+
+test('default install dependencies and callback complete a verified download', async t => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'bookstr-speech-'));
+  t.after(() => fs.rm(root, { recursive: true, force: true }));
+  const fixture = { ...SPEECH_MODELS[0], files: [{ path: 'model.bin', expectedBytes: 4 }] };
+  const originalFetch = global.fetch;
+  t.after(() => { global.fetch = originalFetch; });
+  global.fetch = async () => new Response('test', { status: 200 });
+  const store = new SpeechModelStore(root, { models: [fixture] });
+  await store.install(fixture.id);
+  assert.equal(await store.isInstalled(fixture), true);
+});
+
+test('status exposes active progress and errors while installation checks reject directories and wrong sizes', async t => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'bookstr-speech-'));
+  t.after(() => fs.rm(root, { recursive: true, force: true }));
+  const first = { ...SPEECH_MODELS[0], files: [{ path: 'model.bin', expectedBytes: 4 }] };
+  const second = { ...SPEECH_MODELS[1], files: [{ path: 'model.bin', expectedBytes: 2 }] };
+  const store = new SpeechModelStore(root, { models: [first, second] });
+  await fs.mkdir(path.join(root, first.id, 'model.bin'), { recursive: true });
+  assert.equal(await store.isInstalled(first), false);
+  await fs.rm(path.join(root, first.id, 'model.bin'), { recursive: true });
+  await fs.writeFile(path.join(root, first.id, 'model.bin'), 'no');
+  assert.equal(await store.isInstalled(first), false);
+  store.active = { id: first.id, completedFiles: 3 };
+  store.lastError.set(second.id, 'fixture failure');
+  const status = await store.status();
+  assert.deepEqual(status.map(model => ({ id: model.id, installing: model.installing, completedFiles: model.completedFiles, error: model.error })), [
+    { id: first.id, installing: true, completedFiles: 3, error: '' },
+    { id: second.id, installing: false, completedFiles: 0, error: 'fixture failure' },
+  ]);
+});
+
+test('non-Error download failures are retained as readable model errors', async t => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'bookstr-speech-'));
+  t.after(() => fs.rm(root, { recursive: true, force: true }));
+  const fixture = { ...SPEECH_MODELS[0], files: [{ path: 'model.bin', expectedBytes: 4 }] };
+  const store = new SpeechModelStore(root, { models: [fixture], downloader: async () => { throw 'fixture string'; } });
+  await assert.rejects(store.install(fixture.id));
+  assert.equal(store.lastError.get(fixture.id), 'fixture string');
 });

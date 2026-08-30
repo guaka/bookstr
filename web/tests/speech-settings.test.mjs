@@ -22,6 +22,9 @@ test('lists every installed speech language with localized, sorted labels', () =
   assert.deepEqual(speechSettings.languagesForVoices([{ lang: 'xx' }], { of: () => { throw new Error('unsupported'); } }), [
     { code: 'xx', locale: 'xx', label: 'XX' },
   ]);
+  assert.deepEqual(speechSettings.languagesForVoices([{ lang: 'en' }], { of: () => { throw new Error('unsupported'); } }), [
+    { code: 'en', locale: 'en', label: 'English' },
+  ]);
   assert.deepEqual(speechSettings.languagesForVoices(null, null), []);
   assert.deepEqual(speechSettings.languagesForVoices([{ lang: '' }, null, { lang: 'en-US' }, { lang: 'en-GB' }], null), [
     { code: 'en', locale: 'en-us', label: 'English' },
@@ -34,6 +37,7 @@ test('shows readable, deduplicated languages for codes and common metadata names
   assert.equal(languages.find(language => language.code === 'pt').label, 'Portuguese');
   assert.deepEqual(languages.map(language => language.code).sort(), ['en', 'pt']);
   assert.equal(speechSettings.languageCode('Português'), 'pt');
+  assert.deepEqual(speechSettings.languagesForCodes(null, null), []);
 });
 
 test('filters by language and puts preferred installed voices first', () => {
@@ -50,6 +54,20 @@ test('filters by language and puts preferred installed voices first', () => {
     ], 'en').map(voice => voice.voiceURI),
     ['z', 'a'],
   );
+  assert.deepEqual(
+    speechSettings.voicesForLanguage([
+      { name: 'Zulu', voiceURI: 'z', lang: 'en', localService: true },
+      { name: 'Alpha', voiceURI: 'a', lang: 'en', localService: true },
+    ], 'en', /never-matches/).map(voice => voice.voiceURI),
+    ['a', 'z'],
+  );
+  assert.deepEqual(
+    speechSettings.voicesForLanguage([
+      { name: 'Kokoro Zulu', voiceURI: 'z', lang: 'en', localService: false },
+      { name: 'Alpha', voiceURI: 'a', lang: 'en', localService: true },
+    ], 'en', /kokoro/i).map(voice => voice.voiceURI),
+    ['z', 'a'],
+  );
 });
 
 test('reads per-language selections and migrates legacy English and Portuguese values', () => {
@@ -58,6 +76,7 @@ test('reads per-language selections and migrates legacy English and Portuguese v
   assert.equal(speechSettings.savedVoice({ speechVoiceEnglish: 'legacy-en' }, 'en'), 'legacy-en');
   assert.equal(speechSettings.savedVoice({ speechVoicePortuguese: 'legacy-pt' }, 'pt'), 'legacy-pt');
   assert.equal(speechSettings.savedVoice({}, 'fr'), '');
+  assert.equal(speechSettings.savedVoice(null, 'fr'), '');
   assert.equal(speechSettings.savedVoice({ speechVoices: { fr: 3 } }, 'fr'), '');
 });
 

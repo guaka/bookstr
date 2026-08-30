@@ -64,8 +64,15 @@ test('catalog proxy allowlists only Bookstr search and acquisition routes', () =
     'https://catalog.test/api/litres/search?q=tolstoy&limit=20',
   );
   assert.equal(catalogUpstreamUrl('app://bookstr/api/gdl-epub?id=not-a-number'), '');
+  assert.equal(catalogUpstreamUrl('app://bookstr/api/gdl-epub'), '');
   assert.equal(catalogUpstreamUrl('app://bookstr/api/internet-archive/metadata?id=../private'), '');
+  assert.equal(catalogUpstreamUrl(`app://bookstr/api/internet-archive/metadata?id=${'x'.repeat(129)}`), '');
   assert.equal(catalogUpstreamUrl('app://bookstr/api/internet-archive/download?id=book&name=../private.epub'), '');
+  assert.equal(catalogUpstreamUrl('app://bookstr/api/internet-archive/download?id=../book&name=book.epub'), '');
+  assert.equal(catalogUpstreamUrl('app://bookstr/api/internet-archive/download?id=book'), '');
+  assert.equal(catalogUpstreamUrl(`app://bookstr/api/internet-archive/download?id=book&name=${'x'.repeat(513)}`), '');
+  assert.equal(catalogUpstreamUrl('app://bookstr/api/internet-archive/download?id=book&name=bad%5Cname.epub'), '');
+  assert.equal(catalogUpstreamUrl('app://bookstr/api/internet-archive/download?id=book&name=bad%00name.epub'), '');
   assert.equal(catalogUpstreamUrl('app://bookstr/api/oapen-file?id=not-a-uuid'), '');
   assert.equal(catalogUpstreamUrl('app://bookstr/api/gutendex', base), '');
   assert.equal(catalogUpstreamUrl('app://bookstr/api/oapen', base), '');
@@ -77,6 +84,7 @@ test('catalog proxy allowlists only Bookstr search and acquisition routes', () =
     catalogUpstreamUrl('app://bookstr/api/books/42/download', base),
     'https://catalog.test/api/books/42/download',
   );
+  assert.equal(catalogUpstreamUrl('app://bookstr/api/books/42?view=full', base), 'https://catalog.test/api/books/42?view=full');
   assert.equal(catalogUpstreamUrl('app://bookstr/api/dictionaries/en-fr.sqlite3', base), '');
   assert.equal(catalogUpstreamUrl('app://bookstr/api/books/not-a-number/download', base), '');
   assert.equal(catalogUpstreamUrl('app://bookstr/index.html', base), '');
@@ -122,4 +130,43 @@ test('catalog proxy rejects mutations, ignores unrelated routes, and handles out
   );
   assert.equal(unavailable.status, 502);
   assert.equal(await unavailable.text(), 'Catalog unavailable');
+});
+
+test('catalog proxy selects route-specific accepts, forwards all cache headers, and omits HEAD bodies', async () => {
+  const calls = [];
+  const fetchImpl = async (url, options) => {
+    calls.push({ url, options });
+    return new Response('payload', {
+      status: 206,
+      headers: {
+        'Content-Type': 'application/json',
+        'Content-Length': '7',
+        'Cache-Control': 'max-age=60',
+        ETag: 'fixture',
+        'Last-Modified': 'Sun, 30 Aug 2026 12:00:00 GMT',
+      },
+    });
+  };
+  const opds = await proxyCatalogRequest(new Request('app://bookstr/api/opds?query=paper'), fetchImpl);
+  assert.equal(calls[0].options.headers.Accept, 'application/atom+xml;profile=opds-catalog');
+  assert.equal(opds.headers.get('content-length'), '7');
+  assert.equal(opds.headers.get('cache-control'), 'max-age=60');
+  assert.equal(opds.headers.get('last-modified'), 'Sun, 30 Aug 2026 12:00:00 GMT');
+
+  const json = await proxyCatalogRequest(new Request('app://bookstr/api/oapen?query=paper'), fetchImpl);
+  assert.equal(calls[1].options.headers.Accept, 'application/json');
+  assert.equal(await json.text(), 'payload');
+
+  const head = await proxyCatalogRequest(new Request('app://bookstr/api/search?q=paper', { method: 'HEAD' }), fetchImpl);
+  assert.equal(calls[2].options.method, 'HEAD');
+  assert.equal(await head.text(), '');
+
+  await proxyCatalogRequest(new Request('app://bookstr/api/search?q=paper'), fetchImpl, 'https://catalog.test/api/');
+  assert.equal(calls[3].options.headers.Accept, '*/*');
+  assert.equal(calls[3].url, 'https://catalog.test/api/search?q=paper');
+
+  assert.equal(
+    catalogUpstreamUrl('app://bookstr/api/opds?query=paper&order_by=popular', undefined, 'https://unglue.test/s.open/'),
+    'https://unglue.test/s.paper/?order_by=popular',
+  );
 });
