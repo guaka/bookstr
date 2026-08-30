@@ -24,7 +24,12 @@ function testValue(report) {
   const total = Number(results.tests ?? report.knownTests);
   const passed = Number(results.passed);
   if (Number.isFinite(total) && Number.isFinite(passed)) {
-    return `${passed === total ? '🟢' : '🔴'} ${passed}/${total}`;
+    const failed = Number(results.failed) || 0;
+    const flaky = Number(results.flaky) || 0;
+    const skipped = Number(results.skipped) || 0;
+    const indicator = failed ? '🔴' : flaky || skipped ? '🟡' : passed === total ? '🟢' : '🔴';
+    const detail = flaky ? ` (${flaky} flaky)` : skipped ? ` (${skipped} skipped)` : '';
+    return `${indicator} ${passed}/${total}${detail}`;
   }
   return Number.isFinite(total) ? String(total) : '—';
 }
@@ -45,9 +50,12 @@ export function renderCoverageReport({ reports = [], workflow = 'Bookstr', runUr
     .sort((left, right) => String(left.suite || left.id || '').localeCompare(String(right.suite || right.id || '')))
     .map(report => {
       const reportStatus = String(report.status || 'unknown').toLowerCase();
+      const flaky = Number(report.results?.flaky) || 0;
+      const failed = Number(report.results?.failed) || 0;
       const status = reportStatus === 'not-run'
         ? '⚪ Not run'
-        : reportStatus === 'passing' ? '🟢 Passing' : '🔴 Failing';
+        : flaky && !failed ? '🟡 Flaky'
+          : reportStatus === 'passing' ? '🟢 Passing' : '🔴 Failing';
       const values = METRICS.map(([, labels]) => metricValue(report, labels));
       return `| ${markdownText(report.suite || report.id || 'Unknown')} | ${status} | ${testValue(report)} | ${values.join(' | ')} |`;
     });
@@ -64,7 +72,7 @@ export function renderCoverageReport({ reports = [], workflow = 'Bookstr', runUr
     '',
     '<details><summary>Report details</summary>',
     '',
-    '🟢 means all tests passed or coverage is 100%. 🟡 means measured coverage is below 100%. 🔴 means a failing result. ⚪ Not run means no relevant files changed for that client. — means that suite does not emit that metric; e2e suites currently report tests only.',
+    '🟢 means all tests passed cleanly or coverage is 100%. 🟡 means a test needed a retry or measured coverage is below 100%. 🔴 means a failing result. ⚪ Not run means no relevant files changed for that client. — means that suite does not emit that metric; e2e suites currently report tests only.',
     '',
     'This report is generated from the Bookstr test-overview artifact and updates in place on reruns.',
     '',

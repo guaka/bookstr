@@ -135,6 +135,13 @@ jobs:
           status=$?
           echo "duration_ms=$((($(date +%s) - started) * 1000))" >> "$GITHUB_OUTPUT"
           exit "$status"
+      - name: Upload web Playwright report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bookstr-web-playwright-${{ github.run_id }}
+          path: web-playwright.json
+          if-no-files-found: warn
       - name: Record web test overview
         if: always()
         env:

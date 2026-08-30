@@ -137,3 +137,21 @@ test('exposes the same dependency-free API to browser scripts', async () => {
   assert.equal(context.globalThis.BookstrDesktopProgress.clampProgress(3), 1);
 
 });
+
+test('progress comparison normalizes missing and invalid positions', () => {
+  assert.deepEqual(progressPosition({}), {
+    progression: 0,
+    furthestProgression: 0,
+  });
+  assert.deepEqual(progressPosition({ progression: 'bad', furthestProgression: 2 }), {
+    progression: 0,
+    furthestProgression: 1,
+  });
+  assert.equal(isProgressAhead({}, {}), false);
+  assert.equal(isProgressAhead({ progression: 0.1 }, { progression: 0.1 }), false);
+  assert.equal(isProgressAhead({ furthestProgression: 0.9 }, { furthestProgression: 0.8 }), true);
+  assert.deepEqual(progressPosition({ locator: { progression: 0.3, furthestProgression: 0.4 } }), {
+    progression: 0.3,
+    furthestProgression: 0.4,
+  });
+});

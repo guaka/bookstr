@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
+import { readFile } from 'node:fs/promises';
 import test from 'node:test';
+import vm from 'node:vm';
 
 const require = createRequire(import.meta.url);
 const BookstrSpeech = require('../reader-speech.js');
@@ -478,4 +480,171 @@ test('speech player reports unsupported or empty plans without starting', () => 
   const harness = playerHarness();
   assert.equal(harness.player.start({ chunks: [] }), false);
   assert.equal(harness.spoken.length, 0);
+});
+
+test('speech planner and player cover defensive platform fallbacks', () => {
+  assert.equal(BookstrSpeech.buildPlan('single value').text, 'single value');
+  assert.equal(BookstrSpeech.buildPlan(['', 'kept'], { maximumCharacters: 4 }).text, 'kept');
+  assert.equal(BookstrSpeech.normalizeLocale('zh-hant'), 'zh-hant');
+  assert.equal(BookstrSpeech.selectVoice('not an array', 'en', 'voice'), null);
+  assert.equal(BookstrSpeech.selectVoice([{ lang: 'en-US' }], 'en', 'voice'), null);
+
+  const objectSegmenter = {
+    segment() {
+      return [{ segment: 'Object sentence.' }, { segment: '   ' }];
+    },
+  };
+  assert.deepEqual(
+    BookstrSpeech.buildPlan(['Object sentence.'], { segmenterFactory: objectSegmenter }).chunks.map(chunk => chunk.text),
+    ['Object sentence.'],
+  );
+  const emptySegmenter = { segment() { return []; } };
+  assert.equal(BookstrSpeech.buildPlan(['Fallback text'], { segmenterFactory: emptySegmenter }).chunks[0].text, 'Fallback text');
+
+  const spoken = [];
+  const synthesis = {
+    speak(utterance) { spoken.push(utterance); },
+    cancel() {},
+    getVoices() { return [{ name: 'English voice', voiceURI: 'voice', lang: 'en-US' }]; },
+  };
+  class Utterance {
+    constructor(text) { this.text = text; }
+  }
+  const player = BookstrSpeech.createPlayer({
+    speechSynthesis: synthesis,
+    Utterance,
+    setTimeout(callback) { callback(); return 1; },
+    clearTimeout() {},
+  });
+  assert.equal(player.stop(), false);
+  assert.equal(player.start({ chunks: [null, { text: ' ' }, { text: 'Current.' }] }, {
+    language: 'en-US', rate: 20, voiceIdentifier: 'voice',
+  }), true);
+  assert.equal(spoken[0].rate, 10);
+  assert.deepEqual(spoken[0].voice, synthesis.getVoices()[0]);
+  spoken[0].onerror();
+  assert.equal(player.state, 'stopped');
+});
+
+test('speech planner covers empty, truncated, punctuation, and segmenter-mismatch inputs', () => {
+  assert.deepEqual(BookstrSpeech.buildPlan([]), { text: '', chunks: [] });
+  assert.equal(BookstrSpeech.buildPlan(['one', 'two'], { maximumCharacters: 1 }).text, 'o');
+  assert.equal(BookstrSpeech.buildPlan(['a', 'b'], { maximumCharacters: 2 }).text, 'a');
+  assert.deepEqual(BookstrSpeech.buildPlan(['---']).chunks, []);
+  assert.equal(
+    BookstrSpeech.buildPlan(['Actual text.'], {
+      segmenterFactory: { segment() { return [{ segment: 'Different text.' }]; } },
+    }).chunks[0].text,
+    'Actual text.',
+  );
+  const punctuationPlan = BookstrSpeech.buildPlan(['left --- right, then continue; here it ends.'], {
+    softLimit: 10,
+    hardLimit: 18,
+    segmenterFactory: null,
+  });
+  assert.ok(punctuationPlan.chunks.length > 1);
+  assertPlanIntegrity(punctuationPlan);
+});
+
+test('speech player tolerates missing optional synthesis APIs and stale timers', () => {
+  const spoken = [];
+  const timers = [];
+  const synthesis = {
+    speak(utterance) { spoken.push(utterance); },
+    cancel() {},
+  };
+  class Utterance {
+    constructor(text) { this.text = text; }
+  }
+  const player = BookstrSpeech.createPlayer({
+    speechSynthesis: synthesis,
+    Utterance,
+    setTimeout(callback, delay) {
+      timers.push({ callback, delay });
+      return timers.length;
+    },
+  });
+
+  assert.equal(player.start({ chunks: [
+    { text: 'First.', pauseMs: 0 },
+    { text: 'Second.', pauseMs: 25 },
+  ] }), true);
+  assert.equal(player.pause(), true);
+  assert.equal(player.resume(), true);
+  spoken[0].onend();
+  const pending = timers.at(-1);
+  assert.equal(player.stop(), true);
+  pending.callback();
+  assert.equal(spoken.length, 1);
+  assert.equal(player.stop(), false);
+});
+
+test('speech module works without CommonJS, Intl, or host timers', async () => {
+  const source = await readFile(new URL('../reader-speech.js', import.meta.url), 'utf8');
+  const context = { Intl: undefined };
+  vm.runInNewContext(source, context);
+  const api = context.BookstrSpeech;
+  assert.equal(typeof api.buildPlan, 'function');
+  assert.equal(api.buildPlan(['Fallback sentence.']).chunks[0].text, 'Fallback sentence.');
+
+  class Utterance {
+    constructor(text) { this.text = text; }
+  }
+  const spoken = [];
+  const player = api.createPlayer({
+    speechSynthesis: { speak(utterance) { spoken.push(utterance); } },
+    Utterance,
+  });
+  assert.equal(player.start({ chunks: [
+    { text: 'First.', pauseMs: 0 },
+    { text: 'Second.', pauseMs: 10 },
+  ] }), true);
+  assert.equal(spoken.length, 1);
+  spoken[0].onend();
+  assert.equal(spoken.length, 2);
+
+  const noRoot = { globalThis: undefined };
+  vm.runInNewContext(`(function() { "use strict"; ${source} }).call(null)`, noRoot);
+  new Function('globalThis', `"use strict"; ${source}`)(undefined);
+});
+
+test('speech player accepts an omitted configuration object', () => {
+  const player = BookstrSpeech.createPlayer();
+  assert.equal(player.supported, false);
+  assert.equal(player.start(null), false);
+  assert.equal(player.stop(), false);
+});
+
+test('speech planner handles punctuation after parenthetical phrases and empty DOM text nodes', () => {
+  for (const suffix of ['"...', '!']) {
+    const plan = BookstrSpeech.buildPlan([`Before (inside)${suffix} after.`]);
+    assert.ok(plan.chunks.length > 1);
+    assertPlanIntegrity(plan);
+  }
+  const document = {
+    createTreeWalker() {
+      let index = 0;
+      const nodes = [
+        { parentElement: { closest() { return null; } }, nodeValue: null },
+        { parentElement: { closest() { return null; } }, nodeValue: 'visible' },
+      ];
+      return { nextNode() { return index < nodes.length ? nodes[index++] : null; } };
+    },
+  };
+  assert.equal(BookstrSpeech.visibleText({ ownerDocument: document }), 'visible');
+
+  assert.equal(BookstrSpeech.isSilentSpeechParent({
+    closest(selector) { return selector === 'a' ? this : null; },
+    getAttribute(name) { return name === 'role' ? 'footnote' : ''; },
+    className: '',
+  }), true);
+  for (const text of [
+    'abcdefghij,word with no comma boundary and enough words to split later.',
+    'abcdefghij;word with no clause boundary and enough words to split later.',
+    'abcdefghij:word with no colon boundary and enough words to split later.',
+    'one --- two three four five six seven eight nine ten.',
+    'one - two three four five six seven eight nine ten.',
+  ]) {
+    assertPlanIntegrity(BookstrSpeech.buildPlan([text], { softLimit: 10, hardLimit: 20, segmenterFactory: null }));
+  }
 });
