@@ -103,15 +103,7 @@ jobs:
           api-level: 30
           arch: x86_64
           target: google_apis
-          script: |
-            set +e
-            cd android
-            ./gradlew --no-daemon connectedDebugAndroidTest
-            status=$?
-            mkdir -p e2e-screenshots
-            adb pull /sdcard/Android/data/app.bookstr/files/e2e-screenshots e2e-screenshots || true
-            adb exec-out screencap -p > e2e-screenshots/final-state.png || true
-            exit "$status"
+          script: cd android; ./gradlew --no-daemon connectedDebugAndroidTest; status=$?; mkdir -p e2e-screenshots; adb pull /sdcard/Android/data/app.bookstr/files/e2e-screenshots e2e-screenshots || true; adb exec-out screencap -p > e2e-screenshots/final-state.png || true; exit "$status"
       - name: Record Android UI test overview
         if: always()
         working-directory: .

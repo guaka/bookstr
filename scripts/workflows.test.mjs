@@ -113,6 +113,7 @@ test('Android CI shares one cached Gradle invocation across unit build tasks', a
   assert.equal([...workflow.matchAll(/assembleDebug/g)].length, 1);
   assert.match(workflow, /steps\.android_build\.outcome == 'success'/);
   assert.doesNotMatch(workflow, /steps\.(unit_tests|unit_coverage|assemble)\./);
+  assert.match(workflow, /script: cd android; \.\/gradlew --no-daemon connectedDebugAndroidTest; status=\$\?/);
   assert.match(workflow, /adb pull \/sdcard\/Android\/data\/app\.bookstr\/files\/e2e-screenshots e2e-screenshots/);
   assert.match(workflow, /adb exec-out screencap -p > e2e-screenshots\/final-state\.png/);
   assert.match(workflow, /bookstr-e2e-screenshots-android-\$\{\{ github\.run_id \}\}/);
