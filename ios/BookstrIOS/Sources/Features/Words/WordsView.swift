@@ -289,16 +289,28 @@ struct WordsView: View {
     private func openWord(_ entry: VocabularyWord) async {
         _ = container.vocabularyRepository.recordSeen(key: entry.key)
         showCached()
-        await openBook(id: entry.bookId, title: entry.bookTitle, locator: entry.cfi, openingKey: entry.key)
+        await openBook(
+            id: entry.bookId, title: entry.bookTitle, locator: entry.cfi,
+            openingKey: entry.key, highlightKind: .word
+        )
     }
 
     @MainActor
     private func openMark(_ entry: BookSnippet) async {
-        await openBook(id: entry.bookId, title: entry.bookTitle, locator: entry.locator, openingKey: entry.syncId)
+        await openBook(
+            id: entry.bookId, title: entry.bookTitle, locator: entry.locator,
+            openingKey: entry.syncId, highlightKind: .mark
+        )
     }
 
     @MainActor
-    private func openBook(id: String, title: String, locator: String, openingKey: String) async {
+    private func openBook(
+        id: String,
+        title: String,
+        locator: String,
+        openingKey: String,
+        highlightKind: ReaderHighlightKind
+    ) async {
         guard openingWordKey == nil else { return }
         errorMessage = nil
         var book = container.catalogRepository.rememberedBooks().first { $0.id == id }
@@ -320,7 +332,12 @@ struct WordsView: View {
             errorMessage = "Book open failed: \(error.localizedDescription)"
             return
         }
-        playback.present(book: openedBook, initialLocator: locator, highlightLocator: locator)
+        playback.present(
+            book: openedBook,
+            initialLocator: locator,
+            highlightLocator: locator,
+            highlightKind: highlightKind
+        )
     }
 
     private func highlightedContext(_ context: String, word: String) -> AttributedString {
