@@ -772,11 +772,13 @@ test('Electron windows and packages use the Bookstr app icon', async () => {
     offset += length + 12;
   }
   const pixels = inflateSync(Buffer.concat(idatChunks));
-  assert.match(desktopMain, /const APP_ICON_PATH = process\.platform === 'darwin'[\s\S]*?icon-macos\.png[\s\S]*?apple-touch-icon\.png/);
+  assert.match(desktopMain, /const APP_ICON_PATH = path\.join\(__dirname, 'assets', 'icon-macos\.png'\)/);
   assert.match(desktopMain, /title: 'libstr',[\s\S]*?icon: APP_ICON_PATH/);
   assert.equal((desktopMain.match(/new BrowserWindow\(/g) || []).length, 1);
   assert.match(desktopMain, /app\.dock\.setIcon\(APP_ICON_PATH\)/);
-  assert.equal(desktopPackage.build.icon, '../web/public/apple-touch-icon.png');
+  assert.equal(desktopPackage.build.icon, 'assets/icon-macos.png');
+  assert.equal(desktopPackage.build.win.icon, 'assets/icon-macos.png');
+  assert.equal(desktopPackage.build.linux.icon, 'assets/icon-macos.png');
   assert.equal(macIcon.toString('ascii', 1, 4), 'PNG');
   assert.equal(macIcon.readUInt32BE(16), 1024);
   assert.equal(macIcon.readUInt32BE(20), 1024);

@@ -40,7 +40,7 @@
   "build": {
     "appId": "app.bookstr.desktop",
     "productName": "libstr",
-    "icon": "../web/public/apple-touch-icon.png",
+    "icon": "assets/icon-macos.png",
     "files": [
       "../web/**/*",
       "assets/icon-macos.png",
@@ -74,6 +74,7 @@
       ]
     },
     "win": {
+      "icon": "assets/icon-macos.png",
       "artifactName": "libstr-desktop-${version}-setup-${arch}.exe",
       "signAndEditExecutable": false,
       "target": [
@@ -81,6 +82,7 @@
       ]
     },
     "linux": {
+      "icon": "assets/icon-macos.png",
       "artifactName": "libstr-desktop-${version}-${arch}.AppImage",
       "category": "Office",
       "maintainer": "libstr <support@bookstr.dev>",

@@ -23,9 +23,7 @@ const { SpeechModelStore } = require('./speech-model-store');
 
 const PRELOAD_PATH = path.join(__dirname, 'preload.js');
 const WEB_ROOT = path.join(__dirname, '..', 'web');
-const APP_ICON_PATH = process.platform === 'darwin'
-  ? path.join(__dirname, 'assets', 'icon-macos.png')
-  : path.join(WEB_ROOT, 'public', 'apple-touch-icon.png');
+const APP_ICON_PATH = path.join(__dirname, 'assets', 'icon-macos.png');
 const STATE_FILE = path.join(app.getPath('userData'), 'bookstr-desktop-state.json');
 const speechModelStore = new SpeechModelStore(path.join(app.getPath('userData'), 'speech-models'));
 const DESKTOP_NOSTR_STATE_KEY = 'desktopNostr';
