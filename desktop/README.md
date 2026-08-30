@@ -3,7 +3,9 @@
 This directory contains the Electron shell for the libstr desktop app. It loads
 the existing web reader UI from `../web` through a custom `app://bookstr` protocol,
 keeps reading inside the main library window, and synchronizes reading progress
-through an isolated preload bridge.
+through an isolated preload bridge. The desktop uses the bundled WebTorrent
+client for public and private transfers; it does not bundle Transmission or
+Iroh.
 
 ## Run locally
 
@@ -46,4 +48,6 @@ and reader read-aloud behavior.
   reading progress remain in sync across windows.
 - Reader windows receive signed payloads from the main process via a constrained
   bridge (`window.bookstrDesktop`).
+- `window.bookstrDesktop.transfers` exposes status, rights-gated public seeding,
+  and public/private torrent admission without exposing library paths.
 - External links are opened in the system browser.

@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bookstr.app/contracts/book-rights-v2.schema.json",
+  "title": "Bookstr book rights and redistribution contract v2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["rights_status", "license", "license_url", "rights_source", "jurisdiction", "redistribution", "evidence_url", "attribution", "public_seed_allowed"],
+  "properties": {
+    "rights_status": { "enum": ["public_domain", "open_license", "copyrighted", "unknown"] },
+    "license": { "type": "string" },
+    "license_url": { "type": "string", "format": "uri-reference" },
+    "rights_source": { "type": "string" },
+    "jurisdiction": { "type": "string" },
+    "redistribution": { "enum": ["allowed", "noncommercial", "forbidden", "unknown"] },
+    "evidence_url": { "type": "string", "format": "uri-reference" },
+    "attribution": { "type": "string" },
+    "public_seed_allowed": { "type": "boolean" }
+  }
+}

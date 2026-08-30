@@ -193,6 +193,46 @@ const desktopBridge = {
       ipcRenderer.send('bookstr-desktop-report-progress', normalized);
     }
   },
+  library: {
+    search(request) {
+      return ipcRenderer.invoke('bookstr-desktop-library-search', request);
+    },
+    getBook(bookId) {
+      return ipcRenderer.invoke('bookstr-desktop-library-book', bookId);
+    },
+    upsertBook(book) {
+      return ipcRenderer.invoke('bookstr-desktop-library-upsert-book', book);
+    },
+    downloads() {
+      return ipcRenderer.invoke('bookstr-desktop-library-downloads');
+    },
+    setDownload(download) {
+      return ipcRenderer.invoke('bookstr-desktop-library-set-download', download);
+    },
+    linkedFolders() {
+      return ipcRenderer.invoke('bookstr-desktop-library-linked-folders');
+    },
+    linkFolder(folder) {
+      return ipcRenderer.invoke('bookstr-desktop-library-link-folder', folder);
+    },
+    openReader(bookId) {
+      return ipcRenderer.invoke('bookstr-desktop-library-open-reader', bookId);
+    },
+  },
+  transfers: {
+    status() {
+      return ipcRenderer.invoke('bookstr-desktop-transfer-status');
+    },
+    seedPublic(request) {
+      return ipcRenderer.invoke('bookstr-desktop-transfer-seed-public', request);
+    },
+    addPublic(request) {
+      return ipcRenderer.invoke('bookstr-desktop-transfer-add-public', request);
+    },
+    addPrivate(request) {
+      return ipcRenderer.invoke('bookstr-desktop-transfer-add-private', request);
+    },
+  },
 };
 
 contextBridge.exposeInMainWorld('bookstrDesktop', desktopBridge);

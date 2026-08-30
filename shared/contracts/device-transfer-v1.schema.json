@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bookstr.app/contracts/device-transfer-v1.schema.json",
+  "title": "Bookstr private device and transfer messages v1",
+  "type": "object",
+  "required": ["version", "type"],
+  "properties": {
+    "version": { "const": 1 },
+    "type": { "enum": ["bookstr.device.announce", "bookstr.library.manifest.request", "bookstr.library.manifest.page", "bookstr.transfer.request", "bookstr.transfer.offer", "bookstr.transfer.answer"] },
+    "device_id": { "type": "string" },
+    "request_id": { "type": "string" },
+    "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "infohash": { "type": "string", "pattern": "^[a-f0-9]{40}$" },
+    "private": { "type": "boolean" },
+    "entries": { "type": "array", "maxItems": 100 },
+    "ice": { "type": "array", "maxItems": 32, "items": { "type": "string" } }
+  },
+  "additionalProperties": true
+}
