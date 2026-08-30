@@ -61,6 +61,7 @@
       "catalog-proxy.js",
       "dictionary-proxy.js",
       "webtorrent-bridge.js",
+      "device-pairing.js",
       "library-store.js",
       "library-import.js",
       "acquisition-manager.js",

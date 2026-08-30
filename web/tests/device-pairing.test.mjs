@@ -16,6 +16,15 @@ test('web adapter uses the supplied NIP-07 signer and tools', async () => {
   assert.equal(status.persistent, false);
 });
 
+test('web adapter announces the device through the shared contract', async () => {
+  const secret = nostrTools.generateSecretKey();
+  const signer = { getPublicKey: async () => nostrTools.getPublicKey(secret) };
+  const pairing = await createWebPairing({ signer, tools: nostrTools });
+  const announcement = await pairing.announce({ now: 1_700_000_000 });
+  assert.equal(announcement.type, 'bookstr.device.announce');
+  assert.equal(announcement.expires_at, 1_700_000_120);
+});
+
 test('web adapter resolves the active browser signer without persisting a secret', async () => {
   const secret = nostrTools.generateSecretKey();
   const signer = {

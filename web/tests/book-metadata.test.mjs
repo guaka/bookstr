@@ -63,6 +63,14 @@ test('formats rights markers and accessible distinctions', () => {
   assert.equal(rightsAccessibleLabel({}), 'No open license identified');
 });
 
+test('sorts cached books through the caller-provided cache lookup', () => {
+  const books = sortBooks([
+    { id: 'uncached', title: 'A' },
+    { id: 'cached', title: 'B' },
+  ], 'cached', 'desc', book => book.id === 'cached');
+  assert.deepEqual(books.map(book => book.id), ['cached', 'uncached']);
+});
+
 test('keeps license URLs safe and preserves explicit metadata during partial refreshes', () => {
   assert.equal(normalizeRights({ license_url: 'javascript:alert(1)' }).license_url, '');
   assert.equal(
