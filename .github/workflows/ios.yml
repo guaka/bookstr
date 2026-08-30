@@ -123,9 +123,13 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: bookstr-test-overview-ios-${{ github.run_id }}
+          path: test-overview/*.json
+      - name: Upload iOS test diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bookstr-ios-test-diagnostics-${{ github.run_id }}
           path: |
-            test-overview/ios.json
-            test-overview/ios-e2e.json
             ios/swift-test-results.log
             ios/e2e-summary.json
       - name: Fail unsuccessful iOS checks

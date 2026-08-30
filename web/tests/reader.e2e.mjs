@@ -569,6 +569,24 @@ test('direct Words routes require an active synced word', async ({ page }) => {
 });
 
 test('Open Library search results expose canonical work links', async ({ page }) => {
+  await page.route('https://books-api.guaka.org/api/search**', route => route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify({
+      books: [{
+        id: 'OL123W',
+        source: 'openlibrary',
+        source_native_id: 'OL123W',
+        title: 'A deterministic test book',
+        authors: ['Test Author'],
+      }],
+    }),
+  }));
+  await page.route('https://books-api.guaka.org/api/unglueit**', route => route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify({ books: [] }),
+  }));
   await page.goto('/#search=test');
   const link = page.locator('a.result-source[href^="https://openlibrary.org/works/OL"]').first();
   await expect(link).toBeVisible();

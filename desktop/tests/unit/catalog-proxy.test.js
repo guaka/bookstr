@@ -170,3 +170,70 @@ test('catalog proxy selects route-specific accepts, forwards all cache headers, 
     'https://unglue.test/s.paper/?order_by=popular',
   );
 });
+
+test('catalog proxy handles HEAD responses and route-specific accept headers', async () => {
+  const calls = [];
+  const response = await proxyCatalogRequest(
+    new Request('app://bookstr/api/oapen?query=history', { method: 'HEAD' }),
+    async (url, options) => {
+      calls.push({ url, options });
+      return new Response(null, {
+        status: 206,
+        headers: {
+          'Content-Length': '0',
+          'Cache-Control': 'max-age=60',
+          'Last-Modified': 'yesterday',
+        },
+      });
+    },
+  );
+
+  assert.deepEqual(calls, [{
+    url: 'https://library.oapen.org/rest/search?query=history&expand=metadata%2Cbitstreams&limit=50',
+    options: { method: 'HEAD', headers: { Accept: 'application/json' } },
+  }]);
+  assert.equal(response.status, 206);
+  assert.equal(response.body, null);
+  assert.equal(response.headers.get('content-length'), '0');
+  assert.equal(response.headers.get('cache-control'), 'max-age=60');
+  assert.equal(response.headers.get('last-modified'), 'yesterday');
+  assert.equal(response.headers.get('etag'), null);
+});
+
+test('catalog proxy preserves accept headers for ordinary catalog routes', async () => {
+  let received;
+  const response = await proxyCatalogRequest(
+    new Request('app://bookstr/api/books/7', { headers: { Accept: 'application/custom' } }),
+    async (_url, options) => {
+      received = options;
+      return new Response('ok', { status: 200 });
+    },
+    'https://catalog.test/api/',
+  );
+
+  assert.deepEqual(received, { method: 'GET', headers: { Accept: 'application/custom' } });
+  assert.equal(await response.text(), 'ok');
+});
+
+test('catalog proxy rejects incomplete archive requests and defaults ordinary accept headers', async () => {
+  const base = 'https://catalog.test/api';
+  assert.equal(catalogUpstreamUrl('app://bookstr/api/internet-archive/search', base), '');
+  assert.equal(catalogUpstreamUrl('app://bookstr/api/internet-archive/metadata', base), '');
+  assert.equal(catalogUpstreamUrl('app://bookstr/api/gdl-epub', base), '');
+  assert.equal(catalogUpstreamUrl('app://bookstr/api/oapen-file', base), '');
+  assert.equal(catalogUpstreamUrl('app://bookstr/api/internet-archive/download?id=book'), '');
+  assert.equal(catalogUpstreamUrl('app://bookstr/api/internet-archive/download?name=book.epub'), '');
+  assert.equal(catalogUpstreamUrl(`app://bookstr/api/internet-archive/download?id=book&name=${'x'.repeat(513)}`), '');
+  assert.equal(catalogUpstreamUrl('app://bookstr/api/internet-archive/download?id=book&name=dir%2Fbook.epub'), '');
+
+  let received;
+  await proxyCatalogRequest(
+    new Request('app://bookstr/api/books/8'),
+    async (_url, options) => {
+      received = options;
+      return new Response(null, { status: 204 });
+    },
+    base,
+  );
+  assert.deepEqual(received, { method: 'GET', headers: { Accept: '*/*' } });
+});

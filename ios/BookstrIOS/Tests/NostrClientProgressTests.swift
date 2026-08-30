@@ -255,3 +255,111 @@ final class NostrClientProgressTests: XCTestCase {
         XCTAssertFalse(NostrPullCooldown.shouldSkip(lastSyncs: [stale, nil], now: now))
     }
 }
+
+final class NostrModelCoverageTests: XCTestCase {
+    func testRelayObjectParserHandlesSupportedScalarRepresentations() {
+        let numeric = NostrEvent.fromRelayObject([
+            "id": "event-id",
+            "pubkey": "pubkey",
+            "created_at": NSNumber(value: 42),
+            "kind": NSNumber(value: 1),
+            "content": "content",
+            "tags": [["d", "topic"]],
+            "sig": "signature"
+        ])
+        XCTAssertEqual(numeric?.dTag, "topic")
+
+        let strings = NostrEvent.fromRelayObject([
+            "created_at": "43",
+            "kind": "1",
+            "content": 123,
+            "tags": [["p", "person"]],
+            "sig": 456
+        ])
+        XCTAssertNil(strings?.dTag)
+
+        _ = NostrEvent.fromRelayObject([
+            "created_at": 44.5,
+            "kind": true,
+            "tags": ["malformed"]
+        ])
+    }
+}
+
+final class NostrCoverageExpansionTests: XCTestCase {
+    func testModelHelpersCoverScalarAndTagRepresentations() {
+        XCTAssertFalse(NostrKinds.progressDTag(bookId: "book").isEmpty)
+        XCTAssertFalse(NostrKinds.favoritesChunkDTag(index: 1).isEmpty)
+        XCTAssertFalse(NostrKinds.favoritesChunkDTag(prefix: "custom", index: 2).isEmpty)
+
+        let values: [Any] = [Int64(1), Int(2), 3.5, NSNumber(value: 4), "5"]
+        for value in values {
+            _ = NostrEvent.fromRelayObject([
+                "created_at": value,
+                "kind": value,
+                "content": value,
+                "tags": [["d", "topic", value]],
+                "sig": value
+            ])
+        }
+        let event = NostrEvent.fromRelayObject([
+            "created_at": 6,
+            "kind": 1,
+            "tags": [["d", "topic"], [], ["p", "person", true], "malformed"]
+        ])
+        XCTAssertEqual(event?.dTag, "topic")
+        _ = NostrEvent.fromRelayObject(["created_at": true, "kind": true, "tags": ["malformed"]])
+    }
+
+    func testInvalidRelayURLsReturnWithoutEvents() async {
+        let client = NostrClient()
+        let relay = ["https://relay.example"]
+        let progress = await client.fetchLatestProgress(pubkey: "pubkey", bookId: "book", relays: relay)
+        let vocabulary = await client.fetchVocabulary(pubkey: "pubkey", relays: relay)
+        let applicationData = await client.fetchApplicationData(pubkey: "pubkey", relays: relay)
+        let event = NostrEvent(id: nil, pubkey: nil, createdAt: 1, kind: 1, tags: [], content: "", sig: nil)
+        let published = await client.publishEvent(event, relays: relay)
+        XCTAssertNil(progress)
+        XCTAssertTrue(vocabulary.isEmpty)
+        XCTAssertTrue(applicationData.isEmpty)
+        XCTAssertFalse(published)
+    }
+}
+
+final class NostrPureFunctionCoverageTests: XCTestCase {
+    func testProgressRightsAndTimestampFallbacks() {
+        let rightsContent = NostrClient.progressContent(
+            bookId: "book", progression: 0.2, cfi: "cfi", furthestProgression: 0.1,
+            title: "Title", author: "Author", updatedAt: 12,
+            rights: BookRights(status: .openLicense, license: "CC BY", licenseURL: "https://license", source: "catalog")
+        )
+        XCTAssertEqual(NostrClient.parseProgressRights(rightsContent).licenseURL, "https://license")
+        XCTAssertEqual(NostrClient.parseProgressRights(#"{"rights":"CC0","license_url":"https://cc0"}"#).license, "CC0")
+        XCTAssertEqual(NostrClient.parseProgressRights("not-json").status, .unknown)
+
+        XCTAssertEqual(NostrClient.parseFurthestProgression("not-json", fallback: 0.4), 0.4)
+        XCTAssertEqual(NostrClient.parseFurthestProgression(#"{"furthestProgression":0.2}"#, fallback: 0.4), 0.4)
+        XCTAssertEqual(NostrClient.parseFurthestProgression(#"{"locator":{"furthestProgression":"0.8"}}"#, fallback: 0.4), 0.8)
+        XCTAssertEqual(NostrClient.parseFurthestProgression(#"{"furthestProgression":0.9}"#, fallback: 0.4), 0.9)
+
+        XCTAssertEqual(NostrClient.parseProgressUpdatedAt("not-json", eventCreatedAtSeconds: 12), 12_000)
+        XCTAssertEqual(NostrClient.parseProgressUpdatedAt(#"{"updatedAt":0}"#, eventCreatedAtSeconds: 12), 12_000)
+        XCTAssertEqual(NostrClient.parseProgressUpdatedAt(#"{"updatedAt":"15"}"#, eventCreatedAtSeconds: 12), 15)
+    }
+
+    func testRelayReportCollectsDTags() {
+        let event = NostrEvent(id: "id", pubkey: "pubkey", createdAt: 1, kind: 1, tags: [["d", "one"], ["p", "two"]], content: "", sig: nil)
+        let report = RelayQueryReport(relay: "relay", events: [event], finished: "eose", elapsedMs: 1, notices: [], error: nil)
+        XCTAssertEqual(report.dTags, ["one"])
+    }
+
+    func testConnectionRefusalExercisesSocketErrorPaths() async {
+        let client = NostrClient()
+        let relay = ["ws://127.0.0.1:1"]
+        let progress = await client.fetchLatestProgress(pubkey: "pubkey", bookId: "book", relays: relay)
+        XCTAssertNil(progress)
+        let event = NostrEvent(id: nil, pubkey: nil, createdAt: 1, kind: 1, tags: [], content: "", sig: nil)
+        let published = await client.publishEvent(event, relays: relay)
+        XCTAssertFalse(published)
+    }
+}

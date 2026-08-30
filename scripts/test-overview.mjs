@@ -75,13 +75,15 @@ export function parseJUnit(documents) {
 
 export function parsePlaywright(report) {
   const stats = report?.stats || {};
-  const passed = number(stats.expected);
-  const failed = number(stats.unexpected) + number(stats.flaky);
+  const flaky = number(stats.flaky);
+  const passed = number(stats.expected) + flaky;
+  const failed = number(stats.unexpected);
   const skipped = number(stats.skipped);
   return {
     tests: passed + failed + skipped,
     passed,
     failed,
+    flaky,
     skipped,
     durationMs: number(stats.duration),
   };
