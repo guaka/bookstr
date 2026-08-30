@@ -81,6 +81,13 @@ function timestampVersion(now = new Date()) {
 }
 
 const DESKTOP_VERSION = process.env.BOOKSTR_DESKTOP_VERSION || timestampVersion();
+const DESKTOP_APP_ID = 'app.bookstr.desktop';
+if (process.platform === 'linux') {
+  app.setDesktopName(`${DESKTOP_APP_ID}.desktop`);
+}
+if (process.platform === 'win32') {
+  app.setAppUserModelId(DESKTOP_APP_ID);
+}
 app.setName('libstr');
 app.setVersion(DESKTOP_VERSION);
 app.setAboutPanelOptions({

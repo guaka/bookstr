@@ -3,6 +3,7 @@
   "private": true,
   "version": "0.1.0",
   "description": "libstr Electron desktop shell",
+  "desktopName": "app.bookstr.desktop.desktop",
   "homepage": "https://github.com/guaka/bookstr",
   "author": {
     "name": "libstr",
@@ -83,6 +84,12 @@
     },
     "linux": {
       "icon": "assets/icon-macos.png",
+      "syncDesktopName": true,
+      "desktop": {
+        "entry": {
+          "StartupWMClass": "app.bookstr.desktop"
+        }
+      },
       "artifactName": "libstr-desktop-${version}-${arch}.AppImage",
       "category": "Office",
       "maintainer": "libstr <support@bookstr.dev>",

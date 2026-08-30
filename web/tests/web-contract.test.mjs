@@ -779,6 +779,12 @@ test('Electron windows and packages use the Bookstr app icon', async () => {
   assert.equal(desktopPackage.build.icon, 'assets/icon-macos.png');
   assert.equal(desktopPackage.build.win.icon, 'assets/icon-macos.png');
   assert.equal(desktopPackage.build.linux.icon, 'assets/icon-macos.png');
+  assert.equal(desktopPackage.desktopName, 'app.bookstr.desktop.desktop');
+  assert.equal(desktopPackage.build.linux.syncDesktopName, true);
+  assert.equal(desktopPackage.build.linux.desktop.entry.StartupWMClass, 'app.bookstr.desktop');
+  assert.match(desktopMain, /const DESKTOP_APP_ID = 'app\.bookstr\.desktop'/);
+  assert.match(desktopMain, /process\.platform === 'linux'[\s\S]*?app\.setDesktopName\(`\$\{DESKTOP_APP_ID\}\.desktop`\)/);
+  assert.match(desktopMain, /process\.platform === 'win32'[\s\S]*?app\.setAppUserModelId\(DESKTOP_APP_ID\)/);
   assert.equal(macIcon.toString('ascii', 1, 4), 'PNG');
   assert.equal(macIcon.readUInt32BE(16), 1024);
   assert.equal(macIcon.readUInt32BE(20), 1024);
