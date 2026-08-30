@@ -98,6 +98,6 @@ final class AppShellUITests: XCTestCase {
     }
 
     private func pickerChoice(_ label: String) -> XCUIElement {
-        app.descendants(matching: .any)[label]
+        app.buttons[label].firstMatch
     }
 }
