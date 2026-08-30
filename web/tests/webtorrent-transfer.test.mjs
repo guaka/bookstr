@@ -105,3 +105,25 @@ test('browser transfer adapter validates signals and reports public lifecycle ev
   seedClient.upload();
   assert.equal(uploads[0].privacy, 'public');
 });
+
+test('browser adapter handles seed and delayed private metadata failures', async () => {
+  await assert.rejects(
+    () => seedPublicTorrent({ seed() { throw new Error('seed failed'); } }, { size: 1 }, { sha256: 'a'.repeat(64) }),
+    /seed failed/,
+  );
+  const listeners = new Map();
+  const delayed = {
+    infoHash: '',
+    on(name, callback) { listeners.set(`on:${name}`, callback); },
+    once(name, callback) { listeners.set(name, callback); },
+    addPeer() { return true; },
+  };
+  const errors = [];
+  addPrivateTorrent({ add: () => delayed }, 'private-id', { peer: new FakePeer({}), onError: error => errors.push(error.message) });
+  listeners.get('error')(new Error('metadata failed'));
+  assert.deepEqual(errors, ['metadata failed']);
+  assert.throws(
+    () => addPrivateTorrent({ add: () => ({ infoHash: '' }) }, 'private-id', { peer: new FakePeer({}) }),
+    /metadata-ready event/,
+  );
+});
