@@ -172,7 +172,10 @@ test('libstr desktop app opens with preload bridge', async () => {
       fileCount: 9, installed: false, installing: false, completedFiles: 0, error: '',
     }]));
     await expect(kokoroModel).toHaveClass(/speech-model-delete/);
-    await expect(kokoroModel).toContainText('Delete Kokoro');
+    await expect(kokoroModel).toHaveClass(/destructive-icon-button/);
+    await expect(kokoroModel).toHaveAccessibleName('Delete Kokoro · English');
+    await expect(kokoroModel.locator('svg')).toHaveCount(1);
+    await expect(kokoroModel).toHaveText('');
     expect(await firstWindow.locator('#speech-voice option').count()).toBe(englishVoiceOptions);
     await firstWindow.locator('#speech-language').selectOption('pt');
     await expect(kokoroModel).toBeHidden();
@@ -414,6 +417,9 @@ test('desktop downloads dictionaries through its same-origin proxy', async () =>
     await library.locator('#dictionary-install').click();
     await expect(library.locator('#dictionary-status')).toHaveText('Installed Portuguese → English.');
     await expect(library.locator('#dictionary-packs')).toContainText('Portuguese → English');
+    const removeDictionary = library.getByRole('button', { name: 'Remove Portuguese → English' });
+    await expect(removeDictionary.locator('svg')).toHaveCount(1);
+    await expect(removeDictionary).toHaveText('');
 
     const stored = await library.evaluate(async () => {
       const database = await new Promise((resolve, reject) => {

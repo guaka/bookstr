@@ -1151,7 +1151,17 @@
       .settings-range input[type="range"] { width: 100%; height: auto; }
       .settings-range output { min-width: 3.2rem; text-align: right; font-variant-numeric: tabular-nums; }
       .optional-voices-note { display: flex; flex-wrap: wrap; gap: 0.45rem; margin: 0.45rem 0 0; }
-      .optional-voices-note .speech-model-delete { color: #b42318; border-color: #b42318; }
+      .destructive-icon-button {
+        display: grid;
+        place-items: center;
+        width: 1.9rem;
+        height: 1.9rem;
+        padding: 0.35rem;
+        color: #b42318;
+        border-color: #b42318;
+      }
+      .destructive-icon-button[hidden] { display: none; }
+      .destructive-icon-button svg { display: block; width: 100%; height: 100%; fill: currentColor; }
       #desktop-signer-disconnect { color: #b42318; border-color: #b42318; }
       .settings-status {
         margin: 0;
@@ -2273,7 +2283,10 @@
           label.textContent = `${pack.label} · ${formatPackSize(pack.size)}`;
           const remove = document.createElement('button');
           remove.type = 'button';
-          remove.textContent = 'Remove';
+          remove.className = 'destructive-icon-button';
+          remove.setAttribute('aria-label', `Remove ${pack.label}`);
+          remove.title = `Remove ${pack.label}`;
+          remove.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 3h6l1 2h4v2H4V5h4l1-2Zm-3 6h12l-1 12H7L6 9Zm3 2v7h2v-7H9Zm4 0v7h2v-7h-2Z"/></svg>';
           remove.addEventListener('click', async () => {
             await dictionaryDelete(pack.id);
             dictionaryStatus.textContent = `Removed ${pack.label}.`;
@@ -7128,11 +7141,18 @@
           button.disabled = Boolean(model.installing);
           button.dataset.installed = String(Boolean(model.installed));
           button.classList.toggle('speech-model-delete', Boolean(model.installed));
-          button.textContent = model.installed
-            ? `Delete ${model.label} · ${speechModelSize(model.approximateBytes)}`
-            : model.installing
+          button.classList.toggle('destructive-icon-button', Boolean(model.installed));
+          if (model.installed) {
+            button.setAttribute('aria-label', `Delete ${model.label}`);
+            button.title = `Delete ${model.label} · ${speechModelSize(model.approximateBytes)}`;
+            button.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 3h6l1 2h4v2H4V5h4l1-2Zm-3 6h12l-1 12H7L6 9Zm3 2v7h2v-7H9Zm4 0v7h2v-7h-2Z"/></svg>';
+          } else {
+            button.removeAttribute('aria-label');
+            button.removeAttribute('title');
+            button.textContent = model.installing
               ? `Downloading ${model.label}… ${model.completedFiles}/${model.fileCount}`
               : `Download ${model.label} · ${speechModelSize(model.approximateBytes)}`;
+          }
         }
         updateSpeechModelVisibility(false);
         const visibleError = (next || []).find(model => model.language === speechLanguageInput.value && model.error);
