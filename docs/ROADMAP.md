@@ -23,9 +23,10 @@ clients on the same contracts.
 - [x] Electron SQLite library index with FTS5 search and CJK fallback.
 - [x] Path-safe reader tokens, linked folders, and download state.
 - [x] Atomic SHA-256 file import with checksum and traversal checks.
-- [x] Electron WebTorrent bridge with public rights gating and private discovery
-      disabled.
-- [x] Browser WebTorrent adapter with matching public/private boundaries.
+- [x] Electron WebTorrent bridge with public rights gating, private discovery
+      disabled, and validated peer-address handoff.
+- [x] Browser WebTorrent adapter with matching public/private boundaries and
+      simple-peer signal-to-`addPeer()` handoff.
 - [x] Registry of legal/open sources and per-item rights policy hooks.
 - [x] Source-record normalization plus an Electron acquisition manager with
       HTTPS/torrent fallback, bounded retries, progress, and verified import.

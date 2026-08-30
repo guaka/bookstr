@@ -52,15 +52,17 @@ test('public seed enforces rights, stable naming, trackers, and upload cap', asy
 test('private add disables all public discovery', async () => {
   const log = { adds: [] };
   const bridge = new WebTorrentBridge({ clientFactory: fakeClientFactory(log) });
-  const torrent = await bridge.addPrivate('deadbeef', { path: '/tmp/books' });
+  await assert.rejects(() => bridge.addPrivate('deadbeef', { path: '/tmp/books' }), /peer handoff/);
+  const torrent = await bridge.addPrivate('deadbeef', { path: '/tmp/books', peer: '192.0.2.10:6881' });
   assert.deepEqual(log.adds[0].options.announce, []);
   assert.equal(log.adds[0].options.private, true);
   assert.equal(log.adds[0].options.dht, false);
   assert.equal(log.adds[0].options.tracker, false);
   assert.equal(log.adds[0].options.utPex, false);
   assert.equal(log.adds[0].options.lsd, false);
-  bridge.addPeer(torrent, { id: 'peer' });
-  assert.deepEqual(log.peer, { id: 'peer' });
+  assert.equal(log.peer, '192.0.2.10:6881');
+  assert.equal(torrent.private, true);
+  await assert.rejects(() => bridge.addPrivate('deadbeef', { peer: 'peer.example:6881' }), /IP address/);
 });
 
 test('public seeding requires explicit rights permission', async () => {

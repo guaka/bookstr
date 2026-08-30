@@ -37,13 +37,24 @@ All IDs, cursors, and SDP/ICE values are opaque and expire quickly. QR codes
 may be offered as a convenience for opening a Nostr connection; they do not
 create a second identity or transport.
 
+The `ice` values are serialized, size-limited `simple-peer` signal objects
+(including the SDP offer/answer and, when trickle ICE is enabled, candidates).
+They are never passed directly to `torrent.addPeer()`: a browser/WebView host
+creates a `simple-peer` instance, applies the received signals, and passes that
+instance to WebTorrent. The host sends each subsequent `signal` event back in
+the encrypted answer/offer message. Electron's Node bridge currently supports
+the equivalent authenticated IP-address-and-port handoff for native peers;
+renderer input cannot supply arbitrary hostnames or socket objects.
+
 ## WebTorrent data plane
 
 Public torrents use the shared WSS trackers and may connect browser WebRTC
 peers to ordinary desktop BitTorrent peers. Private same-account torrents set
 the private flag and disable trackers, DHT, PEX, and LSD; the authorized peer
-is supplied by the encrypted control plane. STUN is attempted first and a
-configured TURN relay is the fallback for restrictive networks.
+is supplied by the encrypted control plane and a concrete WebTorrent peer
+handoff is required before downloading starts. A WebRTC host should attempt
+STUN first and use its configured TURN relay as the fallback for restrictive
+networks.
 
 Every receiver checks the advertised byte count and complete SHA-256 before
 importing or opening a file. Public seeding is limited to records whose rights

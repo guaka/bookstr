@@ -57,3 +57,50 @@ test('builds an encrypted device announce envelope without exposing the device s
   assert.equal(wrapped.kind, 1059);
   assert.equal(Object.hasOwn(wrapped, 'deviceSecret'), false);
 });
+
+test('opens envelopes against the main-process registry and clock', async () => {
+  const senderAccount = nostrTools.generateSecretKey();
+  const recipientAccount = nostrTools.generateSecretKey();
+  const sender = new ElectronDevicePairing({
+    loadState: async () => ({}),
+    saveState: async () => {},
+    safeStorage: fakeStorage(false),
+    loadTools: async () => nostrTools,
+    accountPublicKey: async () => nostrTools.getPublicKey(senderAccount),
+    decryptForAccount: async () => { throw new Error('not used'); },
+    clock: () => 100,
+  });
+  const recipient = new ElectronDevicePairing({
+    loadState: async () => ({}),
+    saveState: async () => {},
+    safeStorage: fakeStorage(false),
+    loadTools: async () => nostrTools,
+    accountPublicKey: async () => nostrTools.getPublicKey(recipientAccount),
+    decryptForAccount: async (peer, ciphertext) => nostrTools.nip44.v2.decrypt(
+      ciphertext,
+      nostrTools.nip44.v2.utils.getConversationKey(recipientAccount, peer),
+    ),
+    loadRegistry: async () => ({
+      version: 1,
+      devices: [{
+        device_id: (await sender.status()).deviceId,
+        pubkey: (await sender.status()).devicePubkey,
+        platform: 'electron',
+      }],
+    }),
+    clock: () => 100,
+  });
+  const senderStatus = await sender.status();
+  const recipientPubkey = await recipient.accountPublicKey();
+  const wrapped = await sender.createEnvelope(recipientPubkey, {
+    type: 'bookstr.library.manifest.request',
+    request_id: 'trusted-registry',
+  });
+  const opened = await recipient.openEnvelope(wrapped, {
+    senderPubkey: senderStatus.devicePubkey,
+    // These renderer-controlled values are intentionally ignored.
+    registry: { devices: [{ device_id: 'attacker', pubkey: 'b'.repeat(64), platform: 'web' }] },
+    now: 9999999999,
+  });
+  assert.equal(opened?.request_id, 'trusted-registry');
+});

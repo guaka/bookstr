@@ -33,6 +33,13 @@ test('download and linked-folder APIs never return filesystem paths', () => with
   const reader = store.openReader('book-1');
   assert.match(reader.token, /^[A-Za-z0-9_-]+$/);
   assert.equal(store.resolveReaderToken(reader.token).path.endsWith(path.join('files', 'books', 'book.epub')), true);
+  assert.deepEqual(store.libraryFile('book-1'), {
+    bookId: 'book-1',
+    relativePath: 'books/book.epub',
+    sizeBytes: 3,
+    modTimeUnix: 0,
+    sha256: '',
+  });
 }));
 
 test('path traversal is rejected at the storage boundary', () => withStore(store => {

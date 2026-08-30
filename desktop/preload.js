@@ -238,9 +238,6 @@ const desktopBridge = {
     getBook(bookId) {
       return ipcRenderer.invoke('bookstr-desktop-library-book', bookId);
     },
-    upsertBook(book) {
-      return ipcRenderer.invoke('bookstr-desktop-library-upsert-book', book);
-    },
     importBook(options) {
       return ipcRenderer.invoke('bookstr-desktop-library-import', options);
     },
@@ -281,13 +278,16 @@ const desktopBridge = {
     openEnvelope(request) {
       return ipcRenderer.invoke('bookstr-desktop-device-open-envelope', request);
     },
+    setRegistryEvent(event) {
+      return ipcRenderer.invoke('bookstr-desktop-device-set-registry-event', event);
+    },
   },
   transfers: {
     status() {
       return ipcRenderer.invoke('bookstr-desktop-transfer-status');
     },
-    seedPublic(request) {
-      return ipcRenderer.invoke('bookstr-desktop-transfer-seed-public', request);
+    seedPublic(bookId) {
+      return ipcRenderer.invoke('bookstr-desktop-transfer-seed-public', { bookId });
     },
     addPublic(request) {
       return ipcRenderer.invoke('bookstr-desktop-transfer-add-public', request);

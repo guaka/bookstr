@@ -51,6 +51,7 @@
       "../shared/contracts/device-pairing-client.mjs",
       "../shared/contracts/device-pairing-v1.mjs",
       "../shared/contracts/device-pairing-nip17.mjs",
+      "../shared/contracts/device-registry-nip78.mjs",
       "../shared/contracts/device-transfer-v1.mjs",
       "assets/icon-macos.png",
       "blossom-proxy.js",

@@ -37,7 +37,7 @@ function decryptStoredSecret(encoded, safeStorage) {
 }
 
 class ElectronDevicePairing {
-  constructor({ loadState, saveState, safeStorage, loadTools, accountPublicKey, decryptForAccount, relays = [] } = {}) {
+  constructor({ loadState, saveState, safeStorage, loadTools, accountPublicKey, decryptForAccount, loadRegistry, clock, relays = [] } = {}) {
     if (typeof loadState !== 'function' || typeof saveState !== 'function') throw new TypeError('loadState and saveState are required');
     if (!safeStorage || typeof safeStorage.isEncryptionAvailable !== 'function') throw new TypeError('safeStorage is required');
     if (typeof loadTools !== 'function') throw new TypeError('loadTools is required');
@@ -48,6 +48,11 @@ class ElectronDevicePairing {
     this.loadTools = loadTools;
     this.accountPublicKey = accountPublicKey;
     this.decryptForAccount = decryptForAccount;
+    // The registry is deliberately supplied by the main process.  Renderer
+    // payloads must never be able to authorize a sender by providing their
+    // own view of the account's device registry.
+    this.loadRegistry = typeof loadRegistry === 'function' ? loadRegistry : async () => ({ version: 1, devices: [] });
+    this.clock = typeof clock === 'function' ? clock : () => Math.floor(Date.now() / 1000);
     this.relays = [...new Set(relays.map(relay => String(relay || '').trim()).filter(relay => /^wss:\/\/[^\s]+$/i.test(relay)))];
     this.device = null;
     this.deviceSecret = null;
@@ -75,7 +80,15 @@ class ElectronDevicePairing {
     };
     if (!storedSecret && this.safeStorage.isEncryptionAvailable()) {
       try {
-        await this.saveState({ devicePairing: { version: 1, device_id: deviceId, pubkey, secret: this.safeStorage.encryptString(secretValue(secret)).toString('base64'), name: this.device.name } });
+        const devicePairing = {
+          version: 1,
+          device_id: deviceId,
+          pubkey,
+          secret: this.safeStorage.encryptString(secretValue(secret)).toString('base64'),
+          name: this.device.name,
+        };
+        if (stored?.registry && typeof stored.registry === 'object') devicePairing.registry = stored.registry;
+        await this.saveState({ devicePairing });
       } catch {
         // Keep the key for this session but never persist it in plaintext.
       }
@@ -100,7 +113,7 @@ class ElectronDevicePairing {
 
   async announce(options = {}) {
     const { createDeviceAnnouncement } = await contracts();
-    return createDeviceAnnouncement(await this.ensureDevice(), options);
+    return createDeviceAnnouncement(await this.ensureDevice(), { ...options, now: this.clock() });
   }
 
   async createEnvelope(recipientPubkey, message, options = {}) {
@@ -110,11 +123,14 @@ class ElectronDevicePairing {
       recipientPubkey,
       deviceSecret: this.deviceSecret || (await this.ensureDevice(), this.deviceSecret),
       tools: await this.loadTools(),
+      now: this.clock(),
     });
   }
 
-  async openEnvelope(wrapped, { senderPubkey, registry, now } = {}) {
+  async openEnvelope(wrapped, { senderPubkey } = {}) {
     const [{ unwrapDeviceControlWrap }, { acceptDeviceMessage }] = await Promise.all([nip17(), contracts()]);
+    const registry = await this.loadRegistry();
+    const now = this.clock();
     const recipientSigner = {
       getPublicKey: this.accountPublicKey,
       nip44: { decrypt: this.decryptForAccount },

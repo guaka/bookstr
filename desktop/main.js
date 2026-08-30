@@ -23,7 +23,7 @@ const { appContentSecurityPolicy } = require('./security-policy');
 const { SpeechModelStore } = require('./speech-model-store');
 const { WebTorrentBridge } = require('./webtorrent-bridge');
 const { LibraryStore } = require('./library-store');
-const { LibraryImporter } = require('./library-import');
+const { LibraryImporter, hashFile, safeExtension } = require('./library-import');
 const { AcquisitionManager } = require('./acquisition-manager');
 const { ElectronDevicePairing } = require('./device-pairing');
 
@@ -214,10 +214,85 @@ function getDevicePairing() {
         const tools = await loadNostrTools();
         return decryptWithNip44(tools, ciphertext, await resolveNostrSignerSecret(), pubkey);
       },
+      loadRegistry: loadTrustedDeviceRegistry,
       relays: NIP46_CONNECTION_RELAYS,
     });
   }
   return devicePairing;
+}
+
+function insidePath(root, candidate) {
+  const relative = path.relative(path.resolve(root), path.resolve(candidate));
+  return relative && relative !== '..' && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative);
+}
+
+async function resolveRegisteredLibraryFile(bookId) {
+  const book = getLibraryStore().getBook(bookId);
+  if (!book) throw new Error('Book is not present in the local library.');
+  const registration = getLibraryStore().libraryFile(book.id);
+  if (!registration) throw new Error('Book has no registered library file.');
+  const lexicalPath = getLibraryImporter().resolveRelativePath(registration.relativePath);
+  // Resolve symlinks before handing a path to the torrent client. A database
+  // row is not permission to seed a file outside the library root.
+  const [realRoot, realPath] = await Promise.all([
+    fs.realpath(libraryDataDir),
+    fs.realpath(lexicalPath),
+  ]);
+  if (!insidePath(realRoot, realPath)) throw new Error('Registered library file escaped the library root.');
+  const stats = await fs.stat(realPath);
+  if (!stats.isFile()) throw new Error('Registered library path is not a regular file.');
+  return { book, registration, filePath: realPath };
+}
+
+async function loadTrustedDeviceRegistry() {
+  const state = await loadState();
+  const storedEvent = state?.devicePairing?.registryEvent;
+  if (!isRecord(storedEvent) || JSON.stringify(storedEvent).length > 64 * 1024) return { version: 1, devices: [] };
+  const accountPubkey = normalizeHex(await resolveNostrSignerPublicKey());
+  if (!accountPubkey) return { version: 1, devices: [] };
+  const tools = await loadNostrTools();
+  const { verifyDeviceRegistryEvent } = await import('../shared/contracts/device-registry-nip78.mjs');
+  const registry = await verifyDeviceRegistryEvent(storedEvent, {
+    ownerPubkey: accountPubkey,
+    tools,
+    decrypt: (peer, ciphertext) => decryptAccountPayload(peer, ciphertext, tools),
+  });
+  return registry || { version: 1, devices: [] };
+}
+
+async function decryptAccountPayload(peer, ciphertext, tools = null) {
+  if (await resolveNostrAuthMode() === 'nip46') return (await resolveNip46Signer()).nip44Decrypt(peer, ciphertext);
+  const nostrTools = tools || await loadNostrTools();
+  return decryptWithNip44(nostrTools, ciphertext, await resolveNostrSignerSecret(), peer);
+}
+
+// Registry ingestion stays in the main process. It verifies the account
+// signature and NIP-44 payload before persisting the event used by the loader;
+// there is intentionally no renderer-facing registry mutation API.
+async function ingestTrustedDeviceRegistryEvent(event) {
+  if (!isRecord(event) || JSON.stringify(event).length > 64 * 1024) return false;
+  const createdAt = Number(event.created_at);
+  if (!Number.isSafeInteger(createdAt) || createdAt < 0) return false;
+  const accountPubkey = normalizeHex(await resolveNostrSignerPublicKey());
+  if (!accountPubkey) return false;
+  const tools = await loadNostrTools();
+  const { verifyDeviceRegistryEvent } = await import('../shared/contracts/device-registry-nip78.mjs');
+  const registry = await verifyDeviceRegistryEvent(event, {
+    ownerPubkey: accountPubkey,
+    tools,
+    decrypt: (peer, ciphertext) => decryptAccountPayload(peer, ciphertext, tools),
+  });
+  if (!registry) return false;
+  const state = await loadState();
+  const previousCreatedAt = Number(state?.devicePairing?.registryEvent?.created_at);
+  if (Number.isSafeInteger(previousCreatedAt) && createdAt <= previousCreatedAt) return false;
+  await saveState({
+    devicePairing: {
+      ...(isRecord(state.devicePairing) ? state.devicePairing : {}),
+      registryEvent: event,
+    },
+  });
+  return true;
 }
 
 function normalizeHex(value) {
@@ -255,6 +330,7 @@ async function loadNostrTools() {
     finalizeEvent: pure.finalizeEvent,
     generateSecretKey: pure.generateSecretKey,
     getPublicKey: pure.getPublicKey,
+    verifyEvent: pure.verifyEvent,
     nip19,
     nip44,
     nip46,
@@ -1105,7 +1181,6 @@ function setupIpcHandlers() {
     });
   });
   ipcMain.handle('bookstr-desktop-library-book', (_event, bookId) => getLibraryStore().getBook(bookId));
-  ipcMain.handle('bookstr-desktop-library-upsert-book', (_event, book) => getLibraryStore().upsertBook(book));
   ipcMain.handle('bookstr-desktop-library-import', async (_event, request) => {
     if (!isRecord(request)) throw new Error('Invalid library import request.');
     const selection = await dialog.showOpenDialog({
@@ -1162,11 +1237,14 @@ function setupIpcHandlers() {
   ipcMain.handle('bookstr-desktop-device-announce', (_event, options) => getDevicePairing().announce(isRecord(options) ? options : {}));
   ipcMain.handle('bookstr-desktop-device-create-envelope', (_event, request) => {
     if (!isRecord(request) || !request.recipientPubkey || !isRecord(request.message)) throw new Error('Invalid device envelope request.');
-    return getDevicePairing().createEnvelope(request.recipientPubkey, request.message, { now: request.now, ttl: request.ttl });
+    return getDevicePairing().createEnvelope(request.recipientPubkey, request.message, { ttl: request.ttl });
   });
   ipcMain.handle('bookstr-desktop-device-open-envelope', (_event, request) => {
-    if (!isRecord(request) || !isRecord(request.wrapped) || !request.senderPubkey || !isRecord(request.registry)) throw new Error('Invalid device envelope response.');
-    return getDevicePairing().openEnvelope(request.wrapped, { senderPubkey: request.senderPubkey, registry: request.registry, now: request.now });
+    if (!isRecord(request) || !isRecord(request.wrapped) || !request.senderPubkey) throw new Error('Invalid device envelope response.');
+    return getDevicePairing().openEnvelope(request.wrapped, { senderPubkey: request.senderPubkey });
+  });
+  ipcMain.handle('bookstr-desktop-device-set-registry-event', (_event, event) => {
+    return ingestTrustedDeviceRegistryEvent(event);
   });
   ipcMain.handle('bookstr-desktop-library-downloads', () => getLibraryStore().downloads());
   ipcMain.handle('bookstr-desktop-library-set-download', (_event, download) => getLibraryStore().setDownload(download));
@@ -1178,20 +1256,36 @@ function setupIpcHandlers() {
     return getTorrentBridge().active();
   });
   ipcMain.handle('bookstr-desktop-transfer-seed-public', async (_event, request) => {
-    if (!isRecord(request)) throw new Error('Invalid public seed request.');
-    const filePath = ensureLibraryPath(request.filePath);
-    if (!filePath) throw new Error('Public seed path must be inside the Bookstr library.');
-    const digest = normalizeHex(request.sha256);
-    if (!digest) throw new Error('Public seed requires a SHA-256 digest.');
-    const book = request.bookId ? getLibraryStore().getBook(request.bookId) : null;
-    if (!book || book.sha256.toLowerCase() !== digest || book.public_seed_allowed !== true) {
+    if (!isRecord(request) || Object.keys(request).length !== 1 || typeof request.bookId !== 'string' || !request.bookId.trim()) {
+      throw new Error('Public seed requests accept only a bookId.');
+    }
+    const { book, registration, filePath } = await resolveRegisteredLibraryFile(request.bookId);
+    const storedDigest = normalizeHex(book.sha256);
+    if (!storedDigest || book.public_seed_allowed !== true
+      || !['public_domain', 'open_license'].includes(String(book.rights_status || '').toLowerCase())
+      || String(book.redistribution || '').toLowerCase() !== 'allowed') {
       throw new Error('This edition is not eligible for public seeding.');
     }
-    const extension = String(request.extension || 'epub').trim().toLowerCase();
+    // Hash after resolving the registered path and immediately before handing
+    // it to WebTorrent. Renderer-provided digest, size, and extension are not
+    // part of this trust decision.
+    const { sha256: digest, size } = await hashFile(filePath);
+    if (digest !== storedDigest || (registration.sha256 && normalizeHex(registration.sha256) !== digest)) {
+      throw new Error('Registered library file checksum does not match the stored edition.');
+    }
+    const fileExtension = path.extname(filePath).slice(1).toLowerCase();
+    if (!['epub', 'pdf', 'fb2'].includes(fileExtension)) {
+      throw new Error('Only EPUB, PDF, and FB2 files may be publicly seeded.');
+    }
+    const storedExtension = String(book.extension || '').trim().toLowerCase().replace(/^\./, '');
+    if (storedExtension && storedExtension !== fileExtension) {
+      throw new Error('Registered library file extension does not match the stored edition.');
+    }
+    const extension = safeExtension(fileExtension);
     const result = await getTorrentBridge().seedPublic(filePath, {
       sha256: digest,
       extension,
-      size: request.size,
+      size,
       publicSeedAllowed: true,
     });
     return result.summary || null;
@@ -1207,7 +1301,13 @@ function setupIpcHandlers() {
     if (!isRecord(request) || !request.torrentId) throw new Error('Invalid private transfer request.');
     const downloadPath = request.path ? ensureLibraryPath(request.path) : '';
     if (request.path && !downloadPath) throw new Error('Download path must be inside the Bookstr library.');
-    const torrent = await getTorrentBridge().addPrivate(String(request.torrentId), { path: downloadPath || undefined });
+    // Private torrents have no public discovery. The peer address is supplied
+    // by the authenticated device-transfer handoff and validated again by the
+    // bridge before WebTorrent is allowed to connect.
+    const torrent = await getTorrentBridge().addPrivate(String(request.torrentId), {
+      path: downloadPath || undefined,
+      peer: request.peer,
+    });
     return { infoHash: String(torrent.infoHash || '') };
   });
 

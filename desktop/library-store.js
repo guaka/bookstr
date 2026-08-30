@@ -238,6 +238,15 @@ class LibraryStore {
     return { bookId, sizeBytes: Math.max(0, Number(file.sizeBytes || file.size) || 0) };
   }
 
+  // Internal main-process lookup.  Keep the relative path out of the values
+  // returned through the renderer-facing download/library APIs; callers must
+  // resolve it against libraryRoot before touching the filesystem.
+  libraryFile(bookId) {
+    const id = safeID(bookId);
+    const row = this.db.prepare(`SELECT book_id AS bookId, relative_path AS relativePath, size_bytes AS sizeBytes, mod_time_unix AS modTimeUnix, sha256 FROM library_files WHERE book_id = ? ORDER BY relative_path LIMIT 1`).get(id);
+    return row ? { ...row } : null;
+  }
+
   linkFolder(folder = {}) {
     const relativePath = safeRelativePath(folder.relativePath);
     const id = text(folder.id) || crypto.randomUUID();
