@@ -106,8 +106,16 @@ test('CLI reports success and failure and invokes only matching modules', async 
   }), 'failed');
   assert.equal(process.exitCode, 1);
   process.exitCode = previousExitCode;
-  assert.equal(await invokeIfMain('file:///tool.mjs', ['node'], async () => 'called'), 'imported');
-  assert.equal(await invokeIfMain('file:///tool.mjs', ['node', '/other.mjs'], async () => 'called'), 'imported');
+  let nonMainCalls = 0;
+  const nonMain = async () => {
+    nonMainCalls += 1;
+    return 'called';
+  };
+  assert.equal(await invokeIfMain('file:///tool.mjs', ['node'], nonMain), 'imported');
+  assert.equal(await invokeIfMain('file:///tool.mjs', ['node', '/other.mjs'], nonMain), 'imported');
+  assert.equal(nonMainCalls, 0);
+  assert.equal(await nonMain(), 'called');
+  assert.equal(nonMainCalls, 1);
   assert.equal(await invokeIfMain('file:///tool.mjs', ['node', '/tool.mjs'], async () => 'called'), 'called');
 });
 
