@@ -52,3 +52,14 @@ test('pairing builders normalize defaults and reject untrusted control messages'
   assert.equal(acceptDeviceMessage(registry, key, createManifestRequest({ requestId: 'm' }), { now: 21 }), null);
   assert.equal(acceptDeviceMessage(registerDevice({}, device, { now: 10 }), key, { type: 'unknown' }, { now: 21 }), null);
 });
+
+test('pairing builders generate safe request ids and current timestamps by default', () => {
+  const manifest = createManifestRequest();
+  assert.match(manifest.request_id, /^manifest-[a-f0-9]{24}$/);
+  const transfer = createTransferRequest({ sha256: 'd'.repeat(64), private: false });
+  assert.match(transfer.request_id, /^transfer-[a-f0-9]{24}$/);
+  assert.equal(transfer.private, false);
+  const announcement = createDeviceAnnouncement(device);
+  assert.equal(announcement.device_id, 'phone');
+  assert.ok(announcement.expires_at >= Math.floor(Date.now() / 1000) + 30);
+});
