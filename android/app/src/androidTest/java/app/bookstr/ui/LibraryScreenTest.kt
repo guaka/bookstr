@@ -291,7 +291,7 @@ class LibraryScreenTest {
         composeRule.setContent {
             LibraryScreen(
                 books = listOf(reading, other),
-                favoriteIds = emptySet(),
+                favoriteIds = setOf(reading.id, other.id),
                 externalFavorites = emptyList(),
                 progress = mapOf(reading.id to BookProgress(reading.id, 0.6, "cfi", 1L)),
                 loading = false,
