@@ -3,6 +3,13 @@
   if (typeof module === 'object' && module.exports) module.exports = api;
   if (root) root.BookstrSpeechSettings = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this, function () {
+  const LANGUAGE_NAMES = Object.freeze({
+    ar: 'Arabic', bn: 'Bengali', cs: 'Czech', da: 'Danish', de: 'German', el: 'Greek', en: 'English',
+    es: 'Spanish', fi: 'Finnish', fr: 'French', he: 'Hebrew', hi: 'Hindi', hu: 'Hungarian', id: 'Indonesian',
+    it: 'Italian', ja: 'Japanese', ko: 'Korean', nl: 'Dutch', no: 'Norwegian', pl: 'Polish', pt: 'Portuguese',
+    ro: 'Romanian', ru: 'Russian', sv: 'Swedish', th: 'Thai', tr: 'Turkish', uk: 'Ukrainian', vi: 'Vietnamese',
+    zh: 'Chinese',
+  });
   function normalizeLocale(value) {
     return String(value || '').trim().replace(/_/g, '-').toLowerCase();
   }
@@ -14,10 +21,15 @@
   function languageName(locale, displayNames) {
     const code = languageCode(locale);
     try {
-      return displayNames?.of(code) || code.toUpperCase();
+      return displayNames?.of(code) || LANGUAGE_NAMES[code] || code.toUpperCase();
     } catch {
-      return code.toUpperCase();
+      return LANGUAGE_NAMES[code] || code.toUpperCase();
     }
+  }
+
+  function supportedLanguages(voices, displayNames) {
+    const locales = [...Object.keys(LANGUAGE_NAMES), ...(voices || []).map(voice => languageCode(voice?.lang))];
+    return languagesForVoices(locales.filter(Boolean).map(lang => ({ lang })), displayNames);
   }
 
   function languagesForVoices(voices, displayNames) {
@@ -52,5 +64,5 @@
     return '';
   }
 
-  return { languageCode, languagesForVoices, voicesForLanguage, savedVoice };
+  return { languageCode, languagesForVoices, supportedLanguages, voicesForLanguage, savedVoice };
 });

@@ -4,6 +4,7 @@ const readerOpenCallbacks = new Set();
 const progressCallbacks = new Set();
 const settingsOpenCallbacks = new Set();
 const paneOpenCallbacks = new Set();
+const speechModelProgressCallbacks = new Set();
 const ALLOWED_PANES = new Set(['reading', 'home', 'search', 'people', 'words']);
 const PANE_SHORTCUTS = new Map([
   ['1', 'home'],
@@ -95,6 +96,16 @@ ipcRenderer.on('bookstr-desktop-open-pane', (_event, pane) => {
   }
 });
 
+ipcRenderer.on('bookstr-desktop-speech-model-progress', (_event, progress) => {
+  for (const callback of speechModelProgressCallbacks) {
+    try {
+      callback(progress);
+    } catch {
+      // ignore
+    }
+  }
+});
+
 const desktopSigner = {
   status() {
     return ipcRenderer.invoke('bookstr-desktop-signer-status');
@@ -162,6 +173,22 @@ const desktopBridge = {
   },
   platform() {
     return process.platform;
+  },
+  speechModels: {
+    status() {
+      return ipcRenderer.invoke('bookstr-desktop-speech-model-status');
+    },
+    install(id) {
+      return ipcRenderer.invoke('bookstr-desktop-speech-model-install', id);
+    },
+    remove(id) {
+      return ipcRenderer.invoke('bookstr-desktop-speech-model-remove', id);
+    },
+    onProgress(callback) {
+      if (typeof callback !== 'function') return () => {};
+      speechModelProgressCallbacks.add(callback);
+      return () => speechModelProgressCallbacks.delete(callback);
+    },
   },
   onProgress(callback) {
     if (typeof callback !== 'function') {

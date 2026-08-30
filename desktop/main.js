@@ -19,6 +19,7 @@ const { proxyBlossomRequest } = require('./blossom-proxy');
 const { proxyCatalogRequest } = require('./catalog-proxy');
 const { proxyDictionaryRequest } = require('./dictionary-proxy');
 const { appContentSecurityPolicy } = require('./security-policy');
+const { SpeechModelStore } = require('./speech-model-store');
 
 const PRELOAD_PATH = path.join(__dirname, 'preload.js');
 const WEB_ROOT = path.join(__dirname, '..', 'web');
@@ -26,6 +27,7 @@ const APP_ICON_PATH = process.platform === 'darwin'
   ? path.join(__dirname, 'assets', 'icon-macos.png')
   : path.join(WEB_ROOT, 'public', 'apple-touch-icon.png');
 const STATE_FILE = path.join(app.getPath('userData'), 'bookstr-desktop-state.json');
+const speechModelStore = new SpeechModelStore(path.join(app.getPath('userData'), 'speech-models'));
 const DESKTOP_NOSTR_STATE_KEY = 'desktopNostr';
 const DESKTOP_NOSTR_SECRET_FIELD = 'secret';
 const BOOKSTR_DESKTOP_RELEASES_URL = 'https://github.com/guaka/bookstr/releases';
@@ -1005,6 +1007,14 @@ function setupIpcHandlers() {
     }
     return shell.openExternal(url);
   });
+
+  ipcMain.handle('bookstr-desktop-speech-model-status', () => speechModelStore.status());
+  ipcMain.handle('bookstr-desktop-speech-model-install', (event, id) => {
+    return speechModelStore.install(id, progress => {
+      if (!event.sender.isDestroyed()) event.sender.send('bookstr-desktop-speech-model-progress', progress);
+    });
+  });
+  ipcMain.handle('bookstr-desktop-speech-model-remove', (_event, id) => speechModelStore.remove(id));
 
   ipcMain.handle('bookstr-desktop-nostr-get-public-key', () => {
     return resolveNostrSignerPublicKey();

@@ -798,7 +798,7 @@ test('settings groups Nostr controls and connection status together', () => {
 
 test('Electron settings expose opt-in language voices and reader typography', () => {
   assert.match(html, /desktop-reader-settings settings-speech[\s\S]*?id="speech-language"[\s\S]*?id="speech-voice"[\s\S]*?id="speech-rate"/);
-  assert.match(html, /Download Kokoro[\s\S]*?Download Tugão model[\s\S]*?config/);
+  assert.match(html, /id="speech-model-kokoro_en"[\s\S]*?id="speech-model-piper_pt_pt"[\s\S]*?id="speech-model-status"/);
   assert.match(html, /speech-settings\.js/);
   assert.match(html, /id="reader-font"[\s\S]*?<option value="arial">Arial<\/option>[\s\S]*?id="reader-alignment"[\s\S]*?<option value="justified">Justified<\/option>[\s\S]*?id="reader-font-size"/);
   assert.match(html, /speechVoices:[\s\S]*?speechLanguage:[\s\S]*?speechRate:/);
@@ -807,6 +807,7 @@ test('Electron settings expose opt-in language voices and reader typography', ()
   assert.match(readerHtml, /BookstrTypography\.normalizeFont\([\s\S]*?currentReaderSettings\.readerFont/);
   assert.match(readerHtml, /BookstrTypography\.css\(readerFontFamily, readerAlignment\)/);
   assert.match(pdfReaderJs, /voiceIdentifier: selectedPdfSpeechVoice\(plan\.language\)/);
+  assert.match(html, /BookstrSpeechSettings\.supportedLanguages\(speechVoices\(\), displayNames\)/);
 });
 
 test('Nostr library sync reports its relay, requested data, and resulting counts', () => {

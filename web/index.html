@@ -1150,8 +1150,7 @@
       .settings-range .setting-copy { grid-column: 1 / -1; }
       .settings-range input[type="range"] { width: 100%; height: auto; }
       .settings-range output { min-width: 3.2rem; text-align: right; font-variant-numeric: tabular-nums; }
-      .optional-voices-note { margin: 0.45rem 0 0; }
-      .optional-voices-note a { color: var(--reading-progress); }
+      .optional-voices-note { display: flex; flex-wrap: wrap; gap: 0.45rem; margin: 0.45rem 0 0; }
       .settings-status {
         margin: 0;
         padding: 0.62rem 0.68rem;
@@ -1882,7 +1881,11 @@
               <input id="speech-rate" type="range" min="0.73" max="1.25" step="0.01" value="1" />
               <output id="speech-rate-value" for="speech-rate">1.00×</output>
             </label>
-            <p class="meta-note optional-voices-note"><a href="https://github.com/vicnaum/kokoro-tts-macos/releases/latest" target="_blank" rel="noreferrer">Download Kokoro</a> · <a href="https://huggingface.co/rhasspy/piper-voices/resolve/main/pt/pt_PT/tug%C3%A3o/medium/pt_PT-tug%C3%A3o-medium.onnx?download=true" target="_blank" rel="noreferrer">Download Tugão model</a> · <a href="https://huggingface.co/rhasspy/piper-voices/resolve/main/pt/pt_PT/tug%C3%A3o/medium/pt_PT-tug%C3%A3o-medium.onnx.json?download=true" target="_blank" rel="noreferrer">config</a></p>
+            <div class="optional-voices-note">
+              <button id="speech-model-kokoro_en" type="button">Download Kokoro</button>
+              <button id="speech-model-piper_pt_pt" type="button">Download Tugão</button>
+            </div>
+            <p id="speech-model-status" class="meta-note" role="status" aria-live="polite"></p>
           </div>
           <div class="settings-section settings-nostr">
             <h3>Nostr</h3>
@@ -2149,6 +2152,8 @@
       const speechVoiceInput = document.getElementById('speech-voice');
       const speechRateInput = document.getElementById('speech-rate');
       const speechRateValue = document.getElementById('speech-rate-value');
+      const speechModelButtons = [...document.querySelectorAll('[id^="speech-model-"]:not(#speech-model-status)')];
+      const speechModelStatus = document.getElementById('speech-model-status');
       const npubButton = document.getElementById('npub-button');
       const npubDisplay = document.getElementById('npub-display');
       const nip7Status = document.getElementById('nip7-status');
@@ -7077,7 +7082,7 @@
         const displayNames = typeof Intl.DisplayNames === 'function'
           ? new Intl.DisplayNames([navigator.language || 'en'], { type: 'language' })
           : null;
-        const languages = BookstrSpeechSettings.languagesForVoices(speechVoices(), displayNames);
+        const languages = BookstrSpeechSettings.supportedLanguages(speechVoices(), displayNames);
         const selectedLanguage = BookstrSpeechSettings.languageCode(state.settings.speechLanguage || 'en');
         speechLanguageInput.replaceChildren();
         languages.forEach(language => speechLanguageInput.append(new Option(language.label, language.code)));
@@ -7086,6 +7091,45 @@
         }
         speechLanguageInput.value = selectedLanguage;
         populateSpeechVoiceMenu(speechVoiceInput, selectedLanguage, BookstrSpeechSettings.savedVoice(state.settings, selectedLanguage));
+      }
+
+      function speechModelSize(bytes) {
+        return `${Math.round(Number(bytes || 0) / 1_000_000)} MB`;
+      }
+
+      async function refreshSpeechModels(models) {
+        const next = Array.isArray(models)
+          ? models
+          : await window.bookstrDesktop?.speechModels?.status?.().catch(() => []);
+        for (const model of next || []) {
+          const button = document.getElementById(`speech-model-${model.id}`);
+          if (!button) continue;
+          button.disabled = Boolean(model.installing);
+          button.dataset.installed = String(Boolean(model.installed));
+          button.textContent = model.installed
+            ? `Remove ${model.label} · ${speechModelSize(model.approximateBytes)}`
+            : model.installing
+              ? `Downloading ${model.label}… ${model.completedFiles}/${model.fileCount}`
+              : `Download ${model.label} · ${speechModelSize(model.approximateBytes)}`;
+          if (model.error) speechModelStatus.textContent = `${model.label}: ${model.error}`;
+        }
+      }
+
+      async function toggleSpeechModel(event) {
+        const button = event.currentTarget;
+        const id = button.id.replace('speech-model-', '');
+        button.disabled = true;
+        speechModelStatus.textContent = '';
+        try {
+          const models = button.dataset.installed === 'true'
+            ? await window.bookstrDesktop.speechModels.remove(id)
+            : await window.bookstrDesktop.speechModels.install(id);
+          await refreshSpeechModels(models);
+          refreshSpeechVoiceMenus();
+        } catch (error) {
+          speechModelStatus.textContent = `Voice download failed: ${error?.message || error}`;
+          await refreshSpeechModels();
+        }
       }
 
       function updateReaderSettingLabels() {
@@ -7503,6 +7547,7 @@
         settingsReturnFocus = document.activeElement;
         const firstInput = settingsPanel.querySelector('input, button, select, textarea, [tabindex]:not([tabindex="-1"])');
         firstInput?.focus();
+        if (isDesktopMode) void refreshSpeechModels();
 
         if (!isDesktopMode && state.settings.useNip7 && !state.nip7.pubkey) {
           void connectNip7();
@@ -7668,6 +7713,12 @@
       });
       speechVoiceInput.addEventListener('change', applySettingsFromUI);
       speechRateInput.addEventListener('input', applySettingsFromUI);
+      speechModelButtons.forEach(button => button.addEventListener('click', toggleSpeechModel));
+      window.bookstrDesktop?.speechModels?.onProgress?.(progress => {
+        const button = document.getElementById(`speech-model-${progress.id}`);
+        if (button) button.textContent = `Downloading… ${progress.completedFiles}/${progress.fileCount}`;
+        speechModelStatus.textContent = `${progress.file} · ${speechModelSize(progress.receivedBytes)} / ${speechModelSize(progress.totalBytes)}`;
+      });
       if (window.speechSynthesis) {
         window.speechSynthesis.addEventListener?.('voiceschanged', refreshSpeechVoiceMenus);
       }

@@ -24,8 +24,15 @@ test('lists every installed speech language with localized, sorted labels', () =
   ]);
   assert.deepEqual(speechSettings.languagesForVoices(null, null), []);
   assert.deepEqual(speechSettings.languagesForVoices([{ lang: '' }, null, { lang: 'en-US' }, { lang: 'en-GB' }], null), [
-    { code: 'en', locale: 'en-us', label: 'EN' },
+    { code: 'en', locale: 'en-us', label: 'English' },
   ]);
+});
+
+test('shows readable common languages even when the system exposes only English', () => {
+  const languages = speechSettings.supportedLanguages([{ lang: 'en-US' }], null);
+  assert.equal(languages.find(language => language.code === 'en').label, 'English');
+  assert.equal(languages.find(language => language.code === 'pt').label, 'Portuguese');
+  assert.ok(languages.length > 20);
 });
 
 test('filters by language and puts preferred installed voices first', () => {

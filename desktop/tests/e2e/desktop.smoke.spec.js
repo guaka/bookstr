@@ -79,12 +79,14 @@ test('libstr desktop app opens with preload bridge', async () => {
       version: window.bookstrDesktop?.version,
       hasOpenReader: typeof window.bookstrDesktop?.openReader === 'function',
       hasDesktopSigner: typeof window.bookstrDesktop?.signer?.status === 'function',
+      hasSpeechModels: typeof window.bookstrDesktop?.speechModels?.install === 'function',
       hasBrowserNip07: !!window.nostr,
     }));
 
     expect(bridge.version).toBe(1);
     expect(bridge.hasOpenReader).toBe(true);
     expect(bridge.hasDesktopSigner).toBe(true);
+    expect(bridge.hasSpeechModels).toBe(true);
     expect(bridge.hasBrowserNip07).toBe(false);
     expect(await firstWindow.locator('a.app-header-left').count()).toBe(0);
     await expect.poll(() => firstWindow.locator('.brand-mark').evaluate(image => image.complete && image.naturalWidth > 0)).toBe(true);
@@ -145,8 +147,10 @@ test('libstr desktop app opens with preload bridge', async () => {
     await expect(firstWindow.locator('#desktop-nip46-qr-image')).toBeHidden();
     await expect(firstWindow.locator('#speech-language')).toBeVisible();
     await expect(firstWindow.locator('#speech-voice')).toContainText('Best installed voice');
-    await expect(firstWindow.getByRole('link', { name: 'Download Kokoro' })).toBeVisible();
-    await expect(firstWindow.getByRole('link', { name: 'Download Tugão model' })).toBeVisible();
+    await expect(firstWindow.locator('#speech-language')).toContainText('English');
+    expect(await firstWindow.locator('#speech-language option').count()).toBeGreaterThan(20);
+    await expect(firstWindow.locator('#speech-model-kokoro_en')).toContainText('Download Kokoro');
+    await expect(firstWindow.locator('#speech-model-piper_pt_pt')).toContainText('Download Tugão');
     await firstWindow.locator('#reader-font').selectOption('arial');
     await firstWindow.locator('#reader-alignment').selectOption('justified');
     await firstWindow.locator('#reader-font-size').evaluate(input => {

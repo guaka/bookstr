@@ -50,6 +50,7 @@
       "main.js",
       "preload.js",
       "security-policy.js",
+      "speech-model-store.js",
       "package.json"
     ],
     "extraMetadata": {
