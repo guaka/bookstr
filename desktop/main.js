@@ -20,6 +20,8 @@ const { proxyCatalogRequest } = require('./catalog-proxy');
 const { proxyDictionaryRequest } = require('./dictionary-proxy');
 const { appContentSecurityPolicy } = require('./security-policy');
 const { SpeechModelStore } = require('./speech-model-store');
+const { WebTorrentBridge } = require('./webtorrent-bridge');
+const { LibraryStore } = require('./library-store');
 
 const PRELOAD_PATH = path.join(__dirname, 'preload.js');
 const WEB_ROOT = path.join(__dirname, '..', 'web');
@@ -140,9 +142,39 @@ let cachedNip46Signer = null;
 let cachedNip46BunkerUrl = '';
 let cachedNip46Pool = null;
 let nip46QrSession = null;
+let torrentBridge = null;
+let libraryDataDir = '';
+let libraryStore = null;
 
 function isRecord(value) {
   return value && typeof value === 'object' && !Array.isArray(value);
+}
+
+function ensureLibraryPath(value) {
+  if (!libraryDataDir || typeof value !== 'string' || !value.trim() || value.includes('\0')) return '';
+  const root = path.resolve(libraryDataDir);
+  const candidate = path.resolve(value);
+  const relative = path.relative(root, candidate);
+  return relative && relative !== '..' && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative)
+    ? candidate
+    : '';
+}
+
+function getTorrentBridge() {
+  if (!torrentBridge) {
+    torrentBridge = new WebTorrentBridge({ dataDir: path.join(libraryDataDir, 'torrents') });
+  }
+  return torrentBridge;
+}
+
+function getLibraryStore() {
+  if (!libraryStore) {
+    libraryStore = new LibraryStore({
+      dbPath: path.join(libraryDataDir, 'library.sqlite'),
+      libraryRoot: libraryDataDir,
+    });
+  }
+  return libraryStore;
 }
 
 function normalizeHex(value) {
@@ -1020,6 +1052,59 @@ function setupIpcHandlers() {
     });
   });
   ipcMain.handle('bookstr-desktop-speech-model-remove', (_event, id) => speechModelStore.remove(id));
+  ipcMain.handle('bookstr-desktop-library-search', (_event, request) => {
+    if (!isRecord(request)) throw new Error('Invalid library search request.');
+    return getLibraryStore().search({
+      query: String(request.query || ''),
+      language: String(request.language || ''),
+      limit: request.limit,
+      offset: request.offset,
+    });
+  });
+  ipcMain.handle('bookstr-desktop-library-book', (_event, bookId) => getLibraryStore().getBook(bookId));
+  ipcMain.handle('bookstr-desktop-library-upsert-book', (_event, book) => getLibraryStore().upsertBook(book));
+  ipcMain.handle('bookstr-desktop-library-downloads', () => getLibraryStore().downloads());
+  ipcMain.handle('bookstr-desktop-library-set-download', (_event, download) => getLibraryStore().setDownload(download));
+  ipcMain.handle('bookstr-desktop-library-linked-folders', () => getLibraryStore().linkedFolders());
+  ipcMain.handle('bookstr-desktop-library-link-folder', (_event, folder) => getLibraryStore().linkFolder(folder));
+  ipcMain.handle('bookstr-desktop-library-open-reader', (_event, bookId) => getLibraryStore().openReader(bookId));
+
+  ipcMain.handle('bookstr-desktop-transfer-status', async () => {
+    return getTorrentBridge().active();
+  });
+  ipcMain.handle('bookstr-desktop-transfer-seed-public', async (_event, request) => {
+    if (!isRecord(request)) throw new Error('Invalid public seed request.');
+    const filePath = ensureLibraryPath(request.filePath);
+    if (!filePath) throw new Error('Public seed path must be inside the Bookstr library.');
+    const digest = normalizeHex(request.sha256);
+    if (!digest) throw new Error('Public seed requires a SHA-256 digest.');
+    const book = request.bookId ? getLibraryStore().getBook(request.bookId) : null;
+    if (!book || book.sha256.toLowerCase() !== digest || book.public_seed_allowed !== true) {
+      throw new Error('This edition is not eligible for public seeding.');
+    }
+    const extension = String(request.extension || 'epub').trim().toLowerCase();
+    const result = await getTorrentBridge().seedPublic(filePath, {
+      sha256: digest,
+      extension,
+      size: request.size,
+      publicSeedAllowed: true,
+    });
+    return result.summary || null;
+  });
+  ipcMain.handle('bookstr-desktop-transfer-add-public', async (_event, request) => {
+    if (!isRecord(request) || !request.torrentId) throw new Error('Invalid public transfer request.');
+    const downloadPath = request.path ? ensureLibraryPath(request.path) : '';
+    if (request.path && !downloadPath) throw new Error('Download path must be inside the Bookstr library.');
+    const torrent = await getTorrentBridge().addPublic(String(request.torrentId), { path: downloadPath || undefined });
+    return { infoHash: String(torrent.infoHash || '') };
+  });
+  ipcMain.handle('bookstr-desktop-transfer-add-private', async (_event, request) => {
+    if (!isRecord(request) || !request.torrentId) throw new Error('Invalid private transfer request.');
+    const downloadPath = request.path ? ensureLibraryPath(request.path) : '';
+    if (request.path && !downloadPath) throw new Error('Download path must be inside the Bookstr library.');
+    const torrent = await getTorrentBridge().addPrivate(String(request.torrentId), { path: downloadPath || undefined });
+    return { infoHash: String(torrent.infoHash || '') };
+  });
 
   ipcMain.handle('bookstr-desktop-nostr-get-public-key', () => {
     return resolveNostrSignerPublicKey();
@@ -1126,6 +1211,8 @@ async function bootstrap() {
     },
   }]);
   await app.whenReady();
+  libraryDataDir = path.join(app.getPath('userData'), 'library');
+  await fs.mkdir(path.join(libraryDataDir, 'torrents'), { recursive: true });
   if (process.platform === 'darwin') {
     app.dock.setIcon(APP_ICON_PATH);
   }
@@ -1146,8 +1233,9 @@ async function bootstrap() {
 
 app.on('will-quit', () => {
   globalShortcut.unregister('CommandOrControl+,');
+  void torrentBridge?.stop();
+  try { libraryStore?.close(); } catch { /* best effort during shutdown */ }
 });
-
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
     app.quit();

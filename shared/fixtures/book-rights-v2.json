@@ -1,0 +1,30 @@
+{
+  "version": 2,
+  "cases": [
+    {
+      "name": "Project Gutenberg public domain",
+      "input": { "status": "public_domain", "rights_source": "gutenberg", "jurisdiction": "US", "evidence_url": "https://www.gutenberg.org/" },
+      "expected": { "rights_status": "public_domain", "license": null, "license_url": null, "rights_source": "gutenberg", "jurisdiction": "US", "redistribution": "allowed", "evidence_url": "https://www.gutenberg.org/", "attribution": null, "public_seed_allowed": true }
+    },
+    {
+      "name": "Wikisource CC BY-SA",
+      "input": { "license": "CC BY-SA 4.0", "license_url": "https://creativecommons.org/licenses/by-sa/4.0/", "rights_source": "wikisource", "jurisdiction": "international", "attribution": "Wikisource" },
+      "expected": { "rights_status": "open_license", "license": "CC BY-SA 4.0", "license_url": "https://creativecommons.org/licenses/by-sa/4.0/", "rights_source": "wikisource", "jurisdiction": "international", "redistribution": "allowed", "evidence_url": null, "attribution": "Wikisource", "public_seed_allowed": true }
+    },
+    {
+      "name": "noncommercial open text",
+      "input": { "status": "open_license", "license": "CC BY-NC 4.0", "rights_source": "example" },
+      "expected": { "rights_status": "open_license", "license": "CC BY-NC 4.0", "license_url": null, "rights_source": "example", "jurisdiction": null, "redistribution": "noncommercial", "evidence_url": null, "attribution": null, "public_seed_allowed": false }
+    },
+    {
+      "name": "CBETA evidence is noncommercial",
+      "input": { "license": "Noncommercial use only", "rights_source": "cbeta", "evidence_url": "https://cbeta.org/copyright" },
+      "expected": { "rights_status": "unknown", "license": "Noncommercial use only", "license_url": null, "rights_source": "cbeta", "jurisdiction": null, "redistribution": "noncommercial", "evidence_url": "https://cbeta.org/copyright", "attribution": null, "public_seed_allowed": false }
+    },
+    {
+      "name": "unknown is never seeded",
+      "input": { "license": "Use responsibly", "license_url": "javascript:alert(1)" },
+      "expected": { "rights_status": "unknown", "license": "Use responsibly", "license_url": null, "rights_source": null, "jurisdiction": null, "redistribution": "unknown", "evidence_url": null, "attribution": null, "public_seed_allowed": false }
+    }
+  ]
+}

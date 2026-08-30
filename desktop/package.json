@@ -26,8 +26,8 @@
     "predist:all": "npm run check:reader-assets",
     "dist:all": "npm run dist:linux && npm run dist:win && npm run dist:mac",
     "test": "npm run test:unit && npm run test:e2e",
-    "test:unit": "node --experimental-test-coverage --test-coverage-exclude='**/*.test.js' --test-coverage-exclude='**/*.test.mjs' --test tests/unit/*.test.js ../web/tests/desktop-progress.test.mjs ../web/tests/reader-speech.test.mjs ../web/tests/reader-typography.test.mjs ../web/tests/speech-settings.test.mjs",
-    "test:coverage": "node --experimental-test-coverage --test-coverage-exclude='**/*.test.js' --test-coverage-exclude='**/*.test.mjs' --test --test-reporter=tap tests/unit/*.test.js ../web/tests/desktop-progress.test.mjs ../web/tests/reader-speech.test.mjs ../web/tests/reader-typography.test.mjs ../web/tests/speech-settings.test.mjs",
+    "test:unit": "node --experimental-test-coverage --test-coverage-exclude='**/*.test.js' --test-coverage-exclude='**/*.test.mjs' --test tests/unit/*.test.js ../shared/catalog/source-registry.test.mjs ../shared/contracts/device-transfer-v1.test.mjs ../shared/torrent/metadata.test.mjs ../web/tests/book-rights-v2-contract.test.mjs ../web/tests/desktop-progress.test.mjs ../web/tests/reader-speech.test.mjs ../web/tests/reader-typography.test.mjs ../web/tests/speech-settings.test.mjs",
+    "test:coverage": "node --experimental-test-coverage --test-coverage-exclude='**/*.test.js' --test-coverage-exclude='**/*.test.mjs' --test --test-reporter=tap tests/unit/*.test.js ../shared/catalog/source-registry.test.mjs ../shared/contracts/device-transfer-v1.test.mjs ../shared/torrent/metadata.test.mjs ../web/tests/book-rights-v2-contract.test.mjs ../web/tests/desktop-progress.test.mjs ../web/tests/reader-speech.test.mjs ../web/tests/reader-typography.test.mjs ../web/tests/speech-settings.test.mjs",
     "test:e2e": "playwright test",
     "test:e2e:docker": "docker build --file Dockerfile.test --tag bookstr-electron-tests .. && docker run --rm --init --ipc=host bookstr-electron-tests",
     "test:e2e:smoke": "playwright test tests/e2e/desktop.smoke.spec.js",
@@ -49,6 +49,8 @@
       "blossom-proxy.js",
       "catalog-proxy.js",
       "dictionary-proxy.js",
+      "webtorrent-bridge.js",
+      "library-store.js",
       "main.js",
       "preload.js",
       "security-policy.js",
@@ -102,6 +104,7 @@
   },
   "dependencies": {
     "nostr-tools": "^2.25.0",
-    "qrcode": "^1.5.4"
+    "qrcode": "^1.5.4",
+    "webtorrent": "^3.0.21"
   }
 }
