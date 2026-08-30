@@ -817,7 +817,7 @@ test('Electron settings expose opt-in language voices and reader typography', ()
   assert.match(readerHtml, /BookstrTypography\.normalizeFont\([\s\S]*?currentReaderSettings\.readerFont/);
   assert.match(readerHtml, /BookstrTypography\.css\(readerFontFamily, readerAlignment\)/);
   assert.match(pdfReaderJs, /voiceIdentifier: selectedPdfSpeechVoice\(plan\.language\)/);
-  assert.match(html, /BookMetadata\.mergeLibraryState\(state\.reading, state\.favorites\)[\s\S]*?BookstrSpeechSettings\.languagesForCodes\(bookLanguages, displayNames\)/);
+  assert.match(html, /BookMetadata\.mergeLibraryState\(state\.reading, state\.favorites\)[\s\S]*?BookstrSpeechSettings\.languagesForCodes\(\[\.\.\.bookLanguages, 'en', 'pt'\], displayNames\)/);
 });
 
 test('Nostr library sync reports its relay, requested data, and resulting counts', () => {

@@ -7088,7 +7088,7 @@
         const bookLanguages = BookMetadata.mergeLibraryState(state.reading, state.favorites)
           .map(book => BookMetadata.languageForBook(book))
           .filter(Boolean);
-        const languages = BookstrSpeechSettings.languagesForCodes(bookLanguages, displayNames);
+        const languages = BookstrSpeechSettings.languagesForCodes([...bookLanguages, 'en', 'pt'], displayNames);
         const requestedLanguage = BookstrSpeechSettings.languageCode(state.settings.speechLanguage || '');
         speechLanguageInput.replaceChildren();
         if (!languages.length) {

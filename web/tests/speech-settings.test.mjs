@@ -28,11 +28,12 @@ test('lists every installed speech language with localized, sorted labels', () =
   ]);
 });
 
-test('shows readable, deduplicated languages only for actual book language codes', () => {
-  const languages = speechSettings.languagesForCodes(['en-US', 'pt_PT', 'en', '', null], null);
+test('shows readable, deduplicated languages for codes and common metadata names', () => {
+  const languages = speechSettings.languagesForCodes(['english', 'Portuguese', 'en-US', 'pt_PT', '', null], null);
   assert.equal(languages.find(language => language.code === 'en').label, 'English');
   assert.equal(languages.find(language => language.code === 'pt').label, 'Portuguese');
   assert.deepEqual(languages.map(language => language.code).sort(), ['en', 'pt']);
+  assert.equal(speechSettings.languageCode('Português'), 'pt');
 });
 
 test('filters by language and puts preferred installed voices first', () => {

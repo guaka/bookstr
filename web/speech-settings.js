@@ -10,12 +10,17 @@
     ro: 'Romanian', ru: 'Russian', sv: 'Swedish', th: 'Thai', tr: 'Turkish', uk: 'Ukrainian', vi: 'Vietnamese',
     zh: 'Chinese',
   });
+  const LANGUAGE_ALIASES = Object.freeze({
+    english: 'en', portuguese: 'pt', portugues: 'pt', 'português': 'pt',
+    spanish: 'es', espanol: 'es', 'español': 'es', french: 'fr', german: 'de', italian: 'it',
+  });
   function normalizeLocale(value) {
     return String(value || '').trim().replace(/_/g, '-').toLowerCase();
   }
 
   function languageCode(value) {
-    return normalizeLocale(value).split('-')[0];
+    const code = normalizeLocale(value).split('-')[0];
+    return LANGUAGE_ALIASES[code] || code;
   }
 
   function languageName(locale, displayNames) {
