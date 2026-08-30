@@ -103,10 +103,10 @@ final class DictionaryRepositoryCoverageTests: XCTestCase {
         let repository = DictionaryRepository(packDirectory: directory)
 
         let all = repository.lookupAllInstalled(word: "HELLO")
-        XCTAssertEqual(all.map(\.language), ["en"])
-        XCTAssertEqual(all.first?.definitions, [
-            "PT · goodbye, farewell", "PT · goodbye, farewell — greeting",
-            "DE · goodbye, farewell", "DE · goodbye, farewell — greeting"
+        XCTAssertEqual(all.map(\.language), ["de", "pt"])
+        XCTAssertEqual(all.map(\.definitions), [
+            ["goodbye, farewell", "goodbye, farewell — greeting"],
+            ["goodbye, farewell", "goodbye, farewell — greeting"]
         ])
         XCTAssertTrue(repository.lookupAllInstalled(word: "unknown").isEmpty)
         XCTAssertTrue(repository.lookupAllInstalled(word: " ").isEmpty)

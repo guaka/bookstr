@@ -8,13 +8,31 @@ test('iOS keeps the system text selection menu instead of a custom reader toolba
   assert.match(reader, /if \(window\.bookstrNativeSwipeNavigation\) return;/);
   assert.match(reader, /window\.bookstrCurrentTextSelection = function\(\)/);
   assert.match(reader, /captureLiveTextSelection\(\)/);
-  assert.match(reader, /window\.highlightCurrentSelection = function\(\)/);
-  assert.match(reader, /function paintCurrentSelectionHighlight\(\)/);
+  assert.match(reader, /window\.highlightCurrentSelection = function\(kind\)/);
+  assert.match(reader, /function paintCurrentSelectionHighlight\(kind\)/);
   assert.match(reader, /::highlight\(bookstr-mark\)/);
   assert.match(reader, /window\.__bookstrTextSelection = payload/);
-  assert.match(reader, /window\.highlightReaderCfi = function\(cfi\)/);
-  assert.match(reader, /window\.setReaderHighlights = function\(cfisJson\)/);
+  assert.match(reader, /window\.highlightReaderCfi = function\(cfi, kind\)/);
+  assert.match(reader, /window\.setReaderHighlights = function\(highlightsJson\)/);
   assert.doesNotMatch(reader, /id="selection-actions"/);
+});
+
+test('word and mark highlights stay distinct and readable in every reader theme', () => {
+  assert.match(reader, /word: \{ background: "#e7c766", foreground: "#1c1916"/);
+  assert.match(reader, /mark: \{ background: "#efaa96", foreground: "#1c1916"/);
+  assert.match(reader, /word: \{ background: "#68561f", foreground: "#f4f0e8"/);
+  assert.match(reader, /mark: \{ background: "#713327", foreground: "#f4f0e8"/);
+  assert.match(reader, /function repaintReaderAnnotations\(\)/);
+  assert.match(reader, /rendition\.annotations\.remove\(cfi, "highlight"\)/);
+  assert.match(reader, /applyTheme\(theme\)[\s\S]*?repaintReaderAnnotations\(\)/);
+  assert.match(reader, /activeReaderHighlights\.words\.forEach/);
+  assert.match(reader, /activeReaderHighlights\.marks\.forEach/);
+  assert.match(reader, /Array\.isArray\(parsed\) \? \{ words: parsed, marks: \[\] \}/);
+});
+
+test('dictionary results remain attached when the user adds the shown word', () => {
+  assert.match(reader, /activeDictionary = Object\.assign\(\{\}, activeDictionary, payload\);/);
+  assert.match(reader, /AndroidBridge\.onWordSelected\(JSON\.stringify\(activeDictionary\)\);/);
 });
 
 test('reader captures live iframe selection for Add Word and Mark', () => {

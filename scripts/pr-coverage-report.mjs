@@ -15,26 +15,47 @@ function markdownText(value) {
 function metricValue(report, labels) {
   const item = (report.coverage || []).find(candidate => labels.includes(candidate?.label));
   const value = Number(item?.value);
-  return Number.isFinite(value) ? `${value.toFixed(2)}%` : 'n/a';
+  if (!Number.isFinite(value)) return '—';
+  return `${value === 100 ? '🟢' : '🟡'} ${value.toFixed(2)}%`;
 }
 
 function testValue(report) {
   const results = report.results && typeof report.results === 'object' ? report.results : {};
   const total = Number(results.tests ?? report.knownTests);
   const passed = Number(results.passed);
-  if (Number.isFinite(total) && Number.isFinite(passed)) return `${passed}/${total}`;
-  return Number.isFinite(total) ? String(total) : 'n/a';
+  if (Number.isFinite(total) && Number.isFinite(passed)) {
+    const failed = Number(results.failed) || 0;
+    const flaky = Number(results.flaky) || 0;
+    const skipped = Number(results.skipped) || 0;
+    const indicator = failed ? '🔴' : flaky || skipped ? '🟡' : passed === total ? '🟢' : '🔴';
+    const detail = flaky ? ` (${flaky} flaky)` : skipped ? ` (${skipped} skipped)` : '';
+    return `${indicator} ${passed}/${total}${detail}`;
+  }
+  return Number.isFinite(total) ? String(total) : '—';
 }
 
 export function renderCoverageReport({ reports = [], workflow = 'Bookstr', runUrl = '', marker = 'all' } = {}) {
   const safeMarker = markdownText(marker).replace(/\s+/g, '-');
   const safeWorkflow = markdownText(workflow) || 'Bookstr';
   const safeRunUrl = /^https?:\/\//i.test(String(runUrl)) ? String(runUrl) : '';
-  const rows = reports
+  const completeReports = [...reports];
+  if (safeWorkflow === 'CI') {
+    const reportedSuites = new Set(reports.map(report => String(report?.suite || report?.id || '')));
+    for (const suite of ['Android', 'iOS']) {
+      if (!reportedSuites.has(suite)) completeReports.push({ suite, status: 'not-run' });
+    }
+  }
+  const rows = completeReports
     .filter(report => report && typeof report === 'object')
     .sort((left, right) => String(left.suite || left.id || '').localeCompare(String(right.suite || right.id || '')))
     .map(report => {
-      const status = String(report.status || 'unknown').toLowerCase() === 'passing' ? 'Passing' : 'Failing';
+      const reportStatus = String(report.status || 'unknown').toLowerCase();
+      const flaky = Number(report.results?.flaky) || 0;
+      const failed = Number(report.results?.failed) || 0;
+      const status = reportStatus === 'not-run'
+        ? '⚪ Not run'
+        : flaky && !failed ? '🟡 Flaky'
+          : reportStatus === 'passing' ? '🟢 Passing' : '🔴 Failing';
       const values = METRICS.map(([, labels]) => metricValue(report, labels));
       return `| ${markdownText(report.suite || report.id || 'Unknown')} | ${status} | ${testValue(report)} | ${values.join(' | ')} |`;
     });
@@ -46,8 +67,17 @@ export function renderCoverageReport({ reports = [], workflow = 'Bookstr', runUr
     '| Suite | Status | Tests | Statements | Branches | Functions | Lines |',
     '| --- | --- | ---: | ---: | ---: | ---: | ---: |',
   ];
-  lines.push(...(rows.length ? rows : ['| No coverage artifact | n/a | n/a | n/a | n/a | n/a | n/a |']));
-  lines.push('', '<details><summary>Report details</summary>', '', 'This report is generated from the Bookstr test-overview artifact and updates in place on reruns.', '', '</details>');
+  lines.push(...(rows.length ? rows : ['| No coverage artifact | — | — | — | — | — | — |']));
+  lines.push(
+    '',
+    '<details><summary>Report details</summary>',
+    '',
+    '🟢 means all tests passed cleanly or coverage is 100%. 🟡 means a test needed a retry or measured coverage is below 100%. 🔴 means a failing result. ⚪ Not run means no relevant files changed for that client. — means that suite does not emit that metric; e2e suites currently report tests only.',
+    '',
+    'This report is generated from the Bookstr test-overview artifact and updates in place on reruns.',
+    '',
+    '</details>',
+  );
   return `${lines.join('\n')}\n`;
 }
 

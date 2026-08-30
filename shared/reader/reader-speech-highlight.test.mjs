@@ -15,7 +15,7 @@ test('speech progress uses a muted sage highlight distinct from known-word gold'
     reader,
     /::highlight\(bookstr-speaking-word\)\{background:rgba\(47,93,80,\.32\);color:inherit\}/,
   );
-  assert.match(reader, /::highlight\(bookstr-known-word\)\{background:#e7c766;/);
+  assert.match(reader, /word: \{ background: "#e7c766"/);
   assert.doesNotMatch(
     reader,
     /::highlight\(bookstr-speaking-word\)\{background:#e7c766/,

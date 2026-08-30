@@ -16,8 +16,8 @@ jobs:
     if: github.event.workflow_run.event == 'pull_request' && github.event.workflow_run.conclusion != 'cancelled'
     runs-on: ubuntu-latest
     steps:
-      # This workflow checks out the default branch, not the PR commit. The
-      # reporter therefore runs trusted code while consuming test artifacts.
+      # workflow_run checks out the default branch, so only trusted reporting
+      # code receives permission to update pull request comments.
       - uses: actions/checkout@v4
       - name: Download test overview artifacts
         uses: actions/download-artifact@v4
@@ -32,7 +32,7 @@ jobs:
         env:
           WORKFLOW_NAME: ${{ github.event.workflow_run.name }}
           RUN_URL: ${{ github.event.workflow_run.html_url }}
-          REPORT_MARKER: ${{ github.event.workflow_run.workflow_id }}
+          REPORT_MARKER: ${{ github.event.workflow_run.name }}
         run: node scripts/pr-coverage-report.mjs --input test-overview --output pr-coverage.md --workflow "$WORKFLOW_NAME" --run-url "$RUN_URL" --marker "$REPORT_MARKER"
       - name: Upload PR coverage report
         if: always()
@@ -46,14 +46,14 @@ jobs:
         uses: actions/github-script@v7
         env:
           REPORT_PATH: pr-coverage.md
-          REPORT_MARKER: ${{ github.event.workflow_run.workflow_id }}
         with:
           script: |
             const fs = require('node:fs');
             const pullRequests = context.payload.workflow_run.pull_requests || [];
             if (!pullRequests.length) return;
             const body = fs.readFileSync(process.env.REPORT_PATH, 'utf8');
-            const marker = `<!-- bookstr-coverage-report:${process.env.REPORT_MARKER} -->`;
+            const marker = body.match(/<!-- bookstr-coverage-report:[^>]+ -->/)?.[0];
+            if (!marker) throw new Error('Coverage report marker is missing');
             for (const pullRequest of pullRequests) {
               const comments = await github.paginate(github.rest.issues.listComments, {
                 owner: context.repo.owner,

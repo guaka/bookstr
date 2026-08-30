@@ -14,12 +14,18 @@ enum ReaderSpeechRetention {
     }
 }
 
+enum ReaderHighlightKind: String, Equatable {
+    case word
+    case mark
+}
+
 final class ReaderPlaybackSession: ObservableObject {
     struct Item: Equatable {
         var book: CatalogBook
         var preparedURL: URL?
         var initialLocator: String?
         var highlightLocator: String?
+        var highlightKind: ReaderHighlightKind?
     }
 
     static let toggleSpeechNotification = Notification.Name("bookstrToggleReaderSpeech")
@@ -39,7 +45,8 @@ final class ReaderPlaybackSession: ObservableObject {
         book: CatalogBook,
         preparedURL: URL? = nil,
         initialLocator: String? = nil,
-        highlightLocator: String? = nil
+        highlightLocator: String? = nil,
+        highlightKind: ReaderHighlightKind? = nil
     ) {
         if item?.book.id == book.id, speechRetained {
             isVisible = true
@@ -49,7 +56,8 @@ final class ReaderPlaybackSession: ObservableObject {
             book: book,
             preparedURL: preparedURL,
             initialLocator: initialLocator,
-            highlightLocator: highlightLocator
+            highlightLocator: highlightLocator,
+            highlightKind: highlightKind
         )
         if item != next {
             presentationNonce += 1

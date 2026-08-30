@@ -94,14 +94,11 @@ final class DictionaryRepository {
 
     private let packDirectory: URL
 
-    convenience init() {
+    init(packDirectory: URL? = nil) {
         let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-        self.init(packDirectory: support.appendingPathComponent("bookstr/dictionaries", isDirectory: true))
-    }
-
-    init(packDirectory: URL) {
         self.packDirectory = packDirectory
-        try? FileManager.default.createDirectory(at: packDirectory, withIntermediateDirectories: true)
+            ?? support.appendingPathComponent("bookstr/dictionaries", isDirectory: true)
+        try? FileManager.default.createDirectory(at: self.packDirectory, withIntermediateDirectories: true)
     }
 
     func packs() -> [DictionaryPack] {
@@ -181,13 +178,11 @@ final class DictionaryRepository {
     func lookupAllInstalled(word: String) -> [DictionaryLookup] {
         let candidates = lookupCandidates(for: word)
         guard !candidates.isEmpty else { return [] }
-        let sourceLanguages: Set<String> = Set(Self.packSpecs.compactMap { spec -> String? in
-            guard FileManager.default.fileExists(atPath: packURL(spec.id).path) else { return nil }
-            return spec.source
-        })
-        let languages = sourceLanguages.sorted { (Self.languages[$0] ?? $0) < (Self.languages[$1] ?? $1) }
+        let installed = Self.packSpecs.filter {
+            FileManager.default.fileExists(atPath: packURL($0.id).path)
+        }
         for candidate in candidates {
-            let matches = languages.compactMap { lookupOffline(word: candidate, language: $0) }
+            let matches = installed.compactMap { lookupOffline(word: candidate, pack: $0) }
             if !matches.isEmpty { return matches }
         }
         return []
@@ -201,37 +196,50 @@ final class DictionaryRepository {
             let right = $1.target == "en" ? 0 : ($1.target == "pt" ? 1 : 2)
             return left == right ? $0.label < $1.label : left < right
         }
-        var definitions: [String] = []
-        var targets: [String] = []
-        for spec in installed {
-            var database: OpaquePointer?
-            guard sqlite3_open_v2(packURL(spec.id).path, &database, SQLITE_OPEN_READONLY, nil) == SQLITE_OK,
-                  let database else { continue }
-            defer { sqlite3_close(database) }
-            var statement: OpaquePointer?
-            let sql = "SELECT trans_list, sense_list FROM translation_grouped " +
-                "WHERE written_rep = ? COLLATE NOCASE ORDER BY score DESC, importance DESC"
-            guard sqlite3_prepare_v2(database, sql, -1, &statement, nil) == SQLITE_OK, let statement else { continue }
-            defer { sqlite3_finalize(statement) }
-            _ = word.withCString { pointer in sqlite3_bind_text(statement, 1, pointer, -1, sqliteTransient) }
-            var rows: [String] = []
-            while sqlite3_step(statement) == SQLITE_ROW {
-                let translations = sqlite3_column_text(statement, 0).map { String(cString: $0) } ?? ""
-                let sense = sqlite3_column_text(statement, 1).map { String(cString: $0) } ?? ""
-                let cleaned = translations.replacingOccurrences(of: " | ", with: ", ").trimmingCharacters(in: .whitespaces)
-                let row = sense.isEmpty ? cleaned : "\(cleaned) — \(sense)"
-                if !row.isEmpty, !rows.contains(row) { rows.append(row) }
-            }
-            if !rows.isEmpty {
-                targets.append(spec.target.uppercased())
-                definitions.append(contentsOf: rows.map { "\(spec.target.uppercased()) · \($0)" })
-            }
+        let matches = installed.compactMap { lookupOffline(word: word, pack: $0) }
+        let definitions = matches.flatMap { match in
+            match.definitions.map { "\(match.language.uppercased()) · \($0)" }
         }
         guard !definitions.isEmpty else { return nil }
         return DictionaryLookup(word: word, language: language,
-                                partOfSpeech: "\(Self.languages[language] ?? language.uppercased()) → \(targets.joined(separator: ", "))",
+                                partOfSpeech: "\(Self.languages[language] ?? language.uppercased()) → " +
+                                    matches.map(\.language).map { $0.uppercased() }.joined(separator: ", "),
                                 definitions: definitions, translation: nil,
                                 sourceUrl: "https://www.wikdict.com/")
+    }
+
+    private func lookupOffline(word: String, pack: PackSpec) -> DictionaryLookup? {
+        var database: OpaquePointer?
+        guard sqlite3_open_v2(packURL(pack.id).path, &database, SQLITE_OPEN_READONLY, nil) == SQLITE_OK,
+              let database else { return nil }
+        defer { sqlite3_close(database) }
+        var statement: OpaquePointer?
+        let sql = "SELECT trans_list, sense_list FROM translation_grouped " +
+            "WHERE written_rep = ? COLLATE NOCASE ORDER BY score DESC, importance DESC"
+        guard sqlite3_prepare_v2(database, sql, -1, &statement, nil) == SQLITE_OK,
+              let statement else { return nil }
+        defer { sqlite3_finalize(statement) }
+        _ = word.withCString { pointer in
+            sqlite3_bind_text(statement, 1, pointer, -1, sqliteTransient)
+        }
+        var definitions: [String] = []
+        while sqlite3_step(statement) == SQLITE_ROW {
+            let translations = sqlite3_column_text(statement, 0).map { String(cString: $0) } ?? ""
+            let sense = sqlite3_column_text(statement, 1).map { String(cString: $0) } ?? ""
+            let cleaned = translations.replacingOccurrences(of: " | ", with: ", ")
+                .trimmingCharacters(in: .whitespaces)
+            let row = sense.isEmpty ? cleaned : "\(cleaned) — \(sense)"
+            if !row.isEmpty, !definitions.contains(row) { definitions.append(row) }
+        }
+        guard !definitions.isEmpty else { return nil }
+        return DictionaryLookup(
+            word: word,
+            language: pack.target,
+            partOfSpeech: pack.label,
+            definitions: definitions,
+            translation: nil,
+            sourceUrl: "https://www.wikdict.com/"
+        )
     }
 
     private func packURL(_ id: String) -> URL {
