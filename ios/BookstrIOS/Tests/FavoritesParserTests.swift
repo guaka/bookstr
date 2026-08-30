@@ -1639,11 +1639,94 @@ final class FavoritesParserTests: XCTestCase {
         guard let webView = findSubview(WKWebView.self, in: host.view) else {
             return XCTFail("The mounted reader did not contain a WKWebView")
         }
+        XCTAssertTrue(
+            webView.gestureRecognizers?.contains(where: { $0.name == "bookstr-saved-highlight-tap" }) == true,
+            "The mounted reader did not install its native saved-highlight tap recognizer"
+        )
         let visibleText = try await webView.callAsyncJavaScript(
             "return Array.from(document.querySelectorAll('iframe')).map(frame => frame.contentDocument?.body?.innerText || '').join(' ');",
             arguments: [:], in: nil, contentWorld: .page
         ) as? String
         XCTAssertTrue(visibleText?.contains("Alice was beginning") == true, "ready reader had no visible chapter text")
+
+        let wordCFI = try await webView.callAsyncJavaScript(
+            """
+            const contents = rendition.getContents()[0];
+            const doc = contents.document;
+            const walker = doc.createTreeWalker(doc.body, NodeFilter.SHOW_TEXT);
+            let node;
+            while ((node = walker.nextNode()) && !(node.nodeValue || '').includes('Alice')) {}
+            if (!node) return false;
+            const start = node.nodeValue.indexOf('Alice');
+            const range = doc.createRange();
+            range.setStart(node, start);
+            range.setEnd(node, start + 'Alice'.length);
+            const cfi = contents.cfiFromRange(range);
+            window.setReaderHighlights(JSON.stringify({ words: [cfi], marks: [] }));
+            const rect = range.getBoundingClientRect();
+            const frame = Array.from(document.querySelectorAll('iframe')).find(item => item.contentDocument === doc);
+            const frameRect = frame.getBoundingClientRect();
+            const tapX = frameRect.left + rect.left + rect.width / 2;
+            const tapY = frameRect.top + rect.top + rect.height / 2;
+            (document.elementFromPoint(tapX, tapY) || frame).dispatchEvent(new MouseEvent('click', {
+              bubbles: true, cancelable: true, view: window,
+              clientX: tapX, clientY: tapY
+            }));
+            return cfi;
+            """,
+            arguments: [:], in: nil, contentWorld: .page
+        ) as? String
+        let tappedWordCFI = try XCTUnwrap(wordCFI)
+        XCTAssertFalse(tappedWordCFI.isEmpty)
+        let wordNavigation = XCTNSPredicateExpectation(
+            predicate: NSPredicate { _, _ in
+                container.wordNavigation.requestedHighlight == SavedHighlightRequest(
+                    kind: .word, locator: tappedWordCFI, text: ""
+                )
+            },
+            object: nil
+        )
+        await fulfillment(of: [wordNavigation], timeout: 3)
+
+        let markCFI = try await webView.callAsyncJavaScript(
+            """
+            const contents = rendition.getContents()[0];
+            const doc = contents.document;
+            const walker = doc.createTreeWalker(doc.body, NodeFilter.SHOW_TEXT);
+            let node;
+            while ((node = walker.nextNode()) && !(node.nodeValue || '').includes('White Rabbit')) {}
+            if (!node) return '';
+            const start = node.nodeValue.indexOf('White Rabbit');
+            const range = doc.createRange();
+            range.setStart(node, start);
+            range.setEnd(node, start + 'White Rabbit'.length);
+            const cfi = contents.cfiFromRange(range);
+            window.setReaderHighlights(JSON.stringify({ words: [], marks: [cfi] }));
+            const rect = range.getBoundingClientRect();
+            const frame = Array.from(document.querySelectorAll('iframe')).find(item => item.contentDocument === doc);
+            const frameRect = frame.getBoundingClientRect();
+            const tapX = frameRect.left + rect.left + rect.width / 2;
+            const tapY = frameRect.top + rect.top + rect.height / 2;
+            (document.elementFromPoint(tapX, tapY) || frame).dispatchEvent(new MouseEvent('click', {
+              bubbles: true, cancelable: true, view: window,
+              clientX: tapX, clientY: tapY
+            }));
+            return cfi;
+            """,
+            arguments: [:], in: nil, contentWorld: .page
+        ) as? String
+        XCTAssertFalse(markCFI?.isEmpty ?? true)
+        let markNavigation = XCTNSPredicateExpectation(
+            predicate: NSPredicate { _, _ in
+                container.wordNavigation.requestedHighlight == SavedHighlightRequest(
+                    kind: .mark,
+                    locator: markCFI ?? "",
+                    text: ""
+                )
+            },
+            object: nil
+        )
+        await fulfillment(of: [markNavigation], timeout: 3)
 
         let layoutJSON = try await webView.callAsyncJavaScript(
             """

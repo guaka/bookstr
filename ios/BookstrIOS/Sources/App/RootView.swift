@@ -136,6 +136,7 @@ struct RootView: View {
         .onReceive(container.wordNavigation.$requestToken) { token in
             guard token > 0 else { return }
             selectedTab = 3
+            playback.requestClose()
         }
         .alert("Continue reading", isPresented: Binding(
             get: { continueError != nil },

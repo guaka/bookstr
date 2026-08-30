@@ -817,6 +817,14 @@ struct EPUBReaderView: UIViewRepresentable {
         webView.onEditMenuReadFromHere = { [weak coordinator = context.coordinator] in
             coordinator?.readFromHereFromEditMenu()
         }
+        let tapGesture = UITapGestureRecognizer(
+            target: context.coordinator,
+            action: #selector(Coordinator.handleReaderTap(_:))
+        )
+        tapGesture.name = "bookstr-saved-highlight-tap"
+        tapGesture.cancelsTouchesInView = false
+        tapGesture.delegate = context.coordinator
+        webView.addGestureRecognizer(tapGesture)
         let gesture = UIPanGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handlePagePan(_:)))
         gesture.cancelsTouchesInView = false
         gesture.delegate = context.coordinator
@@ -861,6 +869,7 @@ struct EPUBReaderView: UIViewRepresentable {
         onDictionaryResult: value => send('onDictionaryResult', value),
         onLookupDictionary: value => send('onLookupDictionary', value),
         onKnownWordTapped: value => send('onKnownWordTapped', value),
+        onSavedHighlightTapped: value => send('onSavedHighlightTapped', value),
         onReaderInteracted: () => send('onReaderInteracted', null),
         onSpeechText: value => send('onSpeechText', value)
         ,onReaderStage: value => send('onReaderStage', value)
@@ -902,6 +911,15 @@ struct EPUBReaderView: UIViewRepresentable {
             if let resignObserver {
                 NotificationCenter.default.removeObserver(resignObserver)
             }
+        }
+
+        @objc func handleReaderTap(_ gesture: UITapGestureRecognizer) {
+            guard gesture.state == .ended, let view = gesture.view else { return }
+            let point = gesture.location(in: view)
+            controller.evaluate(
+                "window.activateSavedHighlightAtViewportPoint && " +
+                    "window.activateSavedHighlightAtViewportPoint(\(point.x), \(point.y)); null;"
+            )
         }
 
         @objc func handlePagePan(_ gesture: UIPanGestureRecognizer) {
@@ -1087,6 +1105,7 @@ struct EPUBReaderView: UIViewRepresentable {
             case "onTextSelected": handleTextSelection(value as? String)
             case "onSearchResults": handleSearchResults(value as? String)
             case "onKnownWordTapped": requestKnownWord(value as? String)
+            case "onSavedHighlightTapped": requestSavedHighlight(value as? String)
             case "onLookupDictionary": lookupDictionary(value as? String)
             case "onDictionaryResult": saveDictionaryResult(value as? String)
             case "onSpeechText": handleSpeech(value as? String)
@@ -1382,6 +1401,18 @@ struct EPUBReaderView: UIViewRepresentable {
                 NotificationCenter.default.post(name: .bookstrVocabularyDidChange, object: nil)
             }
             container.wordNavigation.request(word: word)
+        }
+
+        private func requestSavedHighlight(_ json: String?) {
+            guard let item = object(from: json),
+                  let kindValue = item["kind"] as? String,
+                  let kind = ReaderHighlightKind(rawValue: kindValue)
+            else { return }
+            container.wordNavigation.request(
+                kind: kind,
+                locator: item["locator"] as? String ?? "",
+                text: item["text"] as? String ?? ""
+            )
         }
 
         private func lookupDictionary(_ json: String?) {
