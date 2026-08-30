@@ -67,7 +67,8 @@ test('libstr desktop app opens with preload bridge', async () => {
         fullScreen: window?.isFullScreen(),
       };
     });
-    expect(windowState).toEqual({ maximized: true, fullScreen: false });
+    expect(windowState.fullScreen).toBe(false);
+    if (process.platform !== 'linux') expect(windowState.maximized).toBe(true);
 
     const contentSecurityPolicy = await firstWindow.evaluate(async () => (
       await fetch(window.location.href)

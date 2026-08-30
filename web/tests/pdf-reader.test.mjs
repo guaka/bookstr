@@ -71,7 +71,7 @@ function createMockElement(tagName, { ownerDocument } = {}) {
       return null;
     },
     querySelectorAll(selector) {
-      if (selector !== '.pdf-page') return [];
+      if (selector !== '.pdf-page' && selector !== '[data-page]') return [];
       return children.filter(child => child.classList.contains('pdf-page'));
     },
     getContext() {
@@ -165,6 +165,7 @@ function setupPdfReaderEnvironment({ pdfPages = 3 } = {}) {
     onStateChange: null,
   };
   speech.supported = true;
+  speech.lastOptions = null;
 
   const createdObjectURLs = [];
   const revokedObjectURLs = [];
@@ -172,6 +173,13 @@ function setupPdfReaderEnvironment({ pdfPages = 3 } = {}) {
   const windowObject = globalThis;
   windowObject.document = document;
   windowObject.window = windowObject;
+  windowObject.parent = windowObject;
+  windowObject.location = { origin: 'app://bookstr' };
+  windowObject.localStorage = {
+    getItem: (key) => key === 'bookstr_reader_settings_v1'
+      ? JSON.stringify({ speechRate: 1.05, speechVoiceEnglish: 'kokoro-heart' })
+      : null,
+  };
   windowObject.DOMMatrix = class DOMMatrix {};
   windowObject.ImageData = class ImageData {};
   windowObject.Path2D = class Path2D {};
@@ -181,6 +189,10 @@ function setupPdfReaderEnvironment({ pdfPages = 3 } = {}) {
   windowObject._events = {};
   windowObject.addEventListener = (name, listener) => {
     (windowObject._events[name] ||= []).push(listener);
+  };
+  windowObject.requestAnimationFrame = (callback) => {
+    setTimeout(callback, 0);
+    return 1;
   };
   windowObject.__triggers = {
     trigger(name) {
@@ -194,7 +206,7 @@ function setupPdfReaderEnvironment({ pdfPages = 3 } = {}) {
       const text = Array.isArray(paragraphs) ? paragraphs.join(' ').trim() : '';
       const chunks = text ? [{ text, start: 0, pauseMs: 0 }] : [];
       speech.startCalls = 0;
-      return { text, chunks };
+      return { text, chunks, language: 'en' };
     },
     createPlayer: ({ onStateChange }) => {
       speech.createCalls += 1;
@@ -202,9 +214,10 @@ function setupPdfReaderEnvironment({ pdfPages = 3 } = {}) {
       let state = 'stopped';
       return {
         supported: true,
-        start(plan) {
+        start(plan, options) {
           speech.startCalls += 1;
           speech.lastPlan = plan;
+          speech.lastOptions = options;
           state = 'playing';
           if (typeof onStateChange === 'function') onStateChange('playing');
           return true;
@@ -402,10 +415,31 @@ test('pdf-reader supports desktop payload normalization, rendering, and speech c
   assert.equal(env.progress.length > reportedBefore, true);
   assert.equal(env.speech.createCalls > 0, true);
 
+  const progressBeforeScroll = env.progress.length;
+  env.window.__triggers.trigger('scroll');
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert.equal(env.progress.length > progressBeforeScroll, true);
+
   env.controls.play.click();
   await new Promise(resolve => setTimeout(resolve, 0));
   assert.equal(env.speech.startCalls, 1);
   assert.ok(env.speech.lastPlan?.chunks?.length > 0);
+  assert.deepEqual(env.speech.lastOptions, {
+    language: 'en',
+    rate: 1.05,
+    voiceIdentifier: 'kokoro-heart',
+  });
+
+  const stopCallsBeforeSettings = env.speech.stopCalls;
+  env.window.applyReaderSettings({
+    speechRate: 1.1,
+    speechVoiceEnglish: 'new-english-voice',
+  });
+  assert.equal(env.speech.stopCalls, stopCallsBeforeSettings + 1);
+  env.controls.play.click();
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert.equal(env.speech.lastOptions.rate, 1.1);
+  assert.equal(env.speech.lastOptions.voiceIdentifier, 'new-english-voice');
 
   env.controls.pause.click();
   assert.equal(env.speech.pauseCalls, 1);
@@ -417,6 +451,17 @@ test('pdf-reader supports desktop payload normalization, rendering, and speech c
   const stopCallsBeforeClick = env.speech.stopCalls;
   env.controls.stop.click();
   assert.equal(env.speech.stopCalls, stopCallsBeforeClick + 1);
+
+  const parentProgress = [];
+  env.window.parent = {
+    postMessage(payload, origin) {
+      parentProgress.push({ payload, origin });
+    },
+  };
+  env.window.__triggers.trigger('beforeunload');
+  assert.equal(parentProgress.at(-1).payload.type, 'bookstr-reader-progress');
+  assert.equal(parentProgress.at(-1).origin, 'app://bookstr');
+  env.window.parent = env.window;
 
   assert.equal(env.controls.play.disabled, false);
   assert.equal(env.controls.pause.disabled, true);

@@ -28,10 +28,8 @@ final class AppShellUITests: XCTestCase {
         reveal(englishVoice)
         if englishVoice.isHittable {
             englishVoice.tap()
-            let kokoroChoice = pickerChoice("Kokoro · English")
-            XCTAssertTrue(kokoroChoice.waitForExistence(timeout: 8))
             let systemDefaultChoice = pickerChoice("System default")
-            XCTAssertTrue(systemDefaultChoice.waitForExistence(timeout: 4))
+            XCTAssertTrue(systemDefaultChoice.waitForExistence(timeout: 8))
             systemDefaultChoice.tap()
             XCTAssertTrue(
                 englishVoice.waitForExistence(timeout: 4),

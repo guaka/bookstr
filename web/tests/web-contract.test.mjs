@@ -423,6 +423,7 @@ test('desktop EPUB and PDF readers stay inside the main reading pane', () => {
   assert.match(html, /const readerLoad = await readerFrameLoader\('pdf', openGeneration\)/);
   assert.doesNotMatch(html, /async function openInDesktopReader/);
   assert.equal((desktopMain.match(/new BrowserWindow\(/g) || []).length, 1);
+  assert.match(desktopMain, /mainWindow\.once\('ready-to-show',[\s\S]*?mainWindow\.maximize\(\);[\s\S]*?mainWindow\.show\(\)/);
   assert.match(desktopMain, /void webContents\.loadURL\(url\);\r?\n\s*return \{ action: 'deny' \}/);
 });
 
