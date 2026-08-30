@@ -107,6 +107,7 @@ struct RootView: View {
                     preparedURL: item.preparedURL,
                     initialLocator: item.initialLocator,
                     highlightLocator: item.highlightLocator,
+                    highlightKind: item.highlightKind,
                     showsReaderChrome: playback.isVisible,
                     onClose: { playback.requestClose() }
                 )

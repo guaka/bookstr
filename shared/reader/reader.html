@@ -124,6 +124,8 @@
     let currentBookId = "";
     let activeDictionary = null;
     let knownWordSet = new Set();
+    let currentReaderTheme = "paper";
+    const activeReaderHighlights = { words: [], marks: [] };
     let readerInteractionReported = false;
     let pageTransitioning = false;
     let readerFontPercent = Number(localStorage.getItem("bookstr-reader-font-percent")) || 100;
@@ -146,9 +148,14 @@
     }
 
     function applyTheme(theme) {
+      currentReaderTheme = theme === "night" ? "night" : (theme === "white" ? "white" : "paper");
       document.body.className = theme === "night" ? "night" : (theme === "white" ? "white" : "");
       if (rendition) {
         rendition.themes.select(theme === "night" ? "night" : (theme === "white" ? "white" : "paper"));
+        rendition.getContents().forEach(function(contents) {
+          applyReaderHighlightStyles(contents && contents.document);
+        });
+        repaintReaderAnnotations();
       }
       applyTypography();
     }
@@ -226,7 +233,7 @@
       });
     }
 
-    function openBook(source, cfi, theme, highlightCfi, bookId) {
+    function openBook(source, cfi, theme, highlightCfi, bookId, highlightKind) {
       if (window.AndroidBridge && AndroidBridge.onReaderStage) AndroidBridge.onReaderStage("Opening archive");
       currentBookId = String(bookId || "");
       lastSpeechCfi = String(cfi || "").trim();
@@ -289,10 +296,11 @@
         window.bookstrCurrentTextSelection = function() {
           return captureLiveTextSelection() || window.__bookstrTextSelection || null;
         };
-        window.highlightCurrentSelection = function() {
-          paintCurrentSelectionHighlight();
+        window.highlightCurrentSelection = function(kind) {
+          const resolvedKind = kind === "mark" ? "mark" : "word";
+          paintCurrentSelectionHighlight(resolvedKind);
           const live = captureLiveTextSelection() || window.__bookstrTextSelection;
-          if (live && live.cfi) keepHighlight(live.cfi);
+          if (live && live.cfi) keepHighlight(live.cfi, resolvedKind);
         };
         registerThemes();
         applyTheme(theme || "paper");
@@ -302,7 +310,10 @@
         });
         return rendition.display(cfi || undefined);
       }).then(function() {
-        restoredHighlights(highlightCfi).forEach(applyHighlight);
+        const highlights = restoredHighlights(highlightCfi, highlightKind || "word");
+        rememberReaderHighlights(highlights);
+        activeReaderHighlights.words.forEach(function(value) { applyHighlight(value, "word"); });
+        activeReaderHighlights.marks.forEach(function(value) { applyHighlight(value, "mark"); });
         if (highlightCfi) positionReferenceBelowTop();
         if (window.AndroidBridge) AndroidBridge.onReaderReady();
         const restore = String(cfi || "").trim();
@@ -845,14 +856,64 @@
       activeDictionary = null;
     }
 
-    function applyHighlight(cfi) {
+    function readerHighlightPalette() {
+      if (currentReaderTheme === "night") {
+        return {
+          word: { background: "#68561f", foreground: "#f4f0e8", fill: "#e7c766", opacity: "0.28" },
+          mark: { background: "#713327", foreground: "#f4f0e8", fill: "#ff8f73", opacity: "0.28" }
+        };
+      }
+      return {
+        word: { background: "#e7c766", foreground: "#1c1916", fill: "#e7c766", opacity: "0.68" },
+        mark: { background: "#efaa96", foreground: "#1c1916", fill: "#c74b32", opacity: "0.36" }
+      };
+    }
+
+    function applyReaderHighlightStyles(contentDocument) {
+      if (!contentDocument) return;
+      const palette = readerHighlightPalette();
+      let style = contentDocument.getElementById("bookstr-reader-highlight-styles");
+      if (!style) {
+        style = contentDocument.createElement("style");
+        style.id = "bookstr-reader-highlight-styles";
+        (contentDocument.head || contentDocument.documentElement).appendChild(style);
+      }
+      style.textContent =
+        "::highlight(bookstr-known-word){background:" + palette.word.background +
+        ";color:" + palette.word.foreground + "!important;text-decoration:none}" +
+        "::highlight(bookstr-mark){background:" + palette.mark.background +
+        ";color:" + palette.mark.foreground + "!important;text-decoration:none}";
+    }
+
+    function applyHighlight(cfi, kind) {
       if (!cfi || !rendition || !rendition.annotations) return;
+      const resolvedKind = kind === "mark" ? "mark" : "word";
+      const colors = readerHighlightPalette()[resolvedKind];
       try {
         rendition.annotations.highlight(
-          cfi, {}, null, "bookstr-word-highlight",
-          { fill: "#e7c766", "fill-opacity": "0.62", "mix-blend-mode": "multiply" }
+          cfi, {}, null, "bookstr-" + resolvedKind + "-highlight",
+          { fill: colors.fill, "fill-opacity": colors.opacity }
         );
       } catch (error) { console.warn("Could not highlight word", error); }
+    }
+
+    function rememberReaderHighlights(highlights) {
+      activeReaderHighlights.words = Array.from(new Set(highlights.words || [])).filter(Boolean).slice(-500);
+      activeReaderHighlights.marks = Array.from(new Set(highlights.marks || [])).filter(Boolean).slice(-500);
+    }
+
+    function clearReaderAnnotations() {
+      if (!rendition || !rendition.annotations || typeof rendition.annotations.remove !== "function") return;
+      const locations = new Set([...activeReaderHighlights.words, ...activeReaderHighlights.marks]);
+      locations.forEach(function(cfi) {
+        try { rendition.annotations.remove(cfi, "highlight"); } catch (_) {}
+      });
+    }
+
+    function repaintReaderAnnotations() {
+      clearReaderAnnotations();
+      activeReaderHighlights.words.forEach(function(cfi) { applyHighlight(cfi, "word"); });
+      activeReaderHighlights.marks.forEach(function(cfi) { applyHighlight(cfi, "mark"); });
     }
 
     function readerLanguageForDocument(contentDocument) {
@@ -898,19 +959,10 @@
       contentDocument.addEventListener("touchend", publish);
     }
 
-    function ensureMarkHighlightStyle(contentDocument) {
-      if (!contentDocument) return;
-      let style = contentDocument.getElementById("bookstr-mark-style");
-      if (!style) {
-        style = contentDocument.createElement("style");
-        style.id = "bookstr-mark-style";
-        style.textContent = "::highlight(bookstr-mark){background:#e7c766;color:#1c1916;text-decoration:none}";
-        (contentDocument.head || contentDocument.documentElement).appendChild(style);
-      }
-    }
-
-    function paintCurrentSelectionHighlight() {
+    function paintCurrentSelectionHighlight(kind) {
       if (!rendition || typeof rendition.getContents !== "function") return;
+      const resolvedKind = kind === "mark" ? "mark" : "word";
+      const highlightName = resolvedKind === "mark" ? "bookstr-mark" : "bookstr-known-word";
       const list = rendition.getContents() || [];
       for (let index = 0; index < list.length; index += 1) {
         const contents = list[index];
@@ -924,26 +976,33 @@
           try { ranges.push(selection.getRangeAt(rangeIndex).cloneRange()); } catch (_) {}
         }
         if (!ranges.length) continue;
-        ensureMarkHighlightStyle(doc);
+        applyReaderHighlightStyles(doc);
         const existing = [];
         try {
-          const previous = win.CSS.highlights.get("bookstr-mark");
+          const previous = win.CSS.highlights.get(highlightName);
           if (previous) {
             for (const range of previous) existing.push(range);
           }
         } catch (_) {}
-        win.CSS.highlights.set("bookstr-mark", new win.Highlight(...existing, ...ranges));
+        win.CSS.highlights.set(highlightName, new win.Highlight(...existing, ...ranges));
       }
     }
 
-    window.highlightReaderCfi = function(cfi) {
-      keepHighlight(cfi);
+    window.highlightReaderCfi = function(cfi, kind) {
+      keepHighlight(cfi, kind === "mark" ? "mark" : "word");
     };
 
-    window.setReaderHighlights = function(cfisJson) {
-      let cfis = [];
-      try { cfis = JSON.parse(cfisJson || "[]"); } catch (_) {}
-      cfis.forEach(function(cfi) { applyHighlight(cfi); });
+    window.setReaderHighlights = function(highlightsJson) {
+      let highlights = { words: [], marks: [] };
+      try {
+        const parsed = JSON.parse(highlightsJson || "{}");
+        highlights = Array.isArray(parsed) ? { words: parsed, marks: [] } : parsed;
+      } catch (_) {}
+      clearReaderAnnotations();
+      rememberReaderHighlights(highlights);
+      try { localStorage.setItem(highlightStorageKey(), JSON.stringify(activeReaderHighlights)); } catch (_) {}
+      activeReaderHighlights.words.forEach(function(cfi) { applyHighlight(cfi, "word"); });
+      activeReaderHighlights.marks.forEach(function(cfi) { applyHighlight(cfi, "mark"); });
     };
 
     window.setKnownWords = function(wordsJson) {
@@ -983,13 +1042,7 @@
           if (ranges.length >= 5000) break;
         }
       }
-      let style = contentDocument.getElementById("bookstr-known-word-style");
-      if (!style) {
-        style = contentDocument.createElement("style");
-        style.id = "bookstr-known-word-style";
-        style.textContent = "::highlight(bookstr-known-word){background:#e7c766;color:#1c1916;text-decoration:none}";
-        (contentDocument.head || contentDocument.documentElement).appendChild(style);
-      }
+      applyReaderHighlightStyles(contentDocument);
       contentWindow.CSS.highlights.set("bookstr-known-word", new contentWindow.Highlight(...ranges));
     }
 
@@ -1069,18 +1122,26 @@
       return "bookstr-highlights:" + currentBookId;
     }
 
-    function restoredHighlights(extraCfi) {
-      let saved = [];
-      try { saved = JSON.parse(localStorage.getItem(highlightStorageKey()) || "[]"); } catch (_) {}
-      if (extraCfi && !saved.includes(extraCfi)) saved.push(extraCfi);
-      return saved.filter(Boolean).slice(-500);
+    function restoredHighlights(extraCfi, kind) {
+      let saved = { words: [], marks: [] };
+      try {
+        const parsed = JSON.parse(localStorage.getItem(highlightStorageKey()) || "{}");
+        saved = Array.isArray(parsed) ? { words: parsed, marks: [] } : parsed;
+      } catch (_) {}
+      saved.words = Array.isArray(saved.words) ? saved.words.filter(Boolean).slice(-500) : [];
+      saved.marks = Array.isArray(saved.marks) ? saved.marks.filter(Boolean).slice(-500) : [];
+      const target = kind === "mark" ? saved.marks : saved.words;
+      if (extraCfi && !target.includes(extraCfi)) target.push(extraCfi);
+      return saved;
     }
 
-    function keepHighlight(cfi) {
+    function keepHighlight(cfi, kind) {
       if (!cfi) return;
-      const saved = restoredHighlights(cfi);
+      const resolvedKind = kind === "mark" ? "mark" : "word";
+      const saved = restoredHighlights(cfi, resolvedKind);
+      rememberReaderHighlights(saved);
       try { localStorage.setItem(highlightStorageKey(), JSON.stringify(saved)); } catch (_) {}
-      applyHighlight(cfi);
+      applyHighlight(cfi, resolvedKind);
     }
 
     function renderContext(node, context, word) {
@@ -1191,6 +1252,7 @@
         statusNode.textContent = payload.error;
         return;
       }
+      activeDictionary = Object.assign({}, activeDictionary, payload);
       statusNode.textContent = "";
       kindNode.textContent = payload.partOfSpeech || "";
       definitionsNode.replaceChildren();

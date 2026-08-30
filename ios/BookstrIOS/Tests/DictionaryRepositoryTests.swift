@@ -1,4 +1,5 @@
 import XCTest
+import SQLite3
 #if SWIFT_PACKAGE
 @testable import BookstrLogic
 #else
@@ -6,6 +7,39 @@ import XCTest
 #endif
 
 final class DictionaryRepositoryTests: XCTestCase {
+    private let sqliteTransient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
+
+    private func makeDictionary(at directory: URL, id: String, rows: [(String, String, String)]) throws {
+        let url = directory.appendingPathComponent("\(id).sqlite3")
+        var database: OpaquePointer?
+        XCTAssertEqual(sqlite3_open(url.path, &database), SQLITE_OK)
+        let opened = try XCTUnwrap(database)
+        defer { sqlite3_close(opened) }
+        XCTAssertEqual(sqlite3_exec(
+            opened,
+            "CREATE TABLE translation_grouped (written_rep TEXT, trans_list TEXT, sense_list TEXT, score INTEGER, importance INTEGER)",
+            nil,
+            nil,
+            nil
+        ), SQLITE_OK)
+        for row in rows {
+            var statement: OpaquePointer?
+            XCTAssertEqual(sqlite3_prepare_v2(
+                opened,
+                "INSERT INTO translation_grouped VALUES (?, ?, ?, 1, 1)",
+                -1,
+                &statement,
+                nil
+            ), SQLITE_OK)
+            let prepared = try XCTUnwrap(statement)
+            defer { sqlite3_finalize(prepared) }
+            _ = row.0.withCString { sqlite3_bind_text(prepared, 1, $0, -1, sqliteTransient) }
+            _ = row.1.withCString { sqlite3_bind_text(prepared, 2, $0, -1, sqliteTransient) }
+            _ = row.2.withCString { sqlite3_bind_text(prepared, 3, $0, -1, sqliteTransient) }
+            XCTAssertEqual(sqlite3_step(prepared), SQLITE_DONE)
+        }
+    }
+
     private func pack(_ id: String, installed: Bool = false) -> DictionaryPack {
         let parts = id.split(separator: "-").map(String.init)
         return DictionaryPack(id: id, label: id, sourceLanguage: parts[0], targetLanguage: parts[1],
@@ -62,6 +96,22 @@ final class DictionaryRepositoryTests: XCTestCase {
         selection.normalize(using: afterRemoval)
         XCTAssertEqual(selection, DictionaryPairSelection(source: "de", target: "en"))
         XCTAssertTrue(selection.sources(in: afterRemoval).contains("en"))
+    }
+
+    func testAllInstalledReturnsEachMatchingDictionaryAsItsOwnResult() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("bookstr-dictionaries-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try makeDictionary(at: directory, id: "de-en", rows: [("Herz", "heart", "organ")])
+        try makeDictionary(at: directory, id: "de-pt", rows: [("Herz", "coração | peito", "órgão")])
+        try makeDictionary(at: directory, id: "en-de", rows: [("other", "andere", "")])
+
+        let matches = DictionaryRepository(packDirectory: directory).lookupAllInstalled(word: "herz")
+
+        XCTAssertEqual(matches.map(\.partOfSpeech), ["German → English", "German → Portuguese"])
+        XCTAssertEqual(matches.map(\.language), ["en", "pt"])
+        XCTAssertEqual(matches.map(\.definitions), [["heart — organ"], ["coração, peito — órgão"]])
     }
 
     func testParsesPortugueseDefinitionsAndEnglishTranslation() {

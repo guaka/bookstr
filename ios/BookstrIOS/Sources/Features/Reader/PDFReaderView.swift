@@ -63,9 +63,11 @@ final class PDFReaderController: ObservableObject {
         furthestProgression = max(furthestProgression, progression)
     }
 
-    func highlightCurrentSelection() {
+    func highlightCurrentSelection(kind: ReaderHighlightKind) {
         guard let pdfView, let selection = pdfView.currentSelection else { return }
-        let color = UIColor(red: 231 / 255, green: 199 / 255, blue: 102 / 255, alpha: 0.55)
+        let color = kind == .word
+            ? UIColor(red: 231 / 255, green: 199 / 255, blue: 102 / 255, alpha: 0.55)
+            : UIColor(red: 199 / 255, green: 75 / 255, blue: 50 / 255, alpha: 0.35)
         for page in selection.pages {
             let bounds = selection.bounds(for: page)
             guard !bounds.isNull, bounds.width > 1, bounds.height > 1 else { continue }
@@ -272,7 +274,7 @@ struct PDFReaderView: UIViewRepresentable {
             guard let selection = textSelection.wrappedValue,
                   let phrase = ReaderSelectionActions.phraseForVocabulary(from: selection.text)
             else { return }
-            _ = container.vocabularyRepository.saveSelection(
+            let saved = container.vocabularyRepository.saveSelection(
                 word: phrase,
                 language: "en",
                 bookId: book.id,
@@ -280,8 +282,23 @@ struct PDFReaderView: UIViewRepresentable {
                 cfi: selection.locator,
                 context: selection.text
             )
-            controller?.highlightCurrentSelection()
+            controller?.highlightCurrentSelection(kind: .word)
             NotificationCenter.default.post(name: .bookstrVocabularyDidChange, object: nil)
+            Task { @MainActor in
+                guard let result = try? await container.dictionaryRepository.lookup(
+                    word: saved.word,
+                    language: saved.language,
+                    context: saved.contextSentence
+                ) else { return }
+                _ = container.vocabularyRepository.saveDefinition(
+                    key: saved.key,
+                    partOfSpeech: result.partOfSpeech,
+                    definitions: result.definitions,
+                    translation: result.translation,
+                    sourceUrl: result.sourceUrl
+                )
+                NotificationCenter.default.post(name: .bookstrVocabularyDidChange, object: nil)
+            }
         }
 
         fileprivate func markFromEditMenu() {
@@ -297,7 +314,7 @@ struct PDFReaderView: UIViewRepresentable {
                 format: .pdf,
                 locator: selection.locator
             ) != nil else { return }
-            controller?.highlightCurrentSelection()
+            controller?.highlightCurrentSelection(kind: .mark)
             NotificationCenter.default.post(name: .bookstrSnippetsDidChange, object: nil)
         }
     }

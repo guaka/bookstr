@@ -773,10 +773,11 @@ struct EPUBReaderView: UIViewRepresentable {
     @ObservedObject var controller: EPUBReaderController
     let initialCFI: String?
     let highlightCFI: String?
+    var highlightKind: ReaderHighlightKind? = nil
 
     func makeCoordinator() -> Coordinator {
         Coordinator(container: container, book: book, fileURL: fileURL, controller: controller,
-                    initialCFI: initialCFI, highlightCFI: highlightCFI)
+                    initialCFI: initialCFI, highlightCFI: highlightCFI, highlightKind: highlightKind)
     }
 
     func makeUIView(context: Context) -> WKWebView {
@@ -874,17 +875,19 @@ struct EPUBReaderView: UIViewRepresentable {
         private let controller: EPUBReaderController
         private let initialCFI: String?
         private let highlightCFI: String?
+        private let highlightKind: ReaderHighlightKind?
 
         private var resignObserver: NSObjectProtocol?
 
         init(container: AppContainer, book: CatalogBook, fileURL: URL, controller: EPUBReaderController,
-             initialCFI: String?, highlightCFI: String?) {
+             initialCFI: String?, highlightCFI: String?, highlightKind: ReaderHighlightKind?) {
             self.container = container
             self.book = book
             self.fileURL = fileURL
             self.controller = controller
             self.initialCFI = initialCFI
             self.highlightCFI = highlightCFI
+            self.highlightKind = highlightKind
             super.init()
             resignObserver = NotificationCenter.default.addObserver(
                 forName: UIApplication.willResignActiveNotification,
@@ -954,6 +957,7 @@ struct EPUBReaderView: UIViewRepresentable {
             controller.speechLocator = requestedCFI
             let cfi = requestedCFI.isEmpty ? "null" : EPUBReaderController.js(requestedCFI)
             let highlight = highlightCFI?.isEmpty == false ? EPUBReaderController.js(highlightCFI!) : "null"
+            let highlightKind = self.highlightKind.map { EPUBReaderController.js($0.rawValue) } ?? "null"
             let theme = EPUBReaderController.js(container.settingsRepository.theme.rawValue)
             let font = EPUBReaderController.js(container.settingsRepository.readerFont.rawValue)
             let alignment = EPUBReaderController.js(container.settingsRepository.readerAlignment.rawValue)
@@ -969,7 +973,7 @@ struct EPUBReaderView: UIViewRepresentable {
             let knownJSON = String(data: knownData, encoding: .utf8) ?? "[]"
             let knownArgument = EPUBReaderController.js(knownJSON)
             let loadScript = "setReaderTheme(\(theme)); setReaderTypography(\(font), \(alignment)); setKnownWords(\(knownArgument)); " +
-                "loadBook(\(publication), \(cfi), \(theme), \(highlight), \(bookID)); null;"
+                "loadBook(\(publication), \(cfi), \(theme), \(highlight), \(bookID), \(highlightKind)); null;"
             webView.evaluateJavaScript(
                 "[typeof window.loadBook, typeof window.ePub, typeof window.JSZip, " +
                     "typeof window.BookstrSpeech?.buildPlan].join('|')"
@@ -1106,8 +1110,13 @@ struct EPUBReaderView: UIViewRepresentable {
                     cfi: selection.locator,
                     context: selection.context
                 )
-                self.highlightCurrentSelectionInReader()
-                self.highlightReaderLocator(selection.locator)
+                self.enrichSavedWord(
+                    word: phrase,
+                    language: selection.language,
+                    context: selection.context
+                )
+                self.highlightCurrentSelectionInReader(kind: .word)
+                self.highlightReaderLocator(selection.locator, kind: .word)
                 self.refreshKnownWordsInReader()
                 NotificationCenter.default.post(name: .bookstrVocabularyDidChange, object: nil)
             }
@@ -1126,8 +1135,8 @@ struct EPUBReaderView: UIViewRepresentable {
                     format: .epub,
                     locator: selection.locator
                 ) != nil else { return }
-                self.highlightCurrentSelectionInReader()
-                self.highlightReaderLocator(selection.locator)
+                self.highlightCurrentSelectionInReader(kind: .mark)
+                self.highlightReaderLocator(selection.locator, kind: .mark)
                 NotificationCenter.default.post(name: .bookstrSnippetsDidChange, object: nil)
             }
         }
@@ -1141,31 +1150,33 @@ struct EPUBReaderView: UIViewRepresentable {
             )
         }
 
-        fileprivate func highlightCurrentSelectionInReader() {
+        fileprivate func highlightCurrentSelectionInReader(kind: ReaderHighlightKind) {
             controller.evaluate(
-                "window.highlightCurrentSelection && window.highlightCurrentSelection(); null;"
+                "window.highlightCurrentSelection && window.highlightCurrentSelection(" +
+                    "\(EPUBReaderController.js(kind.rawValue))); null;"
             )
         }
 
-        fileprivate func highlightReaderLocator(_ locator: String) {
+        fileprivate func highlightReaderLocator(_ locator: String, kind: ReaderHighlightKind) {
             let cfi = locator.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !cfi.isEmpty else { return }
             controller.evaluate(
-                "window.highlightReaderCfi && window.highlightReaderCfi(\(EPUBReaderController.js(cfi))); null;"
+                "window.highlightReaderCfi && window.highlightReaderCfi(" +
+                    "\(EPUBReaderController.js(cfi)), \(EPUBReaderController.js(kind.rawValue))); null;"
             )
         }
 
         fileprivate func applySavedHighlightsForBook() {
             refreshKnownWordsInReader()
-            var locators = container.vocabularyRepository.all()
+            let words = container.vocabularyRepository.all()
                 .filter { $0.bookId == book.id && !$0.cfi.isEmpty }
                 .map(\.cfi)
-            locators += container.snippetRepository.all()
+            let marks = container.snippetRepository.all()
                 .filter { $0.bookId == book.id && !$0.locator.isEmpty }
                 .map(\.locator)
-            let unique = Array(Set(locators))
-            let data = (try? JSONSerialization.data(withJSONObject: unique)) ?? Data("[]".utf8)
-            let json = String(data: data, encoding: .utf8) ?? "[]"
+            let highlights = ["words": Array(Set(words)), "marks": Array(Set(marks))]
+            let data = (try? JSONSerialization.data(withJSONObject: highlights)) ?? Data("{}".utf8)
+            let json = String(data: data, encoding: .utf8) ?? "{}"
             controller.evaluate(
                 "window.setReaderHighlights && window.setReaderHighlights(\(EPUBReaderController.js(json))); null;"
             )
@@ -1291,14 +1302,44 @@ struct EPUBReaderView: UIViewRepresentable {
         private func handleWordSelection(_ json: String?) {
             guard let item = object(from: json), let word = item["word"] as? String, !word.isEmpty else { return }
             let cfi = item["cfi"] as? String ?? ""
-            _ = container.vocabularyRepository.saveSelection(
+            let saved = container.vocabularyRepository.saveSelection(
                 word: word, language: item["language"] as? String ?? "en", bookId: book.id,
                 bookTitle: book.title, cfi: cfi,
                 context: item["contextSentence"] as? String ?? ""
             )
+            let definitions = item["definitions"] as? [String] ?? []
+            if !definitions.isEmpty || item["translation"] != nil {
+                _ = container.vocabularyRepository.saveDefinition(
+                    key: saved.key,
+                    partOfSpeech: item["partOfSpeech"] as? String ?? "",
+                    definitions: definitions,
+                    translation: item["translation"] as? String,
+                    sourceUrl: item["sourceUrl"] as? String ?? ""
+                )
+            } else {
+                enrichSavedWord(word: saved.word, language: saved.language, context: saved.contextSentence)
+            }
             refreshKnownWordsInReader()
-            highlightReaderLocator(cfi)
+            highlightReaderLocator(cfi, kind: .word)
             NotificationCenter.default.post(name: .bookstrVocabularyDidChange, object: nil)
+        }
+
+        private func enrichSavedWord(word: String, language: String, context: String) {
+            Task { @MainActor in
+                guard let result = try? await container.dictionaryRepository.lookup(
+                    word: word,
+                    language: language,
+                    context: context
+                ) else { return }
+                _ = container.vocabularyRepository.saveDefinition(
+                    key: "\(language.lowercased()):\(word.lowercased())",
+                    partOfSpeech: result.partOfSpeech,
+                    definitions: result.definitions,
+                    translation: result.translation,
+                    sourceUrl: result.sourceUrl
+                )
+                NotificationCenter.default.post(name: .bookstrVocabularyDidChange, object: nil)
+            }
         }
 
         private func handleTextSelection(_ json: String?) {
