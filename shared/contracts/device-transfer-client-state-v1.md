@@ -16,3 +16,11 @@ the verified device registry:
 `DeviceTransferRequest` normalizes the selected book and recipient IDs. Empty
 or whitespace-only identifiers are rejected. Native transports consume this
 request later; the shared core does not decide how bytes move between devices.
+
+## Native transport seam
+
+Native UI observes only `idle`, `preparing`, `transferring`, `completed`,
+`failed`, and `cancelled`, together with a request ID and byte counts. A
+foreground WebTorrent/WebRTC adapter may consume opaque Nostr control data,
+but torrent locators, peer addresses, ICE payloads, and local paths remain
+outside this state and out of UI-facing errors.
