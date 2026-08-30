@@ -61,6 +61,7 @@ test('parses required CLI options and writes the report file', async () => {
 
 test('PR workflow consumes all platform overview artifacts with write access isolated to the reporter', async () => {
   const workflow = await readFile(new URL('../.github/workflows/pr-coverage.yml', import.meta.url), 'utf8');
+  const ci = await readFile(new URL('../.github/workflows/ci.yml', import.meta.url), 'utf8');
   assert.match(workflow, /workflow_run:/);
   assert.match(workflow, /workflows: \[CI, Android CI, iOS CI\]/);
   assert.match(workflow, /pattern: bookstr-test-overview-\*/);
@@ -68,4 +69,11 @@ test('PR workflow consumes all platform overview artifacts with write access iso
   assert.match(workflow, /issues: write/);
   assert.match(workflow, /github\.rest\.issues\.updateComment/);
   assert.match(workflow, /github\.rest\.issues\.createComment/);
+  assert.match(workflow, /REPORT_MARKER: \$\{\{ github\.event\.workflow_run\.name \}\}/);
+  assert.match(ci, /pr-coverage:/);
+  assert.match(ci, /github\.event\.pull_request\.head\.repo\.full_name == github\.repository/);
+  assert.match(ci, /--marker CI/);
+  assert.match(ci, /issues: write/);
+  assert.match(ci, /github\.rest\.issues\.updateComment/);
+  assert.match(ci, /github\.rest\.issues\.createComment/);
 });
