@@ -44,8 +44,10 @@ clients on the same contracts.
 1. **Native mobile host bridges.** Connect the shared adapter to the existing
    iOS Keychain and Android encrypted-preferences/Keystore wrappers, plus each
    platform's Nostr relay client and NIP-44 signer.
-2. **Optional public metadata.** Add rights-gated, operator-opt-in NIP-94
-   publication only after the local verification path is stable.
+2. **Optional public metadata host opt-in.** The shared NIP-94 event contract
+   now enforces rights, completed verification, explicit operator intent, and
+   HTTPS-only locators. Wire a visible per-host publish action only after the
+   local verification path has release coverage.
 
 ## Release gates
 

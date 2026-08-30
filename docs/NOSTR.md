@@ -740,11 +740,18 @@ The identifiers serve different purposes and must not be substituted:
 5. EPUB CFI, PDF page locator, and normalized progression identify a reading
    position within a file.
 
+## Optional public metadata
+
+The shared NIP-94 contract can construct and parse compact public metadata for
+an available file/edition: SHA-256, URL, MIME type, byte size, fallback URLs,
+and Bookstr's optional publication identifier. It requires explicit operator
+opt-in, a completed local verification, allowed redistribution rights, and an
+HTTPS locator. No host publishes these events automatically yet; local paths,
+unverified bytes, and source URLs without separate redistribution permission
+are rejected.
+
 ## Planned, not implemented
 
-- NIP-94 kind `1063` may publish compact public metadata for an available
-  file/edition: SHA-256, URL, MIME type, byte size, fallback URLs, and optional
-  magnet/infohash metadata.
 - NIP-35 may describe torrent sources without putting torrent files or book
   bytes on relays.
 - NIP-25 kind `17` reactions and NIP-22 kind `1111` comments may target a
