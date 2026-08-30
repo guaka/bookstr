@@ -68,4 +68,6 @@ test('PR workflow consumes all platform overview artifacts with write access iso
   assert.match(workflow, /issues: write/);
   assert.match(workflow, /github\.rest\.issues\.updateComment/);
   assert.match(workflow, /github\.rest\.issues\.createComment/);
+  assert.match(workflow, /REPORT_MARKER: \$\{\{ github\.event\.workflow_run\.name \}\}/);
+  assert.doesNotMatch(workflow, /pull-requests: write/);
 });
