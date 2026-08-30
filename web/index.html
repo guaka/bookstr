@@ -6781,6 +6781,21 @@
       }
 
       async function startSearch({ updateHash = true, routeState = null } = {}) {
+        // Source adapters may report partial results before their final result.
+        // Once the user has seen a result set, retain any filter/page choice
+        // while a later adapter update re-renders it.
+        let renderedSearchResults = false;
+        const renderSearchResults = books => {
+          const currentRouteState = renderedSearchResults
+            ? {
+              language: searchResultFilter.language,
+              format: searchResultFilter.format,
+              page: searchResultPage,
+            }
+            : routeState;
+          renderResults(books, { routeState: currentRouteState });
+          renderedSearchResults = true;
+        };
         const query = queryInput.value.trim();
         if (!query) {
           renderSearchSources();
@@ -6828,7 +6843,7 @@
             query,
             searchType.value || 'all',
           ));
-          renderResults(books, { routeState });
+          renderSearchResults(books);
           status.textContent = `Showing ${books.length} cached result${books.length === 1 ? '' : 's'} · refreshes after 10 minutes.`;
           replaceSearchHash();
           renderButtonsState();
@@ -6844,14 +6859,14 @@
               query,
               searchType.value || 'all',
             ));
-            renderResults(matchingBooks, { routeState });
+            renderSearchResults(matchingBooks);
             renderButtonsState();
           });
           let books = searchResponse.books;
           books = books.filter(book => matchesExactSearchTokens(book, query, searchType.value || 'all'));
           cacheSearchBooks(query, books);
           status.textContent = `${searchOutcomeSummary(searchResponse.outcomes)} · ${books.length} result(s).`;
-          renderResults(books, { routeState });
+          renderSearchResults(books);
           replaceSearchHash();
           renderButtonsState();
           if (!books.length) {
