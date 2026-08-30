@@ -807,6 +807,13 @@ test('settings groups Nostr controls and connection status together', () => {
   assert.match(html, /desktopNip46QrStart\.classList\.toggle\('hidden', connected\)/);
 });
 
+test('offline dictionary destinations populate before storage responds', () => {
+  assert.match(html, /function populateDictionaryTargetOptions\(preferredTarget = '', installed = new Set\(\)\)/);
+  assert.match(html, /dictionarySource\.addEventListener\('change',[\s\S]*?populateDictionaryTargetOptions\(\);[\s\S]*?refreshDictionaryTargetOptions\(\)/);
+  assert.match(html, /populateDictionaryTargetOptions\('en'\);[\s\S]*?refreshDictionaryTargetOptions\('en'\)/);
+  assert.match(html, /try \{[\s\S]*?await dictionaryRecords\(\)[\s\S]*?\} catch \{\}[\s\S]*?populateDictionaryTargetOptions/);
+});
+
 test('Electron settings expose opt-in language voices and reader typography', () => {
   assert.match(html, /desktop-reader-settings settings-speech[\s\S]*?id="speech-language"[\s\S]*?id="speech-voice"[\s\S]*?id="speech-rate"/);
   assert.match(html, /id="speech-model-kokoro_en"[\s\S]*?id="speech-model-piper_pt_pt"[\s\S]*?id="speech-model-status"/);

@@ -2323,9 +2323,8 @@
         }
       }
 
-      async function refreshDictionaryTargetOptions(preferredTarget = '') {
+      function populateDictionaryTargetOptions(preferredTarget = '', installed = new Set()) {
         const source = dictionarySource.value;
-        const installed = new Set((await dictionaryRecords()).map(pack => pack.id));
         const available = Object.entries(DICTIONARY_LANGUAGES)
           .filter(([code]) => code !== source && !installed.has(`${source}-${code}`))
           .sort(([, left], [, right]) => left.localeCompare(right));
@@ -2334,6 +2333,14 @@
         if (available.some(([code]) => code === previous)) dictionaryTarget.value = previous;
         dictionaryTarget.disabled = !available.length;
         dictionaryInstall.disabled = !available.length;
+      }
+
+      async function refreshDictionaryTargetOptions(preferredTarget = '') {
+        let installed = new Set();
+        try {
+          installed = new Set((await dictionaryRecords()).map(pack => pack.id));
+        } catch {}
+        populateDictionaryTargetOptions(preferredTarget, installed);
       }
 
       async function lookupOfflineWord(word, language) {
@@ -7788,8 +7795,12 @@
         dictionarySource.add(new Option(label, code));
       }
       dictionarySource.value = 'pt';
-      dictionarySource.addEventListener('change', () => void refreshDictionaryTargetOptions());
+      dictionarySource.addEventListener('change', () => {
+        populateDictionaryTargetOptions();
+        void refreshDictionaryTargetOptions();
+      });
       dictionaryInstall.addEventListener('click', installDictionaryPack);
+      populateDictionaryTargetOptions('en');
       void refreshDictionaryTargetOptions('en');
       void renderDictionaryPacks();
       void bookCacheRecords().then(records => {
