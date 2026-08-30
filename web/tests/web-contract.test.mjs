@@ -53,7 +53,7 @@ test('Search explains active sources and fans out without private-first fallback
   assert.match(html, /@media \(max-width: 600px\)[\s\S]*\.search-sources-table td::before/);
 });
 
-test('search registers lawful LitRes and configured public OPDS FB2 sources', () => {
+test('search retains synced public OPDS sources without exposing feed editing in settings', () => {
   assert.match(html, /async function searchLitresPublicDomain\(query\)/);
   assert.match(html, /\/litres\/search\?q=/);
   assert.match(html, /name: 'LitRes Public Domain'/);
@@ -61,7 +61,7 @@ test('search registers lawful LitRes and configured public OPDS FB2 sources', ()
   assert.match(html, /getOPDSSourcesModule\(\)/);
   assert.match(html, /opds-/);
   assert.match(html, /deliveries: \['Metadata', 'FB2'\]/);
-  assert.match(html, /id="opds-feeds"/);
+  assert.doesNotMatch(html, /id="opds-feeds"|Public OPDS feeds|settings-opds|opds-feed-input/);
   assert.match(html, /function normalizePublicOPDSFeedSettings\(value\)/);
   assert.match(html, /bookstr-opds-feeds/);
   assert.match(html, /bookstr-opds-feed/);

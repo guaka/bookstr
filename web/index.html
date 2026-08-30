@@ -1166,12 +1166,6 @@
         color: #16803c;
         font-weight: 800;
       }
-      .opds-feed-input {
-        width: 100%;
-        min-height: 4.8rem;
-        box-sizing: border-box;
-        resize: vertical;
-      }
       .desktop-signer {
         display: grid;
         gap: 0.55rem;
@@ -1230,7 +1224,6 @@
       body.desktop-mode .settings-tab .setting-option,
       body.desktop-mode .settings-tab .desktop-signer-primary,
       body.desktop-mode .settings-tab .settings-status,
-      body.desktop-mode .settings-tab .opds-feed-input,
       body.desktop-mode .settings-tab .dictionary-pack {
         border: 1px solid color-mix(in srgb, var(--settings-border, #ddd) 78%, transparent);
         border-radius: 0.7rem;
@@ -1270,8 +1263,7 @@
       body.desktop-mode .settings-tab .settings-preferences,
       body.desktop-mode .settings-tab .settings-appearance,
       body.desktop-mode .settings-tab .settings-nostr,
-      body.desktop-mode .settings-tab .settings-dictionaries,
-      body.desktop-mode .settings-tab .settings-opds {
+      body.desktop-mode .settings-tab .settings-dictionaries {
         grid-column: auto;
         grid-row: auto;
         margin: 0;
@@ -1940,10 +1932,6 @@
             <p id="dictionary-status" class="meta-note"></p>
             <div id="dictionary-packs" class="dictionary-packs"></div>
           </div>
-          <div class="settings-section settings-opds">
-            <h3>Public OPDS feeds</h3>
-            <textarea id="opds-feeds" class="opds-feed-input" rows="3" placeholder="Name | https://catalog.example/opds" aria-label="Public OPDS feeds, one name and HTTPS URL per line"></textarea>
-          </div>
         </section>
       </section>
 
@@ -2169,8 +2157,6 @@
       const dictionaryInstall = document.getElementById('dictionary-install');
       const dictionaryStatus = document.getElementById('dictionary-status');
       const dictionaryPacks = document.getElementById('dictionary-packs');
-      const opdsFeedsInput = document.getElementById('opds-feeds');
-
       const state = {
         favorites: [],
         reading: [],
@@ -3562,7 +3548,6 @@
         }
         if (Array.isArray(next.opdsFeeds)) {
           state.settings.opdsFeeds = normalizePublicOPDSFeedSettings(next.opdsFeeds);
-          opdsFeedsInput.value = opdsFeedInputValue();
           localStorage.setItem(SETTINGS_KEY, JSON.stringify(state.settings));
         }
         localStorage.setItem(FAVORITES_KEY, JSON.stringify(state.favorites));
@@ -3740,22 +3725,6 @@
         return feeds;
       }
 
-      function parseOPDSFeedInput(value) {
-        return normalizePublicOPDSFeedSettings(String(value || '').split(/\r?\n/).map(line => {
-          const divider = line.indexOf('|');
-          return divider < 0 ? null : { name: line.slice(0, divider), url: line.slice(divider + 1) };
-        }).filter(Boolean));
-      }
-
-      function opdsFeedInputValue(feeds = state.settings.opdsFeeds) {
-        return normalizePublicOPDSFeedSettings(feeds).map(feed => `${feed.name} | ${feed.url}`).join('\n');
-      }
-
-      function saveOPDSFeedSettingsFromUI() {
-        state.settings.opdsFeeds = parseOPDSFeedInput(opdsFeedsInput.value);
-        opdsFeedsInput.value = opdsFeedInputValue();
-      }
-
       function publicOPDSFeedNostrTags() {
         return state.settings.opdsFeeds.map(feed => ['bookstr-opds-feed', feed.name, feed.url]);
       }
@@ -3766,7 +3735,6 @@
         state.settings.opdsFeeds = normalizePublicOPDSFeedSettings(tags
           .filter(tag => Array.isArray(tag) && tag[0] === 'bookstr-opds-feed')
           .map(tag => ({ name: tag[1], url: tag[2] })));
-        opdsFeedsInput.value = opdsFeedInputValue();
         localStorage.setItem(SETTINGS_KEY, JSON.stringify(state.settings));
         return true;
       }
@@ -7271,7 +7239,6 @@
         speechRateInput.value = String(state.settings.speechRate);
         refreshSpeechVoiceMenus();
         updateReaderSettingLabels();
-        opdsFeedsInput.value = opdsFeedInputValue();
         applyTheme(themeModeInput.value);
         saveLocalAppearance(state.settings.theme);
         renderFavorites();
@@ -7550,7 +7517,6 @@
       }
 
       function applySettingsFromUI() {
-        const previousOPDSFeeds = JSON.stringify(state.settings.opdsFeeds);
         state.settings.autoReading = autoReadingInput.checked;
         state.settings.useNip7 = nip7EnabledInput.checked;
         state.settings.theme = themeModeInput.value;
@@ -7562,16 +7528,11 @@
         state.settings.speechRate = Number(speechRateInput.value);
         updateReaderSettingLabels();
         saveLocalAppearance(state.settings.theme);
-        saveOPDSFeedSettingsFromUI();
         applyTheme(state.settings.theme);
         applyOpenReaderTypography();
         localStorage.setItem(SETTINGS_KEY, JSON.stringify(state.settings));
         localStorage.setItem('bookstr-reader-font-percent', String(state.settings.readerFontPercent));
         notifyOpenReaderSettings();
-        if (previousOPDSFeeds !== JSON.stringify(state.settings.opdsFeeds)) {
-          renderSearchSources();
-          if (state.settings.useNip7 && state.nip7.pubkey) queueFavoriteSync();
-        }
         if (!state.settings.useNip7) {
           state.nip7.pubkey = '';
           localStorage.removeItem(NIP7_STATUS_KEY);
@@ -7769,8 +7730,6 @@
       if (window.speechSynthesis) {
         window.speechSynthesis.addEventListener?.('voiceschanged', refreshSpeechVoiceMenus);
       }
-      opdsFeedsInput.addEventListener('change', applySettingsFromUI);
-
       searchForm.addEventListener('submit', (event) => {
         event.preventDefault();
         startSearch();

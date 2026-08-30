@@ -230,6 +230,8 @@ test('libstr desktop app opens with preload bridge', async () => {
       settingsItem?.click();
     });
     await expect(firstWindow.locator('#settings-modal')).toBeVisible();
+    await expect(firstWindow.locator('#opds-feeds')).toHaveCount(0);
+    await expect(firstWindow.getByRole('heading', { name: 'Public OPDS feeds' })).toHaveCount(0);
 
     await firstWindow.getByRole('button', { name: 'Connect with QR code' }).click();
     await expect(firstWindow.getByAltText('NIP-46 connection QR code')).toHaveAttribute('src', /^data:image\/png;base64,/);
