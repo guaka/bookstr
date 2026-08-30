@@ -1151,6 +1151,7 @@
       .settings-range input[type="range"] { width: 100%; height: auto; }
       .settings-range output { min-width: 3.2rem; text-align: right; font-variant-numeric: tabular-nums; }
       .optional-voices-note { display: flex; flex-wrap: wrap; gap: 0.45rem; margin: 0.45rem 0 0; }
+      .optional-voices-note .speech-model-delete { color: #b42318; border-color: #b42318; }
       .settings-status {
         margin: 0;
         padding: 0.62rem 0.68rem;
@@ -1882,8 +1883,8 @@
               <output id="speech-rate-value" for="speech-rate">1.00×</output>
             </label>
             <div class="optional-voices-note">
-              <button id="speech-model-kokoro_en" type="button">Download Kokoro</button>
-              <button id="speech-model-piper_pt_pt" type="button">Download Tugão</button>
+              <button id="speech-model-kokoro_en" data-language="en" type="button">Download Kokoro</button>
+              <button id="speech-model-piper_pt_pt" data-language="pt" type="button" hidden>Download Tugão</button>
             </div>
             <p id="speech-model-status" class="meta-note" role="status" aria-live="polite"></p>
           </div>
@@ -7097,6 +7098,14 @@
         return `${Math.round(Number(bytes || 0) / 1_000_000)} MB`;
       }
 
+      function updateSpeechModelVisibility(clearStatus = true) {
+        const selectedLanguage = BookstrSpeechSettings.languageCode(speechLanguageInput.value);
+        speechModelButtons.forEach(button => {
+          button.hidden = button.dataset.language !== selectedLanguage;
+        });
+        if (clearStatus) speechModelStatus.textContent = '';
+      }
+
       async function refreshSpeechModels(models) {
         const next = Array.isArray(models)
           ? models
@@ -7106,13 +7115,16 @@
           if (!button) continue;
           button.disabled = Boolean(model.installing);
           button.dataset.installed = String(Boolean(model.installed));
+          button.classList.toggle('speech-model-delete', Boolean(model.installed));
           button.textContent = model.installed
-            ? `Remove ${model.label} · ${speechModelSize(model.approximateBytes)}`
+            ? `Delete ${model.label} · ${speechModelSize(model.approximateBytes)}`
             : model.installing
               ? `Downloading ${model.label}… ${model.completedFiles}/${model.fileCount}`
               : `Download ${model.label} · ${speechModelSize(model.approximateBytes)}`;
-          if (model.error) speechModelStatus.textContent = `${model.label}: ${model.error}`;
         }
+        updateSpeechModelVisibility(false);
+        const visibleError = (next || []).find(model => model.language === speechLanguageInput.value && model.error);
+        speechModelStatus.textContent = visibleError ? `${visibleError.label}: ${visibleError.error}` : '';
       }
 
       async function toggleSpeechModel(event) {
@@ -7709,6 +7721,7 @@
       speechLanguageInput.addEventListener('change', () => {
         state.settings.speechLanguage = speechLanguageInput.value;
         refreshSpeechVoiceMenus();
+        updateSpeechModelVisibility();
         applySettingsFromUI();
       });
       speechVoiceInput.addEventListener('change', applySettingsFromUI);
@@ -7717,7 +7730,9 @@
       window.bookstrDesktop?.speechModels?.onProgress?.(progress => {
         const button = document.getElementById(`speech-model-${progress.id}`);
         if (button) button.textContent = `Downloading… ${progress.completedFiles}/${progress.fileCount}`;
-        speechModelStatus.textContent = `${progress.file} · ${speechModelSize(progress.receivedBytes)} / ${speechModelSize(progress.totalBytes)}`;
+        if (button && !button.hidden) {
+          speechModelStatus.textContent = `${progress.file} · ${speechModelSize(progress.receivedBytes)} / ${speechModelSize(progress.totalBytes)}`;
+        }
       });
       if (window.speechSynthesis) {
         window.speechSynthesis.addEventListener?.('voiceschanged', refreshSpeechVoiceMenus);

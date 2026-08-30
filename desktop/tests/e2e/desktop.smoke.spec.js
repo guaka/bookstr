@@ -149,8 +149,32 @@ test('libstr desktop app opens with preload bridge', async () => {
     await expect(firstWindow.locator('#speech-voice')).toContainText('Best installed voice');
     await expect(firstWindow.locator('#speech-language')).toContainText('English');
     expect(await firstWindow.locator('#speech-language option').count()).toBeGreaterThan(20);
-    await expect(firstWindow.locator('#speech-model-kokoro_en')).toContainText('Download Kokoro');
-    await expect(firstWindow.locator('#speech-model-piper_pt_pt')).toContainText('Download Tugão');
+    const kokoroModel = firstWindow.locator('#speech-model-kokoro_en');
+    const tugaoModel = firstWindow.locator('#speech-model-piper_pt_pt');
+    await expect(kokoroModel).toBeVisible();
+    await expect(kokoroModel).toContainText('Download Kokoro');
+    await expect(tugaoModel).toBeHidden();
+    const englishVoiceOptions = await firstWindow.locator('#speech-voice option').count();
+    await firstWindow.evaluate(() => refreshSpeechModels([{
+      id: 'kokoro_en', label: 'Kokoro · English', language: 'en', approximateBytes: 352_148_969,
+      fileCount: 11, installed: true, installing: false, completedFiles: 0, error: '',
+    }, {
+      id: 'piper_pt_pt', label: 'Tugão · Português (Portugal)', language: 'pt', approximateBytes: 63_939_446,
+      fileCount: 9, installed: false, installing: false, completedFiles: 0, error: '',
+    }]));
+    await expect(kokoroModel).toHaveClass(/speech-model-delete/);
+    await expect(kokoroModel).toContainText('Delete Kokoro');
+    expect(await firstWindow.locator('#speech-voice option').count()).toBe(englishVoiceOptions);
+    await firstWindow.locator('#speech-language').selectOption('pt');
+    await expect(kokoroModel).toBeHidden();
+    await expect(tugaoModel).toBeVisible();
+    await expect(firstWindow.locator('#speech-voice')).toContainText('Best installed voice');
+    await firstWindow.locator('#speech-language').selectOption('es');
+    await expect(kokoroModel).toBeHidden();
+    await expect(tugaoModel).toBeHidden();
+    await expect(firstWindow.locator('#speech-voice')).toContainText('Best installed voice');
+    await firstWindow.locator('#speech-language').selectOption('en');
+    await firstWindow.evaluate(() => refreshSpeechModels());
     await firstWindow.locator('#reader-font').selectOption('arial');
     await firstWindow.locator('#reader-alignment').selectOption('justified');
     await firstWindow.locator('#reader-font-size').evaluate(input => {
