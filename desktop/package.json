@@ -29,6 +29,7 @@
     "test:unit": "node --experimental-test-coverage --test-coverage-exclude='**/*.test.js' --test-coverage-exclude='**/*.test.mjs' --test tests/unit/*.test.js ../web/tests/desktop-progress.test.mjs ../web/tests/reader-speech.test.mjs ../web/tests/reader-typography.test.mjs ../web/tests/speech-settings.test.mjs",
     "test:coverage": "node --experimental-test-coverage --test-coverage-exclude='**/*.test.js' --test-coverage-exclude='**/*.test.mjs' --test --test-reporter=tap tests/unit/*.test.js ../web/tests/desktop-progress.test.mjs ../web/tests/reader-speech.test.mjs ../web/tests/reader-typography.test.mjs ../web/tests/speech-settings.test.mjs",
     "test:e2e": "playwright test",
+    "test:e2e:docker": "docker build --file Dockerfile.test --tag bookstr-electron-tests .. && docker run --rm --init --ipc=host bookstr-electron-tests",
     "test:e2e:smoke": "playwright test tests/e2e/desktop.smoke.spec.js",
     "test:e2e:reader": "playwright test tests/e2e/desktop.reader.spec.js",
     "test:e2e:headed": "playwright test --headed"

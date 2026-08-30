@@ -53,7 +53,7 @@ test('Search explains active sources and fans out without private-first fallback
   assert.match(html, /@media \(max-width: 600px\)[\s\S]*\.search-sources-table td::before/);
 });
 
-test('search registers lawful LitRes and configured public OPDS FB2 sources', () => {
+test('search retains synced public OPDS sources without exposing feed editing in settings', () => {
   assert.match(html, /async function searchLitresPublicDomain\(query\)/);
   assert.match(html, /\/litres\/search\?q=/);
   assert.match(html, /name: 'LitRes Public Domain'/);
@@ -61,7 +61,7 @@ test('search registers lawful LitRes and configured public OPDS FB2 sources', ()
   assert.match(html, /getOPDSSourcesModule\(\)/);
   assert.match(html, /opds-/);
   assert.match(html, /deliveries: \['Metadata', 'FB2'\]/);
-  assert.match(html, /id="opds-feeds"/);
+  assert.doesNotMatch(html, /id="opds-feeds"|Public OPDS feeds|settings-opds|opds-feed-input/);
   assert.match(html, /function normalizePublicOPDSFeedSettings\(value\)/);
   assert.match(html, /bookstr-opds-feeds/);
   assert.match(html, /bookstr-opds-feed/);
@@ -802,6 +802,16 @@ test('Electron identifies development builds with a Bookstr timestamp version', 
 
 test('settings groups Nostr controls and connection status together', () => {
   assert.match(html, /settings-section settings-nostr[\s\S]*?<h3>Nostr<\/h3>[\s\S]*?id="nip7-enabled"[\s\S]*?id="nip7-status"/);
+  assert.match(html, /#desktop-signer-status\.signer-connected::before\s*\{[\s\S]*?content: '✓';[\s\S]*?color: #16803c/);
+  assert.match(html, /desktopSignerStatus\.classList\.toggle\('signer-connected', connected\)/);
+  assert.match(html, /desktopNip46QrStart\.classList\.toggle\('hidden', connected\)/);
+});
+
+test('offline dictionary destinations populate before storage responds', () => {
+  assert.match(html, /function populateDictionaryTargetOptions\(preferredTarget = '', installed = new Set\(\)\)/);
+  assert.match(html, /dictionarySource\.addEventListener\('change',[\s\S]*?populateDictionaryTargetOptions\(\);[\s\S]*?refreshDictionaryTargetOptions\(\)/);
+  assert.match(html, /populateDictionaryTargetOptions\('en'\);[\s\S]*?refreshDictionaryTargetOptions\('en'\)/);
+  assert.match(html, /try \{[\s\S]*?await dictionaryRecords\(\)[\s\S]*?\} catch \{\}[\s\S]*?populateDictionaryTargetOptions/);
 });
 
 test('Electron settings expose opt-in language voices and reader typography', () => {

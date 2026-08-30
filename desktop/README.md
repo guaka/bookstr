@@ -26,6 +26,16 @@ npm run test:e2e:reader
 The test suite uses Playwright Electron mode to validate bootstrap, preload bridge,
 and reader read-aloud behavior.
 
+To run the complete Electron end-to-end suite in the pinned Linux test container:
+
+```bash
+cd desktop
+npm run test:e2e:docker
+```
+
+The Docker command builds from the repository root, runs as Playwright's
+unprivileged user under Xvfb, and removes the test container when it finishes.
+
 ## Package (CI/release)
 
 - `npm run dist` produces macOS `.dmg`, Windows `.exe`, and Linux `.AppImage/.deb`

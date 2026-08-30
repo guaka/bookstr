@@ -1,0 +1,11 @@
+*
+!desktop/
+!desktop/**
+!shared/
+!shared/**
+!web/
+!web/**
+**/coverage/
+**/node_modules/
+**/test-results/
+desktop/dist/

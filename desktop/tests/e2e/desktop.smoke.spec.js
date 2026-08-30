@@ -230,6 +230,8 @@ test('libstr desktop app opens with preload bridge', async () => {
       settingsItem?.click();
     });
     await expect(firstWindow.locator('#settings-modal')).toBeVisible();
+    await expect(firstWindow.locator('#opds-feeds')).toHaveCount(0);
+    await expect(firstWindow.getByRole('heading', { name: 'Public OPDS feeds' })).toHaveCount(0);
 
     await firstWindow.getByRole('button', { name: 'Connect with QR code' }).click();
     await expect(firstWindow.getByAltText('NIP-46 connection QR code')).toHaveAttribute('src', /^data:image\/png;base64,/);
@@ -244,6 +246,8 @@ test('libstr desktop app opens with preload bridge', async () => {
     await expect(firstWindow.locator('#desktop-signer-status')).toContainText('Connected with local nsec');
     await expect(firstWindow.locator('#desktop-signer-status')).not.toContainText('[object Promise]');
     await expect(firstWindow.locator('#desktop-signer-status')).toContainText('npub1');
+    await expect(firstWindow.locator('#desktop-signer-status')).toHaveClass(/signer-connected/);
+    await expect(firstWindow.getByRole('button', { name: 'Connect with QR code' })).toBeHidden();
 
     const localSigner = await firstWindow.evaluate(async () => ({
       pubkey: await window.bookstrDesktop.signer.getPublicKey(),
@@ -394,8 +398,17 @@ test('desktop downloads dictionaries through its same-origin proxy', async () =>
   try {
     const library = await electronApp.firstWindow();
     await library.getByRole('button', { name: 'Settings' }).click();
+    const source = library.locator('#dictionary-source');
+    const target = library.locator('#dictionary-target');
+    await expect(source.locator('option')).toHaveCount(26);
+    await expect(target.locator('option')).toHaveCount(25);
+    await expect(target.locator('option[value="en"]')).toHaveText('English');
+    await expect(target.locator('option[value="pt"]')).toHaveCount(0);
+    await source.selectOption('en');
+    await expect(target.locator('option[value="en"]')).toHaveCount(0);
+    await expect(target.locator('option[value="pt"]')).toHaveText('Portuguese');
     await library.locator('#dictionary-source').selectOption('pt');
-    await library.locator('#dictionary-target').selectOption('en');
+    await target.selectOption('en');
     await library.locator('#dictionary-install').click();
     await expect(library.locator('#dictionary-status')).toHaveText('Installed Portuguese → English.');
     await expect(library.locator('#dictionary-packs')).toContainText('Portuguese → English');
@@ -416,6 +429,29 @@ test('desktop downloads dictionaries through its same-origin proxy', async () =>
   } finally {
     await electronApp.close();
     await server.close();
+  }
+});
+
+test('desktop keeps dictionary destinations available when dictionary storage cannot open', async () => {
+  const electronApp = await electron.launch({ args: electronArgs() });
+  try {
+    const library = await electronApp.firstWindow();
+    await library.addInitScript(() => {
+      const nativeOpen = IDBFactory.prototype.open;
+      IDBFactory.prototype.open = function open(name, ...args) {
+        if (name === 'bookstr_dictionaries_v1') throw new Error('Dictionary storage fixture unavailable');
+        return nativeOpen.call(this, name, ...args);
+      };
+    });
+    await library.reload();
+    await library.getByRole('button', { name: 'Settings' }).click();
+    await expect(library.locator('#dictionary-source')).toHaveValue('pt');
+    await expect(library.locator('#dictionary-target option')).toHaveCount(25);
+    await expect(library.locator('#dictionary-target option[value="en"]')).toHaveText('English');
+    await expect(library.locator('#dictionary-target')).toBeEnabled();
+    await expect(library.locator('#dictionary-install')).toBeEnabled();
+  } finally {
+    await electronApp.close();
   }
 });
 
