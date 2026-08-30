@@ -245,6 +245,9 @@ test('an unavailable MD5 still shows its known book metadata', async ({ page }) 
   await expect(metadata).toContainText('Known Author');
   await expect(metadata).toContainText('2024');
   await expect(metadata).toContainText('pt');
+  await expect(metadata).toContainText('Local file/cache:');
+  await expect(metadata).toContainText('Source URL: https://unavailable.invalid/book.epub');
+  await expect(metadata).toContainText('Error:');
 });
 
 test('an MD5 route reopens a legacy URL-keyed EPUB cache while offline', async ({ page }) => {
@@ -681,23 +684,16 @@ test('settings persist the selected reading theme after reopening the app', asyn
   await page.goto('/#home');
   await page.locator('#settings-btn').click();
   await expect(page.locator('#settings-title')).toBeVisible();
-  await expect(page.locator('#reader-font')).toHaveValue('arial');
-  await expect(page.locator('#reader-alignment')).toHaveValue('justified');
-
   await page.locator('#theme-mode').selectOption('dark');
-  await page.locator('#reader-font').selectOption('georgia');
-  await page.locator('#reader-alignment').selectOption('left');
   await expect(page.locator('body')).toHaveClass(/theme-dark/);
   await expect.poll(async () => page.evaluate(() => JSON.parse(
     localStorage.getItem('bookstr_reader_settings_v1') || '{}',
-  ))).toMatchObject({ theme: 'dark', readerFont: 'georgia', readerAlignment: 'left' });
+  ))).toMatchObject({ theme: 'dark' });
 
   await page.goto('/#home');
   await page.reload();
   await page.locator('#settings-btn').click();
   await expect(page.locator('#theme-mode')).toHaveValue('dark');
-  await expect(page.locator('#reader-font')).toHaveValue('georgia');
-  await expect(page.locator('#reader-alignment')).toHaveValue('left');
   await expect(page.locator('body')).toHaveClass(/theme-dark/);
 });
 
@@ -942,4 +938,74 @@ test('a search result opens its EPUB in the Bookstr reader', async ({ page }) =>
   await expect.poll(async () => page.evaluate(() => JSON.parse(
     localStorage.getItem('bookstr_reading_library_v1') || '[]',
   )[0]?.rights_source)).toBe('epub_opf');
+});
+
+test('Yochai Benkler search ranks an available edition first and opens the actual book', async ({ page }) => {
+  const archiveId = 'the-wealth-of-networks';
+  const filename = 'The_Wealth_of_Networks.epub';
+  const downloadUrl = `https://books-api.guaka.org/api/internet-archive/download?id=${archiveId}&name=${filename}`;
+  const epub = await minimalEpub(
+    'The Wealth of Networks',
+    'The actual downloadable Benkler book opened inside Bookstr.',
+    'CC BY-NC-SA 2.5',
+  );
+  let archiveSearchCalls = 0;
+  await page.route('https://books-api.guaka.org/api/search**', route => route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify({ results: [{
+      id: 105836132,
+      source: 'openlibrary',
+      source_native_id: '5836132',
+      title: 'The wealth of networks',
+      authors: 'Yochai Benkler',
+    }] }),
+  }));
+  await page.route('https://books-api.guaka.org/api/internet-archive/search**', route => {
+    archiveSearchCalls += 1;
+    return route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ response: { docs: [{
+        identifier: archiveId,
+        title: 'The Wealth Of Networks: How Social Production Transforms Markets and Freedom',
+        creator: 'Yochai Benkler',
+        year: 2006,
+      }] } }),
+    });
+  });
+  await page.route('https://books-api.guaka.org/api/internet-archive/metadata**', route => route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify({
+      metadata: {
+        title: 'The Wealth Of Networks: How Social Production Transforms Markets and Freedom',
+        creator: 'Yochai Benkler',
+        date: '2006',
+      },
+      files: [{ name: filename, format: 'EPUB', size: String(epub.length), source: 'derivative' }],
+    }),
+  }));
+  await page.route(downloadUrl, route => route.fulfill({
+    status: 200,
+    contentType: 'application/epub+zip',
+    body: epub,
+  }));
+
+  await page.goto('/#search=Yochai%20Benkler');
+  await expect(page.locator('#search-result-count')).toHaveText('2 results');
+  const rows = page.locator('#results .book-table-row');
+  await expect(rows.first()).toContainText('Internet Archive');
+  await expect(rows.first()).toContainText('epub');
+  await rows.first().locator('a.result-title').click();
+
+  await expect(page.locator('#reader-frame')).toHaveAttribute('src', /reader\.html/);
+  const reader = page.frameLocator('#reader-frame');
+  await expect(reader.locator('body')).toHaveAttribute('data-location', /epubcfi\(/);
+  await expect(reader.frameLocator('#viewer iframe').first().locator('h1')).toHaveText('The Wealth of Networks');
+
+  await page.goto('/#search=Yochai%20Benkler');
+  await expect(page.locator('#status')).toContainText('cached results');
+  await expect(page.locator('#search-result-count')).toHaveText('2 results');
+  expect(archiveSearchCalls).toBe(1);
 });

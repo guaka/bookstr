@@ -1,9 +1,9 @@
-# Bookstr desktop
+# libstr desktop
 
-This directory contains the Electron shell for the Bookstr desktop app. It loads
+This directory contains the Electron shell for the libstr desktop app. It loads
 the existing web reader UI from `../web` through a custom `app://bookstr` protocol,
-opens one reader window per opened book, and synchronizes reading progress through
-an isolated preload bridge.
+keeps reading inside the main library window, and synchronizes reading progress
+through an isolated preload bridge.
 
 ## Run locally
 
@@ -37,7 +37,7 @@ and reader read-aloud behavior.
 ## Update behavior
 
 - Updates are intentionally manual for the beta stage. Use **Check for Updates**
-  from the desktop Bookstr menu to open the GitHub Releases page:
+  from the desktop libstr menu to open the GitHub Releases page:
   <https://github.com/guaka/bookstr/releases>
 
 ## Notes

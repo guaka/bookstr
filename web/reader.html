@@ -31,6 +31,44 @@
       width: 100vw;
       height: 100vh;
     }
+    .reader-header { display: none; }
+    body.desktop-reader .reader-header {
+      position: fixed;
+      z-index: 16;
+      top: 0;
+      right: 0;
+      left: 0;
+      display: flex;
+      align-items: center;
+      gap: 0.65rem;
+      height: 3rem;
+      padding: 0 0.7rem;
+      box-sizing: border-box;
+      background: color-mix(in srgb, var(--reader-progress) 96%, transparent);
+      color: #f7f3ea;
+      font-family: system-ui, sans-serif;
+      box-shadow: 0 1px 12px rgba(0, 0, 0, 0.14);
+    }
+    .reader-mark { width: 1.45rem; height: 1.45rem; flex: 0 0 auto; }
+    .reader-menu { position: relative; flex: 0 0 auto; }
+    #reader-menu-toggle { width: 2rem; height: 2rem; font-size: 1.25rem; }
+    #reader-menu { position: absolute; top: 2.35rem; right: 0; min-width: 8rem; padding: 0.35rem; border: 1px solid rgba(255,255,255,0.22); border-radius: 0.55rem; background: #2f5d50; box-shadow: 0 0.5rem 1.5rem rgba(0,0,0,0.28); }
+    #reader-menu[hidden] { display: none; }
+    #reader-menu button { display: block; width: 100%; padding: 0.45rem 0.6rem; text-align: left; font: inherit; font-size: 0.78rem; border-radius: 0.3rem; }
+    #reader-menu button:hover, #reader-menu button:focus-visible { background: rgba(255,255,255,0.14); outline: none; }
+    body.desktop-reader #viewer { height: calc(100vh - 3rem); margin-top: 3rem; }
+    .reader-header button {
+      border: 0;
+      background: transparent;
+      color: inherit;
+      cursor: pointer;
+    }
+    #reader-back { width: 2rem; height: 2rem; font-size: 1.5rem; line-height: 1; }
+    .reader-header-copy { min-width: 0; flex: 1; line-height: 1.1; }
+    #reader-header-title, #reader-header-byline { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    #reader-header-title { font-size: 0.82rem; font-weight: 650; }
+    #reader-header-byline { margin-top: 0.18rem; font-size: 0.68rem; opacity: 0.8; }
+    #reader-header-rights { font-size: 0.7rem; opacity: 0.9; white-space: nowrap; }
     .reader-nav {
       position: fixed;
       z-index: 12;
@@ -168,6 +206,24 @@
   <script src="reader-typography.js"></script>
 </head>
 <body>
+  <header class="reader-header" aria-label="Reader controls">
+    <svg class="reader-mark" viewBox="0 0 24 24" aria-label="Bookstr" role="img"><path fill="currentColor" d="M3.5 5.2c3-.8 5.8-.2 8.5 1.8v12c-2.7-2-5.5-2.6-8.5-1.8V5.2Zm17 0c-3-.8-5.8-.2-8.5 1.8v12c2.7-2 5.5-2.6 8.5-1.8V5.2Z"/><path fill="#c74b32" d="M12 6.5c-.8-.6-1.6-1-2.5-1.2v2.1c.9.2 1.7.5 2.5 1.1V6.5Zm0 0c.8-.6 1.6-1 2.5-1.2v2.1c-.9.2-1.7.5-2.5 1.1V6.5Z"/></svg>
+    <button id="reader-back" type="button" aria-label="Back to library" title="Back to library">‹</button>
+    <div class="reader-header-copy">
+      <strong id="reader-header-title">Book</strong>
+      <span id="reader-header-byline"></span>
+    </div>
+    <span id="reader-header-rights" aria-label="Rights"></span>
+    <div class="reader-menu">
+      <button id="reader-menu-toggle" type="button" aria-label="Open menu" aria-expanded="false" title="Menu">☰</button>
+      <div id="reader-menu" hidden>
+        <button type="button" data-reader-pane="home">Home</button>
+        <button type="button" data-reader-pane="reading">Reading</button>
+        <button type="button" data-reader-pane="search">Search</button>
+        <button type="button" data-reader-pane="people">People</button>
+      </div>
+    </div>
+  </header>
   <div id="viewer"></div>
   <button id="reader-prev" class="reader-nav" type="button" aria-label="Previous page">‹</button>
   <button id="reader-next" class="reader-nav" type="button" aria-label="Next page">›</button>
@@ -191,14 +247,34 @@
     <a id="dictionary-source" target="_blank" rel="noreferrer">Wiktionary</a>
   </aside>
   <script>
-    const desktopBridge = window.bookstrDesktop || null;
+    const desktopBridge = window.bookstrDesktop || window.parent?.bookstrDesktop || null;
+    if (desktopBridge) document.body.classList.add("desktop-reader");
     let book = null;
     let rendition = null;
     let currentBookId = "";
     let lastSpeechCfi = "";
     let activeDictionary = null;
     let bookLoadGeneration = 0;
-    let readerFontPercent = Number(localStorage.getItem("bookstr-reader-font-percent")) || 100;
+    const READER_SETTINGS_KEY = "bookstr_reader_settings_v1";
+    function storedReaderSettings() {
+      try {
+        const parsed = JSON.parse(localStorage.getItem(READER_SETTINGS_KEY) || "{}");
+        return parsed && typeof parsed === "object" ? parsed : {};
+      } catch (_) {
+        return {};
+      }
+    }
+    let currentReaderSettings = storedReaderSettings();
+    let readerFontPercent = Number(currentReaderSettings.readerFontPercent)
+      || Number(localStorage.getItem("bookstr-reader-font-percent"))
+      || 100;
+    let readerFontFamily = window.BookstrTypography.normalizeFont(
+      currentReaderSettings.readerFont || currentReaderSettings.readerFontFamily,
+    );
+    let readerAlignment = window.BookstrTypography.normalizeAlignment(
+      currentReaderSettings.readerAlignment
+        || (currentReaderSettings.readerTextAlign === "justify" ? "justified" : currentReaderSettings.readerTextAlign),
+    );
     let desktopReaderBook = null;
     let desktopReaderFurthestProgress = 0;
     let desktopReaderProgress = null;
@@ -206,8 +282,63 @@
     const readerSpeechPlayButton = document.getElementById("reader-speech-play");
     const readerSpeechPauseButton = document.getElementById("reader-speech-pause");
     const readerSpeechStopButton = document.getElementById("reader-speech-stop");
+    const readerHeaderTitle = document.getElementById("reader-header-title");
+    const readerHeaderByline = document.getElementById("reader-header-byline");
+    const readerHeaderRights = document.getElementById("reader-header-rights");
     let readerSpeechState = "stopped";
     let readerSpeechPlayer = null;
+
+    function selectedSpeechVoice(language) {
+      const normalized = String(language || "").toLowerCase();
+      return normalized === "pt" || normalized.startsWith("pt-")
+        ? String(currentReaderSettings.speechVoicePortuguese || "")
+        : String(currentReaderSettings.speechVoiceEnglish || "");
+    }
+
+    function applyReaderSettings(settings = storedReaderSettings()) {
+      currentReaderSettings = settings && typeof settings === "object" ? { ...settings } : {};
+      const nextPercent = Number(currentReaderSettings.readerFontPercent);
+      if (Number.isFinite(nextPercent)) readerFontPercent = Math.max(75, Math.min(180, nextPercent));
+      readerFontFamily = window.BookstrTypography.normalizeFont(
+        currentReaderSettings.readerFont || currentReaderSettings.readerFontFamily,
+      );
+      readerAlignment = window.BookstrTypography.normalizeAlignment(
+        currentReaderSettings.readerAlignment
+          || (currentReaderSettings.readerTextAlign === "justify" ? "justified" : currentReaderSettings.readerTextAlign),
+      );
+      if (rendition) {
+        rendition.themes.fontSize(readerFontPercent + "%");
+        applyTypography();
+      }
+      if (readerSpeechState !== "stopped") stopReaderSpeech();
+    }
+    window.applyReaderSettings = applyReaderSettings;
+
+    document.getElementById("reader-back").addEventListener("click", () => {
+      desktopBridge?.focusLibrary?.();
+    });
+    const readerMenuToggle = document.getElementById("reader-menu-toggle");
+    const readerMenu = document.getElementById("reader-menu");
+    readerMenuToggle.addEventListener("click", () => {
+      const open = readerMenu.hidden;
+      readerMenu.hidden = !open;
+      readerMenuToggle.setAttribute("aria-expanded", String(open));
+    });
+    readerMenu.querySelectorAll("[data-reader-pane]").forEach(button => {
+      button.addEventListener("click", () => desktopBridge?.openPane?.(button.dataset.readerPane));
+    });
+
+    function updateReaderHeader(metadata) {
+      const details = metadata && typeof metadata === "object" ? metadata : {};
+      const title = String(details.title || details.name || "Book");
+      const byline = [details.authors || details.author || "", details.year || ""].filter(Boolean).join(" · ");
+      const rights = String(details.license || details.rights || "");
+      readerHeaderTitle.textContent = title;
+      readerHeaderTitle.title = title;
+      readerHeaderByline.textContent = byline;
+      readerHeaderRights.textContent = rights;
+      readerHeaderRights.title = rights;
+    }
 
     function metadataText(value) {
       if (Array.isArray(value)) return value.map(metadataText).filter(Boolean).join(", ");
@@ -275,34 +406,41 @@
     }
 
     function reportDesktopProgress(cfi, progression, furthestProgression) {
-      if (!desktopBridge || !desktopReaderBook || !desktopReaderBook.md5) return;
+      const bookId = String(desktopReaderBook?.md5 || currentBookId || "").trim().toLowerCase();
+      if (!bookId) return;
       const normalizedProgress = clampProgress(progression);
       const safeFurthest = Number.isFinite(Number(furthestProgression)) ? clampProgress(Number(furthestProgression)) : normalizedProgress;
       const payload = {
-        md5: desktopReaderBook.md5,
-        readUrl: String(desktopReaderBook.readUrl || ""),
+        type: "bookstr-reader-progress",
+        bookId,
+        md5: bookId,
+        readUrl: String(desktopReaderBook?.readUrl || ""),
         progression: normalizedProgress,
         furthestProgression: Math.max(clampProgress(safeFurthest), desktopReaderFurthestProgress),
         cfi: String(cfi || ""),
-        title: String(desktopReaderBook.title || ""),
-        authors: String(desktopReaderBook.authors || ""),
-        year: String(desktopReaderBook.year || ""),
-        extension: String(desktopReaderBook.extension || "epub"),
-        language: String(desktopReaderBook.language || ""),
-        source: String(desktopReaderBook.source || ""),
-        sourceNativeId: String(desktopReaderBook.sourceNativeId || ""),
-        sourceUrl: String(desktopReaderBook.sourceUrl || ""),
-        blossomUrl: String(desktopReaderBook.blossomUrl || ""),
-        blossomSha256: String(desktopReaderBook.blossomSha256 || ""),
-		rights_status: String(desktopReaderBook.rights_status || "unknown"),
-		license: String(desktopReaderBook.license || ""),
-		license_url: String(desktopReaderBook.license_url || ""),
-		rights_source: String(desktopReaderBook.rights_source || ""),
+        title: String(desktopReaderBook?.title || ""),
+        authors: String(desktopReaderBook?.authors || ""),
+        year: String(desktopReaderBook?.year || ""),
+        extension: String(desktopReaderBook?.extension || "epub"),
+        language: String(desktopReaderBook?.language || ""),
+        source: String(desktopReaderBook?.source || ""),
+        sourceNativeId: String(desktopReaderBook?.sourceNativeId || ""),
+        sourceUrl: String(desktopReaderBook?.sourceUrl || ""),
+        blossomUrl: String(desktopReaderBook?.blossomUrl || ""),
+        blossomSha256: String(desktopReaderBook?.blossomSha256 || ""),
+		rights_status: String(desktopReaderBook?.rights_status || "unknown"),
+		license: String(desktopReaderBook?.license || ""),
+		license_url: String(desktopReaderBook?.license_url || ""),
+		rights_source: String(desktopReaderBook?.rights_source || ""),
       };
       payload.furthestProgression = Math.max(payload.furthestProgression, desktopReaderFurthestProgress);
       desktopReaderFurthestProgress = payload.furthestProgression;
       desktopReaderProgress = payload;
-      if (desktopBridge.reportProgress) desktopBridge.reportProgress(payload);
+      if (window.parent !== window) {
+        window.parent.postMessage(payload, window.location.origin);
+      } else if (desktopBridge?.reportProgress) {
+        desktopBridge.reportProgress(payload);
+      }
     }
 
     function base64ToArrayBuffer(base64) {
@@ -322,9 +460,6 @@
       }
       applyTypography();
     }
-
-    let readerFontFamily = "arial";
-    let readerAlignment = "justified";
 
     function typographyCSS() {
       return window.BookstrTypography.css(readerFontFamily, readerAlignment);
@@ -675,7 +810,11 @@
       if (!hasSpeechSupport() || !readerSpeechPlayer) return;
       stopReaderSpeech();
       const plan = collectReaderSpeechPlan();
-      readerSpeechPlayer.start(plan, { language: plan.language, rate: 1 });
+      readerSpeechPlayer.start(plan, {
+        language: plan.language,
+        rate: Number(currentReaderSettings.speechRate) || 1,
+        voiceIdentifier: selectedSpeechVoice(plan.language),
+      });
     }
 
     function pauseReaderSpeech() {
@@ -692,6 +831,7 @@
       if (!normalized) return;
       setupReaderSpeechControls();
       const bookMetadata = normalized.book;
+      updateReaderHeader(bookMetadata);
       if (!bookMetadata.md5) {
         desktopReaderBook = null;
       } else {
@@ -1157,7 +1297,10 @@
     };
 
     function flushDesktopProgress() {
-      if (desktopReaderProgress && desktopBridge?.reportProgress) {
+      if (!desktopReaderProgress) return;
+      if (window.parent !== window) {
+        window.parent.postMessage(desktopReaderProgress, window.location.origin);
+      } else if (desktopBridge?.reportProgress) {
         desktopBridge.reportProgress(desktopReaderProgress);
       }
     }

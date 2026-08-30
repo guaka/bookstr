@@ -50,14 +50,25 @@ function electronArgs() {
   return [path.join(__dirname, '../..'), `--user-data-dir=${userData}`];
 }
 
-test('Bookstr desktop app opens with preload bridge', async () => {
+test('libstr desktop app opens with preload bridge', async () => {
   const electronApp = await electron.launch({
     args: electronArgs(),
   });
 
   try {
     const firstWindow = await electronApp.firstWindow();
-    await expect(firstWindow).toHaveTitle(/Bookstr/i);
+    await expect(firstWindow).toHaveTitle('libstr');
+    const appVersion = await electronApp.evaluate(({ app }) => app.getVersion());
+    expect(appVersion).toMatch(/^0\.1-\d{8}-\d{4}$/);
+    const windowState = await electronApp.evaluate(({ BrowserWindow }) => {
+      const [window] = BrowserWindow.getAllWindows();
+      return {
+        maximized: window?.isMaximized(),
+        fullScreen: window?.isFullScreen(),
+      };
+    });
+    expect(windowState.fullScreen).toBe(false);
+    if (process.platform !== 'linux') expect(windowState.maximized).toBe(true);
 
     const contentSecurityPolicy = await firstWindow.evaluate(async () => (
       await fetch(window.location.href)
@@ -126,12 +137,35 @@ test('Bookstr desktop app opens with preload bridge', async () => {
     await firstWindow.getByRole('button', { name: 'Search' }).click();
     await expect(firstWindow.locator('#search-tab')).toBeVisible();
 
-    await firstWindow.getByRole('button', { name: 'Settings' }).click();
+    await firstWindow.keyboard.press(process.platform === 'darwin' ? 'Meta+,' : 'Control+,');
     await expect(firstWindow.locator('#settings-modal')).toBeVisible();
     await expect(firstWindow.locator('#desktop-signer')).toBeVisible();
     await expect(firstWindow.getByText('NIP-46 remote signer')).toBeVisible();
     await expect(firstWindow.locator('#desktop-nip46-qr')).toBeHidden();
     await expect(firstWindow.locator('#desktop-nip46-qr-image')).toBeHidden();
+    await expect(firstWindow.locator('#speech-voice-en')).toContainText(/Kokoro|Best installed voice/);
+    await expect(firstWindow.locator('#speech-voice-pt')).toContainText(/Tugão|Best installed voice/);
+    await expect(firstWindow.getByText('Optional voices are never downloaded or selected automatically.')).toBeVisible();
+    await firstWindow.locator('#reader-font').selectOption('arial');
+    await firstWindow.locator('#reader-alignment').selectOption('justified');
+    await firstWindow.locator('#reader-font-size').evaluate(input => {
+      input.value = '125';
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    await firstWindow.locator('#speech-rate').evaluate(input => {
+      input.value = '1.10';
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    await expect(firstWindow.locator('#reader-font-size-value')).toHaveText('125%');
+    await expect(firstWindow.locator('#speech-rate-value')).toHaveText('1.10×');
+    expect(await firstWindow.evaluate(() => JSON.parse(localStorage.getItem('bookstr_reader_settings_v1')))).toMatchObject({
+      readerFont: 'arial',
+      readerAlignment: 'justified',
+      readerFontPercent: 125,
+      speechRate: 1.1,
+      speechVoiceEnglish: '',
+      speechVoicePortuguese: '',
+    });
 
     const settingsAccelerator = await electronApp.evaluate(({ Menu }) => {
       const menus = Menu.getApplicationMenu()?.items || [];
@@ -189,13 +223,17 @@ test('Bookstr desktop app opens with preload bridge', async () => {
   }
 });
 
-test('desktop pane shortcuts work from controls and reader windows', async () => {
+test('desktop pane shortcuts work from controls and the single reader window', async () => {
   const electronApp = await electron.launch({
     args: electronArgs(),
   });
 
   try {
     const library = await electronApp.firstWindow();
+    await library.evaluate(() => localStorage.setItem('bookstr_words_v1', JSON.stringify([{
+      key: 'en:shortcut', word: 'shortcut', language: 'en', updatedAt: Date.now(),
+    }])));
+    await library.reload();
     await library.locator('#home-query-input').focus();
 
     await library.keyboard.press(shortcut(2));
@@ -209,16 +247,20 @@ test('desktop pane shortcuts work from controls and reader windows', async () =>
     await library.keyboard.press(shortcut(4));
     await expect(library.locator('#people-tab')).toBeVisible();
 
-    const readerPromise = electronApp.waitForEvent('window');
-    await library.evaluate(() => window.bookstrDesktop.openReader({
+    await library.keyboard.press(shortcut(5));
+    await expect(library.locator('#words-tab')).toBeVisible();
+
+    await library.evaluate(() => { void window.bookstrDesktop.openReader({
       kind: 'pdf',
       base64: btoa('%PDF-1.4\n' + 'reader shortcut fixture'.repeat(8)),
       readUrl: 'https://files.test/shortcut.pdf',
       book: { md5: '11111111111111111111111111111111', title: 'Shortcut fixture' },
-    }));
-    const reader = await readerPromise;
-    await reader.bringToFront();
-    await reader.keyboard.press(shortcut(1));
+    }); });
+    await library.waitForURL('app://bookstr/pdf-reader.html');
+    expect(await electronApp.windows()).toHaveLength(1);
+    await library.keyboard.press(shortcut(5));
+    await expect(library.locator('#words-tab')).toBeVisible();
+    await library.keyboard.press(shortcut(1));
     await expect(library.locator('#home-tab')).toBeVisible();
     await expect.poll(() => library.evaluate(() => location.hash.startsWith('#home'))).toBe(true);
   } finally {
@@ -253,6 +295,45 @@ test('desktop bridge round-trips normalized reading progress to the library', as
       extension: 'pdf',
       language: '',
     });
+  } finally {
+    await electronApp.close();
+  }
+});
+
+test('embedded reader progress is persisted locally across library reloads', async () => {
+  const electronApp = await electron.launch({ args: electronArgs() });
+
+  try {
+    const library = await electronApp.firstWindow();
+    await library.locator('#reader-frame').evaluate(frame => { frame.src = 'reader.html?progress-test=1'; });
+    const reader = library.frameLocator('#reader-frame');
+    await expect(reader.locator('#viewer')).toBeAttached();
+    await reader.locator('body').evaluate(() => {
+      parent.postMessage({
+        type: 'bookstr-reader-progress',
+        bookId: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+        progression: 0.42,
+        furthestProgression: 0.67,
+        cfi: 'epubcfi(/6/4!/4/2/1:0)',
+        title: 'Persisted progress fixture',
+        extension: 'epub',
+      }, location.origin);
+    });
+    await expect.poll(() => library.evaluate(() => {
+      const books = JSON.parse(localStorage.getItem('bookstr_reading_library_v1') || '[]');
+      return books.find(book => book.md5 === 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa') || null;
+    })).toMatchObject({
+      progression: 0.42,
+      furthestProgression: 0.67,
+      cfi: 'epubcfi(/6/4!/4/2/1:0)',
+    });
+
+    await library.reload();
+    const restored = await library.evaluate(() => {
+      const books = JSON.parse(localStorage.getItem('bookstr_reading_library_v1') || '[]');
+      return books.find(book => book.md5 === 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa') || null;
+    });
+    expect(restored).toMatchObject({ progression: 0.42, furthestProgression: 0.67 });
   } finally {
     await electronApp.close();
   }
@@ -328,7 +409,7 @@ test('desktop footer stays in the viewport bottom-right without covering content
 
     await assertFooterPosition();
     await electronApp.evaluate(({ BrowserWindow }) => {
-      BrowserWindow.getAllWindows().find(window => window.getTitle() === 'Bookstr')?.setSize(950, 620);
+      BrowserWindow.getAllWindows().find(window => window.getTitle() === 'libstr')?.setSize(950, 620);
     });
     await assertFooterPosition();
   } finally {

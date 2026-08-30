@@ -414,13 +414,17 @@ test('PDFs are fetched and displayed inside the Bookstr reader pane', () => {
   assert.match(html, /const blossomFormat = await bookFormatForBlob\(blossomBlob\)/);
   assert.match(html, /api\\\/files\\\/\[a-f0-9\]\{32\}/);
   assert.match(html, /if \(format === 'pdf'\) await displayPdf\(blob, book, readPath, openGeneration\)/);
-  assert.match(html, /const payload = \{\r?\n\s*kind,\r?\n\s*base64,\r?\n\s*readUrl: readPath \|\| ''/);
+  assert.doesNotMatch(html, /openInDesktopReader/);
+  assert.doesNotMatch(html, /desktopBridge\.openReader\(payload\)/);
 });
 
-test('desktop reader launch metadata is routed via a dedicated bridge payload', () => {
-  assert.match(html, /async function openInDesktopReader\(kind, blob, book, readPath, openGeneration, initialCfi\)/);
-  assert.match(html, /readUrl: readPath \|\| book\?\.readUrl \|\| book\?\.url \|\| ''/);
-  assert.match(html, /if \(isDesktopMode\) \{/);
+test('desktop EPUB and PDF readers stay inside the main reading pane', () => {
+  assert.match(html, /const readerLoad = await readerFrameLoader\('epub', openGeneration\)/);
+  assert.match(html, /const readerLoad = await readerFrameLoader\('pdf', openGeneration\)/);
+  assert.doesNotMatch(html, /async function openInDesktopReader/);
+  assert.equal((desktopMain.match(/new BrowserWindow\(/g) || []).length, 1);
+  assert.match(desktopMain, /mainWindow\.once\('ready-to-show',[\s\S]*?mainWindow\.maximize\(\);[\s\S]*?mainWindow\.show\(\)/);
+  assert.match(desktopMain, /void webContents\.loadURL\(url\);\r?\n\s*return \{ action: 'deny' \}/);
 });
 
 test('desktop main process enforces reader payloads and returns explicit open results', () => {
@@ -428,8 +432,7 @@ test('desktop main process enforces reader payloads and returns explicit open re
   assert.match(desktopMain, /font: String\(payload\.font \|\| 'arial'\)\.toLowerCase\(\)/);
   assert.match(desktopMain, /alignment: String\(payload\.alignment \|\| 'justified'\)\.toLowerCase\(\)/);
   assert.match(desktopMain, /return \{ ok: false, error: 'Invalid reader payload\.' \}/);
-  assert.match(desktopMain, /return \{ ok: true, key, reused: true, kind: requestedKind \}/);
-  assert.match(desktopMain, /return \{ ok: true, key, reused: false, kind: requestedKind \}/);
+  assert.match(desktopMain, /return \{ ok: true, key, reused: currentURL === readerURL, kind: requestedKind \}/);
   assert.match(desktopMain, /ALLOWED_EXTERNAL_URL_PROTOCOLS/);
   assert.match(desktopMain, /function focusLibraryWindow\(\)/);
   assert.match(desktopMain, /function setupApplicationMenu\(\)/);
@@ -470,7 +473,7 @@ test('EPUB reader destroys the previous rendition without transform flicker', ()
 });
 
 test('EPUB reader registers desktop open-reader and progress handlers', () => {
-  assert.match(readerHtml, /const desktopBridge = window\.bookstrDesktop \|\| null;/);
+  assert.match(readerHtml, /const desktopBridge = window\.bookstrDesktop \|\| window\.parent\?\.bookstrDesktop \|\| null;/);
   assert.match(readerHtml, /desktopBridge\.onOpenReader/);
   assert.match(readerHtml, /reportDesktopProgress\(/);
   assert.match(readerHtml, /window\.addEventListener\("beforeunload", function\(\) \{/);
@@ -506,7 +509,7 @@ test('PDF reader uses local PDF.js, lazy page rendering, and an explicit downloa
   assert.match(pdfReaderJs, /new IntersectionObserver/);
   assert.match(pdfReaderJs, /download\.download = String\(filename \|\| 'Book\.pdf'\)\.replace/);
   assert.match(pdfReaderJs, /pdf\?\.destroy\(\)/);
-  assert.match(pdfReaderJs, /const desktopBridge = window\.bookstrDesktop \|\| null;/);
+  assert.match(pdfReaderJs, /const desktopBridge = window\.bookstrDesktop \|\| window\.parent\?\.bookstrDesktop \|\| null;/);
   assert.match(pdfReaderJs, /if \(desktopBridge\?\.onOpenReader\)/);
   assert.match(pdfReaderJs, /desktopBridge\.reportProgress/);
   assert.match(pdfReaderJs, /normalizeDesktopReaderPayload/);
@@ -704,11 +707,31 @@ test('desktop pane shortcuts use the constrained preload callback', () => {
   assert.match(desktopMain, /pane: 'reading', accelerator: 'CmdOrCtrl\+2'/);
   assert.match(desktopMain, /pane: 'search', accelerator: 'CmdOrCtrl\+3'/);
   assert.match(desktopMain, /pane: 'people', accelerator: 'CmdOrCtrl\+4'/);
-  assert.match(desktopPreload, /const ALLOWED_PANES = new Set\(\['reading', 'home', 'search', 'people'\]\)/);
+  assert.match(desktopMain, /pane: 'words', accelerator: 'CmdOrCtrl\+5'/);
+  assert.match(desktopPreload, /const ALLOWED_PANES = new Set\(\['reading', 'home', 'search', 'people', 'words'\]\)/);
   assert.match(desktopPreload, /const PANE_SHORTCUTS = new Map/);
+  assert.match(desktopPreload, /\['5', 'words'\]/);
   assert.match(html, /onOpenPane\?\.\(\(pane\) => activateTab\(pane, \{ updateHash: true \}\)\)/);
-  assert.match(html, /id="home-tab-btn"[\s\S]*?id="reading-tab-btn"[\s\S]*?id="search-tab-btn"[\s\S]*?id="people-tab-btn"/);
+  assert.match(html, /id="home-tab-btn"[\s\S]*?id="reading-tab-btn"[\s\S]*?id="search-tab-btn"[\s\S]*?id="people-tab-btn"[\s\S]*?id="words-tab-btn"[^>]*Command 5/);
   assert.doesNotMatch(html, /class="app-header-left app-home"/);
+});
+
+test('embedded readers persist progress, debounce Nostr publication, and ask before advancing to Nostr', () => {
+  assert.match(html, /event\.data\?\.type === 'bookstr-reader-progress'/);
+  assert.match(html, /queueReadingProgressPublish\(merged\)/);
+  assert.match(html, /}, 2000\)/);
+  assert.match(html, /const remoteIsAhead = remote/);
+  assert.match(html, /reason: 'remote-ahead'/);
+  assert.match(html, /const nostrAheadReadingByBook = new Map\(\)/);
+  assert.match(html, /BookstrDesktopProgress\.isProgressAhead\(existing, normalized\)/);
+  assert.match(html, /function bookWithChosenNostrReadingState\(book\)/);
+  assert.match(html, /Nostr has a further position/);
+  assert.match(html, /Continue from the Nostr position\?/);
+  assert.match(html, /if \(!useRemote\) return book/);
+  assert.match(html, /applyDesktopReadingProgress\(\{ \.\.\.local, \.\.\.remote/);
+  assert.match(html, /bookWithSavedReadingState\(book\)/);
+  assert.match(html, /bookWithChosenNostrReadingState\(book\)/);
+  assert.match(html, /initialCfi: book\.cfi \|\| ''/);
 });
 
 test('desktop application menu preserves native editing commands', () => {
@@ -750,8 +773,8 @@ test('Electron windows and packages use the Bookstr app icon', async () => {
   }
   const pixels = inflateSync(Buffer.concat(idatChunks));
   assert.match(desktopMain, /const APP_ICON_PATH = process\.platform === 'darwin'[\s\S]*?icon-macos\.png[\s\S]*?apple-touch-icon\.png/);
-  assert.match(desktopMain, /title: 'Bookstr',[\s\S]*?icon: APP_ICON_PATH/);
-  assert.match(desktopMain, /title: 'Bookstr Reader',[\s\S]*?icon: APP_ICON_PATH/);
+  assert.match(desktopMain, /title: 'libstr',[\s\S]*?icon: APP_ICON_PATH/);
+  assert.equal((desktopMain.match(/new BrowserWindow\(/g) || []).length, 1);
   assert.match(desktopMain, /app\.dock\.setIcon\(APP_ICON_PATH\)/);
   assert.equal(desktopPackage.build.icon, '../web/public/apple-touch-icon.png');
   assert.equal(macIcon.toString('ascii', 1, 4), 'PNG');
@@ -763,8 +786,27 @@ test('Electron windows and packages use the Bookstr app icon', async () => {
   assert.match(macIconSvg, /clip-path="url\(#tile-clip\)"/);
 });
 
+test('Electron identifies development builds with a Bookstr timestamp version', () => {
+  assert.match(desktopMain, /return `0\.1-\$\{now\.getFullYear\(\)\}.*-\$\{part\(now\.getHours\(\)\)\}\$\{part\(now\.getMinutes\(\)\)\}`/s);
+  assert.match(desktopMain, /const DESKTOP_VERSION = process\.env\.BOOKSTR_DESKTOP_VERSION \|\| timestampVersion\(\)/);
+  assert.match(desktopMain, /app\.setAboutPanelOptions\(\{[\s\S]*applicationName: 'libstr',[\s\S]*applicationVersion: DESKTOP_VERSION,[\s\S]*version: DESKTOP_VERSION/);
+});
+
 test('settings groups Nostr controls and connection status together', () => {
   assert.match(html, /settings-section settings-nostr[\s\S]*?<h3>Nostr<\/h3>[\s\S]*?id="nip7-enabled"[\s\S]*?id="nip7-status"/);
+});
+
+test('Electron settings expose opt-in language voices and reader typography', () => {
+  assert.match(html, /desktop-reader-settings settings-speech[\s\S]*?id="speech-voice-en"[\s\S]*?id="speech-voice-pt"[\s\S]*?id="speech-rate"/);
+  assert.match(html, /Kokoro for English[\s\S]*?Tugão for Portuguese/);
+  assert.match(html, /Optional voices are never downloaded or selected automatically/);
+  assert.match(html, /id="reader-font"[\s\S]*?<option value="arial">Arial<\/option>[\s\S]*?id="reader-alignment"[\s\S]*?<option value="justified">Justified<\/option>[\s\S]*?id="reader-font-size"/);
+  assert.match(html, /speechVoiceEnglish:[\s\S]*?speechVoicePortuguese:[\s\S]*?speechRate:/);
+  assert.match(html, /notifyOpenReaderSettings\(\)/);
+  assert.match(readerHtml, /voiceIdentifier: selectedSpeechVoice\(plan\.language\)/);
+  assert.match(readerHtml, /BookstrTypography\.normalizeFont\([\s\S]*?currentReaderSettings\.readerFont/);
+  assert.match(readerHtml, /BookstrTypography\.css\(readerFontFamily, readerAlignment\)/);
+  assert.match(pdfReaderJs, /voiceIdentifier: selectedPdfSpeechVoice\(plan\.language\)/);
 });
 
 test('vocabulary deletion publishes a durable encrypted tombstone before best-effort NIP-09 cleanup', () => {

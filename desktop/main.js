@@ -1,6 +1,7 @@
 const {
   app,
   BrowserWindow,
+  globalShortcut,
   Menu,
   ipcMain,
   net,
@@ -65,6 +66,7 @@ const LIBRARY_PANES = [
   { label: 'Reading', pane: 'reading', accelerator: 'CmdOrCtrl+2' },
   { label: 'Search', pane: 'search', accelerator: 'CmdOrCtrl+3' },
   { label: 'People', pane: 'people', accelerator: 'CmdOrCtrl+4' },
+  { label: 'Words', pane: 'words', accelerator: 'CmdOrCtrl+5' },
 ];
 const DICTIONARY_PROXY_BASE_URL = process.env.NODE_ENV === 'test'
   ? process.env.BOOKSTR_DESKTOP_TEST_DICTIONARY_BASE_URL
@@ -72,6 +74,20 @@ const DICTIONARY_PROXY_BASE_URL = process.env.NODE_ENV === 'test'
 const BLOSSOM_PROXY_BASE_URL = process.env.NODE_ENV === 'test'
   ? process.env.BOOKSTR_DESKTOP_TEST_BLOSSOM_BASE_URL
   : undefined;
+
+function timestampVersion(now = new Date()) {
+  const part = value => String(value).padStart(2, '0');
+  return `0.1-${now.getFullYear()}${part(now.getMonth() + 1)}${part(now.getDate())}-${part(now.getHours())}${part(now.getMinutes())}`;
+}
+
+const DESKTOP_VERSION = process.env.BOOKSTR_DESKTOP_VERSION || timestampVersion();
+app.setName('libstr');
+app.setVersion(DESKTOP_VERSION);
+app.setAboutPanelOptions({
+  applicationName: 'libstr',
+  applicationVersion: DESKTOP_VERSION,
+  version: DESKTOP_VERSION,
+});
 
 function nip46ConnectionRelays() {
   if (process.env.NODE_ENV === 'test') {
@@ -106,7 +122,7 @@ const MIME_TYPES = new Map([
 ]);
 
 let mainWindow;
-const readerWindows = new Map();
+let readerNavigationId = 0;
 let cachedNostrTools = null;
 let cachedNostrSignerSecret = null;
 let cachedNostrSignerPublicKey = null;
@@ -374,7 +390,7 @@ async function configureNip46(rawInput) {
     bunkerPointer,
     nip46SignerParams(),
   );
-  await signer.connect({ name: 'Bookstr Desktop', url: 'https://github.com/guaka/bookstr' });
+  await signer.connect({ name: 'libstr Desktop', url: 'https://github.com/guaka/bookstr' });
   return activateNip46Signer(signer, clientSecretBytes);
 }
 
@@ -435,7 +451,7 @@ async function startNip46QrSession() {
     relays: connectedRelays,
     secret,
     perms: NIP46_PERMISSIONS,
-    name: 'Bookstr Desktop',
+    name: 'libstr Desktop',
     url: 'https://github.com/guaka/bookstr',
   });
   const qrDataUrl = await QRCode.toDataURL(uri, { errorCorrectionLevel: 'M', margin: 1, width: 280 });
@@ -723,7 +739,7 @@ async function createLibraryWindow() {
     ...bounds,
     minWidth: 950,
     minHeight: 620,
-    title: 'Bookstr',
+    title: 'libstr',
     icon: APP_ICON_PATH,
     backgroundColor: '#f7f3ea',
     show: false,
@@ -736,7 +752,14 @@ async function createLibraryWindow() {
   });
 
   attachSecurity(mainWindow.webContents);
-  mainWindow.once('ready-to-show', () => mainWindow.show());
+  mainWindow.on('page-title-updated', event => {
+    event.preventDefault();
+    mainWindow?.setTitle('libstr');
+  });
+  mainWindow.once('ready-to-show', () => {
+    mainWindow.maximize();
+    mainWindow.show();
+  });
   await mainWindow.loadURL(`${APP_ORIGIN}/index.html`);
 
   mainWindow.on('resize', async () => {
@@ -751,6 +774,12 @@ async function createLibraryWindow() {
 }
 
 function attachSecurity(webContents) {
+  webContents.on('before-input-event', (event, input) => {
+    if ((input.meta || input.control) && !input.alt && (input.key === ',' || input.code === 'Comma')) {
+      event.preventDefault();
+      openLibrarySettings();
+    }
+  });
   webContents.on('will-navigate', (event, url) => {
     if (isLocalBookstrUrl(url)) return;
     event.preventDefault();
@@ -759,7 +788,8 @@ function attachSecurity(webContents) {
   });
   webContents.setWindowOpenHandler(({ url }) => {
     if (isLocalBookstrUrl(url)) {
-      return { action: 'allow' };
+      void webContents.loadURL(url);
+      return { action: 'deny' };
     }
     if (!isExternalUrlAllowed(url)) {
       return { action: 'deny' };
@@ -769,64 +799,50 @@ function attachSecurity(webContents) {
   });
 }
 
-function createReaderWindow(kind) {
-  const window = new BrowserWindow({
-    width: 1180,
-    height: 860,
-    title: 'Bookstr Reader',
-    icon: APP_ICON_PATH,
-    backgroundColor: '#f7f3ea',
-    show: false,
-    webPreferences: {
-      contextIsolation: true,
-      sandbox: true,
-      preload: PRELOAD_PATH,
-      partition: SESSION_PARTITION,
-    },
-  });
-  attachSecurity(window.webContents);
-
-  if (kind === 'pdf') {
-    void window.loadURL(`${APP_ORIGIN}/pdf-reader.html`);
-  } else {
-    void window.loadURL(`${APP_ORIGIN}/reader.html`);
-  }
-  window.once('ready-to-show', () => window.show());
-  return window;
-}
-
 function ensureReaderWindowForPayload(payload) {
   const normalized = normalizePayload(payload);
   if (!normalized?.ok) {
     return normalized;
   }
-  const requestedKind = normalized.kind;
-  const key = normalizeReaderKey(normalized);
-  const existing = readerWindows.get(key);
-  if (existing && existing.isDestroyed()) {
-    readerWindows.delete(key);
-  }
-  const reusable = existing && !existing.isDestroyed();
-  if (reusable) {
-    existing.webContents.send('bookstr-desktop-open-reader', normalized);
-    existing.focus();
-    return { ok: true, key, reused: true, kind: requestedKind };
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    return { ok: false, error: 'libstr window is not available.' };
   }
 
-  const readerWindow = createReaderWindow(requestedKind);
-  readerWindows.set(key, readerWindow);
-  readerWindow.webContents.on('did-finish-load', () => {
-    readerWindow.webContents.send('bookstr-desktop-open-reader', normalized);
-  });
-  readerWindow.on('closed', () => {
-    readerWindows.delete(key);
-  });
-  readerWindow.focus();
-  return { ok: true, key, reused: false, kind: requestedKind };
+  const requestedKind = normalized.kind;
+  const key = normalizeReaderKey(normalized);
+  const readerPath = requestedKind === 'pdf' ? 'pdf-reader.html' : 'reader.html';
+  const readerURL = `${APP_ORIGIN}/${readerPath}`;
+  const currentURL = mainWindow.webContents.getURL().split('?')[0];
+  const sendPayload = () => {
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+    mainWindow.webContents.send('bookstr-desktop-open-reader', normalized);
+  };
+
+  if (currentURL === readerURL) {
+    sendPayload();
+  } else {
+    const navigationId = ++readerNavigationId;
+    mainWindow.webContents.once('did-finish-load', () => {
+      if (navigationId !== readerNavigationId) return;
+      sendPayload();
+    });
+    void mainWindow.loadURL(readerURL);
+  }
+  focusLibraryWindow();
+  return { ok: true, key, reused: currentURL === readerURL, kind: requestedKind };
 }
 
 function isBase64Safe(value) {
   return typeof value === 'string' && value.length > 64;
+}
+
+function mainWindowPathname() {
+  if (!mainWindow || mainWindow.isDestroyed()) return '';
+  try {
+    return new URL(mainWindow.webContents.getURL()).pathname;
+  } catch {
+    return '';
+  }
 }
 
 function focusLibraryWindow() {
@@ -836,6 +852,10 @@ function focusLibraryWindow() {
   if (mainWindow.isMinimized()) {
     mainWindow.restore();
   }
+  const currentPath = mainWindowPathname();
+  if (currentPath === '/reader.html' || currentPath === '/pdf-reader.html') {
+    void mainWindow.loadURL(`${APP_ORIGIN}/index.html`);
+  }
   mainWindow.show();
   mainWindow.focus();
   return true;
@@ -843,13 +863,25 @@ function focusLibraryWindow() {
 
 function openLibrarySettings() {
   if (!focusLibraryWindow()) return false;
-  mainWindow.webContents.send('bookstr-desktop-open-settings');
+  if (mainWindowPathname() === '/index.html') {
+    mainWindow.webContents.send('bookstr-desktop-open-settings');
+  } else {
+    mainWindow.webContents.once('did-finish-load', () => {
+      mainWindow?.webContents.send('bookstr-desktop-open-settings');
+    });
+  }
   return true;
 }
 
 function openLibraryPane(pane) {
   if (!focusLibraryWindow()) return false;
-  mainWindow.webContents.send('bookstr-desktop-open-pane', pane);
+  if (mainWindowPathname() === '/index.html') {
+    mainWindow.webContents.send('bookstr-desktop-open-pane', pane);
+  } else {
+    mainWindow.webContents.once('did-finish-load', () => {
+      mainWindow?.webContents.send('bookstr-desktop-open-pane', pane);
+    });
+  }
   return true;
 }
 
@@ -894,7 +926,7 @@ function setupApplicationMenu() {
       },
     ] : []),
     {
-      label: 'Bookstr',
+      label: 'libstr',
       submenu: [
         ...LIBRARY_PANES.map(({ label, pane, accelerator }) => ({
           label,
@@ -961,6 +993,10 @@ function setupIpcHandlers() {
 
   ipcMain.handle('bookstr-desktop-focus-library', () => {
     return focusLibraryWindow();
+  });
+
+  ipcMain.handle('bookstr-desktop-open-settings', () => {
+    return openLibrarySettings();
   });
 
   ipcMain.handle('bookstr-desktop-open-external', (_event, url) => {
@@ -1087,8 +1123,15 @@ async function bootstrap() {
   setupProtocol(session.fromPartition(SESSION_PARTITION));
   setupIpcHandlers();
   setupApplicationMenu();
+  if (!globalShortcut.register('CommandOrControl+,', () => openLibrarySettings())) {
+    console.warn('Could not register the Settings keyboard shortcut.');
+  }
   await createLibraryWindow();
 }
+
+app.on('will-quit', () => {
+  globalShortcut.unregister('CommandOrControl+,');
+});
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {

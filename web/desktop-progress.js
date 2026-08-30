@@ -11,6 +11,22 @@
     return Math.max(0, Math.min(1, numericValue));
   }
 
+  function progressPosition(payload) {
+    const progression = clampProgress(payload?.progression ?? payload?.locator?.progression);
+    const furthestProgression = Math.max(
+      progression,
+      clampProgress(payload?.furthestProgression ?? payload?.locator?.furthestProgression),
+    );
+    return { progression, furthestProgression };
+  }
+
+  function isProgressAhead(candidate, baseline) {
+    const next = progressPosition(candidate);
+    const current = progressPosition(baseline);
+    return next.furthestProgression > current.furthestProgression
+      || (next.furthestProgression === current.furthestProgression && next.progression > current.progression);
+  }
+
   const profiles = {
     main: { requireId: true, includeLanguage: true },
     web: {
@@ -68,5 +84,5 @@
     return normalized;
   }
 
-  return { clampProgress, normalizeProgressPayload };
+  return { clampProgress, progressPosition, isProgressAhead, normalizeProgressPayload };
 });

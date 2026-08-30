@@ -1137,6 +1137,21 @@
         width: 7.5rem;
         min-width: 7.5rem;
       }
+      .desktop-reader-settings { display: none; }
+      body.desktop-mode .desktop-reader-settings { display: grid; }
+      .settings-control-row { justify-content: space-between; }
+      .settings-control-row select { width: min(18rem, 52%); }
+      .settings-range {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 0.35rem 0.75rem;
+        align-items: center;
+      }
+      .settings-range .setting-copy { grid-column: 1 / -1; }
+      .settings-range input[type="range"] { width: 100%; height: auto; }
+      .settings-range output { min-width: 3.2rem; text-align: right; font-variant-numeric: tabular-nums; }
+      .optional-voices-note { margin: 0.45rem 0 0; }
+      .optional-voices-note a { color: var(--reading-progress); }
       .settings-status {
         margin: 0;
         padding: 0.62rem 0.68rem;
@@ -1175,6 +1190,101 @@
       .settings-tab .settings-backdrop,
       .settings-tab #settings-close {
         display: none;
+      }
+      body.desktop-mode .settings-tab .settings-panel {
+        width: min(900px, calc(100vw - 2.5rem));
+        margin: 1.25rem auto 2.5rem;
+        padding: 1.25rem 1.4rem 1.4rem;
+        border: 1px solid color-mix(in srgb, var(--reading-progress) 18%, var(--card-border, #ddd));
+        border-radius: 1.15rem;
+        background:
+          radial-gradient(circle at 100% 0%, color-mix(in srgb, var(--reading-progress) 10%, transparent), transparent 32%),
+          var(--settings-bg, #faf9f5);
+        box-shadow: 0 18px 50px color-mix(in srgb, var(--card-shadow, #0002) 80%, transparent);
+      }
+      body.desktop-mode .settings-tab .settings-panel-header {
+        align-items: center;
+        padding: 0.25rem 0 1rem;
+        border-bottom: 0;
+      }
+      body.desktop-mode .settings-tab .settings-panel h2 {
+        font-size: clamp(1.45rem, 3vw, 2rem);
+        letter-spacing: -0.05em;
+      }
+      body.desktop-mode .settings-tab .settings-section { padding: 0.9rem 0; }
+      body.desktop-mode .settings-tab .settings-section h3 {
+        margin-bottom: 0.65rem;
+        color: var(--reading-progress);
+        font-family: inherit;
+        font-size: 0.68rem;
+        font-weight: 800;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+      }
+      body.desktop-mode .settings-tab .setting-option,
+      body.desktop-mode .settings-tab .desktop-signer-primary,
+      body.desktop-mode .settings-tab .settings-status,
+      body.desktop-mode .settings-tab .opds-feed-input,
+      body.desktop-mode .settings-tab .dictionary-pack {
+        border: 1px solid color-mix(in srgb, var(--settings-border, #ddd) 78%, transparent);
+        border-radius: 0.7rem;
+        background: color-mix(in srgb, var(--card-bg, #fff) 64%, transparent);
+      }
+      body.desktop-mode .settings-tab .setting-option {
+        min-height: 3.25rem;
+        padding: 0.6rem 0.75rem;
+      }
+      body.desktop-mode .settings-tab .setting-option + .setting-option { margin-top: 0.45rem; }
+      body.desktop-mode .settings-tab .setting-option:hover {
+        border-color: color-mix(in srgb, var(--reading-progress) 42%, var(--settings-border, #ddd));
+        background: color-mix(in srgb, var(--reading-progress) 7%, var(--card-bg, #fff));
+      }
+      body.desktop-mode .settings-tab .settings-nostr {
+        border-left: 1px solid color-mix(in srgb, var(--settings-border, #ddd) 78%, transparent);
+      }
+      body.desktop-mode .settings-tab .desktop-signer-primary { padding: 0.9rem; }
+      body.desktop-mode .settings-tab .desktop-signer-primary strong { font-size: 0.95rem; }
+      body.desktop-mode .settings-tab .settings-status { padding: 0.7rem 0.8rem; }
+      body.desktop-mode .settings-tab select,
+      body.desktop-mode .settings-tab input,
+      body.desktop-mode .settings-tab textarea {
+        border-radius: 0.55rem;
+        border-color: color-mix(in srgb, var(--settings-border, #ddd) 90%, transparent);
+        background: color-mix(in srgb, var(--card-bg, #fff) 84%, transparent);
+      }
+      body.desktop-mode .settings-tab button:not(.icon-btn) {
+        border-radius: 0.55rem;
+        font-weight: 650;
+      }
+      /* Desktop settings stay deliberately single-column: connection forms need room. */
+      body.desktop-mode .settings-tab .settings-panel {
+        display: block;
+        max-width: 46rem;
+      }
+      body.desktop-mode .settings-tab .settings-preferences,
+      body.desktop-mode .settings-tab .settings-appearance,
+      body.desktop-mode .settings-tab .settings-nostr,
+      body.desktop-mode .settings-tab .settings-dictionaries,
+      body.desktop-mode .settings-tab .settings-opds {
+        grid-column: auto;
+        grid-row: auto;
+        margin: 0;
+        padding: 0.9rem 0;
+        border-left: 0;
+      }
+      body.desktop-mode .settings-tab .settings-nostr,
+      body.desktop-mode .settings-tab .settings-dictionaries {
+        border-top: 1px solid color-mix(in srgb, var(--settings-border, #ddd) 78%, transparent);
+      }
+      body.desktop-mode .settings-tab .desktop-signer-row {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+      }
+      body.desktop-mode .settings-tab .desktop-signer-row input { width: 100%; }
+      @media (max-width: 620px) {
+        body.desktop-mode .settings-tab .settings-panel { width: calc(100vw - 1rem); }
+        body.desktop-mode .settings-tab .desktop-signer-row { grid-template-columns: 1fr; }
+        body.desktop-mode .settings-tab .desktop-signer-row button { width: 100%; }
       }
       .settings-tab .settings-panel {
         position: static;
@@ -1582,11 +1692,11 @@
         <div class="app-header-right">
           <button id="reading-favorite-btn" type="button" class="hidden" aria-label="Add to favorites" aria-pressed="false" title="Add to favorites">♡</button>
           <button id="npub-button" type="button" class="npub-info hidden" aria-label="Open settings" aria-pressed="false" title="Settings"><span id="npub-display" class="npub-pill">not connected</span></button>
-          <button id="home-tab-btn" class="header-tab" type="button" aria-label="Home, Command 1" aria-selected="true" title="Home · ⌘1"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m3 11 9-8 9 8"/><path d="M5.5 9.5V21h13V9.5M9 21v-7h6v7"/></svg></button>
+          <button id="home-tab-btn" class="header-tab" type="button" aria-label="Home, Command 1" aria-selected="true" title="Home · ⌘1"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4.5h4v15H4zM10 4.5h4v15h-4zM16 4.5h4v15h-4z"/><path d="M3 19.5h18M5.5 7.5h1M11.5 7.5h1M17.5 7.5h1"/></svg></button>
           <button id="reading-tab-btn" class="header-tab" type="button" aria-label="Reading, Command 2" aria-selected="false" title="Reading · ⌘2"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5.5c3.2-.8 5.9-.2 8 1.6v12c-2.1-1.8-4.8-2.4-8-1.6z"/><path d="M20 5.5c-3.2-.8-5.9-.2-8 1.6v12c2.1-1.8 4.8-2.4 8-1.6z"/></svg></button>
           <button id="search-tab-btn" class="header-tab" type="button" aria-label="Search, Command 3" aria-selected="false" title="Search · ⌘3"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m15.5 15.5 5 5"/></svg></button>
           <button id="people-tab-btn" class="header-tab" type="button" aria-label="People, Command 4" aria-selected="false" title="People · ⌘4"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="3"/><circle cx="17" cy="10" r="2.5"/><path d="M3.5 20c.4-4 2.2-6 5.5-6s5.1 2 5.5 6M14 15c3.5-.6 5.5 1 6 5"/></svg></button>
-          <button id="words-tab-btn" class="header-tab words-tab-icon hidden" type="button" aria-label="Words" aria-selected="false" title="Words">Aᵥ</button>
+          <button id="words-tab-btn" class="header-tab words-tab-icon hidden" type="button" aria-label="Words, Command 5" aria-selected="false" title="Words · ⌘5">Aᵥ</button>
           <button id="settings-btn" class="header-tab icon-btn" aria-label="Settings" aria-selected="false" aria-pressed="false" title="Settings"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15.25A3.25 3.25 0 1 0 12 8.75a3.25 3.25 0 0 0 0 6.5Z"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06-1.87 1.87-.06-.06A1.7 1.7 0 0 0 16 18.4a1.7 1.7 0 0 0-1 .6 1.7 1.7 0 0 0-.4 1.1V20h-2.65v-.09A1.7 1.7 0 0 0 10.9 18.4a1.7 1.7 0 0 0-1.87.34l-.06.06-1.87-1.87.06-.06A1.7 1.7 0 0 0 7.5 15a1.7 1.7 0 0 0-.6-1 1.7 1.7 0 0 0-1.1-.4H5.7v-2.65h.09A1.7 1.7 0 0 0 7.5 9.9a1.7 1.7 0 0 0-.34-1.87l-.06-.06L8.97 6.1l.06.06A1.7 1.7 0 0 0 10.9 6.5a1.7 1.7 0 0 0 1-.6 1.7 1.7 0 0 0 .4-1.1V4.7h2.65v.09A1.7 1.7 0 0 0 16 6.5a1.7 1.7 0 0 0 1.87-.34l.06-.06 1.87 1.87-.06.06A1.7 1.7 0 0 0 19.4 9.9a1.7 1.7 0 0 0 .6 1 1.7 1.7 0 0 0 1.1.4h.09v2.65h-.09A1.7 1.7 0 0 0 19.4 15Z"/></svg></button>
         </div>
       </header>
@@ -1713,7 +1823,10 @@
         <div id="settings-backdrop" class="settings-backdrop"></div>
         <section id="settings-panel" class="settings-panel">
           <header class="settings-panel-header">
-            <h2 id="settings-title">Settings</h2>
+            <div>
+              <h2 id="settings-title">Settings</h2>
+              <p class="meta-note">Shape your reading space and connections.</p>
+            </div>
             <button id="settings-close" type="button" class="icon-btn" aria-label="Close settings">✕</button>
           </header>
           <div class="settings-section settings-preferences">
@@ -1723,6 +1836,7 @@
             </label>
           </div>
           <div class="settings-section settings-appearance">
+            <h3>Reader</h3>
             <label class="setting-option theme-option">
               <span class="setting-copy"><strong>Appearance</strong></span>
             <select id="theme-mode">
@@ -1731,8 +1845,8 @@
               <option value="dark">Night</option>
             </select>
             </label>
-            <label class="setting-option theme-option">
-              <span class="setting-copy"><strong>Font</strong></span>
+            <label class="setting-option settings-control-row desktop-reader-settings">
+              <span class="setting-copy"><strong>Typeface</strong><small>Choose the shape of EPUB and FB2 text.</small></span>
               <select id="reader-font">
                 <option value="arial">Arial</option>
                 <option value="georgia">Georgia</option>
@@ -1740,13 +1854,35 @@
                 <option value="system">System</option>
               </select>
             </label>
-            <label class="setting-option theme-option">
-              <span class="setting-copy"><strong>Alignment</strong></span>
+            <label class="setting-option settings-control-row desktop-reader-settings">
+              <span class="setting-copy"><strong>Text alignment</strong><small>Choose left-aligned or justified paragraphs.</small></span>
               <select id="reader-alignment">
                 <option value="justified">Justified</option>
-                <option value="left">Left</option>
+                <option value="left">Left aligned</option>
               </select>
             </label>
+            <label class="setting-option settings-range desktop-reader-settings">
+              <span class="setting-copy"><strong>Text size</strong><small>Adjust reflowable book text.</small></span>
+              <input id="reader-font-size" type="range" min="75" max="180" step="5" value="100" />
+              <output id="reader-font-size-value" for="reader-font-size">100%</output>
+            </label>
+          </div>
+          <div class="settings-section desktop-reader-settings settings-speech">
+            <h3>Read aloud</h3>
+            <label class="setting-option settings-control-row">
+              <span class="setting-copy"><strong>English voice</strong><small>Kokoro appears here after you install it.</small></span>
+              <select id="speech-voice-en" aria-label="English reading voice"></select>
+            </label>
+            <label class="setting-option settings-control-row">
+              <span class="setting-copy"><strong>Portuguese voice</strong><small>Tugão appears here after you install it.</small></span>
+              <select id="speech-voice-pt" aria-label="Portuguese reading voice"></select>
+            </label>
+            <label class="setting-option settings-range">
+              <span class="setting-copy"><strong>Speech speed</strong><small>Use a natural pace or tune it to your preference.</small></span>
+              <input id="speech-rate" type="range" min="0.73" max="1.25" step="0.01" value="1" />
+              <output id="speech-rate-value" for="speech-rate">1.00×</output>
+            </label>
+            <p class="meta-note optional-voices-note">Optional voices are never downloaded or selected automatically. <a href="https://github.com/vicnaum/kokoro-tts-macos/releases/latest" target="_blank" rel="noreferrer">Kokoro for English</a> · <a href="https://huggingface.co/rhasspy/piper-voices/tree/main/pt/pt_PT/tug%C3%A3o/medium" target="_blank" rel="noreferrer">Tugão for Portuguese</a></p>
           </div>
           <div class="settings-section settings-nostr">
             <h3>Nostr</h3>
@@ -1757,7 +1893,7 @@
                 <button id="desktop-nip46-qr-start" type="button">Connect with QR code</button>
                 <div id="desktop-nip46-qr" class="desktop-signer-qr hidden">
                   <img id="desktop-nip46-qr-image" alt="NIP-46 connection QR code" hidden />
-                  <small>Scan this with your remote signer and approve Bookstr.</small>
+                  <small id="nip46-approval-copy">Scan this with your remote signer and approve Bookstr.</small>
                   <div class="desktop-signer-qr-actions">
                     <button id="desktop-nip46-qr-copy" type="button">Copy connection link</button>
                     <button id="desktop-nip46-qr-cancel" type="button">Cancel</button>
@@ -1832,6 +1968,7 @@
       const WORDS_KEY = 'bookstr_words_v1';
       const WORDS_SORT_KEY = 'bookstr_words_sort_v1';
       const SETTINGS_KEY = 'bookstr_reader_settings_v1';
+      const LOCAL_APPEARANCE_KEY = 'bookstr_local_appearance_v1';
       const NIP7_STATUS_KEY = 'bookstr_nip7_pubkey_v1';
       const NOSTR_FAVORITES_PUBLISH_TIME_KEY = 'bookstr_nostr_favorites_publish_time_v1';
       const NOSTR_RELAYS = ['wss://relay.nomadwiki.org'];
@@ -1860,6 +1997,9 @@
       const BOOK_CACHE_STORAGE_LIMIT = 300 * 1024 * 1024;
       const BOOK_METADATA_CACHE_KEY = 'bookstr_metadata_cache_v1';
       const BOOK_METADATA_CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+      const SEARCH_CACHE_KEY = 'bookstr_search_cache_v1';
+      const SEARCH_CACHE_TTL_MS = 10 * 60 * 1000;
+      const SEARCH_CACHE_MAX_ENTRIES = 6;
       const DICTIONARY_LANGUAGES = {
         bg: 'Bulgarian', ca: 'Catalan', cs: 'Czech', da: 'Danish', de: 'German', el: 'Greek',
         en: 'English', es: 'Spanish', fi: 'Finnish', fr: 'French', ga: 'Irish', id: 'Indonesian',
@@ -1962,7 +2102,13 @@
       const desktopBridge = window.bookstrDesktop || null;
       const isDesktopMode = Boolean(desktopBridge?.openReader);
       document.body.classList.toggle('desktop-mode', isDesktopMode);
-      if (isDesktopMode) document.querySelector('.brand-mark').src = 'public/apple-touch-icon.png';
+      if (isDesktopMode) {
+        document.title = 'libstr';
+        const brandMark = document.querySelector('.brand-mark');
+        brandMark.src = 'public/apple-touch-icon.png';
+        brandMark.alt = 'libstr';
+        document.getElementById('nip46-approval-copy').textContent = 'Scan this with your remote signer and approve libstr.';
+      }
       const nostrSignerName = isDesktopMode ? 'Nostr signer' : 'NIP-07';
       const nostrSigner = isDesktopMode ? desktopBridge?.signer : globalThis.nostr;
       const desktopBridgeVersion = Number(desktopBridge?.version || 0);
@@ -1996,6 +2142,12 @@
       const themeModeInput = document.getElementById('theme-mode');
       const readerFontInput = document.getElementById('reader-font');
       const readerAlignmentInput = document.getElementById('reader-alignment');
+      const readerFontSizeInput = document.getElementById('reader-font-size');
+      const readerFontSizeValue = document.getElementById('reader-font-size-value');
+      const speechVoiceEnglishInput = document.getElementById('speech-voice-en');
+      const speechVoicePortugueseInput = document.getElementById('speech-voice-pt');
+      const speechRateInput = document.getElementById('speech-rate');
+      const speechRateValue = document.getElementById('speech-rate-value');
       const npubButton = document.getElementById('npub-button');
       const npubDisplay = document.getElementById('npub-display');
       const nip7Status = document.getElementById('nip7-status');
@@ -2020,6 +2172,10 @@
           theme: 'white',
           readerFont: 'arial',
           readerAlignment: 'justified',
+          readerFontPercent: 100,
+          speechVoiceEnglish: '',
+          speechVoicePortuguese: '',
+          speechRate: 1,
           opdsFeeds: []
         },
         nip7: {
@@ -3309,6 +3465,63 @@
         return enriched;
       }
 
+      const nostrAheadReadingByBook = new Map();
+
+      function rememberNostrReadingCandidate(candidate, localReading) {
+        const id = String(candidate?.md5 || '').trim().toLowerCase();
+        if (!id) return false;
+        if (!localReading || !BookstrDesktopProgress.isProgressAhead(candidate, localReading)) {
+          nostrAheadReadingByBook.delete(id);
+          return false;
+        }
+        nostrAheadReadingByBook.set(id, { ...candidate, md5: id });
+        return true;
+      }
+
+      function readingSnapshotForNostrCache() {
+        const merged = new Map();
+        state.reading.forEach(item => {
+          const id = String(item?.md5 || '').trim().toLowerCase();
+          if (id) merged.set(id, item);
+        });
+        nostrAheadReadingByBook.forEach((item, id) => merged.set(id, item));
+        return [...merged.values()];
+      }
+
+      function mergeReadingSnapshot(localReading, incomingReading) {
+        const merged = new Map();
+        BookMetadata.dedupeLibraryBooks(Array.isArray(localReading) ? localReading : []).forEach(item => {
+          const id = String(item?.md5 || '').trim().toLowerCase();
+          if (id) merged.set(id, item);
+        });
+        for (const incoming of Array.isArray(incomingReading) ? incomingReading : []) {
+          const id = String(incoming?.md5 || '').trim().toLowerCase();
+          if (!id) continue;
+          const existing = merged.get(id);
+          const incomingUpdatedAt = Number(incoming.updatedAt || 0);
+          const existingUpdatedAt = Number(existing?.updatedAt || 0);
+          if (incoming.deleted) {
+            if (!existing || incomingUpdatedAt >= existingUpdatedAt) {
+              merged.delete(id);
+              nostrAheadReadingByBook.delete(id);
+            }
+            continue;
+          }
+          const normalized = { ...normalizeFavoriteFromRemote(incoming), md5: id };
+          if (existing && rememberNostrReadingCandidate(normalized, existing)) {
+            continue;
+          }
+          if (existing && BookstrDesktopProgress.isProgressAhead(existing, normalized)) {
+            continue;
+          }
+          if (!existing || incomingUpdatedAt >= existingUpdatedAt) {
+            merged.set(id, { ...(existing || {}), ...normalized });
+          }
+        }
+        return BookMetadata.dedupeLibraryBooks([...merged.values()])
+          .sort((left, right) => Number(right.updatedAt || 0) - Number(left.updatedAt || 0));
+      }
+
       function applyNostrSnapshot(snapshot, { render = true, authoritativeFavorites = false } = {}) {
         const next = { ...snapshot };
         if (Array.isArray(next.favorites)) {
@@ -3322,14 +3535,7 @@
             .slice();
         }
         if (Array.isArray(next.reading)) {
-          const deletedBookIds = new Set(next.reading.filter(item => item?.deleted).map(item => String(item.md5 || '').toLowerCase()));
-          const activeReading = next.reading.filter(item => !item?.deleted).map(normalizeFavoriteFromRemote);
-          state.reading = BookMetadata.dedupeLibraryBooks(mergeStateList(
-            state.reading.filter(item => !deletedBookIds.has(String(item.md5 || '').toLowerCase())),
-            activeReading
-          ))
-            .sort((a, b) => Number(b.updatedAt || 0) - Number(a.updatedAt || 0))
-            .slice();
+          state.reading = mergeReadingSnapshot(state.reading, next.reading).slice();
         }
         if (Array.isArray(next.words)) {
           const merged = new Map();
@@ -3402,7 +3608,7 @@
             }, { authoritativeFavorites: Array.isArray(favorites) });
             saveNostrSyncCache(pubkey, {
               favorites: state.favorites,
-              reading: state.reading,
+              reading: readingSnapshotForNostrCache(),
               words: state.words,
             });
             await refreshFavoriteBlossomCopies();
@@ -3434,7 +3640,11 @@
       }
 
       function scheduleFocusedNostrSync() {
-        if (!state.settings.useNip7 || !state.nip7.pubkey || document.visibilityState === 'hidden') return;
+        if (document.visibilityState === 'hidden') {
+          void flushAllReadingProgressPublishes();
+          return;
+        }
+        if (!state.settings.useNip7 || !state.nip7.pubkey) return;
         clearTimeout(nostrFocusSyncTimer);
         nostrFocusSyncTimer = setTimeout(() => {
           if (Date.now() - lastNostrSyncAt >= 30_000) void syncNostrLibraryFromNip7({ useCache: false });
@@ -3584,7 +3794,7 @@
           const ext = String(item.extension || item.format || item.media_type || item.type || (provider === 'gutenberg' ? 'epub' : '')).replace(/^\./, '').toLowerCase();
           const directReadUrl = provider === 'gutenberg' && item.id
             ? `${BOOKS_API_BASE}/books/${encodeURIComponent(item.id)}/download`
-            : item.readUrl || item.url || item.link || blossom.url || '';
+            : item.readUrl || item.read_url || item.url || item.link || blossom.url || '';
           const rights = BookMetadata.normalizeRights(item);
           if (!rights.rights_source && (
             rights.rights_status !== 'unknown' || rights.license || rights.license_url
@@ -3641,6 +3851,20 @@
           byId.add(key);
           return true;
         });
+      }
+
+      function defaultSearchResultRank(book) {
+        if (cachedBookKeys.has(bookCacheKey(book, book.readUrl || book.url))) return 0;
+        if (/^https:\/\//i.test(String(book.blossomUrl || ''))) return 1;
+        if (BookMetadata.canonicalReadUrl(book, BOOKS_API_BASE)) return 2;
+        return 3;
+      }
+
+      function rankSearchResults(books) {
+        return books.map((book, index) => ({ book, index }))
+          .sort((left, right) => defaultSearchResultRank(left.book) - defaultSearchResultRank(right.book)
+            || left.index - right.index)
+          .map(entry => entry.book);
       }
 
       async function searchUnglueIt(query) {
@@ -3846,6 +4070,51 @@
         return dedupeBooks(normalizeSearchBooks({ books }, 'global-digital-library'));
       }
 
+      function internetArchiveFile(files) {
+        const available = (Array.isArray(files) ? files : []).filter(file => (
+          file?.name && file.private !== 'true' && !/[\\/]_?meta\.xml$/i.test(file.name)
+        ));
+        return available.find(file => /epub/i.test(file.format || '') || /\.epub$/i.test(file.name))
+          || available.find(file => /pdf/i.test(file.format || '') || /\.pdf$/i.test(file.name))
+          || null;
+      }
+
+      async function searchInternetArchive(query) {
+        const response = await fetch(`${BOOKS_API_BASE}/internet-archive/search?query=${encodeURIComponent(query)}`);
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(`Internet Archive search failed (${response.status})`);
+        const docs = Array.isArray(payload?.response?.docs) ? payload.response.docs : [];
+        const books = await Promise.all(docs.map(async doc => {
+          const id = String(doc?.identifier || '').trim();
+          if (!id) return null;
+          const metadataResponse = await fetch(`${BOOKS_API_BASE}/internet-archive/metadata?id=${encodeURIComponent(id)}`);
+          const metadataPayload = await metadataResponse.json().catch(() => ({}));
+          if (!metadataResponse.ok) return null;
+          const file = internetArchiveFile(metadataPayload.files);
+          if (!file) return null;
+          const metadata = metadataPayload.metadata || {};
+          const extension = /\.epub$/i.test(file.name) || /epub/i.test(file.format || '') ? 'epub' : 'pdf';
+          return {
+            id,
+            source: 'internet-archive',
+            source_native_id: id,
+            source_url: `https://archive.org/details/${encodeURIComponent(id)}`,
+            title: metadata.title || doc.title || '',
+            authors: metadata.creator || doc.creator || '',
+            year: metadata.date || metadata.year || doc.date || doc.year || '',
+            language: metadata.language || doc.language || '',
+            description: metadata.description || '',
+            license: metadata.licenseurl || doc.licenseurl || '',
+            license_url: metadata.licenseurl || doc.licenseurl || '',
+            rights_status: metadata.licenseurl || doc.licenseurl ? 'open_license' : 'unknown',
+            extension,
+            filesize: Number(file.size || 0),
+            read_url: `${BOOKS_API_BASE}/internet-archive/download?id=${encodeURIComponent(id)}&name=${encodeURIComponent(file.name)}`,
+          };
+        }));
+        return dedupeBooks(normalizeSearchBooks({ books: books.filter(Boolean) }, 'internet-archive'));
+      }
+
       function formatBuildDate(date) {
         if (Number.isNaN(date.getTime())) {
           return '';
@@ -3920,7 +4189,7 @@
 
       function applyDesktopReadingProgress(payload) {
         const update = normalizeDesktopProgress(payload);
-        if (!update) return;
+        if (!update) return null;
         const existingIndex = state.reading.findIndex(item => item && item.md5 === update.md5);
         const existing = existingIndex >= 0 ? state.reading[existingIndex] : null;
         const merged = {
@@ -3956,6 +4225,20 @@
           updateReadingFavoriteButton();
         }
         renderReading();
+        renderHome();
+        return merged;
+      }
+
+      function applyReaderProgress(payload) {
+        if (!payload || payload.type !== 'bookstr-reader-progress') return null;
+        const bookId = String(payload.bookId || payload.md5 || '').trim().toLowerCase();
+        if (!bookId) return null;
+        const active = activeReadingBook && String(activeReadingBook.md5 || '').trim().toLowerCase() === bookId
+          ? activeReadingBook
+          : state.reading.find(item => String(item?.md5 || '').trim().toLowerCase() === bookId);
+        const merged = applyDesktopReadingProgress({ ...(active || {}), ...payload, md5: bookId });
+        if (merged) queueReadingProgressPublish(merged);
+        return merged;
       }
 
 	  function applyReaderRightsMetadata(payload) {
@@ -3988,6 +4271,11 @@
 
 	  window.addEventListener('message', event => {
 		if (event.source !== readerFrame.contentWindow) return;
+		if (event.origin !== window.location.origin) return;
+		if (event.data?.type === 'bookstr-reader-progress') {
+		  applyReaderProgress(event.data);
+		  return;
+		}
 		applyReaderRightsMetadata(event.data);
 	  });
 
@@ -4013,7 +4301,10 @@
 
       if (isDesktopMode) {
         if (desktopBridge?.onProgress) {
-          desktopBridge.onProgress(payload => applyDesktopReadingProgress(payload));
+          desktopBridge.onProgress(payload => {
+            const merged = applyDesktopReadingProgress(payload);
+            if (merged) queueReadingProgressPublish(merged);
+          });
         }
         window.addEventListener('storage', syncSharedStorage);
       }
@@ -4186,7 +4477,40 @@
         if (!pubkey || !nostrSigner?.signEvent) {
           throw new Error(`Connect your ${nostrSignerName} to sync refreshed reading metadata.`);
         }
-        const now = Math.floor(Date.now() / 1000);
+        const rawPriorEvents = await queryNostrEvents(pubkey, {
+          kinds: [NOSTR_PROGRESS_KIND], '#d': [`${READING_D_PREFIX}${bookId}`], limit: 20,
+        });
+        const priorEvents = await verifiedNostrEvents(rawPriorEvents);
+        const remote = priorEvents
+          .map(event => {
+            const parsed = parseReadingProgressEvent(event);
+            return parsed && !parsed.deleted
+              ? { ...parsed, relayCreatedAt: Number(event.created_at || 0) }
+              : null;
+          })
+          .filter(Boolean)
+          .sort((left, right) => Number(right.updatedAt || 0) - Number(left.updatedAt || 0))[0] || null;
+        const localProgression = Math.max(0, Math.min(1, Number(BookMetadata.readingProgressForBook(book) || 0)));
+        const localFurthest = Math.max(localProgression, Number(book.furthestProgression || 0) || 0);
+        const remoteProgression = Math.max(0, Math.min(1, Number(remote?.progression || 0)));
+        const remoteFurthest = Math.max(remoteProgression, Number(remote?.furthestProgression || 0) || 0);
+        const remoteIsAhead = remote && BookstrDesktopProgress.isProgressAhead(remote, {
+          progression: localProgression,
+          furthestProgression: localFurthest,
+        });
+        if (remoteIsAhead) {
+          rememberNostrReadingCandidate(remote, book);
+          saveNostrSyncCache(pubkey, {
+            favorites: state.favorites,
+            reading: readingSnapshotForNostrCache(),
+            words: state.words,
+          });
+          return { published: false, reason: 'remote-ahead', progress: remote };
+        }
+        const now = Math.max(
+          Math.floor(Date.now() / 1000),
+          ...priorEvents.map(event => Number(event.created_at || 0) + 1),
+        );
         const event = await nostrSigner.signEvent({
           kind: NOSTR_PROGRESS_KIND,
           created_at: now,
@@ -4207,10 +4531,10 @@
             sourceNativeId: book.sourceNativeId || '',
 			...BookMetadata.normalizeRights(book),
             locator: {
-              progression: BookMetadata.readingProgressForBook(book),
+              progression: localProgression,
               furthestProgression: Math.max(
-                Number(BookMetadata.readingProgressForBook(book) || 0),
-                Number(book.furthestProgression || 0) || 0,
+                localFurthest,
+                remoteFurthest,
               ),
               cfi: book.cfi || '',
             },
@@ -4220,6 +4544,42 @@
         });
         const accepted = await Promise.all(NOSTR_RELAYS.map(relay => publishRelayEvent(relay, event)));
         if (!accepted.some(Boolean)) throw new Error('Nostr relays did not accept refreshed reading metadata.');
+        nostrAheadReadingByBook.delete(bookId);
+        return { published: true, event };
+      }
+
+      const readingProgressPublishTimers = new Map();
+      const pendingReadingProgressPublishes = new Map();
+
+      function queueReadingProgressPublish(book) {
+        const bookId = String(book?.md5 || '').trim().toLowerCase();
+        if (!bookId || !state.settings.useNip7 || !state.nip7.pubkey || !nostrSigner?.signEvent) return;
+        pendingReadingProgressPublishes.set(bookId, { ...book, md5: bookId });
+        clearTimeout(readingProgressPublishTimers.get(bookId));
+        readingProgressPublishTimers.set(bookId, setTimeout(() => {
+          readingProgressPublishTimers.delete(bookId);
+          void flushReadingProgressPublish(bookId);
+        }, 2000));
+      }
+
+      async function flushReadingProgressPublish(bookId) {
+        const id = String(bookId || '').trim().toLowerCase();
+        clearTimeout(readingProgressPublishTimers.get(id));
+        readingProgressPublishTimers.delete(id);
+        const pending = pendingReadingProgressPublishes.get(id);
+        if (!pending) return false;
+        pendingReadingProgressPublishes.delete(id);
+        try {
+          await publishReadingMetadata(pending);
+          return true;
+        } catch (error) {
+          console.warn('Reading progress stayed local because Nostr sync failed:', error);
+          return false;
+        }
+      }
+
+      async function flushAllReadingProgressPublishes() {
+        return Promise.all([...pendingReadingProgressPublishes.keys()].map(flushReadingProgressPublish));
       }
 
       async function deleteLibraryBook(book) {
@@ -4580,7 +4940,7 @@
               ? 'Blossom'
               : availabilitySources.includes('Gutenberg')
                 ? 'Gutenberg'
-                : '—';
+                : availabilitySources.find(item => item !== 'Metadata only') || '—';
           const readableNow = isBookReadableNow(book);
           const titleAvailabilityClass = readableNow ? 'readable' : 'unavailable';
           const rawLanguage = BookMetadata.languageForBook(book);
@@ -4709,7 +5069,7 @@
             filteredBooks, searchResultSort.key, searchResultSort.direction,
             book => cachedBookKeys.has(bookCacheKey(book, book.readUrl || book.url))
           )
-          : filteredBooks.slice();
+          : rankSearchResults(filteredBooks);
         const totalPages = Math.max(1, Math.ceil(sortedBooks.length / SEARCH_RESULT_PAGE_SIZE));
         searchResultPage = Math.min(Math.max(1, searchResultPage), totalPages);
         const start = (searchResultPage - 1) * SEARCH_RESULT_PAGE_SIZE;
@@ -4935,6 +5295,8 @@
           if (cachedMetadata) return { ...cachedMetadata, md5: bookId };
           return { md5: bookId, title: 'Untitled book', extension: 'epub' };
         }
+        const searchBook = BookMetadata.findBookByReadUrl(readUrl, searchResultBooks);
+        if (searchBook) return searchBook;
         const saved = BookMetadata.findBookByReadUrl(readUrl, state.reading, state.favorites);
         if (saved) return saved;
         try {
@@ -5031,12 +5393,16 @@
 		if (rights.rights_source) rightsRow.append(document.createTextNode(` · ${rights.rights_source}`));
 		details.append(rightsRow);
         const note = document.createElement('p');
-        note.textContent = 'Book details are available, but the book file could not be loaded.';
-        note.style.cssText = 'margin:1.5rem 0 0;color:var(--muted)';
+        note.id = 'read-metadata-fallback-status';
+        note.style.cssText = 'margin:1.5rem 0 0;color:var(--muted);white-space:pre-line;overflow-wrap:anywhere';
         details.append(note);
         panel.append(details);
         panel.hidden = false;
         panel.style.display = 'grid';
+        updateReadMetadataFallbackDiagnostics(book, {
+          readPath: BookMetadata.canonicalReadUrl(book, BOOKS_API_BASE),
+          cacheStatus: 'Checking local cache…',
+        });
         frame.hidden = false;
         const hideWhenReadable = () => {
           let epubReady = false;
@@ -5061,6 +5427,34 @@
         waitForReadableBook();
       }
 
+      function diagnosticUrl(value) {
+        if (!value) return 'None available';
+        try {
+          const parsed = new URL(value, window.location.href);
+          parsed.username = '';
+          parsed.password = '';
+          parsed.search = '';
+          parsed.hash = '';
+          return parsed.toString();
+        } catch {
+          return String(value);
+        }
+      }
+
+      function updateReadMetadataFallbackDiagnostics(book, { readPath = '', cacheStatus = '', error = '' } = {}) {
+        const note = document.getElementById('read-metadata-fallback-status');
+        if (!note) return;
+        const format = String(book?.extension || book?.format || 'unknown').replace(/^\./, '').toLowerCase();
+        const lines = [
+          'Book details are available, but the book file could not be loaded.',
+          `Format: ${format || 'unknown'}`,
+          `Local file/cache: ${cacheStatus || 'Not checked'}`,
+          `Source URL: ${diagnosticUrl(readPath || book?.readUrl || book?.url || '')}`,
+        ];
+        if (error) lines.push(`Error: ${error?.message || error}`);
+        note.textContent = lines.join('\n');
+      }
+
       let readRouteGeneration = 0;
 
       async function openResolvedReadRoute(bookRef) {
@@ -5069,12 +5463,26 @@
         if (routeGeneration !== readRouteGeneration) return;
         showReadMetadataFallback(book);
         const readPath = BookMetadata.canonicalReadUrl(book, BOOKS_API_BASE);
-        const cached = await cachedBookBlob(book, readPath).catch(() => null);
+        let cacheError = null;
+        const cached = await cachedBookBlob(book, readPath).catch(error => {
+          cacheError = error;
+          return null;
+        });
+        updateReadMetadataFallbackDiagnostics(book, {
+          readPath,
+          cacheStatus: cached ? 'Found a local cached copy' : 'No local cached copy found',
+          error: cacheError,
+        });
         if (routeGeneration !== readRouteGeneration) return;
         const cachedFormat = await bookFormatForBlob(cached);
         if (routeGeneration !== readRouteGeneration) return;
         if (cachedFormat) book = { ...book, extension: cachedFormat, format: cachedFormat };
         if (!readPath && !cached) {
+          updateReadMetadataFallbackDiagnostics(book, {
+            readPath,
+            cacheStatus: 'No local cached copy found',
+            error: 'No readable download or Blossom URL is available for this record.',
+          });
           if (isMd5(bookRef) && state.settings.useNip7 && nostrSigner) {
             pendingReadBookId = String(bookRef).toLowerCase();
             status.textContent = 'Looking for this book in your Nostr library…';
@@ -5874,56 +6282,19 @@
         return typeof loader === 'function' ? loader : null;
       }
 
-      async function openInDesktopReader(kind, blob, book, readPath, openGeneration, initialCfi) {
-        if (!isDesktopMode || !desktopBridge) return false;
-        try {
-          const base64 = await blobToBase64(blob);
-          if (openGeneration !== readerOpenGeneration) return false;
-          const payload = {
-            kind,
-            base64,
-            readUrl: readPath || '',
-            cfi: String(initialCfi || ''),
-            theme: state.settings.theme === 'dark' ? 'night' : state.settings.theme,
-            font: BookstrTypography.normalizeFont(state.settings.readerFont),
-            alignment: BookstrTypography.normalizeAlignment(state.settings.readerAlignment),
-            book: {
-              md5: String(book?.md5 || '').trim().toLowerCase(),
-              title: book?.title || 'Book',
-              authors: book?.authors || book?.author || '',
-              year: book?.year || '',
-              language: book?.language || '',
-              extension: String(book?.extension || (kind === 'pdf' ? 'pdf' : 'epub')).replace(/^\./, '').toLowerCase(),
-              readUrl: readPath || book?.readUrl || book?.url || '',
-              source: book?.source || '',
-              sourceNativeId: book?.sourceNativeId || book?.source_native_id || '',
-              blossomSha256: book?.blossomSha256 || '',
-              blossomUrl: book?.blossomUrl || '',
-			  ...BookMetadata.normalizeRights(book),
-            },
-          };
-          await desktopBridge.openReader(payload);
-          status.textContent = `Opened ${book?.title || 'book'} in a dedicated reader window.`;
-          return true;
-        } catch (error) {
-          console.warn('Desktop reader launch failed:', error);
-          return false;
-        }
-      }
-
       async function displayEpub(blob, book, readPath, openGeneration) {
         const theme = state.settings.theme === 'dark' ? 'night' : state.settings.theme;
-        const startedCfi = book?.cfi || '';
-        if (isDesktopMode) {
-          const opened = await openInDesktopReader('epub', blob, book, readPath, openGeneration, startedCfi);
-          if (opened) return;
-          if (openGeneration !== readerOpenGeneration) return;
-        }
         const base64 = await blobToBase64(blob);
         if (openGeneration !== readerOpenGeneration) return;
         const readerLoad = await readerFrameLoader('epub', openGeneration);
         if (!readerLoad) return;
-        await readerLoad(base64, book.cfi || '', theme, book.md5 || BookMetadata.bookIdentity(book));
+        await readerLoad(
+          base64,
+          book.cfi || '',
+          theme,
+          book.md5 || BookMetadata.bookIdentity(book),
+          { ...book, readUrl: readPath || book.readUrl || book.url || '' },
+        );
         applyOpenReaderTypography();
         if (openGeneration === readerOpenGeneration) status.textContent = `Opened ${book.title || 'book'}.`;
       }
@@ -5951,11 +6322,6 @@
         const pdfBlob = blob.type === 'application/pdf'
           ? blob
           : new Blob([blob], { type: 'application/pdf' });
-        if (isDesktopMode) {
-          const opened = await openInDesktopReader('pdf', pdfBlob, book, readPath, openGeneration);
-          if (opened) return;
-          if (openGeneration !== readerOpenGeneration) return;
-        }
         const base64 = await blobToBase64(pdfBlob);
         if (openGeneration !== readerOpenGeneration) return;
         const options = {
@@ -5963,6 +6329,9 @@
           bookTitle: BookMetadata.resolveTitle(book),
           filename: pdfDownloadFilename(book),
           theme: state.settings.theme === 'dark' ? 'night' : state.settings.theme,
+          initialCfi: book.cfi || '',
+          readUrl: readPath || book.readUrl || book.url || '',
+          book,
         };
         const readerLoad = await readerFrameLoader('pdf', openGeneration);
         if (!readerLoad) return;
@@ -5979,11 +6348,55 @@
         readerFrame.contentWindow?.[command]?.();
       });
 
+      function bookWithSavedReadingState(book) {
+        if (!book) return book;
+        const saved = state.reading.find(item => BookMetadata.sameLibraryBook(item, book));
+        if (!saved) return book;
+        return {
+          ...book,
+          progression: BookMetadata.readingProgressForBook(saved),
+          furthestProgression: Math.max(
+            Number(saved.furthestProgression || 0) || 0,
+            Number(BookMetadata.readingProgressForBook(saved) || 0),
+          ),
+          cfi: saved.cfi || book.cfi || '',
+          readUrl: book.readUrl || book.url || saved.readUrl || saved.url || '',
+          updatedAt: Math.max(Number(book.updatedAt || 0), Number(saved.updatedAt || 0)),
+        };
+      }
+
+      function bookWithChosenNostrReadingState(book) {
+        const bookId = String(book?.md5 || '').trim().toLowerCase();
+        const remote = nostrAheadReadingByBook.get(bookId);
+        if (!remote) return book;
+        const local = state.reading.find(item => String(item?.md5 || '').trim().toLowerCase() === bookId);
+        if (!local || !BookstrDesktopProgress.isProgressAhead(remote, local)) {
+          nostrAheadReadingByBook.delete(bookId);
+          return book;
+        }
+        const localPercent = Math.round(BookMetadata.readingProgressForBook(local) * 100);
+        const remotePercent = Math.round(BookMetadata.readingProgressForBook(remote) * 100);
+        const title = BookMetadata.resolveTitle(book) || 'this book';
+        const useRemote = window.confirm(
+          `Nostr has a further position for ${title} (${remotePercent}%, local ${localPercent}%). Continue from the Nostr position?`,
+        );
+        if (!useRemote) return book;
+        nostrAheadReadingByBook.delete(bookId);
+        const adopted = applyDesktopReadingProgress({ ...local, ...remote, md5: bookId, updatedAt: Date.now() });
+        return adopted ? { ...book, ...adopted } : book;
+      }
+
       async function openBook(book, { updateHash = true, addToReading = true } = {}) {
         if (!book) {
           status.textContent = `${book?.title || 'This book'} has metadata only; no readable copy is available.`;
           return;
         }
+
+        const previousBookId = String(activeReadingBook?.md5 || '').trim().toLowerCase();
+        const nextBookId = String(book.md5 || '').trim().toLowerCase();
+        if (previousBookId && previousBookId !== nextBookId) void flushReadingProgressPublish(previousBookId);
+        book = bookWithSavedReadingState(book);
+        book = bookWithChosenNostrReadingState(book);
 
         const openGeneration = ++readerOpenGeneration;
         const readPath = BookMetadata.canonicalReadUrl(book, BOOKS_API_BASE);
@@ -6076,6 +6489,11 @@
           }
         } catch (error) {
           status.textContent = `Could not open ${book.title || 'book'}: ${error?.message || error}`;
+          updateReadMetadataFallbackDiagnostics(book, {
+            readPath,
+            cacheStatus: cachedBookKeys.has(bookCacheKey(book, readPath)) ? 'A local cache entry exists' : 'No usable local cached copy',
+            error,
+          });
           return;
         }
         if (openGeneration !== readerOpenGeneration) return;
@@ -6223,6 +6641,10 @@
             id: 'global-digital-library', name: 'Global Digital Library', coverage: 'Multilingual children’s and learning books',
             deliveries: ['Metadata', 'EPUB', 'Licenses', 'Covers'], access: 'Public', search: searchGlobalDigitalLibrary,
           },
+          {
+            id: 'internet-archive', name: 'Internet Archive', coverage: 'Publicly downloadable digitized and born-digital books',
+            deliveries: ['Metadata', 'EPUB', 'PDF'], access: 'Public', search: searchInternetArchive,
+          },
         ];
         for (const feed of normalizePublicOPDSFeedSettings(state.settings.opdsFeeds)) {
           sources.push({
@@ -6316,6 +6738,41 @@
           : `${outcome.source.name}: ${outcome.books.length}`).join(' · ');
       }
 
+      function searchCacheIdentity(query) {
+        return JSON.stringify({
+          query: String(query || '').trim().toLocaleLowerCase(),
+          type: searchType.value || 'all',
+          pubkey: privateBookSearchAvailable() ? state.nip7.pubkey : '',
+          opdsFeeds: normalizePublicOPDSFeedSettings(state.settings.opdsFeeds),
+        });
+      }
+
+      function freshSearchCacheEntries() {
+        const entries = safeJSONRead(localStorage.getItem(SEARCH_CACHE_KEY), []);
+        return (Array.isArray(entries) ? entries : [])
+          .filter(entry => entry?.key && Array.isArray(entry.books)
+            && Date.now() - Number(entry.ts || 0) < SEARCH_CACHE_TTL_MS)
+          .sort((left, right) => Number(right.ts || 0) - Number(left.ts || 0))
+          .slice(0, SEARCH_CACHE_MAX_ENTRIES);
+      }
+
+      function cachedSearchBooks(query) {
+        const entries = freshSearchCacheEntries();
+        try { localStorage.setItem(SEARCH_CACHE_KEY, JSON.stringify(entries)); } catch {}
+        return entries.find(entry => entry.key === searchCacheIdentity(query))?.books || null;
+      }
+
+      function cacheSearchBooks(query, books) {
+        const key = searchCacheIdentity(query);
+        const entries = [
+          { key, ts: Date.now(), books: books.slice(0, SEARCH_RESULT_LIMIT) },
+          ...freshSearchCacheEntries().filter(entry => entry.key !== key),
+        ].slice(0, SEARCH_CACHE_MAX_ENTRIES);
+        try { localStorage.setItem(SEARCH_CACHE_KEY, JSON.stringify(entries)); } catch {
+          try { localStorage.setItem(SEARCH_CACHE_KEY, JSON.stringify(entries.slice(0, 1))); } catch {}
+        }
+      }
+
       async function startSearch({ updateHash = true, routeState = null } = {}) {
         const query = queryInput.value.trim();
         if (!query) {
@@ -6356,6 +6813,20 @@
           }
           return;
         }
+        const cachedBooks = cachedSearchBooks(query);
+        if (cachedBooks) {
+          renderSearchSourceProgress([]);
+          const books = cachedBooks.filter(book => matchesExactSearchTokens(
+            book,
+            query,
+            searchType.value || 'all',
+          ));
+          renderResults(books, { routeState });
+          status.textContent = `Showing ${books.length} cached result${books.length === 1 ? '' : 's'} · refreshes after 10 minutes.`;
+          replaceSearchHash();
+          renderButtonsState();
+          return;
+        }
         status.textContent = 'Searching privately through LibVault…';
         try {
           const searchResponse = await searchAvailableBookSources(query, (progress, arrivedBooks) => {
@@ -6371,6 +6842,7 @@
           });
           let books = searchResponse.books;
           books = books.filter(book => matchesExactSearchTokens(book, query, searchType.value || 'all'));
+          cacheSearchBooks(query, books);
           status.textContent = `${searchOutcomeSummary(searchResponse.outcomes)} · ${books.length} result(s).`;
           renderResults(books, { routeState });
           replaceSearchHash();
@@ -6552,6 +7024,78 @@
         await refreshDesktopSignerStatus();
       }
 
+      function speechVoices() {
+        if (!isDesktopMode || typeof window.speechSynthesis?.getVoices !== 'function') return [];
+        return window.speechSynthesis.getVoices().filter(voice => voice && (voice.name || voice.voiceURI));
+      }
+
+      function populateSpeechVoiceMenu(select, language, preferredLabel, preferredPattern, savedIdentifier) {
+        if (!select) return;
+        const languagePrefix = `${language.toLowerCase()}-`;
+        const voices = speechVoices()
+          .filter(voice => {
+            const locale = String(voice.lang || '').replace('_', '-').toLowerCase();
+            return locale === language || locale.startsWith(languagePrefix);
+          })
+          .sort((left, right) => {
+            const leftPreferred = preferredPattern.test(`${left.name} ${left.voiceURI}`) ? 0 : 1;
+            const rightPreferred = preferredPattern.test(`${right.name} ${right.voiceURI}`) ? 0 : 1;
+            return leftPreferred - rightPreferred
+              || Number(Boolean(right.localService)) - Number(Boolean(left.localService))
+              || String(left.name).localeCompare(String(right.name));
+          });
+        const selected = String(savedIdentifier || '');
+        select.replaceChildren(new Option('Best installed voice', ''));
+        voices.forEach(voice => {
+          const identifier = String(voice.voiceURI || voice.name);
+          const localLabel = voice.localService === false ? 'online' : 'installed';
+          select.append(new Option(`${voice.name} · ${voice.lang || language} · ${localLabel}`, identifier));
+        });
+        const preferredInstalled = voices.some(voice => preferredPattern.test(`${voice.name} ${voice.voiceURI}`));
+        if (!preferredInstalled) {
+          const option = new Option(`${preferredLabel} · optional download`, `optional:${preferredLabel.toLowerCase()}`);
+          option.disabled = true;
+          select.append(option);
+        }
+        if (selected && !voices.some(voice => String(voice.voiceURI || voice.name) === selected)) {
+          const option = new Option('Previously selected voice · unavailable', selected);
+          option.disabled = true;
+          option.selected = true;
+          select.append(option);
+        } else {
+          select.value = selected;
+        }
+      }
+
+      function refreshSpeechVoiceMenus() {
+        populateSpeechVoiceMenu(
+          speechVoiceEnglishInput,
+          'en',
+          'Kokoro · English',
+          /kokoro/i,
+          state.settings.speechVoiceEnglish,
+        );
+        populateSpeechVoiceMenu(
+          speechVoicePortugueseInput,
+          'pt',
+          'Tugão · Portuguese (Portugal)',
+          /tug[aã]o/i,
+          state.settings.speechVoicePortuguese,
+        );
+      }
+
+      function updateReaderSettingLabels() {
+        readerFontSizeValue.value = `${readerFontSizeInput.value}%`;
+        readerFontSizeValue.textContent = readerFontSizeValue.value;
+        speechRateValue.value = `${Number(speechRateInput.value).toFixed(2)}×`;
+        speechRateValue.textContent = speechRateValue.value;
+      }
+
+      function notifyOpenReaderSettings() {
+        const apply = readerFrame.contentWindow?.applyReaderSettings;
+        if (typeof apply === 'function') apply({ ...state.settings });
+      }
+
       function loadState() {
         const favorites = safeJSONRead(localStorage.getItem(FAVORITES_KEY), []);
         const reading = safeJSONRead(localStorage.getItem(READING_KEY), []);
@@ -6592,10 +7136,27 @@
           if (typeof settings.theme === 'string') {
             state.settings.theme = settings.theme;
           }
-          state.settings.readerFont = BookstrTypography.normalizeFont(settings.readerFont);
-          state.settings.readerAlignment = BookstrTypography.normalizeAlignment(settings.readerAlignment);
+          state.settings.readerFont = BookstrTypography.normalizeFont(settings.readerFont || settings.readerFontFamily);
+          state.settings.readerAlignment = BookstrTypography.normalizeAlignment(
+            settings.readerAlignment || (settings.readerTextAlign === 'justify' ? 'justified' : settings.readerTextAlign),
+          );
+          const readerFontPercent = Number(settings.readerFontPercent);
+          if (Number.isFinite(readerFontPercent)) {
+            state.settings.readerFontPercent = Math.max(75, Math.min(180, readerFontPercent));
+          }
+          if (typeof settings.speechVoiceEnglish === 'string') {
+            state.settings.speechVoiceEnglish = settings.speechVoiceEnglish;
+          }
+          if (typeof settings.speechVoicePortuguese === 'string') {
+            state.settings.speechVoicePortuguese = settings.speechVoicePortuguese;
+          }
+          const speechRate = Number(settings.speechRate);
+          if (Number.isFinite(speechRate)) {
+            state.settings.speechRate = Math.max(0.73, Math.min(1.25, speechRate));
+          }
           state.settings.opdsFeeds = normalizePublicOPDSFeedSettings(settings.opdsFeeds);
         }
+        state.settings.theme = localAppearance() || state.settings.theme;
         if (nip7 && typeof nip7.pubkey === 'string') {
           state.nip7.pubkey = nip7.pubkey;
         }
@@ -6608,8 +7169,13 @@
         themeModeInput.value = ['white', 'paper', 'dark'].includes(state.settings.theme) ? state.settings.theme : 'white';
         readerFontInput.value = state.settings.readerFont;
         readerAlignmentInput.value = state.settings.readerAlignment;
+        readerFontSizeInput.value = String(state.settings.readerFontPercent);
+        speechRateInput.value = String(state.settings.speechRate);
+        refreshSpeechVoiceMenus();
+        updateReaderSettingLabels();
         opdsFeedsInput.value = opdsFeedInputValue();
         applyTheme(themeModeInput.value);
+        saveLocalAppearance(state.settings.theme);
         renderFavorites();
         renderReading();
         renderWords();
@@ -6786,6 +7352,16 @@
         document.body.classList.add(`theme-${normalized}`);
       }
 
+      function localAppearance() {
+        const saved = localStorage.getItem(LOCAL_APPEARANCE_KEY);
+        return ['white', 'paper', 'dark'].includes(saved) ? saved : '';
+      }
+
+      function saveLocalAppearance(theme) {
+        const normalized = ['white', 'paper', 'dark'].includes(theme) ? theme : 'white';
+        localStorage.setItem(LOCAL_APPEARANCE_KEY, normalized);
+      }
+
       function applyOpenReaderTypography() {
         const win = readerFrame?.contentWindow;
         if (typeof win?.setReaderTypography !== 'function') return;
@@ -6882,10 +7458,18 @@
         state.settings.theme = themeModeInput.value;
         state.settings.readerFont = BookstrTypography.normalizeFont(readerFontInput.value);
         state.settings.readerAlignment = BookstrTypography.normalizeAlignment(readerAlignmentInput.value);
+        state.settings.readerFontPercent = Number(readerFontSizeInput.value);
+        state.settings.speechVoiceEnglish = speechVoiceEnglishInput.value;
+        state.settings.speechVoicePortuguese = speechVoicePortugueseInput.value;
+        state.settings.speechRate = Number(speechRateInput.value);
+        updateReaderSettingLabels();
+        saveLocalAppearance(state.settings.theme);
         saveOPDSFeedSettingsFromUI();
         applyTheme(state.settings.theme);
         applyOpenReaderTypography();
         localStorage.setItem(SETTINGS_KEY, JSON.stringify(state.settings));
+        localStorage.setItem('bookstr-reader-font-percent', String(state.settings.readerFontPercent));
+        notifyOpenReaderSettings();
         if (previousOPDSFeeds !== JSON.stringify(state.settings.opdsFeeds)) {
           renderSearchSources();
           if (state.settings.useNip7 && state.nip7.pubkey) queueFavoriteSync();
@@ -7066,6 +7650,13 @@
       themeModeInput.addEventListener('change', applySettingsFromUI);
       readerFontInput.addEventListener('change', applySettingsFromUI);
       readerAlignmentInput.addEventListener('change', applySettingsFromUI);
+      readerFontSizeInput.addEventListener('input', applySettingsFromUI);
+      speechVoiceEnglishInput.addEventListener('change', applySettingsFromUI);
+      speechVoicePortugueseInput.addEventListener('change', applySettingsFromUI);
+      speechRateInput.addEventListener('input', applySettingsFromUI);
+      if (window.speechSynthesis) {
+        window.speechSynthesis.addEventListener?.('voiceschanged', refreshSpeechVoiceMenus);
+      }
       opdsFeedsInput.addEventListener('change', applySettingsFromUI);
 
       searchForm.addEventListener('submit', (event) => {

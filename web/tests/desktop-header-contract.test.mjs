@@ -11,5 +11,5 @@ test('Electron gets a polished toolbar with larger top controls', () => {
   assert.match(html, /body\.desktop-mode \.header-tab\s*\{[\s\S]*?width:\s*2\.1rem;[\s\S]*?height:\s*2\.1rem/);
   assert.match(html, /body\.desktop-mode \.header-tab svg\s*\{[\s\S]*?width:\s*1\.28rem;[\s\S]*?height:\s*1\.28rem/);
   assert.match(html, /body\.desktop-mode \.brand-mark\s*\{[\s\S]*?width:\s*2\.65rem;[\s\S]*?height:\s*2\.65rem/);
-  assert.match(html, /if \(isDesktopMode\) document\.querySelector\('\.brand-mark'\)\.src = 'public\/apple-touch-icon\.png'/);
+  assert.match(html, /if \(isDesktopMode\) \{[\s\S]*?const brandMark = document\.querySelector\('\.brand-mark'\);[\s\S]*?brandMark\.src = 'public\/apple-touch-icon\.png';[\s\S]*?brandMark\.alt = 'libstr'/);
 });

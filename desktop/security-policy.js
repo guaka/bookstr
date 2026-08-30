@@ -9,7 +9,7 @@ function appContentSecurityPolicy(nonce = '') {
     `script-src 'self' 'wasm-unsafe-eval'${nonceSource};`,
     "style-src 'self' 'unsafe-inline';",
     "worker-src 'self' blob:;",
-    "frame-src 'none';",
+    "frame-src 'self' app:;",
     "object-src 'none';",
   ].join(' ');
 }

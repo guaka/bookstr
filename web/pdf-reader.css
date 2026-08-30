@@ -37,6 +37,12 @@ body[data-theme="night"] {
   box-shadow: 0 1px 5px #0004;
 }
 
+.reader-mark { width: 1.45rem; height: 1.45rem; flex: 0 0 auto; }
+.reader-menu { position: relative; }
+#reader-menu { position: absolute; z-index: 5; top: 2.35rem; right: 0; min-width: 8rem; padding: .35rem; border: 1px solid color-mix(in srgb, var(--text) 25%, transparent); border-radius: .45rem; background: var(--toolbar); box-shadow: 0 .5rem 1.5rem #0005; }
+#reader-menu[hidden] { display: none; }
+#reader-menu button { display: block; width: 100%; border: 0; text-align: left; }
+
 .toolbar strong {
   overflow: hidden;
   flex: 1 1 auto;

@@ -27,7 +27,7 @@ const title = document.getElementById('title');
 const pageCount = document.getElementById('page-count');
 const zoomLabel = document.getElementById('zoom-label');
 const download = document.getElementById('download');
-const desktopBridge = window.bookstrDesktop || null;
+const desktopBridge = window.bookstrDesktop || window.parent?.bookstrDesktop || null;
 const pdfSpeechControls = document.getElementById("pdf-speech-controls");
 const pdfSpeechPlayButton = document.getElementById("pdf-speech-play");
 const pdfSpeechPauseButton = document.getElementById("pdf-speech-pause");
@@ -45,6 +45,28 @@ let pageObserver = null;
 let pdfSpeechState = "stopped";
 let pdfSpeechCollectionSession = 0;
 let pdfSpeechPlayer = null;
+let currentPdfReaderSettings = readPdfReaderSettings();
+
+function readPdfReaderSettings() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem('bookstr_reader_settings_v1') || '{}');
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch (_) {
+    return {};
+  }
+}
+
+function selectedPdfSpeechVoice(language) {
+  const normalized = String(language || '').toLowerCase();
+  return normalized === 'pt' || normalized.startsWith('pt-')
+    ? String(currentPdfReaderSettings.speechVoicePortuguese || '')
+    : String(currentPdfReaderSettings.speechVoiceEnglish || '');
+}
+
+window.applyReaderSettings = function(settings = readPdfReaderSettings()) {
+  currentPdfReaderSettings = settings && typeof settings === 'object' ? { ...settings } : {};
+  if (pdfSpeechState !== 'stopped') stopPdfSpeech();
+};
 
 function normalizePdfPageProgress(page, totalPages) {
   const safePage = Number(page) || 1;
@@ -52,6 +74,13 @@ function normalizePdfPageProgress(page, totalPages) {
   if (safeTotal <= 1) return 1;
   const normalized = (safePage - 1) / (safeTotal - 1);
   return Math.max(0, Math.min(1, normalized));
+}
+
+function pdfPageFromLocator(locator, totalPages) {
+  const match = String(locator || '').trim().match(/^page:(\d+)$/i);
+  const requested = match ? Number(match[1]) : 1;
+  const total = Math.max(1, Number(totalPages) || 1);
+  return Math.max(1, Math.min(total, Number.isFinite(requested) ? Math.floor(requested) : 1));
 }
 
 function clampProgress(value) {
@@ -130,7 +159,11 @@ async function startPdfSpeech() {
     setPdfSpeechState("stopped");
     return;
   }
-  pdfSpeechPlayer.start(plan, { language: plan.language, rate: 1 });
+  pdfSpeechPlayer.start(plan, {
+    language: plan.language,
+    rate: Number(currentPdfReaderSettings.speechRate) || 1,
+    voiceIdentifier: selectedPdfSpeechVoice(plan.language),
+  });
 }
 
 function pausePdfSpeech() {
@@ -167,6 +200,7 @@ function normalizeDesktopReaderPayload(payload) {
   return {
     base64,
     theme: String(payload.theme || "white").toLowerCase(),
+    initialCfi: String(payload.initialCfi || payload.cfi || ""),
     readUrl: String(payload.readUrl || ""),
     book: normalizeDesktopBookMetadata(payload.book),
     filename: String(payload.filename || (payload.book && (payload.book.title || payload.book.name) ? `${String(payload.book.title || payload.book.name)}.pdf` : "Book.pdf"))
@@ -175,10 +209,12 @@ function normalizeDesktopReaderPayload(payload) {
 }
 
 function reportPdfProgress(pageNumber) {
-  if (!activePdfBook?.md5 || !desktopBridge?.reportProgress || !pdf || !Number.isFinite(pageNumber)) return;
+  if (!activePdfBook?.md5 || !pdf || !Number.isFinite(pageNumber)) return;
   const progression = normalizePdfPageProgress(pageNumber, pdf.numPages);
   const furthest = Math.max(pdfFurthestProgress, progression);
   const payload = {
+    type: 'bookstr-reader-progress',
+    bookId: activePdfBook.md5,
     md5: activePdfBook.md5,
     readUrl: String(activePdfBook.readUrl || ""),
     progression: clampProgress(progression),
@@ -197,7 +233,11 @@ function reportPdfProgress(pageNumber) {
   };
   pdfFurthestProgress = payload.furthestProgression;
   latestPdfProgress = payload;
-  desktopBridge.reportProgress(payload);
+  if (window.parent && window.parent !== window) {
+    window.parent.postMessage(payload, window.location.origin);
+  } else if (desktopBridge?.reportProgress) {
+    desktopBridge.reportProgress(payload);
+  }
 }
 
 function schedulePdfProgress(pageNumber) {
@@ -217,6 +257,7 @@ function handleDesktopOpenReader(payload) {
     theme: normalized.theme,
     book: normalized.book,
     readUrl: normalized.readUrl,
+    initialCfi: normalized.initialCfi,
   });
 }
 
@@ -244,9 +285,9 @@ if (pdfSpeechControls) {
 }
 
 function reportFlushProgress() {
-  if (latestPdfProgress && desktopBridge?.reportProgress) {
-    desktopBridge.reportProgress(latestPdfProgress);
-  }
+  if (!latestPdfProgress) return;
+  if (window.parent && window.parent !== window) window.parent.postMessage(latestPdfProgress, window.location.origin);
+  else if (desktopBridge?.reportProgress) desktopBridge.reportProgress(latestPdfProgress);
 }
 
 function bytesFromBase64(base64) {
@@ -279,7 +320,7 @@ async function renderPage(pageNumber, canvas, generation) {
   }).promise;
 }
 
-async function renderPages() {
+async function renderPages(initialPage = activePdfPage || 1) {
   const generation = ++renderGeneration;
   if (pageObserver) {
     pageObserver.disconnect();
@@ -291,7 +332,6 @@ async function renderPages() {
       if (!entry.isIntersecting) continue;
       const canvas = entry.target.querySelector('canvas');
       void renderPage(Number(entry.target.dataset.page), canvas, generation);
-      schedulePdfProgress(Number(entry.target.dataset.page));
       observer.unobserve(entry.target);
     }
   }, { rootMargin: '900px 0px' });
@@ -306,8 +346,9 @@ async function renderPages() {
   }
   pageObserver = observer;
   zoomLabel.textContent = `${Math.round(zoom * 100)}%`;
-  activePdfPage = 1;
-  reportPdfProgress(1);
+  activePdfPage = pdfPageFromLocator(`page:${initialPage}`, pdf.numPages);
+  pages.querySelector(`[data-page="${activePdfPage}"]`)?.scrollIntoView?.({ block: 'start' });
+  reportPdfProgress(activePdfPage);
 }
 
 window.loadPdf = async ({
@@ -317,6 +358,7 @@ window.loadPdf = async ({
   theme = 'white',
   book = {},
   readUrl = '',
+  initialCfi = '',
 }) => {
   try {
     renderGeneration += 1;
@@ -337,9 +379,9 @@ window.loadPdf = async ({
     downloadUrl = createPdfObjectURL(new Blob([pdfBytes], { type: 'application/pdf' }));
     download.href = downloadUrl;
     download.download = String(filename || 'Book.pdf').replace(/[\\/:*?"<>|]+/g, ' ').trim();
-    await renderPages();
+    await renderPages(pdfPageFromLocator(initialCfi, pdf.numPages));
     message.classList.add('hidden');
-    reportPdfProgress(1);
+    reportPdfProgress(activePdfPage);
   } catch (error) {
     message.textContent = `Could not display PDF: ${error?.message || error}`;
     throw error;
@@ -348,13 +390,26 @@ window.loadPdf = async ({
 
 document.getElementById('zoom-out').addEventListener('click', () => {
   zoom = Math.max(.5, zoom - .15);
-  void renderPages();
+  void renderPages(activePdfPage);
 });
 
 document.getElementById('zoom-in').addEventListener('click', () => {
   zoom = Math.min(2.5, zoom + .15);
-  void renderPages();
+  void renderPages(activePdfPage);
 });
+
+let pdfScrollFrame = 0;
+window.addEventListener('scroll', () => {
+  if (pdfScrollFrame || !pdf) return;
+  pdfScrollFrame = requestAnimationFrame(() => {
+    pdfScrollFrame = 0;
+    const nearest = [...pages.querySelectorAll('[data-page]')]
+      .map(node => ({ node, distance: Math.abs(Number(node.getBoundingClientRect?.().top || 0)) }))
+      .sort((left, right) => left.distance - right.distance)[0]?.node;
+    const pageNumber = Number(nearest?.dataset?.page || 0);
+    if (pageNumber) schedulePdfProgress(pageNumber);
+  });
+}, { passive: true });
 
 window.addEventListener('beforeunload', () => {
   stopPdfSpeech();
@@ -377,6 +432,7 @@ window.addEventListener("visibilitychange", function() {
 if (typeof globalThis !== 'undefined') {
   globalThis.PdfReaderTest = {
     normalizePdfPageProgress,
+    pdfPageFromLocator,
     clampProgress,
     setPdfSpeechState,
     hasPdfSpeechSupport,

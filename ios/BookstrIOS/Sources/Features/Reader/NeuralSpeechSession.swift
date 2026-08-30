@@ -47,7 +47,6 @@ enum NeuralSpeechInput {
         return phrases.isEmpty ? [text] : phrases
     }
 }
-
 enum NeuralSpeechAudio {
     static func trimTrailingSilence(
         _ samples: [Float],
@@ -415,4 +414,3 @@ final class NeuralSpeechSession {
         completion?(.failure(error))
     }
 }
-

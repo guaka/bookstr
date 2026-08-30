@@ -311,6 +311,8 @@
     const available = [];
     if (source.includes('gutenberg') || /^gutenberg:\d+$/i.test(String(book?.md5 || '')) || /\/api\/books\/\d+(?:\/download)?(?:\?|$)/i.test(readUrl)) available.push('Gutenberg');
     if (book?.blossomUrl || book?.blossomSha256 || source.includes('blossom')) available.push('Blossom');
+    if (readUrl && source.includes('internet-archive')) available.push('Internet Archive');
+    if (readUrl && source === 'oapen') available.push('OAPEN');
     if (!available.length) available.push('Metadata only');
     if (isCached) available.push('Cached');
     return [...new Set(available)];

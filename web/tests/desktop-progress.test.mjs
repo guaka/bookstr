@@ -5,13 +5,32 @@ import test from 'node:test';
 import vm from 'node:vm';
 
 const require = createRequire(import.meta.url);
-const { clampProgress, normalizeProgressPayload } = require('../desktop-progress.js');
+const { clampProgress, isProgressAhead, progressPosition, normalizeProgressPayload } = require('../desktop-progress.js');
 
 test('clamps desktop progress values into the reader range', () => {
   assert.equal(clampProgress('bad'), 0);
   assert.equal(clampProgress(-0.1), 0);
   assert.equal(clampProgress('0.4'), 0.4);
   assert.equal(clampProgress(4), 1);
+});
+
+test('compares remote reading positions by furthest progress, then current progress', () => {
+  assert.deepEqual(progressPosition({ progression: 0.4, furthestProgression: 0.7 }), {
+    progression: 0.4,
+    furthestProgression: 0.7,
+  });
+  assert.equal(isProgressAhead(
+    { progression: 0.5, furthestProgression: 0.8 },
+    { progression: 0.7, furthestProgression: 0.7 },
+  ), true);
+  assert.equal(isProgressAhead(
+    { progression: 0.5, furthestProgression: 0.8 },
+    { progression: 0.6, furthestProgression: 0.8 },
+  ), false);
+  assert.equal(isProgressAhead(
+    { progression: 0.7, furthestProgression: 0.8 },
+    { progression: 0.6, furthestProgression: 0.8 },
+  ), true);
 });
 
 test('main-process profile keeps Electron transport strict and preserves its values', () => {

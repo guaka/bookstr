@@ -311,7 +311,20 @@ test('speech planner caps input at a whole-word boundary and normalizes locales'
   assert.equal(BookstrSpeech.normalizeLocale(''), 'en');
 });
 
-function playerHarness() {
+test('speech voice selection only uses an explicitly chosen installed voice', () => {
+  const voices = [
+    { name: 'Kokoro Heart', voiceURI: 'com.example.kokoro.heart', lang: 'en-US', localService: true },
+    { name: 'Tugão', voiceURI: 'org.piper.pt-PT-tugao', lang: 'pt-PT', localService: true },
+  ];
+
+  assert.equal(BookstrSpeech.selectVoice(voices, 'en', ''), null);
+  assert.equal(BookstrSpeech.selectVoice(voices, 'en', 'com.example.kokoro.heart'), voices[0]);
+  assert.equal(BookstrSpeech.selectVoice(voices, 'pt', 'tugão'), voices[1]);
+  assert.equal(BookstrSpeech.selectVoice(voices, 'en', 'tugão'), null);
+  assert.equal(BookstrSpeech.selectVoice(voices, 'pt', 'missing voice'), null);
+});
+
+function playerHarness({ voices = [] } = {}) {
   let clock = 1000;
   let nextTimerID = 1;
   const timers = new Map();
@@ -325,6 +338,7 @@ function playerHarness() {
     cancel() { this.cancelCalls += 1; },
     pause() { this.pauseCalls += 1; },
     resume() { this.resumeCalls += 1; },
+    getVoices() { return voices; },
   };
   class Utterance {
     constructor(text) {
@@ -365,7 +379,8 @@ function playerHarness() {
 }
 
 test('speech player speaks sequential chunks with language and timed pauses', () => {
-  const harness = playerHarness();
+  const kokoro = { name: 'Kokoro Heart', voiceURI: 'kokoro-heart', lang: 'en-US' };
+  const harness = playerHarness({ voices: [kokoro] });
   const plan = {
     chunks: [
       { text: 'First.', start: 0, pauseMs: 0 },
@@ -374,11 +389,12 @@ test('speech player speaks sequential chunks with language and timed pauses', ()
     ],
   };
 
-  assert.equal(harness.player.start(plan, { language: 'pt', rate: 1 }), true);
+  assert.equal(harness.player.start(plan, { language: 'pt', rate: 1, voiceIdentifier: 'kokoro-heart' }), true);
   assert.equal(harness.player.state, 'playing');
   assert.equal(harness.spoken[0].text, 'First.');
   assert.equal(harness.spoken[0].lang, 'pt-PT');
   assert.equal(harness.spoken[0].rate, 1);
+  assert.equal(harness.spoken[0].voice, undefined, 'a mismatched English voice is not used for Portuguese');
 
   harness.spoken[0].onend();
   assert.equal(harness.spoken.length, 1);
