@@ -288,6 +288,13 @@ final class ReaderAssetContractTests: XCTestCase {
         XCTAssertTrue(html.contains("AndroidBridge.onKnownWordTapped(normalized);"))
     }
 
+    func testReaderForwardsSavedWordAndMarkTapsToNativeBridge() throws {
+        let html = try bundledReaderHTML()
+
+        XCTAssertTrue(html.contains("AndroidBridge.onSavedHighlightTapped(JSON.stringify({ kind: resolvedKind, locator: cfi }));"))
+        XCTAssertTrue(html.contains("activeReaderHighlights[group].includes(cfi)"))
+    }
+
     func testReaderUsesPinchToResizeFontLikeAndroid() throws {
         let html = try bundledReaderHTML()
 

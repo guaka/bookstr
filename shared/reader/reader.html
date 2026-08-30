@@ -891,7 +891,14 @@
       const colors = readerHighlightPalette()[resolvedKind];
       try {
         rendition.annotations.highlight(
-          cfi, {}, null, "bookstr-" + resolvedKind + "-highlight",
+          cfi, {}, function(event) {
+            const group = resolvedKind === "mark" ? "marks" : "words";
+            if (!activeReaderHighlights[group].includes(cfi) || !window.AndroidBridge ||
+                !AndroidBridge.onSavedHighlightTapped) return;
+            if (event && event.preventDefault) event.preventDefault();
+            if (event && event.stopPropagation) event.stopPropagation();
+            AndroidBridge.onSavedHighlightTapped(JSON.stringify({ kind: resolvedKind, locator: cfi }));
+          }, "bookstr-" + resolvedKind + "-highlight",
           { fill: colors.fill, "fill-opacity": colors.opacity }
         );
       } catch (error) { console.warn("Could not highlight word", error); }
@@ -1084,6 +1091,7 @@
       if (contentDocument.__bookstrKnownWordNavigation) return;
       contentDocument.__bookstrKnownWordNavigation = true;
       contentDocument.addEventListener("click", function(event) {
+        if (event.target && event.target.closest && event.target.closest(".bookstr-mark-highlight")) return;
         const selection = contentDocument.defaultView.getSelection();
         if (selection && selection.toString().trim()) return;
         let range = null;

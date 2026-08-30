@@ -30,6 +30,12 @@ test('word and mark highlights stay distinct and readable in every reader theme'
   assert.match(reader, /Array\.isArray\(parsed\) \? \{ words: parsed, marks: \[\] \}/);
 });
 
+test('saved word and mark annotations navigate back to their list entries when tapped', () => {
+  assert.match(reader, /AndroidBridge\.onSavedHighlightTapped\(JSON\.stringify\(\{ kind: resolvedKind, locator: cfi \}\)\)/);
+  assert.match(reader, /activeReaderHighlights\[group\]\.includes\(cfi\)/);
+  assert.match(reader, /event\.target\.closest\("\.bookstr-mark-highlight"\)/);
+});
+
 test('dictionary results remain attached when the user adds the shown word', () => {
   assert.match(reader, /activeDictionary = Object\.assign\(\{\}, activeDictionary, payload\);/);
   assert.match(reader, /AndroidBridge\.onWordSelected\(JSON\.stringify\(activeDictionary\)\);/);

@@ -861,6 +861,7 @@ struct EPUBReaderView: UIViewRepresentable {
         onDictionaryResult: value => send('onDictionaryResult', value),
         onLookupDictionary: value => send('onLookupDictionary', value),
         onKnownWordTapped: value => send('onKnownWordTapped', value),
+        onSavedHighlightTapped: value => send('onSavedHighlightTapped', value),
         onReaderInteracted: () => send('onReaderInteracted', null),
         onSpeechText: value => send('onSpeechText', value)
         ,onReaderStage: value => send('onReaderStage', value)
@@ -1087,6 +1088,7 @@ struct EPUBReaderView: UIViewRepresentable {
             case "onTextSelected": handleTextSelection(value as? String)
             case "onSearchResults": handleSearchResults(value as? String)
             case "onKnownWordTapped": requestKnownWord(value as? String)
+            case "onSavedHighlightTapped": requestSavedHighlight(value as? String)
             case "onLookupDictionary": lookupDictionary(value as? String)
             case "onDictionaryResult": saveDictionaryResult(value as? String)
             case "onSpeechText": handleSpeech(value as? String)
@@ -1382,6 +1384,18 @@ struct EPUBReaderView: UIViewRepresentable {
                 NotificationCenter.default.post(name: .bookstrVocabularyDidChange, object: nil)
             }
             container.wordNavigation.request(word: word)
+        }
+
+        private func requestSavedHighlight(_ json: String?) {
+            guard let item = object(from: json),
+                  let kindValue = item["kind"] as? String,
+                  let kind = ReaderHighlightKind(rawValue: kindValue)
+            else { return }
+            container.wordNavigation.request(
+                kind: kind,
+                locator: item["locator"] as? String ?? "",
+                text: item["text"] as? String ?? ""
+            )
         }
 
         private func lookupDictionary(_ json: String?) {
