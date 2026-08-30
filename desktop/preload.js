@@ -268,6 +268,20 @@ const desktopBridge = {
       return ipcRenderer.invoke('bookstr-desktop-library-open-reader', bookId);
     },
   },
+  devices: {
+    status() {
+      return ipcRenderer.invoke('bookstr-desktop-device-status');
+    },
+    announce(options = {}) {
+      return ipcRenderer.invoke('bookstr-desktop-device-announce', options);
+    },
+    createEnvelope(request) {
+      return ipcRenderer.invoke('bookstr-desktop-device-create-envelope', request);
+    },
+    openEnvelope(request) {
+      return ipcRenderer.invoke('bookstr-desktop-device-open-envelope', request);
+    },
+  },
   transfers: {
     status() {
       return ipcRenderer.invoke('bookstr-desktop-transfer-status');

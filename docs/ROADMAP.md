@@ -33,10 +33,12 @@ clients on the same contracts.
       failover ordering.
 - [x] Device registry mutation, presence/request builders, and authorization
       checks for the private pairing control plane.
+- [x] Electron pairing adapter with encrypted device-key persistence when the
+      OS keyring is available, and session-only behavior otherwise.
 
 ## Remaining implementation slices
 
-1. **Platform pairing adapters.** Wire the shared device contract to each
+1. **Mobile/web pairing adapters.** Wire the shared device contract to each
    platform's Nostr signer, relay pool, and secure device-key storage.
 2. **Optional public metadata.** Add rights-gated, operator-opt-in NIP-94
    publication only after the local verification path is stable.

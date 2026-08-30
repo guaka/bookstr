@@ -25,6 +25,7 @@ const { WebTorrentBridge } = require('./webtorrent-bridge');
 const { LibraryStore } = require('./library-store');
 const { LibraryImporter } = require('./library-import');
 const { AcquisitionManager } = require('./acquisition-manager');
+const { ElectronDevicePairing } = require('./device-pairing');
 
 const PRELOAD_PATH = path.join(__dirname, 'preload.js');
 const WEB_ROOT = path.join(__dirname, '..', 'web');
@@ -150,6 +151,7 @@ let libraryDataDir = '';
 let libraryStore = null;
 let libraryImporter = null;
 let acquisitionManager = null;
+let devicePairing = null;
 
 function isRecord(value) {
   return value && typeof value === 'object' && !Array.isArray(value);
@@ -197,6 +199,25 @@ function getAcquisitionManager() {
     });
   }
   return acquisitionManager;
+}
+
+function getDevicePairing() {
+  if (!devicePairing) {
+    devicePairing = new ElectronDevicePairing({
+      loadState,
+      saveState,
+      safeStorage,
+      loadTools: loadNostrTools,
+      accountPublicKey: resolveNostrSignerPublicKey,
+      decryptForAccount: async (pubkey, ciphertext) => {
+        if (await resolveNostrAuthMode() === 'nip46') return (await resolveNip46Signer()).nip44Decrypt(pubkey, ciphertext);
+        const tools = await loadNostrTools();
+        return decryptWithNip44(tools, ciphertext, await resolveNostrSignerSecret(), pubkey);
+      },
+      relays: NIP46_CONNECTION_RELAYS,
+    });
+  }
+  return devicePairing;
 }
 
 function normalizeHex(value) {
@@ -1136,6 +1157,16 @@ function setupIpcHandlers() {
       },
     });
     return result;
+  });
+  ipcMain.handle('bookstr-desktop-device-status', () => getDevicePairing().status());
+  ipcMain.handle('bookstr-desktop-device-announce', (_event, options) => getDevicePairing().announce(isRecord(options) ? options : {}));
+  ipcMain.handle('bookstr-desktop-device-create-envelope', (_event, request) => {
+    if (!isRecord(request) || !request.recipientPubkey || !isRecord(request.message)) throw new Error('Invalid device envelope request.');
+    return getDevicePairing().createEnvelope(request.recipientPubkey, request.message, { now: request.now, ttl: request.ttl });
+  });
+  ipcMain.handle('bookstr-desktop-device-open-envelope', (_event, request) => {
+    if (!isRecord(request) || !isRecord(request.wrapped) || !request.senderPubkey || !isRecord(request.registry)) throw new Error('Invalid device envelope response.');
+    return getDevicePairing().openEnvelope(request.wrapped, { senderPubkey: request.senderPubkey, registry: request.registry, now: request.now });
   });
   ipcMain.handle('bookstr-desktop-library-downloads', () => getLibraryStore().downloads());
   ipcMain.handle('bookstr-desktop-library-set-download', (_event, download) => getLibraryStore().setDownload(download));
