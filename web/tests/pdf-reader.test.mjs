@@ -361,6 +361,8 @@ test('pdf-reader supports desktop payload normalization, rendering, and speech c
   assert.equal(readerPayload.base64, 'VGVzdC1wZGY=');
   assert.equal(PdfReaderTest.pdfPageFromLocator('page:2', 3), 2);
   assert.equal(PdfReaderTest.pdfPageFromLocator('page:99', 3), 3);
+  assert.equal(PdfReaderTest.pdfPageFromLocator('', 0), 1);
+  assert.equal(PdfReaderTest.pdfPageFromLocator('not-a-page', 3), 1);
 
   const fallbackPayload = PdfReaderTest.normalizeDesktopReaderPayload({
     base64: 'VGVzdA==',
@@ -417,6 +419,7 @@ test('pdf-reader supports desktop payload normalization, rendering, and speech c
 
   const progressBeforeScroll = env.progress.length;
   env.window.__triggers.trigger('scroll');
+  env.window.__triggers.trigger('scroll');
   await new Promise(resolve => setTimeout(resolve, 0));
   assert.equal(env.progress.length > progressBeforeScroll, true);
 
@@ -462,6 +465,22 @@ test('pdf-reader supports desktop payload normalization, rendering, and speech c
   assert.equal(parentProgress.at(-1).payload.type, 'bookstr-reader-progress');
   assert.equal(parentProgress.at(-1).origin, 'app://bookstr');
   env.window.parent = env.window;
+  const bridgeProgressBeforePageHide = env.progress.length;
+  env.window.__triggers.trigger('pagehide');
+  assert.equal(env.progress.length, bridgeProgressBeforePageHide + 1);
+
+  env.window.applyReaderSettings(null);
+  env.window.applyReaderSettings();
+  env.window.applyReaderSettings({ speechRate: 0, speechVoicePortuguese: 'portuguese-voice' });
+  await env.window.loadPdf({
+    ...prepared,
+    book: { ...prepared.book, language: 'pt-PT' },
+  });
+  env.controls.play.click();
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert.equal(env.speech.lastOptions.rate, 1);
+  assert.equal(env.speech.lastOptions.voiceIdentifier, 'portuguese-voice');
+  env.controls.stop.click();
 
   assert.equal(env.controls.play.disabled, false);
   assert.equal(env.controls.pause.disabled, true);
