@@ -16,17 +16,16 @@ a competing wire format.
 | --- | --- | --- | --- | --- |
 | `5` | NIP-09 | Implemented on Bookstr web | Request deletion of saved-vocabulary events | Yes |
 | `30003` | NIP-51 | Favorites implemented; compact collections planned | Private Favorites, named book collections, indexes, and chunks | Yes |
-| `30078` | NIP-78 | Implemented; device registry contract added | Reading progress, private saved vocabulary, snippets, and encrypted device authorization | Yes |
+| `30078` | NIP-78 | Implemented | Reading progress, private saved vocabulary, and private book snippets | Yes |
 | `24133` | NIP-46 | Implemented through signer libraries | Encrypted remote-signer requests and responses | Yes |
 | `24242` | Blossom authorization | Implemented | Short-lived HTTP authorization for Blossom upload/download | No |
-| `1059` | NIP-17/NIP-59 | Implemented on LibVault server; Bookstr control-plane contract added | Gift-wrapped private fetches, device presence, manifests, and transfer negotiation | Yes |
+| `1059` | NIP-17/NIP-59 | Implemented on LibVault server | Gift-wrapped private book fetch requests and results | Yes |
 | `1063` | NIP-94 | Planned | Public file metadata for a fetched edition | Yes |
 | `17` | NIP-25 | Planned | Public reaction to a book ISBN | Yes |
 | `1111` | NIP-22/NIP-73 | Implemented on Bookstr iOS | Public book snippets anchored to an ISBN | Yes |
 
-Bookstr v1 keeps torrent metadata in encrypted NIP-17 payloads and local
-contracts; it does not publish a custom public torrent kind. NIP-35 and NIP-65
-remain optional future interoperability work.
+Kinds described as planned are not part of the current wire contract. NIP-35
+torrent metadata and NIP-65 relay discovery are also planned, not implemented.
 
 The repository uses these supporting NIPs:
 
@@ -43,9 +42,6 @@ The repository uses these supporting NIPs:
 - **NIP-55** for Android communication with an external signer such as Amber.
 - **NIP-73** for ISBN identity tags.
 - **NIP-78** for Bookstr application data.
-
-Bookstr file bytes do not travel through Nostr. WebTorrent carries the bytes;
-Nostr carries identity, private discovery, and negotiation only.
 
 ## Identity and signer boundaries
 
@@ -116,43 +112,6 @@ and `d` tag before treating it as the requested record.
 The same signed application event may be sent to multiple configured relays.
 Relay failure must not discard successfully loaded local or remote data from
 another source.
-
-## Bookstr device and transfer control plane
-
-Bookstr uses one Nostr account across devices. Each installation generates a
-separate device key and records its encrypted authorization in the owner's
-NIP-78 event:
-
-- kind `30078`
-- `d`: `app.bookstr.devices.v1`
-- content: NIP-44 ciphertext containing `{version: 1, devices: [...]}`
-- each device entry contains an opaque `device_id`, public key, platform,
-  display name, capabilities, `created_at`, `last_seen`, and `revoked_at`
-
-The event is replaceable and self-encrypted. A revoked device is ignored even
-if it still has a valid relay session. Device private keys are stored only in
-the platform's secure storage.
-
-Presence, library browsing, and transfer negotiation use NIP-17 gift wraps
-between authorized device keys. The decrypted rumor `content` is a small JSON
-message with one of these types:
-
-| Type | Required fields | Meaning |
-| --- | --- | --- |
-| `bookstr.device.announce` | `version`, `device_id`, `expires_at` | Short-lived online presence; includes no inventory |
-| `bookstr.library.manifest.request` | `request_id`, `cursor`, `limit` | Ask for an encrypted, paginated remote-library view |
-| `bookstr.library.manifest.page` | `request_id`, `entries`, `next_cursor` | Return metadata and SHA-256 identifiers, never paths |
-| `bookstr.transfer.request` | `request_id`, `sha256`, `size`, `private` | Request one verified edition |
-| `bookstr.transfer.offer` | `request_id`, `sha256`, `infohash`, `expires_at`, `ice` | Offer WebTorrent metadata and ICE candidates |
-| `bookstr.transfer.answer` | `request_id`, `infohash`, `ice` | Return the browser/Electron WebRTC answer |
-
-All IDs, cursors, and SDP/ICE values are opaque and short-lived. A private
-torrent sets `private=1`, has no trackers/DHT/PEX/LSD, and accepts only peers
-authorized by the same account registry. A public torrent uses the shared
-WSS trackers and may bridge Electron's ordinary TCP/uTP peers with browser
-WebRTC peers. Every receiver verifies byte count and complete SHA-256 before
-importing or opening a file. WebTorrent is the data plane; NIP-17 is only its
-private control plane.
 
 ## Private LibVault fetch requests
 
@@ -736,10 +695,6 @@ see the author, kind, event time, approximate payload size, and relay activity.
 
 Books live on HTTP/Blossom storage, not on Nostr relays. Access to the private
 Blossom service uses a signed kind `24242` event encoded in the HTTP header:
-
-This is the legacy LibVault/Bookstr delivery path retained for migration and
-existing publications. New Electron transfers use WebTorrent; the same rights
-and complete-file SHA-256 verification rules apply to either path.
 
 ```text
 Authorization: Nostr <unpadded-base64(JSON-event)>

@@ -10,7 +10,7 @@ does not bundle Transmission or Iroh.
 ## Run locally
 
 ```bash
-cd /Users/k/code/playground/libvault/bookstr/desktop
+cd bookstr/desktop
 npm install
 npm start
 ```
@@ -18,7 +18,7 @@ npm start
 ## Test
 
 ```bash
-cd /Users/k/code/playground/libvault/bookstr/desktop
+cd bookstr/desktop
 npm install
 npm run test
 npm run test:e2e:smoke

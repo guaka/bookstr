@@ -51,6 +51,7 @@
       "dictionary-proxy.js",
       "webtorrent-bridge.js",
       "library-store.js",
+      "library-import.js",
       "main.js",
       "preload.js",
       "security-policy.js",

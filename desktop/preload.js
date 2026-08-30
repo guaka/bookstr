@@ -230,6 +230,9 @@ const desktopBridge = {
     upsertBook(book) {
       return ipcRenderer.invoke('bookstr-desktop-library-upsert-book', book);
     },
+    importBook(options) {
+      return ipcRenderer.invoke('bookstr-desktop-library-import', options);
+    },
     downloads() {
       return ipcRenderer.invoke('bookstr-desktop-library-downloads');
     },

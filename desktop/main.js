@@ -2,6 +2,7 @@ const {
   app,
   BrowserWindow,
   globalShortcut,
+  dialog,
   Menu,
   ipcMain,
   net,
@@ -22,6 +23,7 @@ const { appContentSecurityPolicy } = require('./security-policy');
 const { SpeechModelStore } = require('./speech-model-store');
 const { WebTorrentBridge } = require('./webtorrent-bridge');
 const { LibraryStore } = require('./library-store');
+const { LibraryImporter } = require('./library-import');
 
 const PRELOAD_PATH = path.join(__dirname, 'preload.js');
 const WEB_ROOT = path.join(__dirname, '..', 'web');
@@ -145,6 +147,7 @@ let nip46QrSession = null;
 let torrentBridge = null;
 let libraryDataDir = '';
 let libraryStore = null;
+let libraryImporter = null;
 
 function isRecord(value) {
   return value && typeof value === 'object' && !Array.isArray(value);
@@ -175,6 +178,11 @@ function getLibraryStore() {
     });
   }
   return libraryStore;
+}
+
+function getLibraryImporter() {
+  if (!libraryImporter) libraryImporter = new LibraryImporter({ libraryRoot: libraryDataDir });
+  return libraryImporter;
 }
 
 function normalizeHex(value) {
@@ -1063,6 +1071,46 @@ function setupIpcHandlers() {
   });
   ipcMain.handle('bookstr-desktop-library-book', (_event, bookId) => getLibraryStore().getBook(bookId));
   ipcMain.handle('bookstr-desktop-library-upsert-book', (_event, book) => getLibraryStore().upsertBook(book));
+  ipcMain.handle('bookstr-desktop-library-import', async (_event, request) => {
+    if (!isRecord(request)) throw new Error('Invalid library import request.');
+    const selection = await dialog.showOpenDialog({
+      title: 'Import book into Bookstr',
+      defaultPath: libraryDataDir,
+      properties: ['openFile'],
+      filters: [{ name: 'Books', extensions: ['epub', 'pdf', 'fb2', 'txt'] }, { name: 'All files', extensions: ['*'] }],
+    });
+    if (selection.canceled || !selection.filePaths?.[0]) return null;
+    const expectedSha256 = /^[a-f0-9]{64}$/i.test(String(request.expectedSha256 || ''))
+      ? String(request.expectedSha256).toLowerCase()
+      : undefined;
+    const imported = await getLibraryImporter().importFile(selection.filePaths[0], {
+      extension: request.extension,
+      expectedSha256,
+    });
+    const book = getLibraryStore().upsertBook({
+      ...request,
+      id: request.bookId || imported.sha256,
+      sha256: imported.sha256,
+      extension: imported.extension,
+      filesize_bytes: imported.size,
+      source: request.source || 'local-import',
+    });
+    getLibraryStore().registerLibraryFile({
+      bookId: book.id,
+      relativePath: imported.relativePath,
+      sizeBytes: imported.size,
+      sha256: imported.sha256,
+    });
+    getLibraryStore().setDownload({
+      bookId: book.id,
+      status: 'ready',
+      bytes: imported.size,
+      totalBytes: imported.size,
+      source: 'local-import',
+      relativePath: imported.relativePath,
+    });
+    return { book, imported: { sha256: imported.sha256, size: imported.size, extension: imported.extension } };
+  });
   ipcMain.handle('bookstr-desktop-library-downloads', () => getLibraryStore().downloads());
   ipcMain.handle('bookstr-desktop-library-set-download', (_event, download) => getLibraryStore().setDownload(download));
   ipcMain.handle('bookstr-desktop-library-linked-folders', () => getLibraryStore().linkedFolders());
@@ -1232,7 +1280,6 @@ async function bootstrap() {
 }
 
 app.on('will-quit', () => {
-  globalShortcut.unregister('CommandOrControl+,');
   void torrentBridge?.stop();
   try { libraryStore?.close(); } catch { /* best effort during shutdown */ }
 });
