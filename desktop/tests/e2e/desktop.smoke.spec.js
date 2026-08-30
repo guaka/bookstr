@@ -77,6 +77,7 @@ test('libstr desktop app opens with preload bridge', async () => {
 
     const bridge = await firstWindow.evaluate(() => ({
       version: window.bookstrDesktop?.version,
+      developmentMode: window.bookstrDesktop?.developmentMode,
       hasOpenReader: typeof window.bookstrDesktop?.openReader === 'function',
       hasDesktopSigner: typeof window.bookstrDesktop?.signer?.status === 'function',
       hasSpeechModels: typeof window.bookstrDesktop?.speechModels?.install === 'function',
@@ -84,6 +85,7 @@ test('libstr desktop app opens with preload bridge', async () => {
     }));
 
     expect(bridge.version).toBe(1);
+    expect(bridge.developmentMode).toBe(true);
     expect(bridge.hasOpenReader).toBe(true);
     expect(bridge.hasDesktopSigner).toBe(true);
     expect(bridge.hasSpeechModels).toBe(true);
@@ -267,6 +269,41 @@ test('libstr desktop app opens with preload bridge', async () => {
     expect(localSigner.pubkey).toBe(expectedPubkey);
     expect(localSigner.signed.pubkey).toBe(expectedPubkey);
     expect(verifyEvent(localSigner.signed)).toBe(true);
+  } finally {
+    await electronApp.close();
+  }
+});
+
+test('packaged-mode desktop hides and rejects the social Nostr pane', async () => {
+  const electronApp = await electron.launch({
+    args: electronArgs(),
+    env: {
+      ...process.env,
+      NODE_ENV: 'test',
+      BOOKSTR_DESKTOP_TEST_DEV_MODE: '0',
+    },
+  });
+
+  try {
+    const library = await electronApp.firstWindow();
+    expect(await library.evaluate(() => window.bookstrDesktop.developmentMode)).toBe(false);
+    await expect(library.getByRole('button', { name: 'People, Command 4' })).toBeHidden();
+    expect(await library.evaluate(() => window.bookstrDesktop.openPane('people'))).toBe(false);
+
+    await library.evaluate(() => { window.location.hash = 'people'; });
+    await expect(library).toHaveURL(/#home$/);
+    await expect(library.locator('#home-tab')).toBeVisible();
+    await expect(library.locator('#people-tab')).toBeHidden();
+
+    await library.keyboard.press(shortcut(4));
+    await expect(library.locator('#home-tab')).toBeVisible();
+    const paneLabels = await electronApp.evaluate(({ Menu }) => {
+      const menu = Menu.getApplicationMenu()?.items.find(item => (
+        item.submenu?.items.some(child => child.label === 'Home')
+      ));
+      return menu?.submenu?.items.map(item => item.label).filter(Boolean) || [];
+    });
+    expect(paneLabels).not.toContain('People');
   } finally {
     await electronApp.close();
   }

@@ -5,12 +5,13 @@ const progressCallbacks = new Set();
 const settingsOpenCallbacks = new Set();
 const paneOpenCallbacks = new Set();
 const speechModelProgressCallbacks = new Set();
-const ALLOWED_PANES = new Set(['reading', 'home', 'search', 'people', 'words']);
+const DEVELOPMENT_MODE = process.argv.includes('--bookstr-development-mode');
+const ALLOWED_PANES = new Set(['reading', 'home', 'search', 'words', ...(DEVELOPMENT_MODE ? ['people'] : [])]);
 const PANE_SHORTCUTS = new Map([
   ['1', 'home'],
   ['2', 'reading'],
   ['3', 'search'],
-  ['4', 'people'],
+  ...(DEVELOPMENT_MODE ? [['4', 'people']] : []),
   ['5', 'words'],
 ]);
 
@@ -151,6 +152,7 @@ const desktopSigner = {
 
 const desktopBridge = {
   version: 1,
+  developmentMode: DEVELOPMENT_MODE,
   signer: desktopSigner,
   openReader(payload) {
     return ipcRenderer

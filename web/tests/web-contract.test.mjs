@@ -95,6 +95,18 @@ test('People loads the connected user follow list and public book lists', () => 
   assert.match(html, /setHashRoute\('people'\)/);
 });
 
+test('packaged Electron keeps the social Nostr pane in development mode', async () => {
+  const desktopPackage = JSON.parse(await readFile(new URL('../../desktop/package.json', import.meta.url), 'utf8'));
+  assert.ok(desktopPackage.build.files.includes('development-mode.js'));
+  assert.match(desktopMain, /additionalArguments: DEVELOPMENT_MODE \? \['--bookstr-development-mode'\] : \[\]/);
+  assert.match(desktopMain, /VISIBLE_LIBRARY_PANES = visibleLibraryPanes\(LIBRARY_PANES, DEVELOPMENT_MODE\)/);
+  assert.match(desktopPreload, /developmentMode: DEVELOPMENT_MODE/);
+  assert.match(html, /const socialNostrEnabled = !isDesktopMode \|\| Boolean\(desktopBridge\?\.developmentMode\)/);
+  assert.match(html, /peopleTabBtn\.classList\.toggle\('hidden', !socialNostrEnabled\)/);
+  assert.match(html, /if \(tab === 'people' && !socialNostrEnabled\) tab = 'home'/);
+  assert.match(html, /if \(route === 'people'\)[\s\S]*?if \(!socialNostrEnabled\)[\s\S]*?replaceState\([^\n]*#home/);
+});
+
 test('served web app remains React- and bundle-free', () => {
   assert.doesNotMatch(html, /react(?:-dom)?(?:\.production)?/i);
   assert.doesNotMatch(html, /node_modules|bookstr-dist/i);
@@ -708,7 +720,7 @@ test('desktop pane shortcuts use the constrained preload callback', () => {
   assert.match(desktopMain, /pane: 'search', accelerator: 'CmdOrCtrl\+3'/);
   assert.match(desktopMain, /pane: 'people', accelerator: 'CmdOrCtrl\+4'/);
   assert.match(desktopMain, /pane: 'words', accelerator: 'CmdOrCtrl\+5'/);
-  assert.match(desktopPreload, /const ALLOWED_PANES = new Set\(\['reading', 'home', 'search', 'people', 'words'\]\)/);
+  assert.match(desktopPreload, /const ALLOWED_PANES = new Set\(\['reading', 'home', 'search', 'words', \.\.\.\(DEVELOPMENT_MODE \? \['people'\] : \[\]\)\]\)/);
   assert.match(desktopPreload, /const PANE_SHORTCUTS = new Map/);
   assert.match(desktopPreload, /\['5', 'words'\]/);
   assert.match(html, /onOpenPane\?\.\(\(pane\) => activateTab\(pane, \{ updateHash: true \}\)\)/);

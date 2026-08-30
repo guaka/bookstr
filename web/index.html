@@ -2113,7 +2113,9 @@
       let activeTab = 'home';
       const desktopBridge = window.bookstrDesktop || null;
       const isDesktopMode = Boolean(desktopBridge?.openReader);
+      const socialNostrEnabled = !isDesktopMode || Boolean(desktopBridge?.developmentMode);
       document.body.classList.toggle('desktop-mode', isDesktopMode);
+      peopleTabBtn.classList.toggle('hidden', !socialNostrEnabled);
       if (isDesktopMode) {
         document.title = 'libstr';
         const brandMark = document.querySelector('.brand-mark');
@@ -5874,6 +5876,7 @@
 
       function activateTab(tab, { updateHash = false } = {}) {
         if (tab === 'words' && !hasActiveWords()) tab = 'home';
+        if (tab === 'people' && !socialNostrEnabled) tab = 'home';
         activeTab = ['home', 'search', 'reading', 'words', 'people', 'settings'].includes(tab) ? tab : 'home';
         homeTab.classList.toggle('hidden', activeTab !== 'home');
         searchTab.classList.toggle('hidden', activeTab !== 'search');
@@ -7619,6 +7622,11 @@
           return;
         }
         if (route === 'people') {
+          if (!socialNostrEnabled) {
+            activateTab('home');
+            history.replaceState(null, '', `${window.location.pathname}${window.location.search}#home`);
+            return;
+          }
           activateTab('people');
           return;
         }

@@ -20,6 +20,7 @@ const { proxyCatalogRequest } = require('./catalog-proxy');
 const { proxyDictionaryRequest } = require('./dictionary-proxy');
 const { appContentSecurityPolicy } = require('./security-policy');
 const { SpeechModelStore } = require('./speech-model-store');
+const { isDevelopmentMode, visibleLibraryPanes } = require('./development-mode');
 
 const PRELOAD_PATH = path.join(__dirname, 'preload.js');
 const WEB_ROOT = path.join(__dirname, '..', 'web');
@@ -68,6 +69,12 @@ const LIBRARY_PANES = [
   { label: 'People', pane: 'people', accelerator: 'CmdOrCtrl+4' },
   { label: 'Words', pane: 'words', accelerator: 'CmdOrCtrl+5' },
 ];
+const DEVELOPMENT_MODE = isDevelopmentMode({
+  isPackaged: app.isPackaged,
+  nodeEnv: process.env.NODE_ENV,
+  testOverride: process.env.BOOKSTR_DESKTOP_TEST_DEV_MODE,
+});
+const VISIBLE_LIBRARY_PANES = visibleLibraryPanes(LIBRARY_PANES, DEVELOPMENT_MODE);
 const DICTIONARY_PROXY_BASE_URL = process.env.NODE_ENV === 'test'
   ? process.env.BOOKSTR_DESKTOP_TEST_DICTIONARY_BASE_URL
   : undefined;
@@ -755,6 +762,7 @@ async function createLibraryWindow() {
       sandbox: true,
       preload: PRELOAD_PATH,
       partition: SESSION_PARTITION,
+      additionalArguments: DEVELOPMENT_MODE ? ['--bookstr-development-mode'] : [],
     },
   });
 
@@ -935,7 +943,7 @@ function setupApplicationMenu() {
     {
       label: 'libstr',
       submenu: [
-        ...LIBRARY_PANES.map(({ label, pane, accelerator }) => ({
+        ...VISIBLE_LIBRARY_PANES.map(({ label, pane, accelerator }) => ({
           label,
           accelerator,
           click: () => void openLibraryPane(pane),
@@ -982,7 +990,7 @@ function setupApplicationMenu() {
 
 function setupIpcHandlers() {
   ipcMain.on('bookstr-desktop-pane-shortcut', (_event, pane) => {
-    if (!LIBRARY_PANES.some(item => item.pane === pane)) return;
+    if (!VISIBLE_LIBRARY_PANES.some(item => item.pane === pane)) return;
     openLibraryPane(pane);
   });
 

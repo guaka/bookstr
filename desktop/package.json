@@ -49,6 +49,7 @@
       "blossom-proxy.js",
       "catalog-proxy.js",
       "dictionary-proxy.js",
+      "development-mode.js",
       "main.js",
       "preload.js",
       "security-policy.js",
