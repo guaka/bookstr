@@ -3,6 +3,7 @@
   "private": true,
   "version": "0.1.0",
   "description": "libstr Electron desktop shell",
+  "desktopName": "app.bookstr.desktop.desktop",
   "homepage": "https://github.com/guaka/bookstr",
   "author": {
     "name": "libstr",
@@ -25,8 +26,8 @@
     "predist:all": "npm run check:reader-assets",
     "dist:all": "npm run dist:linux && npm run dist:win && npm run dist:mac",
     "test": "npm run test:unit && npm run test:e2e",
-    "test:unit": "node --experimental-test-coverage --test-coverage-exclude='**/*.test.js' --test-coverage-exclude='**/*.test.mjs' --test tests/unit/*.test.js ../web/tests/desktop-progress.test.mjs ../web/tests/reader-speech.test.mjs ../web/tests/reader-typography.test.mjs",
-    "test:coverage": "node --experimental-test-coverage --test-coverage-exclude='**/*.test.js' --test-coverage-exclude='**/*.test.mjs' --test --test-reporter=tap tests/unit/*.test.js ../web/tests/desktop-progress.test.mjs ../web/tests/reader-speech.test.mjs ../web/tests/reader-typography.test.mjs",
+    "test:unit": "node --experimental-test-coverage --test-coverage-exclude='**/*.test.js' --test-coverage-exclude='**/*.test.mjs' --test tests/unit/*.test.js ../web/tests/desktop-progress.test.mjs ../web/tests/reader-speech.test.mjs ../web/tests/reader-typography.test.mjs ../web/tests/speech-settings.test.mjs",
+    "test:coverage": "node --experimental-test-coverage --test-coverage-exclude='**/*.test.js' --test-coverage-exclude='**/*.test.mjs' --test --test-reporter=tap tests/unit/*.test.js ../web/tests/desktop-progress.test.mjs ../web/tests/reader-speech.test.mjs ../web/tests/reader-typography.test.mjs ../web/tests/speech-settings.test.mjs",
     "test:e2e": "playwright test",
     "test:e2e:smoke": "playwright test tests/e2e/desktop.smoke.spec.js",
     "test:e2e:reader": "playwright test tests/e2e/desktop.reader.spec.js",
@@ -40,7 +41,7 @@
   "build": {
     "appId": "app.bookstr.desktop",
     "productName": "libstr",
-    "icon": "../web/public/apple-touch-icon.png",
+    "icon": "assets/icon-macos.png",
     "files": [
       "../web/**/*",
       "assets/icon-macos.png",
@@ -50,6 +51,7 @@
       "main.js",
       "preload.js",
       "security-policy.js",
+      "speech-model-store.js",
       "package.json"
     ],
     "extraMetadata": {
@@ -73,6 +75,7 @@
       ]
     },
     "win": {
+      "icon": "assets/icon-macos.png",
       "artifactName": "libstr-desktop-${version}-setup-${arch}.exe",
       "signAndEditExecutable": false,
       "target": [
@@ -80,6 +83,13 @@
       ]
     },
     "linux": {
+      "icon": "assets/icon-macos.png",
+      "syncDesktopName": true,
+      "desktop": {
+        "entry": {
+          "StartupWMClass": "app.bookstr.desktop"
+        }
+      },
       "artifactName": "libstr-desktop-${version}-${arch}.AppImage",
       "category": "Office",
       "maintainer": "libstr <support@bookstr.dev>",

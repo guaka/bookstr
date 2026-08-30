@@ -1150,8 +1150,8 @@
       .settings-range .setting-copy { grid-column: 1 / -1; }
       .settings-range input[type="range"] { width: 100%; height: auto; }
       .settings-range output { min-width: 3.2rem; text-align: right; font-variant-numeric: tabular-nums; }
-      .optional-voices-note { margin: 0.45rem 0 0; }
-      .optional-voices-note a { color: var(--reading-progress); }
+      .optional-voices-note { display: flex; flex-wrap: wrap; gap: 0.45rem; margin: 0.45rem 0 0; }
+      .optional-voices-note .speech-model-delete { color: #b42318; border-color: #b42318; }
       .settings-status {
         margin: 0;
         padding: 0.62rem 0.68rem;
@@ -1870,19 +1870,23 @@
           <div class="settings-section desktop-reader-settings settings-speech">
             <h3>Read aloud</h3>
             <label class="setting-option settings-control-row">
-              <span class="setting-copy"><strong>English voice</strong><small>Kokoro appears here after you install it.</small></span>
-              <select id="speech-voice-en" aria-label="English reading voice"></select>
+              <span class="setting-copy"><strong>Language</strong></span>
+              <select id="speech-language" aria-label="Read-aloud language"></select>
             </label>
             <label class="setting-option settings-control-row">
-              <span class="setting-copy"><strong>Portuguese voice</strong><small>Tugão appears here after you install it.</small></span>
-              <select id="speech-voice-pt" aria-label="Portuguese reading voice"></select>
+              <span class="setting-copy"><strong>Voice</strong></span>
+              <select id="speech-voice" aria-label="Reading voice"></select>
             </label>
             <label class="setting-option settings-range">
               <span class="setting-copy"><strong>Speech speed</strong><small>Use a natural pace or tune it to your preference.</small></span>
               <input id="speech-rate" type="range" min="0.73" max="1.25" step="0.01" value="1" />
               <output id="speech-rate-value" for="speech-rate">1.00×</output>
             </label>
-            <p class="meta-note optional-voices-note">Optional voices are never downloaded or selected automatically. <a href="https://github.com/vicnaum/kokoro-tts-macos/releases/latest" target="_blank" rel="noreferrer">Kokoro for English</a> · <a href="https://huggingface.co/rhasspy/piper-voices/tree/main/pt/pt_PT/tug%C3%A3o/medium" target="_blank" rel="noreferrer">Tugão for Portuguese</a></p>
+            <div class="optional-voices-note">
+              <button id="speech-model-kokoro_en" data-language="en" type="button">Download Kokoro</button>
+              <button id="speech-model-piper_pt_pt" data-language="pt" type="button" hidden>Download Tugão</button>
+            </div>
+            <p id="speech-model-status" class="meta-note" role="status" aria-live="polite"></p>
           </div>
           <div class="settings-section settings-nostr">
             <h3>Nostr</h3>
@@ -1961,6 +1965,7 @@
     <script src="blossom-authorization.js"></script>
     <script src="vocabulary-wire.js"></script>
     <script src="reader-typography.js"></script>
+    <script src="speech-settings.js"></script>
     <script src="vendor/sql-wasm.js"></script>
     <script>
       const FAVORITES_KEY = 'bookstr_nostr_favorites_v1';
@@ -2144,10 +2149,12 @@
       const readerAlignmentInput = document.getElementById('reader-alignment');
       const readerFontSizeInput = document.getElementById('reader-font-size');
       const readerFontSizeValue = document.getElementById('reader-font-size-value');
-      const speechVoiceEnglishInput = document.getElementById('speech-voice-en');
-      const speechVoicePortugueseInput = document.getElementById('speech-voice-pt');
+      const speechLanguageInput = document.getElementById('speech-language');
+      const speechVoiceInput = document.getElementById('speech-voice');
       const speechRateInput = document.getElementById('speech-rate');
       const speechRateValue = document.getElementById('speech-rate-value');
+      const speechModelButtons = [...document.querySelectorAll('[id^="speech-model-"]:not(#speech-model-status)')];
+      const speechModelStatus = document.getElementById('speech-model-status');
       const npubButton = document.getElementById('npub-button');
       const npubDisplay = document.getElementById('npub-display');
       const nip7Status = document.getElementById('nip7-status');
@@ -2175,6 +2182,8 @@
           readerFontPercent: 100,
           speechVoiceEnglish: '',
           speechVoicePortuguese: '',
+          speechVoices: {},
+          speechLanguage: 'en',
           speechRate: 1,
           opdsFeeds: []
         },
@@ -3581,6 +3590,20 @@
         homeSyncRefresh.disabled = kind === 'syncing';
       }
 
+      function nostrLibraryRelayNames() {
+        return NOSTR_RELAYS.map(relay => {
+          try {
+            return new URL(relay).host;
+          } catch {
+            return relay;
+          }
+        }).join(', ');
+      }
+
+      function nostrSyncCounts(favorites, reading, words) {
+        return `${favorites.length} favorites · ${reading.length} reading · ${words.length} words`;
+      }
+
       async function syncNostrLibraryFromNip7({ useCache = true } = {}) {
         const pubkey = state.nip7.pubkey;
         if (!state.settings.useNip7 || !pubkey) {
@@ -3589,7 +3612,8 @@
         if (nostrSyncTask) {
           return nostrSyncTask;
         }
-        setHomeSyncState('syncing', 'Syncing…');
+        const relayNames = nostrLibraryRelayNames();
+        setHomeSyncState('syncing', `Fetching ≤10 favorite snapshots, ≤100 reading events and ≤120 word events from ${relayNames}…`);
         const task = (async () => {
           const cached = readNostrSyncCache(pubkey);
           if (useCache && cached && isNostrCacheFresh(cached)) {
@@ -3620,7 +3644,7 @@
             const eventDetail = lastFavoritePullInfo?.id
               ? ` · event ${lastFavoritePullInfo.id.slice(0, 12)}… · ${new Date(lastFavoritePullInfo.createdAt * 1000).toLocaleString()}`
               : '';
-            setHomeSyncState('ready', `${account.slice(0, 16)}…${eventDetail}`);
+            setHomeSyncState('ready', `${nostrSyncCounts(favorites, reading, words)} from ${relayNames} · ${account.slice(0, 16)}…${eventDetail}`);
             return true;
           } catch (error) {
             if (cached) {
@@ -3652,7 +3676,7 @@
       }
 
       homeSyncRefresh.addEventListener('click', async () => {
-        setHomeSyncState('syncing', 'Syncing…');
+        setHomeSyncState('syncing', `Connecting to ${nostrLibraryRelayNames()}…`);
         const connected = await connectNip7({ silent: false, skipSync: true });
         if (connected || state.nip7.pubkey) {
           await syncNostrLibraryFromNip7({ useCache: false });
@@ -4820,6 +4844,7 @@
       }
 
       function renderFavorites() {
+        refreshSpeechVoiceMenus();
         favoritesList.innerHTML = '';
         if (!state.favorites.length) {
           const p = document.createElement('li');
@@ -4845,6 +4870,7 @@
       }
 
       function renderReading() {
+        refreshSpeechVoiceMenus();
         readingList.innerHTML = '';
         if (!state.reading.length) {
           const item = document.createElement('li');
@@ -7029,21 +7055,15 @@
         return window.speechSynthesis.getVoices().filter(voice => voice && (voice.name || voice.voiceURI));
       }
 
-      function populateSpeechVoiceMenu(select, language, preferredLabel, preferredPattern, savedIdentifier) {
+      function preferredSpeechPattern(language) {
+        if (language === 'en') return /kokoro/i;
+        if (language === 'pt') return /tug[aã]o/i;
+        return /$a/;
+      }
+
+      function populateSpeechVoiceMenu(select, language, savedIdentifier) {
         if (!select) return;
-        const languagePrefix = `${language.toLowerCase()}-`;
-        const voices = speechVoices()
-          .filter(voice => {
-            const locale = String(voice.lang || '').replace('_', '-').toLowerCase();
-            return locale === language || locale.startsWith(languagePrefix);
-          })
-          .sort((left, right) => {
-            const leftPreferred = preferredPattern.test(`${left.name} ${left.voiceURI}`) ? 0 : 1;
-            const rightPreferred = preferredPattern.test(`${right.name} ${right.voiceURI}`) ? 0 : 1;
-            return leftPreferred - rightPreferred
-              || Number(Boolean(right.localService)) - Number(Boolean(left.localService))
-              || String(left.name).localeCompare(String(right.name));
-          });
+        const voices = BookstrSpeechSettings.voicesForLanguage(speechVoices(), language, preferredSpeechPattern(language));
         const selected = String(savedIdentifier || '');
         select.replaceChildren(new Option('Best installed voice', ''));
         voices.forEach(voice => {
@@ -7051,12 +7071,6 @@
           const localLabel = voice.localService === false ? 'online' : 'installed';
           select.append(new Option(`${voice.name} · ${voice.lang || language} · ${localLabel}`, identifier));
         });
-        const preferredInstalled = voices.some(voice => preferredPattern.test(`${voice.name} ${voice.voiceURI}`));
-        if (!preferredInstalled) {
-          const option = new Option(`${preferredLabel} · optional download`, `optional:${preferredLabel.toLowerCase()}`);
-          option.disabled = true;
-          select.append(option);
-        }
         if (selected && !voices.some(voice => String(voice.voiceURI || voice.name) === selected)) {
           const option = new Option('Previously selected voice · unavailable', selected);
           option.disabled = true;
@@ -7068,20 +7082,85 @@
       }
 
       function refreshSpeechVoiceMenus() {
-        populateSpeechVoiceMenu(
-          speechVoiceEnglishInput,
-          'en',
-          'Kokoro · English',
-          /kokoro/i,
-          state.settings.speechVoiceEnglish,
-        );
-        populateSpeechVoiceMenu(
-          speechVoicePortugueseInput,
-          'pt',
-          'Tugão · Portuguese (Portugal)',
-          /tug[aã]o/i,
-          state.settings.speechVoicePortuguese,
-        );
+        const displayNames = typeof Intl.DisplayNames === 'function'
+          ? new Intl.DisplayNames([navigator.language || 'en'], { type: 'language' })
+          : null;
+        const bookLanguages = BookMetadata.mergeLibraryState(state.reading, state.favorites)
+          .map(book => BookMetadata.languageForBook(book))
+          .filter(Boolean);
+        const languages = BookstrSpeechSettings.languagesForCodes([...bookLanguages, 'en', 'pt'], displayNames);
+        const requestedLanguage = BookstrSpeechSettings.languageCode(state.settings.speechLanguage || '');
+        speechLanguageInput.replaceChildren();
+        if (!languages.length) {
+          const empty = new Option('No book languages', '');
+          empty.disabled = true;
+          empty.selected = true;
+          speechLanguageInput.append(empty);
+          speechLanguageInput.disabled = true;
+          speechVoiceInput.replaceChildren(new Option('No language-specific voice', ''));
+          speechVoiceInput.disabled = true;
+          updateSpeechModelVisibility();
+          return;
+        }
+        speechLanguageInput.disabled = false;
+        speechVoiceInput.disabled = false;
+        languages.forEach(language => speechLanguageInput.append(new Option(language.label, language.code)));
+        const selectedLanguage = languages.some(language => language.code === requestedLanguage)
+          ? requestedLanguage
+          : languages[0].code;
+        speechLanguageInput.value = selectedLanguage;
+        populateSpeechVoiceMenu(speechVoiceInput, selectedLanguage, BookstrSpeechSettings.savedVoice(state.settings, selectedLanguage));
+        updateSpeechModelVisibility();
+      }
+
+      function speechModelSize(bytes) {
+        return `${Math.round(Number(bytes || 0) / 1_000_000)} MB`;
+      }
+
+      function updateSpeechModelVisibility(clearStatus = true) {
+        const selectedLanguage = BookstrSpeechSettings.languageCode(speechLanguageInput.value);
+        speechModelButtons.forEach(button => {
+          button.hidden = button.dataset.language !== selectedLanguage;
+        });
+        if (clearStatus) speechModelStatus.textContent = '';
+      }
+
+      async function refreshSpeechModels(models) {
+        const next = Array.isArray(models)
+          ? models
+          : await window.bookstrDesktop?.speechModels?.status?.().catch(() => []);
+        for (const model of next || []) {
+          const button = document.getElementById(`speech-model-${model.id}`);
+          if (!button) continue;
+          button.disabled = Boolean(model.installing);
+          button.dataset.installed = String(Boolean(model.installed));
+          button.classList.toggle('speech-model-delete', Boolean(model.installed));
+          button.textContent = model.installed
+            ? `Delete ${model.label} · ${speechModelSize(model.approximateBytes)}`
+            : model.installing
+              ? `Downloading ${model.label}… ${model.completedFiles}/${model.fileCount}`
+              : `Download ${model.label} · ${speechModelSize(model.approximateBytes)}`;
+        }
+        updateSpeechModelVisibility(false);
+        const visibleError = (next || []).find(model => model.language === speechLanguageInput.value && model.error);
+        speechModelStatus.textContent = visibleError ? `${visibleError.label}: ${visibleError.error}` : '';
+      }
+
+      async function toggleSpeechModel(event) {
+        const button = event.currentTarget;
+        const id = button.id.replace('speech-model-', '');
+        button.disabled = true;
+        speechModelStatus.textContent = '';
+        try {
+          const models = button.dataset.installed === 'true'
+            ? await window.bookstrDesktop.speechModels.remove(id)
+            : await window.bookstrDesktop.speechModels.install(id);
+          await refreshSpeechModels(models);
+          refreshSpeechVoiceMenus();
+        } catch (error) {
+          speechModelStatus.textContent = `Voice download failed: ${error?.message || error}`;
+          await refreshSpeechModels();
+        }
       }
 
       function updateReaderSettingLabels() {
@@ -7149,6 +7228,12 @@
           }
           if (typeof settings.speechVoicePortuguese === 'string') {
             state.settings.speechVoicePortuguese = settings.speechVoicePortuguese;
+          }
+          if (settings.speechVoices && typeof settings.speechVoices === 'object' && !Array.isArray(settings.speechVoices)) {
+            state.settings.speechVoices = { ...settings.speechVoices };
+          }
+          if (typeof settings.speechLanguage === 'string') {
+            state.settings.speechLanguage = BookstrSpeechSettings.languageCode(settings.speechLanguage) || 'en';
           }
           const speechRate = Number(settings.speechRate);
           if (Number.isFinite(speechRate)) {
@@ -7459,8 +7544,8 @@
         state.settings.readerFont = BookstrTypography.normalizeFont(readerFontInput.value);
         state.settings.readerAlignment = BookstrTypography.normalizeAlignment(readerAlignmentInput.value);
         state.settings.readerFontPercent = Number(readerFontSizeInput.value);
-        state.settings.speechVoiceEnglish = speechVoiceEnglishInput.value;
-        state.settings.speechVoicePortuguese = speechVoicePortugueseInput.value;
+        state.settings.speechLanguage = BookstrSpeechSettings.languageCode(speechLanguageInput.value) || 'en';
+        state.settings.speechVoices[state.settings.speechLanguage] = speechVoiceInput.value;
         state.settings.speechRate = Number(speechRateInput.value);
         updateReaderSettingLabels();
         saveLocalAppearance(state.settings.theme);
@@ -7493,6 +7578,7 @@
         settingsReturnFocus = document.activeElement;
         const firstInput = settingsPanel.querySelector('input, button, select, textarea, [tabindex]:not([tabindex="-1"])');
         firstInput?.focus();
+        if (isDesktopMode) void refreshSpeechModels();
 
         if (!isDesktopMode && state.settings.useNip7 && !state.nip7.pubkey) {
           void connectNip7();
@@ -7651,9 +7737,22 @@
       readerFontInput.addEventListener('change', applySettingsFromUI);
       readerAlignmentInput.addEventListener('change', applySettingsFromUI);
       readerFontSizeInput.addEventListener('input', applySettingsFromUI);
-      speechVoiceEnglishInput.addEventListener('change', applySettingsFromUI);
-      speechVoicePortugueseInput.addEventListener('change', applySettingsFromUI);
+      speechLanguageInput.addEventListener('change', () => {
+        state.settings.speechLanguage = speechLanguageInput.value;
+        refreshSpeechVoiceMenus();
+        updateSpeechModelVisibility();
+        applySettingsFromUI();
+      });
+      speechVoiceInput.addEventListener('change', applySettingsFromUI);
       speechRateInput.addEventListener('input', applySettingsFromUI);
+      speechModelButtons.forEach(button => button.addEventListener('click', toggleSpeechModel));
+      window.bookstrDesktop?.speechModels?.onProgress?.(progress => {
+        const button = document.getElementById(`speech-model-${progress.id}`);
+        if (button) button.textContent = `Downloading… ${progress.completedFiles}/${progress.fileCount}`;
+        if (button && !button.hidden) {
+          speechModelStatus.textContent = `${progress.file} · ${speechModelSize(progress.receivedBytes)} / ${speechModelSize(progress.totalBytes)}`;
+        }
+      });
       if (window.speechSynthesis) {
         window.speechSynthesis.addEventListener?.('voiceschanged', refreshSpeechVoiceMenus);
       }

@@ -57,10 +57,10 @@ function readPdfReaderSettings() {
 }
 
 function selectedPdfSpeechVoice(language) {
-  const normalized = String(language || '').toLowerCase();
-  return normalized === 'pt' || normalized.startsWith('pt-')
-    ? String(currentPdfReaderSettings.speechVoicePortuguese || '')
-    : String(currentPdfReaderSettings.speechVoiceEnglish || '');
+  const languageCode = String(language || '').replace('_', '-').toLowerCase().split('-')[0];
+  return String(currentPdfReaderSettings.speechVoices?.[languageCode]
+    || (languageCode === 'pt' ? currentPdfReaderSettings.speechVoicePortuguese : '')
+    || (languageCode === 'en' ? currentPdfReaderSettings.speechVoiceEnglish : ''));
 }
 
 window.applyReaderSettings = function(settings = readPdfReaderSettings()) {

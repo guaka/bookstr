@@ -79,12 +79,14 @@ test('libstr desktop app opens with preload bridge', async () => {
       version: window.bookstrDesktop?.version,
       hasOpenReader: typeof window.bookstrDesktop?.openReader === 'function',
       hasDesktopSigner: typeof window.bookstrDesktop?.signer?.status === 'function',
+      hasSpeechModels: typeof window.bookstrDesktop?.speechModels?.install === 'function',
       hasBrowserNip07: !!window.nostr,
     }));
 
     expect(bridge.version).toBe(1);
     expect(bridge.hasOpenReader).toBe(true);
     expect(bridge.hasDesktopSigner).toBe(true);
+    expect(bridge.hasSpeechModels).toBe(true);
     expect(bridge.hasBrowserNip07).toBe(false);
     expect(await firstWindow.locator('a.app-header-left').count()).toBe(0);
     await expect.poll(() => firstWindow.locator('.brand-mark').evaluate(image => image.complete && image.naturalWidth > 0)).toBe(true);
@@ -137,15 +139,51 @@ test('libstr desktop app opens with preload bridge', async () => {
     await firstWindow.getByRole('button', { name: 'Search' }).click();
     await expect(firstWindow.locator('#search-tab')).toBeVisible();
 
+    await firstWindow.evaluate(() => {
+      state.favorites = [{ md5: 'a', title: 'English book', language: 'en' }, { md5: 'b', title: 'Portuguese book', language: 'pt-PT' }];
+      state.reading = [{ md5: 'c', title: 'Spanish book', language: 'es' }];
+      refreshSpeechVoiceMenus();
+    });
+
     await firstWindow.keyboard.press(process.platform === 'darwin' ? 'Meta+,' : 'Control+,');
     await expect(firstWindow.locator('#settings-modal')).toBeVisible();
     await expect(firstWindow.locator('#desktop-signer')).toBeVisible();
     await expect(firstWindow.getByText('NIP-46 remote signer')).toBeVisible();
     await expect(firstWindow.locator('#desktop-nip46-qr')).toBeHidden();
     await expect(firstWindow.locator('#desktop-nip46-qr-image')).toBeHidden();
-    await expect(firstWindow.locator('#speech-voice-en')).toContainText(/Kokoro|Best installed voice/);
-    await expect(firstWindow.locator('#speech-voice-pt')).toContainText(/Tugão|Best installed voice/);
-    await expect(firstWindow.getByText('Optional voices are never downloaded or selected automatically.')).toBeVisible();
+    await expect(firstWindow.locator('#speech-language')).toBeVisible();
+    await expect(firstWindow.locator('#speech-voice')).toContainText('Best installed voice');
+    await expect(firstWindow.locator('#speech-language')).toContainText('English');
+    await expect(firstWindow.locator('#speech-language')).toContainText('Portuguese');
+    await expect(firstWindow.locator('#speech-language')).toContainText('Spanish');
+    await expect(firstWindow.locator('#speech-language')).not.toContainText('German');
+    expect(await firstWindow.locator('#speech-language option').count()).toBe(3);
+    const kokoroModel = firstWindow.locator('#speech-model-kokoro_en');
+    const tugaoModel = firstWindow.locator('#speech-model-piper_pt_pt');
+    await expect(kokoroModel).toBeVisible();
+    await expect(kokoroModel).toContainText('Download Kokoro');
+    await expect(tugaoModel).toBeHidden();
+    const englishVoiceOptions = await firstWindow.locator('#speech-voice option').count();
+    await firstWindow.evaluate(() => refreshSpeechModels([{
+      id: 'kokoro_en', label: 'Kokoro · English', language: 'en', approximateBytes: 352_148_969,
+      fileCount: 11, installed: true, installing: false, completedFiles: 0, error: '',
+    }, {
+      id: 'piper_pt_pt', label: 'Tugão · Português (Portugal)', language: 'pt', approximateBytes: 63_939_446,
+      fileCount: 9, installed: false, installing: false, completedFiles: 0, error: '',
+    }]));
+    await expect(kokoroModel).toHaveClass(/speech-model-delete/);
+    await expect(kokoroModel).toContainText('Delete Kokoro');
+    expect(await firstWindow.locator('#speech-voice option').count()).toBe(englishVoiceOptions);
+    await firstWindow.locator('#speech-language').selectOption('pt');
+    await expect(kokoroModel).toBeHidden();
+    await expect(tugaoModel).toBeVisible();
+    await expect(firstWindow.locator('#speech-voice')).toContainText('Best installed voice');
+    await firstWindow.locator('#speech-language').selectOption('es');
+    await expect(kokoroModel).toBeHidden();
+    await expect(tugaoModel).toBeHidden();
+    await expect(firstWindow.locator('#speech-voice')).toContainText('Best installed voice');
+    await firstWindow.locator('#speech-language').selectOption('en');
+    await firstWindow.evaluate(() => refreshSpeechModels());
     await firstWindow.locator('#reader-font').selectOption('arial');
     await firstWindow.locator('#reader-alignment').selectOption('justified');
     await firstWindow.locator('#reader-font-size').evaluate(input => {
@@ -165,6 +203,8 @@ test('libstr desktop app opens with preload bridge', async () => {
       speechRate: 1.1,
       speechVoiceEnglish: '',
       speechVoicePortuguese: '',
+      speechVoices: { en: '' },
+      speechLanguage: 'en',
     });
 
     const settingsAccelerator = await electronApp.evaluate(({ Menu }) => {

@@ -772,11 +772,19 @@ test('Electron windows and packages use the Bookstr app icon', async () => {
     offset += length + 12;
   }
   const pixels = inflateSync(Buffer.concat(idatChunks));
-  assert.match(desktopMain, /const APP_ICON_PATH = process\.platform === 'darwin'[\s\S]*?icon-macos\.png[\s\S]*?apple-touch-icon\.png/);
+  assert.match(desktopMain, /const APP_ICON_PATH = path\.join\(__dirname, 'assets', 'icon-macos\.png'\)/);
   assert.match(desktopMain, /title: 'libstr',[\s\S]*?icon: APP_ICON_PATH/);
   assert.equal((desktopMain.match(/new BrowserWindow\(/g) || []).length, 1);
   assert.match(desktopMain, /app\.dock\.setIcon\(APP_ICON_PATH\)/);
-  assert.equal(desktopPackage.build.icon, '../web/public/apple-touch-icon.png');
+  assert.equal(desktopPackage.build.icon, 'assets/icon-macos.png');
+  assert.equal(desktopPackage.build.win.icon, 'assets/icon-macos.png');
+  assert.equal(desktopPackage.build.linux.icon, 'assets/icon-macos.png');
+  assert.equal(desktopPackage.desktopName, 'app.bookstr.desktop.desktop');
+  assert.equal(desktopPackage.build.linux.syncDesktopName, true);
+  assert.equal(desktopPackage.build.linux.desktop.entry.StartupWMClass, 'app.bookstr.desktop');
+  assert.match(desktopMain, /const DESKTOP_APP_ID = 'app\.bookstr\.desktop'/);
+  assert.match(desktopMain, /process\.platform === 'linux'[\s\S]*?app\.setDesktopName\(`\$\{DESKTOP_APP_ID\}\.desktop`\)/);
+  assert.match(desktopMain, /process\.platform === 'win32'[\s\S]*?app\.setAppUserModelId\(DESKTOP_APP_ID\)/);
   assert.equal(macIcon.toString('ascii', 1, 4), 'PNG');
   assert.equal(macIcon.readUInt32BE(16), 1024);
   assert.equal(macIcon.readUInt32BE(20), 1024);
@@ -797,16 +805,25 @@ test('settings groups Nostr controls and connection status together', () => {
 });
 
 test('Electron settings expose opt-in language voices and reader typography', () => {
-  assert.match(html, /desktop-reader-settings settings-speech[\s\S]*?id="speech-voice-en"[\s\S]*?id="speech-voice-pt"[\s\S]*?id="speech-rate"/);
-  assert.match(html, /Kokoro for English[\s\S]*?Tugão for Portuguese/);
-  assert.match(html, /Optional voices are never downloaded or selected automatically/);
+  assert.match(html, /desktop-reader-settings settings-speech[\s\S]*?id="speech-language"[\s\S]*?id="speech-voice"[\s\S]*?id="speech-rate"/);
+  assert.match(html, /id="speech-model-kokoro_en"[\s\S]*?id="speech-model-piper_pt_pt"[\s\S]*?id="speech-model-status"/);
+  assert.match(html, /speech-model-delete[\s\S]*?color: #b42318/);
+  assert.match(html, /button\.hidden = button\.dataset\.language !== selectedLanguage/);
+  assert.match(html, /speech-settings\.js/);
   assert.match(html, /id="reader-font"[\s\S]*?<option value="arial">Arial<\/option>[\s\S]*?id="reader-alignment"[\s\S]*?<option value="justified">Justified<\/option>[\s\S]*?id="reader-font-size"/);
-  assert.match(html, /speechVoiceEnglish:[\s\S]*?speechVoicePortuguese:[\s\S]*?speechRate:/);
+  assert.match(html, /speechVoices:[\s\S]*?speechLanguage:[\s\S]*?speechRate:/);
   assert.match(html, /notifyOpenReaderSettings\(\)/);
   assert.match(readerHtml, /voiceIdentifier: selectedSpeechVoice\(plan\.language\)/);
   assert.match(readerHtml, /BookstrTypography\.normalizeFont\([\s\S]*?currentReaderSettings\.readerFont/);
   assert.match(readerHtml, /BookstrTypography\.css\(readerFontFamily, readerAlignment\)/);
   assert.match(pdfReaderJs, /voiceIdentifier: selectedPdfSpeechVoice\(plan\.language\)/);
+  assert.match(html, /BookMetadata\.mergeLibraryState\(state\.reading, state\.favorites\)[\s\S]*?BookstrSpeechSettings\.languagesForCodes\(\[\.\.\.bookLanguages, 'en', 'pt'\], displayNames\)/);
+});
+
+test('Nostr library sync reports its relay, requested data, and resulting counts', () => {
+  assert.match(html, /Fetching ≤10 favorite snapshots, ≤100 reading events and ≤120 word events from \$\{relayNames\}/);
+  assert.match(html, /\$\{favorites\.length\} favorites · \$\{reading\.length\} reading · \$\{words\.length\} words/);
+  assert.match(html, /from \$\{relayNames\} · \$\{account\.slice\(0, 16\)\}/);
 });
 
 test('vocabulary deletion publishes a durable encrypted tombstone before best-effort NIP-09 cleanup', () => {
