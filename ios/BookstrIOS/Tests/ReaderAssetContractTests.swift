@@ -293,6 +293,11 @@ final class ReaderAssetContractTests: XCTestCase {
 
         XCTAssertTrue(html.contains("AndroidBridge.onSavedHighlightTapped(JSON.stringify({ kind: resolvedKind, locator: cfi }));"))
         XCTAssertTrue(html.contains("activeReaderHighlights[group].includes(cfi)"))
+        XCTAssertTrue(html.contains("savedHighlightAtPoint(contentDocument, event.clientX, event.clientY)"))
+        XCTAssertTrue(html.contains("savedHighlightAtViewportPoint(event.clientX, event.clientY)"))
+        XCTAssertTrue(html.contains("x - rect.left, y - rect.top"))
+        XCTAssertTrue(html.contains("const range = contents.range(cfi);"))
+        XCTAssertTrue(html.contains(#"{ kind: "mark", values: activeReaderHighlights.marks }"#))
     }
 
     func testReaderUsesPinchToResizeFontLikeAndroid() throws {

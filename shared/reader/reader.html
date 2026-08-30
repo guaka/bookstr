@@ -1091,9 +1091,15 @@
       if (contentDocument.__bookstrKnownWordNavigation) return;
       contentDocument.__bookstrKnownWordNavigation = true;
       contentDocument.addEventListener("click", function(event) {
-        if (event.target && event.target.closest && event.target.closest(".bookstr-mark-highlight")) return;
         const selection = contentDocument.defaultView.getSelection();
         if (selection && selection.toString().trim()) return;
+        const savedHighlight = savedHighlightAtPoint(contentDocument, event.clientX, event.clientY);
+        if (savedHighlight && window.AndroidBridge && AndroidBridge.onSavedHighlightTapped) {
+          event.preventDefault();
+          event.stopPropagation();
+          AndroidBridge.onSavedHighlightTapped(JSON.stringify(savedHighlight));
+          return;
+        }
         let range = null;
         if (contentDocument.caretRangeFromPoint) {
           range = contentDocument.caretRangeFromPoint(event.clientX, event.clientY);
@@ -1119,6 +1125,59 @@
         }
       }, true);
     }
+
+    function savedHighlightAtPoint(contentDocument, x, y) {
+      if (!rendition || typeof rendition.getContents !== "function") return null;
+      const contents = (rendition.getContents() || []).find(function(item) {
+        return item && item.document === contentDocument && typeof item.range === "function";
+      });
+      if (!contents) return null;
+      const groups = [
+        { kind: "mark", values: activeReaderHighlights.marks },
+        { kind: "word", values: activeReaderHighlights.words }
+      ];
+      for (let groupIndex = 0; groupIndex < groups.length; groupIndex += 1) {
+        const group = groups[groupIndex];
+        for (let index = 0; index < group.values.length; index += 1) {
+          const cfi = group.values[index];
+          try {
+            const range = contents.range(cfi);
+            const rects = range && range.getClientRects ? Array.from(range.getClientRects()) : [];
+            if (rects.some(function(rect) {
+              return x >= rect.left - 2 && x <= rect.right + 2 &&
+                y >= rect.top - 2 && y <= rect.bottom + 2;
+            })) return { kind: group.kind, locator: cfi };
+          } catch (_) {}
+        }
+      }
+      return null;
+    }
+
+    function savedHighlightAtViewportPoint(x, y) {
+      if (!rendition || typeof rendition.getContents !== "function") return null;
+      const frames = Array.from(document.querySelectorAll("iframe"));
+      const contentsList = rendition.getContents() || [];
+      for (let index = 0; index < contentsList.length; index += 1) {
+        const contents = contentsList[index];
+        const frame = frames.find(function(candidate) {
+          return candidate.contentDocument === (contents && contents.document);
+        });
+        if (!frame) continue;
+        const rect = frame.getBoundingClientRect();
+        if (x < rect.left - 2 || x > rect.right + 2 || y < rect.top - 2 || y > rect.bottom + 2) continue;
+        const match = savedHighlightAtPoint(contents.document, x - rect.left, y - rect.top);
+        if (match) return match;
+      }
+      return null;
+    }
+
+    document.addEventListener("click", function(event) {
+      const savedHighlight = savedHighlightAtViewportPoint(event.clientX, event.clientY);
+      if (!savedHighlight || !window.AndroidBridge || !AndroidBridge.onSavedHighlightTapped) return;
+      event.preventDefault();
+      event.stopPropagation();
+      AndroidBridge.onSavedHighlightTapped(JSON.stringify(savedHighlight));
+    }, true);
 
     function reportReaderInteraction() {
       if (readerInteractionReported) return;
