@@ -22,5 +22,25 @@ final class DeviceTransferCoreTests: XCTestCase {
         )
         XCTAssertNil(DeviceTransferCore.request(bookId: " ", recipientDeviceId: "phone-1"))
         XCTAssertNil(DeviceTransferCore.request(bookId: "book-1", recipientDeviceId: nil))
+        XCTAssertNil(DeviceTransferCore.request(bookId: "book\n1", recipientDeviceId: "phone-1"))
+        XCTAssertNil(DeviceTransferCore.request(bookId: String(repeating: "b", count: 257), recipientDeviceId: "phone-1"))
+        XCTAssertNil(DeviceTransferCore.request(bookId: "book-1", recipientDeviceId: String(repeating: "p", count: 129)))
+    }
+
+    func testReadinessIgnoresMalformedDeviceIdentifiers() {
+        XCTAssertEqual(
+            DeviceTransferCore.readiness(
+                accountConnected: true,
+                devices: [VerifiedDevice(id: " \n ", name: "Unnamed"), VerifiedDevice(id: "bad\u{0000}id", name: "Bad")]
+            ),
+            .pairDevice
+        )
+        XCTAssertEqual(
+            DeviceTransferCore.readiness(
+                accountConnected: true,
+                devices: [VerifiedDevice(id: "  device-2 ", name: "Phone")]
+            ),
+            .ready
+        )
     }
 }

@@ -22,16 +22,21 @@ data class DeviceTransferRequest(
 )
 
 object DeviceTransferCore {
+    private fun identifier(value: String?, maxLength: Int): String? {
+        val normalized = value?.trim().orEmpty()
+        if (normalized.isEmpty() || normalized.length > maxLength || normalized.any { it.isISOControl() }) return null
+        return normalized
+    }
+
     fun readiness(accountConnected: Boolean, devices: List<VerifiedDevice>): DeviceTransferReadiness = when {
         !accountConnected -> DeviceTransferReadiness.ConnectAccount
-        devices.none { it.id.isNotBlank() } -> DeviceTransferReadiness.PairDevice
+        devices.none { identifier(it.id, 128) != null } -> DeviceTransferReadiness.PairDevice
         else -> DeviceTransferReadiness.Ready
     }
 
     fun request(bookId: String?, recipientDeviceId: String?): DeviceTransferRequest? {
-        val normalizedBookId = bookId?.trim().orEmpty()
-        val normalizedRecipient = recipientDeviceId?.trim().orEmpty()
-        if (normalizedBookId.isEmpty() || normalizedRecipient.isEmpty()) return null
+        val normalizedBookId = identifier(bookId, 256) ?: return null
+        val normalizedRecipient = identifier(recipientDeviceId, 128) ?: return null
         return DeviceTransferRequest(normalizedBookId, normalizedRecipient)
     }
 }

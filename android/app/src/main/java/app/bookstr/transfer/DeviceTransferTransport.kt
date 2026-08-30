@@ -13,7 +13,15 @@ interface DeviceTransferTransport {
     fun cancel(requestId: String)
 }
 
-data class TransferControl internal constructor(val opaquePayload: String)
+class TransferControl private constructor(private val opaquePayload: String) {
+    internal fun <T> usePayload(block: (String) -> T): T = block(opaquePayload)
+
+    override fun toString(): String = "TransferControl(redacted)"
+
+    companion object {
+        internal fun fromOpaquePayload(opaquePayload: String): TransferControl = TransferControl(opaquePayload)
+    }
+}
 
 enum class TransferPhase { Idle, Preparing, Transferring, Completed, Failed, Cancelled }
 
@@ -28,8 +36,11 @@ data class TransferUpdate(
 object TransferUpdateMapper {
     fun safe(requestId: String?, phase: String?, completedBytes: Long? = null, totalBytes: Long? = null, errorCode: String? = null): TransferUpdate? {
         val id = requestId?.trim().orEmpty()
-        val mappedPhase = runCatching { TransferPhase.valueOf(phase?.trim().orEmpty().replaceFirstChar { it.uppercase() }) }.getOrNull()
-        if (id.isEmpty() || mappedPhase == null) return null
-        return TransferUpdate(id, mappedPhase, (completedBytes ?: 0).coerceAtLeast(0), (totalBytes ?: 0).coerceAtLeast(0), errorCode?.trim()?.take(80))
+        val mappedPhase = TransferPhase.entries.firstOrNull { it.name.equals(phase?.trim(), ignoreCase = true) }
+        if (id.isEmpty() || id.length > 128 || id.any { it.isISOControl() } || mappedPhase == null) return null
+        val total = (totalBytes ?: 0).coerceAtLeast(0)
+        val completed = (completedBytes ?: 0).coerceAtLeast(0).let { if (total > 0) it.coerceAtMost(total) else it }
+        val safeError = errorCode?.trim()?.takeIf { it.isNotEmpty() && it.none(Char::isISOControl) }?.take(80)
+        return TransferUpdate(id, mappedPhase, completed, total, safeError)
     }
 }

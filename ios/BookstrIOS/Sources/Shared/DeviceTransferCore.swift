@@ -19,18 +19,25 @@ struct DeviceTransferRequest: Equatable {
 }
 
 enum DeviceTransferCore {
+    private static func identifier(_ value: String?, maxLength: Int) -> String? {
+        let normalized = value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !normalized.isEmpty,
+              normalized.count <= maxLength,
+              normalized.unicodeScalars.allSatisfy({ !CharacterSet.controlCharacters.contains($0) }) else { return nil }
+        return normalized
+    }
+
     static func readiness(accountConnected: Bool, devices: [VerifiedDevice]) -> DeviceTransferReadiness {
         guard accountConnected else { return .connectAccount }
-        guard devices.contains(where: { !$0.id.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) else {
+        guard devices.contains(where: { identifier($0.id, maxLength: 128) != nil }) else {
             return .pairDevice
         }
         return .ready
     }
 
     static func request(bookId: String?, recipientDeviceId: String?) -> DeviceTransferRequest? {
-        let book = bookId?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        let recipient = recipientDeviceId?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        guard !book.isEmpty, !recipient.isEmpty else { return nil }
+        guard let book = identifier(bookId, maxLength: 256),
+              let recipient = identifier(recipientDeviceId, maxLength: 128) else { return nil }
         return DeviceTransferRequest(bookId: book, recipientDeviceId: recipient)
     }
 }

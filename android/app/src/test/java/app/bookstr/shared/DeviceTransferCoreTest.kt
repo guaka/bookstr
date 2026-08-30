@@ -20,5 +20,20 @@ class DeviceTransferCoreTest {
         )
         assertNull(DeviceTransferCore.request(" ", "phone-1"))
         assertNull(DeviceTransferCore.request("book-1", null))
+        assertNull(DeviceTransferCore.request("book\n1", "phone-1"))
+        assertNull(DeviceTransferCore.request("b".repeat(257), "phone-1"))
+        assertNull(DeviceTransferCore.request("book-1", "p".repeat(129)))
+    }
+
+    @Test
+    fun readinessIgnoresMalformedDeviceIdentifiers() {
+        assertEquals(
+            DeviceTransferReadiness.PairDevice,
+            DeviceTransferCore.readiness(true, listOf(VerifiedDevice(" \n ", "Unnamed"), VerifiedDevice("bad\u0000id", "Bad"))),
+        )
+        assertEquals(
+            DeviceTransferReadiness.Ready,
+            DeviceTransferCore.readiness(true, listOf(VerifiedDevice("  device-2 ", "Phone"))),
+        )
     }
 }
