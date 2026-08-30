@@ -203,15 +203,18 @@ jobs:
       - name: Install Electron test dependencies
         if: always()
         run: npx playwright install-deps
-      - name: Run Electron smoke tests
+      - name: Run Electron smoke and local WebTorrent tests
         id: electron_e2e
         if: always()
         continue-on-error: true
         run: |
           started=$(date +%s)
           set +e
+          npm run test:e2e:torrent
+          torrent_status=$?
           xvfb-run -a npx playwright test tests/e2e/desktop.smoke.spec.js --reporter=json > electron-playwright.json
           status=$?
+          if [ "$torrent_status" -ne 0 ]; then status="$torrent_status"; fi
           echo "duration_ms=$((($(date +%s) - started) * 1000))" >> "$GITHUB_OUTPUT"
           exit "$status"
       - name: Record Electron test overview
