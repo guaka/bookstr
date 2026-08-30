@@ -74,6 +74,7 @@ test('approved NIP-46 QR signer becomes active, updates settings, and persists w
     await expect(library.locator('#desktop-signer-setup')).toBeHidden();
     await expect(library.getByText('NIP-46 remote signer', { exact: true })).toBeHidden();
     await expect(library.getByText('Use a local nsec instead')).toBeHidden();
+    await expect(library.getByRole('button', { name: 'Disconnect signer' })).toHaveCSS('color', 'rgb(180, 35, 24)');
     expect(await signerStatus.evaluate(element => getComputedStyle(element, '::before').content)).toBe('"✓"');
 
     await electronApp.close();

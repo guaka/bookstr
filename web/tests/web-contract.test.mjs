@@ -806,6 +806,7 @@ test('settings groups Nostr controls and connection status together', () => {
   assert.match(html, /desktopSignerStatus\.classList\.toggle\('signer-connected', connected\)/);
   assert.match(html, /desktopSignerSetup\.classList\.toggle\('hidden', connected\)/);
   assert.match(html, /desktopNip46QrStart\.classList\.toggle\('hidden', connected\)/);
+  assert.match(html, /#desktop-signer-disconnect\s*\{[^}]*color: #b42318;[^}]*border-color: #b42318;/);
 });
 
 test('offline dictionary destinations populate before storage responds', () => {
