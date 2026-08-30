@@ -6,6 +6,7 @@ import {
   isPublicHTTPSURL,
   normalizeLitresPublicDomainRecords,
   normalizeOPDS2Feed,
+  normalizeOPDS1Feed,
   normalizeOPDSFeed,
   normalizePublicOPDSFeeds,
   resolveOPDSSearchURL,
@@ -157,4 +158,97 @@ test('LitRes adapter keeps only explicit free public-domain direct FB2 downloads
       availability: 'open',
     }],
   }]);
+});
+
+test('OPDS validation covers malformed sources, private address ranges, and feed limits', () => {
+  assert.equal(isPublicHTTPSURL(''), false);
+  assert.equal(isPublicHTTPSURL(null), false);
+  assert.equal(isPublicHTTPSURL('https://localhost/feed'), false);
+  assert.equal(isPublicHTTPSURL('https://foo.localhost/feed'), false);
+  assert.equal(isPublicHTTPSURL('https://foo.local/feed'), false);
+  assert.equal(isPublicHTTPSURL('https://0.1.2.3/feed'), false);
+  assert.equal(isPublicHTTPSURL('https://169.254.1.2/feed'), false);
+  assert.equal(isPublicHTTPSURL('https://172.16.0.1/feed'), false);
+  assert.equal(isPublicHTTPSURL('https://172.32.0.1/feed'), true);
+  assert.equal(isPublicHTTPSURL('https://10.0.0.256/feed'), false);
+  assert.equal(isPublicHTTPSURL('https://[fe80::1]/feed'), false);
+  assert.equal(isPublicHTTPSURL('https://[2001:db8::1]/feed'), true);
+  assert.deepEqual(normalizePublicOPDSFeeds(null), []);
+  assert.deepEqual(normalizePublicOPDSFeeds([
+    { name: 'x'.repeat(81), url: 'https://one.example/feed' },
+    null,
+    'not an object',
+    { name: 'good', url: 'not a url' },
+    ...Array.from({ length: 13 }, (_, index) => ({ name: `feed-${index}`, url: `https://feed-${index}.example/opds` })),
+  ]).length, 12);
+  assert.throws(() => normalizeOPDSFeed('<feed/>', { provider: '', feedURL: 'https://books.example/feed' }));
+  assert.throws(() => normalizeOPDSFeed('<feed/>', { provider: 'x', feedURL: 'http://books.example/feed' }));
+  assert.throws(() => normalizeOPDS2Feed('{bad', { provider: 'x', feedURL: 'https://books.example/feed' }));
+  assert.deepEqual(normalizeOPDS2Feed('[]', { provider: 'x', feedURL: 'https://books.example/feed' }), []);
+});
+
+test('OPDS normalizers support fallback metadata and ignore unusable acquisitions', () => {
+  const records = normalizeOPDS1Feed(`
+    <feed>
+      <entry>
+        <title>Untitled candidate</title><dc:issued>published in 2024</dc:issued>
+        <author><name>First</name></author><author><name>Second</name></author>
+        <dc:language>en</dc:language><dc:language>invalid</dc:language><dc:rights>CC0</dc:rights>
+        <link href="/cover.jpg" type="image/jpeg"/>
+        <link href="/book.fb2?download=1" type="application/octet-stream"/>
+      </entry>
+      <entry><id>bad</id><link href="https://books.example/landing" type="text/html"/></entry>
+    </feed>`, { provider: 'feed', feedURL: 'https://books.example/catalog' });
+  assert.deepEqual(records, [{
+    provider: 'feed', recordId: '/book.fb2?download=1',
+    publicationId: 'feed:/book.fb2?download=1', title: 'Untitled candidate',
+    authors: ['First', 'Second'], languages: ['en'], publishedYear: '2024',
+    rights: { status: 'public_domain', license: 'CC0', source: 'feed' },
+    acquisitions: [{ format: 'fb2', url: 'https://books.example/book.fb2?download=1', availability: 'open' }],
+  }]);
+
+  const opds2 = normalizeOPDS2Feed({ items: [
+    null,
+    { id: 'fallback', title: 'Fallback', author: 'Author', language: ['en', 'english'], license: 'Open publication',
+      acquisitions: { href: 'https://books.example/fallback.fb2', mime: 'application/x-fictionbook+xml' } },
+    { id: 'images-only', links: { href: 'https://books.example/image.jpg', type: 'image/jpeg' } },
+  ] }, { provider: 'feed', feedURL: 'https://books.example/catalog' });
+  assert.deepEqual(opds2, [{
+    provider: 'feed', recordId: 'fallback', publicationId: 'feed:fallback', title: 'Fallback', authors: ['Author'],
+    languages: ['en'], rights: { status: 'open_license', license: 'Open publication', source: 'feed' },
+    acquisitions: [{ format: 'fb2', url: 'https://books.example/fallback.fb2', availability: 'open' }],
+  }]);
+});
+
+test('OPDS search helpers handle absent links, templates, and invalid bases', () => {
+  assert.equal(discoverOpenSearchTemplate('<OpenSearchDescription/>', 'https://books.example/opensearch.xml'), null);
+  assert.equal(discoverOpenSearchTemplate('<OpenSearchDescription><Url template="{bad"/></OpenSearchDescription>', '%%%'), null);
+  assert.equal(resolveOPDSSearchURL(null, 'book'), null);
+  assert.equal(resolveOPDSSearchURL({ href: 'https://books.example/search' }, '  '), 'https://books.example/search');
+  assert.equal(resolveOPDSSearchURL('https://books.example/search/{query}', 'book'), 'https://books.example/search/book');
+  assert.equal(resolveOPDSSearchURL({ href: 'https://books.example/search{?q,query}' }, 'a b'), 'https://books.example/search?q=a%20b&query=a%20b');
+  assert.equal(resolveOPDSSearchURL({ href: '%%%{query}' }, 'book'), '');
+  assert.deepEqual(discoverOPDSFeed('{}', { provider: 'feed', feedURL: 'https://books.example/feed' }), {
+    kind: 'opds2', records: [], search: null,
+  });
+  assert.deepEqual(discoverOPDSFeed('<feed/>', { provider: 'feed', feedURL: 'https://books.example/feed' }), {
+    kind: 'opds1', records: [], search: null,
+  });
+});
+
+test('LitRes normalization accepts alternate evidence fields and rejects unsafe files', () => {
+  assert.deepEqual(normalizeLitresPublicDomainRecords(JSON.stringify([
+    { uuid: 'uuid-1', name: 'Named', is_public_domain: true, isFree: true,
+      author: { title: 'Writer' }, languages: ['RU', 'invalid'], formats: { href: 'https://books.example/named.fb2', extension: 'fb2' } },
+    { slug: 'slug-1', metadata: { title: 'Zero', year: '1900' }, rights: { status: 'Public Domain' }, price: { amount: 0 },
+      download_url: 'https://books.example/zero.fb2', format: 'application/fb2+xml' },
+    { id: 'private', public_domain: true, free: true, files: [{ format: 'fb2', url: 'https://127.0.0.1/private.fb2' }] },
+    { id: 'not-direct', public_domain: true, free: true, files: [{ type: 'application/fb2+xml', url: 'https://books.example/page' }] },
+  ])), [
+    { provider: 'litres-public-domain', recordId: 'uuid-1', publicationId: 'litres-public-domain:uuid-1', title: 'Named', authors: ['Writer'], languages: ['ru'], rights: { status: 'public_domain', license: 'Public Domain', source: 'litres' }, acquisitions: [{ format: 'fb2', url: 'https://books.example/named.fb2', availability: 'open' }] },
+    { provider: 'litres-public-domain', recordId: 'slug-1', publicationId: 'litres-public-domain:slug-1', title: 'Zero', authors: [], languages: [], publishedYear: '1900', rights: { status: 'public_domain', license: 'Public Domain', source: 'litres' }, acquisitions: [{ format: 'fb2', url: 'https://books.example/zero.fb2', availability: 'open' }] },
+  ]);
+  assert.deepEqual(normalizeLitresPublicDomainRecords({}), []);
+  assert.deepEqual(normalizeLitresPublicDomainRecords({ records: [] }), []);
+  assert.deepEqual(normalizeLitresPublicDomainRecords({ items: [] }), []);
 });

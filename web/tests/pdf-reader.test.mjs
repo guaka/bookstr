@@ -485,3 +485,41 @@ test('pdf-reader supports desktop payload normalization, rendering, and speech c
   assert.equal(env.controls.play.disabled, false);
   assert.equal(env.controls.pause.disabled, true);
 });
+
+test('pdf-reader remains usable without desktop speech support and reports load errors', async () => {
+  const env = setupPdfReaderEnvironment({ pdfPages: 1 });
+  env.window.BookstrSpeech = undefined;
+  env.window.speechSynthesis = undefined;
+  env.window.SpeechSynthesisUtterance = undefined;
+  env.window.bookstrDesktop = null;
+  env.window.localStorage = { getItem: () => '{invalid settings' };
+  delete env.window.__bookstrCreateObjectURL;
+  delete env.window.__bookstrRevokeObjectURL;
+
+  await import('../pdf-reader.js?no-speech');
+  const { PdfReaderTest } = env.window;
+  assert.equal(PdfReaderTest.hasPdfSpeechSupport(), false);
+  assert.equal(env.controls.panel.classList.contains('hidden'), true);
+  assert.deepEqual(await PdfReaderTest.collectPdfSpeechPlan(), { text: '', chunks: [], language: 'en' });
+  await PdfReaderTest.startPdfSpeech();
+  PdfReaderTest.pausePdfSpeech();
+  PdfReaderTest.stopPdfSpeech();
+  assert.deepEqual(PdfReaderTest.normalizeDesktopReaderPayload(null), null);
+  assert.equal(PdfReaderTest.normalizeDesktopReaderPayload({ base64: ' ' }), null);
+  assert.equal(PdfReaderTest.normalizeDesktopBookMetadata(null).title, 'Book');
+  assert.equal(PdfReaderTest.clampProgress(Infinity), 0);
+  assert.equal(PdfReaderTest.normalizePdfPageProgress(0, 0), 1);
+  assert.equal(PdfReaderTest.pdfPageFromLocator('page:not-number', 2), 1);
+
+  await env.window.loadPdf({ base64: 'VGVzdA==', filename: 'fallback.pdf' });
+  assert.equal(env.pageCount.textContent, '1 page');
+  assert.match(env.download.href, /^blob:/);
+  PdfReaderTest.reportPdfProgress(Number.NaN);
+  PdfReaderTest.schedulePdfProgress(0);
+  await PdfReaderTest.renderPage(1, env.pages.children[0].querySelector('canvas'), -1);
+  await assert.rejects(
+    env.window.loadPdf({ base64: '%%%not-base64%%%' }),
+    /Invalid character|invalid/i,
+  );
+  assert.match(env.message.textContent, /Could not display PDF/);
+});

@@ -42,6 +42,7 @@ test('renders citations even when book enrichment is unavailable', () => {
 
 test('extracts concise source filenames without exposing the full local path', () => {
   assert.equal(sourceFilename('file:///private/cache/green%20library.pdf'), 'green library.pdf');
+  assert.equal(sourceFilename('%not-a-url%'), '');
 });
 
 test('normalizes passage hits only when citation snippets are present', () => {

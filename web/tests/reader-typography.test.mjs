@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
+import { readFile } from 'node:fs/promises';
+import vm from 'node:vm';
 
 const BookstrTypography = createRequire(import.meta.url)('../reader-typography.js');
 
@@ -37,4 +39,27 @@ test('reader typography CSS uses Arial and justify by default', () => {
     BookstrTypography.fontStack('system'),
     "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
   );
+});
+
+test('reader typography emits the system font and manual hyphenation for left alignment', () => {
+  const css = BookstrTypography.css(' system ', 'LEFT');
+  assert.match(css, /font-family:system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif !important/);
+  assert.match(css, /text-align:left !important/);
+  assert.match(css, /hyphens:manual !important/);
+});
+
+test('reader typography exposes its browser global when CommonJS is unavailable', async () => {
+  const source = await readFile(new URL('../reader-typography.js', import.meta.url), 'utf8');
+  const context = {};
+  vm.runInNewContext(source, context);
+  assert.equal(context.BookstrTypography.normalizeFont('georgia'), 'georgia');
+  assert.match(context.BookstrTypography.css('georgia', 'left'), /text-align:left !important/);
+
+  const noGlobalThis = { globalThis: undefined };
+  vm.runInNewContext(source, noGlobalThis);
+  assert.equal(noGlobalThis.BookstrTypography.normalizeAlignment('left'), 'left');
+
+  const noRoot = { globalThis: undefined };
+  vm.runInNewContext(`(function() { "use strict"; ${source} }).call(null)`, noRoot);
+  new Function('globalThis', `"use strict"; ${source}`)(undefined);
 });
