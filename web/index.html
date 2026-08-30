@@ -1845,15 +1845,15 @@
           </div>
           <div id="device-transfer-devices" class="device-transfer-devices" aria-live="polite"></div>
           <form id="device-private-transfer-form" class="device-transfer-form" autocomplete="off">
-            <input id="device-private-torrent" aria-label="Private torrent metadata" placeholder="Private magnet or torrent ID" required />
-            <input id="device-private-peer" aria-label="Direct peer address" placeholder="Peer IP:port" required />
-            <button type="submit">Start private transfer</button>
+            <input id="device-private-torrent" aria-label="Book to receive" placeholder="Book link or transfer code" required />
+            <input id="device-private-peer" aria-label="Paired device connection" placeholder="Paired-device connection code" required />
+            <button type="submit">Receive book privately</button>
           </form>
-          <p class="device-transfer-note">Private transfers use only the authenticated device handoff. They do not use public trackers, DHT, or local file paths.</p>
+          <p class="device-transfer-note">Private transfers are available only between paired devices. Bookstr keeps them private and never exposes local files.</p>
           <form id="device-public-transfer-form" class="device-transfer-form" autocomplete="off">
-            <input id="device-public-torrent" aria-label="Public torrent metadata" placeholder="Public magnet or torrent ID" required />
+            <input id="device-public-torrent" aria-label="Book to add" placeholder="Book link or transfer code" required />
             <span aria-hidden="true"></span>
-            <button type="submit">Add public torrent</button>
+            <button type="submit">Add book</button>
           </form>
           <p id="device-transfer-result" class="device-transfer-note" role="status"></p>
         </section>
@@ -2745,7 +2745,8 @@
       }
 
       function deviceTransferError(error) {
-        return String(error?.message || error || 'The transfer could not be started.').replace(/[\r\n]+/g, ' ').slice(0, 280);
+        console.warn('Bookstr transfer action failed.', error);
+        return 'Check the book and paired-device details, then try again.';
       }
 
       async function refreshDeviceTransferPanel() {
@@ -2764,7 +2765,7 @@
           const transferCount = Array.isArray(transfers) ? transfers.length : 0;
           deviceTransferSummary.textContent = account
             ? `${device?.name || 'Bookstr desktop'} · ${storage} · ${devices.length} authorized device${devices.length === 1 ? '' : 's'} · ${transferCount} active transfer${transferCount === 1 ? '' : 's'}`
-            : `${device?.name || 'Bookstr desktop'} · ${storage}. Connect a Nostr signer to authorize other devices.`;
+            : `${device?.name || 'Bookstr desktop'} · ${storage}. Connect your Bookstr account to authorize other devices.`;
           if (!devices.length) {
             deviceTransferDevices.innerHTML = '<p class="device-transfer-note">No authorized devices are available yet. Pair another signed Bookstr client to make it discoverable here.</p>';
             return;
@@ -2987,7 +2988,7 @@
           return `Fetching ${title}: ${percent}% · ${bytesLabel(progress.bytes)} / ${bytesLabel(progress.total)}`;
         }
         return progress.source === 'torrent'
-          ? `Fetching ${title}: finding torrent peers…`
+          ? `Fetching ${title}: finding available sources…`
           : `Fetching ${title}: contacting book sources…`;
       }
 
@@ -7792,7 +7793,7 @@
         deviceTransferAnnounce.disabled = true;
         try {
           const message = await desktopBridge.devices.announce();
-          deviceTransferResult.textContent = `Private presence prepared until ${new Date(Number(message.expires_at) * 1000).toLocaleTimeString()}. Send it through your paired-device Nostr control channel.`;
+          deviceTransferResult.textContent = `Private presence prepared until ${new Date(Number(message.expires_at) * 1000).toLocaleTimeString()}. Share it securely with your paired Bookstr device.`;
         } catch (error) {
           deviceTransferResult.textContent = `Could not prepare private presence: ${deviceTransferError(error)}`;
         } finally {
@@ -7802,30 +7803,30 @@
       devicePrivateTransferForm.addEventListener('submit', async event => {
         event.preventDefault();
         if (!desktopBridge?.transfers?.addPrivate) return;
-        deviceTransferResult.textContent = 'Starting private transfer…';
+          deviceTransferResult.textContent = 'Preparing your private book transfer…';
         try {
-          const result = await desktopBridge.transfers.addPrivate({
+          await desktopBridge.transfers.addPrivate({
             torrentId: devicePrivateTorrent.value.trim(),
             peer: devicePrivatePeer.value.trim(),
           });
-          deviceTransferResult.textContent = `Private transfer started (${shortDeviceKey(String(result?.infoHash || ''))}).`;
+          deviceTransferResult.textContent = 'Private book transfer started.';
           devicePrivateTransferForm.reset();
           await refreshDeviceTransferPanel();
         } catch (error) {
-          deviceTransferResult.textContent = `Private transfer was not started: ${deviceTransferError(error)}`;
+          deviceTransferResult.textContent = `Private book transfer could not start. ${deviceTransferError(error)}`;
         }
       });
       devicePublicTransferForm.addEventListener('submit', async event => {
         event.preventDefault();
         if (!desktopBridge?.transfers?.addPublic) return;
-        deviceTransferResult.textContent = 'Adding public torrent…';
+          deviceTransferResult.textContent = 'Adding your book…';
         try {
-          const result = await desktopBridge.transfers.addPublic({ torrentId: devicePublicTorrent.value.trim() });
-          deviceTransferResult.textContent = `Public torrent added (${shortDeviceKey(String(result?.infoHash || ''))}).`;
+          await desktopBridge.transfers.addPublic({ torrentId: devicePublicTorrent.value.trim() });
+          deviceTransferResult.textContent = 'Book added.';
           devicePublicTransferForm.reset();
           await refreshDeviceTransferPanel();
         } catch (error) {
-          deviceTransferResult.textContent = `Public torrent was not added: ${deviceTransferError(error)}`;
+          deviceTransferResult.textContent = `Book could not be added. ${deviceTransferError(error)}`;
         }
       });
       readingTabBtn.addEventListener('click', () => activateTab('reading', { updateHash: true }));

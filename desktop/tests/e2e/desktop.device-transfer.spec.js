@@ -17,14 +17,15 @@ test('Electron exposes private device discovery and guarded transfer controls', 
     const panel = window.locator('#device-transfer-panel');
     await expect(panel).toBeVisible();
     await expect(panel.getByRole('heading', { name: 'Devices & transfers' })).toBeVisible();
+    await expect(panel).not.toContainText(/torrent|magnet|peer/i);
     await expect(window.locator('#device-transfer-summary')).toContainText('Bookstr desktop');
     await window.getByRole('button', { name: 'Prepare private presence' }).click();
     await expect(window.locator('#device-transfer-result')).toContainText('Private presence prepared');
 
-    await window.locator('#device-private-torrent').fill('magnet:?xt=urn:btih:deadbeef');
-    await window.locator('#device-private-peer').fill('peer.example:6881');
-    await window.locator('#device-private-transfer-form').getByRole('button', { name: 'Start private transfer' }).click();
-    await expect(window.locator('#device-transfer-result')).toContainText('IP address and port');
+    await window.locator('#device-private-torrent').fill('book-transfer-code');
+    await window.locator('#device-private-peer').fill('paired-device-code');
+    await window.locator('#device-private-transfer-form').getByRole('button', { name: 'Receive book privately' }).click();
+    await expect(window.locator('#device-transfer-result')).toContainText('Private book transfer could not start');
   } finally {
     await app.close();
   }
