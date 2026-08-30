@@ -143,6 +143,13 @@ jobs:
           name: bookstr-web-playwright-${{ github.run_id }}
           path: web-playwright.json
           if-no-files-found: warn
+      - name: Upload web e2e screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bookstr-e2e-screenshots-web-${{ github.run_id }}
+          path: web/test-results/**/*.png
+          if-no-files-found: error
       - name: Record web test overview
         if: always()
         env:
@@ -229,6 +236,13 @@ jobs:
         run: |
           node scripts/test-overview.mjs record --id electron --suite Electron --status "$UNIT_STATUS" --results-format tap --results desktop/electron-tests.tap --coverage-format node --coverage desktop/electron-tests.tap --duration-ms "$UNIT_DURATION_MS" --output test-overview/electron.json --recorded "$(date -u +%FT%TZ)" --run-url "$RUN_URL" --commit "$GITHUB_SHA"
           node scripts/test-overview.mjs record --id electron-e2e --suite "Electron e2e" --status "$E2E_STATUS" --results-format playwright --results desktop/electron-playwright.json --duration-ms "$E2E_DURATION_MS" --output test-overview/electron-e2e.json --recorded "$(date -u +%FT%TZ)" --run-url "$RUN_URL" --commit "$GITHUB_SHA"
+      - name: Upload Electron e2e screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bookstr-e2e-screenshots-electron-${{ github.run_id }}
+          path: desktop/test-results/**/*.png
+          if-no-files-found: error
       - name: Enforce Electron coverage baseline
         if: always()
         working-directory: .

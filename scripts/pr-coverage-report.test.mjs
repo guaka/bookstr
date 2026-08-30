@@ -26,6 +26,7 @@ test('renders a Bookstr coverage table with portable metric aliases and a stable
   assert.match(report, /\| iOS \| ⚪ Not run \| — \| — \| — \| — \| — \|/);
   assert.match(report, /\| Web e2e \| 🟡 Flaky \| 🟡 2\/2 \(1 flaky\) \|/);
   assert.match(report, /no relevant files changed/);
+  assert.match(report, /\[Download e2e screenshots\]\(https:\/\/github\.com\/guaka\/bookstr\/actions\/runs\/42#artifacts\)/);
   assert.match(report, /Report details/);
 });
 

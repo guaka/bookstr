@@ -312,6 +312,28 @@ test('desktop pane shortcuts work from controls and the single reader window', a
   }
 });
 
+test('desktop home filtering keeps the matching in-progress book visible', async () => {
+  const electronApp = await electron.launch({ args: electronArgs() });
+
+  try {
+    const library = await electronApp.firstWindow();
+    await library.evaluate(() => {
+      localStorage.setItem('bookstr_reading_library_v1', JSON.stringify([
+        { md5: '1'.repeat(32), title: 'Visible Reading Journey', authors: 'Reader', extension: 'epub', progression: 0.6 },
+        { md5: '2'.repeat(32), title: 'Another Book', authors: 'Reader', extension: 'epub', progression: 0 },
+      ]));
+    });
+    await library.reload();
+    await expect(library.locator('#home-reading-list')).toContainText('Visible Reading Journey');
+    await library.locator('#home-query-input').fill('journey');
+    await expect(library.locator('#home-reading-list')).toContainText('Visible Reading Journey');
+    await expect(library.locator('#home-reading-list').getByRole('img', { name: 'Currently reading' })).toBeVisible();
+    await expect(library.locator('#home-reading-list')).not.toContainText('Another Book');
+  } finally {
+    await electronApp.close();
+  }
+});
+
 test('desktop bridge round-trips normalized reading progress to the library', async () => {
   const electronApp = await electron.launch({
     args: electronArgs(),

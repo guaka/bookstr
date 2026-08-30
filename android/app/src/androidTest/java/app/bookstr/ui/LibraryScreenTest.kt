@@ -12,6 +12,7 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.longClick
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import app.bookstr.E2eScreenshotRule
 import app.bookstr.data.CatalogBook
 import app.bookstr.data.ExternalFavorite
 import app.bookstr.data.BookFormat
@@ -19,12 +20,16 @@ import app.bookstr.data.BookProgress
 import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
+import org.junit.rules.RuleChain
 import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class LibraryScreenTest {
-    @get:Rule
+    private val screenshots = E2eScreenshotRule()
     val composeRule = createComposeRule()
+
+    @get:Rule
+    val rules: RuleChain = RuleChain.outerRule(composeRule).around(screenshots)
 
     @Test
     fun rendersBooksAndOpensOnClick() {
@@ -272,6 +277,36 @@ class LibraryScreenTest {
         composeRule.onNodeWithText("Search favorites").performTextInput("pdf")
         composeRule.onNodeWithText("The Blue Book").assertIsDisplayed()
         composeRule.onAllNodesWithText("The Green Book").assertCountEquals(0)
+    }
+
+    @Test
+    fun filteringTheLibraryKeepsTheMatchingReadingProgressVisible() {
+        val reading = CatalogBook(
+            id = "reading",
+            title = "A Visible Reading Journey",
+            author = "Reader",
+            epubUrl = "https://example.org/reading.epub",
+            coverUrl = null,
+        )
+        val other = reading.copy(id = "other", title = "Another Book")
+        composeRule.setContent {
+            LibraryScreen(
+                books = listOf(reading, other),
+                favoriteIds = setOf(reading.id, other.id),
+                externalFavorites = emptyList(),
+                progress = mapOf(reading.id to BookProgress(reading.id, 0.6, "cfi", 1L)),
+                loading = false,
+                error = null,
+                onRefresh = {},
+                onOpenBook = {},
+                onOpenExternal = {},
+            )
+        }
+
+        composeRule.onNodeWithText("Search favorites").performTextInput("journey")
+        composeRule.onAllNodesWithText("A Visible Reading Journey").assertCountEquals(2)
+        composeRule.onAllNodesWithText("60% read").assertCountEquals(2)
+        composeRule.onAllNodesWithText("Another Book").assertCountEquals(0)
     }
 
     @Test
