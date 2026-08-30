@@ -143,9 +143,10 @@ test('libstr desktop app opens with preload bridge', async () => {
     await expect(firstWindow.getByText('NIP-46 remote signer')).toBeVisible();
     await expect(firstWindow.locator('#desktop-nip46-qr')).toBeHidden();
     await expect(firstWindow.locator('#desktop-nip46-qr-image')).toBeHidden();
-    await expect(firstWindow.locator('#speech-voice-en')).toContainText(/Kokoro|Best installed voice/);
-    await expect(firstWindow.locator('#speech-voice-pt')).toContainText(/Tugão|Best installed voice/);
-    await expect(firstWindow.getByText('Optional voices are never downloaded or selected automatically.')).toBeVisible();
+    await expect(firstWindow.locator('#speech-language')).toBeVisible();
+    await expect(firstWindow.locator('#speech-voice')).toContainText('Best installed voice');
+    await expect(firstWindow.getByRole('link', { name: 'Download Kokoro' })).toBeVisible();
+    await expect(firstWindow.getByRole('link', { name: 'Download Tugão model' })).toBeVisible();
     await firstWindow.locator('#reader-font').selectOption('arial');
     await firstWindow.locator('#reader-alignment').selectOption('justified');
     await firstWindow.locator('#reader-font-size').evaluate(input => {
@@ -165,6 +166,8 @@ test('libstr desktop app opens with preload bridge', async () => {
       speechRate: 1.1,
       speechVoiceEnglish: '',
       speechVoicePortuguese: '',
+      speechVoices: { en: '' },
+      speechLanguage: 'en',
     });
 
     const settingsAccelerator = await electronApp.evaluate(({ Menu }) => {

@@ -1870,19 +1870,19 @@
           <div class="settings-section desktop-reader-settings settings-speech">
             <h3>Read aloud</h3>
             <label class="setting-option settings-control-row">
-              <span class="setting-copy"><strong>English voice</strong><small>Kokoro appears here after you install it.</small></span>
-              <select id="speech-voice-en" aria-label="English reading voice"></select>
+              <span class="setting-copy"><strong>Language</strong></span>
+              <select id="speech-language" aria-label="Read-aloud language"></select>
             </label>
             <label class="setting-option settings-control-row">
-              <span class="setting-copy"><strong>Portuguese voice</strong><small>Tugão appears here after you install it.</small></span>
-              <select id="speech-voice-pt" aria-label="Portuguese reading voice"></select>
+              <span class="setting-copy"><strong>Voice</strong></span>
+              <select id="speech-voice" aria-label="Reading voice"></select>
             </label>
             <label class="setting-option settings-range">
               <span class="setting-copy"><strong>Speech speed</strong><small>Use a natural pace or tune it to your preference.</small></span>
               <input id="speech-rate" type="range" min="0.73" max="1.25" step="0.01" value="1" />
               <output id="speech-rate-value" for="speech-rate">1.00×</output>
             </label>
-            <p class="meta-note optional-voices-note">Optional voices are never downloaded or selected automatically. <a href="https://github.com/vicnaum/kokoro-tts-macos/releases/latest" target="_blank" rel="noreferrer">Kokoro for English</a> · <a href="https://huggingface.co/rhasspy/piper-voices/tree/main/pt/pt_PT/tug%C3%A3o/medium" target="_blank" rel="noreferrer">Tugão for Portuguese</a></p>
+            <p class="meta-note optional-voices-note"><a href="https://github.com/vicnaum/kokoro-tts-macos/releases/latest" target="_blank" rel="noreferrer">Download Kokoro</a> · <a href="https://huggingface.co/rhasspy/piper-voices/resolve/main/pt/pt_PT/tug%C3%A3o/medium/pt_PT-tug%C3%A3o-medium.onnx?download=true" target="_blank" rel="noreferrer">Download Tugão model</a> · <a href="https://huggingface.co/rhasspy/piper-voices/resolve/main/pt/pt_PT/tug%C3%A3o/medium/pt_PT-tug%C3%A3o-medium.onnx.json?download=true" target="_blank" rel="noreferrer">config</a></p>
           </div>
           <div class="settings-section settings-nostr">
             <h3>Nostr</h3>
@@ -1961,6 +1961,7 @@
     <script src="blossom-authorization.js"></script>
     <script src="vocabulary-wire.js"></script>
     <script src="reader-typography.js"></script>
+    <script src="speech-settings.js"></script>
     <script src="vendor/sql-wasm.js"></script>
     <script>
       const FAVORITES_KEY = 'bookstr_nostr_favorites_v1';
@@ -2144,8 +2145,8 @@
       const readerAlignmentInput = document.getElementById('reader-alignment');
       const readerFontSizeInput = document.getElementById('reader-font-size');
       const readerFontSizeValue = document.getElementById('reader-font-size-value');
-      const speechVoiceEnglishInput = document.getElementById('speech-voice-en');
-      const speechVoicePortugueseInput = document.getElementById('speech-voice-pt');
+      const speechLanguageInput = document.getElementById('speech-language');
+      const speechVoiceInput = document.getElementById('speech-voice');
       const speechRateInput = document.getElementById('speech-rate');
       const speechRateValue = document.getElementById('speech-rate-value');
       const npubButton = document.getElementById('npub-button');
@@ -2175,6 +2176,8 @@
           readerFontPercent: 100,
           speechVoiceEnglish: '',
           speechVoicePortuguese: '',
+          speechVoices: {},
+          speechLanguage: 'en',
           speechRate: 1,
           opdsFeeds: []
         },
@@ -3581,6 +3584,20 @@
         homeSyncRefresh.disabled = kind === 'syncing';
       }
 
+      function nostrLibraryRelayNames() {
+        return NOSTR_RELAYS.map(relay => {
+          try {
+            return new URL(relay).host;
+          } catch {
+            return relay;
+          }
+        }).join(', ');
+      }
+
+      function nostrSyncCounts(favorites, reading, words) {
+        return `${favorites.length} favorites · ${reading.length} reading · ${words.length} words`;
+      }
+
       async function syncNostrLibraryFromNip7({ useCache = true } = {}) {
         const pubkey = state.nip7.pubkey;
         if (!state.settings.useNip7 || !pubkey) {
@@ -3589,7 +3606,8 @@
         if (nostrSyncTask) {
           return nostrSyncTask;
         }
-        setHomeSyncState('syncing', 'Syncing…');
+        const relayNames = nostrLibraryRelayNames();
+        setHomeSyncState('syncing', `Fetching ≤10 favorite snapshots, ≤100 reading events and ≤120 word events from ${relayNames}…`);
         const task = (async () => {
           const cached = readNostrSyncCache(pubkey);
           if (useCache && cached && isNostrCacheFresh(cached)) {
@@ -3620,7 +3638,7 @@
             const eventDetail = lastFavoritePullInfo?.id
               ? ` · event ${lastFavoritePullInfo.id.slice(0, 12)}… · ${new Date(lastFavoritePullInfo.createdAt * 1000).toLocaleString()}`
               : '';
-            setHomeSyncState('ready', `${account.slice(0, 16)}…${eventDetail}`);
+            setHomeSyncState('ready', `${nostrSyncCounts(favorites, reading, words)} from ${relayNames} · ${account.slice(0, 16)}…${eventDetail}`);
             return true;
           } catch (error) {
             if (cached) {
@@ -3652,7 +3670,7 @@
       }
 
       homeSyncRefresh.addEventListener('click', async () => {
-        setHomeSyncState('syncing', 'Syncing…');
+        setHomeSyncState('syncing', `Connecting to ${nostrLibraryRelayNames()}…`);
         const connected = await connectNip7({ silent: false, skipSync: true });
         if (connected || state.nip7.pubkey) {
           await syncNostrLibraryFromNip7({ useCache: false });
@@ -7029,21 +7047,15 @@
         return window.speechSynthesis.getVoices().filter(voice => voice && (voice.name || voice.voiceURI));
       }
 
-      function populateSpeechVoiceMenu(select, language, preferredLabel, preferredPattern, savedIdentifier) {
+      function preferredSpeechPattern(language) {
+        if (language === 'en') return /kokoro/i;
+        if (language === 'pt') return /tug[aã]o/i;
+        return /$a/;
+      }
+
+      function populateSpeechVoiceMenu(select, language, savedIdentifier) {
         if (!select) return;
-        const languagePrefix = `${language.toLowerCase()}-`;
-        const voices = speechVoices()
-          .filter(voice => {
-            const locale = String(voice.lang || '').replace('_', '-').toLowerCase();
-            return locale === language || locale.startsWith(languagePrefix);
-          })
-          .sort((left, right) => {
-            const leftPreferred = preferredPattern.test(`${left.name} ${left.voiceURI}`) ? 0 : 1;
-            const rightPreferred = preferredPattern.test(`${right.name} ${right.voiceURI}`) ? 0 : 1;
-            return leftPreferred - rightPreferred
-              || Number(Boolean(right.localService)) - Number(Boolean(left.localService))
-              || String(left.name).localeCompare(String(right.name));
-          });
+        const voices = BookstrSpeechSettings.voicesForLanguage(speechVoices(), language, preferredSpeechPattern(language));
         const selected = String(savedIdentifier || '');
         select.replaceChildren(new Option('Best installed voice', ''));
         voices.forEach(voice => {
@@ -7051,12 +7063,6 @@
           const localLabel = voice.localService === false ? 'online' : 'installed';
           select.append(new Option(`${voice.name} · ${voice.lang || language} · ${localLabel}`, identifier));
         });
-        const preferredInstalled = voices.some(voice => preferredPattern.test(`${voice.name} ${voice.voiceURI}`));
-        if (!preferredInstalled) {
-          const option = new Option(`${preferredLabel} · optional download`, `optional:${preferredLabel.toLowerCase()}`);
-          option.disabled = true;
-          select.append(option);
-        }
         if (selected && !voices.some(voice => String(voice.voiceURI || voice.name) === selected)) {
           const option = new Option('Previously selected voice · unavailable', selected);
           option.disabled = true;
@@ -7068,20 +7074,18 @@
       }
 
       function refreshSpeechVoiceMenus() {
-        populateSpeechVoiceMenu(
-          speechVoiceEnglishInput,
-          'en',
-          'Kokoro · English',
-          /kokoro/i,
-          state.settings.speechVoiceEnglish,
-        );
-        populateSpeechVoiceMenu(
-          speechVoicePortugueseInput,
-          'pt',
-          'Tugão · Portuguese (Portugal)',
-          /tug[aã]o/i,
-          state.settings.speechVoicePortuguese,
-        );
+        const displayNames = typeof Intl.DisplayNames === 'function'
+          ? new Intl.DisplayNames([navigator.language || 'en'], { type: 'language' })
+          : null;
+        const languages = BookstrSpeechSettings.languagesForVoices(speechVoices(), displayNames);
+        const selectedLanguage = BookstrSpeechSettings.languageCode(state.settings.speechLanguage || 'en');
+        speechLanguageInput.replaceChildren();
+        languages.forEach(language => speechLanguageInput.append(new Option(language.label, language.code)));
+        if (!languages.some(language => language.code === selectedLanguage)) {
+          speechLanguageInput.append(new Option(selectedLanguage.toUpperCase(), selectedLanguage));
+        }
+        speechLanguageInput.value = selectedLanguage;
+        populateSpeechVoiceMenu(speechVoiceInput, selectedLanguage, BookstrSpeechSettings.savedVoice(state.settings, selectedLanguage));
       }
 
       function updateReaderSettingLabels() {
@@ -7149,6 +7153,12 @@
           }
           if (typeof settings.speechVoicePortuguese === 'string') {
             state.settings.speechVoicePortuguese = settings.speechVoicePortuguese;
+          }
+          if (settings.speechVoices && typeof settings.speechVoices === 'object' && !Array.isArray(settings.speechVoices)) {
+            state.settings.speechVoices = { ...settings.speechVoices };
+          }
+          if (typeof settings.speechLanguage === 'string') {
+            state.settings.speechLanguage = BookstrSpeechSettings.languageCode(settings.speechLanguage) || 'en';
           }
           const speechRate = Number(settings.speechRate);
           if (Number.isFinite(speechRate)) {
@@ -7459,8 +7469,8 @@
         state.settings.readerFont = BookstrTypography.normalizeFont(readerFontInput.value);
         state.settings.readerAlignment = BookstrTypography.normalizeAlignment(readerAlignmentInput.value);
         state.settings.readerFontPercent = Number(readerFontSizeInput.value);
-        state.settings.speechVoiceEnglish = speechVoiceEnglishInput.value;
-        state.settings.speechVoicePortuguese = speechVoicePortugueseInput.value;
+        state.settings.speechLanguage = BookstrSpeechSettings.languageCode(speechLanguageInput.value) || 'en';
+        state.settings.speechVoices[state.settings.speechLanguage] = speechVoiceInput.value;
         state.settings.speechRate = Number(speechRateInput.value);
         updateReaderSettingLabels();
         saveLocalAppearance(state.settings.theme);
@@ -7651,8 +7661,12 @@
       readerFontInput.addEventListener('change', applySettingsFromUI);
       readerAlignmentInput.addEventListener('change', applySettingsFromUI);
       readerFontSizeInput.addEventListener('input', applySettingsFromUI);
-      speechVoiceEnglishInput.addEventListener('change', applySettingsFromUI);
-      speechVoicePortugueseInput.addEventListener('change', applySettingsFromUI);
+      speechLanguageInput.addEventListener('change', () => {
+        state.settings.speechLanguage = speechLanguageInput.value;
+        refreshSpeechVoiceMenus();
+        applySettingsFromUI();
+      });
+      speechVoiceInput.addEventListener('change', applySettingsFromUI);
       speechRateInput.addEventListener('input', applySettingsFromUI);
       if (window.speechSynthesis) {
         window.speechSynthesis.addEventListener?.('voiceschanged', refreshSpeechVoiceMenus);
