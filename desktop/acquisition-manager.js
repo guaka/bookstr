@@ -2,9 +2,12 @@
 
 const fs = require('node:fs');
 const fsp = require('node:fs/promises');
+const net = require('node:net');
 const path = require('node:path');
 const { Readable, Transform } = require('node:stream');
 const { pipeline } = require('node:stream/promises');
+
+const DEFAULT_MAX_ACQUISITION_BYTES = 512 * 1024 * 1024;
 
 let catalogModulePromise;
 function catalogModule() {
@@ -29,19 +32,88 @@ function extensionFor(format) {
 
 function responseLength(response) {
   const value = response?.headers?.get?.('content-length');
+  if (value === null || value === undefined || String(value).trim() === '') return null;
   const size = Number(value);
-  return Number.isSafeInteger(size) && size >= 0 ? size : 0;
+  if (!Number.isSafeInteger(size) || size <= 0) throw new Error('source returned an invalid content length');
+  return size;
 }
 
-async function responseStream(response) {
+function hostFromOrigin(value) {
+  try {
+    const parsed = new URL(String(value || '').trim());
+    return parsed.protocol === 'https:' && !parsed.username && !parsed.password
+      ? parsed.hostname.toLowerCase().replace(/^\[|\]$/g, '')
+      : '';
+  } catch {
+    return '';
+  }
+}
+
+function privateHostname(hostname) {
+  const host = String(hostname || '').toLowerCase().replace(/^\[|\]$/g, '');
+  if (!host || host === 'localhost' || host.endsWith('.localhost') || host === 'local' || host.endsWith('.local')
+    || host === 'internal' || host.endsWith('.internal') || host === 'home.arpa' || host.endsWith('.home.arpa')) return true;
+  const kind = net.isIP(host);
+  if (kind === 4) {
+    const [first, second] = host.split('.').map(Number);
+    return first === 0 || first === 10 || first === 127 || (first === 100 && second >= 64 && second <= 127)
+      || (first === 169 && second === 254) || (first === 172 && second >= 16 && second <= 31)
+      || (first === 192 && second === 0) || (first === 192 && second === 168)
+      || (first === 198 && (second === 18 || second === 19)) || first >= 224;
+  }
+  if (kind === 6) {
+    return host === '::1' || host === '::' || host.startsWith('fc') || host.startsWith('fd')
+      || host.startsWith('fe8') || host.startsWith('fe9') || host.startsWith('fea') || host.startsWith('feb')
+      || host.startsWith('ff');
+  }
+  return false;
+}
+
+function configuredOrigins(origins, provider) {
+  if (!origins) return [];
+  if (origins instanceof Map) return Array.isArray(origins.get(provider)) ? origins.get(provider) : [];
+  return Array.isArray(origins[provider]) ? origins[provider] : [];
+}
+
+function trustedHosts(provider, descriptor, origins) {
+  const values = [descriptor?.homepage, ...configuredOrigins(origins, provider)];
+  return [...new Set(values.map(hostFromOrigin).filter(Boolean))];
+}
+
+function assertTrustedURL(value, { provider, descriptor, origins, label = 'acquisition URL' } = {}) {
+  let parsed;
+  try {
+    parsed = new URL(String(value || '').trim());
+  } catch {
+    throw new Error(`${label} is invalid`);
+  }
+  if (parsed.protocol !== 'https:' || parsed.username || parsed.password) {
+    throw new Error(`${label} must use an HTTPS trusted origin`);
+  }
+  const host = parsed.hostname.toLowerCase().replace(/^\[|\]$/g, '');
+  if (privateHostname(host)) throw new Error(`${label} targets a private or loopback host`);
+  const allowed = trustedHosts(provider, descriptor, origins);
+  if (!allowed.some(origin => host === origin || host.endsWith(`.${origin}`))) {
+    throw new Error(`${label} is outside the trusted ${provider} origins`);
+  }
+  return parsed.href;
+}
+
+async function responseStream(response, maxBytes = DEFAULT_MAX_ACQUISITION_BYTES) {
   if (response?.body && typeof response.body.getReader === 'function') return Readable.fromWeb(response.body);
   if (response?.body && typeof response.body.pipe === 'function') return response.body;
-  if (response && typeof response.arrayBuffer === 'function') return Readable.from(Buffer.from(await response.arrayBuffer()));
+  if (response && typeof response.arrayBuffer === 'function') {
+    const bytes = await response.arrayBuffer();
+    if (bytes.byteLength > maxBytes) throw new Error('source exceeded the maximum acquisition size');
+    return Readable.from(Buffer.from(bytes));
+  }
   throw new Error('acquisition response has no readable body');
 }
 
-function waitForTorrent(torrent, onProgress, signal) {
+function waitForTorrent(torrent, onProgress, signal, maxBytes) {
   if (!torrent || typeof torrent.on !== 'function') throw new Error('torrent did not return an event source');
+  const total = Number(torrent.length || torrent.files?.[0]?.length || 0);
+  if (total > maxBytes) throw new Error('torrent exceeds the maximum acquisition size');
   if (torrent.done) return Promise.resolve(torrent);
   return new Promise((resolve, reject) => {
     let settled = false;
@@ -57,7 +129,11 @@ function waitForTorrent(torrent, onProgress, signal) {
     };
     torrent.on('done', () => finish());
     torrent.on('error', error => finish(error instanceof Error ? error : new Error(String(error))));
-    torrent.on('download', () => onProgress?.({ bytes: Number(torrent.downloaded || 0), totalBytes: Number(torrent.length || 0) }));
+    torrent.on('download', () => {
+      const bytes = Number(torrent.downloaded || 0);
+      if (bytes > maxBytes) return finish(new Error('torrent exceeded the maximum acquisition size'));
+      onProgress?.({ bytes, totalBytes: Number(torrent.length || 0) });
+    });
     signal?.addEventListener?.('abort', abort, { once: true });
   });
 }
@@ -85,7 +161,7 @@ function sourceKey(provider, candidate, recordId) {
 }
 
 class AcquisitionManager {
-  constructor({ store, importer, torrentBridge, fetchImpl = globalThis.fetch, stagingRoot, maxAttempts = 3 } = {}) {
+  constructor({ store, importer, torrentBridge, fetchImpl = globalThis.fetch, stagingRoot, maxAttempts = 3, maxBytes = DEFAULT_MAX_ACQUISITION_BYTES, trustedOrigins = {} } = {}) {
     if (!store || !importer || !stagingRoot) throw new TypeError('store, importer, and stagingRoot are required');
     if (typeof fetchImpl !== 'function') throw new TypeError('fetchImpl is required');
     this.store = store;
@@ -94,14 +170,19 @@ class AcquisitionManager {
     this.fetch = fetchImpl;
     this.stagingRoot = path.resolve(stagingRoot);
     this.maxAttempts = Math.max(1, Math.min(8, Number(maxAttempts) || 3));
+    this.maxBytes = Number.isSafeInteger(Number(maxBytes)) && Number(maxBytes) > 0
+      ? Number(maxBytes)
+      : DEFAULT_MAX_ACQUISITION_BYTES;
+    this.trustedOrigins = trustedOrigins;
   }
 
   async acquire(record, { format, preferTorrent = true, includeRestricted = false, signal, onProgress } = {}) {
     const { listAcquisitions, normalizeProviderRecord, providerBookFields } = await catalogModule();
     const normalized = normalizeProviderRecord(record);
     const fields = providerBookFields(record);
-    const candidates = listAcquisitions(normalized, { format, preferTorrent, includeRestricted });
-    if (!candidates.length) throw new Error('no eligible acquisition is available');
+    const candidates = listAcquisitions(normalized, { format, preferTorrent, includeRestricted })
+      .filter(candidate => /^[a-f0-9]{64}$/i.test(candidate.sha256));
+    if (!candidates.length) throw new Error('no eligible acquisition with a verified SHA-256 is available');
     const rankedCandidates = candidates.map((candidate, index) => {
       const source = sourceKey(normalized.provider, candidate, normalized.recordId);
       return { candidate, index, source, score: healthScore(this.store.sourceHealth?.(source)) };
@@ -117,9 +198,24 @@ class AcquisitionManager {
       const startedAt = Date.now();
       try {
         stageDir = await fsp.mkdtemp(path.join(this.stagingRoot, 'acquisition-'));
+        const descriptor = normalized.providerDescriptor;
+        if (candidate.torrent && /^https?:/i.test(candidate.torrent)) {
+          assertTrustedURL(candidate.torrent, {
+            provider: normalized.provider,
+            descriptor,
+            origins: this.trustedOrigins,
+            label: 'torrent URL',
+          });
+        }
         const stagedPath = candidate.torrent
           ? await this.downloadTorrent(candidate, stageDir, { signal, onProgress })
-          : await this.downloadHTTP(candidate, stageDir, { signal, onProgress, source });
+          : await this.downloadHTTP(candidate, stageDir, {
+            signal,
+            onProgress,
+            source,
+            provider: normalized.provider,
+            descriptor,
+          });
         const imported = await this.importer.importFile(stagedPath, {
           extension: extensionFor(candidate.format),
           expectedSha256: candidate.sha256 || undefined,
@@ -140,22 +236,36 @@ class AcquisitionManager {
     throw new AggregateError(errors, 'all eligible acquisitions failed');
   }
 
-  async downloadHTTP(candidate, stageDir, { signal, onProgress, source } = {}) {
-    const response = await this.fetch(candidate.url, { signal, redirect: 'error' });
+  async downloadHTTP(candidate, stageDir, { signal, onProgress, source, provider, descriptor } = {}) {
+    const url = assertTrustedURL(candidate.url, {
+      provider,
+      descriptor,
+      origins: this.trustedOrigins,
+    });
+    const metadataSize = Number(candidate.size);
+    if (!Number.isSafeInteger(metadataSize) || metadataSize <= 0) throw new Error('source must advertise a positive file size');
+    if (metadataSize > this.maxBytes) throw new Error('source exceeds the maximum acquisition size');
+    const response = await this.fetch(url, { signal, redirect: 'error' });
     if (!response?.ok) throw new Error(`source returned HTTP ${response?.status || 0}`);
-    const expectedSize = candidate.size || responseLength(response);
+    const headerSize = responseLength(response);
+    if (headerSize !== null && headerSize > this.maxBytes) throw new Error('source exceeds the maximum acquisition size');
+    if (headerSize !== null && headerSize !== metadataSize) throw new Error('source size does not match metadata');
+    const expectedSize = metadataSize || headerSize;
+    if (!expectedSize) throw new Error('source did not advertise a file size');
+    const maxBytes = this.maxBytes;
     const stagedPath = safePath(stageDir, `download.${extensionFor(candidate.format)}.part`);
     let bytes = 0;
     const meter = new Transform({
       transform(chunk, _encoding, callback) {
         bytes += chunk.length;
+        if (bytes > maxBytes) return callback(new Error('source exceeded the maximum acquisition size'));
         if (expectedSize && bytes > expectedSize) return callback(new Error('source exceeded advertised size'));
         onProgress?.({ source, bytes, totalBytes: expectedSize });
         callback(null, chunk);
       },
     });
-    await pipeline(await responseStream(response), meter, fs.createWriteStream(stagedPath, { flags: 'wx' }), { signal });
-    if (expectedSize && bytes !== expectedSize) throw new Error('source size does not match advertised size');
+    await pipeline(await responseStream(response, maxBytes), meter, fs.createWriteStream(stagedPath, { flags: 'wx' }), { signal });
+    if (bytes !== expectedSize) throw new Error('source size does not match advertised size');
     return stagedPath;
   }
 
@@ -165,9 +275,24 @@ class AcquisitionManager {
       ? this.torrentBridge.addPrivate(candidate.torrent, { path: stageDir })
       : this.torrentBridge.addPublic(candidate.torrent, { path: stageDir }));
     if (Array.isArray(torrent?.files) && torrent.files.length !== 1) throw new Error('book torrent must contain exactly one file');
-    await waitForTorrent(torrent, onProgress, signal);
-    return torrentFilePath(torrent, stageDir);
+    await waitForTorrent(torrent, onProgress, signal, this.maxBytes);
+    const stagedPath = torrentFilePath(torrent, stageDir);
+    const stats = await fsp.stat(stagedPath);
+    if (!stats.isFile() || stats.size <= 0 || stats.size > this.maxBytes) {
+      throw new Error('torrent file exceeds the maximum acquisition size');
+    }
+    if (Number(candidate.size) > 0 && stats.size !== Number(candidate.size)) {
+      throw new Error('torrent file size does not match metadata');
+    }
+    return stagedPath;
   }
 }
 
-module.exports = { AcquisitionManager, extensionFor, safePath };
+module.exports = {
+  AcquisitionManager,
+  DEFAULT_MAX_ACQUISITION_BYTES,
+  assertTrustedURL,
+  extensionFor,
+  privateHostname,
+  safePath,
+};
