@@ -47,4 +47,5 @@ test('rights adapter safely handles malformed metadata and every inferred policy
   assert.equal(linked.rights_source, 'metadata');
   assert.equal(linked.jurisdiction, 'EU');
   assert.equal(linked.attribution, 'Author');
+  assert.equal(normalizeRightsV2({ license_url: 'https://%' }).license_url, '');
 });
