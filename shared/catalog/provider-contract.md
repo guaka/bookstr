@@ -49,3 +49,20 @@ Adapters support OPDS 1 Atom acquisition feeds, OpenSearch discovery, and
 OPDS 2 JSON publication feeds. They return only FB2 acquisitions and report a
 feed-specific failure to the calling client; custom feed URLs are fetched by
 the client and are never forwarded through Bookstr's public worker.
+
+## v1 legal-source registry
+
+`source-registry.mjs` is the shared policy index for built-in discovery:
+
+- Propagate and Ebooks libres et gratuits expose native torrent delivery and
+  source-asserted public-domain policy.
+- Internet Archive exposes torrents, but each item still needs rights evidence.
+- Project Gutenberg, Wikisource, OAPEN, DOAB, Open Textbook Library, Unglue.it,
+  Global Digital Library, and the existing LitRes feed remain HTTPS/metadata
+  sources. Wikisource records must retain the per-work license template;
+  Russian and Chinese works are first-class language coverage.
+
+Source descriptors do not grant redistribution by themselves. The rights v2
+normalizer must return `redistribution: allowed` before an edition can be
+publicly seeded. LibriVox is intentionally deferred until audio support exists,
+and the 92 GB OAPEN collection torrent is not a Bookstr dependency.

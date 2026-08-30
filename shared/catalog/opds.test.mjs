@@ -252,3 +252,39 @@ test('LitRes normalization accepts alternate evidence fields and rejects unsafe 
   assert.deepEqual(normalizeLitresPublicDomainRecords({ records: [] }), []);
   assert.deepEqual(normalizeLitresPublicDomainRecords({ items: [] }), []);
 });
+
+test('OPDS adapters handle alternate links, metadata, and conservative search discovery', () => {
+  const context = { provider: 'feed', feedURL: 'https://books.example/root/catalog' };
+  const opds1 = normalizeOPDS1Feed(`<feed><entry><link href="ftp://books.example/book.fb2" type="application/fb2+xml"/></entry>
+    <entry><link href="/book.FB2.zip?download=1"/><dc:published>around 1899</dc:published><dc:rights>unknown</dc:rights></entry></feed>`, context);
+  assert.equal(opds1.length, 1);
+  assert.equal(opds1[0].title, 'Untitled');
+  assert.equal(opds1[0].publishedYear, '1899');
+  assert.equal(opds1[0].rights.status, 'unknown');
+  assert.equal(opds1[0].acquisitions[0].url, 'https://books.example/book.FB2.zip?download=1');
+
+  const opds2 = normalizeOPDS2Feed({ publications: [{
+    id: 42, title: 8, creator: [{ identifier: 'Writer' }, 9], languages: ['EN', 'nonsense'], license: 'CC-BY',
+    acquisition: { url: '/book.fb2', media_type: 'application/fb2+xml' }, images: { url: '/cover.jpg' },
+  }] }, context);
+  assert.equal(opds2[0].recordId, '42');
+  assert.deepEqual(opds2[0].authors, ['Writer']);
+  assert.deepEqual(opds2[0].languages, ['en']);
+  assert.equal(opds2[0].rights.status, 'open_license');
+
+  assert.deepEqual(discoverOPDSFeed(JSON.stringify({ links: [{ rel: ['other', 'search'], href: '%%%'}] }), context).search, {
+    kind: 'template', href: 'https://books.example/root/%%%', type: '',
+  });
+  assert.deepEqual(discoverOPDSFeed('<feed><link rel="search" href="/search{query}" type="application/atom+xml"/></feed>', context).search, {
+    kind: 'template', href: 'https://books.example/search{query}', type: 'application/atom+xml',
+  });
+  assert.equal(resolveOPDSSearchURL({ href: 'https://books.example/search{&q}' }, 'a b'), 'https://books.example/search&q=a%20b');
+
+  const litres = normalizeLitresPublicDomainRecords({ items: [{
+    file_id: 7, name: 'Fallback title', public_domain: true, price: { value: '0,00' }, language: 'RU',
+    labels: [{ title: 'Public Domain' }], downloads: { download_url: 'https://books.example/direct.fb2', type: 'application/fb2+xml' },
+  }] });
+  assert.equal(litres[0].recordId, '7');
+  assert.equal(litres[0].title, 'Fallback title');
+  assert.deepEqual(litres[0].languages, ['ru']);
+});

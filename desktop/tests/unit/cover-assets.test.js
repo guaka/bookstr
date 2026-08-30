@@ -78,6 +78,12 @@ test('cover image fallback advances candidates and removes an exhausted image', 
   attachImageFallback(blank, ['data:image/svg+xml,only']);
   assert.equal(blank.src, 'data:image/svg+xml,only');
   blankListeners.error();
+  const noAttributeImage = {
+    src: '',
+    addEventListener: () => {},
+  };
+  attachImageFallback(noAttributeImage, ['data:image/svg+xml,only']);
+  assert.equal(noAttributeImage.src, 'data:image/svg+xml,only');
 });
 
 test('cover candidates reject unsafe hints and keep only usable public URLs', () => {

@@ -2,13 +2,15 @@
 
 This directory contains the Electron shell for the libstr desktop app. It loads
 the existing web reader UI from `../web` through a custom `app://bookstr` protocol,
-keeps reading inside the main library window, and synchronizes reading progress
-through an isolated preload bridge.
+keeps reading inside the main library window, opens one reader window per opened
+book, and synchronizes reading progress through an isolated preload bridge. The
+desktop uses the bundled WebTorrent client for public and private transfers; it
+does not bundle Transmission or Iroh.
 
 ## Run locally
 
 ```bash
-cd /Users/k/code/playground/libvault/bookstr/desktop
+cd bookstr/desktop
 npm install
 npm start
 ```
@@ -16,7 +18,7 @@ npm start
 ## Test
 
 ```bash
-cd /Users/k/code/playground/libvault/bookstr/desktop
+cd bookstr/desktop
 npm install
 npm run test
 npm run test:e2e:smoke
@@ -56,4 +58,8 @@ unprivileged user under Xvfb, and removes the test container when it finishes.
   reading progress remain in sync across windows.
 - Reader windows receive signed payloads from the main process via a constrained
   bridge (`window.bookstrDesktop`).
+- `window.bookstrDesktop.transfers` exposes status, rights-gated public seeding,
+  and public/private torrent admission without exposing library paths.
+- `window.bookstrDesktop.library.acquire(record)` selects an eligible HTTPS or
+  torrent source, retries safely, and imports only after checksum verification.
 - External links are opened in the system browser.

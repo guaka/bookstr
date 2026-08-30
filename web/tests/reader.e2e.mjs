@@ -797,10 +797,12 @@ test('HTTP search results expose format filters and can be favorited in place', 
   await expect(openLicenseRow.locator('.rights-marker')).toHaveText('CC BY-SA 4.0');
   await expect(page.locator('#search-format-filter')).toBeVisible();
 
-  await page.locator('#search-format-filter').selectOption('pdf');
+  const formatFilter = page.locator('#search-format-filter');
+  await formatFilter.selectOption('pdf');
+  await expect(formatFilter).toHaveValue('pdf');
   await expect(page.locator('#search-result-count')).toHaveText('1 of 2 results');
-  await expect(page.locator('#results')).toContainText('Paper Walls');
-  await expect(page.locator('#results')).not.toContainText('Paper Boats');
+  await expect(page.locator('#results .book-table-row')).toHaveCount(1);
+  await expect(page.locator('#results .book-table-row')).toContainText('Paper Walls');
 
   const favorite = page.locator('#results button[data-action="favorite"]').first();
   await favorite.click();

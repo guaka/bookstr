@@ -2,6 +2,7 @@ const { contextBridge, ipcRenderer } = require('electron');
 
 const readerOpenCallbacks = new Set();
 const progressCallbacks = new Set();
+const acquisitionProgressCallbacks = new Set();
 const settingsOpenCallbacks = new Set();
 const paneOpenCallbacks = new Set();
 const speechModelProgressCallbacks = new Set();
@@ -67,6 +68,16 @@ ipcRenderer.on('bookstr-desktop-open-reader', (_event, payload) => {
 
 ipcRenderer.on('bookstr-desktop-reader-progress', (_event, payload) => {
   for (const callback of progressCallbacks) {
+    try {
+      callback(payload);
+    } catch {
+      // ignore
+    }
+  }
+});
+
+ipcRenderer.on('bookstr-desktop-acquisition-progress', (_event, payload) => {
+  for (const callback of acquisitionProgressCallbacks) {
     try {
       callback(payload);
     } catch {
@@ -219,6 +230,74 @@ const desktopBridge = {
     if (normalized?.md5) {
       ipcRenderer.send('bookstr-desktop-report-progress', normalized);
     }
+  },
+  library: {
+    search(request) {
+      return ipcRenderer.invoke('bookstr-desktop-library-search', request);
+    },
+    getBook(bookId) {
+      return ipcRenderer.invoke('bookstr-desktop-library-book', bookId);
+    },
+    importBook(options) {
+      return ipcRenderer.invoke('bookstr-desktop-library-import', options);
+    },
+    acquire(record, options = {}) {
+      return ipcRenderer.invoke('bookstr-desktop-library-acquire', { record, ...options });
+    },
+    onAcquisitionProgress(callback) {
+      if (typeof callback !== 'function') return () => {};
+      acquisitionProgressCallbacks.add(callback);
+      return () => acquisitionProgressCallbacks.delete(callback);
+    },
+    downloads() {
+      return ipcRenderer.invoke('bookstr-desktop-library-downloads');
+    },
+    setDownload(download) {
+      return ipcRenderer.invoke('bookstr-desktop-library-set-download', download);
+    },
+    linkedFolders() {
+      return ipcRenderer.invoke('bookstr-desktop-library-linked-folders');
+    },
+    linkFolder(folder) {
+      return ipcRenderer.invoke('bookstr-desktop-library-link-folder', folder);
+    },
+    openReader(bookId) {
+      return ipcRenderer.invoke('bookstr-desktop-library-open-reader', bookId);
+    },
+  },
+  devices: {
+    status() {
+      return ipcRenderer.invoke('bookstr-desktop-device-status');
+    },
+    registry() {
+      return ipcRenderer.invoke('bookstr-desktop-device-registry');
+    },
+    announce(options = {}) {
+      return ipcRenderer.invoke('bookstr-desktop-device-announce', options);
+    },
+    createEnvelope(request) {
+      return ipcRenderer.invoke('bookstr-desktop-device-create-envelope', request);
+    },
+    openEnvelope(request) {
+      return ipcRenderer.invoke('bookstr-desktop-device-open-envelope', request);
+    },
+    setRegistryEvent(event) {
+      return ipcRenderer.invoke('bookstr-desktop-device-set-registry-event', event);
+    },
+  },
+  transfers: {
+    status() {
+      return ipcRenderer.invoke('bookstr-desktop-transfer-status');
+    },
+    seedPublic(bookId) {
+      return ipcRenderer.invoke('bookstr-desktop-transfer-seed-public', { bookId });
+    },
+    addPublic(request) {
+      return ipcRenderer.invoke('bookstr-desktop-transfer-add-public', request);
+    },
+    addPrivate(request) {
+      return ipcRenderer.invoke('bookstr-desktop-transfer-add-private', request);
+    },
   },
 };
 
