@@ -148,7 +148,7 @@ jobs:
         with:
           name: bookstr-e2e-screenshots-web-${{ github.run_id }}
           path: web/test-results/**/*.png
-          if-no-files-found: warn
+          if-no-files-found: error
       - name: Record web test overview
         if: always()
         env:
@@ -238,7 +238,7 @@ jobs:
         with:
           name: bookstr-e2e-screenshots-electron-${{ github.run_id }}
           path: desktop/test-results/**/*.png
-          if-no-files-found: warn
+          if-no-files-found: error
       - name: Enforce Electron coverage baseline
         if: always()
         working-directory: .

@@ -20,15 +20,16 @@ import app.bookstr.data.BookProgress
 import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
+import org.junit.rules.RuleChain
 import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class LibraryScreenTest {
-    @get:Rule
-    val screenshots = E2eScreenshotRule()
+    private val screenshots = E2eScreenshotRule()
+    val composeRule = createComposeRule()
 
     @get:Rule
-    val composeRule = createComposeRule()
+    val rules: RuleChain = RuleChain.outerRule(composeRule).around(screenshots)
 
     @Test
     fun rendersBooksAndOpensOnClick() {

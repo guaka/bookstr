@@ -102,6 +102,15 @@ test('CodeQL scans every main push while gating pull requests by language', asyn
 test('Android CI shares one cached Gradle invocation across unit build tasks', async () => {
   const workflow = await readWorkflow('android.yml');
   const properties = await readFile(new URL('../android/gradle.properties', import.meta.url), 'utf8');
+  const e2eRunner = await readFile(new URL('../android/scripts/run-connected-e2e.sh', import.meta.url), 'utf8');
+  const screenshotRule = await readFile(
+    new URL('../android/app/src/androidTest/java/app/bookstr/E2eScreenshotRule.kt', import.meta.url),
+    'utf8',
+  );
+  const libraryTests = await readFile(
+    new URL('../android/app/src/androidTest/java/app/bookstr/ui/LibraryScreenTest.kt', import.meta.url),
+    'utf8',
+  );
 
   assert.match(properties, /^org\.gradle\.configuration-cache=true$/m);
   assert.match(
@@ -113,10 +122,14 @@ test('Android CI shares one cached Gradle invocation across unit build tasks', a
   assert.equal([...workflow.matchAll(/assembleDebug/g)].length, 1);
   assert.match(workflow, /steps\.android_build\.outcome == 'success'/);
   assert.doesNotMatch(workflow, /steps\.(unit_tests|unit_coverage|assemble)\./);
-  assert.match(workflow, /script: cd android; \.\/gradlew --no-daemon connectedDebugAndroidTest; status=\$\?/);
-  assert.match(workflow, /adb pull \/sdcard\/Android\/data\/app\.bookstr\/files\/e2e-screenshots e2e-screenshots/);
-  assert.match(workflow, /adb exec-out screencap -p > e2e-screenshots\/final-state\.png/);
+  assert.match(workflow, /script: \.\/android\/scripts\/run-connected-e2e\.sh/);
+  assert.match(e2eRunner, /\.\/gradlew --no-daemon connectedDebugAndroidTest/);
+  assert.match(e2eRunner, /adb pull "\$device_screenshot_dir\/\." "\$host_screenshot_dir"/);
+  assert.match(e2eRunner, /Android e2e tests produced no screenshots/);
+  assert.match(screenshotRule, /screencap -p \/sdcard\/e2e-screenshots\/\$testName\.png/);
+  assert.match(libraryTests, /RuleChain\.outerRule\(composeRule\)\.around\(screenshots\)/);
   assert.match(workflow, /bookstr-e2e-screenshots-android-\$\{\{ github\.run_id \}\}/);
+  assert.match(workflow, /bookstr-e2e-screenshots-android-[\s\S]*if-no-files-found: error/);
 });
 
 test('Pages deploys once after CI and does not cancel an active deploy', async () => {

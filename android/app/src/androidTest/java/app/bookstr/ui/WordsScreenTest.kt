@@ -17,16 +17,17 @@ import app.bookstr.data.VocabularyWord
 import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
+import org.junit.rules.RuleChain
 import org.junit.runner.RunWith
 import org.json.JSONArray
 
 @RunWith(AndroidJUnit4::class)
 class WordsScreenTest {
-    @get:Rule
-    val screenshots = E2eScreenshotRule()
+    private val screenshots = E2eScreenshotRule()
+    val composeRule = createComposeRule()
 
     @get:Rule
-    val composeRule = createComposeRule()
+    val rules: RuleChain = RuleChain.outerRule(composeRule).around(screenshots)
 
     @Test
     fun filtersWordsByDefinitionAndClearsTheFilter() {
