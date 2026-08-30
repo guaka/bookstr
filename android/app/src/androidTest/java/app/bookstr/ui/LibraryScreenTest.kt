@@ -303,8 +303,8 @@ class LibraryScreenTest {
         }
 
         composeRule.onNodeWithText("Search favorites").performTextInput("journey")
-        composeRule.onNodeWithText("A Visible Reading Journey").assertIsDisplayed()
-        composeRule.onNodeWithText("60% read").assertIsDisplayed()
+        composeRule.onAllNodesWithText("A Visible Reading Journey").assertCountEquals(2)
+        composeRule.onAllNodesWithText("60% read").assertCountEquals(2)
         composeRule.onAllNodesWithText("Another Book").assertCountEquals(0)
     }
 
