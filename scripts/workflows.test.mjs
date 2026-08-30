@@ -34,10 +34,24 @@ test('Electron unit coverage and smoke results are published beside other client
   assert.match(workflow, /electron: \$\{\{ steps\.filter\.outputs\.electron \}\}/);
   assert.match(workflow, /npm run test:coverage \| tee electron-tests\.tap/);
   assert.match(workflow, /xvfb-run -a npx playwright test tests\/e2e\/desktop\.smoke\.spec\.js/);
+  assert.match(workflow, /bookstr-e2e-screenshots-web-\$\{\{ github\.run_id \}\}/);
+  assert.match(workflow, /web\/test-results\/\*\*\/\*\.png/);
+  assert.match(workflow, /bookstr-e2e-screenshots-electron-\$\{\{ github\.run_id \}\}/);
+  assert.match(workflow, /desktop\/test-results\/\*\*\/\*\.png/);
   assert.match(workflow, /--coverage-format node --coverage desktop\/electron-tests\.tap/);
   assert.match(workflow, /bookstr-test-overview-electron-\$\{\{ github\.run_id \}\}/);
   assert.match(deploy, /latest_run_with_artifact ci\.yml bookstr-test-overview-electron-/);
   assert.match(deploy, /pattern: bookstr-test-overview-electron-\*/);
+});
+
+test('Playwright captures every web and Electron e2e test for PR artifacts', async () => {
+  const web = await readFile(new URL('../web/playwright.config.mjs', import.meta.url), 'utf8');
+  const electron = await readFile(new URL('../desktop/playwright.config.js', import.meta.url), 'utf8');
+
+  assert.match(web, /outputDir: 'test-results'/);
+  assert.match(web, /screenshot: 'on'/);
+  assert.match(electron, /outputDir: 'test-results'/);
+  assert.match(electron, /screenshot: 'on'/);
 });
 
 test('every client enforces the shared coverage baseline', async () => {
@@ -56,6 +70,8 @@ test('every client enforces the shared coverage baseline', async () => {
   assert.match(ios, /NeuralSpeechSessionTests/);
   assert.match(ios, /ReaderPlaybackSessionTests/);
   assert.match(ios, /SnippetRepositoryTests/);
+  assert.match(ios, /xcresulttool export attachments --path ios\/E2EResults\.xcresult --output-path ios\/e2e-screenshots/);
+  assert.match(ios, /bookstr-e2e-screenshots-ios-\$\{\{ github\.run_id \}\}/);
 });
 
 test('CodeQL scans every main push while gating pull requests by language', async () => {
@@ -97,6 +113,9 @@ test('Android CI shares one cached Gradle invocation across unit build tasks', a
   assert.equal([...workflow.matchAll(/assembleDebug/g)].length, 1);
   assert.match(workflow, /steps\.android_build\.outcome == 'success'/);
   assert.doesNotMatch(workflow, /steps\.(unit_tests|unit_coverage|assemble)\./);
+  assert.match(workflow, /adb pull \/sdcard\/Android\/data\/app\.bookstr\/files\/e2e-screenshots e2e-screenshots/);
+  assert.match(workflow, /adb exec-out screencap -p > e2e-screenshots\/final-state\.png/);
+  assert.match(workflow, /bookstr-e2e-screenshots-android-\$\{\{ github\.run_id \}\}/);
 });
 
 test('Pages deploys once after CI and does not cancel an active deploy', async () => {

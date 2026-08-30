@@ -8,6 +8,7 @@ module.exports = defineConfig({
   outputDir: 'test-results',
   reporter: [['list']],
   use: {
+    screenshot: 'on',
     launchOptions: {
       devtools: false,
     },

@@ -3,6 +3,7 @@ package app.bookstr.nostr
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import app.bookstr.E2eScreenshotRule
 import app.bookstr.data.NostrAuthMode
 import app.bookstr.data.SettingsRepository
 import org.junit.Assert.assertEquals
@@ -15,6 +16,9 @@ import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class NostrSignerCoverageConfigTest {
+    @get:org.junit.Rule
+    val screenshots = E2eScreenshotRule()
+
     private lateinit var context: Context
     private lateinit var settings: SettingsRepository
 

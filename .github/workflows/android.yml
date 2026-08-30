@@ -103,7 +103,15 @@ jobs:
           api-level: 30
           arch: x86_64
           target: google_apis
-          script: cd android && ./gradlew --no-daemon connectedDebugAndroidTest
+          script: |
+            set +e
+            cd android
+            ./gradlew --no-daemon connectedDebugAndroidTest
+            status=$?
+            mkdir -p e2e-screenshots
+            adb pull /sdcard/Android/data/app.bookstr/files/e2e-screenshots e2e-screenshots || true
+            adb exec-out screencap -p > e2e-screenshots/final-state.png || true
+            exit "$status"
       - name: Record Android UI test overview
         if: always()
         working-directory: .
@@ -121,6 +129,13 @@ jobs:
         with:
           name: bookstr-test-overview-android-ui-${{ github.run_id }}
           path: test-overview/android-ui.json
+      - name: Upload Android e2e screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bookstr-e2e-screenshots-android-${{ github.run_id }}
+          path: android/e2e-screenshots/**/*.png
+          if-no-files-found: warn
       - name: Fail unsuccessful Android checks
         if: always() && (steps.android_build.outcome != 'success' || steps.ui_tests.outcome != 'success')
         run: exit 1

@@ -63,6 +63,7 @@ export function renderCoverageReport({ reports = [], workflow = 'Bookstr', runUr
     `<!-- bookstr-coverage-report:${safeMarker} -->`,
     '## Bookstr coverage',
     safeRunUrl ? `Workflow: **${safeWorkflow}** | [Open workflow run](${safeRunUrl})` : `Workflow: **${safeWorkflow}**`,
+    safeRunUrl ? `[Download e2e screenshots](${safeRunUrl}#artifacts)` : '',
     '',
     '| Suite | Status | Tests | Statements | Branches | Functions | Lines |',
     '| --- | --- | ---: | ---: | ---: | ---: | ---: |',

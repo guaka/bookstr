@@ -14,6 +14,13 @@ final class AppShellUITests: XCTestCase {
         XCTAssertTrue(library.isSelected)
     }
 
+    override func tearDownWithError() throws {
+        let attachment = XCTAttachment(screenshot: app.screenshot())
+        attachment.name = name
+        attachment.lifetime = .keepAlways
+        add(attachment)
+    }
+
     func testNavigationSettingsAndContinueReadingJourney() throws {
         selectTab("Search")
         selectTab("Words")
@@ -81,6 +88,11 @@ final class AppShellUITests: XCTestCase {
         )
         back.tap()
         XCTAssertTrue(app.tabBars.buttons["Library"].waitForExistence(timeout: 5))
+    }
+
+    func testLibraryFixturesExposeBothReadableFormats() throws {
+        XCTAssertTrue(app.buttons["library-book-ui-test-alice-epub"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["library-book-ui-test-alice-pdf"].waitForExistence(timeout: 5))
     }
 
     private func selectTab(_ label: String) {
