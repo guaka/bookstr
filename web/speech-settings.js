@@ -27,9 +27,8 @@
     }
   }
 
-  function supportedLanguages(voices, displayNames) {
-    const locales = [...Object.keys(LANGUAGE_NAMES), ...(voices || []).map(voice => languageCode(voice?.lang))];
-    return languagesForVoices(locales.filter(Boolean).map(lang => ({ lang })), displayNames);
+  function languagesForCodes(codes, displayNames) {
+    return languagesForVoices((codes || []).filter(Boolean).map(lang => ({ lang })), displayNames);
   }
 
   function languagesForVoices(voices, displayNames) {
@@ -64,5 +63,5 @@
     return '';
   }
 
-  return { languageCode, languagesForVoices, supportedLanguages, voicesForLanguage, savedVoice };
+  return { languageCode, languagesForVoices, languagesForCodes, voicesForLanguage, savedVoice };
 });

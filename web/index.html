@@ -4844,6 +4844,7 @@
       }
 
       function renderFavorites() {
+        refreshSpeechVoiceMenus();
         favoritesList.innerHTML = '';
         if (!state.favorites.length) {
           const p = document.createElement('li');
@@ -4869,6 +4870,7 @@
       }
 
       function renderReading() {
+        refreshSpeechVoiceMenus();
         readingList.innerHTML = '';
         if (!state.reading.length) {
           const item = document.createElement('li');
@@ -7083,15 +7085,32 @@
         const displayNames = typeof Intl.DisplayNames === 'function'
           ? new Intl.DisplayNames([navigator.language || 'en'], { type: 'language' })
           : null;
-        const languages = BookstrSpeechSettings.supportedLanguages(speechVoices(), displayNames);
-        const selectedLanguage = BookstrSpeechSettings.languageCode(state.settings.speechLanguage || 'en');
+        const bookLanguages = BookMetadata.mergeLibraryState(state.reading, state.favorites)
+          .map(book => BookMetadata.languageForBook(book))
+          .filter(Boolean);
+        const languages = BookstrSpeechSettings.languagesForCodes(bookLanguages, displayNames);
+        const requestedLanguage = BookstrSpeechSettings.languageCode(state.settings.speechLanguage || '');
         speechLanguageInput.replaceChildren();
-        languages.forEach(language => speechLanguageInput.append(new Option(language.label, language.code)));
-        if (!languages.some(language => language.code === selectedLanguage)) {
-          speechLanguageInput.append(new Option(selectedLanguage.toUpperCase(), selectedLanguage));
+        if (!languages.length) {
+          const empty = new Option('No book languages', '');
+          empty.disabled = true;
+          empty.selected = true;
+          speechLanguageInput.append(empty);
+          speechLanguageInput.disabled = true;
+          speechVoiceInput.replaceChildren(new Option('No language-specific voice', ''));
+          speechVoiceInput.disabled = true;
+          updateSpeechModelVisibility();
+          return;
         }
+        speechLanguageInput.disabled = false;
+        speechVoiceInput.disabled = false;
+        languages.forEach(language => speechLanguageInput.append(new Option(language.label, language.code)));
+        const selectedLanguage = languages.some(language => language.code === requestedLanguage)
+          ? requestedLanguage
+          : languages[0].code;
         speechLanguageInput.value = selectedLanguage;
         populateSpeechVoiceMenu(speechVoiceInput, selectedLanguage, BookstrSpeechSettings.savedVoice(state.settings, selectedLanguage));
+        updateSpeechModelVisibility();
       }
 
       function speechModelSize(bytes) {

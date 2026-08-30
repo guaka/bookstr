@@ -139,6 +139,12 @@ test('libstr desktop app opens with preload bridge', async () => {
     await firstWindow.getByRole('button', { name: 'Search' }).click();
     await expect(firstWindow.locator('#search-tab')).toBeVisible();
 
+    await firstWindow.evaluate(() => {
+      state.favorites = [{ md5: 'a', title: 'English book', language: 'en' }, { md5: 'b', title: 'Portuguese book', language: 'pt-PT' }];
+      state.reading = [{ md5: 'c', title: 'Spanish book', language: 'es' }];
+      refreshSpeechVoiceMenus();
+    });
+
     await firstWindow.keyboard.press(process.platform === 'darwin' ? 'Meta+,' : 'Control+,');
     await expect(firstWindow.locator('#settings-modal')).toBeVisible();
     await expect(firstWindow.locator('#desktop-signer')).toBeVisible();
@@ -148,7 +154,10 @@ test('libstr desktop app opens with preload bridge', async () => {
     await expect(firstWindow.locator('#speech-language')).toBeVisible();
     await expect(firstWindow.locator('#speech-voice')).toContainText('Best installed voice');
     await expect(firstWindow.locator('#speech-language')).toContainText('English');
-    expect(await firstWindow.locator('#speech-language option').count()).toBeGreaterThan(20);
+    await expect(firstWindow.locator('#speech-language')).toContainText('Portuguese');
+    await expect(firstWindow.locator('#speech-language')).toContainText('Spanish');
+    await expect(firstWindow.locator('#speech-language')).not.toContainText('German');
+    expect(await firstWindow.locator('#speech-language option').count()).toBe(3);
     const kokoroModel = firstWindow.locator('#speech-model-kokoro_en');
     const tugaoModel = firstWindow.locator('#speech-model-piper_pt_pt');
     await expect(kokoroModel).toBeVisible();
