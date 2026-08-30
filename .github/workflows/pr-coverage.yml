@@ -1,0 +1,69 @@
+name: PR coverage report
+
+on:
+  workflow_run:
+    workflows: [CI, Android CI, iOS CI]
+    types: [completed]
+
+permissions:
+  actions: read
+  contents: read
+  issues: write
+  pull-requests: write
+
+jobs:
+  report:
+    if: github.event.workflow_run.event == 'pull_request' && github.event.workflow_run.conclusion != 'cancelled'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download test overview artifacts
+        uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: ${{ github.event.workflow_run.id }}
+          pattern: bookstr-test-overview-*
+          path: test-overview
+          merge-multiple: true
+      - name: Render PR coverage report
+        env:
+          WORKFLOW_NAME: ${{ github.event.workflow_run.name }}
+          RUN_URL: ${{ github.event.workflow_run.html_url }}
+          REPORT_MARKER: ${{ github.event.workflow_run.workflow_id }}
+        run: node scripts/pr-coverage-report.mjs --input test-overview --output pr-coverage.md --workflow "$WORKFLOW_NAME" --run-url "$RUN_URL" --marker "$REPORT_MARKER"
+      - name: Upload PR coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bookstr-pr-coverage-${{ github.event.workflow_run.id }}
+          path: pr-coverage.md
+          if-no-files-found: warn
+      - name: Update PR coverage comment
+        if: always()
+        uses: actions/github-script@v7
+        env:
+          REPORT_PATH: pr-coverage.md
+          REPORT_MARKER: ${{ github.event.workflow_run.workflow_id }}
+        with:
+          script: |
+            const fs = require('node:fs');
+            const pullRequests = context.payload.workflow_run.pull_requests || [];
+            if (!pullRequests.length) return;
+            const body = fs.readFileSync(process.env.REPORT_PATH, 'utf8');
+            const marker = `<!-- bookstr-coverage-report:${process.env.REPORT_MARKER} -->`;
+            for (const pullRequest of pullRequests) {
+              const comments = await github.paginate(github.rest.issues.listComments, {
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: pullRequest.number,
+                per_page: 100,
+              });
+              const existing = comments.find(comment => comment.body?.includes(marker));
+              const payload = { owner: context.repo.owner, repo: context.repo.repo, body };
+              if (existing) {
+                await github.rest.issues.updateComment({ ...payload, comment_id: existing.id });
+              } else {
+                await github.rest.issues.createComment({ ...payload, issue_number: pullRequest.number });
+              }
+            }
