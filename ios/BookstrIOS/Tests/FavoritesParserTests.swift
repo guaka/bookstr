@@ -1639,6 +1639,10 @@ final class FavoritesParserTests: XCTestCase {
         guard let webView = findSubview(WKWebView.self, in: host.view) else {
             return XCTFail("The mounted reader did not contain a WKWebView")
         }
+        XCTAssertTrue(
+            webView.gestureRecognizers?.contains(where: { $0.name == "bookstr-saved-highlight-tap" }) == true,
+            "The mounted reader did not install its native saved-highlight tap recognizer"
+        )
         let visibleText = try await webView.callAsyncJavaScript(
             "return Array.from(document.querySelectorAll('iframe')).map(frame => frame.contentDocument?.body?.innerText || '').join(' ');",
             arguments: [:], in: nil, contentWorld: .page

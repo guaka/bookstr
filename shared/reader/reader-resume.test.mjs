@@ -31,11 +31,13 @@ test('word and mark highlights stay distinct and readable in every reader theme'
 });
 
 test('saved word and mark annotations navigate back to their list entries when tapped', () => {
-  assert.match(reader, /AndroidBridge\.onSavedHighlightTapped\(JSON\.stringify\(\{ kind: resolvedKind, locator: cfi \}\)\)/);
+  assert.match(reader, /activateSavedHighlight\(\{ kind: resolvedKind, locator: cfi \}\)/);
   assert.match(reader, /activeReaderHighlights\[group\]\.includes\(cfi\)/);
   assert.match(reader, /savedHighlightAtPoint\(contentDocument, event\.clientX, event\.clientY\)/);
-  assert.match(reader, /savedHighlightAtViewportPoint\(event\.clientX, event\.clientY\)/);
+  assert.match(reader, /window\.activateSavedHighlightAtViewportPoint\(event\.clientX, event\.clientY\)/);
   assert.match(reader, /x - rect\.left, y - rect\.top/);
+  assert.match(reader, /window\.activateSavedHighlightAtViewportPoint = function\(x, y\)/);
+  assert.match(reader, /lastSavedHighlightActivation/);
   assert.match(reader, /const range = contents\.range\(cfi\)/);
   assert.match(reader, /\{ kind: "mark", values: activeReaderHighlights\.marks \}/);
 });

@@ -817,6 +817,14 @@ struct EPUBReaderView: UIViewRepresentable {
         webView.onEditMenuReadFromHere = { [weak coordinator = context.coordinator] in
             coordinator?.readFromHereFromEditMenu()
         }
+        let tapGesture = UITapGestureRecognizer(
+            target: context.coordinator,
+            action: #selector(Coordinator.handleReaderTap(_:))
+        )
+        tapGesture.name = "bookstr-saved-highlight-tap"
+        tapGesture.cancelsTouchesInView = false
+        tapGesture.delegate = context.coordinator
+        webView.addGestureRecognizer(tapGesture)
         let gesture = UIPanGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handlePagePan(_:)))
         gesture.cancelsTouchesInView = false
         gesture.delegate = context.coordinator
@@ -903,6 +911,15 @@ struct EPUBReaderView: UIViewRepresentable {
             if let resignObserver {
                 NotificationCenter.default.removeObserver(resignObserver)
             }
+        }
+
+        @objc func handleReaderTap(_ gesture: UITapGestureRecognizer) {
+            guard gesture.state == .ended, let view = gesture.view else { return }
+            let point = gesture.location(in: view)
+            controller.evaluate(
+                "window.activateSavedHighlightAtViewportPoint && " +
+                    "window.activateSavedHighlightAtViewportPoint(\(point.x), \(point.y)); null;"
+            )
         }
 
         @objc func handlePagePan(_ gesture: UIPanGestureRecognizer) {
