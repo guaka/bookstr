@@ -1,6 +1,8 @@
 import Foundation
 import SQLite3
 
+private let sqliteTransient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
+
 struct DictionaryLookup: Equatable {
     var word: String
     var language: String
@@ -92,9 +94,13 @@ final class DictionaryRepository {
 
     private let packDirectory: URL
 
-    init() {
+    convenience init() {
         let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-        packDirectory = support.appendingPathComponent("bookstr/dictionaries", isDirectory: true)
+        self.init(packDirectory: support.appendingPathComponent("bookstr/dictionaries", isDirectory: true))
+    }
+
+    init(packDirectory: URL) {
+        self.packDirectory = packDirectory
         try? FileManager.default.createDirectory(at: packDirectory, withIntermediateDirectories: true)
     }
 
@@ -207,7 +213,7 @@ final class DictionaryRepository {
                 "WHERE written_rep = ? COLLATE NOCASE ORDER BY score DESC, importance DESC"
             guard sqlite3_prepare_v2(database, sql, -1, &statement, nil) == SQLITE_OK, let statement else { continue }
             defer { sqlite3_finalize(statement) }
-            word.withCString { pointer in sqlite3_bind_text(statement, 1, pointer, -1, nil) }
+            _ = word.withCString { pointer in sqlite3_bind_text(statement, 1, pointer, -1, sqliteTransient) }
             var rows: [String] = []
             while sqlite3_step(statement) == SQLITE_ROW {
                 let translations = sqlite3_column_text(statement, 0).map { String(cString: $0) } ?? ""
