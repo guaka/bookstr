@@ -67,12 +67,24 @@ test('acquisition retries the next eligible source after a checksum failure', ()
   assert.equal(store.downloads()[0].status, 'ready');
 }));
 
-test('torrent acquisition rejects multi-file torrents before import', () => withManager(async ({ manager }) => {
-  manager.torrentBridge = { addPublic: async () => ({ files: [{ path: 'one.epub' }, { path: 'two.epub' }], on() {} }) };
+test('torrent acquisition rejects multi-file torrents before import and destroys the torrent', () => withManager(async ({ manager }) => {
+  let destroyed = 0;
+  manager.torrentBridge = { addPublic: async () => ({ files: [{ path: 'one.epub' }, { path: 'two.epub' }], on() {}, destroy() { destroyed += 1; } }) };
   await assert.rejects(() => manager.acquire({
     provider: 'propagate', recordId: 'p-1', title: 'Book',
     acquisitions: [{ format: 'epub', torrent: 'https://example.test/book.torrent', availability: 'open', size: 10, sha256: BOOK_SHA256 }],
   }), /all eligible acquisitions failed/);
+  assert.equal(destroyed, 1);
+}));
+
+test('private torrent candidates stay out of the unauthenticated acquisition path', () => withManager(async ({ manager }) => {
+  let calls = 0;
+  manager.torrentBridge = { addPrivate: async () => { calls += 1; throw new Error('private handoff is not available'); } };
+  await assert.rejects(() => manager.acquire({
+    provider: 'propagate', recordId: 'private-1', title: 'Book',
+    acquisitions: [{ format: 'epub', torrent: 'https://example.test/book.torrent', private: true, availability: 'open', size: 10, sha256: BOOK_SHA256 }],
+  }), /no eligible acquisition/);
+  assert.equal(calls, 0);
 }));
 
 test('acquisition deprioritizes a source in cooldown', () => withManager(async ({ manager, store }) => {
@@ -154,15 +166,57 @@ test('streaming acquisition enforces the hard limit even when metadata matches',
 
 test('torrent acquisition rejects a torrent whose declared length exceeds the hard limit', () => withManager(async ({ manager }) => {
   manager.maxBytes = 5;
+  let destroyed = 0;
   manager.torrentBridge = {
     addPublic: async () => ({
       length: 10,
       files: [{ path: 'book.epub', length: 10 }],
       on() {},
+      destroy() { destroyed += 1; },
     }),
   };
   await assert.rejects(() => manager.acquire({
     provider: 'propagate', recordId: 'size-5', title: 'Book',
     acquisitions: [{ format: 'epub', torrent: 'https://example.test/book.torrent', availability: 'open', size: 10, sha256: BOOK_SHA256 }],
   }), /all eligible acquisitions failed/);
+  assert.equal(destroyed, 1);
+}));
+
+test('torrent acquisition destroys a torrent that crosses the streaming hard limit', () => withManager(async ({ manager }) => {
+  manager.maxBytes = 5;
+  let destroyed = 0;
+  const torrent = {
+    downloaded: 0,
+    files: [{ path: 'book.epub' }],
+    on(event, callback) {
+      if (event === 'download') queueMicrotask(() => {
+        torrent.downloaded = 6;
+        callback();
+      });
+    },
+    destroy() { destroyed += 1; },
+  };
+  manager.torrentBridge = { addPublic: async () => torrent };
+  await assert.rejects(() => manager.acquire({
+    provider: 'propagate', recordId: 'stream-limit-1', title: 'Book',
+    acquisitions: [{ format: 'epub', torrent: 'https://example.test/book.torrent', availability: 'open', size: 5, sha256: BOOK_SHA256 }],
+  }), /all eligible acquisitions failed/);
+  assert.equal(destroyed, 1);
+}));
+
+test('torrent acquisition destroys a completed torrent when its staged file fails validation', () => withManager(async ({ manager }) => {
+  let destroyed = 0;
+  manager.torrentBridge = {
+    addPublic: async () => ({
+      done: true,
+      files: [{ path: 'missing.epub', length: 10 }],
+      destroy() { destroyed += 1; },
+      on() {},
+    }),
+  };
+  await assert.rejects(() => manager.acquire({
+    provider: 'propagate', recordId: 'post-validation-1', title: 'Book',
+    acquisitions: [{ format: 'epub', torrent: 'https://example.test/book.torrent', availability: 'open', size: 10, sha256: BOOK_SHA256 }],
+  }), /all eligible acquisitions failed/);
+  assert.equal(destroyed, 1);
 }));

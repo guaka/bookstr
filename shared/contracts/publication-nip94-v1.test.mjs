@@ -40,3 +40,10 @@ test('rejects non-public, unverified, non-opted-in, and filesystem publication i
   assert.throws(() => createPublicFileMetadataEvent({ ...input, operatorOptIn: true, verified: true, url: 'file:///private/book.epub' }, { pubkey, now: 1 }), /HTTPS publication URL/);
   assert.equal(parsePublicFileMetadataEvent({ kind: 1063, content: '', tags: [['url', 'file:///private/book.epub'], ['x', sha256], ['m', 'application/epub+zip'], ['size', '1']] }), null);
 });
+
+test('rejects malformed publication URLs and metadata event shapes', () => {
+  const input = { operatorOptIn: true, verified: true, rights: allowed, url: 'https://%', sha256, size: 1, format: 'epub' };
+  assert.throws(() => createPublicFileMetadataEvent(input, { pubkey, now: 1 }), /HTTPS publication URL/);
+  assert.equal(parsePublicFileMetadataEvent({ kind: 1063, content: 'not-empty', tags: [] }), null);
+  assert.equal(parsePublicFileMetadataEvent({ kind: 1063, content: '', tags: [['url', 'https://%']] }), null);
+});

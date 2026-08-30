@@ -63,6 +63,14 @@ test('formats rights markers and accessible distinctions', () => {
   assert.equal(rightsAccessibleLabel({}), 'No open license identified');
 });
 
+test('sorts cached books through the caller-provided cache lookup', () => {
+  const books = sortBooks([
+    { id: 'uncached', title: 'A' },
+    { id: 'cached', title: 'B' },
+  ], 'cached', 'desc', book => book.id === 'cached');
+  assert.deepEqual(books.map(book => book.id), ['cached', 'uncached']);
+});
+
 test('keeps license URLs safe and preserves explicit metadata during partial refreshes', () => {
   assert.equal(normalizeRights({ license_url: 'javascript:alert(1)' }).license_url, '');
   assert.equal(
@@ -81,6 +89,11 @@ test('metadataObject parses object payloads and ignores invalid payloads', () =>
     title: 'Remote',
   });
   assert.deepEqual(metadataObject('{ invalid json }'), {});
+});
+
+test('metadata helpers safely retain malformed URL text without deriving a title', () => {
+  assert.equal(resolveTitle({ title: 'Untitled book' }, 'https://%', 'https://books.example/'), 'Untitled book');
+  assert.equal(normalizeReadUrl('https://%', 'https://books.example/'), 'https://%');
 });
 
 test('normalizes and preserves the earliest favorite addition time', () => {

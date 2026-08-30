@@ -66,3 +66,17 @@ test('rejects credentials, unsupported formats, and restricted downloads by defa
   assert.equal(normalizeProviderRecord({ ...record, acquisitions: [{ format: 'mobi', url: 'https://example.test/book.mobi', availability: 'open' }] }).acquisitions.length, 0);
   assert.throws(() => listAcquisitions(record, { format: 'mobi' }), /unsupported/);
 });
+
+test('drops malformed HTTP and magnet locators without losing valid acquisitions', () => {
+  const normalized = normalizeProviderRecord({
+    ...record,
+    acquisitions: [
+      { format: 'epub', url: 'https://%', torrent: 'magnet:?xt=urn:btih:abc', availability: 'open' },
+      { format: 'epub', url: 'https://%', torrent: 'magnet:invalid', availability: 'open' },
+    ],
+  });
+  assert.deepEqual(normalized.acquisitions.map(entry => ({ url: entry.url, torrent: entry.torrent })), [
+    { url: '', torrent: 'magnet:?xt=urn:btih:abc' },
+    { url: '', torrent: 'magnet:invalid' },
+  ]);
+});

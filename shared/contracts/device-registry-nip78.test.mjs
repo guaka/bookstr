@@ -48,3 +48,19 @@ test('rejects a registry event without the account signature or decryptable payl
   const tampered = { ...registryEvent(account), content: 'not-a-nip44-payload' };
   assert.equal(await verifyDeviceRegistryEvent(tampered, options), null);
 });
+
+test('rejects verifier failures and mismatched decoded owners', async () => {
+  const account = nostrTools.generateSecretKey();
+  const event = registryEvent(account);
+  const ownerPubkey = nostrTools.getPublicKey(account);
+  assert.equal(await verifyDeviceRegistryEvent(event, {
+    ownerPubkey,
+    tools: { verifyEvent() { throw new Error('bad verifier'); } },
+    decrypt: async () => '{}',
+  }), null);
+  assert.equal(await verifyDeviceRegistryEvent(event, {
+    ownerPubkey,
+    tools: { verifyEvent: () => true },
+    decrypt: async () => JSON.stringify({ owner_pubkey: 'b'.repeat(64), devices: [] }),
+  }), null);
+});

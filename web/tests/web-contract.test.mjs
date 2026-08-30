@@ -700,6 +700,7 @@ test('desktop content security policy permits secure Nostr relay sockets', async
   const desktopPackage = JSON.parse(await readFile(new URL('../../desktop/package.json', import.meta.url), 'utf8'));
   assert.match(desktopPolicy, /connect-src 'self' https: wss:;/);
   assert.ok(desktopPackage.build.files.includes('security-policy.js'));
+  assert.ok(desktopPackage.build.files.includes('device-pairing.js'));
 });
 
 test('desktop pane shortcuts use the constrained preload callback', () => {

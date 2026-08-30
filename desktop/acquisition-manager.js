@@ -160,6 +160,10 @@ function sourceKey(provider, candidate, recordId) {
   return raw.length <= 256 ? raw : raw.slice(0, 256);
 }
 
+function destroyTorrent(torrent) {
+  try { torrent?.destroy?.(); } catch { /* best effort cleanup */ }
+}
+
 class AcquisitionManager {
   constructor({ store, importer, torrentBridge, fetchImpl = globalThis.fetch, stagingRoot, maxAttempts = 3, maxBytes = DEFAULT_MAX_ACQUISITION_BYTES, trustedOrigins = {} } = {}) {
     if (!store || !importer || !stagingRoot) throw new TypeError('store, importer, and stagingRoot are required');
@@ -181,7 +185,9 @@ class AcquisitionManager {
     const normalized = normalizeProviderRecord(record);
     const fields = providerBookFields(record);
     const candidates = listAcquisitions(normalized, { format, preferTorrent, includeRestricted })
-      .filter(candidate => /^[a-f0-9]{64}$/i.test(candidate.sha256));
+      // Private torrents require an authenticated peer handoff. Until that
+      // exists, do not attempt them as ordinary catalog acquisitions.
+      .filter(candidate => !candidate.private && /^[a-f0-9]{64}$/i.test(candidate.sha256));
     if (!candidates.length) throw new Error('no eligible acquisition with a verified SHA-256 is available');
     const rankedCandidates = candidates.map((candidate, index) => {
       const source = sourceKey(normalized.provider, candidate, normalized.recordId);
@@ -274,17 +280,25 @@ class AcquisitionManager {
     const torrent = await (candidate.private
       ? this.torrentBridge.addPrivate(candidate.torrent, { path: stageDir })
       : this.torrentBridge.addPublic(candidate.torrent, { path: stageDir }));
-    if (Array.isArray(torrent?.files) && torrent.files.length !== 1) throw new Error('book torrent must contain exactly one file');
-    await waitForTorrent(torrent, onProgress, signal, this.maxBytes);
-    const stagedPath = torrentFilePath(torrent, stageDir);
-    const stats = await fsp.stat(stagedPath);
-    if (!stats.isFile() || stats.size <= 0 || stats.size > this.maxBytes) {
-      throw new Error('torrent file exceeds the maximum acquisition size');
+    try {
+      if (Array.isArray(torrent?.files) && torrent.files.length !== 1) throw new Error('book torrent must contain exactly one file');
+      await waitForTorrent(torrent, onProgress, signal, this.maxBytes);
+      const stagedPath = torrentFilePath(torrent, stageDir);
+      const stats = await fsp.stat(stagedPath);
+      if (!stats.isFile() || stats.size <= 0 || stats.size > this.maxBytes) {
+        throw new Error('torrent file exceeds the maximum acquisition size');
+      }
+      if (Number(candidate.size) > 0 && stats.size !== Number(candidate.size)) {
+        throw new Error('torrent file size does not match metadata');
+      }
+      return stagedPath;
+    } catch (error) {
+      // A torrent owns its peer connections and partially downloaded files;
+      // every rejection path must release it before the staging directory is
+      // removed by acquire().
+      destroyTorrent(torrent);
+      throw error;
     }
-    if (Number(candidate.size) > 0 && stats.size !== Number(candidate.size)) {
-      throw new Error('torrent file size does not match metadata');
-    }
-    return stagedPath;
   }
 }
 
