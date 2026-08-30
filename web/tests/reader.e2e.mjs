@@ -27,7 +27,7 @@ test('home filtering keeps the matching in-progress book visible', async ({ page
   await expect(page.locator('#home-reading-list')).toContainText('Visible Reading Journey');
   await page.locator('#home-query-input').fill('journey');
   await expect(page.locator('#home-reading-list')).toContainText('Visible Reading Journey');
-  await expect(page.locator('#home-reading-list')).toContainText('60%');
+  await expect(page.locator('#home-reading-list').getByRole('img', { name: 'Currently reading' })).toBeVisible();
   await expect(page.locator('#home-reading-list')).not.toContainText('Another Book');
 });
 

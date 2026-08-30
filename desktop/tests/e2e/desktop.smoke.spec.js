@@ -327,7 +327,7 @@ test('desktop home filtering keeps the matching in-progress book visible', async
     await expect(library.locator('#home-reading-list')).toContainText('Visible Reading Journey');
     await library.locator('#home-query-input').fill('journey');
     await expect(library.locator('#home-reading-list')).toContainText('Visible Reading Journey');
-    await expect(library.locator('#home-reading-list')).toContainText('60%');
+    await expect(library.locator('#home-reading-list').getByRole('img', { name: 'Currently reading' })).toBeVisible();
     await expect(library.locator('#home-reading-list')).not.toContainText('Another Book');
   } finally {
     await electronApp.close();
