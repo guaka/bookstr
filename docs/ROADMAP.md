@@ -48,6 +48,12 @@ clients on the same contracts.
    now enforces rights, completed verification, explicit operator intent, and
    HTTPS-only locators. Wire a visible per-host publish action only after the
    local verification path has release coverage.
+3. **Local WebTorrent end-to-end coverage.** Add hermetic fixtures for a small
+   verified EPUB and exercise: Electron-to-Electron private transfer with a
+   direct peer handoff; browser-to-browser private WebRTC offer/answer with no
+   tracker or DHT; and browser-to-Electron public interoperability through a
+   disposable local WebSocket tracker. These tests must not require public
+   trackers, relays, NAT traversal, or real book files.
 
 ## Release gates
 
