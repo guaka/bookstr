@@ -32,7 +32,7 @@ test('Electron unit coverage and smoke results are published beside other client
   const deploy = await readWorkflow('deploy-web.yml');
 
   assert.match(workflow, /electron: \$\{\{ steps\.filter\.outputs\.electron \}\}/);
-  assert.match(workflow, /npm run test:coverage \| tee electron-tests\.tap/);
+  assert.match(workflow, /npm run test:coverage(?::ci)? \| tee electron-tests\.tap/);
   assert.match(workflow, /xvfb-run -a npx playwright test tests\/e2e\/desktop\.smoke\.spec\.js/);
   assert.match(workflow, /--coverage-format node --coverage desktop\/electron-tests\.tap/);
   assert.match(workflow, /bookstr-test-overview-electron-\$\{\{ github\.run_id \}\}/);

@@ -190,7 +190,7 @@ jobs:
         run: |
           started=$(date +%s)
           set +e
-          npm run test:coverage | tee electron-tests.tap
+          npm run test:coverage:ci | tee electron-tests.tap
           status=${PIPESTATUS[0]}
           echo "duration_ms=$((($(date +%s) - started) * 1000))" >> "$GITHUB_OUTPUT"
           exit "$status"
