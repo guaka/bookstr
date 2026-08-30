@@ -212,7 +212,7 @@ jobs:
           set +e
           npm run test:e2e:torrent
           torrent_status=$?
-          xvfb-run -a npx playwright test tests/e2e/desktop.smoke.spec.js --reporter=json > electron-playwright.json
+          xvfb-run -a npx playwright test tests/e2e/desktop.smoke.spec.js tests/e2e/desktop.device-transfer.spec.js --reporter=json > electron-playwright.json
           status=$?
           if [ "$torrent_status" -ne 0 ]; then status="$torrent_status"; fi
           echo "duration_ms=$((($(date +%s) - started) * 1000))" >> "$GITHUB_OUTPUT"

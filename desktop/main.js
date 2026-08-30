@@ -1234,6 +1234,7 @@ function setupIpcHandlers() {
     return result;
   });
   ipcMain.handle('bookstr-desktop-device-status', () => getDevicePairing().status());
+  ipcMain.handle('bookstr-desktop-device-registry', () => loadTrustedDeviceRegistry());
   ipcMain.handle('bookstr-desktop-device-announce', (_event, options) => getDevicePairing().announce(isRecord(options) ? options : {}));
   ipcMain.handle('bookstr-desktop-device-create-envelope', (_event, request) => {
     if (!isRecord(request) || !request.recipientPubkey || !isRecord(request.message)) throw new Error('Invalid device envelope request.');

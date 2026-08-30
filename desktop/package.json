@@ -33,6 +33,7 @@
     "test:e2e:torrent": "node --test tests/e2e/webtorrent-private.e2e.test.js",
     "test:e2e:docker": "docker build --file Dockerfile.test --tag bookstr-electron-tests .. && docker run --rm --init --ipc=host bookstr-electron-tests",
     "test:e2e:smoke": "playwright test tests/e2e/desktop.smoke.spec.js",
+    "test:e2e:transfers": "playwright test tests/e2e/desktop.device-transfer.spec.js",
     "test:e2e:reader": "playwright test tests/e2e/desktop.reader.spec.js",
     "test:e2e:headed": "playwright test --headed"
   },

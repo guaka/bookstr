@@ -98,6 +98,14 @@ class ElectronDevicePairing {
 
   async status() {
     const device = await this.ensureDevice();
+    let accountPubkey = '';
+    try {
+      accountPubkey = String(await this.accountPublicKey() || '').toLowerCase();
+    } catch {
+      // A desktop may create a local session-only device identity before its
+      // user connects a signer. Envelope/registry operations still require the
+      // account callback and therefore remain unavailable until then.
+    }
     return {
       version: 1,
       deviceId: device.device_id,
@@ -105,7 +113,7 @@ class ElectronDevicePairing {
       platform: device.platform,
       name: device.name,
       capabilities: [...device.capabilities],
-      accountPubkey: String(await this.accountPublicKey() || '').toLowerCase(),
+      accountPubkey,
       persistent: this.safeStorage.isEncryptionAvailable() && Boolean((await this.loadState())?.devicePairing?.secret),
       relays: [...this.relays],
     };

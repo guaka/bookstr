@@ -1675,8 +1675,34 @@
         overflow-wrap: anywhere;
         white-space: pre-wrap;
       }
+      .device-transfer-panel {
+        display: grid;
+        gap: 0.9rem;
+        margin-bottom: 1rem;
+        padding: 1rem;
+        border: 1px solid var(--card-border);
+        border-radius: 0.85rem;
+        background: var(--card-bg);
+      }
+      .device-transfer-panel h3, .device-transfer-panel h4 { margin: 0; }
+      .device-transfer-summary { color: var(--muted); font-size: 0.9rem; }
+      .device-transfer-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+      .device-transfer-devices { display: grid; gap: 0.45rem; }
+      .device-transfer-device {
+        display: flex;
+        justify-content: space-between;
+        gap: 0.7rem;
+        padding: 0.55rem 0.65rem;
+        border-radius: 0.55rem;
+        background: var(--page-bg);
+      }
+      .device-transfer-device code { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .device-transfer-form { display: grid; grid-template-columns: minmax(12rem, 1fr) minmax(10rem, 1fr) auto; gap: 0.5rem; }
+      .device-transfer-form input { min-width: 0; }
+      .device-transfer-note { margin: 0; color: var(--muted); font-size: 0.82rem; }
       @media (max-width: 700px) {
         .nip17-exchange-grid { grid-template-columns: 1fr; }
+        .device-transfer-form { grid-template-columns: 1fr; }
       }
     </style>
   </head>
@@ -1808,6 +1834,29 @@
       </section>
 
       <section id="people-tab" class="card hidden" data-tab-panel="people">
+        <section id="device-transfer-panel" class="device-transfer-panel hidden" aria-labelledby="device-transfer-title">
+          <div>
+            <h3 id="device-transfer-title">Devices &amp; transfers</h3>
+            <p id="device-transfer-summary" class="device-transfer-summary" role="status">Checking this device…</p>
+          </div>
+          <div class="device-transfer-actions">
+            <button id="device-transfer-refresh" type="button">Refresh devices</button>
+            <button id="device-transfer-announce" type="button">Prepare private presence</button>
+          </div>
+          <div id="device-transfer-devices" class="device-transfer-devices" aria-live="polite"></div>
+          <form id="device-private-transfer-form" class="device-transfer-form" autocomplete="off">
+            <input id="device-private-torrent" aria-label="Private torrent metadata" placeholder="Private magnet or torrent ID" required />
+            <input id="device-private-peer" aria-label="Direct peer address" placeholder="Peer IP:port" required />
+            <button type="submit">Start private transfer</button>
+          </form>
+          <p class="device-transfer-note">Private transfers use only the authenticated device handoff. They do not use public trackers, DHT, or local file paths.</p>
+          <form id="device-public-transfer-form" class="device-transfer-form" autocomplete="off">
+            <input id="device-public-torrent" aria-label="Public torrent metadata" placeholder="Public magnet or torrent ID" required />
+            <span aria-hidden="true"></span>
+            <button type="submit">Add public torrent</button>
+          </form>
+          <p id="device-transfer-result" class="device-transfer-note" role="status"></p>
+        </section>
         <div id="people-list" class="people-list" aria-live="polite"></div>
       </section>
 
@@ -2085,6 +2134,17 @@
       const wordsTab = document.getElementById('words-tab');
       const peopleTab = document.getElementById('people-tab');
       const peopleList = document.getElementById('people-list');
+      const deviceTransferPanel = document.getElementById('device-transfer-panel');
+      const deviceTransferSummary = document.getElementById('device-transfer-summary');
+      const deviceTransferDevices = document.getElementById('device-transfer-devices');
+      const deviceTransferRefresh = document.getElementById('device-transfer-refresh');
+      const deviceTransferAnnounce = document.getElementById('device-transfer-announce');
+      const devicePrivateTransferForm = document.getElementById('device-private-transfer-form');
+      const devicePrivateTorrent = document.getElementById('device-private-torrent');
+      const devicePrivatePeer = document.getElementById('device-private-peer');
+      const devicePublicTransferForm = document.getElementById('device-public-transfer-form');
+      const devicePublicTorrent = document.getElementById('device-public-torrent');
+      const deviceTransferResult = document.getElementById('device-transfer-result');
       const homeTabBtn = document.getElementById('home-tab-btn');
       const searchTabBtn = document.getElementById('search-tab-btn');
       const peopleTabBtn = document.getElementById('people-tab-btn');
@@ -2677,6 +2737,46 @@
             .map(list => `<li>${escapeHtml(list.title)}</li>`).join('');
           return `<article class="person-row">${avatar}<div>${identity}${titles ? `<ul class="person-lists">${titles}</ul>` : ''}</div></article>`;
         }).join('');
+      }
+
+      function shortDeviceKey(value) {
+        const key = String(value || '');
+        return key.length >= 20 ? `${key.slice(0, 12)}…${key.slice(-8)}` : 'pending';
+      }
+
+      function deviceTransferError(error) {
+        return String(error?.message || error || 'The transfer could not be started.').replace(/[\r\n]+/g, ' ').slice(0, 280);
+      }
+
+      async function refreshDeviceTransferPanel() {
+        if (!isDesktopMode || !desktopBridge?.devices?.status || !desktopBridge?.devices?.registry) return;
+        deviceTransferPanel.classList.remove('hidden');
+        deviceTransferSummary.textContent = 'Checking this device…';
+        try {
+          const [device, registry, transfers] = await Promise.all([
+            desktopBridge.devices.status(),
+            desktopBridge.devices.registry(),
+            desktopBridge.transfers?.status?.() || [],
+          ]);
+          const devices = Array.isArray(registry?.devices) ? registry.devices : [];
+          const account = String(device?.accountPubkey || '');
+          const storage = device?.persistent ? 'protected device key' : 'session-only device key';
+          const transferCount = Array.isArray(transfers) ? transfers.length : 0;
+          deviceTransferSummary.textContent = account
+            ? `${device?.name || 'Bookstr desktop'} · ${storage} · ${devices.length} authorized device${devices.length === 1 ? '' : 's'} · ${transferCount} active transfer${transferCount === 1 ? '' : 's'}`
+            : `${device?.name || 'Bookstr desktop'} · ${storage}. Connect a Nostr signer to authorize other devices.`;
+          if (!devices.length) {
+            deviceTransferDevices.innerHTML = '<p class="device-transfer-note">No authorized devices are available yet. Pair another signed Bookstr client to make it discoverable here.</p>';
+            return;
+          }
+          deviceTransferDevices.innerHTML = devices.map(entry => `<div class="device-transfer-device">
+            <span><strong>${escapeHtml(entry.name || 'Bookstr device')}</strong><br><small>${escapeHtml(entry.platform || 'web')} · ${escapeHtml((entry.capabilities || []).join(', ') || 'library')}</small></span>
+            <code title="${escapeHtml(entry.pubkey || '')}">${escapeHtml(shortDeviceKey(entry.pubkey))}</code>
+          </div>`).join('');
+        } catch (error) {
+          deviceTransferSummary.textContent = `Device status unavailable: ${deviceTransferError(error)}`;
+          deviceTransferDevices.replaceChildren();
+        }
       }
 
       let nostrPeopleSyncTask;
@@ -5888,6 +5988,7 @@
         if (activeTab === 'words') requestAnimationFrame(() => wordsFilter.focus());
         if (activeTab === 'people') {
           renderPeople();
+          void refreshDeviceTransferPanel();
           if (!state.followingLoaded) void syncNostrPeopleFromNip7();
         }
         if (!updateHash) return;
@@ -7682,6 +7783,51 @@
       homeTabBtn.addEventListener('click', () => activateTab('home', { updateHash: true }));
       searchTabBtn.addEventListener('click', () => activateTab('search', { updateHash: true }));
       peopleTabBtn.addEventListener('click', () => activateTab('people', { updateHash: true }));
+      deviceTransferRefresh.addEventListener('click', () => {
+        deviceTransferResult.textContent = '';
+        void refreshDeviceTransferPanel();
+      });
+      deviceTransferAnnounce.addEventListener('click', async () => {
+        if (!desktopBridge?.devices?.announce) return;
+        deviceTransferAnnounce.disabled = true;
+        try {
+          const message = await desktopBridge.devices.announce();
+          deviceTransferResult.textContent = `Private presence prepared until ${new Date(Number(message.expires_at) * 1000).toLocaleTimeString()}. Send it through your paired-device Nostr control channel.`;
+        } catch (error) {
+          deviceTransferResult.textContent = `Could not prepare private presence: ${deviceTransferError(error)}`;
+        } finally {
+          deviceTransferAnnounce.disabled = false;
+        }
+      });
+      devicePrivateTransferForm.addEventListener('submit', async event => {
+        event.preventDefault();
+        if (!desktopBridge?.transfers?.addPrivate) return;
+        deviceTransferResult.textContent = 'Starting private transfer…';
+        try {
+          const result = await desktopBridge.transfers.addPrivate({
+            torrentId: devicePrivateTorrent.value.trim(),
+            peer: devicePrivatePeer.value.trim(),
+          });
+          deviceTransferResult.textContent = `Private transfer started (${shortDeviceKey(String(result?.infoHash || ''))}).`;
+          devicePrivateTransferForm.reset();
+          await refreshDeviceTransferPanel();
+        } catch (error) {
+          deviceTransferResult.textContent = `Private transfer was not started: ${deviceTransferError(error)}`;
+        }
+      });
+      devicePublicTransferForm.addEventListener('submit', async event => {
+        event.preventDefault();
+        if (!desktopBridge?.transfers?.addPublic) return;
+        deviceTransferResult.textContent = 'Adding public torrent…';
+        try {
+          const result = await desktopBridge.transfers.addPublic({ torrentId: devicePublicTorrent.value.trim() });
+          deviceTransferResult.textContent = `Public torrent added (${shortDeviceKey(String(result?.infoHash || ''))}).`;
+          devicePublicTransferForm.reset();
+          await refreshDeviceTransferPanel();
+        } catch (error) {
+          deviceTransferResult.textContent = `Public torrent was not added: ${deviceTransferError(error)}`;
+        }
+      });
       readingTabBtn.addEventListener('click', () => activateTab('reading', { updateHash: true }));
       wordsTabBtn.addEventListener('click', () => activateTab('words', { updateHash: true }));
 

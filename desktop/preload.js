@@ -269,6 +269,9 @@ const desktopBridge = {
     status() {
       return ipcRenderer.invoke('bookstr-desktop-device-status');
     },
+    registry() {
+      return ipcRenderer.invoke('bookstr-desktop-device-registry');
+    },
     announce(options = {}) {
       return ipcRenderer.invoke('bookstr-desktop-device-announce', options);
     },
