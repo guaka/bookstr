@@ -71,7 +71,9 @@ test('approved NIP-46 QR signer becomes active, updates settings, and persists w
     const signerStatus = library.locator('#desktop-signer-status');
     await expect(signerStatus).toContainText('Connected with NIP-46 remote signer');
     await expect(signerStatus).toHaveClass(/signer-connected/);
-    await expect(library.getByRole('button', { name: 'Connect with QR code' })).toBeHidden();
+    await expect(library.locator('#desktop-signer-setup')).toBeHidden();
+    await expect(library.getByText('NIP-46 remote signer', { exact: true })).toBeHidden();
+    await expect(library.getByText('Use a local nsec instead')).toBeHidden();
     expect(await signerStatus.evaluate(element => getComputedStyle(element, '::before').content)).toBe('"✓"');
 
     await electronApp.close();

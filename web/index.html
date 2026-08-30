@@ -1889,31 +1889,33 @@
           <div class="settings-section settings-nostr">
             <h3>Nostr</h3>
             <div id="desktop-signer" class="desktop-signer hidden">
-              <div class="desktop-signer-primary">
-                <strong>NIP-46 remote signer</strong>
-                <small>Recommended. Your private key stays in your signer.</small>
-                <button id="desktop-nip46-qr-start" type="button">Connect with QR code</button>
-                <div id="desktop-nip46-qr" class="desktop-signer-qr hidden">
-                  <img id="desktop-nip46-qr-image" alt="NIP-46 connection QR code" hidden />
-                  <small id="nip46-approval-copy">Scan this with your remote signer and approve Bookstr.</small>
-                  <div class="desktop-signer-qr-actions">
-                    <button id="desktop-nip46-qr-copy" type="button">Copy connection link</button>
-                    <button id="desktop-nip46-qr-cancel" type="button">Cancel</button>
+              <div id="desktop-signer-setup">
+                <div class="desktop-signer-primary">
+                  <strong>NIP-46 remote signer</strong>
+                  <small>Recommended. Your private key stays in your signer.</small>
+                  <button id="desktop-nip46-qr-start" type="button">Connect with QR code</button>
+                  <div id="desktop-nip46-qr" class="desktop-signer-qr hidden">
+                    <img id="desktop-nip46-qr-image" alt="NIP-46 connection QR code" hidden />
+                    <small id="nip46-approval-copy">Scan this with your remote signer and approve Bookstr.</small>
+                    <div class="desktop-signer-qr-actions">
+                      <button id="desktop-nip46-qr-copy" type="button">Copy connection link</button>
+                      <button id="desktop-nip46-qr-cancel" type="button">Cancel</button>
+                    </div>
+                  </div>
+                  <small>Or paste a signer connection:</small>
+                  <div class="desktop-signer-row">
+                    <input id="desktop-nip46-input" type="text" placeholder="bunker://… or signer@example.com" aria-label="NIP-46 signer connection" />
+                    <button id="desktop-nip46-connect" type="button">Connect</button>
                   </div>
                 </div>
-                <small>Or paste a signer connection:</small>
-                <div class="desktop-signer-row">
-                  <input id="desktop-nip46-input" type="text" placeholder="bunker://… or signer@example.com" aria-label="NIP-46 signer connection" />
-                  <button id="desktop-nip46-connect" type="button">Connect</button>
-                </div>
+                <details>
+                  <summary>Use a local nsec instead</summary>
+                  <div class="desktop-signer-row">
+                    <input id="desktop-nsec-input" type="password" placeholder="nsec1…" autocomplete="off" aria-label="Nostr secret key" />
+                    <button id="desktop-nsec-connect" type="button">Connect nsec</button>
+                  </div>
+                </details>
               </div>
-              <details>
-                <summary>Use a local nsec instead</summary>
-                <div class="desktop-signer-row">
-                  <input id="desktop-nsec-input" type="password" placeholder="nsec1…" autocomplete="off" aria-label="Nostr secret key" />
-                  <button id="desktop-nsec-connect" type="button">Connect nsec</button>
-                </div>
-              </details>
               <button id="desktop-signer-disconnect" class="hidden" type="button">Disconnect signer</button>
               <p id="desktop-signer-status" class="settings-status">No signer connected.</p>
             </div>
@@ -2136,6 +2138,7 @@
       const desktopNip46QrCancel = document.getElementById('desktop-nip46-qr-cancel');
       const desktopNsecInput = document.getElementById('desktop-nsec-input');
       const desktopNsecConnect = document.getElementById('desktop-nsec-connect');
+      const desktopSignerSetup = document.getElementById('desktop-signer-setup');
       const desktopSignerDisconnect = document.getElementById('desktop-signer-disconnect');
       const desktopSignerStatus = document.getElementById('desktop-signer-status');
       const themeModeInput = document.getElementById('theme-mode');
@@ -6906,6 +6909,7 @@
           const connected = Boolean(signerState.configured);
           desktopSignerStatus.classList.toggle('signer-connected', connected);
           desktopSignerDisconnect.classList.toggle('hidden', !connected);
+          desktopSignerSetup.classList.toggle('hidden', connected);
           desktopNip46QrStart.classList.toggle('hidden', connected);
           if (connected) {
             desktopNip46QrImage.hidden = true;

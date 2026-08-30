@@ -804,6 +804,7 @@ test('settings groups Nostr controls and connection status together', () => {
   assert.match(html, /settings-section settings-nostr[\s\S]*?<h3>Nostr<\/h3>[\s\S]*?id="nip7-enabled"[\s\S]*?id="nip7-status"/);
   assert.match(html, /#desktop-signer-status\.signer-connected::before\s*\{[\s\S]*?content: '✓';[\s\S]*?color: #16803c/);
   assert.match(html, /desktopSignerStatus\.classList\.toggle\('signer-connected', connected\)/);
+  assert.match(html, /desktopSignerSetup\.classList\.toggle\('hidden', connected\)/);
   assert.match(html, /desktopNip46QrStart\.classList\.toggle\('hidden', connected\)/);
 });
 
