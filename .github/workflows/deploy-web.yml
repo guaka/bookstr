@@ -111,6 +111,13 @@ jobs:
           mkdir -p web/docs
           cp -R docs/. web/docs/
           cp README.md web/docs/README.md
+      - name: Bundle shared device pairing contracts
+        run: |
+          mkdir -p web/shared/contracts
+          cp shared/contracts/device-pairing-client.mjs web/shared/contracts/device-pairing-client.mjs
+          cp shared/contracts/device-pairing-nip17.mjs web/shared/contracts/device-pairing-nip17.mjs
+          cp shared/contracts/device-pairing-v1.mjs web/shared/contracts/device-pairing-v1.mjs
+          cp shared/contracts/device-transfer-v1.mjs web/shared/contracts/device-transfer-v1.mjs
       - uses: actions/upload-pages-artifact@v3
         with:
           path: web

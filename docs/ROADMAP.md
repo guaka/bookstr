@@ -35,11 +35,14 @@ clients on the same contracts.
       checks for the private pairing control plane.
 - [x] Electron pairing adapter with encrypted device-key persistence when the
       OS keyring is available, and session-only behavior otherwise.
+- [x] Shared web/WebView pairing adapter with injected NIP-07/native signer,
+      relay publisher, and OS-secure storage capabilities.
 
 ## Remaining implementation slices
 
-1. **Mobile/web pairing adapters.** Wire the shared device contract to each
-   platform's Nostr signer, relay pool, and secure device-key storage.
+1. **Native mobile host bridges.** Connect the shared adapter to the existing
+   iOS Keychain and Android encrypted-preferences/Keystore wrappers, plus each
+   platform's Nostr relay client and NIP-44 signer.
 2. **Optional public metadata.** Add rights-gated, operator-opt-in NIP-94
    publication only after the local verification path is stable.
 
