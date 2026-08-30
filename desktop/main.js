@@ -24,6 +24,7 @@ const { SpeechModelStore } = require('./speech-model-store');
 const { WebTorrentBridge } = require('./webtorrent-bridge');
 const { LibraryStore } = require('./library-store');
 const { LibraryImporter } = require('./library-import');
+const { AcquisitionManager } = require('./acquisition-manager');
 
 const PRELOAD_PATH = path.join(__dirname, 'preload.js');
 const WEB_ROOT = path.join(__dirname, '..', 'web');
@@ -148,6 +149,7 @@ let torrentBridge = null;
 let libraryDataDir = '';
 let libraryStore = null;
 let libraryImporter = null;
+let acquisitionManager = null;
 
 function isRecord(value) {
   return value && typeof value === 'object' && !Array.isArray(value);
@@ -183,6 +185,18 @@ function getLibraryStore() {
 function getLibraryImporter() {
   if (!libraryImporter) libraryImporter = new LibraryImporter({ libraryRoot: libraryDataDir });
   return libraryImporter;
+}
+
+function getAcquisitionManager() {
+  if (!acquisitionManager) {
+    acquisitionManager = new AcquisitionManager({
+      store: getLibraryStore(),
+      importer: getLibraryImporter(),
+      torrentBridge: getTorrentBridge(),
+      stagingRoot: path.join(libraryDataDir, '.staging'),
+    });
+  }
+  return acquisitionManager;
 }
 
 function normalizeHex(value) {
@@ -1110,6 +1124,18 @@ function setupIpcHandlers() {
       relativePath: imported.relativePath,
     });
     return { book, imported: { sha256: imported.sha256, size: imported.size, extension: imported.extension } };
+  });
+  ipcMain.handle('bookstr-desktop-library-acquire', async (event, request) => {
+    if (!isRecord(request) || !isRecord(request.record)) throw new Error('Invalid acquisition request.');
+    const result = await getAcquisitionManager().acquire(request.record, {
+      format: request.format,
+      preferTorrent: request.preferTorrent !== false,
+      includeRestricted: request.includeRestricted === true,
+      onProgress: payload => {
+        if (!event.sender.isDestroyed()) event.sender.send('bookstr-desktop-acquisition-progress', payload);
+      },
+    });
+    return result;
   });
   ipcMain.handle('bookstr-desktop-library-downloads', () => getLibraryStore().downloads());
   ipcMain.handle('bookstr-desktop-library-set-download', (_event, download) => getLibraryStore().setDownload(download));

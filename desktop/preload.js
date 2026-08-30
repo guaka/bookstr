@@ -2,6 +2,7 @@ const { contextBridge, ipcRenderer } = require('electron');
 
 const readerOpenCallbacks = new Set();
 const progressCallbacks = new Set();
+const acquisitionProgressCallbacks = new Set();
 const settingsOpenCallbacks = new Set();
 const paneOpenCallbacks = new Set();
 const speechModelProgressCallbacks = new Set();
@@ -67,6 +68,16 @@ ipcRenderer.on('bookstr-desktop-open-reader', (_event, payload) => {
 
 ipcRenderer.on('bookstr-desktop-reader-progress', (_event, payload) => {
   for (const callback of progressCallbacks) {
+    try {
+      callback(payload);
+    } catch {
+      // ignore
+    }
+  }
+});
+
+ipcRenderer.on('bookstr-desktop-acquisition-progress', (_event, payload) => {
+  for (const callback of acquisitionProgressCallbacks) {
     try {
       callback(payload);
     } catch {
@@ -232,6 +243,14 @@ const desktopBridge = {
     },
     importBook(options) {
       return ipcRenderer.invoke('bookstr-desktop-library-import', options);
+    },
+    acquire(record, options = {}) {
+      return ipcRenderer.invoke('bookstr-desktop-library-acquire', { record, ...options });
+    },
+    onAcquisitionProgress(callback) {
+      if (typeof callback !== 'function') return () => {};
+      acquisitionProgressCallbacks.add(callback);
+      return () => acquisitionProgressCallbacks.delete(callback);
     },
     downloads() {
       return ipcRenderer.invoke('bookstr-desktop-library-downloads');

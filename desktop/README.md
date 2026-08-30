@@ -60,4 +60,6 @@ unprivileged user under Xvfb, and removes the test container when it finishes.
   bridge (`window.bookstrDesktop`).
 - `window.bookstrDesktop.transfers` exposes status, rights-gated public seeding,
   and public/private torrent admission without exposing library paths.
+- `window.bookstrDesktop.library.acquire(record)` selects an eligible HTTPS or
+  torrent source, retries safely, and imports only after checksum verification.
 - External links are opened in the system browser.
