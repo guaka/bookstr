@@ -70,6 +70,20 @@ function torrentFilePath(torrent, root) {
   return safePath(root, relative);
 }
 
+function healthScore(health, now = Math.floor(Date.now() / 1000)) {
+  if (!health) return 0;
+  const cooling = Number(health.cooldownUntil) > now;
+  const failures = Number(health.consecutiveFailures) || 0;
+  const successes = Number(health.successes) || 0;
+  const latency = Number(health.latencyMs) || 0;
+  return (cooling ? -10000 : 0) - failures * 100 + successes * 5 - Math.min(1000, latency / 1000);
+}
+
+function sourceKey(provider, candidate, recordId) {
+  const raw = `${provider}:${candidate.source_id || recordId}`;
+  return raw.length <= 256 ? raw : raw.slice(0, 256);
+}
+
 class AcquisitionManager {
   constructor({ store, importer, torrentBridge, fetchImpl = globalThis.fetch, stagingRoot, maxAttempts = 3 } = {}) {
     if (!store || !importer || !stagingRoot) throw new TypeError('store, importer, and stagingRoot are required');
@@ -88,14 +102,19 @@ class AcquisitionManager {
     const fields = providerBookFields(record);
     const candidates = listAcquisitions(normalized, { format, preferTorrent, includeRestricted });
     if (!candidates.length) throw new Error('no eligible acquisition is available');
+    const rankedCandidates = candidates.map((candidate, index) => {
+      const source = sourceKey(normalized.provider, candidate, normalized.recordId);
+      return { candidate, index, source, score: healthScore(this.store.sourceHealth?.(source)) };
+    }).sort((left, right) => right.score - left.score || left.index - right.index);
     this.store.upsertBook(fields);
     await fsp.mkdir(this.stagingRoot, { recursive: true });
     const errors = [];
-    const attempts = candidates.slice(0, this.maxAttempts);
-    for (const [index, candidate] of attempts.entries()) {
-      const source = `${normalized.provider}:${candidate.source_id || normalized.recordId}`;
+    const attempts = rankedCandidates.slice(0, this.maxAttempts);
+    for (const [index, attempt] of attempts.entries()) {
+      const { candidate, source } = attempt;
       this.store.setDownload({ bookId: fields.id, status: 'downloading', bytes: 0, totalBytes: candidate.size, source });
       let stageDir = '';
+      const startedAt = Date.now();
       try {
         stageDir = await fsp.mkdtemp(path.join(this.stagingRoot, 'acquisition-'));
         const stagedPath = candidate.torrent
@@ -108,9 +127,11 @@ class AcquisitionManager {
         const book = this.store.upsertBook({ ...fields, sha256: imported.sha256, extension: imported.extension, filesize_bytes: imported.size });
         this.store.registerLibraryFile({ bookId: book.id, relativePath: imported.relativePath, sizeBytes: imported.size, sha256: imported.sha256 });
         this.store.setDownload({ bookId: book.id, status: 'ready', bytes: imported.size, totalBytes: imported.size, source, relativePath: imported.relativePath });
+        this.store.recordSourceHealth?.({ source, success: true, latencyMs: Date.now() - startedAt });
         return { book, source, sha256: imported.sha256, size: imported.size, extension: imported.extension };
       } catch (error) {
         errors.push(error instanceof Error ? error : new Error(String(error)));
+        this.store.recordSourceHealth?.({ source, success: false, latencyMs: Date.now() - startedAt });
         this.store.setDownload({ bookId: fields.id, status: index + 1 < attempts.length ? 'retrying' : 'failed', source, error: errors.at(-1).message });
       } finally {
         if (stageDir) await fsp.rm(stageDir, { recursive: true, force: true }).catch(() => {});

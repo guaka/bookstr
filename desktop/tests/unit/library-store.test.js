@@ -40,3 +40,15 @@ test('path traversal is rejected at the storage boundary', () => withStore(store
   assert.throws(() => store.registerLibraryFile({ bookId: 'book-1', relativePath: '../secret.epub' }), /relative path/);
   assert.throws(() => store.linkFolder({ relativePath: '/outside' }), /relative path/);
 }));
+
+test('source health records cooldowns and clears them after success', () => withStore(store => {
+  const failed = store.recordSourceHealth({ source: 'gutenberg:mirror-a', success: false, latencyMs: 250, now: 1000 });
+  assert.equal(failed.failures, 1);
+  assert.equal(failed.consecutiveFailures, 1);
+  assert.equal(failed.cooldownUntil, 1010);
+  const recovered = store.recordSourceHealth({ source: 'gutenberg:mirror-a', success: true, latencyMs: 40, now: 1020 });
+  assert.equal(recovered.successes, 1);
+  assert.equal(recovered.consecutiveFailures, 0);
+  assert.equal(recovered.cooldownUntil, 0);
+  assert.deepEqual(store.sourceHealthAll().map(item => item.sourceId), ['gutenberg:mirror-a']);
+}));

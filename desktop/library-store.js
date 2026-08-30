@@ -111,6 +111,17 @@ CREATE TABLE IF NOT EXISTS linked_folders (
   enabled INTEGER NOT NULL DEFAULT 1,
   updated_at INTEGER NOT NULL DEFAULT (unixepoch())
 );
+CREATE TABLE IF NOT EXISTS source_health (
+  source_id TEXT PRIMARY KEY,
+  successes INTEGER NOT NULL DEFAULT 0,
+  failures INTEGER NOT NULL DEFAULT 0,
+  consecutive_failures INTEGER NOT NULL DEFAULT 0,
+  last_success_at INTEGER NOT NULL DEFAULT 0,
+  last_failure_at INTEGER NOT NULL DEFAULT 0,
+  cooldown_until INTEGER NOT NULL DEFAULT 0,
+  latency_ms INTEGER NOT NULL DEFAULT 0,
+  updated_at INTEGER NOT NULL DEFAULT (unixepoch())
+);
 `;
 
 class LibraryStore {
@@ -236,6 +247,58 @@ class LibraryStore {
 
   linkedFolders() {
     return this.db.prepare('SELECT id, label, enabled = 1 AS enabled FROM linked_folders ORDER BY label, id').all().map(row => ({ id: row.id, label: row.label, enabled: Boolean(row.enabled) }));
+  }
+
+  sourceHealth(sourceId) {
+    const id = safeID(sourceId);
+    const row = this.db.prepare('SELECT source_id AS sourceId, successes, failures, consecutive_failures AS consecutiveFailures, last_success_at AS lastSuccessAt, last_failure_at AS lastFailureAt, cooldown_until AS cooldownUntil, latency_ms AS latencyMs, updated_at AS updatedAt FROM source_health WHERE source_id = ?').get(id);
+    return row ? { ...row } : null;
+  }
+
+  sourceHealthAll() {
+    return this.db.prepare('SELECT source_id AS sourceId, successes, failures, consecutive_failures AS consecutiveFailures, last_success_at AS lastSuccessAt, last_failure_at AS lastFailureAt, cooldown_until AS cooldownUntil, latency_ms AS latencyMs, updated_at AS updatedAt FROM source_health ORDER BY source_id').all().map(row => ({ ...row }));
+  }
+
+  recordSourceHealth({ source, success = false, latencyMs = 0, now } = {}) {
+    const sourceId = safeID(source);
+    const timestamp = Number.isSafeInteger(Number(now)) && Number(now) > 0
+      ? Math.floor(Number(now))
+      : Math.floor(Date.now() / 1000);
+    const latency = Number.isFinite(Number(latencyMs)) && Number(latencyMs) >= 0
+      ? Math.min(2_147_483_647, Math.round(Number(latencyMs)))
+      : 0;
+    const previous = this.sourceHealth(sourceId) || {
+      successes: 0,
+      failures: 0,
+      consecutiveFailures: 0,
+      lastSuccessAt: 0,
+      lastFailureAt: 0,
+      cooldownUntil: 0,
+      latencyMs: 0,
+    };
+    const ok = success === true;
+    const consecutiveFailures = ok ? 0 : previous.consecutiveFailures + 1;
+    const cooldownUntil = ok
+      ? 0
+      : timestamp + Math.min(300, 5 * (2 ** Math.min(6, consecutiveFailures)));
+    this.db.prepare(`
+      INSERT INTO source_health (source_id, successes, failures, consecutive_failures, last_success_at, last_failure_at, cooldown_until, latency_ms)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(source_id) DO UPDATE SET successes=excluded.successes, failures=excluded.failures,
+        consecutive_failures=excluded.consecutive_failures, last_success_at=excluded.last_success_at,
+        last_failure_at=excluded.last_failure_at, cooldown_until=excluded.cooldown_until,
+        latency_ms=excluded.latency_ms, updated_at=unixepoch()
+    `).run(
+      sourceId,
+      previous.successes + (ok ? 1 : 0),
+      previous.failures + (ok ? 0 : 1),
+      consecutiveFailures,
+      ok ? timestamp : previous.lastSuccessAt,
+      ok ? previous.lastFailureAt : timestamp,
+      cooldownUntil,
+      latency,
+    );
+    return this.sourceHealth(sourceId);
   }
 
   openReader(bookId) {

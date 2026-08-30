@@ -68,3 +68,21 @@ test('torrent acquisition rejects multi-file torrents before import', () => with
   }), /all eligible acquisitions failed/);
 }));
 
+test('acquisition deprioritizes a source in cooldown', () => withManager(async ({ manager, store }) => {
+  store.recordSourceHealth({ source: 'gutenberg:slow', success: false, now: Math.floor(Date.now() / 1000) });
+  const calls = [];
+  manager.fetch = async url => {
+    calls.push(url);
+    const body = 'book bytes';
+    return { ok: true, status: 200, headers: new Headers({ 'content-length': String(body.length) }), body: Readable.toWeb(Readable.from(Buffer.from(body))) };
+  };
+  const result = await manager.acquire({
+    provider: 'gutenberg', recordId: 'g-3', title: 'Book',
+    acquisitions: [
+      { format: 'epub', url: 'https://slow.example/book.epub', source_id: 'slow', availability: 'open', size: 10 },
+      { format: 'epub', url: 'https://fast.example/book.epub', source_id: 'fast', availability: 'open', size: 10 },
+    ],
+  });
+  assert.equal(calls[0], 'https://fast.example/book.epub');
+  assert.equal(result.source, 'gutenberg:fast');
+}));

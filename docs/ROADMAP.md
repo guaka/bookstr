@@ -29,14 +29,16 @@ clients on the same contracts.
 - [x] Registry of legal/open sources and per-item rights policy hooks.
 - [x] Source-record normalization plus an Electron acquisition manager with
       HTTPS/torrent fallback, bounded retries, progress, and verified import.
+- [x] Persistent source health, cooldowns, latency tracking, and deterministic
+      failover ordering.
+- [x] Device registry mutation, presence/request builders, and authorization
+      checks for the private pairing control plane.
 
 ## Remaining implementation slices
 
-1. **Account pairing.** Wire device registry, presence, paginated manifests,
-   and offer/answer messages to each platform's Nostr signer and secure store.
-2. **Health and failover.** Track source availability, rank verified sources,
-   and fall back without changing the edition's SHA-256 identity.
-3. **Optional public metadata.** Add rights-gated, operator-opt-in NIP-94
+1. **Platform pairing adapters.** Wire the shared device contract to each
+   platform's Nostr signer, relay pool, and secure device-key storage.
+2. **Optional public metadata.** Add rights-gated, operator-opt-in NIP-94
    publication only after the local verification path is stable.
 
 ## Release gates
