@@ -151,10 +151,11 @@ final class ReaderPlaybackSessionTests: XCTestCase {
         session.requestClose()
         let nonce = session.presentationNonce
 
-        session.present(book: Self.book("other"), highlightLocator: "mark")
+        session.present(book: Self.book("other"), highlightLocator: "mark", highlightKind: .mark)
 
         XCTAssertEqual(session.item?.book.id, "other")
         XCTAssertEqual(session.item?.highlightLocator, "mark")
+        XCTAssertEqual(session.item?.highlightKind, .mark)
         XCTAssertTrue(session.isVisible)
         XCTAssertFalse(session.speechRetained)
         XCTAssertFalse(session.isSpeechPlaying)
@@ -167,10 +168,16 @@ final class ReaderPlaybackSessionTests: XCTestCase {
         session.present(book: Self.book("alice"), initialLocator: "start")
         let nonce = session.presentationNonce
 
-        session.present(book: Self.book("alice"), initialLocator: "word-cfi", highlightLocator: "word-cfi")
+        session.present(
+            book: Self.book("alice"),
+            initialLocator: "word-cfi",
+            highlightLocator: "word-cfi",
+            highlightKind: .word
+        )
 
         XCTAssertEqual(session.item?.initialLocator, "word-cfi")
         XCTAssertEqual(session.item?.highlightLocator, "word-cfi")
+        XCTAssertEqual(session.item?.highlightKind, .word)
         XCTAssertEqual(session.presentationNonce, nonce + 1)
         XCTAssertTrue(session.isVisible)
     }

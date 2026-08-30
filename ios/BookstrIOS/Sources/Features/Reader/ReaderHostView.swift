@@ -11,6 +11,7 @@ struct ReaderHostView: View {
     var preparedURL: URL? = nil
     var initialLocator: String? = nil
     var highlightLocator: String? = nil
+    var highlightKind: ReaderHighlightKind? = nil
     var showsReaderChrome: Bool = true
     var onClose: (() -> Void)? = nil
     @State private var localURL: URL?
@@ -60,7 +61,8 @@ struct ReaderHostView: View {
                     .padding(.bottom, 5)
                 } else {
                     EPUBReaderView(book: book, fileURL: localURL, controller: epubController,
-                                   initialCFI: initialLocator, highlightCFI: highlightLocator)
+                                   initialCFI: initialLocator, highlightCFI: highlightLocator,
+                                   highlightKind: highlightKind)
                         .padding(.top, 48)
                         .padding(.bottom, 5)
                 }
