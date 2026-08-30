@@ -58,7 +58,7 @@ test('every client enforces the shared coverage baseline', async () => {
   assert.match(ios, /SnippetRepositoryTests/);
 });
 
-test('CodeQL gates each language while retaining scheduled full scans', async () => {
+test('CodeQL scans every main push while gating pull requests by language', async () => {
   const workflow = await readWorkflow('codeql.yml');
 
   for (const language of [
@@ -76,8 +76,8 @@ test('CodeQL gates each language while retaining scheduled full scans', async ()
     );
   }
 
-  assert.match(workflow, /event_name == 'schedule'/);
-  assert.match(workflow, /cancel-in-progress: false/);
+  assert.equal([...workflow.matchAll(/event_name != 'pull_request'/g)].length, 5);
+  assert.match(workflow, /cancel-in-progress: \$\{\{ github\.event_name == 'pull_request' \}\}/);
   assert.match(workflow, /runs-on: macos-26[\s\S]*languages: swift/);
   assert.match(workflow, /languages: java-kotlin\n\s+build-mode: manual/);
   assert.match(workflow, /run: \.\/gradlew --no-daemon assembleDebug/);
