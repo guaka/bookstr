@@ -8,7 +8,7 @@ class DeviceTransferTransportTest {
     @Test
     fun mapperOnlyReturnsUserSafeTransferState() {
         assertEquals(TransferPhase.Transferring, TransferUpdateMapper.safe("request-1", "transferring", -2, -1)?.phase)
-        assertEquals(0, TransferUpdateMapper.safe("request-1", "transferring", -2, -1)?.completedBytes)
+        assertEquals(0L, TransferUpdateMapper.safe("request-1", "transferring", -2, -1)?.completedBytes)
         assertNull(TransferUpdateMapper.safe("", "completed"))
         assertNull(TransferUpdateMapper.safe("request-1", "unknown"))
     }
