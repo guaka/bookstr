@@ -244,6 +244,8 @@ test('libstr desktop app opens with preload bridge', async () => {
     await expect(firstWindow.locator('#desktop-signer-status')).toContainText('Connected with local nsec');
     await expect(firstWindow.locator('#desktop-signer-status')).not.toContainText('[object Promise]');
     await expect(firstWindow.locator('#desktop-signer-status')).toContainText('npub1');
+    await expect(firstWindow.locator('#desktop-signer-status')).toHaveClass(/signer-connected/);
+    await expect(firstWindow.getByRole('button', { name: 'Connect with QR code' })).toBeHidden();
 
     const localSigner = await firstWindow.evaluate(async () => ({
       pubkey: await window.bookstrDesktop.signer.getPublicKey(),

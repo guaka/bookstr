@@ -1160,6 +1160,12 @@
         color: var(--note-text, #666);
         font-size: 0.77rem;
       }
+      #desktop-signer-status.signer-connected::before {
+        content: '✓';
+        margin-right: 0.38rem;
+        color: #16803c;
+        font-weight: 800;
+      }
       .opds-feed-input {
         width: 100%;
         min-height: 4.8rem;
@@ -6922,9 +6928,17 @@
             ? ' · available for this session only'
             : '';
           desktopSignerStatus.textContent = message || `${modeLabel}${identity}${storage}`;
-          desktopSignerDisconnect.classList.toggle('hidden', !signerState.configured);
+          const connected = Boolean(signerState.configured);
+          desktopSignerStatus.classList.toggle('signer-connected', connected);
+          desktopSignerDisconnect.classList.toggle('hidden', !connected);
+          desktopNip46QrStart.classList.toggle('hidden', connected);
+          if (connected) {
+            desktopNip46QrImage.hidden = true;
+            desktopNip46Qr.classList.add('hidden');
+          }
           return signerState;
         } catch (error) {
+          desktopSignerStatus.classList.remove('signer-connected');
           desktopSignerStatus.textContent = `Signer status unavailable: ${error?.message || error}`;
           return null;
         }
@@ -6952,7 +6966,6 @@
         if (qrState.status === 'connected') {
           desktopNip46QrImage.hidden = true;
           desktopNip46Qr.classList.add('hidden');
-          desktopNip46QrStart.classList.remove('hidden');
           enableDesktopNostrSigner();
           await connectNip7({ silent: true });
           await refreshDesktopSignerStatus();
