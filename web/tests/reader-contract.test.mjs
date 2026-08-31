@@ -3,7 +3,29 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 
 const reader = await readFile(new URL('../reader.html', import.meta.url), 'utf8');
+const comicReader = await readFile(new URL('../comic-reader.html', import.meta.url), 'utf8');
 const app = await readFile(new URL('../index.html', import.meta.url), 'utf8');
+
+test('comic reader supports bounded CBZ and CBR page extraction and navigation', () => {
+  assert.match(comicReader, /JSZip\.loadAsync/);
+  assert.match(comicReader, /vendor\/libarchive\.js/);
+  assert.match(comicReader, /archive_read_new_memory/);
+  assert.match(comicReader, /Encrypted comic archives are not supported/);
+  assert.match(comicReader, /MAX_ENTRIES=2000/);
+  assert.match(comicReader, /MAX_PAGE_BYTES=30\*1024\*1024/);
+  assert.match(comicReader, /localeCompare\(b,undefined,\{numeric:true/);
+  assert.match(comicReader, /Previous page/);
+  assert.match(comicReader, /Next page/);
+  assert.match(comicReader, /bookstr-comic-progress/);
+  assert.match(comicReader, /split\('\/'\)\.includes\('\.\.'\)/);
+  assert.doesNotMatch(comicReader, /setPassword/);
+});
+
+test('Bookstr routes CBZ and CBR files to the comic reader', () => {
+  assert.match(app, /displayComic\(blob, book, readPath, openGeneration, format\)/);
+  assert.match(app, /format === 'cbz' \|\| format === 'cbr'/);
+  assert.match(app, /Only EPUB, PDF, FB2, CBZ, and CBR book files can be opened/);
+});
 
 test('EPUB reader uses continuous vertical scrolling', () => {
   assert.match(reader, /manager:\s*"continuous"/);

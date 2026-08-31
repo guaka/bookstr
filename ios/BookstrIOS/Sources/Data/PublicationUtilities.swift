@@ -97,6 +97,10 @@ enum PublicationUtilities {
                 && fileContains(fileURL, needle: Data("META-INF/container.xml".utf8))
         case .fb2:
             return validateFB2(fileURL: fileURL)
+        case .cbr:
+            return fileContains(fileURL, needle: Data([0x52, 0x61, 0x72, 0x21]))
+        case .cbz:
+            return fileContains(fileURL, needle: Data([0x50, 0x4b]))
         }
     }
 

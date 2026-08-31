@@ -267,13 +267,24 @@
     }
     if (source.protocol !== 'https:' || source.hostname.toLowerCase() !== 'blossom.bfr.ee') return '';
     const name = source.pathname.split('/').filter(Boolean).pop() || '';
-    const match = name.match(/^([a-f0-9]{64})(\.(?:epub|pdf|fb2(?:\.zip)?))?$/i);
+    const match = name.match(/^([a-f0-9]{64})(\.(?:epub|pdf|fb2(?:\.zip)?|cbr|cbz))?$/i);
     if (!match || match[1].toLowerCase() !== hash) return '';
     try {
       return new URL(`/api/blossom/${hash}${String(match[2] || '').toLowerCase()}`, appBaseUrl).toString();
     } catch {
       return '';
     }
+  }
+
+  function torrentMetadataForBook(book) {
+    const source = book?.torrent || book?.torrentDescriptor || {};
+    const torrentId = String(book?.torrentId || book?.torrent_id || source.magnetURI || source.magnetUri || '').trim();
+    const torrentFile = String(book?.torrentFile || book?.torrent_file || source.torrentFile || '').trim();
+    const announce = Array.isArray(book?.torrentAnnounce || source.announce)
+      ? (book.torrentAnnounce || source.announce).map(value => String(value || '').trim()).filter(Boolean)
+      : [];
+    if (!torrentId && !torrentFile) return null;
+    return { torrentId, torrentFile, announce };
   }
 
   function canonicalReadUrl(book, apiBase = 'https://books-api.guaka.org/api') {
@@ -447,6 +458,9 @@
       publisher: incoming.publisher || incoming.publishers?.[0] || '',
       blossomUrl: incoming.blossomUrl || incoming.blossom_url || '',
       blossomSha256: incoming.blossomSha256 || incoming.blossom_sha256 || incoming.sha256 || '',
+      torrentId: incoming.torrentId || incoming.torrent_id || incoming.magnetURI || incoming.magnet_uri || incoming.torrent?.magnetURI || '',
+      torrentFile: incoming.torrentFile || incoming.torrent_file || incoming.torrent?.torrentFile || '',
+      torrentAnnounce: incoming.torrentAnnounce || incoming.torrent_announce || incoming.torrent?.announce || [],
       ...normalizeRights(incoming),
     };
     for (const [field, value] of Object.entries(fields)) {
@@ -538,6 +552,7 @@
     findBookByReadUrl,
     metadataEndpointForReadUrl,
     desktopBlossomProxyUrl,
+    torrentMetadataForBook,
     canonicalReadUrl,
     canonicalCatalogUrl,
     availabilityForBook,

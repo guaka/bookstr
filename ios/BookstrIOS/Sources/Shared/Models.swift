@@ -4,15 +4,21 @@ enum BookFormat: String, Codable, CaseIterable, Sendable {
     case epub
     case pdf
     case fb2
+    case cbr
+    case cbz
 
     static func from(format: String?, url: String = "") -> BookFormat {
         let normalized = format?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         if normalized == "pdf" { return .pdf }
         if normalized == "epub" { return .epub }
         if normalized == "fb2" || normalized == "fb2.zip" { return .fb2 }
+        if normalized == "cbr" { return .cbr }
+        if normalized == "cbz" { return .cbz }
         let path = url.lowercased()
         if path.contains(".pdf") { return .pdf }
         if path.contains(".fb2") { return .fb2 }
+        if path.contains(".cbr") { return .cbr }
+        if path.contains(".cbz") { return .cbz }
         return .epub
     }
 }

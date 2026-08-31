@@ -1,5 +1,9 @@
 import Foundation
 
+private func isSupportedBookFormat(_ value: String) -> Bool {
+    ["pdf", "epub", "fb2", "cbr", "cbz"].contains(value.lowercased())
+}
+
 struct SharedFavoriteRef: Codable, Equatable {
     var bookstrId: String?
     var libvaultMd5: String?
@@ -420,7 +424,7 @@ enum FavoritesParser {
                     title: parts.count > 2 && !parts[2].isEmpty ? parts[2] : nil,
                     author: parts.count > 3 && !parts[3].isEmpty ? parts[3] : nil,
                     year: parts.count > 6 && !parts[6].isEmpty ? parts[6] : nil,
-                    format: parts.count > 5 && (parts[5] == "pdf" || parts[5] == "epub" || parts[5] == "fb2") ? parts[5] : nil,
+                    format: parts.count > 5 && isSupportedBookFormat(parts[5]) ? parts[5] : nil,
                     rightsStatus: bookRights.status.rawValue, license: bookRights.license,
                     licenseUrl: bookRights.licenseURL, rightsSource: bookRights.source
                 ))
@@ -435,7 +439,7 @@ enum FavoritesParser {
                         var next = current
                         if parts.count > 2, !parts[2].isEmpty { next.title = parts[2] }
                         if parts.count > 3, !parts[3].isEmpty { next.author = parts[3] }
-                        if parts.count > 4, parts[4] == "pdf" || parts[4] == "epub" || parts[4] == "fb2" { next.format = parts[4] }
+                        if parts.count > 4, isSupportedBookFormat(parts[4]) { next.format = parts[4] }
                         if parts.count > 6, !parts[6].isEmpty { next.year = parts[6] }
                         let preferred = BookRights.preferred(current: next.rights, incoming: bookRights)
                         next.rightsStatus = preferred.status.rawValue
@@ -451,7 +455,7 @@ enum FavoritesParser {
                             title: parts.count > 2 && !parts[2].isEmpty ? parts[2] : nil,
                             author: parts.count > 3 && !parts[3].isEmpty ? parts[3] : nil,
                             year: parts.count > 6 && !parts[6].isEmpty ? parts[6] : nil,
-                            format: parts.count > 4 && (parts[4] == "pdf" || parts[4] == "epub" || parts[4] == "fb2") ? parts[4] : nil,
+                            format: parts.count > 4 && isSupportedBookFormat(parts[4]) ? parts[4] : nil,
                             rightsStatus: bookRights.status.rawValue, license: bookRights.license,
                             licenseUrl: bookRights.licenseURL, rightsSource: bookRights.source
                         )
@@ -480,14 +484,14 @@ enum FavoritesParser {
                         var next = current
                         if parts.count > 2, !parts[2].isEmpty { next.blossomSha256 = parts[2] }
                         if parts.count > 3, !parts[3].isEmpty { next.blossomUrl = parts[3] }
-                        if parts.count > 4, parts[4] == "pdf" || parts[4] == "epub" || parts[4] == "fb2" { next.format = parts[4] }
+                        if parts.count > 4, isSupportedBookFormat(parts[4]) { next.format = parts[4] }
                         return next
                     }
                 } else {
                     refs.append(
                         SharedFavoriteRef(
                             libvaultMd5: md5,
-                            format: parts.count > 4 && (parts[4] == "pdf" || parts[4] == "epub" || parts[4] == "fb2") ? parts[4] : nil,
+                            format: parts.count > 4 && isSupportedBookFormat(parts[4]) ? parts[4] : nil,
                             blossomSha256: parts.count > 2 && !parts[2].isEmpty ? parts[2] : nil,
                             blossomUrl: parts.count > 3 && !parts[3].isEmpty ? parts[3] : nil
                         )
