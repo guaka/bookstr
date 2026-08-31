@@ -54,6 +54,34 @@
     return title || titleFromUrl(readUrl || source.readUrl || source.blossomUrl || source.url, baseUrl) || 'Untitled book';
   }
 
+  const LANGUAGE_ALIASES = {
+    eng: 'en', english: 'en',
+    por: 'pt', portuguese: 'pt', português: 'pt', portugues: 'pt',
+    fra: 'fr', fre: 'fr', french: 'fr', français: 'fr', francais: 'fr',
+    deu: 'de', ger: 'de', german: 'de', deutsch: 'de',
+    spa: 'es', spanish: 'es', español: 'es', espanol: 'es',
+    ita: 'it', italian: 'it', italiano: 'it',
+    nld: 'nl', dut: 'nl', dutch: 'nl', nederlands: 'nl',
+    rus: 'ru', russian: 'ru', русский: 'ru',
+    zho: 'zh', chi: 'zh', chinese: 'zh', 中文: 'zh',
+    jpn: 'ja', japanese: 'ja', 日本語: 'ja',
+    ara: 'ar', arabic: 'ar', pol: 'pl', polish: 'pl',
+    swe: 'sv', swedish: 'sv', nor: 'no', norwegian: 'no',
+    dan: 'da', danish: 'da', fin: 'fi', finnish: 'fi',
+    ces: 'cs', cze: 'cs', czech: 'cs', ukr: 'uk', ukrainian: 'uk',
+    tur: 'tr', turkish: 'tr', ell: 'el', gre: 'el', greek: 'el',
+    heb: 'he', hebrew: 'he', lat: 'la', latin: 'la',
+  };
+
+  function normalizeLanguage(value) {
+    const raw = String(value || '').trim().toLowerCase();
+    const first = raw.split(/[,;|]/, 1)[0].trim().replace(/^\/languages\//, '').replaceAll('_', '-');
+    if (!first || ['unknown', 'und', 'undefined', 'null', 'multi', 'multiple'].includes(first)) return '';
+    return LANGUAGE_ALIASES[first]
+      || (/^[a-z]{2,3}(?:-[a-z0-9]{2,8})*$/.test(first) ? first : '')
+      || (/^[\p{L}][\p{L} .'-]{1,40}$/u.test(first) ? first : '');
+  }
+
   function languageForBook(ref) {
     const source = ref && typeof ref === 'object' ? ref : {};
     const metadata = metadataObject(source.metadata);
@@ -61,8 +89,8 @@
       || (Array.isArray(source.languages) ? source.languages[0] : source.languages)
       || metadata.language || metadata.lang
       || (Array.isArray(metadata.languages) ? metadata.languages[0] : metadata.languages);
-    if (raw && typeof raw === 'object') return String(raw.code || raw.id || raw.name || '').trim().toLowerCase();
-    return String(raw || '').trim().toLowerCase();
+    if (raw && typeof raw === 'object') return normalizeLanguage(raw.code || raw.id || raw.name || '');
+    return normalizeLanguage(raw);
   }
 
   function yearForBook(ref) {
@@ -256,26 +284,6 @@
     }
   }
 
-  function desktopBlossomProxyUrl(blossomUrl, sha256, appBaseUrl) {
-    const hash = String(sha256 || '').trim().toLowerCase();
-    if (!/^[a-f0-9]{64}$/.test(hash)) return '';
-    let source;
-    try {
-      source = new URL(blossomUrl);
-    } catch {
-      return '';
-    }
-    if (source.protocol !== 'https:' || source.hostname.toLowerCase() !== 'blossom.bfr.ee') return '';
-    const name = source.pathname.split('/').filter(Boolean).pop() || '';
-    const match = name.match(/^([a-f0-9]{64})(\.(?:epub|pdf|fb2(?:\.zip)?|cbr|cbz))?$/i);
-    if (!match || match[1].toLowerCase() !== hash) return '';
-    try {
-      return new URL(`/api/blossom/${hash}${String(match[2] || '').toLowerCase()}`, appBaseUrl).toString();
-    } catch {
-      return '';
-    }
-  }
-
   function torrentMetadataForBook(book) {
     const source = book?.torrent || book?.torrentDescriptor || {};
     const torrentId = String(book?.torrentId || book?.torrent_id || source.magnetURI || source.magnetUri || '').trim();
@@ -301,11 +309,12 @@
         ? String(book.sourceNativeId)
         : '');
     if (gutenbergId) return `${String(apiBase).replace(/\/$/, '')}/books/${gutenbergId}/download`;
-    const direct = String(book?.blossomUrl || book?.readUrl || book?.url || '');
+    const direct = String(book?.readUrl || book?.url || '');
     if (!direct) return '';
     try {
       const url = new URL(direct);
       if (/^\/api\/read\/[a-f0-9]{32}\/?$/i.test(url.pathname)) return '';
+      if (url.hostname.toLowerCase() === 'blossom.bfr.ee') return '';
     } catch {}
     return direct;
   }
@@ -331,7 +340,6 @@
     if (source.includes('gutenberg') || /^gutenberg:\d+$/i.test(String(book?.md5 || '')) || /\/api\/books\/\d+(?:\/download)?(?:\?|$)/i.test(readUrl)) available.push('Gutenberg');
     if (torrentMetadataForBook(book)) available.push('WebTorrent');
     if (libgenTorrentMetadataForBook(book)) available.push('Torrent');
-    if (book?.blossomUrl || book?.blossomSha256 || source.includes('blossom')) available.push('Blossom');
     if (readUrl && source.includes('internet-archive')) available.push('Internet Archive');
     if (readUrl && source === 'oapen') available.push('OAPEN');
     if (!available.length) available.push('Metadata only');
@@ -548,6 +556,7 @@
     isPlaceholderTitle,
     resolveTitle,
     languageForBook,
+    normalizeLanguage,
     yearForBook,
     normalizeRights,
     preferredRights,
@@ -562,7 +571,6 @@
     normalizeReadUrl,
     findBookByReadUrl,
     metadataEndpointForReadUrl,
-    desktopBlossomProxyUrl,
     torrentMetadataForBook,
     libgenTorrentMetadataForBook,
     canonicalReadUrl,

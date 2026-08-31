@@ -53,7 +53,7 @@ function epubCandidateNames(zip, opfPath, opf) {
   return [...new Set([...resolved, ...filenameFallbacks])];
 }
 
-async function epubCover(bytes) {
+async function epubPackage(bytes) {
   const zip = await JSZip.loadAsync(bytes, { checkCRC32: true, createFolders: false });
   const containerEntry = zip.file('META-INF/container.xml');
   const container = containerEntry ? await containerEntry.async('string') : '';
@@ -62,6 +62,11 @@ async function epubCover(bytes) {
     || '';
   const opfEntry = opfPath ? zip.file(opfPath) : null;
   const opf = opfEntry ? await opfEntry.async('string') : '';
+  return { zip, opfPath, opf };
+}
+
+async function epubCover(bytes) {
+  const { zip, opfPath, opf } = await epubPackage(bytes);
   for (const name of epubCandidateNames(zip, opfPath, opf)) {
     const entry = zip.file(name);
     if (!entry || entry.dir || Number(entry._data?.uncompressedSize || 0) > MAX_COVER_BYTES) continue;
@@ -69,6 +74,52 @@ async function epubCover(bytes) {
     if (cover) return cover;
   }
   return null;
+}
+
+function decodeXMLText(value) {
+  const codePoint = (value, radix) => {
+    const numeric = parseInt(value, radix);
+    return Number.isInteger(numeric) && numeric > 0 && numeric <= 0x10ffff ? String.fromCodePoint(numeric) : '';
+  };
+  return String(value || '')
+    .replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&#(\d+);/g, (_match, code) => codePoint(code, 10))
+    .replace(/&#x([a-f0-9]+);/gi, (_match, code) => codePoint(code, 16))
+    .replace(/&amp;/gi, '&').replace(/&lt;/gi, '<').replace(/&gt;/gi, '>')
+    .replace(/&quot;/gi, '"').replace(/&apos;/gi, "'")
+    .replace(/\s+/g, ' ').trim();
+}
+
+function xmlElement(xml, name) {
+  return decodeXMLText(xml.match(new RegExp(`<(?:[\\w.-]+:)?${name}\\b[^>]*>([\\s\\S]*?)<\\/(?:[\\w.-]+:)?${name}>`, 'i'))?.[1] || '');
+}
+
+async function epubMetadata(bytes) {
+  const { opf } = await epubPackage(bytes);
+  if (!opf) return null;
+  return {
+    title: xmlElement(opf, 'title'),
+    authors: xmlElement(opf, 'creator'),
+    language: xmlElement(opf, 'language'),
+    isbn: [...opf.matchAll(/<(?:[\w.-]+:)?identifier\b[^>]*>([\s\S]*?)<\/(?:[\w.-]+:)?identifier>/gi)]
+      .map(match => decodeXMLText(match[1]).replace(/^urn:isbn:/i, ''))
+      .find(value => /(?:\d[\s-]*){9}[\dX]/i.test(value)) || '',
+  };
+}
+
+function fb2Metadata(bytes) {
+  const xml = bytes.toString('utf8');
+  const titleInfo = xml.match(/<title-info\b[^>]*>([\s\S]*?)<\/title-info>/i)?.[1] || xml;
+  const firstName = xmlElement(titleInfo, 'first-name');
+  const middleName = xmlElement(titleInfo, 'middle-name');
+  const lastName = xmlElement(titleInfo, 'last-name');
+  return {
+    title: xmlElement(titleInfo, 'book-title'),
+    authors: [firstName, middleName, lastName].filter(Boolean).join(' '),
+    language: xmlElement(titleInfo, 'lang'),
+    isbn: xmlElement(xml, 'isbn'),
+  };
 }
 
 function fb2Cover(bytes) {
@@ -114,4 +165,26 @@ async function localBookCover({ bookId, bookPath, cacheDir }) {
   return { ...cover, path: outputPath, cached: false };
 }
 
-module.exports = { detectImage, epubCover, fb2Cover, localBookCover, safeCoverID };
+async function localBookMetadata({ bookId, bookPath }) {
+  if (!safeCoverID(bookId) || !bookPath) return null;
+  const stat = await fs.stat(bookPath);
+  if (!stat.isFile() || stat.size <= 0 || stat.size > MAX_BOOK_BYTES) return null;
+  const extension = path.extname(bookPath).toLowerCase();
+  if (!['.epub', '.fb2'].includes(extension)) return null;
+  const bytes = await fs.readFile(bookPath);
+  const metadata = extension === '.epub' ? await epubMetadata(bytes) : fb2Metadata(bytes);
+  if (!metadata) return null;
+  const useful = Object.fromEntries(Object.entries(metadata).filter(([, value]) => String(value || '').trim()));
+  return Object.keys(useful).length ? useful : null;
+}
+
+module.exports = {
+  detectImage,
+  epubCover,
+  epubMetadata,
+  fb2Cover,
+  fb2Metadata,
+  localBookCover,
+  localBookMetadata,
+  safeCoverID,
+};

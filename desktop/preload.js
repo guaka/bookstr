@@ -238,6 +238,9 @@ const desktopBridge = {
     getBook(bookId) {
       return ipcRenderer.invoke('bookstr-desktop-library-book', bookId);
     },
+    metadata(bookId) {
+      return ipcRenderer.invoke('bookstr-desktop-library-metadata', bookId);
+    },
     importBook(options) {
       return ipcRenderer.invoke('bookstr-desktop-library-import', options);
     },

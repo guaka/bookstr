@@ -131,6 +131,7 @@ test('Library extracts and displays a downloaded EPUB cover inside Electron', as
     await expect(cover).toHaveAttribute('src', `app://bookstr/api/library-cover/${md5}`);
     await expect(cover).toHaveClass(/is-loaded/);
     await expect.poll(() => cover.evaluate(image => image.naturalWidth > 0)).toBe(true);
+    await expect(row.locator('.result-cell').nth(5)).toHaveText('EN');
   } finally {
     await app.close();
   }

@@ -171,6 +171,16 @@ test('preserves common language metadata shapes', () => {
   assert.equal(languageForBook({ metadata: JSON.stringify({ lang: 'fr' }) }), 'fr');
 });
 
+test('normalizes common language names and bibliographic codes', () => {
+  assert.equal(languageForBook({ language: 'English' }), 'en');
+  assert.equal(languageForBook({ language: 'eng' }), 'en');
+  assert.equal(languageForBook({ language: '/languages/fre' }), 'fr');
+  assert.equal(languageForBook({ language: 'Portuguese; English' }), 'pt');
+  assert.equal(languageForBook({ language: 'cat' }), 'cat');
+  assert.equal(languageForBook({ language: 'Basque' }), 'basque');
+  assert.equal(languageForBook({ language: 'unknown' }), '');
+});
+
 test('extracts language from object-based metadata language lists', () => {
   assert.equal(languageForBook({ metadata: { languages: [{ code: 'ES' }, { code: 'PT' }] } }), 'es');
 });

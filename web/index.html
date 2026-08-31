@@ -2004,7 +2004,6 @@
     <script src="generated/nostr-constants-v1.js"></script>
     <script src="nostr-progress.js"></script>
     <script src="favorite-references.js"></script>
-    <script src="blossom-authorization.js"></script>
     <script src="vocabulary-wire.js"></script>
     <script src="reader-typography.js"></script>
     <script src="speech-settings.js"></script>
@@ -2848,8 +2847,7 @@
           const id = String(favorite.md5 || '');
           const readUrl = favorite.readUrl || favorite.url || '';
           const addedAt = String(BookMetadata.normalizeFavoriteAddedAt(favorite.favoriteAddedAt) || now);
-          const sha256 = normalizeSha256(favorite.blossomSha256 || '');
-          const tagId = sha256 || id || pseudoIdForSeed(`${favorite.title || ''}${readUrl}`);
+          const tagId = id || pseudoIdForSeed(`${favorite.title || ''}${readUrl}`);
 		  const rights = BookMetadata.normalizeRights(favorite);
           if (isMd5(id)) {
             tags.push(['book', 'libvault', id.toLowerCase(), addedAt]);
@@ -2860,13 +2858,6 @@
               favorite.coverUrl || '', favorite.coverSha256 || '',
 			  rights.rights_status, rights.license, rights.license_url, rights.rights_source,
             ]);
-            const blossomUrl = favorite.blossomUrl || '';
-            if (/^[a-f0-9]{64}$/.test(sha256) && /^https:\/\//i.test(blossomUrl)) {
-              tags.push(['blossom', id.toLowerCase(), sha256, blossomUrl, favorite.format || '']);
-            }
-			tags.push(['bookstr', tagId, favorite.title || '', favorite.authors || favorite.author || '', readUrl, favorite.format || '', favorite.year || '', favorite.language || '', favorite.source || '', favorite.coverUrl || '', favorite.coverSha256 || '', rights.rights_status, rights.license, rights.license_url, rights.rights_source]);
-          } else if (sha256) {
-            tags.push(['book', 'blossom', sha256, addedAt, readUrl].filter(Boolean));
 			tags.push(['bookstr', tagId, favorite.title || '', favorite.authors || favorite.author || '', readUrl, favorite.format || '', favorite.year || '', favorite.language || '', favorite.source || '', favorite.coverUrl || '', favorite.coverSha256 || '', rights.rights_status, rights.license, rights.license_url, rights.rights_source]);
           } else {
             tags.push(['book', 'bookstr', tagId, addedAt, readUrl].filter(Boolean));
@@ -3796,9 +3787,8 @@
 
       function defaultSearchResultRank(book) {
         if (cachedBookKeys.has(bookCacheKey(book, book.readUrl || book.url))) return 0;
-        if (/^https:\/\//i.test(String(book.blossomUrl || ''))) return 1;
-        if (BookMetadata.canonicalReadUrl(book, BOOKS_API_BASE)) return 2;
-        return 3;
+        if (BookMetadata.canonicalReadUrl(book, BOOKS_API_BASE)) return 1;
+        return 2;
       }
 
       function rankSearchResults(books) {
@@ -4848,7 +4838,6 @@
         const cached = cachedBookKeys.has(bookCacheKey(book, book.readUrl || book.url));
         return cached
           || (isDesktopMode && Boolean(isMd5(book?.md5) || BookMetadata.torrentMetadataForBook(book) || BookMetadata.libgenTorrentMetadataForBook(book)))
-          || /^https:\/\//i.test(String(book.blossomUrl || ''))
           || Boolean(BookMetadata.canonicalReadUrl(book, BOOKS_API_BASE));
       }
 
@@ -5552,12 +5541,11 @@
         const documents = Array.isArray(payload?.docs) ? payload.docs : [];
         const wantedTitle = String(title || '').trim().toLocaleLowerCase();
         const wantedAuthor = authorMatchKey(authors);
-        const matching = documents.filter(document => Number(document?.cover_i || 0) > 0);
-        const document = matching.find(item => {
+        const document = documents.find(item => {
           const sameTitle = String(item?.title || '').trim().toLocaleLowerCase() === wantedTitle;
           const itemAuthors = Array.isArray(item?.author_name) ? item.author_name.join(', ') : item?.author_name || '';
           return sameTitle && (!wantedAuthor || authorMatchKey(itemAuthors) === wantedAuthor);
-        }) || (isbn ? matching[0] : null);
+        }) || (isbn ? documents[0] : null);
         if (!document) return null;
         const coverId = Number(document.cover_i || 0) || '';
         const recordId = String(document.key || '').match(/OL\d+W/i)?.[0]?.toUpperCase() || '';
@@ -5569,7 +5557,7 @@
           publisher: document.publisher?.[0] || '',
           isbn: isbn || document.isbn?.[0] || '',
           coverId,
-          coverUrl: `https://covers.openlibrary.org/b/id/${coverId}-M.jpg`,
+          coverUrl: coverId ? `https://covers.openlibrary.org/b/id/${coverId}-M.jpg` : '',
           editionCount: Number(document.edition_count || 0),
           source: 'openlibrary',
           sourceNativeId: recordId,
@@ -5693,7 +5681,7 @@
         try {
           results = await searchAllBooksParty(query);
         } catch (error) {
-          if (!openLibraryMetadata) throw error;
+          if (!openLibraryMetadata && !combined) throw error;
           mergeOpenLibraryMetadata();
           return combined;
         }
@@ -5756,7 +5744,17 @@
 
       async function enrichLibraryMetadata() {
         const cache = metadataCacheRead();
-        const library = BookMetadata.mergeLibraryState(state.reading, state.favorites);
+        let library = BookMetadata.mergeLibraryState(state.reading, state.favorites);
+        if (isDesktopMode && desktopBridge?.library?.metadata) {
+          await Promise.all(library.filter(book => isMd5(book?.md5)).map(async book => {
+            const metadata = await desktopBridge.library.metadata(book.md5).catch(() => null);
+            if (metadata) applyLibraryEnrichment(book, metadata, 'local-file');
+          }));
+          library = BookMetadata.mergeLibraryState(state.reading, state.favorites);
+          localStorage.setItem(READING_KEY, JSON.stringify(state.reading));
+          localStorage.setItem(FAVORITES_KEY, JSON.stringify(state.favorites));
+          renderHome();
+        }
         const pending = [];
         for (const book of library) {
           const key = BookMetadata.bookIdentity(book);
@@ -6046,45 +6044,6 @@
         if (!result?.url) throw new Error('The torrent download did not produce a readable file.');
         const response = await fetch(result.url);
         if (!response.ok) throw new Error(`Torrent file read failed (${response.status}).`);
-        const blob = await response.blob();
-        await enforceBlobSha256(book, blob);
-        return blob;
-      }
-
-      async function fetchBlossomCopy(book, readPath) {
-        const sha256 = normalizeSha256(book?.blossomSha256);
-        if (!sha256) return null;
-        if (!nostrSigner?.signEvent) {
-          throw new Error(`Connect your ${nostrSignerName} to authorize this Blossom download.`);
-        }
-        const suppliedUrl = String(book.blossomUrl || readPath || '');
-        let blossomUrl = '';
-        try {
-          const candidate = new URL(suppliedUrl);
-          if (candidate.protocol === 'https:' && candidate.hostname.toLowerCase() === 'blossom.bfr.ee') {
-            blossomUrl = candidate.toString();
-          }
-        } catch {}
-        // Old LibVault notes could contain the MD5 -> SHA-256 lookup URL as a
-        // Blossom URL. The SHA-256 tag is authoritative, so recover it to the
-        // canonical Blossom blob location instead of fetching lib.b.bfr.ee.
-        blossomUrl ||= `https://blossom.bfr.ee/${sha256}`;
-        const server = new URL(blossomUrl).hostname;
-        const now = Math.floor(Date.now() / 1000);
-        const event = await nostrSigner.signEvent(BookstrBlossomAuthorization.unsignedGetEvent(
-          sha256,
-          server,
-          now,
-          'Download a Bookstr book'
-        ));
-        const downloadUrl = isDesktopMode
-          ? BookMetadata.desktopBlossomProxyUrl(blossomUrl, sha256, window.location.href)
-          : blossomUrl;
-        if (!downloadUrl) throw new Error('The Blossom download URL is invalid.');
-        const response = await fetch(downloadUrl, {
-          headers: { Authorization: BookstrBlossomAuthorization.authorizationHeader(event) }
-        });
-        if (!response.ok) throw new Error(`Blossom download failed (${response.status}).`);
         const blob = await response.blob();
         await enforceBlobSha256(book, blob);
         return blob;
@@ -6600,23 +6559,8 @@
             else if (torrentFormat === 'cbz' || torrentFormat === 'cbr') await displayComic(torrentBlob, book, readPath, openGeneration, torrentFormat);
             else await displayEpub(torrentBlob, book, readPath, openGeneration);
           } else {
-            if (torrentError && !readPath && !book.blossomSha256) throw torrentError;
-            if (book.blossomSha256) status.textContent = `Authorizing ${book.title || 'book'} download…`;
-            const blossomBlob = book.blossomSha256 ? await fetchBlossomCopy(book, readPath) : null;
-            if (openGeneration !== readerOpenGeneration) return;
-            if (blossomBlob) {
-            const blossomFormat = await bookFormatForBlob(blossomBlob) || String(book.extension || '').toLowerCase();
-            if (blossomFormat === 'pdf') {
-            await displayPdf(blossomBlob, book, readPath, openGeneration);
-          } else if (blossomFormat === 'fb2') {
-            await displayFB2(blossomBlob, book, readPath, openGeneration);
-          } else if (blossomFormat === 'cbz' || blossomFormat === 'cbr') {
-            await displayComic(blossomBlob, book, readPath, openGeneration, blossomFormat);
-          } else {
-            status.textContent = `Opening ${book.title || 'book'}…`;
-            await displayEpub(blossomBlob, book, readPath, openGeneration);
-          }
-            } else if (String(book.extension || '').toLowerCase() === 'pdf' || /\.pdf(?:\?|$)/i.test(readPath)) {
+            if (torrentError && !readPath) throw torrentError;
+            if (String(book.extension || '').toLowerCase() === 'pdf' || /\.pdf(?:\?|$)/i.test(readPath)) {
             let blob = await cachedBookBlob(book, readPath).catch(() => null);
             if (openGeneration !== readerOpenGeneration) return;
             if (!blob) {
@@ -6659,7 +6603,7 @@
             if (blob) {
               status.textContent = `Opening cached ${book.title || 'book'}…`;
             } else {
-              if (!readPath) throw new Error('No cached or Blossom copy was found.');
+              if (!readPath) throw new Error('No cached or downloadable copy was found.');
               status.textContent = `Loading ${book.title || 'book'}…`;
               const response = await fetch(readPath);
               if (!response.ok) throw new Error(`EPUB download failed (${response.status}).`);

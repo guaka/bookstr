@@ -16,7 +16,6 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const QRCode = require('qrcode');
 const { normalizeProgressPayload } = require('../web/desktop-progress');
-const { proxyBlossomRequest } = require('./blossom-proxy');
 const { proxyCatalogRequest } = require('./catalog-proxy');
 const { proxyDictionaryRequest } = require('./dictionary-proxy');
 const { appContentSecurityPolicy } = require('./security-policy');
@@ -24,7 +23,7 @@ const { SpeechModelStore } = require('./speech-model-store');
 const { WebTorrentBridge } = require('./webtorrent-bridge');
 const { LibraryStore } = require('./library-store');
 const { LibraryImporter, hashFile, safeExtension } = require('./library-import');
-const { localBookCover, safeCoverID } = require('./library-cover');
+const { localBookCover, localBookMetadata, safeCoverID } = require('./library-cover');
 const { AcquisitionManager } = require('./acquisition-manager');
 const { ElectronDevicePairing } = require('./device-pairing');
 
@@ -58,7 +57,6 @@ const NIP46_PERMISSIONS = [
   'sign_event:3',
   'sign_event:5',
   'sign_event:22242',
-  'sign_event:24242',
   'sign_event:30003',
   'sign_event:30078',
 ];
@@ -77,9 +75,6 @@ const LIBRARY_PANES = [
 ];
 const DICTIONARY_PROXY_BASE_URL = process.env.NODE_ENV === 'test'
   ? process.env.BOOKSTR_DESKTOP_TEST_DICTIONARY_BASE_URL
-  : undefined;
-const BLOSSOM_PROXY_BASE_URL = process.env.NODE_ENV === 'test'
-  ? process.env.BOOKSTR_DESKTOP_TEST_BLOSSOM_BASE_URL
   : undefined;
 
 function timestampVersion(now = new Date()) {
@@ -1188,6 +1183,16 @@ function setupIpcHandlers() {
     });
   });
   ipcMain.handle('bookstr-desktop-library-book', (_event, bookId) => getLibraryStore().getBook(bookId));
+  ipcMain.handle('bookstr-desktop-library-metadata', async (_event, bookId) => {
+    const id = safeCoverID(bookId);
+    if (!id) return null;
+    try {
+      const { filePath } = await resolveRegisteredLibraryFile(id);
+      return await localBookMetadata({ bookId: id, bookPath: filePath });
+    } catch {
+      return null;
+    }
+  });
   ipcMain.handle('bookstr-desktop-library-import', async (_event, request) => {
     if (!isRecord(request)) throw new Error('Invalid library import request.');
     const selection = await dialog.showOpenDialog({
@@ -1480,8 +1485,6 @@ function setupProtocol(targetSession) {
       const file = await fs.readFile(entry.path);
       return new Response(file, { headers: { 'Content-Type': MIME_TYPES.get(path.extname(entry.path).toLowerCase()) || 'application/octet-stream' } });
     }
-    const blossomResponse = await proxyBlossomRequest(request, net.fetch, BLOSSOM_PROXY_BASE_URL);
-    if (blossomResponse) return blossomResponse;
     const catalogResponse = await proxyCatalogRequest(request, net.fetch);
     if (catalogResponse) return catalogResponse;
     if (parsed.host !== APP_HOST) {
