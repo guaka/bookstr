@@ -159,3 +159,24 @@ test('repository torrent downloads only the selected MD5 file', async () => {
   assert.equal(result.filePath, `/tmp/bookstr-select/r_1000/${'a'.repeat(32)}`);
   assert.deepEqual(progress.at(-1), { bytes: 42, totalBytes: 42, peers: 0 });
 });
+
+test('public download waits for completion', async () => {
+  const log = { adds: [] };
+  const bridge = new WebTorrentBridge({ clientFactory: async options => ({
+    torrents: [],
+    throttleUpload() {},
+    add(id, addOptions) {
+      log.adds.push({ id, options: addOptions });
+      const torrent = new EventEmitter();
+      torrent.infoHash = 'e'.repeat(40);
+      torrent.files = [{ path: '/tmp/bookstr/book.epub' }];
+      this.torrents.push(torrent);
+      setImmediate(() => torrent.emit('done'));
+      return torrent;
+    },
+    destroy(callback) { callback?.(); },
+  }) });
+  const torrent = await bridge.downloadPublic('magnet:?xt=urn:btih:test', { path: '/tmp/bookstr' });
+  assert.equal(torrent.infoHash, 'e'.repeat(40));
+  assert.equal(log.adds[0].options.path, '/tmp/bookstr');
+});
