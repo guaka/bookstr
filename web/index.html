@@ -4857,7 +4857,7 @@
         const download = desktopDownloadByBook.get(md5);
         if (!download) return isDesktopMode && isMd5(md5) ? 'Available' : '';
         const status = String(download.status || '').toLowerCase();
-        if (status === 'ready') return download.source === 'libvault' ? 'Available on LibVault' : 'Ready';
+        if (status === 'ready') return 'Ready';
         if (status === 'downloading') {
           const total = Number(download.totalBytes || 0);
           const percent = total > 0 ? Math.min(100, Math.round(Number(download.bytes || 0) / total * 100)) : 0;
@@ -5980,46 +5980,6 @@
         };
       }
 
-      async function fetchLibVaultManagedCopy(book) {
-        const md5 = String(book?.md5 || '').trim().toLowerCase();
-        if (!isMd5(md5)) return null;
-        const readURL = `${LIBVAULT_API_BASE}/read/${md5}`;
-        let response = await fetch(readURL);
-        if (response.ok) {
-          desktopDownloadByBook.set(md5, { bookId: md5, status: 'ready', source: 'libvault' });
-          return response.blob();
-        }
-        if (response.status !== 404) throw new Error(`LibVault read failed (${response.status}).`);
-        status.textContent = `Fetching ${book.title || 'book'} through LibVault…`;
-        response = await fetch(`${LIBVAULT_API_BASE}/fetch/${md5}`);
-        if (!response.ok) throw new Error(`LibVault fetch failed (${response.status}).`);
-        let job = await response.json();
-        const jobID = String(job?.job_id || job?.id || '');
-        for (let attempt = 0; attempt < 300 && jobID; attempt++) {
-          const state = String(job?.status || '').toLowerCase();
-          desktopDownloadByBook.set(md5, {
-            bookId: md5,
-            status: state === 'ready' ? 'ready' : state === 'failed' ? 'failed' : 'downloading',
-            source: 'libvault',
-            bytes: Number(job?.bytes || 0),
-            totalBytes: Number(job?.total || 0),
-          });
-          if (state === 'ready') break;
-          if (state === 'failed') throw new Error(job?.error || 'LibVault could not acquire this book.');
-          const total = Number(job?.total || 0);
-          const percent = total > 0 ? ` · ${Math.min(100, Math.round(Number(job?.bytes || 0) / total * 100))}%` : '';
-          status.textContent = `Fetching ${book.title || 'book'} through LibVault${percent}`;
-          await new Promise(resolve => setTimeout(resolve, 1000));
-          const poll = await fetch(`${LIBVAULT_API_BASE}/jobs/${encodeURIComponent(jobID)}`);
-          if (!poll.ok) throw new Error(`LibVault job check failed (${poll.status}).`);
-          job = await poll.json();
-        }
-        response = await fetch(readURL);
-        if (!response.ok) throw new Error('LibVault did not produce a readable file in time.');
-        desktopDownloadByBook.set(md5, { bookId: md5, status: 'ready', source: 'libvault' });
-        return response.blob();
-      }
-
       async function fetchDesktopTorrentCopy(book) {
         if (!isDesktopMode) return null;
         let torrentBook = await resolveLibVaultHTTPBook(book).catch(() => null) || book;
@@ -6059,9 +6019,6 @@
           let result;
           try {
             result = await desktopBridge.library.acquireLibgen(torrentBook);
-          } catch (torrentError) {
-            console.warn('Repository torrent unavailable; asking LibVault for its cached or fetched copy.', torrentError);
-            return fetchLibVaultManagedCopy(torrentBook);
           } finally {
             stopProgress();
           }

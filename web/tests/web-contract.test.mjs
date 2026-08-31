@@ -301,6 +301,14 @@ test('every search result title links through the read hash route', () => {
   assert.match(html, /label: 'Book search results',[\s\S]*?routeOnly: true/);
 });
 
+test('torrent acquisition does not fall back to LibVault managed copies', () => {
+  assert.doesNotMatch(html, /fetchLibVaultManagedCopy/);
+  assert.doesNotMatch(html, /LIBVAULT_API_BASE\}\/read/);
+  assert.doesNotMatch(html, /LIBVAULT_API_BASE\}\/fetch/);
+  assert.doesNotMatch(html, /LIBVAULT_API_BASE\}\/jobs/);
+  assert.match(html, /result = await desktopBridge\.library\.acquireLibgen\(torrentBook\)/);
+});
+
 test('read links remain addressable when a book has no MD5', () => {
   assert.match(html, /return direct \|\| `book:\$\{BookMetadata\.bookIdentity\(book\)\}`/);
   assert.match(html, /if \(bookId\.startsWith\('book:'\)\)/);
