@@ -6584,23 +6584,26 @@
 
       let readerOpenGeneration = 0;
       let readerFrameKind = '';
+      let readerFrameBookId = '';
       let readerFrameNavigation = null;
       let readerFrameNavigationId = 0;
 
-      async function readerFrameLoader(kind, openGeneration) {
+      async function readerFrameLoader(kind, openGeneration, bookId) {
         const loaderName = kind === 'pdf' ? 'loadPdf' : kind === 'fb2' ? 'loadFB2' : kind === 'comic' ? 'loadComic' : 'loadBook';
         const readerPath = kind === 'pdf' ? 'pdf-reader.html' : kind === 'fb2' ? 'fb2-reader.html' : kind === 'comic' ? 'comic-reader.html' : 'reader.html';
+        const requestedBookId = String(bookId || '').trim().toLowerCase();
         const existingLoader = readerFrame.contentWindow?.[loaderName];
-        if (!readerFrameNavigation && readerFrameKind === kind && typeof existingLoader === 'function') {
+        if (!readerFrameNavigation && readerFrameKind === kind && readerFrameBookId === requestedBookId && typeof existingLoader === 'function') {
           return existingLoader;
         }
 
-        if (!readerFrameNavigation || readerFrameNavigation.kind !== kind) {
+        if (!readerFrameNavigation || readerFrameNavigation.kind !== kind || readerFrameNavigation.bookId !== requestedBookId) {
           readerFrameNavigation?.cancel();
           const navigationId = ++readerFrameNavigationId;
           let cancelNavigation;
           const navigation = {
             kind,
+            bookId: requestedBookId,
             cancel: () => cancelNavigation?.(),
           };
           navigation.promise = new Promise((resolve, reject) => {
@@ -6627,6 +6630,7 @@
               // document that exposes the requested reader API.
               if (typeof loader !== 'function') return;
               readerFrameKind = kind;
+              readerFrameBookId = requestedBookId;
               resolveOnce(true);
             };
             readerFrame.onload = resolveWhenReady;
@@ -6652,7 +6656,7 @@
         const theme = state.settings.theme === 'dark' ? 'night' : state.settings.theme;
         const base64 = await blobToBase64(blob);
         if (openGeneration !== readerOpenGeneration) return;
-        const readerLoad = await readerFrameLoader('epub', openGeneration);
+        const readerLoad = await readerFrameLoader('epub', openGeneration, book.md5 || BookMetadata.bookIdentity(book));
         if (!readerLoad) return;
         await readerLoad(
           base64,
@@ -6669,7 +6673,7 @@
         blob = await globalThis.BookstrFB2?.normalizeBlob(blob) || blob;
         const base64 = await blobToBase64(blob);
         if (openGeneration !== readerOpenGeneration) return;
-        const readerLoad = await readerFrameLoader('fb2', openGeneration);
+        const readerLoad = await readerFrameLoader('fb2', openGeneration, book.md5 || BookMetadata.bookIdentity(book));
         if (!readerLoad) return;
         await readerLoad(base64, book.cfi || '', state.settings.theme === 'dark' ? 'night' : state.settings.theme, book.md5 || BookMetadata.bookIdentity(book));
         applyOpenReaderTypography();
@@ -6679,7 +6683,7 @@
       async function displayComic(blob, book, readPath, openGeneration, format) {
         const base64 = await blobToBase64(blob);
         if (openGeneration !== readerOpenGeneration) return;
-        const readerLoad = await readerFrameLoader('comic', openGeneration);
+        const readerLoad = await readerFrameLoader('comic', openGeneration, book.md5 || BookMetadata.bookIdentity(book));
         if (!readerLoad) return;
         await readerLoad({
           base64,
@@ -6715,7 +6719,7 @@
           readUrl: readPath || book.readUrl || book.url || '',
           book,
         };
-        const readerLoad = await readerFrameLoader('pdf', openGeneration);
+        const readerLoad = await readerFrameLoader('pdf', openGeneration, book.md5 || BookMetadata.bookIdentity(book));
         if (!readerLoad) return;
         await readerLoad(options);
         if (openGeneration === readerOpenGeneration) status.textContent = `Opened ${book.title || 'PDF'}.`;

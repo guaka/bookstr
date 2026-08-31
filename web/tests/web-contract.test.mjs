@@ -395,8 +395,9 @@ test('EPUBs use persistent IndexedDB caching', () => {
   assert.match(html, /records\.forEach\(rememberCachedRecord\)/);
   assert.match(html, /const openGeneration = \+\+readerOpenGeneration/);
   assert.match(html, /if \(openGeneration !== readerOpenGeneration\) return/);
-  assert.match(html, /async function readerFrameLoader\(kind, openGeneration\)/);
+  assert.match(html, /async function readerFrameLoader\(kind, openGeneration, bookId\)/);
   assert.match(html, /readerFrameNavigation\?\.cancel\(\)/);
+  assert.match(html, /readerFrameBookId === requestedBookId/);
   assert.match(html, /readinessTimer = setInterval\(resolveWhenReady, 50\)/);
   assert.match(html, /clearInterval\(readinessTimer\)/);
   assert.match(html, /readerFrame\.src = `\$\{readerPath\}\?load=\$\{navigationId\}`/);
