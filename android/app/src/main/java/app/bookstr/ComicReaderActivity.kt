@@ -27,7 +27,7 @@ class ComicReaderActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         bookId = intent.getStringExtra(EXTRA_BOOK_ID).orEmpty()
         val app = application as BookstrApp
-        format = BookFormat.from(intent.getStringExtra(EXTRA_FORMAT), intent.getStringExtra(EXTRA_URL))
+        format = BookFormat.from(intent.getStringExtra(EXTRA_FORMAT), intent.getStringExtra(EXTRA_URL).orEmpty())
         archive = app.catalogRepository.publicationFile(bookId, format)
         val loader = WebViewAssetLoader.Builder()
             .addPathHandler("/assets/", WebViewAssetLoader.AssetsPathHandler(this))
