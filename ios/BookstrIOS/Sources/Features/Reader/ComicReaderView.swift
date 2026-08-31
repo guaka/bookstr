@@ -4,6 +4,10 @@ import LibArchive
 
 @MainActor
 final class ComicReaderController: ObservableObject {
+    static let fitZoom = 0.92
+    static let minimumZoom = 0.5
+    static let maximumZoom = 3.0
+
     @Published var progression = 0.0
     @Published var furthestProgression = 0.0
     @Published var pageIndex = 0
@@ -11,6 +15,7 @@ final class ComicReaderController: ObservableObject {
     @Published var ready = false
     @Published var loadingStage = "Opening comic"
     @Published var errorMessage: String?
+    @Published var zoomScale = fitZoom
 
     fileprivate weak var webView: WKWebView?
 
@@ -23,6 +28,20 @@ final class ComicReaderController: ObservableObject {
         furthestProgression = max(furthestProgression, progression)
         ready = count > 0
         loadingStage = ready ? "Comic ready" : "Opening comic"
+    }
+
+    func zoomIn() { setZoom(zoomScale + 0.2) }
+    func zoomOut() { setZoom(zoomScale - 0.2) }
+    func fitPage() { setZoom(Self.fitZoom) }
+
+    func updateZoom(_ value: Double) {
+        zoomScale = min(max(value, Self.minimumZoom), Self.maximumZoom)
+    }
+
+    private func setZoom(_ value: Double) {
+        let clamped = min(max(value, Self.minimumZoom), Self.maximumZoom)
+        zoomScale = clamped
+        webView?.evaluateJavaScript("window.BookstrComicZoom?.set(\(clamped)); null;")
     }
 
     nonisolated static func page(from locator: String?, fallbackProgression: Double = 0) -> Int {
@@ -97,6 +116,7 @@ struct ComicReaderView: UIViewRepresentable {
       const send = (method, value) => window.webkit.messageHandlers.bookstrComic.postMessage({ method, value });
       window.BookstrComic = {
         onComicProgress: (pageIndex, pageCount) => send('progress', { pageIndex, pageCount }),
+        onComicZoom: value => send('zoom', Number(value)),
         onComicError: value => send('error', String(value || 'Could not open comic archive.'))
       };
     })();
@@ -222,6 +242,9 @@ struct ComicReaderView: UIViewRepresentable {
                 onProgress(controller.progression, locator)
             case "error":
                 controller.errorMessage = body["value"] as? String ?? "Could not open comic archive."
+            case "zoom":
+                guard let value = body["value"] as? NSNumber else { return }
+                controller.updateZoom(value.doubleValue)
             default:
                 break
             }

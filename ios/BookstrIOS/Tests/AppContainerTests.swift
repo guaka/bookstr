@@ -4,6 +4,18 @@ import XCTest
 
 final class AppContainerTests: XCTestCase {
     @MainActor
+    func testComicZoomStartsFittedAndClampsToSupportedRange() {
+        let controller = ComicReaderController()
+        XCTAssertEqual(controller.zoomScale, ComicReaderController.fitZoom)
+        controller.updateZoom(99)
+        XCTAssertEqual(controller.zoomScale, ComicReaderController.maximumZoom)
+        controller.updateZoom(0)
+        XCTAssertEqual(controller.zoomScale, ComicReaderController.minimumZoom)
+        controller.fitPage()
+        XCTAssertEqual(controller.zoomScale, ComicReaderController.fitZoom)
+    }
+
+    @MainActor
     func testLibraryPullDownFilterMatchesBookMetadata() {
         let epub = CatalogBook(
             id: "epub", title: "EPUB", author: "Author", epubUrl: "https://example.org/book.epub",

@@ -325,6 +325,27 @@ struct ReaderHostView: View {
             if activeFormat == .epub || activeFormat == .pdf || activeFormat == .fb2 {
                 searchButton
             }
+
+            if activeFormat == .cbr || activeFormat == .cbz {
+                Menu {
+                    Button("Zoom In", systemImage: "plus.magnifyingglass") {
+                        comicController.zoomIn()
+                    }
+                    .disabled(comicController.zoomScale >= ComicReaderController.maximumZoom)
+                    Button("Fit Page", systemImage: "arrow.down.right.and.arrow.up.left") {
+                        comicController.fitPage()
+                    }
+                    Button("Zoom Out", systemImage: "minus.magnifyingglass") {
+                        comicController.zoomOut()
+                    }
+                    .disabled(comicController.zoomScale <= ComicReaderController.minimumZoom)
+                } label: {
+                    Image(systemName: "magnifyingglass")
+                        .frame(width: 40, height: 40)
+                }
+                .accessibilityLabel("Comic zoom, \(Int(round(comicController.zoomScale * 100))) percent")
+                .accessibilityIdentifier("reader-comic-zoom")
+            }
         }
         .foregroundStyle(container.settingsRepository.theme.background)
         .padding(.leading, 6)
