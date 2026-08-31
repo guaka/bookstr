@@ -54,6 +54,16 @@ test('Playwright captures every web and Electron e2e test for PR artifacts', asy
   assert.match(electron, /screenshot: 'on'/);
 });
 
+test('trusted PR reporting publishes screenshot galleries on a reusable asset branch', async () => {
+  const workflow = await readWorkflow('pr-coverage.yml');
+
+  assert.match(workflow, /contents: write/);
+  assert.match(workflow, /cancel-in-progress: false/);
+  assert.match(workflow, /pattern: bookstr-e2e-screenshots-\*/);
+  assert.match(workflow, /path: e2e-screenshots/);
+  assert.match(workflow, /publishScreenshotGallery/);
+});
+
 test('every client enforces the shared coverage baseline', async () => {
   const ci = await readWorkflow('ci.yml');
   const android = await readWorkflow('android.yml');
