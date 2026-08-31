@@ -465,8 +465,8 @@ class CatalogRepository(
                         ZipFile(file).use { archive -> archive.getEntry("META-INF/container.xml") != null }
                     }.getOrDefault(false)
             BookFormat.Fb2 -> isStructurallyValidFb2(file)
-            BookFormat.Cbr -> signature[0] == 0x52 && signature[1] == 0x61 && signature[2] == 0x72 && signature[3] == 0x21
-            BookFormat.Cbz -> signature[0] == 0x50 && signature[1] == 0x4b
+            BookFormat.Cbr -> signature[0] == 0x52.toByte() && signature[1] == 0x61.toByte() && signature[2] == 0x72.toByte() && signature[3] == 0x21.toByte()
+            BookFormat.Cbz -> signature[0] == 0x50.toByte() && signature[1] == 0x4b.toByte()
         }
     }
 

@@ -165,14 +165,14 @@ class CatalogRepositoryDownloadMetadataCoverageAdditionalTest {
         assertEquals(null, results[0].year)
     }
     @Test
-    fun parseDownloadedBookMetadataInfersPdfFromUrlWhenFormatIsUnknownAndQueryIsPresent() {
+    fun parseDownloadedBookMetadataKeepsExplicitCbzFormatOverPdfUrlWithQuery() {
         val id = "z".repeat(64)
         val results = parseDownloadedBookMetadata(
             """{"books":[{"id":"$id","format":"cbz","epubUrl":"https://example.org/book.PDF?download=true","title":"Query path"}]}"""
         )
 
         assertEquals(1, results.size)
-        assertEquals(BookFormat.Pdf, results[0].format)
+        assertEquals(BookFormat.Cbz, results[0].format)
     }
 
     @Test
