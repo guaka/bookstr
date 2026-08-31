@@ -105,7 +105,7 @@ test('Library reports useful local torrent states', async () => {
     await seedLibrary(page, books);
     await page.reload();
 
-    await expect(page.locator('.library-book-count')).toHaveText('7 books · 2 readable now · 1 seeding');
+    await expect(page.locator('.library-book-count')).toHaveText('7 books · 2 readable now · 1 seeding · ↓ 0 B/s · ↑ 0 B/s');
     await expect(libraryRow(page, books[0].title).locator('.result-availability')).toHaveText('—');
     const compactAuthors = libraryRow(page, books[0].title).locator('.result-author');
     await expect(compactAuthors).toHaveAttribute('title', books[0].authors);
@@ -282,13 +282,13 @@ test('a successful torrent download does not duplicate its legacy SHA-addressed 
     await page.reload();
     await page.locator('#home-query-input').fill('');
 
-    await expect(page.locator('.library-book-count')).toHaveText('1 book · 1 readable now · 0 seeding');
+    await expect(page.locator('.library-book-count')).toHaveText('1 book · 1 readable now · 0 seeding · ↓ 0 B/s · ↑ 0 B/s');
     await expect(page.locator('.book-table-row')).toHaveCount(1);
     await expect(libraryRow(page, 'Scale').locator('.result-availability')).toHaveText('Ready');
 
     await page.reload();
     await page.locator('#home-query-input').fill('');
-    await expect(page.locator('.library-book-count')).toHaveText('1 book · 1 readable now · 0 seeding');
+    await expect(page.locator('.library-book-count')).toHaveText('1 book · 1 readable now · 0 seeding · ↓ 0 B/s · ↑ 0 B/s');
     await expect(page.locator('.book-table-row')).toHaveCount(1);
     await expect(libraryRow(page, 'Scale').locator('.result-availability')).toHaveText('Ready');
   } finally {
@@ -328,7 +328,7 @@ test('SHA-addressed library rows inherit seeding status from their LibGen downlo
     await page.reload();
 
     const row = libraryRow(page, favorite.title);
-    await expect(page.locator('.library-book-count')).toHaveText('1 book · 1 readable now · 1 seeding');
+    await expect(page.locator('.library-book-count')).toHaveText('1 book · 1 readable now · 1 seeding · ↓ 0 B/s · ↑ 0 B/s');
     await expect(row.locator('.result-availability')).toHaveText('Seeding');
     await expect(row.locator('.result-title')).toHaveClass(/readable/);
     await expect(row.locator('.result-title')).not.toHaveClass(/unavailable/);
