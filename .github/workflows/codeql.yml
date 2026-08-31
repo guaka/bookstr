@@ -13,6 +13,8 @@ permissions:
   pull-requests: read
   security-events: write
 
+# GitHub code scanning is not enabled for this repository. The analysis steps
+# still validate extraction and builds, but must not attempt SARIF uploads.
 concurrency:
   group: codeql-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
@@ -80,6 +82,8 @@ jobs:
           build-mode: none
       - name: Analyze
         uses: github/codeql-action/analyze@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4
+        with:
+          upload: never
 
   java-kotlin:
     name: Analyze (java-kotlin)
@@ -104,6 +108,8 @@ jobs:
         run: ./gradlew --no-daemon assembleDebug
       - name: Analyze
         uses: github/codeql-action/analyze@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4
+        with:
+          upload: never
 
   javascript-typescript:
     name: Analyze (javascript-typescript)
@@ -119,6 +125,8 @@ jobs:
           build-mode: none
       - name: Analyze
         uses: github/codeql-action/analyze@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4
+        with:
+          upload: never
 
   python:
     name: Analyze (python)
@@ -134,6 +142,8 @@ jobs:
           build-mode: none
       - name: Analyze
         uses: github/codeql-action/analyze@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4
+        with:
+          upload: never
 
   swift:
     name: Analyze (swift)
@@ -146,8 +156,19 @@ jobs:
         uses: github/codeql-action/init@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4
         with:
           languages: swift
-          build-mode: autobuild
-      - name: Autobuild
-        uses: github/codeql-action/autobuild@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4
+          build-mode: manual
+      - name: Build iOS app
+        run: |
+          xcodebuild build -quiet \
+            -project ios/BookstrIOS.xcodeproj \
+            -scheme BookstrIOS \
+            -destination 'generic/platform=iOS Simulator' \
+            -skipPackagePluginValidation \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO \
+            COMPILATION_CACHE_ENABLE_CACHING=NO \
+            SWIFT_ENABLE_COMPILE_CACHE=NO
       - name: Analyze
         uses: github/codeql-action/analyze@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4
+        with:
+          upload: never
