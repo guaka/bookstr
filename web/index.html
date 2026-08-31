@@ -2236,6 +2236,7 @@
       const searchResultSort = { key: '', direction: 'asc' };
       const searchResultFilter = { language: '', format: '' };
       let searchResultPage = 1;
+      let activeSearchGeneration = 0;
 
       let dictionaryDbPromise;
       let sqlRuntimePromise;
@@ -6905,7 +6906,7 @@
         if (outcomes.every(outcome => outcome.error)) {
           throw new Error(outcomes.map(outcome => `${outcome.source.name}: ${outcome.error?.message || outcome.error}`).join('; '));
         }
-        return { books: dedupeBooks(outcomes.flatMap(outcome => outcome.books)).slice(0, SEARCH_RESULT_LIMIT), outcomes };
+        return { books: dedupeBooks(arrivedBooks).slice(0, SEARCH_RESULT_LIMIT), outcomes };
       }
 
       function searchOutcomeSummary(outcomes) {
@@ -6949,6 +6950,7 @@
       }
 
       async function startSearch({ updateHash = true, routeState = null } = {}) {
+        const searchGeneration = ++activeSearchGeneration;
         // Source adapters may report partial results before their final result.
         // Once the user has seen a result set, retain any filter/page choice
         // while a later adapter update re-renders it.
@@ -7003,6 +7005,7 @@
         status.textContent = 'Searching public book catalogs…';
         try {
           const searchResponse = await searchAvailableBookSources(query, (progress, arrivedBooks) => {
+            if (searchGeneration !== activeSearchGeneration) return;
             renderSearchSourceProgress(progress);
             if (!arrivedBooks.length) return;
             const matchingBooks = arrivedBooks.filter(book => matchesExactSearchTokens(
@@ -7013,6 +7016,7 @@
             renderSearchResults(matchingBooks);
             renderButtonsState();
           });
+          if (searchGeneration !== activeSearchGeneration) return;
           let books = searchResponse.books;
           books = books.filter(book => matchesExactSearchTokens(book, query, searchType.value || 'all'));
           cacheSearchBooks(query, books);
@@ -7024,6 +7028,7 @@
             status.textContent += ' No matches found.';
           }
         } catch (error) {
+          if (searchGeneration !== activeSearchGeneration) return;
           status.textContent = `Search failed: ${error.message || error}`;
           resultsEl.innerHTML = '<p class="note">Search failed. Check your network connection and try again.</p>';
           searchResultCount.textContent = '0 results';
