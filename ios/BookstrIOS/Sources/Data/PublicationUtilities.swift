@@ -8,6 +8,8 @@ import PDFKit
 enum PublicationUtilities {
     static let blossomHost = "blossom.bfr.ee"
     static let maxFB2Bytes: Int64 = 50 * 1024 * 1024
+    static let maxComicEntries = 2_000
+    static let maxComicPageBytes: UInt32 = 30 * 1024 * 1024
 
     static func publicationIdentityCandidates(for book: CatalogBook) -> [String] {
         var seen = Set<String>()
@@ -78,11 +80,17 @@ enum PublicationUtilities {
     static func detectedFormat(fileURL: URL) -> BookFormat? {
         guard let handle = try? FileHandle(forReadingFrom: fileURL) else { return nil }
         defer { try? handle.close() }
-        let prefix = try? handle.read(upToCount: 5)
+        let prefix = try? handle.read(upToCount: 8)
         guard let prefix else { return nil }
         if String(data: prefix, encoding: .ascii)?.hasPrefix("%PDF-") == true { return .pdf }
+        if isRARSignature(prefix) { return .cbr }
         if prefix.starts(with: [0x50, 0x4b]) {
-            return isSafeFB2Zip(fileURL: fileURL) ? .fb2 : .epub
+            if isSafeFB2Zip(fileURL: fileURL) { return .fb2 }
+            if fileContains(fileURL, needle: Data("META-INF/container.xml".utf8)) { return .epub }
+            if zipContainsComicImage(fileURL: fileURL) { return .cbz }
+            // Preserve the historical detection contract: an unknown ZIP is
+            // provisionally EPUB, then structural validation rejects it.
+            return .epub
         }
         if String(data: prefix, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("<") == true { return .fb2 }
         return nil
@@ -98,10 +106,74 @@ enum PublicationUtilities {
         case .fb2:
             return validateFB2(fileURL: fileURL)
         case .cbr:
-            return fileContains(fileURL, needle: Data([0x52, 0x61, 0x72, 0x21]))
+            return detectedFormat(fileURL: fileURL) == .cbr
         case .cbz:
-            return fileContains(fileURL, needle: Data([0x50, 0x4b]))
+            return detectedFormat(fileURL: fileURL) == .cbz
         }
+    }
+
+    private static func isRARSignature(_ prefix: Data) -> Bool {
+        prefix.starts(with: [0x52, 0x61, 0x72, 0x21, 0x1a, 0x07, 0x00])
+            || prefix.starts(with: [0x52, 0x61, 0x72, 0x21, 0x1a, 0x07, 0x01, 0x00])
+    }
+
+    /// Validate CBZ from its central directory so arbitrary ZIP downloads are
+    /// not mislabeled as EPUBs or comics. Page payloads stay mapped on disk.
+    private static func zipContainsComicImage(fileURL: URL) -> Bool {
+        guard let data = try? Data(contentsOf: fileURL, options: [.mappedIfSafe]), data.count >= 22 else { return false }
+        let searchStart = max(data.startIndex, data.endIndex - 65_557)
+        var cursor = data.endIndex - 22
+        var endRecord: Data.Index?
+        while cursor >= searchStart {
+            if cursor + 3 < data.endIndex, readUInt32(data, cursor) == 0x06054b50 {
+                endRecord = cursor
+                break
+            }
+            if cursor == data.startIndex { break }
+            cursor -= 1
+        }
+        guard let endRecord,
+              endRecord + 22 <= data.endIndex,
+              readUInt16(data, endRecord + 4) == 0,
+              readUInt16(data, endRecord + 6) == 0 else { return false }
+        let entryCount = Int(readUInt16(data, endRecord + 10))
+        let directorySize = Int(readUInt32(data, endRecord + 12))
+        let directoryOffset = Int(readUInt32(data, endRecord + 16))
+        guard entryCount > 0, entryCount <= maxComicEntries,
+              directoryOffset >= 0, directorySize >= 46,
+              directoryOffset + directorySize <= data.count else { return false }
+
+        var entry = data.startIndex + directoryOffset
+        let directoryEnd = entry + directorySize
+        var readableImages = 0
+        for _ in 0..<entryCount {
+            guard entry + 46 <= directoryEnd, readUInt32(data, entry) == 0x02014b50 else { return false }
+            let flags = readUInt16(data, entry + 8)
+            let uncompressedSize = readUInt32(data, entry + 24)
+            let nameLength = Int(readUInt16(data, entry + 28))
+            let extraLength = Int(readUInt16(data, entry + 30))
+            let commentLength = Int(readUInt16(data, entry + 32))
+            let next = entry + 46 + nameLength + extraLength + commentLength
+            guard nameLength > 0, next <= directoryEnd,
+                  let name = String(data: data[(entry + 46)..<(entry + 46 + nameLength)], encoding: .utf8)
+            else { return false }
+            let normalized = name.replacingOccurrences(of: "\\", with: "/")
+            let components = normalized.split(separator: "/", omittingEmptySubsequences: false)
+            guard !normalized.hasPrefix("/"), !components.contains(".."), !components.contains("") else { return false }
+            if flags & 0x0001 == 0,
+               uncompressedSize > 0, uncompressedSize <= maxComicPageBytes,
+               isComicImageName(normalized) {
+                readableImages += 1
+            }
+            entry = next
+        }
+        return entry == directoryEnd && readableImages > 0
+    }
+
+    private static func isComicImageName(_ name: String) -> Bool {
+        let lower = name.lowercased()
+        guard !lower.contains("/__macosx/"), !lower.hasPrefix("__macosx/") else { return false }
+        return [".jpg", ".jpeg", ".png", ".gif", ".webp"].contains { lower.hasSuffix($0) }
     }
 
     /// Returns descriptive metadata from a local FB2 file without inserting

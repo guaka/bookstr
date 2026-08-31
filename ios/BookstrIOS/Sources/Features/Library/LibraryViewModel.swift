@@ -10,6 +10,27 @@ enum LibrarySort: String, CaseIterable, Identifiable {
     var label: String { rawValue.capitalized }
 }
 
+enum LibraryFilter: String, CaseIterable, Identifiable {
+    case all
+    case epub
+    case pdf
+    case fb2
+    case cbr
+    case cbz
+
+    var id: String { rawValue }
+    var label: String { self == .all ? "All formats" : rawValue.uppercased() }
+
+    func matches(_ book: CatalogBook) -> Bool {
+        self == .all || book.format.rawValue == rawValue
+    }
+
+    func matches(_ favorite: ExternalFavorite) -> Bool {
+        guard self != .all else { return true }
+        return favorite.format?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == rawValue
+    }
+}
+
 /// Cache-first Library load: never block the foreground path on relay/Amber work.
 struct LibraryForegroundLoadPlan: Equatable {
     var applyCachedFavorites: Bool
@@ -213,6 +234,14 @@ final class LibraryViewModel: ObservableObject {
             }
             return lhs.title.localizedCaseInsensitiveCompare(rhs.title) == .orderedAscending
         }
+    }
+
+    static func filtered(_ books: [CatalogBook], by filter: LibraryFilter) -> [CatalogBook] {
+        books.filter(filter.matches)
+    }
+
+    static func filtered(_ favorites: [ExternalFavorite], by filter: LibraryFilter) -> [ExternalFavorite] {
+        favorites.filter(filter.matches)
     }
 
     private func externalMD5(_ favorite: ExternalFavorite) -> String? {

@@ -170,19 +170,19 @@ final class CatalogRepository {
         }, uniquingKeysWith: { first, _ in first })
         for file in fileStore.publicationFiles() {
             let ext = file.pathExtension.lowercased()
-            guard ext == "epub" || ext == "pdf" || ext == "fb2" else { continue }
+            guard let storedFormat = BookFormat(rawValue: ext) else { continue }
             let embedded = ext == "fb2" ? PublicationUtilities.fb2Metadata(fileURL: file) : nil
             let id = file.deletingPathExtension().lastPathComponent.lowercased()
             guard id.count == 64, id.allSatisfy(\.isHexDigit) else { continue }
             if let remembered = byID[id], remembered.format.rawValue != ext {
-                byID[id] = replacingFormat(of: remembered, with: ext == "pdf" ? .pdf : ext == "fb2" ? .fb2 : .epub)
+                byID[id] = replacingFormat(of: remembered, with: storedFormat)
             } else if byID[id] == nil, let favorite = favoritesBySHA[id] {
                 byID[id] = CatalogBook(
                     id: id, title: favorite.title, author: favorite.author ?? "Unknown",
                     epubUrl: "https://\(Self.blossomHost)/\(id)", coverUrl: nil,
                     sourceUrl: favorite.blossomUrl, isbn: favorite.isbn,
                     libvaultMd5: favorite.libvaultMd5,
-                    format: ext == "pdf" ? .pdf : ext == "fb2" ? .fb2 : .epub, blossomSha256: id, year: favorite.year,
+                    format: storedFormat, blossomSha256: id, year: favorite.year,
                     rightsStatus: favorite.rightsStatus, license: favorite.license,
                     licenseUrl: favorite.licenseUrl, rightsSource: favorite.rightsSource
                 )
@@ -191,7 +191,7 @@ final class CatalogRepository {
                     id: id, title: embedded?.title ?? "Downloaded \(ext.uppercased())", author: embedded?.author ?? "Unknown",
                     epubUrl: "https://\(Self.blossomHost)/\(id)", coverUrl: nil,
                     sourceUrl: nil, isbn: nil, libvaultMd5: nil,
-                    format: ext == "pdf" ? .pdf : ext == "fb2" ? .fb2 : .epub, blossomSha256: id, year: embedded?.year
+                    format: storedFormat, blossomSha256: id, year: embedded?.year
                 )
             }
         }
@@ -323,7 +323,7 @@ final class CatalogRepository {
         }
         guard let actual = Self.detectedFormat(fileURL: tempURL) else {
             throw NSError(domain: "CatalogRepository", code: 2,
-                          userInfo: [NSLocalizedDescriptionKey: "The downloaded file is not a valid PDF, EPUB, or FB2"])
+                          userInfo: [NSLocalizedDescriptionKey: "The downloaded file is not a valid PDF, EPUB, FB2, CBR, or CBZ"])
         }
         let corrected = replacingFormat(of: book, with: actual)
         guard isValidCachedFile(book: corrected, fileURL: tempURL, verifyBlossomHash: true) else {
@@ -346,7 +346,7 @@ final class CatalogRepository {
         let fileURL = try await ensureDownloaded(book: book)
         guard let actual = Self.detectedFormat(fileURL: fileURL) else {
             throw NSError(domain: "CatalogRepository", code: 10,
-                          userInfo: [NSLocalizedDescriptionKey: "This publication is not a readable PDF, EPUB, or FB2"])
+                          userInfo: [NSLocalizedDescriptionKey: "This publication is not a readable PDF, EPUB, FB2, CBR, or CBZ"])
         }
         let corrected = replacingFormat(of: book, with: actual)
         guard isValidCachedFile(book: corrected, fileURL: fileURL, verifyBlossomHash: false) else {
@@ -366,7 +366,7 @@ final class CatalogRepository {
     /// the file that is already on disk before trying the network again.
     func localPublication(for book: CatalogBook) -> (book: CatalogBook, url: URL)? {
         for id in Self.publicationIdentityCandidates(for: book) {
-            for format in [book.format, .epub, .pdf, .fb2] {
+            for format in [book.format] + BookFormat.allCases.filter({ $0 != book.format }) {
                 let url = fileStore.bookFileURL(bookId: id, format: format)
                 guard FileManager.default.fileExists(atPath: url.path),
                       let actual = Self.detectedFormat(fileURL: url),

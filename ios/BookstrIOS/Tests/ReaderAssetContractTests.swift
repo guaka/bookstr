@@ -12,6 +12,27 @@ import WebKit
 #endif
 
 final class ReaderAssetContractTests: XCTestCase {
+#if !SWIFT_PACKAGE
+    func testComicReaderResourcesAreBundled() throws {
+        XCTAssertNotNil(Bundle.main.url(forResource: "comic-reader", withExtension: "html"))
+        XCTAssertNotNil(Bundle.main.url(forResource: "jszip.min", withExtension: "js"))
+        XCTAssertNotNil(
+            Bundle.main.url(forResource: "libarchive", withExtension: "js", subdirectory: "vendor")
+                ?? Bundle.main.url(forResource: "libarchive", withExtension: "js")
+        )
+        XCTAssertNotNil(
+            Bundle.main.url(forResource: "libarchive", withExtension: "wasm", subdirectory: "vendor")
+                ?? Bundle.main.url(forResource: "libarchive", withExtension: "wasm")
+        )
+    }
+
+    func testComicLocatorRestoresPageIndex() {
+        XCTAssertEqual(ComicReaderController.page(from: "comic:12:30"), 12)
+        XCTAssertEqual(ComicReaderController.page(from: "epubcfi(/6/2)"), 0)
+        XCTAssertEqual(ComicReaderController.page(from: "comic:-4:30"), 0)
+    }
+#endif
+
     func testSpeechPlaybackQueueYieldsEveryChunkOnceInOrder() {
         var queue = SpeechPlaybackQueue()
         let chunks = [

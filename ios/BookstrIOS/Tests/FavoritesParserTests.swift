@@ -1555,6 +1555,42 @@ final class FavoritesParserTests: XCTestCase {
         XCTAssertFalse(PublicationUtilities.isStructurallyValidPublication(fileURL: url, format: .pdf))
     }
 
+    func testCBZIsDetectedFromImageEntriesInsteadOfBeingMisclassifiedAsEPUB() throws {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".cbz")
+        defer { try? FileManager.default.removeItem(at: url) }
+        try makeStoredZip([
+            ("001.jpg", "image-one"),
+            ("chapter/002.png", "image-two")
+        ]).write(to: url)
+
+        XCTAssertEqual(PublicationUtilities.detectedFormat(fileURL: url), .cbz)
+        XCTAssertTrue(PublicationUtilities.isStructurallyValidPublication(fileURL: url, format: .cbz))
+        XCTAssertFalse(PublicationUtilities.isStructurallyValidPublication(fileURL: url, format: .epub))
+    }
+
+    func testArbitraryZipIsNotAcceptedAsEPUBOrCBZ() throws {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".zip")
+        defer { try? FileManager.default.removeItem(at: url) }
+        try makeStoredZip([("notes.txt", "not a publication")]).write(to: url)
+
+        XCTAssertEqual(PublicationUtilities.detectedFormat(fileURL: url), .epub)
+        XCTAssertFalse(PublicationUtilities.isStructurallyValidPublication(fileURL: url, format: .epub))
+        XCTAssertFalse(PublicationUtilities.isStructurallyValidPublication(fileURL: url, format: .cbz))
+    }
+
+    func testCBRRecognizesRAR4AndRAR5Signatures() throws {
+        for signature in [
+            Data([0x52, 0x61, 0x72, 0x21, 0x1a, 0x07, 0x00, 0x01]),
+            Data([0x52, 0x61, 0x72, 0x21, 0x1a, 0x07, 0x01, 0x00, 0x01])
+        ] {
+            let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".cbr")
+            defer { try? FileManager.default.removeItem(at: url) }
+            try signature.write(to: url)
+            XCTAssertEqual(PublicationUtilities.detectedFormat(fileURL: url), .cbr)
+            XCTAssertTrue(PublicationUtilities.isStructurallyValidPublication(fileURL: url, format: .cbr))
+        }
+    }
+
 #if canImport(UIKit)
     func testRealPdfIsAccepted() throws {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".pdf")

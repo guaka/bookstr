@@ -26,6 +26,12 @@ targets:
         buildPhase: resources
       - path: ../shared/reader/jszip.min.js
         buildPhase: resources
+      - path: ../web/comic-reader.html
+        buildPhase: resources
+      - path: ../web/vendor/libarchive.js
+        buildPhase: resources
+      - path: ../web/vendor/libarchive.wasm
+        buildPhase: resources
     dependencies:
       - package: swift-nostr
         product: NostrConnect
@@ -75,6 +81,7 @@ targets:
       GENERATE_INFOPLIST_FILE: YES
       CODE_SIGN_STYLE: Automatic
       DEVELOPMENT_TEAM: SUJ594N47C
+      PRODUCT_BUNDLE_IDENTIFIER: app.bookstr.ios.tests
     dependencies:
       - target: BookstrIOS
   BookstrIOSUITests:
@@ -87,6 +94,7 @@ targets:
       GENERATE_INFOPLIST_FILE: YES
       CODE_SIGN_STYLE: Automatic
       DEVELOPMENT_TEAM: SUJ594N47C
+      PRODUCT_BUNDLE_IDENTIFIER: app.bookstr.ios.uitests
       TEST_TARGET_NAME: BookstrIOS
     dependencies:
       - target: BookstrIOS

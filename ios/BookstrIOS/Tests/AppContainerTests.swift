@@ -3,6 +3,30 @@ import XCTest
 @testable import BookstrIOS
 
 final class AppContainerTests: XCTestCase {
+    @MainActor
+    func testLibraryFormatFilterMatchesCatalogAndExternalFavorites() {
+        let epub = CatalogBook(
+            id: "epub", title: "EPUB", author: "Author", epubUrl: "https://example.org/book.epub",
+            coverUrl: nil, sourceUrl: nil, isbn: nil, libvaultMd5: nil, format: .epub,
+            blossomSha256: nil, year: nil
+        )
+        let cbz = CatalogBook(
+            id: "cbz", title: "Comic", author: "Artist", epubUrl: "https://example.org/book.cbz",
+            coverUrl: nil, sourceUrl: nil, isbn: nil, libvaultMd5: nil, format: .cbz,
+            blossomSha256: nil, year: nil
+        )
+        let external = ExternalFavorite(
+            key: "external", title: "External comic", author: "Artist", year: nil,
+            url: nil, isbn: nil, libvaultMd5: nil, format: "CBZ",
+            blossomSha256: nil, blossomUrl: nil
+        )
+
+        XCTAssertEqual(LibraryFilter.all.label, "All formats")
+        XCTAssertEqual(LibraryViewModel.filtered([epub, cbz], by: .cbz).map(\.id), ["cbz"])
+        XCTAssertTrue(LibraryFilter.cbz.matches(external))
+        XCTAssertFalse(LibraryFilter.pdf.matches(external))
+    }
+
     func testBootstrapProvidesWordNavigationState() {
         let container = AppContainer.bootstrap()
 
