@@ -129,3 +129,59 @@ test('a slower previous Electron search cannot overwrite a newer query', async (
     await app.close();
   }
 });
+
+test('a metadata-only Electron search result opens its book page', async () => {
+  const app = await electron.launch({ args: electronArgs() });
+  try {
+    const page = await app.firstWindow();
+    await page.addInitScript(() => {
+      const originalFetch = window.fetch.bind(window);
+      window.fetch = async (input, init) => {
+        const rawUrl = typeof input === 'string' ? input : input?.url;
+        const url = new URL(rawUrl, location.href);
+        if (url.protocol !== 'app:' || url.hostname !== 'bookstr' || !url.pathname.startsWith('/api/')) {
+          return originalFetch(input, init);
+        }
+        if (url.pathname === '/api/search') {
+          return new Response(JSON.stringify({ books: [{
+            source: 'openlibrary',
+            source_native_id: 'OLCLICKABLEW',
+            title: 'Clickable Metadata Result',
+            authors: ['Fixture Author'],
+            language: 'en',
+          }] }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+        }
+        if (url.pathname === '/api/opds') {
+          return new Response('<?xml version="1.0"?><feed xmlns="http://www.w3.org/2005/Atom"></feed>', {
+            status: 200,
+            headers: { 'Content-Type': 'application/atom+xml' },
+          });
+        }
+        const empty = url.pathname === '/api/gutendex'
+          ? { results: [] }
+          : url.pathname === '/api/open-textbooks'
+            ? { data: [] }
+            : url.pathname === '/api/gdl'
+              ? { books: [] }
+              : url.pathname === '/api/internet-archive/search'
+                ? { response: { docs: [] } }
+                : [];
+        return new Response(JSON.stringify(empty), { status: 200, headers: { 'Content-Type': 'application/json' } });
+      };
+    });
+    await page.reload();
+
+    await page.getByRole('button', { name: 'Search' }).click();
+    const query = page.getByRole('textbox', { name: 'Book search query' });
+    await query.fill('clickable');
+    await query.press('Enter');
+    await page.getByRole('link', { name: 'Clickable Metadata Result', exact: true }).click();
+
+    await expect(page).toHaveURL(/#read=book%3A/);
+    await expect(page.locator('#read-metadata-fallback')).toBeVisible();
+    await expect(page.locator('#read-metadata-fallback h1')).toHaveText('Clickable Metadata Result');
+    await expect(page.locator('#read-metadata-fallback-status')).toContainText('No readable download or torrent is available');
+  } finally {
+    await app.close();
+  }
+});

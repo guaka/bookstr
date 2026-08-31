@@ -3702,7 +3702,7 @@
             : [];
 
         return results.map(item => {
-          const rawId = String(item.md5 || item.id || item.sha256 || item.libvaultMd5 || '').trim().toLowerCase();
+          const rawId = String(item.md5 || item.id || item.source_native_id || item.sourceNativeId || item.sha256 || item.libvaultMd5 || '').trim().toLowerCase();
           const blossom = payload?.blossoms?.[rawId] || {};
           const cover = payload?.covers?.[rawId] || {};
           const authors = Array.isArray(item.authors)
@@ -5429,6 +5429,8 @@
         const routeGeneration = ++readRouteGeneration;
         let book = await resolveReadRouteBook(bookRef);
         if (routeGeneration !== readRouteGeneration) return;
+        activeReadingBook = book;
+        activateTab('reading');
         showReadMetadataFallback(book);
         const readPath = BookMetadata.canonicalReadUrl(book, BOOKS_API_BASE);
         let cacheError = null;
@@ -7829,7 +7831,7 @@
           if (legacyMd5) {
             history.replaceState(null, '', `${window.location.pathname}${window.location.search}#read=${legacyMd5}`);
           }
-          if (isMd5(bookRef) || /^(https?:|blob:)/i.test(bookRef)) {
+          if (isMd5(bookRef) || /^(?:book:|https?:|blob:)/i.test(bookRef)) {
             void openResolvedReadRoute(bookRef);
           }
           return;

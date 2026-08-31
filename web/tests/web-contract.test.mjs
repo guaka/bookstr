@@ -305,6 +305,7 @@ test('read links remain addressable when a book has no MD5', () => {
   assert.match(html, /return direct \|\| `book:\$\{BookMetadata\.bookIdentity\(book\)\}`/);
   assert.match(html, /if \(bookId\.startsWith\('book:'\)\)/);
   assert.match(html, /BookMetadata\.bookIdentity\(book\) === identity/);
+  assert.match(html, /\^\(\?:book:\|https\?:\|blob:\)/);
 });
 
 test('Home titles use the same read hash resolver as Search titles', () => {
