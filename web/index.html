@@ -5862,7 +5862,14 @@
         const metadata = document.createElement('dl');
         metadata.className = 'read-metadata-grid';
         const digest = String(book.md5 || book.sha256 || '').trim();
-        const digestLabel = /^[a-f0-9]{64}$/i.test(digest) ? 'SHA-256' : 'MD5';
+        const catalogUrl = BookMetadata.canonicalCatalogUrl(book);
+        const digestLabel = /^[a-f0-9]{64}$/i.test(digest)
+          ? 'SHA-256'
+          : /^[a-f0-9]{32}$/i.test(digest)
+            ? 'MD5'
+            : /^openlibrary:/i.test(digest)
+              ? 'Open Library'
+              : 'Catalog ID';
         for (const [label, value] of [
           ['Author', book.author || book.authors],
           ['Published', book.year],
@@ -5884,10 +5891,17 @@
               searchForAuthor(book);
             });
             description.append(link);
+          } else if (label === 'Open Library' && catalogUrl) {
+            const link = document.createElement('a');
+            link.href = catalogUrl;
+            link.target = '_blank';
+            link.rel = 'noopener noreferrer';
+            link.textContent = String(value).replace(/^openlibrary:/i, '');
+            description.append(link);
           } else {
             description.textContent = String(value);
           }
-          if (label === 'MD5' || label === 'SHA-256') description.className = 'metadata-digest';
+          if (['MD5', 'SHA-256', 'Open Library', 'Catalog ID'].includes(label)) description.className = 'metadata-digest';
           if (label === 'Author') {
             description.classList.add('metadata-authors');
             description.title = String(value);

@@ -377,6 +377,10 @@ test('builds canonical Open Library work and edition links', () => {
     canonicalCatalogUrl({ source: 'openlibrary', sourceNativeId: 'OL123M' }),
     'https://openlibrary.org/books/OL123M',
   );
+  assert.equal(
+    canonicalCatalogUrl({ md5: 'openlibrary:126499640' }),
+    'https://openlibrary.org/works/OL126499640W',
+  );
   assert.equal(canonicalCatalogUrl({ source: 'gutenberg', sourceNativeId: '34527' }), '');
 });
 

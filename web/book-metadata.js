@@ -345,8 +345,9 @@
 
   function canonicalCatalogUrl(book) {
     const source = String(book?.source || '').trim().toLowerCase();
-    if (source !== 'openlibrary') return '';
-    const rawId = String(book?.sourceNativeId || book?.source_native_id || '').trim();
+    const legacyId = String(book?.md5 || book?.id || '').trim().match(/^openlibrary:(.+)$/i)?.[1] || '';
+    if (source !== 'openlibrary' && !legacyId) return '';
+    const rawId = String(book?.sourceNativeId || book?.source_native_id || legacyId).trim();
     if (!rawId) return '';
     const olid = /^OL\d+[WM]$/i.test(rawId)
       ? rawId.toUpperCase()

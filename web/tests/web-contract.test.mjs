@@ -696,7 +696,9 @@ test('torrent messages use colored state dots', () => {
 
 test('book details use a compact metadata grid with human-readable digest and rights labels', () => {
   assert.match(html, /metadata\.className = 'read-metadata-grid'/);
-  assert.match(html, /digestLabel = \/\^\[a-f0-9\]\{64\}\$\/i\.test\(digest\) \? 'SHA-256' : 'MD5'/);
+  assert.match(html, /\^\[a-f0-9\]\{32\}\$\/i\.test\(digest\)[\s\S]*?\? 'MD5'/);
+  assert.match(html, /\^openlibrary:\/i\.test\(digest\)[\s\S]*?\? 'Open Library'/);
+  assert.match(html, /link\.href = catalogUrl;[\s\S]*?replace\(\/\^openlibrary:\/i, ''\)/);
   assert.match(html, /epub_opf: 'EPUB metadata'/);
   assert.match(html, /\.read-metadata-grid dd\.metadata-digest/);
   assert.match(html, /font-size: clamp\(1\.45rem, 2\.3vw, 2\.15rem\)/);
