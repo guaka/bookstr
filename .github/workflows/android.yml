@@ -103,6 +103,7 @@ jobs:
           api-level: 30
           arch: x86_64
           target: google_apis
+          disk-size: 2048M
           script: ./android/scripts/run-connected-e2e.sh
       - name: Record Android UI test overview
         if: always()

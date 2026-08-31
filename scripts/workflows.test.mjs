@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
+import { readFile, readdir } from 'node:fs/promises';
 import test from 'node:test';
 
 const readWorkflow = (name) =>
@@ -84,34 +84,10 @@ test('every client enforces the shared coverage baseline', async () => {
   assert.match(ios, /bookstr-e2e-screenshots-ios-\$\{\{ github\.run_id \}\}/);
 });
 
-test('CodeQL scans every main push while gating pull requests by language', async () => {
-  const workflow = await readWorkflow('codeql.yml');
+test('CodeQL workflow is disabled', async () => {
+  const workflows = await readdir(new URL('../.github/workflows/', import.meta.url));
 
-  for (const language of [
-    'actions',
-    'java-kotlin',
-    'javascript-typescript',
-    'python',
-    'swift',
-  ]) {
-    assert.match(workflow, new RegExp(`name: Analyze \\(${language}\\)`));
-    const output = language.replaceAll('-', '_');
-    assert.match(
-      workflow,
-      new RegExp(`needs\\.changes\\.outputs\\.${output} == 'true'`),
-    );
-  }
-
-  assert.equal([...workflow.matchAll(/event_name != 'pull_request'/g)].length, 5);
-  assert.match(workflow, /cancel-in-progress: \$\{\{ github\.event_name == 'pull_request' \}\}/);
-  assert.match(workflow, /runs-on: macos-26[\s\S]*languages: swift/);
-  assert.match(workflow, /permissions:\n\s+actions: read/);
-  assert.match(workflow, /languages: java-kotlin\n\s+build-mode: manual/);
-  assert.match(workflow, /run: \.\/gradlew --no-daemon assembleDebug/);
-  assert.match(workflow, /languages: swift\n\s+build-mode: manual/);
-  assert.match(workflow, /-destination 'generic\/platform=iOS Simulator'/);
-  assert.match(workflow, /-skipPackagePluginValidation/);
-  assert.equal([...workflow.matchAll(/upload: never/g)].length, 5);
+  assert.equal(workflows.includes('codeql.yml'), false);
 });
 
 test('Android CI shares one cached Gradle invocation across unit build tasks', async () => {
@@ -138,6 +114,7 @@ test('Android CI shares one cached Gradle invocation across unit build tasks', a
   assert.match(workflow, /steps\.android_build\.outcome == 'success'/);
   assert.doesNotMatch(workflow, /steps\.(unit_tests|unit_coverage|assemble)\./);
   assert.match(workflow, /script: \.\/android\/scripts\/run-connected-e2e\.sh/);
+  assert.match(workflow, /disk-size: 2048M/);
   assert.match(e2eRunner, /\.\/gradlew --no-daemon connectedDebugAndroidTest/);
   assert.match(e2eRunner, /adb pull "\$device_screenshot_dir\/\." "\$host_screenshot_dir"/);
   assert.match(e2eRunner, /Android e2e tests produced no screenshots/);
