@@ -21,7 +21,6 @@ const CATALOG_PATHS = [
   /^\/api\/internet-archive\/search$/,
   /^\/api\/internet-archive\/metadata$/,
   /^\/api\/internet-archive\/download$/,
-  /^\/api\/litres\/search$/,
   /^\/api\/books\/\d+$/,
   /^\/api\/books\/\d+\/download$/,
 ];

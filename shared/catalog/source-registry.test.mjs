@@ -9,6 +9,7 @@ test('v1 source registry includes legal multilingual torrent and text sources', 
   assert.ok(sourceDescriptor('wikisource').languages.includes('ru'));
   assert.ok(sourceDescriptor('wikisource').languages.includes('zh'));
   assert.equal(sourceDescriptor('oapen').delivery, 'https');
+  assert.equal(sourceDescriptor('litres-public-domain').enabledInV1, false);
   assert.equal(sources.length, new Set(sources.map(source => source.id)).size);
 });
 test('seeding is gated by item rights evidence', () => {

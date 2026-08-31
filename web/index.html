@@ -6776,17 +6776,6 @@
         }
       }
 
-      async function searchLitresPublicDomain(query) {
-        const response = await fetch(`${BOOKS_API_BASE}/litres/search?q=${encodeURIComponent(query)}&limit=${SEARCH_RESULT_LIMIT}`);
-        const payload = await response.json().catch(() => ({}));
-        if (!response.ok) throw new Error(payload?.error || `LitRes search failed (${response.status})`);
-        const adapter = await getOPDSSourcesModule();
-        const books = (Array.isArray(payload.records) ? payload.records : [])
-          .map(record => adapter.providerRecordToBook(record, 'https://www.litres.ru/'))
-          .filter(Boolean);
-        return dedupeBooks(normalizeSearchBooks({ books }, 'litres-public-domain'));
-      }
-
       async function searchCustomOPDSFeed(feed, query) {
         const adapter = await getOPDSSourcesModule();
         const records = await adapter.searchOPDSFeed(feed, query);
@@ -6808,10 +6797,6 @@
           {
             id: 'gutenberg', name: 'Project Gutenberg', coverage: 'Public-domain ebooks',
             deliveries: ['Metadata', 'EPUB', 'Covers'], access: 'Public', search: searchProjectGutenberg,
-          },
-          {
-            id: 'litres-public-domain', name: 'LitRes Public Domain', coverage: 'Explicitly public-domain, free editions',
-            deliveries: ['Metadata', 'FB2'], access: 'Public', search: searchLitresPublicDomain,
           },
           {
             id: 'oapen', name: 'OAPEN', coverage: 'Peer-reviewed open-access academic books',

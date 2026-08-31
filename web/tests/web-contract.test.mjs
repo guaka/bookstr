@@ -54,9 +54,9 @@ test('Search explains active sources and fans out without private-first fallback
 });
 
 test('search retains synced public OPDS sources without exposing feed editing in settings', () => {
-  assert.match(html, /async function searchLitresPublicDomain\(query\)/);
-  assert.match(html, /\/litres\/search\?q=/);
-  assert.match(html, /name: 'LitRes Public Domain'/);
+  assert.doesNotMatch(html, /async function searchLitresPublicDomain\(query\)/);
+  assert.doesNotMatch(html, /\/litres\/search\?q=/);
+  assert.doesNotMatch(html, /name: 'LitRes Public Domain'/);
   assert.match(html, /async function searchCustomOPDSFeed\(feed, query\)/);
   assert.match(html, /getOPDSSourcesModule\(\)/);
   assert.match(html, /opds-/);

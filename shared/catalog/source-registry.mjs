@@ -46,7 +46,7 @@ const SOURCES = [
   },
   {
     id: 'litres-public-domain', displayName: 'LitRes public-domain feed', languages: ['ru'], delivery: 'https',
-    rightsPolicy: 'item-evidence-required', homepage: 'https://www.litres.ru', enabledInV1: true,
+    rightsPolicy: 'item-evidence-required', homepage: 'https://www.litres.ru', enabledInV1: false,
   },
   {
     id: 'custom-opds', displayName: 'Custom OPDS', languages: ['multi'], delivery: 'metadata',
