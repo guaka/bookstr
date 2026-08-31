@@ -71,3 +71,29 @@ test('relay publication is limited to secure WSS endpoints', async () => {
   assert.deepEqual(calls.map(call => call[0]), ['wss://one.example']);
   assert.equal(calls[0][1], 1059);
 });
+
+test('client validates tools and tolerates secure storage failures', async () => {
+  const account = nostrTools.generateSecretKey();
+  assert.throws(
+    () => new DevicePairingClient({ signer: signerFor(account), tools: {} }),
+    /key generation/,
+  );
+
+  const unavailable = new DevicePairingClient({
+    signer: signerFor(account),
+    tools: nostrTools,
+    secureStorage: { isAvailable: async () => { throw new Error('locked'); } },
+  });
+  assert.equal((await unavailable.status()).persistent, false);
+
+  const getFailure = new DevicePairingClient({
+    signer: signerFor(account),
+    tools: nostrTools,
+    secureStorage: {
+      isAvailable: async () => true,
+      get: async () => { throw new Error('unreadable'); },
+      set: async () => { throw new Error('read-only'); },
+    },
+  });
+  assert.equal((await getFailure.status()).persistent, false);
+});

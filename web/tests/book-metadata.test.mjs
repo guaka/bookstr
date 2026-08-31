@@ -896,6 +896,11 @@ test('sortBooks supports descending cached ordering', () => {
   assert.equal(ordered[1].title, 'Fresh favorite');
 });
 
+test('sortBooks uses an uncached default when no cache lookup is provided', () => {
+  const books = [{ title: 'Zulu' }, { title: 'Alpha' }];
+  assert.deepEqual(sortBooks(books, 'cached').map(book => book.title), ['Alpha', 'Zulu']);
+});
+
 test('bookIdentity strips URL fragments when using URL fallback', () => {
   assert.equal(
     bookIdentity({
