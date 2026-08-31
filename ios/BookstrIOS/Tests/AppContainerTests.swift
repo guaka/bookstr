@@ -4,7 +4,7 @@ import XCTest
 
 final class AppContainerTests: XCTestCase {
     @MainActor
-    func testLibraryFormatFilterMatchesCatalogAndExternalFavorites() {
+    func testLibraryPullDownFilterMatchesBookMetadata() {
         let epub = CatalogBook(
             id: "epub", title: "EPUB", author: "Author", epubUrl: "https://example.org/book.epub",
             coverUrl: nil, sourceUrl: nil, isbn: nil, libvaultMd5: nil, format: .epub,
@@ -21,10 +21,11 @@ final class AppContainerTests: XCTestCase {
             blossomSha256: nil, blossomUrl: nil
         )
 
-        XCTAssertEqual(LibraryFilter.all.label, "All formats")
-        XCTAssertEqual(LibraryViewModel.filtered([epub, cbz], by: .cbz).map(\.id), ["cbz"])
-        XCTAssertTrue(LibraryFilter.cbz.matches(external))
-        XCTAssertFalse(LibraryFilter.pdf.matches(external))
+        XCTAssertEqual(LibraryViewModel.filtered([epub, cbz], by: "comic artist").map(\.id), ["cbz"])
+        XCTAssertEqual(LibraryViewModel.filtered([epub, cbz], by: "CBZ").map(\.id), ["cbz"])
+        XCTAssertEqual(LibraryViewModel.filtered([epub, cbz], by: "  ").map(\.id), ["epub", "cbz"])
+        XCTAssertEqual(LibraryViewModel.filtered([external], by: "external artist").map(\.key), ["external"])
+        XCTAssertTrue(LibraryViewModel.filtered([external], by: "PDF").isEmpty)
     }
 
     func testBootstrapProvidesWordNavigationState() {

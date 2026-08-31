@@ -10,27 +10,6 @@ enum LibrarySort: String, CaseIterable, Identifiable {
     var label: String { rawValue.capitalized }
 }
 
-enum LibraryFilter: String, CaseIterable, Identifiable {
-    case all
-    case epub
-    case pdf
-    case fb2
-    case cbr
-    case cbz
-
-    var id: String { rawValue }
-    var label: String { self == .all ? "All formats" : rawValue.uppercased() }
-
-    func matches(_ book: CatalogBook) -> Bool {
-        self == .all || book.format.rawValue == rawValue
-    }
-
-    func matches(_ favorite: ExternalFavorite) -> Bool {
-        guard self != .all else { return true }
-        return favorite.format?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == rawValue
-    }
-}
-
 /// Cache-first Library load: never block the foreground path on relay/Amber work.
 struct LibraryForegroundLoadPlan: Equatable {
     var applyCachedFavorites: Bool
@@ -236,12 +215,41 @@ final class LibraryViewModel: ObservableObject {
         }
     }
 
-    static func filtered(_ books: [CatalogBook], by filter: LibraryFilter) -> [CatalogBook] {
-        books.filter(filter.matches)
+    static func filtered(_ books: [CatalogBook], by query: String) -> [CatalogBook] {
+        let terms = filterTerms(query)
+        guard !terms.isEmpty else { return books }
+        return books.filter { book in
+            matchesFilter(
+                terms,
+                values: [book.title, book.author, book.isbn, book.year, book.format.rawValue]
+            )
+        }
     }
 
-    static func filtered(_ favorites: [ExternalFavorite], by filter: LibraryFilter) -> [ExternalFavorite] {
-        favorites.filter(filter.matches)
+    static func filtered(_ favorites: [ExternalFavorite], by query: String) -> [ExternalFavorite] {
+        let terms = filterTerms(query)
+        guard !terms.isEmpty else { return favorites }
+        return favorites.filter { favorite in
+            matchesFilter(
+                terms,
+                values: [favorite.title, favorite.author, favorite.isbn, favorite.year, favorite.format]
+            )
+        }
+    }
+
+    private static func filterTerms(_ query: String) -> [String] {
+        normalizedFilterText(query)
+            .split(whereSeparator: \.isWhitespace)
+            .map(String.init)
+    }
+
+    private static func matchesFilter(_ terms: [String], values: [String?]) -> Bool {
+        let searchable = normalizedFilterText(values.compactMap { $0 }.joined(separator: " "))
+        return terms.allSatisfy(searchable.contains)
+    }
+
+    private static func normalizedFilterText(_ value: String) -> String {
+        value.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
     }
 
     private func externalMD5(_ favorite: ExternalFavorite) -> String? {
