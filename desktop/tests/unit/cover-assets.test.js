@@ -33,7 +33,7 @@ test('cover URL normalization keeps public and web-relative images', () => {
   assert.equal(normalizeCoverUrl('http://insecure.example/cover.jpg', false), '');
 });
 
-test('web cover candidates retain LibVault fallback and honor cover formats and bases', () => {
+test('web cover candidates avoid LibVault and honor public cover formats and bases', () => {
   const md5 = 'a'.repeat(32);
   const sha256 = 'b'.repeat(64);
   const candidates = bookCoverCandidates({
@@ -45,12 +45,12 @@ test('web cover candidates retain LibVault fallback and honor cover formats and 
   }, {
     desktop: false,
     blossomBase: 'https://media.example',
-    libVaultCoverBase: 'https://library.example/covers',
   });
-  assert.equal(candidates[0], `https://media.example/${sha256}.png`);
+  assert.equal(candidates[0], 'https://covers.openlibrary.org/b/id/42-M.jpg');
+  assert.ok(candidates.includes(`https://media.example/${sha256}.png`));
   assert.equal(candidates.filter(url => url.endsWith('.png')).length, 1);
   assert.ok(candidates.includes('https://covers.openlibrary.org/b/id/42-M.jpg'));
-  assert.ok(candidates.includes(`https://library.example/covers/${md5}`));
+  assert.ok(!candidates.some(url => url.includes('lib.b.bfr.ee')));
   assert.ok(decodeURIComponent(candidates.at(-1)).includes('>B</text>'));
   assert.equal(bookCoverCandidates({}, { desktop: true }).length, 1);
 });
@@ -117,7 +117,7 @@ test('cover candidates accept legacy aliases and deterministic placeholder initi
   assert.ok(decodeURIComponent(placeholderCoverUrl({ title: '123' })).includes('>1</text>'));
   assert.ok(decodeURIComponent(placeholderCoverUrl({ title: '' })).includes('>B</text>'));
   assert.ok(decodeURIComponent(placeholderCoverUrl()).includes('>B</text>'));
-  assert.ok(bookCoverCandidates({ md5: 'f'.repeat(32) }).some(url => url.endsWith(`/${'f'.repeat(32)}`)));
+  assert.equal(bookCoverCandidates({ md5: 'f'.repeat(32) }).length, 1);
 
   const candidates = bookCoverCandidates({
     cover_url: '//images.example/legacy.jpg',
@@ -164,7 +164,7 @@ test('cover candidates accept legacy aliases and deterministic placeholder initi
   assert.ok(decodeURIComponent(placeholderCoverUrl({ title: '123' })).includes('>1</text>'));
   assert.ok(decodeURIComponent(placeholderCoverUrl({ title: '' })).includes('>B</text>'));
   assert.ok(decodeURIComponent(placeholderCoverUrl()).includes('>B</text>'));
-  assert.ok(bookCoverCandidates({ md5: 'f'.repeat(32) }).some(url => url.endsWith(`/${'f'.repeat(32)}`)));
+  assert.equal(bookCoverCandidates({ md5: 'f'.repeat(32) }).length, 1);
 
   const candidates = bookCoverCandidates({
     cover_url: '//images.example/legacy.jpg',

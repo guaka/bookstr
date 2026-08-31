@@ -4,7 +4,7 @@
   function normalizeCoverUrl(value, desktop) {
     const url = String(value || '').trim();
     if (!url) return '';
-    if (desktop && /^https:\/\/lib\.b\.bfr\.ee\/api\/(?:covers|placeholder)\//i.test(url)) return '';
+    if (/^https:\/\/lib\.b\.bfr\.ee\/api\/(?:covers|placeholder)\//i.test(url)) return '';
     if (/^\/\//.test(url)) return `https:${url}`;
     if (/^(?:https:|data:image\/|blob:|app:)/i.test(url)) return url;
     if (!desktop && /^(?:\/|\.\/)/.test(url)) return url;
@@ -29,6 +29,11 @@
     };
     add(book?.coverUrl || book?.cover_url || book?.thumbnail || book?.image || book?.metadata?.coverUrl);
 
+    const coverId = book?.coverId || book?.cover_id || '';
+    if (coverId) add(`https://covers.openlibrary.org/b/id/${encodeURIComponent(coverId)}-M.jpg`);
+    const isbn = String(root.BookMetadata?.isbnForBook?.(book) || '').trim();
+    if (isbn) add(`https://covers.openlibrary.org/b/isbn/${encodeURIComponent(isbn)}-M.jpg?default=false`);
+
     const coverSha256 = String(book?.coverSha256 || book?.cover_sha256 || '').trim().toLowerCase();
     if (/^[a-f0-9]{64}$/.test(coverSha256)) {
       const format = String(book?.coverFormat || book?.cover_format || '').replace(/^\./, '').toLowerCase();
@@ -37,13 +42,6 @@
       for (const extension of [...new Set(formats)]) add(`${options.blossomBase || BLOSSOM_BASE}/${coverSha256}.${extension}`);
     }
 
-    const coverId = book?.coverId || book?.cover_id || '';
-    if (coverId) add(`https://covers.openlibrary.org/b/id/${encodeURIComponent(coverId)}-M.jpg`);
-    const isbn = String(root.BookMetadata?.isbnForBook?.(book) || '').trim();
-    if (isbn) add(`https://covers.openlibrary.org/b/isbn/${encodeURIComponent(isbn)}-M.jpg?default=false`);
-
-    const md5 = String(book?.md5 || '').trim().toLowerCase();
-    if (!desktop && /^[a-f0-9]{32}$/.test(md5)) add(`${options.libVaultCoverBase || ''}/${md5}`);
     candidates.push(placeholderCoverUrl(book));
     return candidates;
   }

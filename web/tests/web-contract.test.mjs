@@ -324,7 +324,7 @@ test('Home titles use the same read hash resolver as Search titles', () => {
 test('Home and Search share tables with covers and author search links', () => {
   assert.match(html, /renderBookTable\(target, books/);
   assert.match(html, /bookCoverUrls\(book\)/);
-  assert.match(html, /const LIBVAULT_COVER_BASE = 'https:\/\/lib\.b\.bfr\.ee\/api\/covers'/);
+  assert.doesNotMatch(html, /const LIBVAULT_COVER_BASE/);
   assert.match(html, /CoverAssets\.bookCoverCandidates\(book/);
   assert.match(html, /const cover = payload\?\.covers\?\.\[rawId\] \|\| \{\}/);
   assert.match(html, /coverUrl: item\.cover_url \|\| item\.coverUrl \|\| item\.thumbnail \|\| cover\.url/);
@@ -397,6 +397,8 @@ test('EPUBs use persistent IndexedDB caching', () => {
   assert.match(html, /if \(openGeneration !== readerOpenGeneration\) return/);
   assert.match(html, /async function readerFrameLoader\(kind, openGeneration\)/);
   assert.match(html, /readerFrameNavigation\?\.cancel\(\)/);
+  assert.match(html, /readinessTimer = setInterval\(resolveWhenReady, 50\)/);
+  assert.match(html, /clearInterval\(readinessTimer\)/);
   assert.match(html, /readerFrame\.src = `\$\{readerPath\}\?load=\$\{navigationId\}`/);
   assert.match(html, /const readerLoad = await readerFrameLoader\('epub', openGeneration\)/);
   assert.match(html, /const routeGeneration = \+\+readRouteGeneration/);
@@ -633,13 +635,12 @@ test('Home can delete a book locally and across synced clients', () => {
   assert.match(html, /if \(parsed\.deleted\)/);
 });
 
-test('Home can refresh and sync merged LibVault and Open Library metadata', () => {
-  assert.match(html, /data-action="refresh-library"/);
+test('Home can refresh and sync Open Library and all.books metadata without LibVault', () => {
+  assert.doesNotMatch(html, /data-action="refresh-library"/);
   assert.match(html, /async function refreshLibraryBookMetadata\(book\)/);
-  assert.match(html, /async function libVaultMetadataForBook\(book\)/);
-  assert.match(html, /`\$\{LIBVAULT_API_BASE\}\/books\/\$\{md5\}`/);
+  assert.doesNotMatch(html, /async function libVaultMetadataForBook\(book\)/);
   assert.match(html, /async function openLibraryMetadataForBook\(book\)/);
-  assert.match(html, /Refreshing metadata for \$\{title\} from LibVault, Open Library, and all\.books/);
+  assert.match(html, /Refreshing metadata for \$\{title\} from Open Library and all\.books/);
   assert.match(html, /openlibrary\.org\/works\/\$\{workId\}\.json/);
   assert.match(html, /year: edition\?\.publish_date[\s\S]*?work\?\.first_publish_date[\s\S]*?source\.first_publish_year/);
   assert.match(html, /function isMissingAuthor\(value\)[\s\S]*?unknown\(\?: author\)\?/);
@@ -647,7 +648,7 @@ test('Home can refresh and sync merged LibVault and Open Library metadata', () =
   assert.match(html, /authors,\s*year: BookMetadata\.yearForBook/);
   assert.match(html, /const mergeOpenLibraryMetadata = \(\) => merge\(openLibraryMetadata, 'openlibrary'\)/);
   assert.match(html, /const knownReadUrl = BookMetadata\.canonicalReadUrl\(combined \|\| book, BOOKS_API_BASE\)/);
-  assert.match(html, /if \(openLibraryMetadata && knownReadUrl/);
+  assert.match(html, /if \(openLibraryMetadata && \(/);
   assert.match(html, /const wantedAuthor = authorMatchKey\(book\.authors \|\| book\.author\)/);
   assert.match(html, /merge\(matched, matched\?\.source \|\| 'remote'\);\s*mergeOpenLibraryMetadata\(\)/);
   assert.match(html, /if \(refreshed\.isFavorite\) syncTasks\.push\(syncFavoritesToNostr\(\)\)/);

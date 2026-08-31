@@ -327,7 +327,7 @@ test('desktop home filtering keeps the matching in-progress book visible', async
     await expect(library.locator('#home-reading-list')).toContainText('Visible Reading Journey');
     await library.locator('#home-query-input').fill('journey');
     await expect(library.locator('#home-reading-list')).toContainText('Visible Reading Journey');
-    await expect(library.locator('#home-reading-list').getByRole('img', { name: 'Currently reading' })).toBeVisible();
+    await expect(library.locator('#home-reading-list').getByRole('img', { name: 'Currently reading' })).toHaveCount(0);
     await expect(library.locator('#home-reading-list')).not.toContainText('Another Book');
   } finally {
     await electronApp.close();
@@ -515,33 +515,52 @@ test('desktop footer stays in the viewport bottom-right without covering content
   }
 });
 
-test('desktop favorites load public Blossom covers instead of private API images', async () => {
+test('desktop favorites discover independent Open Library covers without LibVault', async () => {
   const electronApp = await electron.launch({ args: electronArgs() });
   const md5 = 'd'.repeat(32);
-  const coverSha256 = 'c'.repeat(64);
-  const blossomCover = `https://blossom.bfr.ee/${coverSha256}.jpg`;
+  const openLibraryCover = 'https://covers.openlibrary.org/b/id/12345-M.jpg';
 
   try {
     const library = await electronApp.firstWindow();
-    await library.route(blossomCover, route => route.fulfill({
+    let libVaultMetadataRequests = 0;
+    await library.route(`https://lib.b.bfr.ee/api/books/${md5}`, route => {
+      libVaultMetadataRequests += 1;
+      return route.fulfill({ status: 503 });
+    });
+    await library.route('https://openlibrary.org/search.json?**', route => route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ docs: [{
+        key: '/works/OL123W',
+        title: 'Covered Book',
+        author_name: ['Fixture Author'],
+        cover_i: 12345,
+        first_publish_year: 2024,
+        language: ['eng'],
+        edition_count: 1,
+      }] }),
+    }));
+    await library.route(openLibraryCover, route => route.fulfill({
       status: 200,
       contentType: 'image/svg+xml',
       body: '<svg xmlns="http://www.w3.org/2000/svg" width="40" height="56"><rect width="40" height="56" fill="#2f5d50"/></svg>',
     }));
-    await library.evaluate(({ md5: id, coverSha256: coverHash }) => {
+    await library.evaluate(id => {
       localStorage.setItem('bookstr_nostr_favorites_v1', JSON.stringify([{
         md5: id,
         title: 'Covered Book',
         authors: 'Fixture Author',
-        coverUrl: `https://lib.b.bfr.ee/api/covers/${id}`,
-        coverSha256: coverHash,
+        year: '2024',
+        language: 'eng',
+        extension: 'epub',
       }]));
-    }, { md5, coverSha256 });
+    }, md5);
     await library.reload();
 
     const cover = library.locator('.result-cover').first();
-    await expect(cover).toHaveAttribute('src', blossomCover);
+    await expect(cover).toHaveAttribute('src', openLibraryCover, { timeout: 15_000 });
     await expect.poll(() => cover.evaluate(image => image.complete && image.naturalWidth > 0)).toBe(true);
+    expect(libVaultMetadataRequests).toBe(0);
   } finally {
     await electronApp.close();
   }

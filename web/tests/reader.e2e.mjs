@@ -27,7 +27,7 @@ test('home filtering keeps the matching in-progress book visible', async ({ page
   await expect(page.locator('#home-reading-list')).toContainText('Visible Reading Journey');
   await page.locator('#home-query-input').fill('journey');
   await expect(page.locator('#home-reading-list')).toContainText('Visible Reading Journey');
-  await expect(page.locator('#home-reading-list').getByRole('img', { name: 'Currently reading' })).toBeVisible();
+  await expect(page.locator('#home-reading-list').getByRole('img', { name: 'Currently reading' })).toHaveCount(0);
   await expect(page.locator('#home-reading-list')).not.toContainText('Another Book');
 });
 
@@ -442,6 +442,45 @@ test('switching EPUBs quickly leaves only the newest book in the reader', async 
   await expect(reader.locator('body')).toHaveAttribute('data-book-id', /^sha256:[a-f0-9]{64}$/, { timeout: 45_000 });
   await expect(reader.locator('#viewer > .epub-container')).toHaveCount(1);
   await expect(reader.frameLocator('#viewer iframe').locator('body')).toContainText('Newest second book');
+});
+
+test('a previously loaded EPUB cannot satisfy the next MD5 while it is loading', async ({ page }) => {
+  const first = { md5: '1'.repeat(32), title: 'First loaded EPUB', url: 'https://files.test/first-loaded.epub' };
+  const second = { md5: '2'.repeat(32), title: 'Second loading EPUB', url: 'https://files.test/second-loading.epub' };
+  const [firstEpub, secondEpub] = await Promise.all([
+    minimalEpub(first.title),
+    minimalEpub(second.title),
+  ]);
+  await page.addInitScript(books => {
+    localStorage.setItem('bookstr_nostr_favorites_v1', JSON.stringify(books.map(book => ({
+      md5: book.md5,
+      title: book.title,
+      extension: 'epub',
+      readUrl: book.url,
+    }))));
+  }, [first, second]);
+  await page.route(first.url, route => route.fulfill({
+    status: 200,
+    contentType: 'application/epub+zip',
+    body: firstEpub,
+  }));
+  await page.route(second.url, async route => {
+    await new Promise(resolve => setTimeout(resolve, 1200));
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/epub+zip',
+      body: secondEpub,
+    });
+  });
+
+  await page.goto(`/#read=${first.md5}`);
+  const reader = page.frameLocator('#reader-frame');
+  await expect(reader.locator('body')).toHaveAttribute('data-book-id', first.md5, { timeout: 45_000 });
+  await page.evaluate(md5 => { window.location.hash = `read=${md5}`; }, second.md5);
+  await expect(page.locator('#read-metadata-fallback')).toBeVisible();
+  await expect(page.locator('#read-metadata-fallback h1')).toHaveText(second.title);
+  await expect(reader.locator('body')).toHaveAttribute('data-book-id', second.md5, { timeout: 45_000 });
+  await expect(reader.frameLocator('#viewer iframe').locator('body')).toContainText(second.title);
 });
 
 test('EPUB reader keeps desktop speech controls hidden in the browser', async ({ page }) => {
