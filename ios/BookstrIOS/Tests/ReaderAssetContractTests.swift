@@ -2,6 +2,7 @@ import CryptoKit
 import XCTest
 #if !SWIFT_PACKAGE
 import JavaScriptCore
+import LibArchive
 #endif
 #if SWIFT_PACKAGE
 @testable import BookstrLogic
@@ -13,11 +14,9 @@ import WebKit
 
 final class ReaderAssetContractTests: XCTestCase {
     func testCBZComicInfoLanguageMetadataIsNormalized() throws {
-        let encoded = "UEsDBBQAAAAIAGltH13aFkIEYQAAAHUAAAANABwAQ29taWNJbmZvLnhtbFVUCQAD5naVauZ2lWp1eAsAAQT1AQAABAAAAACzsa/IzVEoSy0qzszPs1Uy1DNQUkjNS85PycxLt1UqLUnTtVCyt+Oycc7PzUz2zEvLt7MJySzJSbVzrUjMLchJtdGHcG18EvPSSxPTUz2D/e0CQuKdgmz0kYVs9BEmcAEAUEsDBAoAAAAAAGltH12sLGB1CAAAAAgAAAAHABwAMDAxLmpwZ1VUCQAD5naVauZ2lWp1eAsAAQT1AQAABAAAAABmaXh0dXJlClBLAQIeAxQAAAAIAGltH13aFkIEYQAAAHUAAAANABgAAAAAAAEAAACkgQAAAABDb21pY0luZm8ueG1sVVQFAAPmdpVqdXgLAAEE9QEAAAQAAAAAUEsBAh4DCgAAAAAAaW0fXawsYHUIAAAACAAAAAcAGAAAAAAAAQAAAKSBqAAAADAwMS5qcGdVVAUAA+Z2lWp1eAsAAQT1AQAABAAAAABQSwUGAAAAAAIAAgCgAAAA8QAAAAAA"
-        let fileURL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".cbz")
-        defer { try? FileManager.default.removeItem(at: fileURL) }
-        try XCTUnwrap(Data(base64Encoded: encoded)).write(to: fileURL)
+        let fileURL = try comicFixture(named: "bookstr-test-comic", extension: "cbz")
 
+        XCTAssertEqual(PublicationUtilities.detectedFormat(fileURL: fileURL), .cbz)
         XCTAssertEqual(
             PublicationUtilities.comicMetadata(fileURL: fileURL, format: .cbz)?.language,
             "pt-br"
@@ -25,6 +24,18 @@ final class ReaderAssetContractTests: XCTestCase {
     }
 
 #if !SWIFT_PACKAGE
+    func testFreeLicensedCBRFixtureContainsFourReadableJPEGPages() throws {
+        let fileURL = try comicFixture(named: "bobby-make-believe-public-domain", extension: "cbr")
+        XCTAssertEqual(PublicationUtilities.detectedFormat(fileURL: fileURL), .cbr)
+        XCTAssertTrue(PublicationUtilities.isStructurallyValidPublication(fileURL: fileURL, format: .cbr))
+
+        let entries = try ArchiveReader().entries(at: fileURL)
+            .filter { $0.fileType == .regular && $0.path.lowercased().hasSuffix(".jpg") }
+        XCTAssertEqual(entries.count, 4)
+        let firstPage = try XCTUnwrap(entries.first)
+        XCTAssertTrue(try ArchiveReader().data(forEntryPath: firstPage.path, in: fileURL).starts(with: [0xff, 0xd8, 0xff]))
+    }
+
     func testComicReaderResourcesAreBundled() throws {
         XCTAssertNotNil(Bundle.main.url(forResource: "comic-reader", withExtension: "html"))
         XCTAssertNotNil(Bundle.main.url(forResource: "jszip.min", withExtension: "js"))
@@ -44,6 +55,19 @@ final class ReaderAssetContractTests: XCTestCase {
         XCTAssertEqual(ComicReaderController.page(from: "comic:-4:30"), 0)
     }
 #endif
+
+    private func comicFixture(named name: String, extension fileExtension: String) throws -> URL {
+        #if SWIFT_PACKAGE
+        let bundle = Bundle.module
+        #else
+        let bundle = Bundle(for: Self.self)
+        #endif
+        return try XCTUnwrap(
+            bundle.url(forResource: name, withExtension: fileExtension, subdirectory: "Comics")
+                ?? bundle.url(forResource: name, withExtension: fileExtension, subdirectory: "Fixtures/Comics")
+                ?? bundle.url(forResource: name, withExtension: fileExtension)
+        )
+    }
 
     func testSpeechPlaybackQueueYieldsEveryChunkOnceInOrder() {
         var queue = SpeechPlaybackQueue()
