@@ -3899,6 +3899,126 @@ test('resolveLibVaultBook requests metadata only and returns LibGen torrent iden
   assert.equal(result.filesize_bytes, 12345);
 });
 
+test('resolveLibVaultBook rejects unavailable signers, relays, and unusable responses', async () => {
+  const md5 = 'd'.repeat(32);
+  const signer = {
+    getPublicKey: async () => senderPubkey,
+    nip44: { encrypt: async () => '{}', decrypt: async () => '' },
+    signEvent: async event => ({ ...event, id: 'seed', pubkey: senderPubkey, sig: 'signed' }),
+  };
+  const options = response => ({
+    signer,
+    fetchImpl: async () => discoveryResponse(),
+    loadTools: async () => ({
+      generateSecretKey: () => new Uint8Array(32).fill(7),
+      finalizeEvent: event => ({ ...event, id: 'wrap', pubkey: 'f'.repeat(64), sig: 'wrapped' }),
+      nip44: { v2: { utils: { getConversationKey: () => new Uint8Array(32).fill(8) }, encrypt: plaintext => `wrapped:${plaintext}` } },
+      verifyEvent: () => true,
+    }),
+    publish: async () => true,
+    listen: ({ requestID }) => ({
+      ready: Promise.resolve(), arm: () => {}, close: () => {},
+      result: Promise.resolve({ request_id: requestID, ...response }),
+    }),
+  });
+
+  await assert.rejects(() => resolveLibVaultBook({ md5 }, {}), /Nostr signer with NIP-44 support/);
+  await assert.rejects(() => resolveLibVaultBook({ md5 }, { signer }), /No Nostr relay publisher/);
+  await assert.rejects(() => resolveLibVaultBook({ md5 }, {
+    ...options({}), signer: { ...signer, getPublicKey: async () => 'invalid' },
+  }), /invalid public key/);
+  const noPublisher = options({});
+  delete noPublisher.publish;
+  await assert.rejects(() => resolveLibVaultBook({ md5 }, noPublisher), /No Nostr relay publisher/);
+  await assert.rejects(() => resolveLibVaultBook({ md5 }, {
+    ...options({}), publish: async () => false,
+  }), /No relay accepted/);
+  await assert.rejects(() => resolveLibVaultBook({ md5 }, options({
+    type: 'wrong.type', status: 'ready', book: { md5, id: 1 },
+  })), /response was invalid/);
+  await assert.rejects(() => resolveLibVaultBook({ md5 }, options({
+    type: LIBVAULT_RESOLVE_RESPONSE_TYPE, status: 'not_found', error: 'missing catalog record',
+  })), /missing catalog record/);
+  await assert.rejects(() => resolveLibVaultBook({ md5 }, options({
+    type: LIBVAULT_RESOLVE_RESPONSE_TYPE, status: 'ready', book: { md5 },
+  })), /usable LibGen torrent metadata/);
+});
+
+test('resolveLibVaultBook receives a metadata result through its default WebSocket listener', async () => {
+  const md5 = 'e'.repeat(32);
+  const sockets = [];
+  let sentPayload;
+
+  class FakeWebSocket {
+    constructor() {
+      this.handlers = {};
+      this.subscriptions = new Set();
+      sockets.push(this);
+      setTimeout(() => this.emit('open'), 0);
+    }
+    addEventListener(name, handler) { (this.handlers[name] ||= []).push(handler); }
+    send(message) {
+      const packet = JSON.parse(message);
+      if (packet?.[0] === 'REQ') {
+        this.subscriptions.add(packet[1]);
+        setTimeout(() => this.emit('message', { data: JSON.stringify(['EOSE', packet[1]]) }), 0);
+      }
+    }
+    reply(subscription) {
+      this.emit('message', { data: JSON.stringify(['EVENT', subscription, {
+        kind: 1059, pubkey: servicePubkey, created_at: Math.floor(Date.now() / 1000),
+        tags: [['p', senderPubkey]], content: 'resolve-wrap',
+      }]) });
+    }
+    close() {}
+    emit(name, event) { (this.handlers[name] || []).forEach(handler => handler(event)); }
+  }
+
+  const result = await resolveLibVaultBook({ md5 }, {
+    signer: {
+      getPublicKey: async () => senderPubkey,
+      nip44: {
+        encrypt: async () => '{}',
+        decrypt: async (_peer, ciphertext) => {
+          if (ciphertext === 'resolve-wrap') return JSON.stringify({
+            kind: 13, pubkey: servicePubkey, created_at: Math.floor(Date.now() / 1000),
+            tags: [], content: 'resolve-rumor',
+          });
+          const rumor = {
+            kind: 14, pubkey: servicePubkey, created_at: Math.floor(Date.now() / 1000),
+            tags: [['p', senderPubkey]],
+            content: JSON.stringify({
+              type: LIBVAULT_RESOLVE_RESPONSE_TYPE, request_id: sentPayload.request_id,
+              status: 'ready', book: { md5, id: 2412930, extension: 'pdf', filesize_bytes: 12345 },
+            }),
+          };
+          rumor.id = nostrTools.getEventHash(rumor);
+          return JSON.stringify(rumor);
+        },
+      },
+      signEvent: async event => ({ ...event, id: 'seed', pubkey: senderPubkey, sig: 'signed' }),
+    },
+    fetchImpl: async () => discoveryResponse(),
+    loadTools: async () => ({
+      generateSecretKey: () => new Uint8Array(32).fill(7),
+      finalizeEvent: event => ({ ...event, id: 'wrap', pubkey: 'f'.repeat(64), sig: 'wrapped' }),
+      nip19: { npubEncode: pubkey => `npub:${pubkey}` },
+      nip44: { v2: { utils: { getConversationKey: () => new Uint8Array(32).fill(8) }, encrypt: plaintext => `wrapped:${plaintext}` } },
+      verifyEvent: () => true,
+    }),
+    publish: async () => {
+      for (const socket of sockets) for (const subscription of socket.subscriptions) socket.reply(subscription);
+      return true;
+    },
+    onTrace: trace => { if (trace.direction === 'sent') sentPayload = trace.payload; },
+    WebSocketImpl: FakeWebSocket,
+    responseTimeoutMs: 1000,
+  });
+
+  assert.equal(result.md5, md5);
+  assert.equal(result.id, 2412930);
+});
+
 test('libvaultBookRef ignores an invalid md5 and keeps normalized isbn', () => {
   const ref = libvaultBookRef({
     md5: 'ZZZZ',
