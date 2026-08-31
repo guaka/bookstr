@@ -153,6 +153,47 @@ test('Library reports useful local torrent states', async () => {
   }
 });
 
+test('a failed favorite edition reuses a matching downloaded torrent edition', async () => {
+  const launch = electronArgs('matching-downloaded-edition');
+  const favorite = {
+    md5: '2'.repeat(32),
+    title: 'Previously Downloaded Book',
+    authors: 'Fixture Author',
+    extension: 'epub',
+  };
+  const downloaded = { ...favorite, md5: '3'.repeat(32), libgenId: 1234, sourceNativeId: '1234' };
+  const libraryRoot = path.join(launch.userData, 'library');
+  const relativePath = `books/${downloaded.md5}.epub`;
+  const bytes = await minimalEpub(favorite.title, 'Recovered downloaded edition.');
+  fs.mkdirSync(path.join(libraryRoot, 'books'), { recursive: true });
+  fs.writeFileSync(path.join(libraryRoot, relativePath), bytes);
+  const store = new LibraryStore({ dbPath: path.join(libraryRoot, 'library.sqlite'), libraryRoot });
+  try {
+    store.upsertBook({ id: favorite.md5, ...favorite });
+    store.upsertBook({ id: downloaded.md5, ...downloaded });
+    store.setDownload({ bookId: favorite.md5, status: 'failed', source: 'torrent', error: 'old edition unavailable' });
+    store.registerLibraryFile({ bookId: downloaded.md5, relativePath, sizeBytes: bytes.length });
+    store.setDownload({ bookId: downloaded.md5, status: 'ready', bytes: bytes.length, totalBytes: bytes.length, source: 'torrent' });
+  } finally {
+    store.close();
+  }
+  const app = await electron.launch({ args: launch.args });
+  try {
+    const page = await app.firstWindow();
+    await seedLibrary(page, [favorite]);
+    await page.reload();
+
+    await expect(libraryRow(page, favorite.title).locator('.result-availability')).toHaveText('Ready');
+    await expect(libraryRow(page, favorite.title).locator('.result-title')).toHaveClass(/readable/);
+    await expect(page.locator('.library-book-count')).toContainText('1 readable now');
+    await libraryRow(page, favorite.title).getByRole('link', { name: favorite.title }).click();
+    await expect(page.locator('#reader-frame')).toBeVisible();
+    await expect(page.locator('#reader-frame')).toHaveAttribute('src', /reader\.html/);
+  } finally {
+    await app.close();
+  }
+});
+
 test('Electron drops IndexedDB book files but keeps their Library entries torrent-available', async () => {
   const launch = electronArgs('cache-phaseout-user-data');
   const book = {

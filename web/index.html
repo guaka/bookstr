@@ -5133,8 +5133,8 @@
       }
 
       function bookCoverUrls(book) {
-        const md5 = desktopTorrentBookId(book);
         const download = desktopDownloadForBook(book);
+        const md5 = String(download?.md5 || download?.bookId || desktopTorrentBookId(book)).trim().toLowerCase();
         const localCoverUrl = isDesktopMode && isMd5(md5) && String(download?.status || '').toLowerCase() === 'ready'
           ? `app://bookstr/api/library-cover/${md5}`
           : '';
@@ -5234,11 +5234,20 @@
       }
 
       function desktopDownloadForBook(book) {
+        let exact = null;
         for (const bookId of desktopBookIds(book)) {
           const download = desktopDownloadByBook.get(bookId);
-          if (download) return download;
+          if (download) {
+            exact = download;
+            if (!['failed', 'unavailable'].includes(String(download.status || '').toLowerCase())) return download;
+          }
         }
-        return null;
+        const localEditions = [...new Set(desktopDownloadByBook.values())].filter(download => (
+          ['ready', 'seeding'].includes(String(download?.status || '').toLowerCase())
+          && isMd5(download?.md5 || download?.bookId)
+          && Number(download?.sourceNativeId || 0) > 0
+        ));
+        return BookMetadata.matchingTorrentCatalogRecord(book, localEditions) || exact;
       }
 
       function desktopDownloadIds(download) {
@@ -6650,9 +6659,32 @@
         if (!state.settings.autoDownloadTorrents) {
           throw new Error('Automatic torrent downloads are disabled in Settings.');
         }
-        let torrentBook = BookMetadata.libgenTorrentMetadataForBook(book)
+        const localDownload = desktopDownloadForBook(book);
+        const localStatus = String(localDownload?.status || '').toLowerCase();
+        const localMd5 = String(localDownload?.md5 || localDownload?.bookId || '').trim().toLowerCase();
+        const localTorrentBook = ['ready', 'seeding'].includes(localStatus) && isMd5(localMd5)
+          ? {
+              ...book,
+              ...localDownload,
+              md5: localMd5,
+              libgenId: Number(localDownload.sourceNativeId || 0),
+              extension: localDownload.extension || book.extension || book.format || '',
+            }
+          : null;
+        if (localTorrentBook && desktopBridge?.library?.openReader) {
+          const reader = await desktopBridge.library.openReader(localMd5);
+          if (reader?.token) {
+            const response = await fetch(`app://bookstr/api/library-file/${reader.token}`);
+            if (!response.ok) throw new Error(`Local library file read failed (${response.status}).`);
+            const blob = await response.blob();
+            await enforceBlobSha256(localTorrentBook, blob);
+            Object.assign(book, localTorrentBook);
+            return blob;
+          }
+        }
+        let torrentBook = localTorrentBook || (BookMetadata.libgenTorrentMetadataForBook(book)
           ? book
-          : await resolveLibVaultHTTPBook(book).catch(() => null) || book;
+          : await resolveLibVaultHTTPBook(book).catch(() => null) || book);
         Object.assign(book, torrentBook);
         let libgenTorrent = BookMetadata.libgenTorrentMetadataForBook(torrentBook);
         if (!libgenTorrent && isMd5(torrentBook?.md5)) {

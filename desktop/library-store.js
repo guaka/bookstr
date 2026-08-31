@@ -226,7 +226,9 @@ class LibraryStore {
     return this.db.prepare(`
       SELECT downloads.book_id AS bookId, downloads.status, downloads.bytes,
         downloads.total_bytes AS totalBytes, downloads.source, downloads.error,
-        downloads.updated_at AS updatedAt, books.sha256, books.md5
+        downloads.updated_at AS updatedAt, books.sha256, books.md5,
+        books.title, books.authors, books.language, books.year, books.extension,
+        books.isbn, books.source_native_id AS sourceNativeId
       FROM downloads
       LEFT JOIN books ON books.id = downloads.book_id
       ORDER BY downloads.updated_at DESC
