@@ -19,17 +19,40 @@ enum ReaderHighlightKind: String, Equatable {
     case mark
 }
 
+enum ReaderPresentationOrigin: Equatable {
+    case user
+    case continuation
+}
+
 enum ReaderContinuationSelection {
-    static func newerLocalProgress(
+    static func preferredLocalProgress(
         than session: ReaderSession?,
         progress: [BookProgress],
-        availableBookIDs: Set<String>
+        availableBookIDs: Set<String>,
+        launchWriteRecoveryWindow: Int64 = 60_000
     ) -> BookProgress? {
         let available = Set(availableBookIDs.map { $0.lowercased() })
-        guard let recent = progress.first(where: { available.contains($0.bookId.lowercased()) }) else { return nil }
+        let local = progress
+            .filter { available.contains($0.bookId.lowercased()) }
+            .sorted { $0.updatedAt > $1.updatedAt }
+        guard let recent = local.first else { return nil }
         guard let session else { return recent }
         guard let sessionUpdatedAt = session.updatedAt else { return recent }
-        return recent.updatedAt > sessionUpdatedAt ? recent : nil
+        if recent.updatedAt > sessionUpdatedAt { return recent }
+
+        // Older builds restored an EPUB and immediately rewrote its session and
+        // progress, making that automatic launch look newer than the comic the
+        // user had actually opened. Recover the interrupted book once; future
+        // launches use the explicit reader selection stored by the new build.
+        let isLaunchWrite = recent.bookId.caseInsensitiveCompare(session.bookId) == .orderedSame
+            && abs(recent.updatedAt - sessionUpdatedAt) <= 2_000
+        guard isLaunchWrite,
+              let interrupted = local.first(where: {
+                  $0.bookId.caseInsensitiveCompare(session.bookId) != .orderedSame
+              }),
+              interrupted.updatedAt <= sessionUpdatedAt,
+              sessionUpdatedAt - interrupted.updatedAt <= launchWriteRecoveryWindow else { return nil }
+        return interrupted
     }
 }
 
@@ -40,6 +63,7 @@ final class ReaderPlaybackSession: ObservableObject {
         var initialLocator: String?
         var highlightLocator: String?
         var highlightKind: ReaderHighlightKind?
+        var origin: ReaderPresentationOrigin
     }
 
     static let toggleSpeechNotification = Notification.Name("bookstrToggleReaderSpeech")
@@ -60,7 +84,8 @@ final class ReaderPlaybackSession: ObservableObject {
         preparedURL: URL? = nil,
         initialLocator: String? = nil,
         highlightLocator: String? = nil,
-        highlightKind: ReaderHighlightKind? = nil
+        highlightKind: ReaderHighlightKind? = nil,
+        origin: ReaderPresentationOrigin = .user
     ) {
         if item?.book.id == book.id, speechRetained {
             isVisible = true
@@ -71,7 +96,8 @@ final class ReaderPlaybackSession: ObservableObject {
             preparedURL: preparedURL,
             initialLocator: initialLocator,
             highlightLocator: highlightLocator,
-            highlightKind: highlightKind
+            highlightKind: highlightKind,
+            origin: origin
         )
         if item != next {
             presentationNonce += 1

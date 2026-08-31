@@ -342,3 +342,19 @@ struct ReaderSession: Codable {
         self.updatedAt = updatedAt
     }
 }
+
+struct ReaderSelection: Codable, Equatable {
+    let bookId: String
+    let format: BookFormat
+    let selectedAt: Int64
+
+    init(
+        bookId: String,
+        format: BookFormat,
+        selectedAt: Int64 = Int64(Date().timeIntervalSince1970 * 1_000)
+    ) {
+        self.bookId = bookId
+        self.format = format
+        self.selectedAt = selectedAt
+    }
+}

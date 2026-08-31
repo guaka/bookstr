@@ -307,6 +307,13 @@ final class SettingsRepositoryCoverageTests: XCTestCase {
         XCTAssertNil(repo.readerSession())
         repo.clearReaderSession()
 
+        XCTAssertNil(repo.readerSelection())
+        let selection = ReaderSelection(bookId: "comic", format: .cbr, selectedAt: 42)
+        repo.saveReaderSelection(selection)
+        XCTAssertEqual(repo.readerSelection(), selection)
+        defaults.set(Data([0xff]), forKey: "reader_selection")
+        XCTAssertNil(repo.readerSelection())
+
         repo.cacheNostrFavorites(pubkey: "ABC", plaintext: "favorites", eventId: "")
         XCTAssertEqual(repo.cachedNostrFavorites(pubkey: "abc"), "favorites")
         XCTAssertNil(repo.cachedFavoritesEventId(pubkey: "abc"))

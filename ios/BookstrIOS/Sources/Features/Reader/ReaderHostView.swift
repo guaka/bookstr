@@ -12,6 +12,7 @@ struct ReaderHostView: View {
     var initialLocator: String? = nil
     var highlightLocator: String? = nil
     var highlightKind: ReaderHighlightKind? = nil
+    var presentationOrigin: ReaderPresentationOrigin = .user
     var showsReaderChrome: Bool = true
     var onClose: (() -> Void)? = nil
     @State private var localURL: URL?
@@ -582,6 +583,11 @@ struct ReaderHostView: View {
             let saved = container.progressRepository.get(bookId: book.id)
             let format = CatalogRepository.detectedFormat(fileURL: openedURL) ?? book.format
             resolvedFormat = format
+            if presentationOrigin == .user {
+                container.settingsRepository.saveReaderSelection(
+                    ReaderSelection(bookId: book.id, format: format)
+                )
+            }
             epubController.furthestProgression = saved.progression
             fb2Controller.furthestProgression = saved.progression
             comicController.furthestProgression = saved.progression
