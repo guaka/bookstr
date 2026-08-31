@@ -90,7 +90,9 @@ class MainActivity : ComponentActivity() {
                 val publication = catalog.publicationFile(session.bookId, session.format)
                 if (publication.isFile) {
                     startActivity(
-                        if (session.format == BookFormat.Pdf) {
+                        if (session.format == BookFormat.Cbr || session.format == BookFormat.Cbz) {
+                            ComicReaderActivity.intent(this@MainActivity, session.bookId, session.format, session.bookTitle)
+                        } else if (session.format == BookFormat.Pdf) {
                             PdfReaderActivity.intent(
                                 context = this@MainActivity,
                                 bookId = session.bookId,
@@ -304,7 +306,9 @@ class MainActivity : ComponentActivity() {
                         try {
                             catalog.ensureDownloaded(book)
                             books = (books + book).distinctBy { it.id }
-                            if (book.format == BookFormat.Pdf) {
+                            if (book.format == BookFormat.Cbr || book.format == BookFormat.Cbz) {
+                                startActivity(ComicReaderActivity.intent(this@MainActivity, book.id, book.format, book.title, book.epubUrl))
+                            } else if (book.format == BookFormat.Pdf) {
                                 startActivity(
                                     PdfReaderActivity.intent(
                                         context = this@MainActivity,
@@ -434,7 +438,9 @@ class MainActivity : ComponentActivity() {
                                                 error = "The recent book is no longer downloaded"
                                             } else {
                                                 startActivity(
-                                                    if (session.format == BookFormat.Pdf) {
+                                                    if (session.format == BookFormat.Cbr || session.format == BookFormat.Cbz) {
+                                                        ComicReaderActivity.intent(this@MainActivity, session.bookId, session.format, session.bookTitle)
+                                                    } else if (session.format == BookFormat.Pdf) {
                                                         PdfReaderActivity.intent(
                                                             context = this@MainActivity,
                                                             bookId = session.bookId,

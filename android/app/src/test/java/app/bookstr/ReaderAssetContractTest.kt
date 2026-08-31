@@ -111,6 +111,17 @@ class ReaderAssetContractTest {
     }
 
     @Test
+    fun comicAssetsIncludeArchiveReaderAndBoundedNavigation() {
+        assertTrue(generatedAsset("comic-reader.html").isFile)
+        assertTrue(generatedAsset("vendor/libarchive.js").isFile)
+        assertTrue(generatedAsset("vendor/libarchive.wasm").isFile)
+        val html = generatedAsset("comic-reader.html").readText()
+        assertTrue(html.contains("MAX_ENTRIES=2000"))
+        assertTrue(html.contains("archive_read_new_memory"))
+        assertTrue(html.contains("bookstr-comic-progress"))
+    }
+
+    @Test
     fun packagedReaderUsesCanonicalSpeechPlanner() {
         val html = generatedAsset("reader.html").readText()
         val sharedSpeech = File("../../web/reader-speech.js")

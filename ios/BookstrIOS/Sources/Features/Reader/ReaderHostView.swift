@@ -342,6 +342,8 @@ struct ReaderHostView: View {
             )
         case .pdf:
             playback.updateSpeechState(retained: false, playing: false)
+        case .cbr, .cbz:
+            playback.updateSpeechState(retained: false, playing: false)
         }
     }
 
@@ -352,6 +354,8 @@ struct ReaderHostView: View {
         case .fb2:
             fb2Controller.toggleSpeech(playback: fb2SpeechChoice)
         case .pdf:
+            break
+        case .cbr, .cbz:
             break
         }
         syncPlaybackSpeech()

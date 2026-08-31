@@ -405,7 +405,7 @@ test('PDFs are fetched and displayed inside the Bookstr reader pane', () => {
   assert.match(html, /new Blob\(\[blob\], \{ type: 'application\/pdf' \}\)/);
   assert.match(html, /PDF download failed/);
   assert.match(html, /await displayPdf\(blob, book, readPath, openGeneration\)/);
-  assert.match(html, /const readerPath = kind === 'pdf' \? 'pdf-reader\.html' : kind === 'fb2' \? 'fb2-reader\.html' : 'reader\.html'/);
+  assert.match(html, /const readerPath = kind === 'pdf' \? 'pdf-reader\.html' : kind === 'fb2' \? 'fb2-reader\.html' : kind === 'comic' \? 'comic-reader\.html' : 'reader\.html'/);
   assert.match(html, /const readerLoad = await readerFrameLoader\('pdf', openGeneration\)/);
   assert.match(html, /filename: pdfDownloadFilename\(book\)/);
   assert.match(html, /return `\$\{safeTitle \|\| 'Bookstr book'\}\.pdf`/);
@@ -906,5 +906,5 @@ test('reader-open route always updates hash with encoded book identity', () => {
 
 test('reader never navigates its iframe to an untrusted book URL', () => {
   assert.doesNotMatch(html, /readerFrame\.src\s*=\s*readPath/);
-  assert.match(html, /throw new Error\('Only EPUB, PDF, and FB2 book files can be opened\.'\)/);
+  assert.match(html, /throw new Error\('Only EPUB, PDF, FB2, CBZ, and CBR book files can be opened\.'\)/);
 });
