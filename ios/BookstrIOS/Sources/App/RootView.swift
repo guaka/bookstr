@@ -158,11 +158,20 @@ struct RootView: View {
             )
             return
         }
-        guard let session = settings.readerSession() else {
+        let downloaded = container.catalogRepository.downloadedBooks()
+        let session = settings.readerSession()
+        if let recent = ReaderContinuationSelection.newerLocalProgress(
+            than: session,
+            progress: container.progressRepository.all(),
+            availableBookIDs: Set(downloaded.map(\.id))
+        ), let book = downloaded.first(where: { $0.id.caseInsensitiveCompare(recent.bookId) == .orderedSame }) {
+            presentWithoutAnimation(book, initialLocator: recent.cfi.isEmpty ? nil : recent.cfi)
+            return
+        }
+        guard let session else {
             if reportMissing { continueError = "No recent book to continue." }
             return
         }
-        let downloaded = container.catalogRepository.downloadedBooks()
         if let book = downloaded.first(where: { $0.id == session.bookId }) {
             presentWithoutAnimation(book, initialLocator: continuationLocator(for: book))
             return
@@ -192,9 +201,11 @@ struct RootView: View {
         let saved = container.progressRepository.get(bookId: book.id).cfi
             .trimmingCharacters(in: .whitespacesAndNewlines)
         if saved.isEmpty == false { return saved }
-        let session = container.settingsRepository.readerSession()?.locator?
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        return session?.isEmpty == false ? session : nil
+        guard let session = container.settingsRepository.readerSession(),
+              session.bookId.caseInsensitiveCompare(book.id) == .orderedSame,
+              session.format == book.format else { return nil }
+        let locator = session.locator?.trimmingCharacters(in: .whitespacesAndNewlines)
+        return locator?.isEmpty == false ? locator : nil
     }
 
     private func presentWithoutAnimation(

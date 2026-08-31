@@ -5,7 +5,7 @@ import LibArchive
 @MainActor
 final class ComicReaderController: ObservableObject {
     static let fitZoom = 0.92
-    static let minimumZoom = 0.5
+    static let minimumZoom = 0.25
     static let maximumZoom = 3.0
 
     @Published var progression = 0.0

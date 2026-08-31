@@ -6,6 +6,38 @@ import XCTest
 #endif
 
 final class ReaderPlaybackSessionTests: XCTestCase {
+    func testLegacyReaderSessionUsesNewestAvailableComicProgress() throws {
+        let legacyJSON = """
+        {"bookId":"old-epub","bookTitle":"Old","format":"epub","pageIndex":0,"pageOffset":0}
+        """
+        let session = try JSONDecoder().decode(ReaderSession.self, from: Data(legacyJSON.utf8))
+        let selected = ReaderContinuationSelection.newerLocalProgress(
+            than: session,
+            progress: [
+                BookProgress(bookId: "comic", progression: 0.4, cfi: "comic:3:10", updatedAt: 200),
+                BookProgress(bookId: "old-epub", progression: 0.2, cfi: "epubcfi(/6/2)", updatedAt: 100),
+            ],
+            availableBookIDs: ["old-epub", "comic"]
+        )
+
+        XCTAssertNil(session.updatedAt)
+        XCTAssertEqual(selected?.bookId, "comic")
+    }
+
+    func testTimestampedReaderSessionOutranksOlderProgress() {
+        let session = ReaderSession(
+            bookId: "comic", bookTitle: "Comic", format: .cbr,
+            locator: "comic:4:10", updatedAt: 300
+        )
+        let selected = ReaderContinuationSelection.newerLocalProgress(
+            than: session,
+            progress: [BookProgress(bookId: "old-epub", progression: 0.2, cfi: "epubcfi(/6/2)", updatedAt: 200)],
+            availableBookIDs: ["old-epub", "comic"]
+        )
+
+        XCTAssertNil(selected)
+    }
+
     func testRetentionIsFalseWhenEverySignalIsIdle() {
         XCTAssertFalse(
             ReaderSpeechRetention.isRetained(

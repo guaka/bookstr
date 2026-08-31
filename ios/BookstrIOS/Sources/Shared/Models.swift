@@ -310,6 +310,7 @@ struct ReaderSession: Codable {
     let license: String?
     let licenseUrl: String?
     let rightsSource: String?
+    let updatedAt: Int64?
 
     init(
         bookId: String,
@@ -323,7 +324,8 @@ struct ReaderSession: Codable {
         rightsStatus: String? = nil,
         license: String? = nil,
         licenseUrl: String? = nil,
-        rightsSource: String? = nil
+        rightsSource: String? = nil,
+        updatedAt: Int64? = Int64(Date().timeIntervalSince1970 * 1_000)
     ) {
         self.bookId = bookId
         self.bookTitle = bookTitle
@@ -337,5 +339,6 @@ struct ReaderSession: Codable {
         self.license = license
         self.licenseUrl = licenseUrl
         self.rightsSource = rightsSource
+        self.updatedAt = updatedAt
     }
 }

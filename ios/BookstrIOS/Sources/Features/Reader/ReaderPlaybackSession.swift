@@ -19,6 +19,20 @@ enum ReaderHighlightKind: String, Equatable {
     case mark
 }
 
+enum ReaderContinuationSelection {
+    static func newerLocalProgress(
+        than session: ReaderSession?,
+        progress: [BookProgress],
+        availableBookIDs: Set<String>
+    ) -> BookProgress? {
+        let available = Set(availableBookIDs.map { $0.lowercased() })
+        guard let recent = progress.first(where: { available.contains($0.bookId.lowercased()) }) else { return nil }
+        guard let session else { return recent }
+        guard let sessionUpdatedAt = session.updatedAt else { return recent }
+        return recent.updatedAt > sessionUpdatedAt ? recent : nil
+    }
+}
+
 final class ReaderPlaybackSession: ObservableObject {
     struct Item: Equatable {
         var book: CatalogBook

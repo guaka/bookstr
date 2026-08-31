@@ -58,7 +58,7 @@ struct ReaderHostView: View {
                         controller: fb2Controller,
                         initialLocator: initialLocator,
                         onProgress: { progression, locator in
-                            container.progressRepository.save(bookId: book.id, progression: progression, cfi: locator)
+                            persistProgress(progression, locator: locator, format: .fb2)
                         }
                     )
                     .padding(.top, 48)
@@ -71,11 +71,7 @@ struct ReaderHostView: View {
                         controller: comicController,
                         initialLocator: initialLocator,
                         onProgress: { progression, locator in
-                            container.progressRepository.save(
-                                bookId: book.id,
-                                progression: progression,
-                                cfi: locator
-                            )
+                            persistProgress(progression, locator: locator, format: activeFormat)
                         }
                     )
                     .padding(.top, 48)
@@ -212,6 +208,7 @@ struct ReaderHostView: View {
         .sheet(isPresented: $showSearch) { readerSearchSheet }
         .task { await openBook() }
         .onAppear {
+            dismissKeyboard()
             updateIdleTimer()
             syncPlaybackSpeech()
         }
@@ -583,15 +580,60 @@ struct ReaderHostView: View {
                 try await container.catalogRepository.ensureDownloaded(book: book)
             }
             let saved = container.progressRepository.get(bookId: book.id)
-            resolvedFormat = CatalogRepository.detectedFormat(fileURL: openedURL) ?? book.format
+            let format = CatalogRepository.detectedFormat(fileURL: openedURL) ?? book.format
+            resolvedFormat = format
             epubController.furthestProgression = saved.progression
             fb2Controller.furthestProgression = saved.progression
             comicController.furthestProgression = saved.progression
+            saveReaderSession(
+                format: format,
+                locator: saved.cfi.isEmpty ? initialLocator : saved.cfi
+            )
             localURL = openedURL
         } catch {
             self.error = error.localizedDescription
         }
         loading = false
+    }
+
+    private func persistProgress(_ progression: Double, locator: String, format: BookFormat) {
+        container.progressRepository.save(bookId: book.id, progression: progression, cfi: locator)
+        saveReaderSession(format: format, locator: locator)
+    }
+
+    private func saveReaderSession(format: BookFormat, locator: String?) {
+        let pageIndex: Int
+        if format == .cbr || format == .cbz {
+            pageIndex = ComicReaderController.page(from: locator)
+        } else if format == .pdf,
+                  let value = locator?.split(separator: ":").dropFirst().first.flatMap({ Int($0) }) {
+            pageIndex = value
+        } else {
+            pageIndex = 0
+        }
+        container.settingsRepository.saveReaderSession(ReaderSession(
+            bookId: book.id,
+            bookTitle: book.title,
+            format: format,
+            author: book.author,
+            year: book.year,
+            locator: locator,
+            pageIndex: pageIndex,
+            pageOffset: 0,
+            rightsStatus: book.rightsStatus,
+            license: book.license,
+            licenseUrl: book.licenseUrl,
+            rightsSource: book.rightsSource
+        ))
+    }
+
+    private func dismissKeyboard() {
+        UIApplication.shared.sendAction(
+            #selector(UIResponder.resignFirstResponder),
+            to: nil,
+            from: nil,
+            for: nil
+        )
     }
 }
 

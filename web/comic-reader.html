@@ -12,7 +12,7 @@ html.bookstr-native-chrome body{grid-template-rows:1fr}html.bookstr-native-chrom
 <main id="stage" aria-label="Comic page"><div id="message" class="message">Opening comic…</div></main>
 <footer class="footer"><button id="zoom-out" aria-label="Zoom out">−</button><span id="zoom-label">Fit</span><button id="zoom-in" aria-label="Zoom in">+</button></footer>
 <script>
-const MAX_ENTRIES=2000,MAX_PAGE_BYTES=30*1024*1024,FIT_SCALE=.92,MIN_SCALE=.5,MAX_SCALE=3;let pages=[],current=0,scale=FIT_SCALE,urls=[];
+const MAX_ENTRIES=2000,MAX_PAGE_BYTES=30*1024*1024,FIT_SCALE=.92,MIN_SCALE=.25,MAX_SCALE=3;let pages=[],current=0,scale=FIT_SCALE,urls=[];
 const stage=document.getElementById('stage'),image=document.createElement('img'),message=document.getElementById('message'),count=document.getElementById('count');let comicBookId='';
 function imageName(name){const value=String(name||'').replaceAll('\\','/');if(!value||value.endsWith('/')||value.split('/').includes('..'))return false;if(/(^|\/)__MACOSX(\/|$)/i.test(value)||/(^|\/)(?:thumbs?|thumbnails?)(\/|$)/i.test(value))return false;return /\.(?:jpe?g|png|gif|webp)$/i.test(value)}
 function error(text){image.remove();message.textContent=text;message.hidden=false;document.getElementById('prev').disabled=true;document.getElementById('next').disabled=true;if(window.BookstrComic?.onComicError)window.BookstrComic.onComicError(text)}
