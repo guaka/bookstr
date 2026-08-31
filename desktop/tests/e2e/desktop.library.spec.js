@@ -53,7 +53,12 @@ async function minimalCBZ() {
 
 async function seedLibrary(page, books) {
   await page.evaluate(items => {
-    localStorage.setItem('bookstr_reader_settings_v1', JSON.stringify({ autoReading: false, useNip7: false, theme: 'white' }));
+    localStorage.setItem('bookstr_reader_settings_v1', JSON.stringify({
+      autoReading: false,
+      useNip7: false,
+      theme: 'white',
+      readerPadding: 36,
+    }));
     localStorage.setItem('bookstr_nostr_favorites_v1', JSON.stringify(items));
   }, books);
 }
@@ -125,6 +130,7 @@ test('switching MD5 books never treats the previous EPUB as the next book', asyn
     const renderedChapter = reader.frameLocator('#viewer iframe').locator('body');
     await expect(renderedChapter).toContainText('Only hunger games bytes.', { timeout: 45_000 });
     await expect(renderedChapter).not.toContainText('Only luminous bytes.');
+    await expect(renderedChapter).toHaveCSS('padding-left', '36px');
   } finally {
     await app.close();
   }
@@ -147,6 +153,7 @@ test('Library opens FB2 and CBZ books through their format-specific readers', as
     await page.getByRole('link', { name: fb2.title }).click();
     let reader = page.frameLocator('#reader-frame');
     await expect(reader.locator('#viewer')).toContainText('Distinct FB2 contents.');
+    await expect(reader.locator('body')).toHaveCSS('padding-left', '36px');
     await page.getByRole('button', { name: 'Home' }).click();
     await page.getByRole('link', { name: cbz.title }).click();
     reader = page.frameLocator('#reader-frame');

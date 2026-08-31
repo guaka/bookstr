@@ -21,15 +21,23 @@
     return String(value || "").trim().toLowerCase() === "left" ? "left" : "justified";
   }
 
+  function normalizePadding(value) {
+    const pixels = Number(value);
+    return Number.isFinite(pixels) ? Math.max(8, Math.min(64, Math.round(pixels))) : 24;
+  }
+
   function fontStack(name) {
     return FONTS[normalizeFont(name)];
   }
 
-  function css(font, alignment) {
+  function css(font, alignment, padding) {
     const family = fontStack(font);
     const align = normalizeAlignment(alignment) === "left" ? "left" : "justify";
     const hyphens = align === "justify" ? "auto" : "manual";
-    return "body, p, div, li, blockquote, td, span, h1, h2, h3, h4, h5, h6{" +
+    const horizontalPadding = normalizePadding(padding);
+    return "html, body{box-sizing:border-box !important;}" +
+      "body{padding-left:" + horizontalPadding + "px !important;padding-right:" + horizontalPadding + "px !important;}" +
+      "body, p, div, li, blockquote, td, span, h1, h2, h3, h4, h5, h6{" +
       "font-family:" + family + " !important;}" +
       "p, div, li, blockquote, td{text-align:" + align + " !important;hyphens:" + hyphens +
       " !important;-webkit-hyphens:" + hyphens + " !important;}" +
@@ -39,6 +47,7 @@
   return {
     normalizeFont: normalizeFont,
     normalizeAlignment: normalizeAlignment,
+    normalizePadding: normalizePadding,
     fontStack: fontStack,
     css: css
   };

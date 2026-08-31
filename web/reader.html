@@ -275,6 +275,7 @@
       currentReaderSettings.readerAlignment
         || (currentReaderSettings.readerTextAlign === "justify" ? "justified" : currentReaderSettings.readerTextAlign),
     );
+    let readerPadding = window.BookstrTypography.normalizePadding(currentReaderSettings.readerPadding);
     let desktopReaderBook = null;
     let desktopReaderFurthestProgress = 0;
     let desktopReaderProgress = null;
@@ -306,6 +307,7 @@
         currentReaderSettings.readerAlignment
           || (currentReaderSettings.readerTextAlign === "justify" ? "justified" : currentReaderSettings.readerTextAlign),
       );
+      readerPadding = window.BookstrTypography.normalizePadding(currentReaderSettings.readerPadding);
       if (rendition) {
         rendition.themes.fontSize(readerFontPercent + "%");
         applyTypography();
@@ -399,6 +401,7 @@
         theme: String(payload.theme || "paper").toLowerCase(),
         font: String(payload.font || "arial").toLowerCase(),
         alignment: String(payload.alignment || "justified").toLowerCase(),
+        padding: window.BookstrTypography.normalizePadding(payload.padding ?? currentReaderSettings.readerPadding),
         cfi: String(payload.cfi || ""),
         readUrl: String(payload.readUrl || ""),
         book: normalizeDesktopBookMetadata(payload.book, String(payload.readUrl || "")),
@@ -462,7 +465,7 @@
     }
 
     function typographyCSS() {
-      return window.BookstrTypography.css(readerFontFamily, readerAlignment);
+      return window.BookstrTypography.css(readerFontFamily, readerAlignment, readerPadding);
     }
 
     function applyTypographyToDocument(contentDocument) {
@@ -840,7 +843,7 @@
       desktopReaderFurthestProgress = 0;
       desktopReaderProgress = null;
       const bookId = desktopReaderBook ? desktopReaderBook.md5 : "";
-      window.setReaderTypography(normalized.font, normalized.alignment);
+      window.setReaderTypography(normalized.font, normalized.alignment, normalized.padding);
       void reportPromise(window.loadBook(
         normalized.base64,
         normalized.cfi,
@@ -1290,9 +1293,10 @@
       applyTheme(theme);
     };
 
-    window.setReaderTypography = function(font, alignment) {
+    window.setReaderTypography = function(font, alignment, padding) {
       readerFontFamily = window.BookstrTypography.normalizeFont(font);
       readerAlignment = window.BookstrTypography.normalizeAlignment(alignment);
+      readerPadding = window.BookstrTypography.normalizePadding(padding);
       applyTypography();
     };
 

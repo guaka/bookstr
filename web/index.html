@@ -1892,6 +1892,11 @@
               <input id="reader-font-size" type="range" min="75" max="180" step="5" value="100" />
               <output id="reader-font-size-value" for="reader-font-size">100%</output>
             </label>
+            <label class="setting-option settings-range desktop-reader-settings">
+              <span class="setting-copy"><strong>Page padding</strong><small>Set the side margins for EPUB and FB2 books.</small></span>
+              <input id="reader-padding" type="range" min="8" max="64" step="4" value="24" />
+              <output id="reader-padding-value" for="reader-padding">24 px</output>
+            </label>
           </div>
           <div class="settings-section desktop-reader-settings settings-speech">
             <h3>Read aloud</h3>
@@ -2181,6 +2186,8 @@
       const readerAlignmentInput = document.getElementById('reader-alignment');
       const readerFontSizeInput = document.getElementById('reader-font-size');
       const readerFontSizeValue = document.getElementById('reader-font-size-value');
+      const readerPaddingInput = document.getElementById('reader-padding');
+      const readerPaddingValue = document.getElementById('reader-padding-value');
       const speechLanguageInput = document.getElementById('speech-language');
       const speechVoiceInput = document.getElementById('speech-voice');
       const speechRateInput = document.getElementById('speech-rate');
@@ -2210,6 +2217,7 @@
           readerFont: 'arial',
           readerAlignment: 'justified',
           readerFontPercent: 100,
+          readerPadding: 24,
           speechVoiceEnglish: '',
           speechVoicePortuguese: '',
           speechVoices: {},
@@ -7312,6 +7320,8 @@
       function updateReaderSettingLabels() {
         readerFontSizeValue.value = `${readerFontSizeInput.value}%`;
         readerFontSizeValue.textContent = readerFontSizeValue.value;
+        readerPaddingValue.value = `${readerPaddingInput.value} px`;
+        readerPaddingValue.textContent = readerPaddingValue.value;
         speechRateValue.value = `${Number(speechRateInput.value).toFixed(2)}×`;
         speechRateValue.textContent = speechRateValue.value;
       }
@@ -7369,6 +7379,7 @@
           if (Number.isFinite(readerFontPercent)) {
             state.settings.readerFontPercent = Math.max(75, Math.min(180, readerFontPercent));
           }
+          state.settings.readerPadding = BookstrTypography.normalizePadding(settings.readerPadding);
           if (typeof settings.speechVoiceEnglish === 'string') {
             state.settings.speechVoiceEnglish = settings.speechVoiceEnglish;
           }
@@ -7401,6 +7412,7 @@
         readerFontInput.value = state.settings.readerFont;
         readerAlignmentInput.value = state.settings.readerAlignment;
         readerFontSizeInput.value = String(state.settings.readerFontPercent);
+        readerPaddingInput.value = String(state.settings.readerPadding);
         speechRateInput.value = String(state.settings.speechRate);
         refreshSpeechVoiceMenus();
         updateReaderSettingLabels();
@@ -7598,6 +7610,7 @@
         win.setReaderTypography(
           BookstrTypography.normalizeFont(state.settings.readerFont),
           BookstrTypography.normalizeAlignment(state.settings.readerAlignment),
+          BookstrTypography.normalizePadding(state.settings.readerPadding),
         );
       }
 
@@ -7688,6 +7701,7 @@
         state.settings.readerFont = BookstrTypography.normalizeFont(readerFontInput.value);
         state.settings.readerAlignment = BookstrTypography.normalizeAlignment(readerAlignmentInput.value);
         state.settings.readerFontPercent = Number(readerFontSizeInput.value);
+        state.settings.readerPadding = BookstrTypography.normalizePadding(readerPaddingInput.value);
         state.settings.speechLanguage = BookstrSpeechSettings.languageCode(speechLanguageInput.value) || 'en';
         state.settings.speechVoices[state.settings.speechLanguage] = speechVoiceInput.value;
         state.settings.speechRate = Number(speechRateInput.value);
@@ -7921,6 +7935,7 @@
       readerFontInput.addEventListener('change', applySettingsFromUI);
       readerAlignmentInput.addEventListener('change', applySettingsFromUI);
       readerFontSizeInput.addEventListener('input', applySettingsFromUI);
+      readerPaddingInput.addEventListener('input', applySettingsFromUI);
       speechLanguageInput.addEventListener('change', () => {
         state.settings.speechLanguage = speechLanguageInput.value;
         refreshSpeechVoiceMenus();

@@ -156,6 +156,7 @@ test('libstr desktop app opens with preload bridge', async () => {
     await expect(firstWindow.locator('#desktop-nip46-qr-image')).toBeHidden();
     await expect(firstWindow.locator('#speech-language')).toBeVisible();
     await expect(firstWindow.locator('#speech-voice')).toContainText('Best installed voice');
+    await expect(firstWindow.locator('#reader-padding')).toBeVisible();
     await expect(firstWindow.locator('#speech-language')).toContainText('English');
     await expect(firstWindow.locator('#speech-language')).toContainText('Portuguese');
     await expect(firstWindow.locator('#speech-language')).toContainText('Spanish');
@@ -193,16 +194,22 @@ test('libstr desktop app opens with preload bridge', async () => {
       input.value = '125';
       input.dispatchEvent(new Event('input', { bubbles: true }));
     });
+    await firstWindow.locator('#reader-padding').evaluate(input => {
+      input.value = '40';
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    });
     await firstWindow.locator('#speech-rate').evaluate(input => {
       input.value = '1.10';
       input.dispatchEvent(new Event('input', { bubbles: true }));
     });
     await expect(firstWindow.locator('#reader-font-size-value')).toHaveText('125%');
+    await expect(firstWindow.locator('#reader-padding-value')).toHaveText('40 px');
     await expect(firstWindow.locator('#speech-rate-value')).toHaveText('1.10×');
     expect(await firstWindow.evaluate(() => JSON.parse(localStorage.getItem('bookstr_reader_settings_v1')))).toMatchObject({
       readerFont: 'arial',
       readerAlignment: 'justified',
       readerFontPercent: 125,
+      readerPadding: 40,
       speechRate: 1.1,
       speechVoiceEnglish: '',
       speechVoicePortuguese: '',

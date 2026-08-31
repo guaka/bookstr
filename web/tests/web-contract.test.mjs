@@ -810,12 +810,14 @@ test('Electron settings expose opt-in language voices and reader typography', ()
   assert.match(html, /speech-model-delete[\s\S]*?color: #b42318/);
   assert.match(html, /button\.hidden = button\.dataset\.language !== selectedLanguage/);
   assert.match(html, /speech-settings\.js/);
-  assert.match(html, /id="reader-font"[\s\S]*?<option value="arial">Arial<\/option>[\s\S]*?id="reader-alignment"[\s\S]*?<option value="justified">Justified<\/option>[\s\S]*?id="reader-font-size"/);
+  assert.match(html, /id="reader-font"[\s\S]*?<option value="arial">Arial<\/option>[\s\S]*?id="reader-alignment"[\s\S]*?<option value="justified">Justified<\/option>[\s\S]*?id="reader-font-size"[\s\S]*?id="reader-padding"/);
+  assert.match(html, /readerPadding: 24/);
+  assert.match(html, /BookstrTypography\.normalizePadding\(readerPaddingInput\.value\)/);
   assert.match(html, /speechVoices:[\s\S]*?speechLanguage:[\s\S]*?speechRate:/);
   assert.match(html, /notifyOpenReaderSettings\(\)/);
   assert.match(readerHtml, /voiceIdentifier: selectedSpeechVoice\(plan\.language\)/);
   assert.match(readerHtml, /BookstrTypography\.normalizeFont\([\s\S]*?currentReaderSettings\.readerFont/);
-  assert.match(readerHtml, /BookstrTypography\.css\(readerFontFamily, readerAlignment\)/);
+  assert.match(readerHtml, /BookstrTypography\.css\(readerFontFamily, readerAlignment, readerPadding\)/);
   assert.match(pdfReaderJs, /voiceIdentifier: selectedPdfSpeechVoice\(plan\.language\)/);
   assert.match(html, /BookMetadata\.mergeLibraryState\(state\.reading, state\.favorites\)[\s\S]*?BookstrSpeechSettings\.languagesForCodes\(\[\.\.\.bookLanguages, 'en', 'pt'\], displayNames\)/);
 });
