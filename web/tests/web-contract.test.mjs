@@ -793,6 +793,13 @@ test('Home can refresh and sync Open Library and all.books metadata without LibV
   assert.match(html, /if \(refreshed\.isReading\) syncTasks\.push\(publishReadingMetadata\(refreshed\)\)/);
 });
 
+test('background metadata enrichment avoids OPDS fan-out and remembers a missing Unglue endpoint', () => {
+  assert.match(html, /results = await searchAllBooksPartySource\(query\)/);
+  assert.match(html, /let unglueItUnavailable = false/);
+  assert.match(html, /if \(unglueItUnavailable\) return \[\]/);
+  assert.match(html, /if \(resp\.status === 404\) \{\s*unglueItUnavailable = true;\s*return \[\]/);
+});
+
 test('Home offers result-driven language and format filters', () => {
   assert.match(html, /id="home-language-filter"/);
   assert.match(html, /id="home-format-filter"/);

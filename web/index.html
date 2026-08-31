@@ -4111,9 +4111,16 @@
           .map(entry => entry.book);
       }
 
+      let unglueItUnavailable = false;
+
       async function searchUnglueIt(query) {
+        if (unglueItUnavailable) return [];
         const resp = await fetch(`${BOOKS_API_BASE}/opds?query=${encodeURIComponent(query)}&order_by=newest`);
         const payload = await resp.text();
+        if (resp.status === 404) {
+          unglueItUnavailable = true;
+          return [];
+        }
         if (!resp.ok) {
           throw new Error(`Unglue.it search failed (${resp.status})`);
         }
@@ -6283,7 +6290,7 @@
         }
         let results;
         try {
-          results = await searchAllBooksParty(query);
+          results = await searchAllBooksPartySource(query);
         } catch (error) {
           if (!openLibraryMetadata && !combined) throw error;
           mergeOpenLibraryMetadata();
@@ -6412,7 +6419,7 @@
         status.textContent = `Finding a readable copy of ${book.title || 'this book'}…`;
         try {
           const query = BookMetadata.isPlaceholderTitle(book.title) ? book.md5 : book.title;
-          const results = await searchAllBooksParty(query || book.authors || '');
+          const results = await searchAllBooksPartySource(query || book.authors || '');
           const normalizedTitle = String(book.title || '').toLocaleLowerCase();
           const match = results.find(item => item.md5 === book.md5 && (item.readUrl || item.url))
             || results.find(item => String(item.title || '').toLocaleLowerCase() === normalizedTitle && (item.readUrl || item.url))
@@ -7424,13 +7431,6 @@
         const payload = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(payload?.error || `search failed (${res.status})`);
         return normalizeSearchBooks(payload, 'all.books.party');
-      }
-
-      async function searchAllBooksParty(query) {
-        const outcomes = await Promise.allSettled([searchAllBooksPartySource(query), searchUnglueIt(query)]);
-        const books = outcomes.flatMap(outcome => outcome.status === 'fulfilled' ? outcome.value : []);
-        if (!books.length && outcomes.every(outcome => outcome.status === 'rejected')) throw outcomes[0].reason;
-        return dedupeBooks(books).slice(0, SEARCH_RESULT_LIMIT);
       }
 
       function resetNip17Exchange() {
