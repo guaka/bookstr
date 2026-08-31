@@ -65,6 +65,7 @@ jobs:
         run: node scripts/coverage-ratchet.mjs --suite ios --report test-overview/ios.json
       - name: Prepare iOS simulator
         id: simulator
+        timeout-minutes: 2
         run: |
           for attempt in {1..12}; do
             DEVICE_ID=$(xcrun simctl list devices available -j | jq -r '[.devices[][] | select(.isAvailable == true and (.name | startswith("iPhone")))] | first | .udid // empty')
@@ -75,12 +76,11 @@ jobs:
             echo "No available iPhone simulator was found" >&2
             exit 1
           fi
-          xcrun simctl boot "$DEVICE_ID" || true
-          xcrun simctl bootstatus "$DEVICE_ID" -b
           echo "id=$DEVICE_ID" >> "$GITHUB_OUTPUT"
       - name: Build and run e2e tests
         id: ios_e2e_tests
         continue-on-error: true
+        timeout-minutes: 30
         run: |
           started=$(date +%s)
           set +e

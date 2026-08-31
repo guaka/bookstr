@@ -7,6 +7,26 @@ import SQLite3
 #endif
 
 final class DictionaryRepositoryCoverageTests: XCTestCase {
+    private final class MockURLProtocol: URLProtocol {
+        static var handler: ((URLRequest) throws -> (HTTPURLResponse, Data))?
+
+        override class func canInit(with request: URLRequest) -> Bool { true }
+        override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+
+        override func startLoading() {
+            do {
+                let (response, data) = try XCTUnwrap(Self.handler)(request)
+                client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+                client?.urlProtocol(self, didLoad: data)
+                client?.urlProtocolDidFinishLoading(self)
+            } catch {
+                client?.urlProtocol(self, didFailWithError: error)
+            }
+        }
+
+        override func stopLoading() {}
+    }
+
     private let sqliteTransient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
 
     private func pack(_ id: String, installed: Bool = false) -> DictionaryPack {
@@ -57,6 +77,24 @@ final class DictionaryRepositoryCoverageTests: XCTestCase {
             .appendingPathComponent("bookstr-dictionary-coverage-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         return directory
+    }
+
+    private func mockSession(
+        _ handler: @escaping (URLRequest) throws -> (HTTPURLResponse, Data)
+    ) -> URLSession {
+        MockURLProtocol.handler = handler
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [MockURLProtocol.self]
+        return URLSession(configuration: configuration)
+    }
+
+    private func response(for request: URLRequest, status: Int = 200) throws -> HTTPURLResponse {
+        try XCTUnwrap(HTTPURLResponse(
+            url: try XCTUnwrap(request.url),
+            statusCode: status,
+            httpVersion: nil,
+            headerFields: ["Content-Type": "application/json"]
+        ))
     }
 
     func testPairSelectionNormalizesWithoutPreferredLanguages() {
@@ -110,6 +148,19 @@ final class DictionaryRepositoryCoverageTests: XCTestCase {
         ])
         XCTAssertTrue(repository.lookupAllInstalled(word: "unknown").isEmpty)
         XCTAssertTrue(repository.lookupAllInstalled(word: " ").isEmpty)
+    }
+
+    func testPreferredOfflineLookupAggregatesAndOrdersInstalledTargets() async throws {
+        let directory = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try makeDictionary(at: directory, id: "en-de", rows: [("hello", "hallo", "greeting")])
+        try makeDictionary(at: directory, id: "en-pt", rows: [("hello", "olá", "")])
+        try makeDictionary(at: directory, id: "en-fr", rows: [("hello", "bonjour", "")])
+        let result = try await DictionaryRepository(packDirectory: directory)
+            .lookup(word: "hello", language: "en", context: "plain text")
+        XCTAssertEqual(result.language, "en")
+        XCTAssertEqual(result.definitions, ["PT · olá", "FR · bonjour", "DE · hallo — greeting"])
+        XCTAssertEqual(result.partOfSpeech, "English → PT, FR, DE")
     }
 
     func testParserAndMergeHelpersCoverFallbacks() async throws {
@@ -178,6 +229,136 @@ final class DictionaryRepositoryCoverageTests: XCTestCase {
             XCTFail("Unknown packs must be rejected")
         } catch let error as URLError {
             XCTAssertEqual(error.code, .badURL)
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
+    }
+
+    func testNetworkLookupFollowsEnglishLemma() async throws {
+        let session = mockSession { request in
+            let components = try XCTUnwrap(URLComponents(url: try XCTUnwrap(request.url), resolvingAgainstBaseURL: false))
+            let values: [String: String] = Dictionary(uniqueKeysWithValues: (components.queryItems ?? []).compactMap {
+                guard let value = $0.value else { return nil }
+                return ($0.name, value)
+            })
+            let extract: String
+            switch values["titles"] {
+            case "apples":
+                extract = "==English==\n===Noun===\nplural of apple"
+            case "apple":
+                extract = "==English==\n===Noun===\nA round fruit."
+            default:
+                extract = ""
+            }
+            let body = try JSONSerialization.data(withJSONObject: [
+                "query": ["pages": [["extract": extract]]]
+            ])
+            return (try self.response(for: request), body)
+        }
+        let repository = DictionaryRepository(session: session)
+        let result = try await repository.lookup(word: "apples", language: "en", context: "simple text")
+        XCTAssertEqual(result.word, "apples")
+        XCTAssertEqual(result.partOfSpeech, "Noun")
+        XCTAssertEqual(result.definitions, ["plural of apple", "A round fruit."])
+        XCTAssertTrue(result.sourceUrl.contains("en.wiktionary.org/wiki/apples"))
+    }
+
+    func testPortugueseNetworkLookupUsesHTMLTranslation() async throws {
+        let session = mockSession { request in
+            let components = try XCTUnwrap(URLComponents(url: try XCTUnwrap(request.url), resolvingAgainstBaseURL: false))
+            let action = components.queryItems?.first { $0.name == "action" }?.value
+            let object: [String: Any]
+            if action == "parse" {
+                object = ["parse": ["text": "<p><b>Inglês</b>: house</p>"]]
+            } else {
+                object = ["query": ["pages": [["extract": "==Português==\n===Substantivo===\nUma habitação."]]]]
+            }
+            return (try self.response(for: request), try JSONSerialization.data(withJSONObject: object))
+        }
+        let result = try await DictionaryRepository(session: session)
+            .lookup(word: "casa", language: "pt-BR", context: "uma casa")
+        XCTAssertEqual(result.language, "pt")
+        XCTAssertEqual(result.definitions, ["Uma habitação."])
+        XCTAssertEqual(result.translation, "house")
+    }
+
+    func testNetworkLookupFallsBackAndReportsMissingWord() async throws {
+        var hosts: [String] = []
+        let session = mockSession { request in
+            hosts.append(try XCTUnwrap(request.url?.host))
+            return (try self.response(for: request), Data(#"{"query":{"pages":[{"extract":""}]}}"#.utf8))
+        }
+        do {
+            _ = try await DictionaryRepository(session: session)
+                .lookup(word: "missing", language: "en", context: "plain text")
+            XCTFail("Missing network entries should fail")
+        } catch let error as URLError {
+            XCTAssertEqual(error.code, .fileDoesNotExist)
+        }
+        XCTAssertEqual(hosts, ["en.wiktionary.org", "pt.wiktionary.org"])
+    }
+
+    func testNetworkLookupReturnsFallbackLanguageResult() async throws {
+        let session = mockSession { request in
+            let host = try XCTUnwrap(request.url?.host)
+            let extract = host == "pt.wiktionary.org"
+                ? "==Português==\n===Substantivo===\nUma resposta.\n===Tradução===\nInglês: answer"
+                : ""
+            let body = try JSONSerialization.data(withJSONObject: ["query": ["pages": [["extract": extract]]]])
+            return (try self.response(for: request), body)
+        }
+        let result = try await DictionaryRepository(session: session)
+            .lookup(word: "resposta", language: "en", context: "plain text")
+        XCTAssertEqual(result.language, "pt")
+        XCTAssertEqual(result.translation, "answer")
+    }
+
+    func testNetworkLookupIgnoresBadHTTPResponses() async throws {
+        let session = mockSession { request in
+            (try self.response(for: request, status: 503), Data())
+        }
+        do {
+            _ = try await DictionaryRepository(session: session)
+                .lookup(word: "missing", language: "pt", context: "uma frase")
+            XCTFail("Bad HTTP responses should not produce an entry")
+        } catch let error as URLError {
+            XCTAssertEqual(error.code, .fileDoesNotExist)
+        }
+    }
+
+    func testPackInstallCoversDownloadValidationAndReplacement() async throws {
+        let directory = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let success = mockSession { request in
+            (try self.response(for: request), Data(repeating: 0x41, count: 2048))
+        }
+        let repository = DictionaryRepository(packDirectory: directory, session: success)
+        await XCTAssertNoThrowAsync { try await repository.installPack("en-pt") }
+        XCTAssertEqual(repository.packs().first { $0.id == "en-pt" }?.bytes, 2048)
+        await XCTAssertNoThrowAsync { try await repository.installPack("en-pt") }
+
+        let small = DictionaryRepository(packDirectory: directory, session: mockSession { request in
+            (try self.response(for: request), Data("small".utf8))
+        })
+        await assertInstallError(.cannotDecodeContentData) { try await small.installPack("en-de") }
+
+        let rejected = DictionaryRepository(packDirectory: directory, session: mockSession { request in
+            (try self.response(for: request, status: 500), Data())
+        })
+        await assertInstallError(.badServerResponse) { try await rejected.installPack("en-fr") }
+    }
+
+    private func XCTAssertNoThrowAsync(_ operation: () async throws -> Void) async {
+        do { try await operation() } catch { XCTFail("Unexpected error: \(error)") }
+    }
+
+    private func assertInstallError(_ expected: URLError.Code, operation: () async throws -> Void) async {
+        do {
+            try await operation()
+            XCTFail("Expected \(expected)")
+        } catch let error as URLError {
+            XCTAssertEqual(error.code, expected)
         } catch {
             XCTFail("Unexpected error: \(error)")
         }

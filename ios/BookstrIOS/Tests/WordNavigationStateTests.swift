@@ -399,6 +399,37 @@ final class WordNavigationStateTests: XCTestCase {
         )
     }
 
+    func testSavedHighlightMatchingFallsBackToTextAndHandlesBlankValues() {
+        let state = WordNavigationState()
+        let word = makeWord(key: "word", cfi: "word-locator")
+        let mark = makeMark(id: "mark", locator: "mark-locator")
+        XCTAssertEqual(
+            state.matchingWord(
+                for: SavedHighlightRequest(kind: .word, locator: "missing", text: "test"),
+                in: [word]
+            )?.syncId,
+            "word"
+        )
+        XCTAssertEqual(
+            state.matchingMark(
+                for: SavedHighlightRequest(kind: .mark, locator: "missing", text: "marked TEXT"),
+                in: [mark]
+            )?.syncId,
+            "mark"
+        )
+        XCTAssertNil(state.matchingMark(
+            for: SavedHighlightRequest(kind: .mark, locator: "missing", text: "  "), in: [mark]
+        ))
+        XCTAssertNil(state.matchingMark(
+            for: SavedHighlightRequest(kind: .mark, locator: "missing", text: "other"), in: [mark]
+        ))
+        let token = state.requestToken
+        state.request(kind: .mark, locator: " ", text: " ")
+        XCTAssertEqual(state.requestToken, token)
+        state.request(kind: .word, locator: "", text: " text ")
+        XCTAssertEqual(state.requestedWord, "text")
+    }
+
     private func makeMark(id: String, locator: String) -> BookSnippet {
         BookSnippet(
             syncId: id, text: "Marked text", bookId: "book", bookTitle: "Book",

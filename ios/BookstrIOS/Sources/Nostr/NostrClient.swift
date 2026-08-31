@@ -38,6 +38,9 @@ protocol NostrEventPublishing {
 }
 
 final class NostrClient: NostrEventPublishing {
+    typealias QueryOverride = @Sendable (String, String, [String: Any]) async -> RelayQueryReport
+    typealias PublishOverride = @Sendable (NostrEvent, String) async -> Bool
+
     static let defaultInteropRelay = "wss://relay.nomadwiki.org"
     /// Query sockets fail fast instead of parking for minutes when a relay is unreachable.
     static let queryRequestTimeout: TimeInterval = 12
@@ -48,6 +51,13 @@ final class NostrClient: NostrEventPublishing {
     private static let relaySession: URLSession = {
         URLSession(configuration: makeRelaySessionConfiguration())
     }()
+    private let queryOverride: QueryOverride?
+    private let publishOverride: PublishOverride?
+
+    init(queryOverride: QueryOverride? = nil, publishOverride: PublishOverride? = nil) {
+        self.queryOverride = queryOverride
+        self.publishOverride = publishOverride
+    }
 
     static func makeRelaySessionConfiguration() -> URLSessionConfiguration {
         let config = URLSessionConfiguration.ephemeral
@@ -66,7 +76,12 @@ final class NostrClient: NostrEventPublishing {
     func publishEvent(_ event: NostrEvent, relays: [String]) async -> Bool {
         var accepted = false
         for relay in relays {
-            if await sendEventOnce(event, relayURL: relay) { accepted = true }
+            let didAccept = if let publishOverride {
+                await publishOverride(event, relay)
+            } else {
+                await sendEventOnce(event, relayURL: relay)
+            }
+            if didAccept { accepted = true }
         }
         return accepted
     }
@@ -153,7 +168,10 @@ final class NostrClient: NostrEventPublishing {
         await withTaskGroup(of: RelayQueryReport.self) { group in
             for relay in Set(relays) {
                 group.addTask {
-                    await self.queryEvents(relayURL: relay, subscriptionId: subscriptionId, filter: filter)
+                    if let queryOverride = self.queryOverride {
+                        return await queryOverride(relay, subscriptionId, filter)
+                    }
+                    return await self.queryEvents(relayURL: relay, subscriptionId: subscriptionId, filter: filter)
                 }
             }
             var reports: [RelayQueryReport] = []
@@ -256,13 +274,10 @@ final class NostrClient: NostrEventPublishing {
         let socket = Self.relaySession.webSocketTask(with: socketURL)
         socket.resume()
         let req: [Any] = ["REQ", subscriptionId, filter]
-        guard JSONSerialization.isValidJSONObject(req),
-              let data = try? JSONSerialization.data(withJSONObject: req),
-              let message = String(data: data, encoding: .utf8)
-        else {
-            Self.close(socket)
-            return RelayQueryReport(relay: relayURL, events: [], finished: "bad-filter", elapsedMs: 0, notices: [], error: "could not encode REQ")
-        }
+        // Every filter is assembled internally from JSON-compatible scalar and
+        // array values, so encoding failure would be a programming error.
+        let data = try! JSONSerialization.data(withJSONObject: req)
+        let message = String(decoding: data, as: UTF8.self)
 
         let collected = EventCollector()
         let once = OnceBox<(events: [NostrEvent], finished: String, notices: [String])>()
@@ -286,10 +301,6 @@ final class NostrClient: NostrEventPublishing {
                 let deadline = Date().addingTimeInterval(8)
                 while Date() < deadline {
                     let remaining = deadline.timeIntervalSinceNow
-                    guard remaining > 0 else {
-                        collected.finish("deadline")
-                        break
-                    }
                     guard let msg = await self.receiveMessage(socket, timeout: remaining) else {
                         collected.finish("receive-timeout")
                         break

@@ -1,4 +1,5 @@
 import Foundation
+import Network
 import XCTest
 #if SWIFT_PACKAGE
 @testable import BookstrLogic
@@ -287,6 +288,13 @@ final class NostrModelCoverageTests: XCTestCase {
 }
 
 final class NostrCoverageExpansionTests: XCTestCase {
+    private func event(_ id: String?, createdAt: Int64, dTag: String? = nil) -> NostrEvent {
+        NostrEvent(
+            id: id, pubkey: "pubkey", createdAt: createdAt, kind: NostrKinds.progress,
+            tags: dTag.map { [["d", $0]] } ?? [], content: "", sig: nil
+        )
+    }
+
     func testModelHelpersCoverScalarAndTagRepresentations() {
         XCTAssertFalse(NostrKinds.progressDTag(bookId: "book").isEmpty)
         XCTAssertFalse(NostrKinds.favoritesChunkDTag(index: 1).isEmpty)
@@ -309,6 +317,9 @@ final class NostrCoverageExpansionTests: XCTestCase {
         ])
         XCTAssertEqual(event?.dTag, "topic")
         _ = NostrEvent.fromRelayObject(["created_at": true, "kind": true, "tags": ["malformed"]])
+        _ = NostrEvent.fromRelayObject([
+            "created_at": Date(), "kind": Date(), "tags": [["x", Date()]]
+        ])
     }
 
     func testInvalidRelayURLsReturnWithoutEvents() async {
@@ -323,6 +334,206 @@ final class NostrCoverageExpansionTests: XCTestCase {
         XCTAssertTrue(vocabulary.isEmpty)
         XCTAssertTrue(applicationData.isEmpty)
         XCTAssertFalse(published)
+    }
+
+    func testInjectedRelayQueriesCoverLatestDedupAndVocabularyFiltering() async {
+        let older = event("same", createdAt: 1, dTag: NostrKinds.vocabularyPrefix + "old")
+        let newer = event("same", createdAt: 3, dTag: NostrKinds.vocabularyPrefix + "new")
+        let byDTag = event(nil, createdAt: 2, dTag: "other")
+        let anonymous = event(nil, createdAt: 4)
+        let client = NostrClient(queryOverride: { relay, _, _ in
+            RelayQueryReport(
+                relay: relay, events: relay == "wss://a" ? [older, byDTag] : [newer, byDTag, anonymous],
+                finished: "eose", elapsedMs: 1, notices: [], error: nil
+            )
+        })
+
+        let latest = await client.fetchLatestProgress(pubkey: "PUBKEY", bookId: "book", relays: ["wss://b", "wss://a"])
+        XCTAssertEqual(latest?.createdAt, 4)
+        let application = await client.fetchApplicationData(pubkey: "PUBKEY", relays: ["wss://a", "wss://b"])
+        XCTAssertTrue(application.contains { $0.id == "same" && $0.createdAt == 3 })
+        XCTAssertEqual(application.filter { $0.dTag == "other" }.count, 1)
+        let vocabulary = await client.fetchVocabulary(pubkey: "PUBKEY", relays: ["wss://a", "wss://b"])
+        XCTAssertEqual(vocabulary.map(\.id), ["same"])
+    }
+
+    func testInjectedFavoriteQueriesCoverTaggedAndFallbackResults() async {
+        let favorite = event("favorite", createdAt: 20, dTag: NostrKinds.favoritesDTag)
+        let tagged = NostrClient(queryOverride: { relay, subscription, filter in
+            XCTAssertEqual((filter["authors"] as? [String])?.first, "pubkey")
+            return RelayQueryReport(
+                relay: relay, events: subscription == "bookstr-favorites" ? [favorite] : [],
+                finished: "eose", elapsedMs: 1, notices: [], error: nil
+            )
+        })
+        let direct = await tagged.fetchLatestFavorites(pubkey: "PUBKEY", relays: ["wss://custom"])
+        XCTAssertEqual(direct.event?.id, "favorite")
+        XCTAssertFalse(direct.fallbackUsed)
+        XCTAssertEqual(direct.reports.map(\.relay), ["wss://custom", NostrClient.defaultInteropRelay].sorted())
+
+        let fallback = NostrClient(queryOverride: { relay, subscription, _ in
+            RelayQueryReport(
+                relay: relay,
+                events: subscription == "bookstr-favorites-all"
+                    ? [self.event("wrong", createdAt: 30, dTag: "wrong"), favorite] : [],
+                finished: "eose", elapsedMs: 1, notices: [], error: nil
+            )
+        })
+        let recovered = await fallback.fetchLatestFavorites(pubkey: "PUBKEY", relays: [])
+        XCTAssertEqual(recovered.event?.id, "favorite")
+        XCTAssertTrue(recovered.fallbackUsed)
+        XCTAssertEqual(recovered.reports.count, 2)
+    }
+
+    func testInjectedReplaceableAndPublisherCoverSuccessAndFailure() async {
+        let older = event("old", createdAt: 1, dTag: "target")
+        let newer = event("new", createdAt: 2, dTag: "target")
+        let client = NostrClient(
+            queryOverride: { relay, _, _ in
+                RelayQueryReport(relay: relay, events: [older, newer], finished: "eose", elapsedMs: 0, notices: [], error: nil)
+            },
+            publishOverride: { _, relay in relay.hasSuffix("accept") }
+        )
+        let replaceable = await client.fetchReplaceable(pubkey: "PUBKEY", kind: 30_078, dTag: "target", relays: [])
+        XCTAssertEqual(replaceable?.id, "new")
+        let accepted = await client.publishEvent(newer, relays: ["wss://reject", "wss://accept"])
+        let rejected = await client.publishEvent(newer, relays: [])
+        XCTAssertTrue(accepted)
+        XCTAssertFalse(rejected)
+    }
+
+    func testLocalWebSocketRelayExercisesQueryAndPublishProtocol() async throws {
+        let relayEvent = NostrEvent(
+            id: "relay-event", pubkey: "pubkey", createdAt: 42, kind: NostrKinds.progress,
+            tags: [["d", NostrKinds.progressDTag(bookId: "book")]], content: "{}", sig: "sig"
+        )
+        let relay = try await LocalWebSocketRelay(event: relayEvent).start()
+        let client = NostrClient()
+        let relayURL = await relay.url
+        let url = try XCTUnwrap(relayURL)
+
+        let fetched = await client.fetchLatestProgress(pubkey: "pubkey", bookId: "book", relays: [url])
+        let queryMessages = await relay.receivedMessages()
+        XCTAssertEqual(fetched?.id, "relay-event")
+        XCTAssertTrue(queryMessages.contains { $0.contains("\"REQ\"") })
+
+        let accepted = await client.publishEvent(relayEvent, relays: [url])
+        let publishMessages = await relay.receivedMessages()
+        XCTAssertTrue(accepted)
+        XCTAssertTrue(publishMessages.contains { $0.contains("\"EVENT\"") })
+        await relay.stop()
+
+        let rejectingRelay = try await LocalWebSocketRelay(event: relayEvent, publishAccepted: false).start()
+        let optionalRejectingURL = await rejectingRelay.url
+        let rejectingURL = try XCTUnwrap(optionalRejectingURL)
+        let rejected = await client.publishEvent(relayEvent, relays: [rejectingURL])
+        XCTAssertFalse(rejected)
+        await rejectingRelay.stop()
+    }
+
+    func testLocalSilentRelayExercisesReceiveTimeout() async throws {
+        let event = NostrEvent(id: "event", pubkey: "pubkey", createdAt: 1, kind: 1, tags: [], content: "", sig: nil)
+        let relay = try await LocalWebSocketRelay(event: event, respondToQueries: false).start()
+        let optionalURL = await relay.url
+        let url = try XCTUnwrap(optionalURL)
+        let fetched = await NostrClient().fetchLatestProgress(pubkey: "pubkey", bookId: "book", relays: [url])
+        XCTAssertNil(fetched)
+        await relay.stop()
+    }
+}
+
+private actor LocalWebSocketRelay {
+    private let event: NostrEvent
+    private let publishAccepted: Bool
+    private let respondToQueries: Bool
+    private var listener: NWListener?
+    private var messages: [String] = []
+
+    init(event: NostrEvent, publishAccepted: Bool = true, respondToQueries: Bool = true) {
+        self.event = event
+        self.publishAccepted = publishAccepted
+        self.respondToQueries = respondToQueries
+    }
+
+    var url: String? {
+        guard let port = listener?.port else { return nil }
+        return "ws://127.0.0.1:\(port.rawValue)"
+    }
+
+    func start() async throws -> LocalWebSocketRelay {
+        let parameters = NWParameters.tcp
+        parameters.defaultProtocolStack.applicationProtocols.insert(NWProtocolWebSocket.Options(), at: 0)
+        let listener = try NWListener(using: parameters, on: .any)
+        self.listener = listener
+        listener.newConnectionHandler = { [weak self] connection in
+            guard let self else { return }
+            connection.start(queue: .global(qos: .userInitiated))
+            self.receive(on: connection)
+        }
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            listener.stateUpdateHandler = { state in
+                switch state {
+                case .ready:
+                    continuation.resume()
+                case .failed(let error):
+                    continuation.resume(throwing: error)
+                default:
+                    break
+                }
+            }
+            listener.start(queue: .global(qos: .userInitiated))
+        }
+        return self
+    }
+
+    func stop() {
+        listener?.cancel()
+        listener = nil
+    }
+
+    func receivedMessages() -> [String] { messages }
+
+    nonisolated private func receive(on connection: NWConnection) {
+        connection.receiveMessage { [weak self] data, _, _, error in
+            guard let self else { return }
+            if let data, let text = String(data: data, encoding: .utf8) {
+                Task { await self.handle(text, connection: connection) }
+            } else if error == nil {
+                self.receive(on: connection)
+            }
+        }
+    }
+
+    private func handle(_ text: String, connection: NWConnection) {
+        messages.append(text)
+        if text.contains("\"REQ\"") {
+            guard respondToQueries else {
+                receive(on: connection)
+                return
+            }
+            send("[\"NOTICE\",\" local relay ready \"]", on: connection)
+            let object = (try? JSONEncoder().encode(event))
+                .flatMap { try? JSONSerialization.jsonObject(with: $0) }
+            let payload = object.flatMap { try? JSONSerialization.data(withJSONObject: ["EVENT", "subscription", $0]) }
+                .flatMap { String(data: $0, encoding: .utf8) }
+            if let payload { send(payload, on: connection) }
+            send("[\"EOSE\",\"subscription\"]", on: connection)
+        } else if text.contains("\"EVENT\"") {
+            if publishAccepted {
+                send("[\"OK\",\"event\",true,\"accepted\"]", on: connection)
+            } else {
+                for index in 0..<8 {
+                    send("[\"NOTICE\",\"rejected \(index)\"]", on: connection)
+                }
+            }
+        }
+        receive(on: connection)
+    }
+
+    nonisolated private func send(_ text: String, on connection: NWConnection) {
+        let metadata = NWProtocolWebSocket.Metadata(opcode: .text)
+        let context = NWConnection.ContentContext(identifier: UUID().uuidString, metadata: [metadata])
+        connection.send(content: Data(text.utf8), contentContext: context, isComplete: true, completion: .contentProcessed { _ in })
     }
 }
 

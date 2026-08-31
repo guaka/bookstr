@@ -1,6 +1,15 @@
 {
-  "originHash" : "f1e638eb9257692f23c25a07d9bd5d886c20b565a36b374bd3cbc607d8a6abb6",
+  "originHash" : "33c89a9110df27a4830e39604d6e0842be90b8edfb7bd85a3033a505428b3309",
   "pins" : [
+    {
+      "identity" : "libarchive-swift",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/everpcpc/libarchive-swift",
+      "state" : {
+        "revision" : "69a947c0e5bf4e940a6ac998a8fab3165d5b97f6",
+        "version" : "0.1.11"
+      }
+    },
     {
       "identity" : "onnxruntime-libs",
       "kind" : "remoteSourceControl",

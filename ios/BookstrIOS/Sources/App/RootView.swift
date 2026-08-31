@@ -108,6 +108,7 @@ struct RootView: View {
                     initialLocator: item.initialLocator,
                     highlightLocator: item.highlightLocator,
                     highlightKind: item.highlightKind,
+                    presentationOrigin: item.origin,
                     showsReaderChrome: playback.isVisible,
                     onClose: { playback.requestClose() }
                 )
@@ -123,7 +124,9 @@ struct RootView: View {
             _ = await container.nostrSyncService.retryPendingFavorites()
             guard !attemptedInitialContinuation else { return }
             attemptedInitialContinuation = true
-            guard !ProcessInfo.processInfo.arguments.contains("--ui-testing-library-fixtures") else { return }
+            let arguments = ProcessInfo.processInfo.arguments
+            guard !arguments.contains("--ui-testing-library-fixtures")
+                    || arguments.contains("--ui-testing-open-continuation") else { return }
             openContinuation(reportMissing: false)
         }
         .onChange(of: scenePhase) { _, phase in
@@ -154,15 +157,34 @@ struct RootView: View {
                 current.book,
                 preparedURL: current.preparedURL,
                 initialLocator: current.initialLocator,
-                highlightLocator: current.highlightLocator
+                highlightLocator: current.highlightLocator,
+                origin: current.origin
             )
             return
         }
-        guard let session = settings.readerSession() else {
+        let downloaded = container.catalogRepository.downloadedBooks()
+        if let selection = settings.readerSelection(),
+           let book = downloaded.first(where: {
+               $0.id.caseInsensitiveCompare(selection.bookId) == .orderedSame
+                   && $0.format == selection.format
+           }) {
+            presentWithoutAnimation(book, initialLocator: continuationLocator(for: book))
+            return
+        }
+        let session = settings.readerSession()
+        if let recent = ReaderContinuationSelection.preferredLocalProgress(
+            than: session,
+            progress: container.progressRepository.all(),
+            availableBookIDs: Set(downloaded.map(\.id))
+        ), let book = downloaded.first(where: { $0.id.caseInsensitiveCompare(recent.bookId) == .orderedSame }) {
+            settings.saveReaderSelection(ReaderSelection(bookId: book.id, format: book.format))
+            presentWithoutAnimation(book, initialLocator: recent.cfi.isEmpty ? nil : recent.cfi)
+            return
+        }
+        guard let session else {
             if reportMissing { continueError = "No recent book to continue." }
             return
         }
-        let downloaded = container.catalogRepository.downloadedBooks()
         if let book = downloaded.first(where: { $0.id == session.bookId }) {
             presentWithoutAnimation(book, initialLocator: continuationLocator(for: book))
             return
@@ -192,16 +214,19 @@ struct RootView: View {
         let saved = container.progressRepository.get(bookId: book.id).cfi
             .trimmingCharacters(in: .whitespacesAndNewlines)
         if saved.isEmpty == false { return saved }
-        let session = container.settingsRepository.readerSession()?.locator?
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        return session?.isEmpty == false ? session : nil
+        guard let session = container.settingsRepository.readerSession(),
+              session.bookId.caseInsensitiveCompare(book.id) == .orderedSame,
+              session.format == book.format else { return nil }
+        let locator = session.locator?.trimmingCharacters(in: .whitespacesAndNewlines)
+        return locator?.isEmpty == false ? locator : nil
     }
 
     private func presentWithoutAnimation(
         _ book: CatalogBook,
         preparedURL: URL? = nil,
         initialLocator: String? = nil,
-        highlightLocator: String? = nil
+        highlightLocator: String? = nil,
+        origin: ReaderPresentationOrigin = .continuation
     ) {
         var transaction = Transaction(animation: nil)
         transaction.disablesAnimations = true
@@ -210,7 +235,8 @@ struct RootView: View {
                 book: book,
                 preparedURL: preparedURL,
                 initialLocator: initialLocator,
-                highlightLocator: highlightLocator
+                highlightLocator: highlightLocator,
+                origin: origin
             )
         }
     }

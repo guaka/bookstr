@@ -7,17 +7,21 @@ struct LibraryView: View {
     @State private var openError: String?
     @State private var openingBookID: String?
     @State private var rightsDetails: RightsDetailsItem?
+    @State private var libraryFilter = ""
     @AppStorage("library_sort") private var selectedSort = LibrarySort.recent
 
     var body: some View {
+        let filteredReading = LibraryViewModel.filtered(viewModel.reading, by: libraryFilter)
+        let filteredFavorites = LibraryViewModel.filtered(viewModel.favorites, by: libraryFilter)
+        let filteredExternalFavorites = LibraryViewModel.filtered(viewModel.externalFavorites, by: libraryFilter)
         let sortedReading = LibraryViewModel.sorted(
-            viewModel.reading, by: selectedSort, progress: viewModel.progress
+            filteredReading, by: selectedSort, progress: viewModel.progress
         )
         let sortedFavorites = LibraryViewModel.sorted(
-            viewModel.favorites, by: selectedSort, progress: viewModel.progress
+            filteredFavorites, by: selectedSort, progress: viewModel.progress
         )
         let sortedExternalFavorites = LibraryViewModel.sorted(
-            viewModel.externalFavorites, by: selectedSort
+            filteredExternalFavorites, by: selectedSort
         )
 
         return List {
@@ -31,8 +35,10 @@ struct LibraryView: View {
             }
 
             Section("Reading") {
-                if viewModel.reading.isEmpty {
-                    Text("Books you open will appear here with their progress.")
+                if sortedReading.isEmpty {
+                    Text(viewModel.reading.isEmpty
+                         ? "Books you open will appear here with their progress."
+                         : "No books being read match your filter.")
                         .foregroundStyle(.secondary)
                 } else {
                     ForEach(sortedReading) { book in
@@ -51,8 +57,10 @@ struct LibraryView: View {
             }
 
             Section("Favorites") {
-                if viewModel.favorites.isEmpty && viewModel.externalFavorites.isEmpty {
-                    Text(emptyFavoritesCopy)
+                if sortedFavorites.isEmpty && sortedExternalFavorites.isEmpty {
+                    Text(viewModel.favorites.isEmpty && viewModel.externalFavorites.isEmpty
+                         ? emptyFavoritesCopy
+                         : "No favorite books match your filter.")
                         .foregroundStyle(.secondary)
                 } else {
                     ForEach(sortedFavorites) { book in
@@ -115,6 +123,11 @@ struct LibraryView: View {
         .contentMargins(.top, 8, for: .scrollContent)
         .contentMargins(.horizontal, 0, for: .scrollContent)
         .bookstrScreenTitle("Library")
+        .searchable(
+            text: $libraryFilter,
+            placement: .navigationBarDrawer(displayMode: .automatic),
+            prompt: "Filter books"
+        )
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Menu {
@@ -170,6 +183,7 @@ struct LibraryView: View {
                 Text(book.author).font(.subheadline).foregroundStyle(.secondary)
                 HStack(spacing: 5) {
                     if let year = book.year { Text(year) }
+                    if let language = book.language { Text("· \(language.uppercased())") }
                     RightsBadge(rights: book.rights)
                     Text("· \(book.format.rawValue.uppercased())")
                 }

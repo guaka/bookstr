@@ -85,7 +85,7 @@ struct DictionaryPairSelection: Equatable {
 }
 
 final class DictionaryRepository {
-    private static let session: URLSession = {
+    private static let defaultSession: URLSession = {
         let config = URLSessionConfiguration.ephemeral
         config.timeoutIntervalForRequest = 12
         config.timeoutIntervalForResource = 20
@@ -93,11 +93,13 @@ final class DictionaryRepository {
     }()
 
     private let packDirectory: URL
+    private let session: URLSession
 
-    init(packDirectory: URL? = nil) {
+    init(packDirectory: URL? = nil, session: URLSession? = nil) {
         let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
         self.packDirectory = packDirectory
             ?? support.appendingPathComponent("bookstr/dictionaries", isDirectory: true)
+        self.session = session ?? Self.defaultSession
         try? FileManager.default.createDirectory(at: self.packDirectory, withIntermediateDirectories: true)
     }
 
@@ -116,7 +118,7 @@ final class DictionaryRepository {
         guard Self.packSpecs.contains(where: { $0.id == id }),
               let remote = URL(string: "https://download.wikdict.com/dictionaries/sqlite/2/\(id).sqlite3")
         else { throw URLError(.badURL) }
-        let (temporary, response) = try await URLSession.shared.download(from: remote)
+        let (temporary, response) = try await session.download(from: remote)
         guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
             throw URLError(.badServerResponse)
         }
@@ -473,7 +475,7 @@ final class DictionaryRepository {
             URLQueryItem(name: "formatversion", value: "2")
         ]
         guard let url = components?.url else { return nil }
-        let (data, response) = try await Self.session.data(from: url)
+        let (data, response) = try await session.data(from: url)
         guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else { return nil }
         let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
         let pages = (json?["query"] as? [String: Any])?["pages"] as? [[String: Any]]
@@ -491,7 +493,7 @@ final class DictionaryRepository {
             URLQueryItem(name: "formatversion", value: "2")
         ]
         guard let url = components?.url else { return nil }
-        let (data, response) = try await Self.session.data(from: url)
+        let (data, response) = try await session.data(from: url)
         guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else { return nil }
         let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
         return (json?["parse"] as? [String: Any])?["text"] as? String

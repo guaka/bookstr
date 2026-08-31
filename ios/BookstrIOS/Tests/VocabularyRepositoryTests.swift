@@ -448,4 +448,17 @@ final class VocabularyRepositoryTests: XCTestCase {
         XCTAssertEqual(repo.all().first?.word, first.word)
         XCTAssertEqual(repo.word(syncId: deleted.syncId)?.deleted, true)
     }
+
+    func testMergeRemoteAcceptsNewTombstoneWithoutLocalEntry() {
+        let repo = VocabularyRepository(fileStore: JSONFileStore(subdirectory: "bookstr-test-\(UUID().uuidString)"))
+        let tombstone = VocabularyWord(
+            key: "en:gone", word: "gone", language: "en", syncId: "gone", bookId: "book",
+            bookTitle: "Book", cfi: "cfi", contextSentence: "", partOfSpeech: "",
+            definitions: [], translation: nil, sourceUrl: "", lookupCount: 1,
+            firstSeenAt: 1, lastSeenAt: 2, deleted: true
+        )
+        XCTAssertTrue(repo.mergeRemote(tombstone))
+        XCTAssertEqual(repo.word(syncId: "gone"), tombstone)
+        XCTAssertTrue(repo.all().isEmpty)
+    }
 }

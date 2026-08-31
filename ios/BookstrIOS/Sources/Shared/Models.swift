@@ -156,6 +156,7 @@ struct CatalogBook: Codable, Identifiable, Hashable, Sendable {
     let format: BookFormat
     let blossomSha256: String?
     let year: String?
+    var language: String? = nil
     var rightsStatus: String? = nil
     var license: String? = nil
     var licenseUrl: String? = nil
@@ -194,7 +195,7 @@ struct BookSearchResult: Identifiable, Hashable {
         guard let downloadUrl, let format else { return nil }
         return CatalogBook(id: id, title: title, author: author, epubUrl: downloadUrl,
                            coverUrl: coverUrl, sourceUrl: downloadUrl, isbn: nil, libvaultMd5: nil,
-                           format: format, blossomSha256: nil, year: year,
+                           format: format, blossomSha256: nil, year: year, language: language,
                            rightsStatus: rightsStatus, license: license, licenseUrl: licenseUrl,
                            rightsSource: rightsSource)
     }
@@ -202,7 +203,7 @@ struct BookSearchResult: Identifiable, Hashable {
     func asFavoriteBook() -> CatalogBook {
         CatalogBook(id: id, title: title, author: author, epubUrl: downloadUrl ?? "",
                     coverUrl: coverUrl, sourceUrl: downloadUrl, isbn: nil, libvaultMd5: nil,
-                    format: format ?? .epub, blossomSha256: nil, year: year,
+                    format: format ?? .epub, blossomSha256: nil, year: year, language: language,
                     rightsStatus: rightsStatus, license: license, licenseUrl: licenseUrl,
                     rightsSource: rightsSource)
     }
@@ -309,6 +310,7 @@ struct ReaderSession: Codable {
     let license: String?
     let licenseUrl: String?
     let rightsSource: String?
+    let updatedAt: Int64?
 
     init(
         bookId: String,
@@ -322,7 +324,8 @@ struct ReaderSession: Codable {
         rightsStatus: String? = nil,
         license: String? = nil,
         licenseUrl: String? = nil,
-        rightsSource: String? = nil
+        rightsSource: String? = nil,
+        updatedAt: Int64? = Int64(Date().timeIntervalSince1970 * 1_000)
     ) {
         self.bookId = bookId
         self.bookTitle = bookTitle
@@ -336,5 +339,22 @@ struct ReaderSession: Codable {
         self.license = license
         self.licenseUrl = licenseUrl
         self.rightsSource = rightsSource
+        self.updatedAt = updatedAt
+    }
+}
+
+struct ReaderSelection: Codable, Equatable {
+    let bookId: String
+    let format: BookFormat
+    let selectedAt: Int64
+
+    init(
+        bookId: String,
+        format: BookFormat,
+        selectedAt: Int64 = Int64(Date().timeIntervalSince1970 * 1_000)
+    ) {
+        self.bookId = bookId
+        self.format = format
+        self.selectedAt = selectedAt
     }
 }

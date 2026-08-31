@@ -137,8 +137,14 @@ protocol SpeechFileDownloading: Sendable {
 }
 
 struct URLSessionSpeechDownloader: SpeechFileDownloading {
+    private let session: URLSession
+
+    init(session: URLSession = .shared) {
+        self.session = session
+    }
+
     func download(from url: URL) async throws -> (URL, URLResponse) {
-        try await URLSession.shared.download(from: url)
+        try await session.download(from: url)
     }
 }
 
@@ -151,13 +157,16 @@ final class SpeechModelStore: ObservableObject {
 
     private let downloader: any SpeechFileDownloading
     private let fileManager: FileManager
+    private let sourceURLBuilder: (String, String, String) -> URL?
 
     init(
         downloader: any SpeechFileDownloading = URLSessionSpeechDownloader(),
-        fileManager: FileManager = .default
+        fileManager: FileManager = .default,
+        sourceURLBuilder: @escaping (String, String, String) -> URL? = SpeechModelCatalog.sourceURL
     ) {
         self.downloader = downloader
         self.fileManager = fileManager
+        self.sourceURLBuilder = sourceURLBuilder
     }
 
     func isInstalled(_ id: SpeechEngineID) -> Bool {
@@ -175,11 +184,7 @@ final class SpeechModelStore: ObservableObject {
         do {
             try fileManager.createDirectory(at: staging, withIntermediateDirectories: true)
             for file in model.files {
-                guard let source = SpeechModelCatalog.sourceURL(
-                    repository: model.repository,
-                    revision: model.revision,
-                    path: file.path
-                ) else {
+                guard let source = sourceURLBuilder(model.repository, model.revision, file.path) else {
                     throw URLError(.badURL)
                 }
                 let (temporary, response) = try await downloader.download(from: source)

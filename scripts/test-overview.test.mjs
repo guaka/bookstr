@@ -59,6 +59,14 @@ test('normalizes Istanbul and JaCoCo coverage', () => {
       regions: { count: 100, covered: 100 }, lines: { count: 100, covered: 100 },
     } },
   ] }] }).map(metric => metric.value), [70, 50, 80, 75]);
+  assert.equal(parseLLVM({ data: [{ files: [{
+    filename: '/repo/ios/BookstrIOS/Sources/Data/Store.swift',
+    summary: { regions: { count: 2, covered: 2 }, lines: { count: 4, covered: 2 } },
+    segments: [
+      [10, 1, 1, true, true, false], [10, 4, 0, true, true, false],
+      [11, 1, 0, true, true, false],
+    ],
+  }] }] }).find(metric => metric.label === 'Lines').value, 50);
 });
 
 test('normalizes Node test-runner coverage from TAP and spec reports', () => {

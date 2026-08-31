@@ -3,6 +3,44 @@ import XCTest
 @testable import BookstrIOS
 
 final class AppContainerTests: XCTestCase {
+    @MainActor
+    func testComicZoomStartsFittedAndClampsToSupportedRange() {
+        let controller = ComicReaderController()
+        XCTAssertEqual(controller.zoomScale, ComicReaderController.fitZoom)
+        controller.updateZoom(99)
+        XCTAssertEqual(controller.zoomScale, ComicReaderController.maximumZoom)
+        controller.updateZoom(0)
+        XCTAssertEqual(controller.zoomScale, ComicReaderController.minimumZoom)
+        controller.fitPage()
+        XCTAssertEqual(controller.zoomScale, ComicReaderController.fitZoom)
+    }
+
+    @MainActor
+    func testLibraryPullDownFilterMatchesBookMetadata() {
+        let epub = CatalogBook(
+            id: "epub", title: "EPUB", author: "Author", epubUrl: "https://example.org/book.epub",
+            coverUrl: nil, sourceUrl: nil, isbn: nil, libvaultMd5: nil, format: .epub,
+            blossomSha256: nil, year: nil
+        )
+        let cbz = CatalogBook(
+            id: "cbz", title: "Comic", author: "Artist", epubUrl: "https://example.org/book.cbz",
+            coverUrl: nil, sourceUrl: nil, isbn: nil, libvaultMd5: nil, format: .cbz,
+            blossomSha256: nil, year: nil, language: "ja"
+        )
+        let external = ExternalFavorite(
+            key: "external", title: "External comic", author: "Artist", year: nil,
+            url: nil, isbn: nil, libvaultMd5: nil, format: "CBZ",
+            blossomSha256: nil, blossomUrl: nil
+        )
+
+        XCTAssertEqual(LibraryViewModel.filtered([epub, cbz], by: "comic artist").map(\.id), ["cbz"])
+        XCTAssertEqual(LibraryViewModel.filtered([epub, cbz], by: "CBZ").map(\.id), ["cbz"])
+        XCTAssertEqual(LibraryViewModel.filtered([epub, cbz], by: "JA").map(\.id), ["cbz"])
+        XCTAssertEqual(LibraryViewModel.filtered([epub, cbz], by: "  ").map(\.id), ["epub", "cbz"])
+        XCTAssertEqual(LibraryViewModel.filtered([external], by: "external artist").map(\.key), ["external"])
+        XCTAssertTrue(LibraryViewModel.filtered([external], by: "PDF").isEmpty)
+    }
+
     func testBootstrapProvidesWordNavigationState() {
         let container = AppContainer.bootstrap()
 

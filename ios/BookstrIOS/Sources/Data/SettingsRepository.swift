@@ -14,6 +14,7 @@ final class SettingsRepository: ObservableObject {
         static let pubkey = "pubkey_hex"
         static let signerPackage = "signer_package"
         static let readerSession = "reader_session"
+        static let readerSelection = "reader_selection"
         static let nip46BunkerURL = "nip46_bunker_url"
         static let nip46ClientSecret = "nip46_client_secret"
         static let nip46ClientPubkey = "nip46_client_pubkey"
@@ -208,6 +209,17 @@ final class SettingsRepository: ObservableObject {
 
     func clearReaderSession() {
         defaults.removeObject(forKey: Keys.readerSession)
+    }
+
+    func saveReaderSelection(_ selection: ReaderSelection) {
+        guard !selection.bookId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              let data = try? JSONEncoder().encode(selection) else { return }
+        defaults.set(data, forKey: Keys.readerSelection)
+    }
+
+    func readerSelection() -> ReaderSelection? {
+        guard let data = defaults.data(forKey: Keys.readerSelection) else { return nil }
+        return try? JSONDecoder().decode(ReaderSelection.self, from: data)
     }
 
     func connectNip46(pubkeyHex: String, bunkerURL: String, clientSecret: String, clientPubkey: String? = nil) {
