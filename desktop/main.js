@@ -1233,6 +1233,33 @@ function setupIpcHandlers() {
     });
     return result;
   });
+  ipcMain.handle('bookstr-desktop-library-acquire-libgen', async (event, request) => {
+    if (!isRecord(request) || !isRecord(request.book)) throw new Error('Invalid LibGen torrent acquisition request.');
+    const bookId = String(request.book.md5 || '').trim().toLowerCase();
+    if (/^[a-f0-9]{32}$/.test(bookId)) {
+      try {
+        await resolveRegisteredLibraryFile(bookId);
+        const localReader = getLibraryStore().openReader(bookId);
+        if (localReader?.token) {
+          return {
+            book: getLibraryStore().getBook(bookId),
+            source: 'local',
+            url: `${APP_ORIGIN}/api/library-file/${localReader.token}`,
+          };
+        }
+      } catch {
+        // Missing or changed local files fall through to a fresh torrent fetch.
+      }
+    }
+    const result = await getAcquisitionManager().acquireLibgen(request.book, {
+      onProgress: payload => {
+        if (!event.sender.isDestroyed()) event.sender.send('bookstr-desktop-acquisition-progress', payload);
+      },
+    });
+    const reader = getLibraryStore().openReader(result.book.id);
+    if (!reader?.token) throw new Error('Downloaded torrent book could not be opened.');
+    return { ...result, url: `${APP_ORIGIN}/api/library-file/${reader.token}` };
+  });
   ipcMain.handle('bookstr-desktop-device-status', () => getDevicePairing().status());
   ipcMain.handle('bookstr-desktop-device-registry', () => loadTrustedDeviceRegistry());
   ipcMain.handle('bookstr-desktop-device-announce', (_event, options) => getDevicePairing().announce(isRecord(options) ? options : {}));

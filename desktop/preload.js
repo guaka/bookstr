@@ -244,6 +244,9 @@ const desktopBridge = {
     acquire(record, options = {}) {
       return ipcRenderer.invoke('bookstr-desktop-library-acquire', { record, ...options });
     },
+    acquireLibgen(book) {
+      return ipcRenderer.invoke('bookstr-desktop-library-acquire-libgen', { book });
+    },
     onAcquisitionProgress(callback) {
       if (typeof callback !== 'function') return () => {};
       acquisitionProgressCallbacks.add(callback);

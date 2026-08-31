@@ -6,7 +6,7 @@ const fsp = require('node:fs/promises');
 const path = require('node:path');
 const { Readable } = require('node:stream');
 const test = require('node:test');
-const { AcquisitionManager } = require('../../acquisition-manager');
+const { AcquisitionManager, libgenTorrentMetadataURL } = require('../../acquisition-manager');
 const { LibraryImporter } = require('../../library-import');
 const { LibraryStore } = require('../../library-store');
 
@@ -47,6 +47,52 @@ test('acquisition downloads, verifies, imports, and registers a book', () => wit
   assert.equal(store.getBook('gutenberg:g-1').sha256, result.sha256);
   assert.equal(store.downloads()[0].status, 'ready');
 }));
+
+test('LibGen acquisition resolves the repository batch and imports only the selected book', () => withManager(async ({ manager, store, root }) => {
+  const md5 = 'a'.repeat(32);
+  const body = Buffer.from('%PDF-book bytes');
+  let metadataRequest = '';
+  manager.fetch = async url => {
+    metadataRequest = url;
+    return {
+      ok: true,
+      status: 200,
+      headers: new Headers({ 'content-length': '14' }),
+      arrayBuffer: async () => Buffer.from('d4:test4:datae'),
+    };
+  };
+  let requestedFile = '';
+  let destroyed = 0;
+  manager.torrentBridge = {
+    async downloadSelected(_metadata, options) {
+      requestedFile = options.fileName;
+      const filePath = path.join(options.path, 'r_2412000', md5);
+      await fsp.mkdir(path.dirname(filePath), { recursive: true });
+      await fsp.writeFile(filePath, body);
+      options.onProgress({ bytes: body.length, totalBytes: body.length });
+      return { filePath, torrent: { destroy() { destroyed += 1; } } };
+    },
+  };
+  const result = await manager.acquireLibgen({
+    md5,
+    id: 2412930,
+    title: 'Torrent PDF',
+    extension: 'pdf',
+    filesize_bytes: body.length,
+  });
+  assert.equal(metadataRequest, libgenTorrentMetadataURL(2412930));
+  assert.equal(requestedFile, md5);
+  assert.equal(result.source, 'torrent');
+  assert.equal(store.getBook(md5).sha256, result.sha256);
+  assert.equal(store.downloads()[0].status, 'ready');
+  assert.equal(destroyed, 1);
+  assert.equal((await fsp.readdir(path.join(root, 'staging'))).length, 0);
+}));
+
+test('LibGen torrent metadata uses the containing 1,000-book batch', () => {
+  assert.match(libgenTorrentMetadataURL(2412930), /\/r_2412000\.torrent$/);
+  assert.throws(() => libgenTorrentMetadataURL(0), /positive integer/);
+});
 
 test('acquisition retries the next eligible source after a checksum failure', () => withManager(async ({ manager, store }) => {
   let calls = 0;

@@ -22,6 +22,7 @@ const {
   findBookByReadUrl,
   metadataEndpointForReadUrl,
   torrentMetadataForBook,
+  libgenTorrentMetadataForBook,
   canonicalReadUrl,
   canonicalCatalogUrl,
   bookIdentity,
@@ -49,6 +50,15 @@ test('normalizes portable torrent metadata and ignores empty descriptors', () =>
     torrentFile: 'book.torrent',
     announce: ['wss://tracker.example'],
   });
+});
+
+test('recognizes LibGen repository torrent metadata from catalog identifiers', () => {
+  assert.deepEqual(libgenTorrentMetadataForBook({
+    md5: 'a'.repeat(32),
+    libgenId: 2412930,
+  }), { md5: 'a'.repeat(32), libgenId: 2412930, batch: 2412000 });
+  assert.equal(libgenTorrentMetadataForBook({ md5: 'a'.repeat(32) }), null);
+  assert.equal(libgenTorrentMetadataForBook({ md5: 'not-an-md5', libgenId: 10 }), null);
 });
 
 test('normalizes explicit rights evidence without inferring from age or source', () => {

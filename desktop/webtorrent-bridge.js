@@ -142,13 +142,82 @@ class WebTorrentBridge {
     });
   }
 
-  async addPublic(torrentId, { path: downloadPath, announce } = {}) {
+  async addPublic(torrentId, { path: downloadPath, announce, deselect = false } = {}) {
     const client = await this.start();
     const options = {
       path: downloadPath ? safePath(downloadPath) : this.dataDir,
       announce: Array.isArray(announce) && announce.length ? announce : this.trackers,
+      deselect: deselect === true,
     };
     return client.add(torrentId, options);
+  }
+
+  async downloadSelected(torrentId, { path: downloadPath, fileName, signal, maxBytes, onProgress } = {}) {
+    const wantedName = String(fileName || '').trim().toLowerCase();
+    if (!wantedName || wantedName.includes('/') || wantedName.includes('\\')) {
+      throw new TypeError('selected torrent file name is invalid');
+    }
+    const torrent = await this.addPublic(torrentId, { path: downloadPath, deselect: true });
+    try {
+      const waitForMetadata = async () => {
+        if (Array.isArray(torrent.files) && torrent.files.length) return;
+        if (typeof torrent.once !== 'function') throw new Error('torrent did not expose metadata events');
+        await new Promise((resolve, reject) => {
+          const finish = error => {
+            signal?.removeEventListener?.('abort', abort);
+            if (error) reject(error); else resolve();
+          };
+          const abort = () => finish(new Error('torrent download aborted'));
+          torrent.once('metadata', () => finish());
+          torrent.once('error', finish);
+          signal?.addEventListener?.('abort', abort, { once: true });
+        });
+      };
+      await waitForMetadata();
+      const file = torrent.files.find(candidate => path.basename(String(candidate.path || candidate.name || '')).toLowerCase() === wantedName);
+      if (!file) throw new Error(`${wantedName} is absent from the repository torrent`);
+      const limit = Number(maxBytes);
+      if (Number.isFinite(limit) && limit > 0 && Number(file.length) > limit) {
+        throw new Error('selected torrent file exceeds the maximum acquisition size');
+      }
+      if (typeof file.select !== 'function') throw new Error('selected torrent file cannot be downloaded');
+      if (signal?.aborted) throw new Error('torrent download aborted');
+      file.select(10);
+      const report = () => onProgress?.({
+        bytes: Number(file.downloaded || 0),
+        totalBytes: Number(file.length || 0),
+        peers: Array.isArray(torrent.wires) ? torrent.wires.length : Number(torrent.numPeers || 0),
+      });
+      report();
+      if (!file.done) {
+        await new Promise((resolve, reject) => {
+          let settled = false;
+          const finish = error => {
+            if (settled) return;
+            settled = true;
+            torrent.removeListener?.('download', report);
+            signal?.removeEventListener?.('abort', abort);
+            if (error) reject(error); else resolve();
+          };
+          const abort = () => finish(new Error('torrent download aborted'));
+          torrent.on?.('download', report);
+          file.once?.('done', () => finish());
+          torrent.once?.('error', error => finish(error));
+          signal?.addEventListener?.('abort', abort, { once: true });
+        });
+      }
+      report();
+      const root = safePath(torrent.path || downloadPath || this.dataDir);
+      const filePath = path.resolve(root, String(file.path || file.name || ''));
+      const relative = path.relative(root, filePath);
+      if (!relative || relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
+        throw new Error('selected torrent file escaped its download directory');
+      }
+      return { torrent, file, filePath };
+    } catch (error) {
+      try { torrent.destroy?.(); } catch { /* best effort cleanup */ }
+      throw error;
+    }
   }
 
   async addPrivate(torrentId, { path: downloadPath, peer } = {}) {

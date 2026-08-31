@@ -3897,6 +3897,7 @@
           const provider = String(item.source || source).toLowerCase();
           const isProviderQualified = /^[a-z][a-z0-9+.-]*:/i.test(rawId);
           const md5 = isMd5(rawId) || isProviderQualified ? rawId : `${provider}:${rawId}`;
+          const libgenId = isMd5(rawId) ? Number(item.libgen_id || item.libgenId || item.id || 0) : 0;
           const ext = String(item.extension || item.format || item.media_type || item.type || (provider === 'gutenberg' ? 'epub' : '')).replace(/^\./, '').toLowerCase();
           const directReadUrl = provider === 'gutenberg' && item.id
             ? `${BOOKS_API_BASE}/books/${encodeURIComponent(item.id)}/download`
@@ -3932,6 +3933,7 @@
             torrentId: item.torrent_id || item.torrentId || item.magnet_uri || item.magnetURI || item.torrent?.magnetURI || '',
             torrentFile: item.torrent_file || item.torrentFile || item.torrent?.torrentFile || '',
             torrentAnnounce: item.torrent_announce || item.torrentAnnounce || item.torrent?.announce || [],
+            libgenId,
             source: item.source || source,
             sourceNativeId: item.source_native_id || item.sourceNativeId || '',
             sourceUrl: item.source_url || item.sourceUrl || '',
@@ -5013,6 +5015,7 @@
       function isBookReadableNow(book) {
         const cached = cachedBookKeys.has(bookCacheKey(book, book.readUrl || book.url));
         return cached
+          || (isDesktopMode && Boolean(BookMetadata.torrentMetadataForBook(book) || BookMetadata.libgenTorrentMetadataForBook(book)))
           || /^https:\/\//i.test(String(book.blossomUrl || ''))
           || Boolean(BookMetadata.canonicalReadUrl(book, BOOKS_API_BASE));
       }
@@ -5058,11 +5061,12 @@
           const canOpen = options.routeOnly || (options.canOpen ? options.canOpen(book) : Boolean(options.onOpen));
           const readUrl = book.readUrl || book.url || '';
           const authorQuery = authorSearchName(book.authors);
-          const availabilitySources = BookMetadata.availabilitySourcesForBook(book, isCached(book));
+          const availabilitySources = BookMetadata.availabilitySourcesForBook(book, isCached(book))
+            .filter(source => !isDesktopMode || source !== 'Blossom');
           const availability = isCached(book)
             ? 'Cached'
-            : availabilitySources.includes('Blossom')
-              ? 'Blossom'
+            : availabilitySources.includes('Torrent')
+              ? 'Torrent'
               : availabilitySources.includes('Gutenberg')
                 ? 'Gutenberg'
                 : availabilitySources.find(item => item !== 'Metadata only') || '—';
@@ -5602,17 +5606,19 @@
         const cachedFormat = await bookFormatForBlob(cached);
         if (routeGeneration !== readRouteGeneration) return;
         if (cachedFormat) book = { ...book, extension: cachedFormat, format: cachedFormat };
-        if (!readPath && !cached) {
+        const torrentAvailable = isDesktopMode
+          && Boolean(BookMetadata.torrentMetadataForBook(book) || BookMetadata.libgenTorrentMetadataForBook(book));
+        if (!readPath && !cached && !torrentAvailable) {
           updateReadMetadataFallbackDiagnostics(book, {
             readPath,
             cacheStatus: 'No local cached copy found',
-            error: 'No readable download or Blossom URL is available for this record.',
+            error: 'No readable download or torrent is available for this record.',
           });
           if (isMd5(bookRef) && state.settings.useNip7 && nostrSigner) {
             pendingReadBookId = String(bookRef).toLowerCase();
             status.textContent = 'Looking for this book in your Nostr library…';
           } else {
-            status.textContent = 'No cached or Blossom copy was found for this book.';
+            status.textContent = 'No cached or torrent copy was found for this book.';
           }
           return;
         }
@@ -6054,7 +6060,34 @@
       }
 
       async function fetchDesktopTorrentCopy(book) {
-        if (!isDesktopMode || !desktopBridge?.transfers?.downloadPublic) return null;
+        if (!isDesktopMode) return null;
+        const libgenTorrent = BookMetadata.libgenTorrentMetadataForBook(book);
+        if (libgenTorrent && desktopBridge?.library?.acquireLibgen) {
+          status.textContent = `Finding torrent peers for ${book.title || 'book'}…`;
+          const stopProgress = desktopBridge.library.onAcquisitionProgress?.(progress => {
+            if (String(progress?.bookId || '').toLowerCase() !== libgenTorrent.md5) return;
+            const total = Number(progress.totalBytes || 0);
+            const percent = total > 0 ? ` · ${Math.min(100, Math.round(Number(progress.bytes || 0) / total * 100))}%` : '';
+            const peers = Number(progress.peers || 0);
+            status.textContent = peers > 0
+              ? `Downloading ${book.title || 'book'} from ${peers} torrent peer${peers === 1 ? '' : 's'}${percent}`
+              : `Finding torrent peers for ${book.title || 'book'}${percent}`;
+          }) || (() => {});
+          let result;
+          try {
+            result = await desktopBridge.library.acquireLibgen(book);
+          } finally {
+            stopProgress();
+          }
+          if (!result?.url) throw new Error('The torrent download did not produce a readable file.');
+          const response = await fetch(result.url);
+          if (!response.ok) throw new Error(`Torrent file read failed (${response.status}).`);
+          const blob = await response.blob();
+          if (result.sha256) book.sha256 = result.sha256;
+          await enforceBlobSha256(book, blob);
+          return blob;
+        }
+        if (!desktopBridge?.transfers?.downloadPublic) return null;
         const torrent = BookMetadata.torrentMetadataForBook(book);
         const sha256 = normalizeSha256(book?.sha256 || book?.blossomSha256);
         if (!torrent || !sha256 || !book?.md5) return null;
@@ -6598,9 +6631,11 @@
 
         try {
           let torrentBlob = null;
+          let torrentError = null;
           try {
             torrentBlob = await fetchDesktopTorrentCopy(book);
           } catch (error) {
+            torrentError = error;
             console.warn('Public torrent unavailable; using network fallback.', error);
           }
           if (torrentBlob) {
@@ -6610,6 +6645,7 @@
             else if (torrentFormat === 'cbz' || torrentFormat === 'cbr') await displayComic(torrentBlob, book, readPath, openGeneration, torrentFormat);
             else await displayEpub(torrentBlob, book, readPath, openGeneration);
           } else {
+            if (torrentError && !readPath && !book.blossomSha256) throw torrentError;
             if (book.blossomSha256) status.textContent = `Authorizing ${book.title || 'book'} download…`;
             const blossomBlob = book.blossomSha256 ? await fetchBlossomCopy(book, readPath) : null;
             if (openGeneration !== readerOpenGeneration) return;

@@ -1,6 +1,7 @@
 'use strict';
 
 const assert = require('node:assert/strict');
+const { EventEmitter } = require('node:events');
 const test = require('node:test');
 const {
   WebTorrentBridge,
@@ -117,4 +118,44 @@ test('private handoff waits for asynchronous metadata and bridge cleanup is safe
 
   const noPeerBridge = new WebTorrentBridge({ clientFactory: async () => ({ add: () => ({ infoHash: 'a'.repeat(40) }) }) });
   await assert.rejects(() => noPeerBridge.addPrivate('private-id', { peer: '192.0.2.12:6881' }), /does not support peer connections/);
+});
+
+test('repository torrent downloads only the selected MD5 file', async () => {
+  const log = { adds: [] };
+  const wanted = new EventEmitter();
+  wanted.path = `r_1000/${'a'.repeat(32)}`;
+  wanted.length = 42;
+  wanted.downloaded = 0;
+  wanted.done = false;
+  wanted.select = priority => {
+    log.priority = priority;
+    setImmediate(() => {
+      wanted.downloaded = wanted.length;
+      wanted.done = true;
+      wanted.emit('done');
+    });
+  };
+  const torrent = new EventEmitter();
+  torrent.path = '/tmp/bookstr-select';
+  torrent.files = [{ path: `r_1000/${'b'.repeat(32)}`, length: 10 }, wanted];
+  const bridge = new WebTorrentBridge({
+    clientFactory: async () => ({
+      torrents: [],
+      add(id, options) {
+        log.adds.push({ id, options });
+        return torrent;
+      },
+    }),
+  });
+  const progress = [];
+  const result = await bridge.downloadSelected(Buffer.from('torrent metadata'), {
+    path: '/tmp/bookstr-select',
+    fileName: 'a'.repeat(32),
+    onProgress: value => progress.push(value),
+  });
+  assert.equal(log.adds[0].options.deselect, true);
+  assert.equal(log.priority, 10);
+  assert.equal(result.file, wanted);
+  assert.equal(result.filePath, `/tmp/bookstr-select/r_1000/${'a'.repeat(32)}`);
+  assert.deepEqual(progress.at(-1), { bytes: 42, totalBytes: 42, peers: 0 });
 });

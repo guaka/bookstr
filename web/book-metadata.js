@@ -287,6 +287,13 @@
     return { torrentId, torrentFile, announce };
   }
 
+  function libgenTorrentMetadataForBook(book) {
+    const md5 = String(book?.md5 || book?.libvaultMd5 || '').trim().toLowerCase();
+    const libgenId = Number(book?.libgenId || book?.libgen_id || book?.sourceNativeId || book?.source_native_id || '');
+    if (!/^[a-f0-9]{32}$/.test(md5) || !Number.isSafeInteger(libgenId) || libgenId <= 0) return null;
+    return { md5, libgenId, batch: Math.floor(libgenId / 1000) * 1000 };
+  }
+
   function canonicalReadUrl(book, apiBase = 'https://books-api.guaka.org/api') {
     const gutenbergId = String(book?.md5 || book?.id || '').match(/^gutenberg:(\d+)$/i)?.[1]
       || (String(book?.source || '').toLowerCase() === 'gutenberg' && /^\d+$/.test(String(book?.sourceNativeId || ''))
@@ -321,6 +328,7 @@
     const readUrl = String(book?.readUrl || book?.url || '');
     const available = [];
     if (source.includes('gutenberg') || /^gutenberg:\d+$/i.test(String(book?.md5 || '')) || /\/api\/books\/\d+(?:\/download)?(?:\?|$)/i.test(readUrl)) available.push('Gutenberg');
+    if (torrentMetadataForBook(book) || libgenTorrentMetadataForBook(book)) available.push('Torrent');
     if (book?.blossomUrl || book?.blossomSha256 || source.includes('blossom')) available.push('Blossom');
     if (readUrl && source.includes('internet-archive')) available.push('Internet Archive');
     if (readUrl && source === 'oapen') available.push('OAPEN');
@@ -461,6 +469,7 @@
       torrentId: incoming.torrentId || incoming.torrent_id || incoming.magnetURI || incoming.magnet_uri || incoming.torrent?.magnetURI || '',
       torrentFile: incoming.torrentFile || incoming.torrent_file || incoming.torrent?.torrentFile || '',
       torrentAnnounce: incoming.torrentAnnounce || incoming.torrent_announce || incoming.torrent?.announce || [],
+      libgenId: incoming.libgenId || incoming.libgen_id || incoming.sourceNativeId || incoming.source_native_id || '',
       ...normalizeRights(incoming),
     };
     for (const [field, value] of Object.entries(fields)) {
@@ -553,6 +562,7 @@
     metadataEndpointForReadUrl,
     desktopBlossomProxyUrl,
     torrentMetadataForBook,
+    libgenTorrentMetadataForBook,
     canonicalReadUrl,
     canonicalCatalogUrl,
     availabilityForBook,

@@ -8,6 +8,8 @@ const { Readable, Transform } = require('node:stream');
 const { pipeline } = require('node:stream/promises');
 
 const DEFAULT_MAX_ACQUISITION_BYTES = 512 * 1024 * 1024;
+const LIBGEN_TORRENT_METADATA_BASE_URL = 'https://annas-archive.gl/dyn/small_file/torrents/external/libgen_rs_non_fic';
+const MAX_TORRENT_METADATA_BYTES = 8 * 1024 * 1024;
 
 let catalogModulePromise;
 function catalogModule() {
@@ -164,6 +166,13 @@ function destroyTorrent(torrent) {
   try { torrent?.destroy?.(); } catch { /* best effort cleanup */ }
 }
 
+function libgenTorrentMetadataURL(libgenId, baseURL = LIBGEN_TORRENT_METADATA_BASE_URL) {
+  const id = Number(libgenId);
+  if (!Number.isSafeInteger(id) || id <= 0) throw new TypeError('LibGen ID must be a positive integer');
+  const batch = Math.floor(id / 1000) * 1000;
+  return `${String(baseURL).replace(/\/$/, '')}/r_${batch}.torrent`;
+}
+
 class AcquisitionManager {
   constructor({ store, importer, torrentBridge, fetchImpl = globalThis.fetch, stagingRoot, maxAttempts = 3, maxBytes = DEFAULT_MAX_ACQUISITION_BYTES, trustedOrigins = {} } = {}) {
     if (!store || !importer || !stagingRoot) throw new TypeError('store, importer, and stagingRoot are required');
@@ -178,6 +187,77 @@ class AcquisitionManager {
       ? Number(maxBytes)
       : DEFAULT_MAX_ACQUISITION_BYTES;
     this.trustedOrigins = trustedOrigins;
+  }
+
+  async acquireLibgen(book, { signal, onProgress } = {}) {
+    if (!this.torrentBridge?.downloadSelected) throw new Error('torrent bridge is not configured');
+    const md5 = String(book?.md5 || '').trim().toLowerCase();
+    if (!/^[a-f0-9]{32}$/.test(md5)) throw new TypeError('LibGen torrent acquisition requires an MD5 record identifier');
+    const libgenId = Number(book?.libgenId || book?.libgen_id || book?.id);
+    const extension = extensionFor(book?.extension || book?.format);
+    const metadataURL = libgenTorrentMetadataURL(libgenId);
+    const expectedSize = Number(book?.filesize_bytes || book?.filesize || book?.size || 0);
+    if (expectedSize && (!Number.isSafeInteger(expectedSize) || expectedSize < 0 || expectedSize > this.maxBytes)) {
+      throw new Error('catalog file size is invalid or exceeds the maximum acquisition size');
+    }
+    const fields = {
+      id: md5,
+      md5,
+      title: String(book?.title || ''),
+      authors: String(book?.authors || book?.author || ''),
+      language: String(book?.language || ''),
+      year: String(book?.year || ''),
+      extension,
+      isbn: String(book?.isbn || ''),
+      source: String(book?.source || 'libvault'),
+      sourceNativeId: String(libgenId),
+      sourceUrl: metadataURL,
+      rights_status: String(book?.rights_status || book?.rightsStatus || 'unknown'),
+      license: String(book?.license || ''),
+      license_url: String(book?.license_url || book?.licenseUrl || ''),
+      rights_source: String(book?.rights_source || book?.rightsSource || ''),
+      filesize_bytes: expectedSize,
+    };
+    this.store.upsertBook(fields);
+    this.store.setDownload({ bookId: md5, status: 'finding-peers', bytes: 0, totalBytes: expectedSize, source: 'torrent' });
+    await fsp.mkdir(this.stagingRoot, { recursive: true });
+    const stageDir = await fsp.mkdtemp(path.join(this.stagingRoot, 'libgen-torrent-'));
+    let torrent;
+    try {
+      const response = await this.fetch(metadataURL, { signal, redirect: 'error' });
+      if (!response?.ok) throw new Error(`torrent metadata returned HTTP ${response?.status || 0}`);
+      const declaredLength = responseLength(response);
+      if (declaredLength !== null && declaredLength > MAX_TORRENT_METADATA_BYTES) throw new Error('torrent metadata is too large');
+      const metadata = Buffer.from(await response.arrayBuffer());
+      if (!metadata.length || metadata.length > MAX_TORRENT_METADATA_BYTES || metadata[0] !== 0x64) {
+        throw new Error('torrent metadata is invalid');
+      }
+      const selected = await this.torrentBridge.downloadSelected(metadata, {
+        path: stageDir,
+        fileName: md5,
+        signal,
+        maxBytes: this.maxBytes,
+        onProgress: progress => {
+          this.store.setDownload({ bookId: md5, status: 'downloading', bytes: progress.bytes, totalBytes: progress.totalBytes, source: 'torrent' });
+          onProgress?.({ bookId: md5, source: 'torrent', ...progress });
+        },
+      });
+      torrent = selected.torrent;
+      const stats = await fsp.stat(selected.filePath);
+      if (!stats.isFile() || stats.size <= 0 || stats.size > this.maxBytes) throw new Error('downloaded torrent file is invalid');
+      if (expectedSize && stats.size !== expectedSize) throw new Error('torrent file size does not match the catalog');
+      const imported = await this.importer.importFile(selected.filePath, { extension });
+      const storedBook = this.store.upsertBook({ ...fields, sha256: imported.sha256, filesize_bytes: imported.size });
+      this.store.registerLibraryFile({ bookId: md5, relativePath: imported.relativePath, sizeBytes: imported.size, sha256: imported.sha256 });
+      this.store.setDownload({ bookId: md5, status: 'ready', bytes: imported.size, totalBytes: imported.size, source: 'torrent', relativePath: imported.relativePath });
+      return { book: storedBook, source: 'torrent', sha256: imported.sha256, size: imported.size, extension: imported.extension };
+    } catch (error) {
+      this.store.setDownload({ bookId: md5, status: 'failed', source: 'torrent', error: error?.message || String(error) });
+      throw error;
+    } finally {
+      destroyTorrent(torrent);
+      await fsp.rm(stageDir, { recursive: true, force: true }).catch(() => {});
+    }
   }
 
   async acquire(record, { format, preferTorrent = true, includeRestricted = false, signal, onProgress } = {}) {
@@ -309,4 +389,6 @@ module.exports = {
   extensionFor,
   privateHostname,
   safePath,
+  libgenTorrentMetadataURL,
+  LIBGEN_TORRENT_METADATA_BASE_URL,
 };
