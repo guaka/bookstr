@@ -21,6 +21,7 @@ const {
   normalizeReadUrl,
   findBookByReadUrl,
   metadataEndpointForReadUrl,
+  torrentMetadataForBook,
   canonicalReadUrl,
   canonicalCatalogUrl,
   bookIdentity,
@@ -34,6 +35,21 @@ const {
   enrichBookMetadata,
   isbnForBook,
 } = globalThis.BookMetadata;
+
+test('normalizes portable torrent metadata and ignores empty descriptors', () => {
+  assert.equal(torrentMetadataForBook({}), null);
+  assert.deepEqual(torrentMetadataForBook({
+    torrentDescriptor: {
+      magnetUri: ' magnet:?xt=urn:btih:book ',
+      torrentFile: ' book.torrent ',
+      announce: [' wss://tracker.example ', '', null],
+    },
+  }), {
+    torrentId: 'magnet:?xt=urn:btih:book',
+    torrentFile: 'book.torrent',
+    announce: ['wss://tracker.example'],
+  });
+});
 
 test('normalizes explicit rights evidence without inferring from age or source', () => {
   assert.deepEqual(normalizeRights({ copyright: false, source: 'gutenberg' }), {
@@ -894,6 +910,11 @@ test('sortBooks supports descending cached ordering', () => {
   const ordered = sortBooks(books, 'cached', 'desc', book => book?.isCached === true);
   assert.equal(ordered[0].title, 'Cached old');
   assert.equal(ordered[1].title, 'Fresh favorite');
+});
+
+test('sortBooks uses an uncached default when no cache lookup is provided', () => {
+  const books = [{ title: 'Zulu' }, { title: 'Alpha' }];
+  assert.deepEqual(sortBooks(books, 'cached').map(book => book.title), ['Alpha', 'Zulu']);
 });
 
 test('bookIdentity strips URL fragments when using URL fallback', () => {

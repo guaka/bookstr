@@ -44,6 +44,24 @@ test('rejects expired, tampered, and misaddressed wraps', async () => {
   assert.equal(await unwrapDeviceControlWrap({ ...wrapped, content: `${wrapped.content}tampered` }, { senderPubkey, recipientSigner, tools, now: 1000 }), null);
 });
 
+test('rejects a wrap whose inner rumor cannot be decrypted', async () => {
+  const wrapped = await createDeviceControlWrap(createManifestRequest({ requestId: 'm-inner' }), {
+    deviceSecret: senderSecret, recipientPubkey, tools, now: 1000,
+  });
+  let decryptions = 0;
+  const signer = {
+    ...recipientSigner,
+    nip44: {
+      decrypt: async (...args) => {
+        decryptions += 1;
+        if (decryptions === 2) throw new Error('corrupt rumor');
+        return recipientSigner.nip44.decrypt(...args);
+      },
+    },
+  };
+  assert.equal(await unwrapDeviceControlWrap(wrapped, { senderPubkey, recipientSigner: signer, tools, now: 1000 }), null);
+});
+
 test('publishes once to each secure relay and requires one acceptance', async () => {
   const calls = [];
   const result = await publishDeviceControlMessage(createManifestRequest({ requestId: 'm-3' }), {
@@ -57,4 +75,3 @@ test('publishes once to each secure relay and requires one acceptance', async ()
   assert.deepEqual(calls.map(call => call[0]), ['wss://one.example', 'wss://two.example']);
   assert.equal(result.wrap.kind, 1059);
 });
-

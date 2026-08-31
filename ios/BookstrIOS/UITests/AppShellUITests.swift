@@ -95,6 +95,20 @@ final class AppShellUITests: XCTestCase {
         XCTAssertTrue(app.buttons["library-book-ui-test-alice-pdf"].waitForExistence(timeout: 5))
     }
 
+    func testOpeningEPUBShowsReaderControlsAndChapter() throws {
+        let epub = app.buttons["library-book-ui-test-alice-epub"]
+        XCTAssertTrue(epub.waitForExistence(timeout: 5))
+        epub.tap()
+
+        XCTAssertTrue(app.buttons["reader-back"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.buttons["reader-speech-toggle"].waitForExistence(timeout: 5))
+        XCTAssertTrue(
+            app.staticTexts.matching(
+                NSPredicate(format: "label CONTAINS[c] %@", "Down the Rabbit-Hole")
+            ).firstMatch.waitForExistence(timeout: 10)
+        )
+    }
+
     private func selectTab(_ label: String) {
         let tab = app.tabBars.buttons[label]
         XCTAssertTrue(tab.waitForExistence(timeout: 5), "Missing " + label + " tab")
