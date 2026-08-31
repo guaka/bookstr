@@ -1150,8 +1150,8 @@
       .settings-range .setting-copy { grid-column: 1 / -1; }
       .settings-range input[type="range"] { width: 100%; height: auto; }
       .settings-range output { min-width: 3.2rem; text-align: right; font-variant-numeric: tabular-nums; }
-      .optional-voices-note { margin: 0.45rem 0 0; }
-      .optional-voices-note a { color: var(--reading-progress); }
+      .optional-voices-note { display: flex; flex-wrap: wrap; gap: 0.45rem; margin: 0.45rem 0 0; }
+      .optional-voices-note .speech-model-delete { color: #b42318; border-color: #b42318; }
       .settings-status {
         margin: 0;
         padding: 0.62rem 0.68rem;
@@ -1160,11 +1160,11 @@
         color: var(--note-text, #666);
         font-size: 0.77rem;
       }
-      .opds-feed-input {
-        width: 100%;
-        min-height: 4.8rem;
-        box-sizing: border-box;
-        resize: vertical;
+      #desktop-signer-status.signer-connected::before {
+        content: '✓';
+        margin-right: 0.38rem;
+        color: #16803c;
+        font-weight: 800;
       }
       .desktop-signer {
         display: grid;
@@ -1224,7 +1224,6 @@
       body.desktop-mode .settings-tab .setting-option,
       body.desktop-mode .settings-tab .desktop-signer-primary,
       body.desktop-mode .settings-tab .settings-status,
-      body.desktop-mode .settings-tab .opds-feed-input,
       body.desktop-mode .settings-tab .dictionary-pack {
         border: 1px solid color-mix(in srgb, var(--settings-border, #ddd) 78%, transparent);
         border-radius: 0.7rem;
@@ -1264,8 +1263,7 @@
       body.desktop-mode .settings-tab .settings-preferences,
       body.desktop-mode .settings-tab .settings-appearance,
       body.desktop-mode .settings-tab .settings-nostr,
-      body.desktop-mode .settings-tab .settings-dictionaries,
-      body.desktop-mode .settings-tab .settings-opds {
+      body.desktop-mode .settings-tab .settings-dictionaries {
         grid-column: auto;
         grid-row: auto;
         margin: 0;
@@ -1677,8 +1675,34 @@
         overflow-wrap: anywhere;
         white-space: pre-wrap;
       }
+      .device-transfer-panel {
+        display: grid;
+        gap: 0.9rem;
+        margin-bottom: 1rem;
+        padding: 1rem;
+        border: 1px solid var(--card-border);
+        border-radius: 0.85rem;
+        background: var(--card-bg);
+      }
+      .device-transfer-panel h3, .device-transfer-panel h4 { margin: 0; }
+      .device-transfer-summary { color: var(--muted); font-size: 0.9rem; }
+      .device-transfer-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+      .device-transfer-devices { display: grid; gap: 0.45rem; }
+      .device-transfer-device {
+        display: flex;
+        justify-content: space-between;
+        gap: 0.7rem;
+        padding: 0.55rem 0.65rem;
+        border-radius: 0.55rem;
+        background: var(--page-bg);
+      }
+      .device-transfer-device code { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .device-transfer-form { display: grid; grid-template-columns: minmax(12rem, 1fr) minmax(10rem, 1fr) auto; gap: 0.5rem; }
+      .device-transfer-form input { min-width: 0; }
+      .device-transfer-note { margin: 0; color: var(--muted); font-size: 0.82rem; }
       @media (max-width: 700px) {
         .nip17-exchange-grid { grid-template-columns: 1fr; }
+        .device-transfer-form { grid-template-columns: 1fr; }
       }
     </style>
   </head>
@@ -1810,6 +1834,29 @@
       </section>
 
       <section id="people-tab" class="card hidden" data-tab-panel="people">
+        <section id="device-transfer-panel" class="device-transfer-panel hidden" aria-labelledby="device-transfer-title">
+          <div>
+            <h3 id="device-transfer-title">Devices &amp; transfers</h3>
+            <p id="device-transfer-summary" class="device-transfer-summary" role="status">Checking this device…</p>
+          </div>
+          <div class="device-transfer-actions">
+            <button id="device-transfer-refresh" type="button">Refresh devices</button>
+            <button id="device-transfer-announce" type="button">Prepare private presence</button>
+          </div>
+          <div id="device-transfer-devices" class="device-transfer-devices" aria-live="polite"></div>
+          <form id="device-private-transfer-form" class="device-transfer-form" autocomplete="off">
+            <input id="device-private-torrent" aria-label="Book to receive" placeholder="Book link or transfer code" required />
+            <input id="device-private-peer" aria-label="Paired device connection" placeholder="Paired-device connection code" required />
+            <button type="submit">Receive book privately</button>
+          </form>
+          <p class="device-transfer-note">Private transfers are available only between paired devices. Bookstr keeps them private and never exposes local files.</p>
+          <form id="device-public-transfer-form" class="device-transfer-form" autocomplete="off">
+            <input id="device-public-torrent" aria-label="Book to add" placeholder="Book link or transfer code" required />
+            <span aria-hidden="true"></span>
+            <button type="submit">Add book</button>
+          </form>
+          <p id="device-transfer-result" class="device-transfer-note" role="status"></p>
+        </section>
         <div id="people-list" class="people-list" aria-live="polite"></div>
       </section>
 
@@ -1870,19 +1917,23 @@
           <div class="settings-section desktop-reader-settings settings-speech">
             <h3>Read aloud</h3>
             <label class="setting-option settings-control-row">
-              <span class="setting-copy"><strong>English voice</strong><small>Kokoro appears here after you install it.</small></span>
-              <select id="speech-voice-en" aria-label="English reading voice"></select>
+              <span class="setting-copy"><strong>Language</strong></span>
+              <select id="speech-language" aria-label="Read-aloud language"></select>
             </label>
             <label class="setting-option settings-control-row">
-              <span class="setting-copy"><strong>Portuguese voice</strong><small>Tugão appears here after you install it.</small></span>
-              <select id="speech-voice-pt" aria-label="Portuguese reading voice"></select>
+              <span class="setting-copy"><strong>Voice</strong></span>
+              <select id="speech-voice" aria-label="Reading voice"></select>
             </label>
             <label class="setting-option settings-range">
               <span class="setting-copy"><strong>Speech speed</strong><small>Use a natural pace or tune it to your preference.</small></span>
               <input id="speech-rate" type="range" min="0.73" max="1.25" step="0.01" value="1" />
               <output id="speech-rate-value" for="speech-rate">1.00×</output>
             </label>
-            <p class="meta-note optional-voices-note">Optional voices are never downloaded or selected automatically. <a href="https://github.com/vicnaum/kokoro-tts-macos/releases/latest" target="_blank" rel="noreferrer">Kokoro for English</a> · <a href="https://huggingface.co/rhasspy/piper-voices/tree/main/pt/pt_PT/tug%C3%A3o/medium" target="_blank" rel="noreferrer">Tugão for Portuguese</a></p>
+            <div class="optional-voices-note">
+              <button id="speech-model-kokoro_en" data-language="en" type="button">Download Kokoro</button>
+              <button id="speech-model-piper_pt_pt" data-language="pt" type="button" hidden>Download Tugão</button>
+            </div>
+            <p id="speech-model-status" class="meta-note" role="status" aria-live="polite"></p>
           </div>
           <div class="settings-section settings-nostr">
             <h3>Nostr</h3>
@@ -1930,10 +1981,6 @@
             <p id="dictionary-status" class="meta-note"></p>
             <div id="dictionary-packs" class="dictionary-packs"></div>
           </div>
-          <div class="settings-section settings-opds">
-            <h3>Public OPDS feeds</h3>
-            <textarea id="opds-feeds" class="opds-feed-input" rows="3" placeholder="Name | https://catalog.example/opds" aria-label="Public OPDS feeds, one name and HTTPS URL per line"></textarea>
-          </div>
         </section>
       </section>
 
@@ -1961,6 +2008,7 @@
     <script src="blossom-authorization.js"></script>
     <script src="vocabulary-wire.js"></script>
     <script src="reader-typography.js"></script>
+    <script src="speech-settings.js"></script>
     <script src="vendor/sql-wasm.js"></script>
     <script>
       const FAVORITES_KEY = 'bookstr_nostr_favorites_v1';
@@ -2086,6 +2134,17 @@
       const wordsTab = document.getElementById('words-tab');
       const peopleTab = document.getElementById('people-tab');
       const peopleList = document.getElementById('people-list');
+      const deviceTransferPanel = document.getElementById('device-transfer-panel');
+      const deviceTransferSummary = document.getElementById('device-transfer-summary');
+      const deviceTransferDevices = document.getElementById('device-transfer-devices');
+      const deviceTransferRefresh = document.getElementById('device-transfer-refresh');
+      const deviceTransferAnnounce = document.getElementById('device-transfer-announce');
+      const devicePrivateTransferForm = document.getElementById('device-private-transfer-form');
+      const devicePrivateTorrent = document.getElementById('device-private-torrent');
+      const devicePrivatePeer = document.getElementById('device-private-peer');
+      const devicePublicTransferForm = document.getElementById('device-public-transfer-form');
+      const devicePublicTorrent = document.getElementById('device-public-torrent');
+      const deviceTransferResult = document.getElementById('device-transfer-result');
       const homeTabBtn = document.getElementById('home-tab-btn');
       const searchTabBtn = document.getElementById('search-tab-btn');
       const peopleTabBtn = document.getElementById('people-tab-btn');
@@ -2144,10 +2203,12 @@
       const readerAlignmentInput = document.getElementById('reader-alignment');
       const readerFontSizeInput = document.getElementById('reader-font-size');
       const readerFontSizeValue = document.getElementById('reader-font-size-value');
-      const speechVoiceEnglishInput = document.getElementById('speech-voice-en');
-      const speechVoicePortugueseInput = document.getElementById('speech-voice-pt');
+      const speechLanguageInput = document.getElementById('speech-language');
+      const speechVoiceInput = document.getElementById('speech-voice');
       const speechRateInput = document.getElementById('speech-rate');
       const speechRateValue = document.getElementById('speech-rate-value');
+      const speechModelButtons = [...document.querySelectorAll('[id^="speech-model-"]:not(#speech-model-status)')];
+      const speechModelStatus = document.getElementById('speech-model-status');
       const npubButton = document.getElementById('npub-button');
       const npubDisplay = document.getElementById('npub-display');
       const nip7Status = document.getElementById('nip7-status');
@@ -2156,8 +2217,6 @@
       const dictionaryInstall = document.getElementById('dictionary-install');
       const dictionaryStatus = document.getElementById('dictionary-status');
       const dictionaryPacks = document.getElementById('dictionary-packs');
-      const opdsFeedsInput = document.getElementById('opds-feeds');
-
       const state = {
         favorites: [],
         reading: [],
@@ -2175,6 +2234,8 @@
           readerFontPercent: 100,
           speechVoiceEnglish: '',
           speechVoicePortuguese: '',
+          speechVoices: {},
+          speechLanguage: 'en',
           speechRate: 1,
           opdsFeeds: []
         },
@@ -2322,9 +2383,8 @@
         }
       }
 
-      async function refreshDictionaryTargetOptions(preferredTarget = '') {
+      function populateDictionaryTargetOptions(preferredTarget = '', installed = new Set()) {
         const source = dictionarySource.value;
-        const installed = new Set((await dictionaryRecords()).map(pack => pack.id));
         const available = Object.entries(DICTIONARY_LANGUAGES)
           .filter(([code]) => code !== source && !installed.has(`${source}-${code}`))
           .sort(([, left], [, right]) => left.localeCompare(right));
@@ -2333,6 +2393,14 @@
         if (available.some(([code]) => code === previous)) dictionaryTarget.value = previous;
         dictionaryTarget.disabled = !available.length;
         dictionaryInstall.disabled = !available.length;
+      }
+
+      async function refreshDictionaryTargetOptions(preferredTarget = '') {
+        let installed = new Set();
+        try {
+          installed = new Set((await dictionaryRecords()).map(pack => pack.id));
+        } catch {}
+        populateDictionaryTargetOptions(preferredTarget, installed);
       }
 
       async function lookupOfflineWord(word, language) {
@@ -2671,6 +2739,47 @@
         }).join('');
       }
 
+      function shortDeviceKey(value) {
+        const key = String(value || '');
+        return key.length >= 20 ? `${key.slice(0, 12)}…${key.slice(-8)}` : 'pending';
+      }
+
+      function deviceTransferError(error) {
+        console.warn('Bookstr transfer action failed.', error);
+        return 'Check the book and paired-device details, then try again.';
+      }
+
+      async function refreshDeviceTransferPanel() {
+        if (!isDesktopMode || !desktopBridge?.devices?.status || !desktopBridge?.devices?.registry) return;
+        deviceTransferPanel.classList.remove('hidden');
+        deviceTransferSummary.textContent = 'Checking this device…';
+        try {
+          const [device, registry, transfers] = await Promise.all([
+            desktopBridge.devices.status(),
+            desktopBridge.devices.registry(),
+            desktopBridge.transfers?.status?.() || [],
+          ]);
+          const devices = Array.isArray(registry?.devices) ? registry.devices : [];
+          const account = String(device?.accountPubkey || '');
+          const storage = device?.persistent ? 'protected device key' : 'session-only device key';
+          const transferCount = Array.isArray(transfers) ? transfers.length : 0;
+          deviceTransferSummary.textContent = account
+            ? `${device?.name || 'Bookstr desktop'} · ${storage} · ${devices.length} authorized device${devices.length === 1 ? '' : 's'} · ${transferCount} active transfer${transferCount === 1 ? '' : 's'}`
+            : `${device?.name || 'Bookstr desktop'} · ${storage}. Connect your Bookstr account to authorize other devices.`;
+          if (!devices.length) {
+            deviceTransferDevices.innerHTML = '<p class="device-transfer-note">No authorized devices are available yet. Pair another signed Bookstr client to make it discoverable here.</p>';
+            return;
+          }
+          deviceTransferDevices.innerHTML = devices.map(entry => `<div class="device-transfer-device">
+            <span><strong>${escapeHtml(entry.name || 'Bookstr device')}</strong><br><small>${escapeHtml(entry.platform || 'web')} · ${escapeHtml((entry.capabilities || []).join(', ') || 'library')}</small></span>
+            <code title="${escapeHtml(entry.pubkey || '')}">${escapeHtml(shortDeviceKey(entry.pubkey))}</code>
+          </div>`).join('');
+        } catch (error) {
+          deviceTransferSummary.textContent = `Device status unavailable: ${deviceTransferError(error)}`;
+          deviceTransferDevices.replaceChildren();
+        }
+      }
+
       let nostrPeopleSyncTask;
       async function syncNostrPeopleFromNip7() {
         const pubkey = state.nip7.pubkey;
@@ -2879,7 +2988,7 @@
           return `Fetching ${title}: ${percent}% · ${bytesLabel(progress.bytes)} / ${bytesLabel(progress.total)}`;
         }
         return progress.source === 'torrent'
-          ? `Fetching ${title}: finding torrent peers…`
+          ? `Fetching ${title}: finding available sources…`
           : `Fetching ${title}: contacting book sources…`;
       }
 
@@ -3547,7 +3656,6 @@
         }
         if (Array.isArray(next.opdsFeeds)) {
           state.settings.opdsFeeds = normalizePublicOPDSFeedSettings(next.opdsFeeds);
-          opdsFeedsInput.value = opdsFeedInputValue();
           localStorage.setItem(SETTINGS_KEY, JSON.stringify(state.settings));
         }
         localStorage.setItem(FAVORITES_KEY, JSON.stringify(state.favorites));
@@ -3581,6 +3689,20 @@
         homeSyncRefresh.disabled = kind === 'syncing';
       }
 
+      function nostrLibraryRelayNames() {
+        return NOSTR_RELAYS.map(relay => {
+          try {
+            return new URL(relay).host;
+          } catch {
+            return relay;
+          }
+        }).join(', ');
+      }
+
+      function nostrSyncCounts(favorites, reading, words) {
+        return `${favorites.length} favorites · ${reading.length} reading · ${words.length} words`;
+      }
+
       async function syncNostrLibraryFromNip7({ useCache = true } = {}) {
         const pubkey = state.nip7.pubkey;
         if (!state.settings.useNip7 || !pubkey) {
@@ -3589,7 +3711,8 @@
         if (nostrSyncTask) {
           return nostrSyncTask;
         }
-        setHomeSyncState('syncing', 'Syncing…');
+        const relayNames = nostrLibraryRelayNames();
+        setHomeSyncState('syncing', `Fetching ≤10 favorite snapshots, ≤100 reading events and ≤120 word events from ${relayNames}…`);
         const task = (async () => {
           const cached = readNostrSyncCache(pubkey);
           if (useCache && cached && isNostrCacheFresh(cached)) {
@@ -3620,7 +3743,7 @@
             const eventDetail = lastFavoritePullInfo?.id
               ? ` · event ${lastFavoritePullInfo.id.slice(0, 12)}… · ${new Date(lastFavoritePullInfo.createdAt * 1000).toLocaleString()}`
               : '';
-            setHomeSyncState('ready', `${account.slice(0, 16)}…${eventDetail}`);
+            setHomeSyncState('ready', `${nostrSyncCounts(favorites, reading, words)} from ${relayNames} · ${account.slice(0, 16)}…${eventDetail}`);
             return true;
           } catch (error) {
             if (cached) {
@@ -3652,7 +3775,7 @@
       }
 
       homeSyncRefresh.addEventListener('click', async () => {
-        setHomeSyncState('syncing', 'Syncing…');
+        setHomeSyncState('syncing', `Connecting to ${nostrLibraryRelayNames()}…`);
         const connected = await connectNip7({ silent: false, skipSync: true });
         if (connected || state.nip7.pubkey) {
           await syncNostrLibraryFromNip7({ useCache: false });
@@ -3710,22 +3833,6 @@
         return feeds;
       }
 
-      function parseOPDSFeedInput(value) {
-        return normalizePublicOPDSFeedSettings(String(value || '').split(/\r?\n/).map(line => {
-          const divider = line.indexOf('|');
-          return divider < 0 ? null : { name: line.slice(0, divider), url: line.slice(divider + 1) };
-        }).filter(Boolean));
-      }
-
-      function opdsFeedInputValue(feeds = state.settings.opdsFeeds) {
-        return normalizePublicOPDSFeedSettings(feeds).map(feed => `${feed.name} | ${feed.url}`).join('\n');
-      }
-
-      function saveOPDSFeedSettingsFromUI() {
-        state.settings.opdsFeeds = parseOPDSFeedInput(opdsFeedsInput.value);
-        opdsFeedsInput.value = opdsFeedInputValue();
-      }
-
       function publicOPDSFeedNostrTags() {
         return state.settings.opdsFeeds.map(feed => ['bookstr-opds-feed', feed.name, feed.url]);
       }
@@ -3736,7 +3843,6 @@
         state.settings.opdsFeeds = normalizePublicOPDSFeedSettings(tags
           .filter(tag => Array.isArray(tag) && tag[0] === 'bookstr-opds-feed')
           .map(tag => ({ name: tag[1], url: tag[2] })));
-        opdsFeedsInput.value = opdsFeedInputValue();
         localStorage.setItem(SETTINGS_KEY, JSON.stringify(state.settings));
         return true;
       }
@@ -4837,6 +4943,7 @@
       }
 
       function renderFavorites() {
+        refreshSpeechVoiceMenus();
         favoritesList.innerHTML = '';
         if (!state.favorites.length) {
           const p = document.createElement('li');
@@ -4862,6 +4969,7 @@
       }
 
       function renderReading() {
+        refreshSpeechVoiceMenus();
         readingList.innerHTML = '';
         if (!state.reading.length) {
           const item = document.createElement('li');
@@ -5898,6 +6006,7 @@
         if (activeTab === 'words') requestAnimationFrame(() => wordsFilter.focus());
         if (activeTab === 'people') {
           renderPeople();
+          void refreshDeviceTransferPanel();
           if (!state.followingLoaded) void syncNostrPeopleFromNip7();
         }
         if (!updateHash) return;
@@ -6876,6 +6985,21 @@
       }
 
       async function startSearch({ updateHash = true, routeState = null } = {}) {
+        // Source adapters may report partial results before their final result.
+        // Once the user has seen a result set, retain any filter/page choice
+        // while a later adapter update re-renders it.
+        let renderedSearchResults = false;
+        const renderSearchResults = books => {
+          const currentRouteState = renderedSearchResults
+            ? {
+              language: searchResultFilter.language,
+              format: searchResultFilter.format,
+              page: searchResultPage,
+            }
+            : routeState;
+          renderResults(books, { routeState: currentRouteState });
+          renderedSearchResults = true;
+        };
         const query = queryInput.value.trim();
         if (!query) {
           renderSearchSources();
@@ -6923,7 +7047,7 @@
             query,
             searchType.value || 'all',
           ));
-          renderResults(books, { routeState });
+          renderSearchResults(books);
           status.textContent = `Showing ${books.length} cached result${books.length === 1 ? '' : 's'} · refreshes after 10 minutes.`;
           replaceSearchHash();
           renderButtonsState();
@@ -6939,14 +7063,14 @@
               query,
               searchType.value || 'all',
             ));
-            renderResults(matchingBooks, { routeState });
+            renderSearchResults(matchingBooks);
             renderButtonsState();
           });
           let books = searchResponse.books;
           books = books.filter(book => matchesExactSearchTokens(book, query, searchType.value || 'all'));
           cacheSearchBooks(query, books);
           status.textContent = `${searchOutcomeSummary(searchResponse.outcomes)} · ${books.length} result(s).`;
-          renderResults(books, { routeState });
+          renderSearchResults(books);
           replaceSearchHash();
           renderButtonsState();
           if (!books.length) {
@@ -6998,9 +7122,17 @@
             ? ' · available for this session only'
             : '';
           desktopSignerStatus.textContent = message || `${modeLabel}${identity}${storage}`;
-          desktopSignerDisconnect.classList.toggle('hidden', !signerState.configured);
+          const connected = Boolean(signerState.configured);
+          desktopSignerStatus.classList.toggle('signer-connected', connected);
+          desktopSignerDisconnect.classList.toggle('hidden', !connected);
+          desktopNip46QrStart.classList.toggle('hidden', connected);
+          if (connected) {
+            desktopNip46QrImage.hidden = true;
+            desktopNip46Qr.classList.add('hidden');
+          }
           return signerState;
         } catch (error) {
+          desktopSignerStatus.classList.remove('signer-connected');
           desktopSignerStatus.textContent = `Signer status unavailable: ${error?.message || error}`;
           return null;
         }
@@ -7028,7 +7160,6 @@
         if (qrState.status === 'connected') {
           desktopNip46QrImage.hidden = true;
           desktopNip46Qr.classList.add('hidden');
-          desktopNip46QrStart.classList.remove('hidden');
           enableDesktopNostrSigner();
           await connectNip7({ silent: true });
           await refreshDesktopSignerStatus();
@@ -7131,21 +7262,15 @@
         return window.speechSynthesis.getVoices().filter(voice => voice && (voice.name || voice.voiceURI));
       }
 
-      function populateSpeechVoiceMenu(select, language, preferredLabel, preferredPattern, savedIdentifier) {
+      function preferredSpeechPattern(language) {
+        if (language === 'en') return /kokoro/i;
+        if (language === 'pt') return /tug[aã]o/i;
+        return /$a/;
+      }
+
+      function populateSpeechVoiceMenu(select, language, savedIdentifier) {
         if (!select) return;
-        const languagePrefix = `${language.toLowerCase()}-`;
-        const voices = speechVoices()
-          .filter(voice => {
-            const locale = String(voice.lang || '').replace('_', '-').toLowerCase();
-            return locale === language || locale.startsWith(languagePrefix);
-          })
-          .sort((left, right) => {
-            const leftPreferred = preferredPattern.test(`${left.name} ${left.voiceURI}`) ? 0 : 1;
-            const rightPreferred = preferredPattern.test(`${right.name} ${right.voiceURI}`) ? 0 : 1;
-            return leftPreferred - rightPreferred
-              || Number(Boolean(right.localService)) - Number(Boolean(left.localService))
-              || String(left.name).localeCompare(String(right.name));
-          });
+        const voices = BookstrSpeechSettings.voicesForLanguage(speechVoices(), language, preferredSpeechPattern(language));
         const selected = String(savedIdentifier || '');
         select.replaceChildren(new Option('Best installed voice', ''));
         voices.forEach(voice => {
@@ -7153,12 +7278,6 @@
           const localLabel = voice.localService === false ? 'online' : 'installed';
           select.append(new Option(`${voice.name} · ${voice.lang || language} · ${localLabel}`, identifier));
         });
-        const preferredInstalled = voices.some(voice => preferredPattern.test(`${voice.name} ${voice.voiceURI}`));
-        if (!preferredInstalled) {
-          const option = new Option(`${preferredLabel} · optional download`, `optional:${preferredLabel.toLowerCase()}`);
-          option.disabled = true;
-          select.append(option);
-        }
         if (selected && !voices.some(voice => String(voice.voiceURI || voice.name) === selected)) {
           const option = new Option('Previously selected voice · unavailable', selected);
           option.disabled = true;
@@ -7170,20 +7289,85 @@
       }
 
       function refreshSpeechVoiceMenus() {
-        populateSpeechVoiceMenu(
-          speechVoiceEnglishInput,
-          'en',
-          'Kokoro · English',
-          /kokoro/i,
-          state.settings.speechVoiceEnglish,
-        );
-        populateSpeechVoiceMenu(
-          speechVoicePortugueseInput,
-          'pt',
-          'Tugão · Portuguese (Portugal)',
-          /tug[aã]o/i,
-          state.settings.speechVoicePortuguese,
-        );
+        const displayNames = typeof Intl.DisplayNames === 'function'
+          ? new Intl.DisplayNames([navigator.language || 'en'], { type: 'language' })
+          : null;
+        const bookLanguages = BookMetadata.mergeLibraryState(state.reading, state.favorites)
+          .map(book => BookMetadata.languageForBook(book))
+          .filter(Boolean);
+        const languages = BookstrSpeechSettings.languagesForCodes([...bookLanguages, 'en', 'pt'], displayNames);
+        const requestedLanguage = BookstrSpeechSettings.languageCode(state.settings.speechLanguage || '');
+        speechLanguageInput.replaceChildren();
+        if (!languages.length) {
+          const empty = new Option('No book languages', '');
+          empty.disabled = true;
+          empty.selected = true;
+          speechLanguageInput.append(empty);
+          speechLanguageInput.disabled = true;
+          speechVoiceInput.replaceChildren(new Option('No language-specific voice', ''));
+          speechVoiceInput.disabled = true;
+          updateSpeechModelVisibility();
+          return;
+        }
+        speechLanguageInput.disabled = false;
+        speechVoiceInput.disabled = false;
+        languages.forEach(language => speechLanguageInput.append(new Option(language.label, language.code)));
+        const selectedLanguage = languages.some(language => language.code === requestedLanguage)
+          ? requestedLanguage
+          : languages[0].code;
+        speechLanguageInput.value = selectedLanguage;
+        populateSpeechVoiceMenu(speechVoiceInput, selectedLanguage, BookstrSpeechSettings.savedVoice(state.settings, selectedLanguage));
+        updateSpeechModelVisibility();
+      }
+
+      function speechModelSize(bytes) {
+        return `${Math.round(Number(bytes || 0) / 1_000_000)} MB`;
+      }
+
+      function updateSpeechModelVisibility(clearStatus = true) {
+        const selectedLanguage = BookstrSpeechSettings.languageCode(speechLanguageInput.value);
+        speechModelButtons.forEach(button => {
+          button.hidden = button.dataset.language !== selectedLanguage;
+        });
+        if (clearStatus) speechModelStatus.textContent = '';
+      }
+
+      async function refreshSpeechModels(models) {
+        const next = Array.isArray(models)
+          ? models
+          : await window.bookstrDesktop?.speechModels?.status?.().catch(() => []);
+        for (const model of next || []) {
+          const button = document.getElementById(`speech-model-${model.id}`);
+          if (!button) continue;
+          button.disabled = Boolean(model.installing);
+          button.dataset.installed = String(Boolean(model.installed));
+          button.classList.toggle('speech-model-delete', Boolean(model.installed));
+          button.textContent = model.installed
+            ? `Delete ${model.label} · ${speechModelSize(model.approximateBytes)}`
+            : model.installing
+              ? `Downloading ${model.label}… ${model.completedFiles}/${model.fileCount}`
+              : `Download ${model.label} · ${speechModelSize(model.approximateBytes)}`;
+        }
+        updateSpeechModelVisibility(false);
+        const visibleError = (next || []).find(model => model.language === speechLanguageInput.value && model.error);
+        speechModelStatus.textContent = visibleError ? `${visibleError.label}: ${visibleError.error}` : '';
+      }
+
+      async function toggleSpeechModel(event) {
+        const button = event.currentTarget;
+        const id = button.id.replace('speech-model-', '');
+        button.disabled = true;
+        speechModelStatus.textContent = '';
+        try {
+          const models = button.dataset.installed === 'true'
+            ? await window.bookstrDesktop.speechModels.remove(id)
+            : await window.bookstrDesktop.speechModels.install(id);
+          await refreshSpeechModels(models);
+          refreshSpeechVoiceMenus();
+        } catch (error) {
+          speechModelStatus.textContent = `Voice download failed: ${error?.message || error}`;
+          await refreshSpeechModels();
+        }
       }
 
       function updateReaderSettingLabels() {
@@ -7252,6 +7436,12 @@
           if (typeof settings.speechVoicePortuguese === 'string') {
             state.settings.speechVoicePortuguese = settings.speechVoicePortuguese;
           }
+          if (settings.speechVoices && typeof settings.speechVoices === 'object' && !Array.isArray(settings.speechVoices)) {
+            state.settings.speechVoices = { ...settings.speechVoices };
+          }
+          if (typeof settings.speechLanguage === 'string') {
+            state.settings.speechLanguage = BookstrSpeechSettings.languageCode(settings.speechLanguage) || 'en';
+          }
           const speechRate = Number(settings.speechRate);
           if (Number.isFinite(speechRate)) {
             state.settings.speechRate = Math.max(0.73, Math.min(1.25, speechRate));
@@ -7275,7 +7465,6 @@
         speechRateInput.value = String(state.settings.speechRate);
         refreshSpeechVoiceMenus();
         updateReaderSettingLabels();
-        opdsFeedsInput.value = opdsFeedInputValue();
         applyTheme(themeModeInput.value);
         saveLocalAppearance(state.settings.theme);
         renderFavorites();
@@ -7554,28 +7743,22 @@
       }
 
       function applySettingsFromUI() {
-        const previousOPDSFeeds = JSON.stringify(state.settings.opdsFeeds);
         state.settings.autoReading = autoReadingInput.checked;
         state.settings.useNip7 = nip7EnabledInput.checked;
         state.settings.theme = themeModeInput.value;
         state.settings.readerFont = BookstrTypography.normalizeFont(readerFontInput.value);
         state.settings.readerAlignment = BookstrTypography.normalizeAlignment(readerAlignmentInput.value);
         state.settings.readerFontPercent = Number(readerFontSizeInput.value);
-        state.settings.speechVoiceEnglish = speechVoiceEnglishInput.value;
-        state.settings.speechVoicePortuguese = speechVoicePortugueseInput.value;
+        state.settings.speechLanguage = BookstrSpeechSettings.languageCode(speechLanguageInput.value) || 'en';
+        state.settings.speechVoices[state.settings.speechLanguage] = speechVoiceInput.value;
         state.settings.speechRate = Number(speechRateInput.value);
         updateReaderSettingLabels();
         saveLocalAppearance(state.settings.theme);
-        saveOPDSFeedSettingsFromUI();
         applyTheme(state.settings.theme);
         applyOpenReaderTypography();
         localStorage.setItem(SETTINGS_KEY, JSON.stringify(state.settings));
         localStorage.setItem('bookstr-reader-font-percent', String(state.settings.readerFontPercent));
         notifyOpenReaderSettings();
-        if (previousOPDSFeeds !== JSON.stringify(state.settings.opdsFeeds)) {
-          renderSearchSources();
-          if (state.settings.useNip7 && state.nip7.pubkey) queueFavoriteSync();
-        }
         if (!state.settings.useNip7) {
           state.nip7.pubkey = '';
           localStorage.removeItem(NIP7_STATUS_KEY);
@@ -7595,6 +7778,7 @@
         settingsReturnFocus = document.activeElement;
         const firstInput = settingsPanel.querySelector('input, button, select, textarea, [tabindex]:not([tabindex="-1"])');
         firstInput?.focus();
+        if (isDesktopMode) void refreshSpeechModels();
 
         if (!isDesktopMode && state.settings.useNip7 && !state.nip7.pubkey) {
           void connectNip7();
@@ -7702,6 +7886,51 @@
       homeTabBtn.addEventListener('click', () => activateTab('home', { updateHash: true }));
       searchTabBtn.addEventListener('click', () => activateTab('search', { updateHash: true }));
       peopleTabBtn.addEventListener('click', () => activateTab('people', { updateHash: true }));
+      deviceTransferRefresh.addEventListener('click', () => {
+        deviceTransferResult.textContent = '';
+        void refreshDeviceTransferPanel();
+      });
+      deviceTransferAnnounce.addEventListener('click', async () => {
+        if (!desktopBridge?.devices?.announce) return;
+        deviceTransferAnnounce.disabled = true;
+        try {
+          const message = await desktopBridge.devices.announce();
+          deviceTransferResult.textContent = `Private presence prepared until ${new Date(Number(message.expires_at) * 1000).toLocaleTimeString()}. Share it securely with your paired Bookstr device.`;
+        } catch (error) {
+          deviceTransferResult.textContent = `Could not prepare private presence: ${deviceTransferError(error)}`;
+        } finally {
+          deviceTransferAnnounce.disabled = false;
+        }
+      });
+      devicePrivateTransferForm.addEventListener('submit', async event => {
+        event.preventDefault();
+        if (!desktopBridge?.transfers?.addPrivate) return;
+          deviceTransferResult.textContent = 'Preparing your private book transfer…';
+        try {
+          await desktopBridge.transfers.addPrivate({
+            torrentId: devicePrivateTorrent.value.trim(),
+            peer: devicePrivatePeer.value.trim(),
+          });
+          deviceTransferResult.textContent = 'Private book transfer started.';
+          devicePrivateTransferForm.reset();
+          await refreshDeviceTransferPanel();
+        } catch (error) {
+          deviceTransferResult.textContent = `Private book transfer could not start. ${deviceTransferError(error)}`;
+        }
+      });
+      devicePublicTransferForm.addEventListener('submit', async event => {
+        event.preventDefault();
+        if (!desktopBridge?.transfers?.addPublic) return;
+          deviceTransferResult.textContent = 'Adding your book…';
+        try {
+          await desktopBridge.transfers.addPublic({ torrentId: devicePublicTorrent.value.trim() });
+          deviceTransferResult.textContent = 'Book added.';
+          devicePublicTransferForm.reset();
+          await refreshDeviceTransferPanel();
+        } catch (error) {
+          deviceTransferResult.textContent = `Book could not be added. ${deviceTransferError(error)}`;
+        }
+      });
       readingTabBtn.addEventListener('click', () => activateTab('reading', { updateHash: true }));
       wordsTabBtn.addEventListener('click', () => activateTab('words', { updateHash: true }));
 
@@ -7753,14 +7982,25 @@
       readerFontInput.addEventListener('change', applySettingsFromUI);
       readerAlignmentInput.addEventListener('change', applySettingsFromUI);
       readerFontSizeInput.addEventListener('input', applySettingsFromUI);
-      speechVoiceEnglishInput.addEventListener('change', applySettingsFromUI);
-      speechVoicePortugueseInput.addEventListener('change', applySettingsFromUI);
+      speechLanguageInput.addEventListener('change', () => {
+        state.settings.speechLanguage = speechLanguageInput.value;
+        refreshSpeechVoiceMenus();
+        updateSpeechModelVisibility();
+        applySettingsFromUI();
+      });
+      speechVoiceInput.addEventListener('change', applySettingsFromUI);
       speechRateInput.addEventListener('input', applySettingsFromUI);
+      speechModelButtons.forEach(button => button.addEventListener('click', toggleSpeechModel));
+      window.bookstrDesktop?.speechModels?.onProgress?.(progress => {
+        const button = document.getElementById(`speech-model-${progress.id}`);
+        if (button) button.textContent = `Downloading… ${progress.completedFiles}/${progress.fileCount}`;
+        if (button && !button.hidden) {
+          speechModelStatus.textContent = `${progress.file} · ${speechModelSize(progress.receivedBytes)} / ${speechModelSize(progress.totalBytes)}`;
+        }
+      });
       if (window.speechSynthesis) {
         window.speechSynthesis.addEventListener?.('voiceschanged', refreshSpeechVoiceMenus);
       }
-      opdsFeedsInput.addEventListener('change', applySettingsFromUI);
-
       searchForm.addEventListener('submit', (event) => {
         event.preventDefault();
         startSearch();
@@ -7819,8 +8059,12 @@
         dictionarySource.add(new Option(label, code));
       }
       dictionarySource.value = 'pt';
-      dictionarySource.addEventListener('change', () => void refreshDictionaryTargetOptions());
+      dictionarySource.addEventListener('change', () => {
+        populateDictionaryTargetOptions();
+        void refreshDictionaryTargetOptions();
+      });
       dictionaryInstall.addEventListener('click', installDictionaryPack);
+      populateDictionaryTargetOptions('en');
       void refreshDictionaryTargetOptions('en');
       void renderDictionaryPacks();
       void bookCacheRecords().then(records => {

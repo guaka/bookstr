@@ -1,0 +1,312 @@
+'use strict';
+
+const fs = require('node:fs');
+const fsp = require('node:fs/promises');
+const net = require('node:net');
+const path = require('node:path');
+const { Readable, Transform } = require('node:stream');
+const { pipeline } = require('node:stream/promises');
+
+const DEFAULT_MAX_ACQUISITION_BYTES = 512 * 1024 * 1024;
+
+let catalogModulePromise;
+function catalogModule() {
+  catalogModulePromise ||= import('../shared/catalog/acquisition.mjs');
+  return catalogModulePromise;
+}
+
+function safePath(root, value) {
+  const candidate = path.resolve(root, value);
+  const relative = path.relative(path.resolve(root), candidate);
+  if (!relative || relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
+    throw new TypeError('staging path escaped its root');
+  }
+  return candidate;
+}
+
+function extensionFor(format) {
+  const extension = String(format || '').trim().toLowerCase().replace(/^\./, '');
+  if (!['epub', 'pdf', 'fb2'].includes(extension)) throw new TypeError('unsupported acquisition format');
+  return extension;
+}
+
+function responseLength(response) {
+  const value = response?.headers?.get?.('content-length');
+  if (value === null || value === undefined || String(value).trim() === '') return null;
+  const size = Number(value);
+  if (!Number.isSafeInteger(size) || size <= 0) throw new Error('source returned an invalid content length');
+  return size;
+}
+
+function hostFromOrigin(value) {
+  try {
+    const parsed = new URL(String(value || '').trim());
+    return parsed.protocol === 'https:' && !parsed.username && !parsed.password
+      ? parsed.hostname.toLowerCase().replace(/^\[|\]$/g, '')
+      : '';
+  } catch {
+    return '';
+  }
+}
+
+function privateHostname(hostname) {
+  const host = String(hostname || '').toLowerCase().replace(/^\[|\]$/g, '');
+  if (!host || host === 'localhost' || host.endsWith('.localhost') || host === 'local' || host.endsWith('.local')
+    || host === 'internal' || host.endsWith('.internal') || host === 'home.arpa' || host.endsWith('.home.arpa')) return true;
+  const kind = net.isIP(host);
+  if (kind === 4) {
+    const [first, second] = host.split('.').map(Number);
+    return first === 0 || first === 10 || first === 127 || (first === 100 && second >= 64 && second <= 127)
+      || (first === 169 && second === 254) || (first === 172 && second >= 16 && second <= 31)
+      || (first === 192 && second === 0) || (first === 192 && second === 168)
+      || (first === 198 && (second === 18 || second === 19)) || first >= 224;
+  }
+  if (kind === 6) {
+    return host === '::1' || host === '::' || host.startsWith('fc') || host.startsWith('fd')
+      || host.startsWith('fe8') || host.startsWith('fe9') || host.startsWith('fea') || host.startsWith('feb')
+      || host.startsWith('ff');
+  }
+  return false;
+}
+
+function configuredOrigins(origins, provider) {
+  if (!origins) return [];
+  if (origins instanceof Map) return Array.isArray(origins.get(provider)) ? origins.get(provider) : [];
+  return Array.isArray(origins[provider]) ? origins[provider] : [];
+}
+
+function trustedHosts(provider, descriptor, origins) {
+  const values = [descriptor?.homepage, ...configuredOrigins(origins, provider)];
+  return [...new Set(values.map(hostFromOrigin).filter(Boolean))];
+}
+
+function assertTrustedURL(value, { provider, descriptor, origins, label = 'acquisition URL' } = {}) {
+  let parsed;
+  try {
+    parsed = new URL(String(value || '').trim());
+  } catch {
+    throw new Error(`${label} is invalid`);
+  }
+  if (parsed.protocol !== 'https:' || parsed.username || parsed.password) {
+    throw new Error(`${label} must use an HTTPS trusted origin`);
+  }
+  const host = parsed.hostname.toLowerCase().replace(/^\[|\]$/g, '');
+  if (privateHostname(host)) throw new Error(`${label} targets a private or loopback host`);
+  const allowed = trustedHosts(provider, descriptor, origins);
+  if (!allowed.some(origin => host === origin || host.endsWith(`.${origin}`))) {
+    throw new Error(`${label} is outside the trusted ${provider} origins`);
+  }
+  return parsed.href;
+}
+
+async function responseStream(response, maxBytes = DEFAULT_MAX_ACQUISITION_BYTES) {
+  if (response?.body && typeof response.body.getReader === 'function') return Readable.fromWeb(response.body);
+  if (response?.body && typeof response.body.pipe === 'function') return response.body;
+  if (response && typeof response.arrayBuffer === 'function') {
+    const bytes = await response.arrayBuffer();
+    if (bytes.byteLength > maxBytes) throw new Error('source exceeded the maximum acquisition size');
+    return Readable.from(Buffer.from(bytes));
+  }
+  throw new Error('acquisition response has no readable body');
+}
+
+function waitForTorrent(torrent, onProgress, signal, maxBytes) {
+  if (!torrent || typeof torrent.on !== 'function') throw new Error('torrent did not return an event source');
+  const total = Number(torrent.length || torrent.files?.[0]?.length || 0);
+  if (total > maxBytes) throw new Error('torrent exceeds the maximum acquisition size');
+  if (torrent.done) return Promise.resolve(torrent);
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const finish = (error) => {
+      if (settled) return;
+      settled = true;
+      signal?.removeEventListener?.('abort', abort);
+      if (error) reject(error); else resolve(torrent);
+    };
+    const abort = () => {
+      try { torrent.destroy?.(); } catch { /* best effort */ }
+      finish(new Error('acquisition aborted'));
+    };
+    torrent.on('done', () => finish());
+    torrent.on('error', error => finish(error instanceof Error ? error : new Error(String(error))));
+    torrent.on('download', () => {
+      const bytes = Number(torrent.downloaded || 0);
+      if (bytes > maxBytes) return finish(new Error('torrent exceeded the maximum acquisition size'));
+      onProgress?.({ bytes, totalBytes: Number(torrent.length || 0) });
+    });
+    signal?.addEventListener?.('abort', abort, { once: true });
+  });
+}
+
+function torrentFilePath(torrent, root) {
+  const files = Array.isArray(torrent.files) ? torrent.files : [];
+  if (files.length !== 1) throw new Error('book torrent must contain exactly one file');
+  const relative = String(files[0].path || files[0].name || '').replaceAll('\\', '/');
+  if (!relative || relative.split('/').includes('..') || relative.startsWith('/')) throw new Error('torrent file path is invalid');
+  return safePath(root, relative);
+}
+
+function healthScore(health, now = Math.floor(Date.now() / 1000)) {
+  if (!health) return 0;
+  const cooling = Number(health.cooldownUntil) > now;
+  const failures = Number(health.consecutiveFailures) || 0;
+  const successes = Number(health.successes) || 0;
+  const latency = Number(health.latencyMs) || 0;
+  return (cooling ? -10000 : 0) - failures * 100 + successes * 5 - Math.min(1000, latency / 1000);
+}
+
+function sourceKey(provider, candidate, recordId) {
+  const raw = `${provider}:${candidate.source_id || recordId}`;
+  return raw.length <= 256 ? raw : raw.slice(0, 256);
+}
+
+function destroyTorrent(torrent) {
+  try { torrent?.destroy?.(); } catch { /* best effort cleanup */ }
+}
+
+class AcquisitionManager {
+  constructor({ store, importer, torrentBridge, fetchImpl = globalThis.fetch, stagingRoot, maxAttempts = 3, maxBytes = DEFAULT_MAX_ACQUISITION_BYTES, trustedOrigins = {} } = {}) {
+    if (!store || !importer || !stagingRoot) throw new TypeError('store, importer, and stagingRoot are required');
+    if (typeof fetchImpl !== 'function') throw new TypeError('fetchImpl is required');
+    this.store = store;
+    this.importer = importer;
+    this.torrentBridge = torrentBridge;
+    this.fetch = fetchImpl;
+    this.stagingRoot = path.resolve(stagingRoot);
+    this.maxAttempts = Math.max(1, Math.min(8, Number(maxAttempts) || 3));
+    this.maxBytes = Number.isSafeInteger(Number(maxBytes)) && Number(maxBytes) > 0
+      ? Number(maxBytes)
+      : DEFAULT_MAX_ACQUISITION_BYTES;
+    this.trustedOrigins = trustedOrigins;
+  }
+
+  async acquire(record, { format, preferTorrent = true, includeRestricted = false, signal, onProgress } = {}) {
+    const { listAcquisitions, normalizeProviderRecord, providerBookFields } = await catalogModule();
+    const normalized = normalizeProviderRecord(record);
+    const fields = providerBookFields(record);
+    const candidates = listAcquisitions(normalized, { format, preferTorrent, includeRestricted })
+      // Private torrents require an authenticated peer handoff. Until that
+      // exists, do not attempt them as ordinary catalog acquisitions.
+      .filter(candidate => !candidate.private && /^[a-f0-9]{64}$/i.test(candidate.sha256));
+    if (!candidates.length) throw new Error('no eligible acquisition with a verified SHA-256 is available');
+    const rankedCandidates = candidates.map((candidate, index) => {
+      const source = sourceKey(normalized.provider, candidate, normalized.recordId);
+      return { candidate, index, source, score: healthScore(this.store.sourceHealth?.(source)) };
+    }).sort((left, right) => right.score - left.score || left.index - right.index);
+    this.store.upsertBook(fields);
+    await fsp.mkdir(this.stagingRoot, { recursive: true });
+    const errors = [];
+    const attempts = rankedCandidates.slice(0, this.maxAttempts);
+    for (const [index, attempt] of attempts.entries()) {
+      const { candidate, source } = attempt;
+      this.store.setDownload({ bookId: fields.id, status: 'downloading', bytes: 0, totalBytes: candidate.size, source });
+      let stageDir = '';
+      const startedAt = Date.now();
+      try {
+        stageDir = await fsp.mkdtemp(path.join(this.stagingRoot, 'acquisition-'));
+        const descriptor = normalized.providerDescriptor;
+        if (candidate.torrent && /^https?:/i.test(candidate.torrent)) {
+          assertTrustedURL(candidate.torrent, {
+            provider: normalized.provider,
+            descriptor,
+            origins: this.trustedOrigins,
+            label: 'torrent URL',
+          });
+        }
+        const stagedPath = candidate.torrent
+          ? await this.downloadTorrent(candidate, stageDir, { signal, onProgress })
+          : await this.downloadHTTP(candidate, stageDir, {
+            signal,
+            onProgress,
+            source,
+            provider: normalized.provider,
+            descriptor,
+          });
+        const imported = await this.importer.importFile(stagedPath, {
+          extension: extensionFor(candidate.format),
+          expectedSha256: candidate.sha256 || undefined,
+        });
+        const book = this.store.upsertBook({ ...fields, sha256: imported.sha256, extension: imported.extension, filesize_bytes: imported.size });
+        this.store.registerLibraryFile({ bookId: book.id, relativePath: imported.relativePath, sizeBytes: imported.size, sha256: imported.sha256 });
+        this.store.setDownload({ bookId: book.id, status: 'ready', bytes: imported.size, totalBytes: imported.size, source, relativePath: imported.relativePath });
+        this.store.recordSourceHealth?.({ source, success: true, latencyMs: Date.now() - startedAt });
+        return { book, source, sha256: imported.sha256, size: imported.size, extension: imported.extension };
+      } catch (error) {
+        errors.push(error instanceof Error ? error : new Error(String(error)));
+        this.store.recordSourceHealth?.({ source, success: false, latencyMs: Date.now() - startedAt });
+        this.store.setDownload({ bookId: fields.id, status: index + 1 < attempts.length ? 'retrying' : 'failed', source, error: errors.at(-1).message });
+      } finally {
+        if (stageDir) await fsp.rm(stageDir, { recursive: true, force: true }).catch(() => {});
+      }
+    }
+    throw new AggregateError(errors, 'all eligible acquisitions failed');
+  }
+
+  async downloadHTTP(candidate, stageDir, { signal, onProgress, source, provider, descriptor } = {}) {
+    const url = assertTrustedURL(candidate.url, {
+      provider,
+      descriptor,
+      origins: this.trustedOrigins,
+    });
+    const metadataSize = Number(candidate.size);
+    if (!Number.isSafeInteger(metadataSize) || metadataSize <= 0) throw new Error('source must advertise a positive file size');
+    if (metadataSize > this.maxBytes) throw new Error('source exceeds the maximum acquisition size');
+    const response = await this.fetch(url, { signal, redirect: 'error' });
+    if (!response?.ok) throw new Error(`source returned HTTP ${response?.status || 0}`);
+    const headerSize = responseLength(response);
+    if (headerSize !== null && headerSize > this.maxBytes) throw new Error('source exceeds the maximum acquisition size');
+    if (headerSize !== null && headerSize !== metadataSize) throw new Error('source size does not match metadata');
+    const expectedSize = metadataSize || headerSize;
+    if (!expectedSize) throw new Error('source did not advertise a file size');
+    const maxBytes = this.maxBytes;
+    const stagedPath = safePath(stageDir, `download.${extensionFor(candidate.format)}.part`);
+    let bytes = 0;
+    const meter = new Transform({
+      transform(chunk, _encoding, callback) {
+        bytes += chunk.length;
+        if (bytes > maxBytes) return callback(new Error('source exceeded the maximum acquisition size'));
+        if (expectedSize && bytes > expectedSize) return callback(new Error('source exceeded advertised size'));
+        onProgress?.({ source, bytes, totalBytes: expectedSize });
+        callback(null, chunk);
+      },
+    });
+    await pipeline(await responseStream(response, maxBytes), meter, fs.createWriteStream(stagedPath, { flags: 'wx' }), { signal });
+    if (bytes !== expectedSize) throw new Error('source size does not match advertised size');
+    return stagedPath;
+  }
+
+  async downloadTorrent(candidate, stageDir, { signal, onProgress } = {}) {
+    if (!this.torrentBridge) throw new Error('torrent bridge is not configured');
+    const torrent = await (candidate.private
+      ? this.torrentBridge.addPrivate(candidate.torrent, { path: stageDir })
+      : this.torrentBridge.addPublic(candidate.torrent, { path: stageDir }));
+    try {
+      if (Array.isArray(torrent?.files) && torrent.files.length !== 1) throw new Error('book torrent must contain exactly one file');
+      await waitForTorrent(torrent, onProgress, signal, this.maxBytes);
+      const stagedPath = torrentFilePath(torrent, stageDir);
+      const stats = await fsp.stat(stagedPath);
+      if (!stats.isFile() || stats.size <= 0 || stats.size > this.maxBytes) {
+        throw new Error('torrent file exceeds the maximum acquisition size');
+      }
+      if (Number(candidate.size) > 0 && stats.size !== Number(candidate.size)) {
+        throw new Error('torrent file size does not match metadata');
+      }
+      return stagedPath;
+    } catch (error) {
+      // A torrent owns its peer connections and partially downloaded files;
+      // every rejection path must release it before the staging directory is
+      // removed by acquire().
+      destroyTorrent(torrent);
+      throw error;
+    }
+  }
+}
+
+module.exports = {
+  AcquisitionManager,
+  DEFAULT_MAX_ACQUISITION_BYTES,
+  assertTrustedURL,
+  extensionFor,
+  privateHostname,
+  safePath,
+};

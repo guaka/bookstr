@@ -289,10 +289,10 @@
     let readerSpeechPlayer = null;
 
     function selectedSpeechVoice(language) {
-      const normalized = String(language || "").toLowerCase();
-      return normalized === "pt" || normalized.startsWith("pt-")
-        ? String(currentReaderSettings.speechVoicePortuguese || "")
-        : String(currentReaderSettings.speechVoiceEnglish || "");
+      const languageCode = String(language || "").replace("_", "-").toLowerCase().split("-")[0];
+      return String(currentReaderSettings.speechVoices?.[languageCode]
+        || (languageCode === "pt" ? currentReaderSettings.speechVoicePortuguese : "")
+        || (languageCode === "en" ? currentReaderSettings.speechVoiceEnglish : ""));
     }
 
     function applyReaderSettings(settings = storedReaderSettings()) {

@@ -22,7 +22,7 @@ function launchEnvironment(relayUrl) {
   };
 }
 
-test('approved NIP-46 QR signer becomes active, signs, encrypts, and survives restart', async () => {
+test('approved NIP-46 QR signer becomes active, updates settings, and persists when secure storage is available', async () => {
   const fixture = await createNip46Fixture();
   const userData = newUserData();
   let electronApp = await electron.launch({
@@ -32,12 +32,16 @@ test('approved NIP-46 QR signer becomes active, signs, encrypts, and survives re
 
   try {
     let library = await electronApp.firstWindow();
-    const invitation = await library.evaluate(() => window.bookstrDesktop.signer.startNip46Qr());
-    const parsedInvitation = new URL(invitation.uri);
+    await library.getByRole('button', { name: 'Settings' }).click();
+    await library.getByRole('button', { name: 'Connect with QR code' }).click();
+    await expect(library.getByAltText('NIP-46 connection QR code')).toHaveAttribute('src', /^data:image\/png;base64,/);
+    await library.getByRole('button', { name: 'Copy connection link' }).click();
+    const invitationUri = await library.evaluate(() => navigator.clipboard.readText());
+    const parsedInvitation = new URL(invitationUri);
     expect(parsedInvitation.searchParams.getAll('relay')).toEqual([fixture.relayUrl]);
     expect(parsedInvitation.searchParams.get('perms')).toContain('sign_event:22242');
 
-    await fixture.approve(invitation.uri);
+    await fixture.approve(invitationUri);
     await expect.poll(() => library.evaluate(() => window.bookstrDesktop.signer.nip46QrStatus()))
       .toMatchObject({ status: 'connected', responseReceived: true, relays: [fixture.relayUrl] });
 
@@ -64,6 +68,11 @@ test('approved NIP-46 QR signer becomes active, signs, encrypts, and survives re
       ({ peerPubkey, ciphertext }) => window.bookstrDesktop.signer.nip44.decrypt(peerPubkey, ciphertext),
       { peerPubkey: fixture.peerPubkey, ciphertext: encryptedForUser },
     )).resolves.toBe('decrypted by Electron');
+    const signerStatus = library.locator('#desktop-signer-status');
+    await expect(signerStatus).toContainText('Connected with NIP-46 remote signer');
+    await expect(signerStatus).toHaveClass(/signer-connected/);
+    await expect(library.getByRole('button', { name: 'Connect with QR code' })).toBeHidden();
+    expect(await signerStatus.evaluate(element => getComputedStyle(element, '::before').content)).toBe('"✓"');
 
     await electronApp.close();
     electronApp = await electron.launch({
@@ -71,9 +80,13 @@ test('approved NIP-46 QR signer becomes active, signs, encrypts, and survives re
       env: launchEnvironment(fixture.relayUrl),
     });
     library = await electronApp.firstWindow();
-    await expect.poll(() => library.evaluate(() => window.bookstrDesktop.signer.status()))
-      .toMatchObject({ mode: 'nip46', configured: true, pubkey: fixture.userPubkey });
-    await expect(library.evaluate(() => window.bookstrDesktop.signer.getPublicKey())).resolves.toBe(fixture.userPubkey);
+    const restartedStatus = await library.evaluate(() => window.bookstrDesktop.signer.status());
+    if (connected.status.persistent) {
+      expect(restartedStatus).toMatchObject({ mode: 'nip46', configured: true, pubkey: fixture.userPubkey });
+      await expect(library.evaluate(() => window.bookstrDesktop.signer.getPublicKey())).resolves.toBe(fixture.userPubkey);
+    } else {
+      expect(restartedStatus).toMatchObject({ mode: '', configured: false, pubkey: '' });
+    }
   } finally {
     await electronApp?.close();
     await fixture.close();

@@ -1,0 +1,19 @@
+FROM mcr.microsoft.com/playwright:v1.62.1-noble
+
+WORKDIR /workspace/desktop
+
+COPY --chown=pwuser:pwuser desktop/package.json desktop/package-lock.json ./
+RUN chown -R pwuser:pwuser /workspace
+
+USER pwuser
+RUN npm ci
+RUN node node_modules/electron/install.js
+
+COPY --chown=pwuser:pwuser desktop/ ./
+COPY --chown=pwuser:pwuser shared/ ../shared/
+COPY --chown=pwuser:pwuser web/ ../web/
+
+ENV CI=1
+
+ENTRYPOINT ["xvfb-run", "-a"]
+CMD ["npx", "playwright", "test"]

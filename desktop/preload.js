@@ -2,8 +2,10 @@ const { contextBridge, ipcRenderer } = require('electron');
 
 const readerOpenCallbacks = new Set();
 const progressCallbacks = new Set();
+const acquisitionProgressCallbacks = new Set();
 const settingsOpenCallbacks = new Set();
 const paneOpenCallbacks = new Set();
+const speechModelProgressCallbacks = new Set();
 const ALLOWED_PANES = new Set(['reading', 'home', 'search', 'people', 'words']);
 const PANE_SHORTCUTS = new Map([
   ['1', 'home'],
@@ -74,6 +76,16 @@ ipcRenderer.on('bookstr-desktop-reader-progress', (_event, payload) => {
   }
 });
 
+ipcRenderer.on('bookstr-desktop-acquisition-progress', (_event, payload) => {
+  for (const callback of acquisitionProgressCallbacks) {
+    try {
+      callback(payload);
+    } catch {
+      // ignore
+    }
+  }
+});
+
 ipcRenderer.on('bookstr-desktop-open-settings', () => {
   for (const callback of settingsOpenCallbacks) {
     try {
@@ -89,6 +101,16 @@ ipcRenderer.on('bookstr-desktop-open-pane', (_event, pane) => {
   for (const callback of paneOpenCallbacks) {
     try {
       callback(pane);
+    } catch {
+      // ignore
+    }
+  }
+});
+
+ipcRenderer.on('bookstr-desktop-speech-model-progress', (_event, progress) => {
+  for (const callback of speechModelProgressCallbacks) {
+    try {
+      callback(progress);
     } catch {
       // ignore
     }
@@ -163,6 +185,22 @@ const desktopBridge = {
   platform() {
     return process.platform;
   },
+  speechModels: {
+    status() {
+      return ipcRenderer.invoke('bookstr-desktop-speech-model-status');
+    },
+    install(id) {
+      return ipcRenderer.invoke('bookstr-desktop-speech-model-install', id);
+    },
+    remove(id) {
+      return ipcRenderer.invoke('bookstr-desktop-speech-model-remove', id);
+    },
+    onProgress(callback) {
+      if (typeof callback !== 'function') return () => {};
+      speechModelProgressCallbacks.add(callback);
+      return () => speechModelProgressCallbacks.delete(callback);
+    },
+  },
   onProgress(callback) {
     if (typeof callback !== 'function') {
       return () => {};
@@ -200,8 +238,16 @@ const desktopBridge = {
     getBook(bookId) {
       return ipcRenderer.invoke('bookstr-desktop-library-book', bookId);
     },
-    upsertBook(book) {
-      return ipcRenderer.invoke('bookstr-desktop-library-upsert-book', book);
+    importBook(options) {
+      return ipcRenderer.invoke('bookstr-desktop-library-import', options);
+    },
+    acquire(record, options = {}) {
+      return ipcRenderer.invoke('bookstr-desktop-library-acquire', { record, ...options });
+    },
+    onAcquisitionProgress(callback) {
+      if (typeof callback !== 'function') return () => {};
+      acquisitionProgressCallbacks.add(callback);
+      return () => acquisitionProgressCallbacks.delete(callback);
     },
     downloads() {
       return ipcRenderer.invoke('bookstr-desktop-library-downloads');
@@ -219,12 +265,32 @@ const desktopBridge = {
       return ipcRenderer.invoke('bookstr-desktop-library-open-reader', bookId);
     },
   },
+  devices: {
+    status() {
+      return ipcRenderer.invoke('bookstr-desktop-device-status');
+    },
+    registry() {
+      return ipcRenderer.invoke('bookstr-desktop-device-registry');
+    },
+    announce(options = {}) {
+      return ipcRenderer.invoke('bookstr-desktop-device-announce', options);
+    },
+    createEnvelope(request) {
+      return ipcRenderer.invoke('bookstr-desktop-device-create-envelope', request);
+    },
+    openEnvelope(request) {
+      return ipcRenderer.invoke('bookstr-desktop-device-open-envelope', request);
+    },
+    setRegistryEvent(event) {
+      return ipcRenderer.invoke('bookstr-desktop-device-set-registry-event', event);
+    },
+  },
   transfers: {
     status() {
       return ipcRenderer.invoke('bookstr-desktop-transfer-status');
     },
-    seedPublic(request) {
-      return ipcRenderer.invoke('bookstr-desktop-transfer-seed-public', request);
+    seedPublic(bookId) {
+      return ipcRenderer.invoke('bookstr-desktop-transfer-seed-public', { bookId });
     },
     addPublic(request) {
       return ipcRenderer.invoke('bookstr-desktop-transfer-add-public', request);

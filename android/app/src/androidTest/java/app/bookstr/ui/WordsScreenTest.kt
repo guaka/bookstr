@@ -12,17 +12,22 @@ import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.swipeLeft
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import app.bookstr.E2eScreenshotRule
 import app.bookstr.data.VocabularyWord
 import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
+import org.junit.rules.RuleChain
 import org.junit.runner.RunWith
 import org.json.JSONArray
 
 @RunWith(AndroidJUnit4::class)
 class WordsScreenTest {
-    @get:Rule
+    private val screenshots = E2eScreenshotRule()
     val composeRule = createComposeRule()
+
+    @get:Rule
+    val rules: RuleChain = RuleChain.outerRule(composeRule).around(screenshots)
 
     @Test
     fun filtersWordsByDefinitionAndClearsTheFilter() {

@@ -19,6 +19,8 @@ struct WordsView: View {
     @State private var query = ""
     @State private var sort = WordSortKey.recent
     @State private var installedMatches: [String: [DictionaryLookup]] = [:]
+    @State private var focusedRowID: String?
+    @State private var handledNavigationToken = 0
 
     var body: some View {
         Group {
@@ -78,6 +80,7 @@ struct WordsView: View {
                 await refreshFromInstalledDictionaries()
                 refreshInstalledMatches()
             }
+            revealRequestedHighlight()
         }
         .onChange(of: mode) { _, newMode in
             showCached()
@@ -87,13 +90,8 @@ struct WordsView: View {
             Task { await refreshFromNetwork(force: false) }
         }
         .onReceive(container.wordNavigation.$requestToken) { _ in
-            guard mode == .words else { return }
-            guard let requestedWord = container.wordNavigation.requestedWord else { return }
-            guard let target = container.wordNavigation.matchingWord(for: requestedWord, in: words) else {
-                errorMessage = "Could not find “\(requestedWord)” in your saved words."
-                return
-            }
-            Task { await openWord(target) }
+            showCached()
+            revealRequestedHighlight()
         }
         .refreshable {
             await refreshFromNetwork(force: true)
@@ -138,26 +136,36 @@ struct WordsView: View {
                 Text(wordsEmptyCopy)
             }
         } else {
-            List {
-                if visibleWords.isEmpty, !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    Text("No words match “\(query)”.")
-                        .foregroundStyle(.secondary)
-                        .listRowSeparator(.hidden)
+            ScrollViewReader { proxy in
+                List {
+                    if visibleWords.isEmpty, !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        Text("No words match “\(query)”.")
+                            .foregroundStyle(.secondary)
+                            .listRowSeparator(.hidden)
+                    }
+                    ForEach(visibleWords) { entry in
+                        let rowID = wordRowID(entry)
+                        Button { Task { await openWord(entry) } } label: { wordRow(entry) }
+                            .buttonStyle(.plain)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .listRowInsets(EdgeInsets(top: 10, leading: 4, bottom: 10, trailing: 4))
+                            .listRowBackground(focusedRowID == rowID ?
+                                container.settingsRepository.theme.primary.opacity(0.14) : Color.clear)
+                            .alignmentGuide(.listRowSeparatorLeading) { $0[.leading] }
+                            .alignmentGuide(.listRowSeparatorTrailing) { $0[.trailing] }
+                            .id(rowID)
+                    }
+                    .onDelete(perform: deleteWords)
                 }
-                ForEach(visibleWords) { entry in
-                    Button { Task { await openWord(entry) } } label: { wordRow(entry) }
-                        .buttonStyle(.plain)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .listRowInsets(EdgeInsets(top: 10, leading: 4, bottom: 10, trailing: 4))
-                        .alignmentGuide(.listRowSeparatorLeading) { $0[.leading] }
-                        .alignmentGuide(.listRowSeparatorTrailing) { $0[.trailing] }
+                .listStyle(.plain)
+                .listRowSpacing(0)
+                .contentMargins(.top, 0, for: .scrollContent)
+                .contentMargins(.horizontal, 0, for: .scrollContent)
+                .onChange(of: focusedRowID) { _, rowID in
+                    guard mode == .words, let rowID else { return }
+                    withAnimation { proxy.scrollTo(rowID, anchor: .center) }
                 }
-                .onDelete(perform: deleteWords)
             }
-            .listStyle(.plain)
-            .listRowSpacing(0)
-            .contentMargins(.top, 0, for: .scrollContent)
-            .contentMargins(.horizontal, 0, for: .scrollContent)
         }
     }
 
@@ -170,26 +178,36 @@ struct WordsView: View {
                 Text(marksEmptyCopy)
             }
         } else {
-            List {
-                if visibleMarks.isEmpty, !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    Text("No marks match “\(query)”.")
-                        .foregroundStyle(.secondary)
-                        .listRowSeparator(.hidden)
+            ScrollViewReader { proxy in
+                List {
+                    if visibleMarks.isEmpty, !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        Text("No marks match “\(query)”.")
+                            .foregroundStyle(.secondary)
+                            .listRowSeparator(.hidden)
+                    }
+                    ForEach(visibleMarks) { entry in
+                        let rowID = markRowID(entry)
+                        Button { Task { await openMark(entry) } } label: { markRow(entry) }
+                            .buttonStyle(.plain)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .listRowInsets(EdgeInsets(top: 10, leading: 4, bottom: 10, trailing: 4))
+                            .listRowBackground(focusedRowID == rowID ?
+                                container.settingsRepository.theme.primary.opacity(0.14) : Color.clear)
+                            .accessibilityIdentifier("mark-row-\(entry.syncId)")
+                            .id(rowID)
+                    }
+                    .onDelete(perform: deleteMarks)
                 }
-                ForEach(visibleMarks) { entry in
-                    Button { Task { await openMark(entry) } } label: { markRow(entry) }
-                        .buttonStyle(.plain)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .listRowInsets(EdgeInsets(top: 10, leading: 4, bottom: 10, trailing: 4))
-                        .accessibilityIdentifier("mark-row-\(entry.syncId)")
+                .listStyle(.plain)
+                .listRowSpacing(0)
+                .contentMargins(.top, 0, for: .scrollContent)
+                .contentMargins(.horizontal, 0, for: .scrollContent)
+                .accessibilityIdentifier("marks-list")
+                .onChange(of: focusedRowID) { _, rowID in
+                    guard mode == .marks, let rowID else { return }
+                    withAnimation { proxy.scrollTo(rowID, anchor: .center) }
                 }
-                .onDelete(perform: deleteMarks)
             }
-            .listStyle(.plain)
-            .listRowSpacing(0)
-            .contentMargins(.top, 0, for: .scrollContent)
-            .contentMargins(.horizontal, 0, for: .scrollContent)
-            .accessibilityIdentifier("marks-list")
         }
     }
 
@@ -239,8 +257,11 @@ struct WordsView: View {
             if let matches = installedMatches[entry.key], !matches.isEmpty {
                 ForEach(Array(matches.enumerated()), id: \.offset) { _, match in
                     VStack(alignment: .leading, spacing: 3) {
+                        Text("Dictionary: \(match.partOfSpeech)")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(container.settingsRepository.theme.primary)
                         if !match.partOfSpeech.isEmpty {
-                            Text(match.partOfSpeech)
+                            Text("Results in \(languageName(match.language))")
                                 .font(.caption.weight(.semibold))
                                 .foregroundStyle(.secondary)
                         }
@@ -253,6 +274,9 @@ struct WordsView: View {
                     .padding(.top, 2)
                 }
             } else if !entry.definitions.isEmpty {
+                Text("Dictionary: \(dictionaryName(for: entry))")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(container.settingsRepository.theme.primary)
                 ForEach(Array(entry.definitions.enumerated()), id: \.offset) { _, definition in
                     Text(definition)
                         .font(.footnote)
@@ -361,6 +385,53 @@ struct WordsView: View {
     private func showCached() {
         words = container.vocabularyRepository.all()
         marks = container.snippetRepository.all()
+    }
+
+    private func wordRowID(_ entry: VocabularyWord) -> String { "word:\(entry.key)" }
+
+    private func markRowID(_ entry: BookSnippet) -> String { "mark:\(entry.syncId)" }
+
+    private func revealRequestedHighlight() {
+        let token = container.wordNavigation.requestToken
+        guard token > 0, token != handledNavigationToken else { return }
+        handledNavigationToken = token
+        guard let request = container.wordNavigation.requestedHighlight else { return }
+        query = ""
+        switch request.kind {
+        case .word:
+            mode = .words
+            guard let target = container.wordNavigation.matchingWord(for: request, in: words) else {
+                errorMessage = "Could not find that word in your saved words."
+                return
+            }
+            focus(rowID: wordRowID(target))
+        case .mark:
+            mode = .marks
+            guard let target = container.wordNavigation.matchingMark(for: request, in: marks) else {
+                errorMessage = "Could not find that mark in your saved marks."
+                return
+            }
+            focus(rowID: markRowID(target))
+        }
+    }
+
+    private func focus(rowID: String) {
+        focusedRowID = nil
+        DispatchQueue.main.async { focusedRowID = rowID }
+    }
+
+    private func dictionaryName(for entry: VocabularyWord) -> String {
+        guard let host = URL(string: entry.sourceUrl)?.host?.lowercased() else {
+            return entry.sourceUrl.isEmpty ? "Saved definition" : entry.sourceUrl
+        }
+        if host.contains("wiktionary.org") { return "Wiktionary · \(languageName(entry.language))" }
+        if host.contains("wikdict.com") { return "WikDict · \(languageName(entry.language))" }
+        return host.replacingOccurrences(of: "www.", with: "")
+    }
+
+    private func languageName(_ code: String) -> String {
+        let normalized = code.lowercased().split(separator: "-").first.map(String.init) ?? code
+        return Locale.current.localizedString(forLanguageCode: normalized)?.capitalized ?? code.uppercased()
     }
 
     private func displayedDefinitions(for entry: VocabularyWord) -> [String] {

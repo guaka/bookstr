@@ -5,4 +5,8 @@
 - [Design](DESIGN.md)
 - [Kindle](KINDLE.md)
 - [Nostr](NOSTR.md)
+- [Device transfer](DEVICE_TRANSFER.md)
+- [Electron roadmap](ROADMAP.md)
+- [Sources](SOURCES.md)
+- [Migration](MIGRATION.md)
 - [OPDS](OPDS.md)

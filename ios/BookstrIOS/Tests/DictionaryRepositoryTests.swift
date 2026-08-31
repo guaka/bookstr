@@ -114,6 +114,20 @@ final class DictionaryRepositoryTests: XCTestCase {
         XCTAssertEqual(matches.map(\.definitions), [["heart — organ"], ["coração, peito — órgão"]])
     }
 
+    func testAllInstalledChecksFallbackSpellingInEveryDictionary() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("bookstr-dictionaries-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try makeDictionary(at: directory, id: "pt-en", rows: [("dou-lhe", "I give him", "")])
+        try makeDictionary(at: directory, id: "pt-de", rows: [("dou", "ich gebe", "")])
+
+        let matches = DictionaryRepository(packDirectory: directory).lookupAllInstalled(word: "dou-lhe")
+
+        XCTAssertEqual(matches.map(\.partOfSpeech), ["Portuguese → English", "Portuguese → German"])
+        XCTAssertEqual(matches.map(\.definitions), [["I give him"], ["ich gebe"]])
+    }
+
     func testParsesPortugueseDefinitionsAndEnglishTranslation() {
         let extract = """
         ==Português==

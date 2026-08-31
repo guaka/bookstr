@@ -108,6 +108,10 @@ jobs:
         if: always()
         continue-on-error: true
         run: xcrun xcresulttool get test-results summary --path ios/E2EResults.xcresult > ios/e2e-summary.json
+      - name: Extract iOS e2e screenshots
+        if: always()
+        continue-on-error: true
+        run: xcrun xcresulttool export attachments --path ios/E2EResults.xcresult --output-path ios/e2e-screenshots
       - name: Record iOS e2e overview
         if: always()
         env:
@@ -123,11 +127,22 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: bookstr-test-overview-ios-${{ github.run_id }}
+          path: test-overview/*.json
+      - name: Upload iOS test diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bookstr-ios-test-diagnostics-${{ github.run_id }}
           path: |
-            test-overview/ios.json
-            test-overview/ios-e2e.json
             ios/swift-test-results.log
             ios/e2e-summary.json
+      - name: Upload iOS e2e screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bookstr-e2e-screenshots-ios-${{ github.run_id }}
+          path: ios/e2e-screenshots/**/*.png
+          if-no-files-found: error
       - name: Fail unsuccessful iOS checks
         if: always() && (steps.ios_tests.outcome != 'success' || steps.ios_e2e_tests.outcome != 'success' || steps.ios_e2e_results.outcome != 'success')
         run: exit 1

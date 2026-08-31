@@ -22,7 +22,9 @@ test('normalizes platform test reports', () => {
   assert.deepEqual(parseJUnit(['<testsuite tests="5" failures="1" errors="1" skipped="1" time="2.5"></testsuite>']), {
     tests: 5, passed: 2, failed: 2, skipped: 1, durationMs: 2500,
   });
-  assert.equal(parsePlaywright({ stats: { expected: 6, unexpected: 1, skipped: 2, duration: 900 } }).tests, 9);
+  assert.deepEqual(parsePlaywright({ stats: { expected: 6, unexpected: 1, flaky: 1, skipped: 2, duration: 900 } }), {
+    tests: 10, passed: 7, failed: 1, flaky: 1, skipped: 2, durationMs: 900,
+  });
   assert.equal(parseXCResult({ totalTestCount: 8, failedTests: 1, skippedTests: 1 }).passed, 6);
   assert.deepEqual(parseSwiftTest("Executed 231 tests, with 0 failures (0 unexpected) in 0.178 (0.190) seconds\n"), {
     tests: 231, passed: 231, failed: 0, skipped: 0, durationMs: 178,
