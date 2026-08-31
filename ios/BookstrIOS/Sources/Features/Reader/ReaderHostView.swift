@@ -547,7 +547,7 @@ struct ReaderHostView: View {
     }
 
     private var readerByline: String {
-        [book.author.isEmpty ? nil : book.author, book.year]
+        [book.author.isEmpty ? nil : book.author, book.year, book.language?.uppercased()]
             .compactMap { $0 }
             .joined(separator: " · ")
     }

@@ -156,6 +156,7 @@ struct CatalogBook: Codable, Identifiable, Hashable, Sendable {
     let format: BookFormat
     let blossomSha256: String?
     let year: String?
+    var language: String? = nil
     var rightsStatus: String? = nil
     var license: String? = nil
     var licenseUrl: String? = nil
@@ -194,7 +195,7 @@ struct BookSearchResult: Identifiable, Hashable {
         guard let downloadUrl, let format else { return nil }
         return CatalogBook(id: id, title: title, author: author, epubUrl: downloadUrl,
                            coverUrl: coverUrl, sourceUrl: downloadUrl, isbn: nil, libvaultMd5: nil,
-                           format: format, blossomSha256: nil, year: year,
+                           format: format, blossomSha256: nil, year: year, language: language,
                            rightsStatus: rightsStatus, license: license, licenseUrl: licenseUrl,
                            rightsSource: rightsSource)
     }
@@ -202,7 +203,7 @@ struct BookSearchResult: Identifiable, Hashable {
     func asFavoriteBook() -> CatalogBook {
         CatalogBook(id: id, title: title, author: author, epubUrl: downloadUrl ?? "",
                     coverUrl: coverUrl, sourceUrl: downloadUrl, isbn: nil, libvaultMd5: nil,
-                    format: format ?? .epub, blossomSha256: nil, year: year,
+                    format: format ?? .epub, blossomSha256: nil, year: year, language: language,
                     rightsStatus: rightsStatus, license: license, licenseUrl: licenseUrl,
                     rightsSource: rightsSource)
     }

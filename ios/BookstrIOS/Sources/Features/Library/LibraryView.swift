@@ -183,6 +183,7 @@ struct LibraryView: View {
                 Text(book.author).font(.subheadline).foregroundStyle(.secondary)
                 HStack(spacing: 5) {
                     if let year = book.year { Text(year) }
+                    if let language = book.language { Text("· \(language.uppercased())") }
                     RightsBadge(rights: book.rights)
                     Text("· \(book.format.rawValue.uppercased())")
                 }

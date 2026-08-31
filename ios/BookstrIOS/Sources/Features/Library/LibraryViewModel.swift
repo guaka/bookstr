@@ -221,7 +221,7 @@ final class LibraryViewModel: ObservableObject {
         return books.filter { book in
             matchesFilter(
                 terms,
-                values: [book.title, book.author, book.isbn, book.year, book.format.rawValue]
+                values: [book.title, book.author, book.isbn, book.year, book.language, book.format.rawValue]
             )
         }
     }

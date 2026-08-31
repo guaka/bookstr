@@ -33,6 +33,7 @@
 		5D14136E0D59C256F2F69460 /* AppContainerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E953DE583891B52989473771 /* AppContainerTests.swift */; };
 		5DB889E6F39D4FE4A93EDE88 /* ReaderAssetContractTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 72EA11CB11F3CEF1440866E6 /* ReaderAssetContractTests.swift */; };
 		601AF8A79D4831DDC09A645C /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 23A93D9A5855B73ACF116D90 /* RootView.swift */; };
+		628D753F89F64875FF534939 /* LibArchive in Frameworks */ = {isa = PBXBuildFile; productRef = D74F01E1504CF8FDFBA42EC9 /* LibArchive */; };
 		6480490A639CE5220CC5DFCB /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6F93448D346ACAB3619DFEB4 /* Theme.swift */; };
 		6A0D1FD1C20FDF3EA0EF7F56 /* NostrConstantsV1.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7BA154F3ED4ACB912D2B64FE /* NostrConstantsV1.swift */; };
 		6CFA77C5EDBF89E9E2C87904 /* NostrSigner.swift in Sources */ = {isa = PBXBuildFile; fileRef = CBC8C1E2AA5F7475E90DE61A /* NostrSigner.swift */; };
@@ -211,6 +212,7 @@
 				9F071395C4FA0319FE7D14EC /* NostrConnect in Frameworks */,
 				4996C0C39A8E6AA94CD4A0D7 /* NostrCore in Frameworks */,
 				5BCCE14D8755238CCB662E0D /* sherpa-onnx in Frameworks */,
+				628D753F89F64875FF534939 /* LibArchive in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -506,6 +508,7 @@
 				852A2E2E0141791441DC562E /* NostrConnect */,
 				FEE3AF5A18BD6006726181A5 /* NostrCore */,
 				A6F58F0C4DD69AA16B021DB4 /* sherpa-onnx */,
+				D74F01E1504CF8FDFBA42EC9 /* LibArchive */,
 			);
 			productName = BookstrIOS;
 			productReference = 0ADD34E2FDD350ABCD0A2F1E /* BookstrIOS.app */;
@@ -563,6 +566,7 @@
 			mainGroup = AA0BA622039A0D274FA42EBA;
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
+				7025FED45343CF1C78FF9E74 /* XCRemoteSwiftPackageReference "libarchive-swift" */,
 				ACEF3FCAEEDD319D65424C51 /* XCRemoteSwiftPackageReference "sherpa-onnx" */,
 				23E78AF47BCE51E7F46E4F46 /* XCRemoteSwiftPackageReference "swift-nostr" */,
 			);
@@ -1007,6 +1011,14 @@
 				minimumVersion = 0.7.0;
 			};
 		};
+		7025FED45343CF1C78FF9E74 /* XCRemoteSwiftPackageReference "libarchive-swift" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/everpcpc/libarchive-swift";
+			requirement = {
+				kind = exactVersion;
+				version = 0.1.11;
+			};
+		};
 		ACEF3FCAEEDD319D65424C51 /* XCRemoteSwiftPackageReference "sherpa-onnx" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/k2-fsa/sherpa-onnx";
@@ -1027,6 +1039,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = ACEF3FCAEEDD319D65424C51 /* XCRemoteSwiftPackageReference "sherpa-onnx" */;
 			productName = "sherpa-onnx";
+		};
+		D74F01E1504CF8FDFBA42EC9 /* LibArchive */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 7025FED45343CF1C78FF9E74 /* XCRemoteSwiftPackageReference "libarchive-swift" */;
+			productName = LibArchive;
 		};
 		FEE3AF5A18BD6006726181A5 /* NostrCore */ = {
 			isa = XCSwiftPackageProductDependency;

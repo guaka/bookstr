@@ -1,5 +1,8 @@
 import CryptoKit
 import Foundation
+#if canImport(LibArchive)
+import LibArchive
+#endif
 #if canImport(zlib)
 import zlib
 #endif
@@ -10,6 +13,11 @@ enum PublicationUtilities {
     static let maxFB2Bytes: Int64 = 50 * 1024 * 1024
     static let maxComicEntries = 2_000
     static let maxComicPageBytes: UInt32 = 30 * 1024 * 1024
+    static let maxComicMetadataBytes = 1 * 1024 * 1024
+
+    struct ComicMetadata: Equatable {
+        let language: String?
+    }
 
     static func publicationIdentityCandidates(for book: CatalogBook) -> [String] {
         var seen = Set<String>()
@@ -174,6 +182,153 @@ enum PublicationUtilities {
         let lower = name.lowercased()
         guard !lower.contains("/__macosx/"), !lower.hasPrefix("__macosx/") else { return false }
         return [".jpg", ".jpeg", ".png", ".gif", ".webp"].contains { lower.hasSuffix($0) }
+    }
+
+    static func comicMetadata(fileURL: URL, format: BookFormat) -> ComicMetadata? {
+        let data: Data?
+        switch format {
+        case .cbz: data = zipComicInfoData(fileURL: fileURL)
+        case .cbr: data = rarComicInfoData(fileURL: fileURL)
+        default: return nil
+        }
+        guard let data, let language = parseComicInfoLanguage(data) else { return nil }
+        return ComicMetadata(language: language)
+    }
+
+    private final class ComicInfoParser: NSObject, XMLParserDelegate {
+        var language: String?
+        private var value = ""
+        private var invalid = false
+
+        func parser(_ parser: XMLParser, didStartElement elementName: String,
+                    namespaceURI: String?, qualifiedName qName: String?, attributes attributeDict: [String: String] = [:]) {
+            value = ""
+        }
+
+        func parser(_ parser: XMLParser, foundCharacters string: String) { value += string }
+
+        func parser(_ parser: XMLParser, didEndElement elementName: String,
+                    namespaceURI: String?, qualifiedName qName: String?) {
+            let name = (qName ?? elementName).split(separator: ":").last.map(String.init)?.lowercased()
+                ?? elementName.lowercased()
+            if name == "languageiso", language == nil {
+                let candidate = value.trimmingCharacters(in: .whitespacesAndNewlines)
+                    .replacingOccurrences(of: "_", with: "-").lowercased()
+                if candidate.range(of: #"^[a-z]{2,3}(?:-[a-z0-9]{2,8})*$"#, options: .regularExpression) != nil {
+                    language = candidate
+                }
+            }
+            value = ""
+        }
+
+        func parser(_ parser: XMLParser, foundSkippedEntity name: String) {
+            invalid = true
+            parser.abortParsing()
+        }
+
+        var isValid: Bool { !invalid && language != nil }
+    }
+
+    private static func parseComicInfoLanguage(_ data: Data) -> String? {
+        guard !data.isEmpty, data.count <= maxComicMetadataBytes else { return nil }
+        let source = String(decoding: data, as: UTF8.self)
+        guard source.range(of: "<!DOCTYPE", options: .caseInsensitive) == nil,
+              source.range(of: "<!ENTITY", options: .caseInsensitive) == nil else { return nil }
+        let delegate = ComicInfoParser()
+        let parser = XMLParser(data: data)
+        parser.delegate = delegate
+        parser.shouldProcessNamespaces = true
+        parser.shouldResolveExternalEntities = false
+        guard parser.parse(), delegate.isValid else { return nil }
+        return delegate.language
+    }
+
+    private static func zipComicInfoData(fileURL: URL) -> Data? {
+        guard let data = try? Data(contentsOf: fileURL, options: [.mappedIfSafe]), data.count >= 22 else { return nil }
+        let searchStart = max(data.startIndex, data.endIndex - 65_557)
+        var cursor = data.endIndex - 22
+        var endRecord: Data.Index?
+        while cursor >= searchStart {
+            if cursor + 3 < data.endIndex, readUInt32(data, cursor) == 0x06054b50 {
+                endRecord = cursor
+                break
+            }
+            if cursor == data.startIndex { break }
+            cursor -= 1
+        }
+        guard let endRecord,
+              readUInt16(data, endRecord + 4) == 0,
+              readUInt16(data, endRecord + 6) == 0 else { return nil }
+        let entryCount = Int(readUInt16(data, endRecord + 10))
+        let directorySize = Int(readUInt32(data, endRecord + 12))
+        let directoryOffset = Int(readUInt32(data, endRecord + 16))
+        guard entryCount > 0, entryCount <= maxComicEntries,
+              directorySize >= 46, directoryOffset >= 0,
+              directoryOffset + directorySize <= data.count else { return nil }
+
+        var entry = data.startIndex + directoryOffset
+        let directoryEnd = entry + directorySize
+        for _ in 0..<entryCount {
+            guard entry + 46 <= directoryEnd, readUInt32(data, entry) == 0x02014b50 else { return nil }
+            let flags = readUInt16(data, entry + 8)
+            let method = readUInt16(data, entry + 10)
+            let compressedSize = Int(readUInt32(data, entry + 20))
+            let uncompressedSize = Int(readUInt32(data, entry + 24))
+            let nameLength = Int(readUInt16(data, entry + 28))
+            let extraLength = Int(readUInt16(data, entry + 30))
+            let commentLength = Int(readUInt16(data, entry + 32))
+            let localOffset = Int(readUInt32(data, entry + 42))
+            let nameStart = entry + 46
+            let next = nameStart + nameLength + extraLength + commentLength
+            guard nameLength > 0, next <= directoryEnd,
+                  let name = String(data: data[nameStart..<(nameStart + nameLength)], encoding: .utf8)
+            else { return nil }
+            entry = next
+
+            let normalized = name.replacingOccurrences(of: "\\", with: "/")
+            guard normalized.split(separator: "/").last?.lowercased() == "comicinfo.xml" else { continue }
+            guard flags & 0x0001 == 0, method == 0 || method == 8,
+                  compressedSize > 0, compressedSize <= maxComicMetadataBytes,
+                  uncompressedSize > 0, uncompressedSize <= maxComicMetadataBytes,
+                  localOffset >= 0, localOffset + 30 <= data.count,
+                  readUInt32(data, data.startIndex + localOffset) == 0x04034b50 else { return nil }
+            let localNameLength = Int(readUInt16(data, data.startIndex + localOffset + 26))
+            let localExtraLength = Int(readUInt16(data, data.startIndex + localOffset + 28))
+            let payload = data.startIndex + localOffset + 30 + localNameLength + localExtraLength
+            guard payload + compressedSize <= data.endIndex else { return nil }
+            let compressed = Data(data[payload..<(payload + compressedSize)])
+            if method == 0 { return compressedSize == uncompressedSize ? compressed : nil }
+            return inflateRawDeflate(compressed, expectedSize: uncompressedSize)
+        }
+        return nil
+    }
+
+    private static func rarComicInfoData(fileURL: URL) -> Data? {
+        #if canImport(LibArchive)
+        var result = Data()
+        do {
+            try ArchiveReader().readDataBlocks(
+                in: fileURL,
+                selecting: { entry in
+                    guard entry.fileType == .regular,
+                          !entry.isDataEncrypted, !entry.isMetadataEncrypted,
+                          entry.size > 0, entry.size <= Int64(maxComicMetadataBytes),
+                          URL(fileURLWithPath: entry.path).lastPathComponent.lowercased() == "comicinfo.xml"
+                    else { return .skip }
+                    return .read
+                }
+            ) { _, block in
+                guard result.count + block.data.count <= maxComicMetadataBytes else { return .finishEntry }
+                result.append(block.data)
+                return .continueReading
+            }
+            return result.isEmpty ? nil : result
+        } catch {
+            return nil
+        }
+        #else
+        return nil
+        #endif
     }
 
     /// Returns descriptive metadata from a local FB2 file without inserting

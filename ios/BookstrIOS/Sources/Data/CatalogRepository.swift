@@ -152,6 +152,8 @@ final class CatalogRepository {
     private let settings: SettingsRepository
     private let signerStore: SignerStore
     private let nip46Service: Nip46Service
+    private var inspectedComicMetadata = Set<URL>()
+    private var comicLanguageByURL: [URL: String] = [:]
 
     init(fileStore: JSONFileStore, settings: SettingsRepository, signerStore: SignerStore, nip46Service: Nip46Service) {
         self.fileStore = fileStore
@@ -174,8 +176,15 @@ final class CatalogRepository {
             let embedded = ext == "fb2" ? PublicationUtilities.fb2Metadata(fileURL: file) : nil
             let id = file.deletingPathExtension().lastPathComponent.lowercased()
             guard id.count == 64, id.allSatisfy(\.isHexDigit) else { continue }
+            let comicLanguage = byID[id]?.language ?? ((storedFormat == .cbr || storedFormat == .cbz)
+                ? cachedComicLanguage(fileURL: file, format: storedFormat) : nil)
             if let remembered = byID[id], remembered.format.rawValue != ext {
-                byID[id] = replacingFormat(of: remembered, with: storedFormat)
+                var updated = replacingFormat(of: remembered, with: storedFormat)
+                updated.language = updated.language ?? comicLanguage
+                byID[id] = updated
+            } else if var remembered = byID[id] {
+                remembered.language = remembered.language ?? comicLanguage
+                byID[id] = remembered
             } else if byID[id] == nil, let favorite = favoritesBySHA[id] {
                 byID[id] = CatalogBook(
                     id: id, title: favorite.title, author: favorite.author ?? "Unknown",
@@ -183,6 +192,7 @@ final class CatalogRepository {
                     sourceUrl: favorite.blossomUrl, isbn: favorite.isbn,
                     libvaultMd5: favorite.libvaultMd5,
                     format: storedFormat, blossomSha256: id, year: favorite.year,
+                    language: comicLanguage,
                     rightsStatus: favorite.rightsStatus, license: favorite.license,
                     licenseUrl: favorite.licenseUrl, rightsSource: favorite.rightsSource
                 )
@@ -191,7 +201,8 @@ final class CatalogRepository {
                     id: id, title: embedded?.title ?? "Downloaded \(ext.uppercased())", author: embedded?.author ?? "Unknown",
                     epubUrl: "https://\(Self.blossomHost)/\(id)", coverUrl: nil,
                     sourceUrl: nil, isbn: nil, libvaultMd5: nil,
-                    format: storedFormat, blossomSha256: id, year: embedded?.year
+                    format: storedFormat, blossomSha256: id, year: embedded?.year,
+                    language: comicLanguage
                 )
             }
         }
@@ -428,10 +439,18 @@ final class CatalogRepository {
             id: id, title: book.title, author: book.author, epubUrl: book.epubUrl,
             coverUrl: book.coverUrl, sourceUrl: book.sourceUrl, isbn: book.isbn,
             libvaultMd5: book.libvaultMd5, format: format,
-            blossomSha256: book.blossomSha256, year: book.year,
+            blossomSha256: book.blossomSha256, year: book.year, language: book.language,
             rightsStatus: book.rightsStatus, license: book.license,
             licenseUrl: book.licenseUrl, rightsSource: book.rightsSource
         )
+    }
+
+    private func cachedComicLanguage(fileURL: URL, format: BookFormat) -> String? {
+        if inspectedComicMetadata.contains(fileURL) { return comicLanguageByURL[fileURL] }
+        inspectedComicMetadata.insert(fileURL)
+        let language = PublicationUtilities.comicMetadata(fileURL: fileURL, format: format)?.language
+        comicLanguageByURL[fileURL] = language
+        return language
     }
 
     private func isValidCachedFile(book: CatalogBook, fileURL: URL, verifyBlossomHash: Bool) -> Bool {
@@ -463,7 +482,7 @@ final class CatalogRepository {
             id: book.id, title: book.title, author: book.author, epubUrl: book.epubUrl,
             coverUrl: book.coverUrl, sourceUrl: book.sourceUrl, isbn: book.isbn,
             libvaultMd5: book.libvaultMd5, format: format,
-            blossomSha256: book.blossomSha256, year: book.year,
+            blossomSha256: book.blossomSha256, year: book.year, language: book.language,
             rightsStatus: book.rightsStatus, license: book.license,
             licenseUrl: book.licenseUrl, rightsSource: book.rightsSource
         )

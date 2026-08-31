@@ -12,6 +12,18 @@ import WebKit
 #endif
 
 final class ReaderAssetContractTests: XCTestCase {
+    func testCBZComicInfoLanguageMetadataIsNormalized() throws {
+        let encoded = "UEsDBBQAAAAIAGltH13aFkIEYQAAAHUAAAANABwAQ29taWNJbmZvLnhtbFVUCQAD5naVauZ2lWp1eAsAAQT1AQAABAAAAACzsa/IzVEoSy0qzszPs1Uy1DNQUkjNS85PycxLt1UqLUnTtVCyt+Oycc7PzUz2zEvLt7MJySzJSbVzrUjMLchJtdGHcG18EvPSSxPTUz2D/e0CQuKdgmz0kYVs9BEmcAEAUEsDBAoAAAAAAGltH12sLGB1CAAAAAgAAAAHABwAMDAxLmpwZ1VUCQAD5naVauZ2lWp1eAsAAQT1AQAABAAAAABmaXh0dXJlClBLAQIeAxQAAAAIAGltH13aFkIEYQAAAHUAAAANABgAAAAAAAEAAACkgQAAAABDb21pY0luZm8ueG1sVVQFAAPmdpVqdXgLAAEE9QEAAAQAAAAAUEsBAh4DCgAAAAAAaW0fXawsYHUIAAAACAAAAAcAGAAAAAAAAQAAAKSBqAAAADAwMS5qcGdVVAUAA+Z2lWp1eAsAAQT1AQAABAAAAABQSwUGAAAAAAIAAgCgAAAA8QAAAAAA"
+        let fileURL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".cbz")
+        defer { try? FileManager.default.removeItem(at: fileURL) }
+        try XCTUnwrap(Data(base64Encoded: encoded)).write(to: fileURL)
+
+        XCTAssertEqual(
+            PublicationUtilities.comicMetadata(fileURL: fileURL, format: .cbz)?.language,
+            "pt-br"
+        )
+    }
+
 #if !SWIFT_PACKAGE
     func testComicReaderResourcesAreBundled() throws {
         XCTAssertNotNil(Bundle.main.url(forResource: "comic-reader", withExtension: "html"))

@@ -1,5 +1,6 @@
 import SwiftUI
 import WebKit
+import LibArchive
 
 @MainActor
 final class ComicReaderController: ObservableObject {
@@ -102,12 +103,20 @@ struct ComicReaderView: UIViewRepresentable {
     """
 
     final class Coordinator: NSObject, WKNavigationDelegate, WKScriptMessageHandler, WKURLSchemeHandler {
+        private struct NativePage: Sendable {
+            let name: String
+            let url: URL
+        }
+
         private let book: CatalogBook
         private let format: BookFormat
         private let fileURL: URL
         private let controller: ComicReaderController
         private let initialLocator: String?
         private let onProgress: (Double, String) -> Void
+        private var nativePages: [NativePage] = []
+        private var extractionDirectory: URL?
+        private var hasStartedLoading = false
 
         init(
             book: CatalogBook,
@@ -125,33 +134,61 @@ struct ComicReaderView: UIViewRepresentable {
             self.onProgress = onProgress
         }
 
+        deinit {
+            if let extractionDirectory {
+                try? FileManager.default.removeItem(at: extractionDirectory)
+            }
+        }
+
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+            guard !hasStartedLoading else { return }
+            hasStartedLoading = true
             controller.loadingStage = "Extracting pages"
             let initialPage = ComicReaderController.page(
                 from: initialLocator,
                 fallbackProgression: controller.furthestProgression
             )
-            let archivePath = "/books/current.\(format.rawValue)"
-            let options: [String: Any] = [
+            var options: [String: Any] = [
                 "format": format.rawValue,
                 "bookTitle": book.title,
                 "bookId": book.id,
-                "archiveURL": "bookstr-comic://app\(archivePath)",
                 "initialPage": initialPage
             ]
+            if format == .cbr {
+                Task { [weak self, weak webView] in
+                    guard let self else { return }
+                    do {
+                        let prepared = try await Self.extractRARPages(from: self.fileURL)
+                        self.extractionDirectory = prepared.directory
+                        self.nativePages = prepared.pages
+                        options["pages"] = prepared.pages.enumerated().map { index, page in
+                            ["name": page.name, "url": "bookstr-comic://app/pages/\(index)"]
+                        }
+                        self.startComic(options: options, in: webView)
+                    } catch {
+                        self.controller.errorMessage = error.localizedDescription
+                    }
+                }
+            } else {
+                options["archiveURL"] = "bookstr-comic://app/books/current.cbz"
+                startComic(options: options, in: webView)
+            }
+        }
+
+        private func startComic(options: [String: Any], in webView: WKWebView?) {
             guard let data = try? JSONSerialization.data(withJSONObject: options),
                   let json = String(data: data, encoding: .utf8) else {
                 controller.errorMessage = "Could not configure the comic reader."
                 return
             }
-            webView.evaluateJavaScript("[typeof loadComic,typeof JSZip,typeof libarchive].join('|')") {
+            webView?.evaluateJavaScript("[typeof loadComic,typeof JSZip].join('|')") {
                 [weak self, weak webView] value, error in
                 guard let self else { return }
                 if let error {
                     self.controller.errorMessage = "Could not initialize the comic reader: \(error.localizedDescription)"
                     return
                 }
-                guard value as? String == "function|function|function" else {
+                guard value as? String == "function|function" else {
                     self.controller.errorMessage = "The comic reader resources did not load."
                     return
                 }
@@ -211,6 +248,12 @@ struct ComicReaderView: UIViewRepresentable {
                 case "/books/current.cbr", "/books/current.cbz":
                     data = try Data(contentsOf: fileURL, options: .mappedIfSafe)
                     mimeType = "application/octet-stream"
+                case let path? where path.hasPrefix("/pages/"):
+                    guard let index = Int(path.dropFirst("/pages/".count)),
+                          nativePages.indices.contains(index) else { throw URLError(.fileDoesNotExist) }
+                    let page = nativePages[index]
+                    data = try Data(contentsOf: page.url, options: .mappedIfSafe)
+                    mimeType = Self.imageMIMEType(for: page.url.pathExtension)
                 default:
                     throw URLError(.fileDoesNotExist)
                 }
@@ -246,6 +289,114 @@ struct ComicReaderView: UIViewRepresentable {
                 )
             }
             return try Data(contentsOf: url, options: .mappedIfSafe)
+        }
+
+        private static func extractRARPages(from archiveURL: URL) async throws -> (directory: URL, pages: [NativePage]) {
+            try await Task.detached(priority: .userInitiated) {
+                let fileManager = FileManager.default
+                let directory = fileManager.temporaryDirectory
+                    .appendingPathComponent("bookstr-cbr-\(UUID().uuidString)", isDirectory: true)
+                try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
+
+                do {
+                    var pages: [NativePage] = []
+                    var activeHandle: FileHandle?
+                    var activeEntryPath: String?
+                    var activeURL: URL?
+                    var expectedSize: Int64 = 0
+                    var receivedSize: Int64 = 0
+                    var seenEntries = 0
+
+                    try ArchiveReader().readDataBlocks(
+                        in: archiveURL,
+                        selecting: { entry in
+                            seenEntries += 1
+                            guard seenEntries <= PublicationUtilities.maxComicEntries else {
+                                throw comicError("The archive contains too many entries.")
+                            }
+                            guard entry.fileType == .regular,
+                                  !entry.isDataEncrypted, !entry.isMetadataEncrypted,
+                                  entry.size > 0,
+                                  entry.size <= Int64(PublicationUtilities.maxComicPageBytes),
+                                  isSafeImagePath(entry.path) else { return .skip }
+
+                            let fileExtension = URL(fileURLWithPath: entry.path).pathExtension.lowercased()
+                            let outputURL = directory.appendingPathComponent(
+                                String(format: "page-%04d.%@", pages.count, fileExtension)
+                            )
+                            guard fileManager.createFile(atPath: outputURL.path, contents: nil),
+                                  let handle = try? FileHandle(forWritingTo: outputURL) else {
+                                throw comicError("Could not prepare a comic page.")
+                            }
+                            activeHandle = handle
+                            activeEntryPath = entry.path
+                            activeURL = outputURL
+                            expectedSize = entry.size
+                            receivedSize = 0
+                            return .read
+                        },
+                        didFinishEntry: { entry, consumedToEOF in
+                            guard activeEntryPath == entry.path else { return }
+                            try activeHandle?.close()
+                            if consumedToEOF, receivedSize == expectedSize, let activeURL {
+                                pages.append(NativePage(name: entry.path, url: activeURL))
+                            } else if let activeURL {
+                                try? fileManager.removeItem(at: activeURL)
+                            }
+                            activeHandle = nil
+                            activeEntryPath = nil
+                            activeURL = nil
+                        },
+                        { entry, block in
+                            guard activeEntryPath == entry.path, let activeHandle else { return .finishEntry }
+                            guard block.offset >= 0,
+                                  block.offset + Int64(block.data.count) <= expectedSize else {
+                                return .finishEntry
+                            }
+                            try activeHandle.seek(toOffset: UInt64(block.offset))
+                            try activeHandle.write(contentsOf: block.data)
+                            receivedSize += Int64(block.data.count)
+                            return .continueReading
+                        }
+                    )
+                    try activeHandle?.close()
+                    guard !pages.isEmpty else {
+                        throw comicError("The CBR archive contains no readable comic pages.")
+                    }
+                    pages.sort { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+                    return (directory, pages)
+                } catch {
+                    try? fileManager.removeItem(at: directory)
+                    throw error
+                }
+            }.value
+        }
+
+        private static func isSafeImagePath(_ path: String) -> Bool {
+            let normalized = path.replacingOccurrences(of: "\\", with: "/")
+            let components = normalized.split(separator: "/", omittingEmptySubsequences: false)
+            guard !normalized.hasPrefix("/"), !components.contains(".."), !components.contains("") else { return false }
+            let lower = normalized.lowercased()
+            guard !lower.hasPrefix("__macosx/"), !lower.contains("/__macosx/") else { return false }
+            return ["jpg", "jpeg", "png", "gif", "webp"].contains(URL(fileURLWithPath: lower).pathExtension)
+        }
+
+        private static func imageMIMEType(for fileExtension: String) -> String {
+            switch fileExtension.lowercased() {
+            case "jpg", "jpeg": return "image/jpeg"
+            case "png": return "image/png"
+            case "gif": return "image/gif"
+            case "webp": return "image/webp"
+            default: return "application/octet-stream"
+            }
+        }
+
+        private static func comicError(_ message: String) -> NSError {
+            NSError(
+                domain: "BookstrComicReader",
+                code: 2,
+                userInfo: [NSLocalizedDescriptionKey: message]
+            )
         }
     }
 }
