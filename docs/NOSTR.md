@@ -224,6 +224,25 @@ are NIP-17 messages addressed to the requesting pubkey and include an encrypted
 gift-wrap event ID for durable replay protection; it does not persist decrypted
 request contents or sender pubkeys in the replay table.
 
+### Metadata-only catalog resolution
+
+Desktop clients can resolve a compact MD5 library entry without starting a
+server-side download. The request uses the same encrypted envelope and book
+reference as `libvault.fetch`:
+
+```json
+{
+  "type": "libvault.resolve",
+  "request_id": "<client-generated-opaque-id>",
+  "book": { "md5": "<catalog-md5>" }
+}
+```
+
+LibVault replies once with `libvault.resolve.result`, status `ready`, and the
+catalog `book`. For LibGen records this includes `md5`, numeric `id`,
+`extension`, and `filesize_bytes`. Resolution is read-only: it does not create a
+fetch job, download the book, or publish it to Blossom.
+
 ## Private catalog and downloaded-content search
 
 Search uses the same NIP-17/NIP-59 envelope, service discovery, recipient

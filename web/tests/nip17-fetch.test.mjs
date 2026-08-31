@@ -5,12 +5,15 @@ import {
   LIBVAULT_FETCH_TYPE,
   LIBVAULT_FAVORITES_TYPE,
   LIBVAULT_NIP05,
+  LIBVAULT_RESOLVE_RESPONSE_TYPE,
+  LIBVAULT_RESOLVE_TYPE,
   LIBVAULT_SEARCH_RESPONSE_TYPE,
   LIBVAULT_API,
   libvaultBookRef,
   lookupLibVaultBlossom,
   lookupLibVaultBlossomState,
   monitorLibVaultFetch,
+  resolveLibVaultBook,
   resolveLibVaultService,
   sendLibVaultFetchRequest,
   sendLibVaultFavoritesSync,
@@ -3858,6 +3861,42 @@ test('searchLibVault clamps oversized limits to the maximum', async () => {
   assert.equal(sentPayload?.request_id?.length > 0, true);
   assert.equal(response.status, 'ready');
   assert.equal(response.books[0]?.title, 'Limited Search');
+});
+
+test('resolveLibVaultBook requests metadata only and returns LibGen torrent identifiers', async () => {
+  const md5 = 'd'.repeat(32);
+  let sentPayload;
+  const result = await resolveLibVaultBook({ md5, title: 'Compact favorite' }, {
+    signer: {
+      getPublicKey: async () => senderPubkey,
+      nip44: { encrypt: async () => '{}', decrypt: async () => '' },
+      signEvent: async event => ({ ...event, id: 'seed', pubkey: senderPubkey, sig: 'signed' }),
+    },
+    fetchImpl: async () => discoveryResponse(),
+    loadTools: async () => ({
+      generateSecretKey: () => new Uint8Array(32).fill(7),
+      finalizeEvent: event => ({ ...event, id: 'wrap', pubkey: 'f'.repeat(64), sig: 'wrapped' }),
+      nip19: { npubEncode: pubkey => `npub:${pubkey}` },
+      nip44: { v2: { utils: { getConversationKey: () => new Uint8Array(32).fill(8) }, encrypt: plaintext => `wrapped:${plaintext}` } },
+      verifyEvent: () => true,
+    }),
+    publish: async () => true,
+    onTrace: trace => { if (trace.direction === 'sent') sentPayload = trace.payload; },
+    listen: ({ requestID }) => ({
+      ready: Promise.resolve(), arm: () => {}, close: () => {},
+      result: Promise.resolve({
+        type: LIBVAULT_RESOLVE_RESPONSE_TYPE,
+        request_id: requestID,
+        status: 'ready',
+        book: { md5, id: 2412930, extension: 'pdf', filesize_bytes: 12345 },
+      }),
+    }),
+  });
+
+  assert.equal(sentPayload.type, LIBVAULT_RESOLVE_TYPE);
+  assert.equal(sentPayload.book.md5, md5);
+  assert.equal(result.id, 2412930);
+  assert.equal(result.filesize_bytes, 12345);
 });
 
 test('libvaultBookRef ignores an invalid md5 and keeps normalized isbn', () => {

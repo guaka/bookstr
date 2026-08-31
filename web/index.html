@@ -5015,7 +5015,7 @@
       function isBookReadableNow(book) {
         const cached = cachedBookKeys.has(bookCacheKey(book, book.readUrl || book.url));
         return cached
-          || (isDesktopMode && Boolean(BookMetadata.torrentMetadataForBook(book) || BookMetadata.libgenTorrentMetadataForBook(book)))
+          || (isDesktopMode && Boolean(isMd5(book?.md5) || BookMetadata.torrentMetadataForBook(book) || BookMetadata.libgenTorrentMetadataForBook(book)))
           || /^https:\/\//i.test(String(book.blossomUrl || ''))
           || Boolean(BookMetadata.canonicalReadUrl(book, BOOKS_API_BASE));
       }
@@ -5063,6 +5063,9 @@
           const authorQuery = authorSearchName(book.authors);
           const availabilitySources = BookMetadata.availabilitySourcesForBook(book, isCached(book))
             .filter(source => !isDesktopMode || source !== 'Blossom');
+          if (isDesktopMode && isMd5(book?.md5) && !availabilitySources.includes('Torrent')) {
+            availabilitySources.unshift('Torrent');
+          }
           const availability = isCached(book)
             ? 'Cached'
             : availabilitySources.includes('Torrent')
@@ -5607,7 +5610,7 @@
         if (routeGeneration !== readRouteGeneration) return;
         if (cachedFormat) book = { ...book, extension: cachedFormat, format: cachedFormat };
         const torrentAvailable = isDesktopMode
-          && Boolean(BookMetadata.torrentMetadataForBook(book) || BookMetadata.libgenTorrentMetadataForBook(book));
+          && Boolean(isMd5(book?.md5) || BookMetadata.torrentMetadataForBook(book) || BookMetadata.libgenTorrentMetadataForBook(book));
         if (!readPath && !cached && !torrentAvailable) {
           updateReadMetadataFallbackDiagnostics(book, {
             readPath,
@@ -6061,21 +6064,39 @@
 
       async function fetchDesktopTorrentCopy(book) {
         if (!isDesktopMode) return null;
-        const libgenTorrent = BookMetadata.libgenTorrentMetadataForBook(book);
+        let torrentBook = book;
+        let libgenTorrent = BookMetadata.libgenTorrentMetadataForBook(torrentBook);
+        if (!libgenTorrent && isMd5(torrentBook?.md5)) {
+          if (!nostrSigner?.signEvent || !nostrSigner?.nip44?.encrypt || !nostrSigner?.nip44?.decrypt) {
+            throw new Error('Connect your Nostr signer to resolve this torrent from LibVault.');
+          }
+          status.textContent = `Resolving torrent metadata for ${torrentBook.title || 'book'}…`;
+          nip17FetchModule ||= import('./nip17-fetch.js');
+          const resolved = await nip17FetchModule.then(module => module.resolveLibVaultBook(torrentBook, {
+            signer: nostrSigner,
+            publish: publishRelayEvent,
+            onTrace: showNip17Trace,
+          }));
+          const normalized = normalizeSearchBooks({ books: [resolved] }, 'libvault')[0];
+          if (!normalized) throw new Error('LibVault returned invalid torrent metadata.');
+          torrentBook = BookMetadata.enrichBookMetadata(torrentBook, normalized, 'libvault');
+          Object.assign(book, torrentBook);
+          libgenTorrent = BookMetadata.libgenTorrentMetadataForBook(torrentBook);
+        }
         if (libgenTorrent && desktopBridge?.library?.acquireLibgen) {
-          status.textContent = `Finding torrent peers for ${book.title || 'book'}…`;
+          status.textContent = `Finding torrent peers for ${torrentBook.title || 'book'}…`;
           const stopProgress = desktopBridge.library.onAcquisitionProgress?.(progress => {
             if (String(progress?.bookId || '').toLowerCase() !== libgenTorrent.md5) return;
             const total = Number(progress.totalBytes || 0);
             const percent = total > 0 ? ` · ${Math.min(100, Math.round(Number(progress.bytes || 0) / total * 100))}%` : '';
             const peers = Number(progress.peers || 0);
             status.textContent = peers > 0
-              ? `Downloading ${book.title || 'book'} from ${peers} torrent peer${peers === 1 ? '' : 's'}${percent}`
-              : `Finding torrent peers for ${book.title || 'book'}${percent}`;
+              ? `Downloading ${torrentBook.title || 'book'} from ${peers} torrent peer${peers === 1 ? '' : 's'}${percent}`
+              : `Finding torrent peers for ${torrentBook.title || 'book'}${percent}`;
           }) || (() => {});
           let result;
           try {
-            result = await desktopBridge.library.acquireLibgen(book);
+            result = await desktopBridge.library.acquireLibgen(torrentBook);
           } finally {
             stopProgress();
           }

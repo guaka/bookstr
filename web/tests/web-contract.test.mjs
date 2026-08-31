@@ -232,6 +232,7 @@ test('Search requires whole query tokens instead of prefix matches', () => {
 
 test('desktop availability prefers torrent and hides Blossom from library rows', () => {
   assert.match(html, /filter\(source => !isDesktopMode \|\| source !== 'Blossom'\)/);
+  assert.match(html, /isDesktopMode && isMd5\(book\?\.md5\)[\s\S]*?availabilitySources\.unshift\('Torrent'\)/);
   assert.match(html, /const availability = isCached\(book\)[\s\S]*?availabilitySources\.includes\('Torrent'\)[\s\S]*?availabilitySources\.includes\('Gutenberg'\)[\s\S]*?: '—'/);
   assert.match(html, /class="availability-primary"/);
   assert.doesNotMatch(html, /secondaryAvailability/);
@@ -240,7 +241,9 @@ test('desktop availability prefers torrent and hides Blossom from library rows',
 
 test('Electron opens LibGen catalog records through their repository torrent batch', () => {
   assert.match(html, /const libgenId = isMd5\(rawId\)/);
-  assert.match(html, /desktopBridge\.library\.acquireLibgen\(book\)/);
+  assert.match(html, /resolveLibVaultBook\(torrentBook/);
+  assert.match(html, /Resolving torrent metadata for/);
+  assert.match(html, /desktopBridge\.library\.acquireLibgen\(torrentBook\)/);
   assert.match(html, /!readPath && !cached && !torrentAvailable/);
   assert.match(desktopPreload, /acquireLibgen\(book\)/);
   assert.match(desktopMain, /bookstr-desktop-library-acquire-libgen/);
@@ -248,7 +251,7 @@ test('Electron opens LibGen catalog records through their repository torrent bat
   assert.match(desktopMain, /source: 'local'/);
   assert.match(desktopMain, /getAcquisitionManager\(\)\.acquireLibgen\(request\.book/);
   assert.match(html, /if \(result\.sha256\) book\.sha256 = result\.sha256/);
-  assert.match(html, /Downloading \$\{book\.title \|\| 'book'\} from \$\{peers\} torrent peer/);
+  assert.match(html, /Downloading \$\{torrentBook\.title \|\| 'book'\} from \$\{peers\} torrent peer/);
 });
 
 test('book opening canonicalizes stable Gutenberg IDs', () => {

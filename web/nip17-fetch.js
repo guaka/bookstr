@@ -1,6 +1,8 @@
 const LIBVAULT_NIP05 = 'books@blossom.bfr.ee';
 const LIBVAULT_NIP05_URL = 'https://blossom.bfr.ee/.well-known/nostr.json?name=books';
 const LIBVAULT_FETCH_TYPE = 'libvault.fetch';
+const LIBVAULT_RESOLVE_TYPE = 'libvault.resolve';
+const LIBVAULT_RESOLVE_RESPONSE_TYPE = 'libvault.resolve.result';
 const LIBVAULT_SEARCH_TYPE = 'libvault.search';
 const LIBVAULT_SEARCH_RESPONSE_TYPE = 'libvault.search.result';
 const LIBVAULT_FAVORITES_TYPE = 'libvault.favorites.sync';
@@ -162,8 +164,26 @@ export async function unwrapLibVaultResponse(wrapped, service, senderPubkey, sig
 }
 
 function listenForSearchResponse(requestID, service, senderPubkey, signer, tools, options = {}) {
+  return listenForResponse(requestID, service, senderPubkey, signer, tools, {
+    ...options,
+    responseType: LIBVAULT_SEARCH_RESPONSE_TYPE,
+    operation: 'search',
+  });
+}
+
+function listenForResolveResponse(requestID, service, senderPubkey, signer, tools, options = {}) {
+  return listenForResponse(requestID, service, senderPubkey, signer, tools, {
+    ...options,
+    responseType: LIBVAULT_RESOLVE_RESPONSE_TYPE,
+    operation: 'resolve',
+  });
+}
+
+function listenForResponse(requestID, service, senderPubkey, signer, tools, options = {}) {
   const WebSocketImpl = options.WebSocketImpl !== undefined ? options.WebSocketImpl : globalThis.WebSocket;
-  if (typeof WebSocketImpl !== 'function') throw new Error('WebSocket support is required for private search');
+  if (typeof WebSocketImpl !== 'function') {
+    throw new Error(`WebSocket support is required for private ${options.operation || 'request'}`);
+  }
   const sockets = [];
   const pendingPackets = [];
   let armed = false;
@@ -178,7 +198,7 @@ function listenForSearchResponse(requestID, service, senderPubkey, signer, tools
   const handlePacket = (packet, relay) => {
     if (settled) return;
     void unwrapLibVaultResponse(packet[2], service, senderPubkey, signer, tools).then(response => {
-      if (!response || response.type !== LIBVAULT_SEARCH_RESPONSE_TYPE || response.request_id !== requestID || settled) return;
+      if (!response || response.type !== options.responseType || response.request_id !== requestID || settled) return;
       settled = true;
       options.onTrace?.({ direction: 'received', relay, event: packet[2], payload: response });
       resultResolve(response);
@@ -227,7 +247,7 @@ function listenForSearchResponse(requestID, service, senderPubkey, signer, tools
     socket.addEventListener('error', failReady, { once: true });
   }
   const readyTimer = setTimeout(() => {
-    if (!readyResolved) readyReject(new Error('Private LibVault search relay timed out'));
+    if (!readyResolved) readyReject(new Error(`Private LibVault ${options.operation} relay timed out`));
   }, options.readyTimeoutMs || 8000);
   ready.finally(() => clearTimeout(readyTimer)).catch(() => {});
   return {
@@ -239,12 +259,56 @@ function listenForSearchResponse(requestID, service, senderPubkey, signer, tools
       resultTimer = setTimeout(() => {
         if (settled) return;
         settled = true;
-        resultReject(new Error('Private LibVault search response timed out'));
+        resultReject(new Error(`Private LibVault ${options.operation} response timed out`));
         close();
       }, options.responseTimeoutMs || 20000);
     },
     close,
   };
+}
+
+export async function resolveLibVaultBook(book, options = {}) {
+  const signer = options.signer || globalThis.window?.nostr;
+  if (!signer?.getPublicKey || !signer?.signEvent || !signer?.nip44?.encrypt || !signer?.nip44?.decrypt) {
+    throw new Error('A Nostr signer with NIP-44 support is required');
+  }
+  const publish = options.publish;
+  if (typeof publish !== 'function' && !options.listen) throw new Error('No Nostr relay publisher is available');
+  const service = await resolveLibVaultService(options.fetchImpl || fetch);
+  const senderPubkey = String(await signer.getPublicKey()).toLowerCase();
+  if (!validHex(senderPubkey, 64)) throw new Error('The Nostr signer returned an invalid public key');
+  const tools = await (options.loadTools || (() => import('./vendor/nostr-tools.js')))();
+  const id = requestId();
+  const listener = options.listen
+    ? options.listen({ requestID: id, service, senderPubkey, signer, tools, onTrace: options.onTrace })
+    : listenForResolveResponse(id, service, senderPubkey, signer, tools, options);
+  const resultPromise = Promise.resolve(listener.result);
+  resultPromise.catch(() => {});
+  try {
+    await listener.ready;
+    if (typeof publish !== 'function') throw new Error('No Nostr relay publisher is available');
+    const payload = { type: LIBVAULT_RESOLVE_TYPE, request_id: id, book: libvaultBookRef(book) };
+    const wrap = await createPrivateRequestWrap(payload, id, service, senderPubkey, signer, tools);
+    const recipient = tools.nip19?.npubEncode?.(service.pubkey) || service.pubkey;
+    try { options.onTrace?.({ direction: 'sent', recipient, recipientNip05: service.nip05, relays: service.relays, event: wrap, payload }); } catch {}
+    listener.arm();
+    const accepted = await Promise.all(service.relays.map(relay => publish(relay, wrap)));
+    if (!accepted.some(Boolean)) throw new Error('No relay accepted the private LibVault resolve request');
+    const response = await resultPromise;
+    if (response?.type !== LIBVAULT_RESOLVE_RESPONSE_TYPE || response?.request_id !== id) {
+      throw new Error('Private LibVault resolve response was invalid');
+    }
+    if (response.status !== 'ready') throw new Error(response.error || 'Private LibVault resolve failed');
+    const resolved = response.book;
+    const resolvedMD5 = String(resolved?.md5 || '').toLowerCase();
+    const libgenId = Number(resolved?.id || resolved?.libgen_id || 0);
+    if (!validHex(resolvedMD5, 32) || !Number.isSafeInteger(libgenId) || libgenId <= 0) {
+      throw new Error('LibVault did not return usable LibGen torrent metadata');
+    }
+    return resolved;
+  } finally {
+    listener.close();
+  }
 }
 
 export async function searchLibVault(query, searchType = 'all', options = {}) {
@@ -397,5 +461,6 @@ export async function lookupLibVaultBlossom(md5, fetchImpl = fetch) {
 
 export {
   LIBVAULT_API, LIBVAULT_NIP05, LIBVAULT_NIP05_URL, LIBVAULT_FETCH_TYPE,
+  LIBVAULT_RESOLVE_TYPE, LIBVAULT_RESOLVE_RESPONSE_TYPE,
   LIBVAULT_SEARCH_TYPE, LIBVAULT_SEARCH_RESPONSE_TYPE, LIBVAULT_FAVORITES_TYPE,
 };
