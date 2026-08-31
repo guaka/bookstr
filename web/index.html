@@ -3929,6 +3929,9 @@
             coverSha256: item.cover_sha256 || item.coverSha256 || cover.sha256 || '',
             blossomUrl: item.blossom_url || item.blossomUrl || blossom.url || '',
             blossomSha256: item.blossom_sha256 || item.blossomSha256 || blossom.sha256 || item.sha256 || '',
+            torrentId: item.torrent_id || item.torrentId || item.magnet_uri || item.magnetURI || item.torrent?.magnetURI || '',
+            torrentFile: item.torrent_file || item.torrentFile || item.torrent?.torrentFile || '',
+            torrentAnnounce: item.torrent_announce || item.torrentAnnounce || item.torrent?.announce || [],
             source: item.source || source,
             sourceNativeId: item.source_native_id || item.sourceNativeId || '',
             sourceUrl: item.source_url || item.sourceUrl || '',
@@ -4380,6 +4383,20 @@
 		if (event.origin !== window.location.origin) return;
 		if (event.data?.type === 'bookstr-reader-progress') {
 		  applyReaderProgress(event.data);
+		  return;
+		}
+		if (event.data?.type === 'bookstr-comic-progress') {
+		  const id = String(event.data.bookId || activeReadingBook?.md5 || '').trim().toLowerCase();
+		  const pageIndex = Math.max(0, Number(event.data.pageIndex) || 0);
+		  const pageCount = Math.max(0, Number(event.data.pageCount) || 0);
+		  if (id) {
+		    state.reading = state.reading.map(item => String(item?.md5 || '').trim().toLowerCase() === id
+		      ? { ...item, pageIndex, pageCount, cfi: `comic:${pageIndex}:${pageCount}`, progression: pageCount > 1 ? pageIndex / (pageCount - 1) : 0, updatedAt: Date.now() }
+		      : item);
+		    localStorage.setItem(READING_KEY, JSON.stringify(state.reading));
+		    renderReading();
+		    renderHome();
+		  }
 		  return;
 		}
 		applyReaderRightsMetadata(event.data);
@@ -6025,7 +6042,7 @@
       }
 
       async function enforceBlobSha256(book, blob) {
-        const expected = normalizeSha256(book?.blossomSha256);
+        const expected = normalizeSha256(book?.sha256 || book?.blossomSha256);
         const computed = await blobSha256Hex(blob);
         if (!computed) return;
         if (expected && computed !== expected) {
@@ -6034,6 +6051,28 @@
         if (!expected) {
           book.blossomSha256 = computed;
         }
+      }
+
+      async function fetchDesktopTorrentCopy(book) {
+        if (!isDesktopMode || !desktopBridge?.transfers?.downloadPublic) return null;
+        const torrent = BookMetadata.torrentMetadataForBook(book);
+        const sha256 = normalizeSha256(book?.sha256 || book?.blossomSha256);
+        if (!torrent || !sha256 || !book?.md5) return null;
+        const torrentId = torrent.torrentId || torrent.torrentFile;
+        if (!torrentId) return null;
+        status.textContent = `Finding peers for ${book.title || 'book'}…`;
+        const result = await desktopBridge.transfers.downloadPublic({
+          bookId: book.md5,
+          sha256,
+          torrentId,
+          book,
+        });
+        if (!result?.url) throw new Error('The torrent download did not produce a readable file.');
+        const response = await fetch(result.url);
+        if (!response.ok) throw new Error(`Torrent file read failed (${response.status}).`);
+        const blob = await response.blob();
+        await enforceBlobSha256(book, blob);
+        return blob;
       }
 
       async function fetchBlossomCopy(book, readPath) {
@@ -6091,7 +6130,14 @@
         if (type.includes('fictionbook') || type.includes('fb2')) return 'fb2';
         if (type.includes('zip')) {
           const inspected = await globalThis.BookstrFB2?.inspect(blob);
-          return inspected?.format === 'fb2' ? 'fb2' : 'epub';
+          if (inspected?.format === 'fb2') return 'fb2';
+          try {
+            const zip = await JSZip.loadAsync(blob, { checkCRC32: true, createFolders: false });
+            const names = Object.keys(zip.files).map(name => name.replaceAll('\\', '/'));
+            if (names.some(name => /(^|\/)META-INF\/container\.xml$/i.test(name))) return 'epub';
+            if (names.some(name => isComicImageName(name))) return 'cbz';
+          } catch {}
+          return 'epub';
         }
         if (type.includes('epub')) return 'epub';
         try {
@@ -6099,12 +6145,25 @@
           if (String.fromCharCode(...bytes) === '%PDF-') return 'pdf';
           if (bytes[0] === 0x50 && bytes[1] === 0x4b) {
             const inspected = await globalThis.BookstrFB2?.inspect(blob);
-            return inspected?.format === 'fb2' ? 'fb2' : 'epub';
+            if (inspected?.format === 'fb2') return 'fb2';
+            try {
+              const zip = await JSZip.loadAsync(blob, { checkCRC32: true, createFolders: false });
+              return Object.keys(zip.files).some(name => isComicImageName(name)) ? 'cbz' : 'epub';
+            } catch {}
+            return 'epub';
           }
+          if (bytes[0] === 0x52 && bytes[1] === 0x61 && bytes[2] === 0x72 && bytes[3] === 0x21) return 'cbr';
           const prefix = new TextDecoder('utf-8', { fatal: false }).decode(bytes);
           if (prefix.trimStart().startsWith('<')) return 'fb2';
         } catch {}
         return '';
+      }
+
+      function isComicImageName(name) {
+        const clean = String(name || '').replaceAll('\\', '/');
+        if (!clean || clean.endsWith('/') || clean.split('/').includes('..')) return false;
+        if (/(^|\/)__MACOSX(\/|$)/i.test(clean) || /(^|\/)(thumbs?|thumbnails?)(\/|$)/i.test(clean)) return false;
+        return /\.(?:jpe?g|png|gif|webp)$/i.test(clean);
       }
 
       let bookCacheDatabase;
@@ -6339,8 +6398,8 @@
       let readerFrameNavigationId = 0;
 
       async function readerFrameLoader(kind, openGeneration) {
-        const loaderName = kind === 'pdf' ? 'loadPdf' : kind === 'fb2' ? 'loadFB2' : 'loadBook';
-        const readerPath = kind === 'pdf' ? 'pdf-reader.html' : kind === 'fb2' ? 'fb2-reader.html' : 'reader.html';
+        const loaderName = kind === 'pdf' ? 'loadPdf' : kind === 'fb2' ? 'loadFB2' : kind === 'comic' ? 'loadComic' : 'loadBook';
+        const readerPath = kind === 'pdf' ? 'pdf-reader.html' : kind === 'fb2' ? 'fb2-reader.html' : kind === 'comic' ? 'comic-reader.html' : 'reader.html';
         const existingLoader = readerFrame.contentWindow?.[loaderName];
         if (!readerFrameNavigation && readerFrameKind === kind && typeof existingLoader === 'function') {
           return existingLoader;
@@ -6366,7 +6425,7 @@
             const rejectOnce = settle(reject);
             cancelNavigation = () => resolveOnce(false);
             const timeout = setTimeout(() => {
-              rejectOnce(new Error(`${kind === 'pdf' ? 'PDF' : 'EPUB'} reader timed out while loading.`));
+              rejectOnce(new Error(`${kind === 'pdf' ? 'PDF' : kind === 'comic' ? 'comic' : 'EPUB'} reader timed out while loading.`));
             }, 15_000);
             readerFrame.onload = () => {
               if (readerFrameNavigation !== navigation) return;
@@ -6417,6 +6476,22 @@
         await readerLoad(base64, book.cfi || '', state.settings.theme === 'dark' ? 'night' : state.settings.theme, book.md5 || BookMetadata.bookIdentity(book));
         applyOpenReaderTypography();
         if (openGeneration === readerOpenGeneration) status.textContent = `Opened ${book.title || 'book'}.`;
+      }
+
+      async function displayComic(blob, book, readPath, openGeneration, format) {
+        const base64 = await blobToBase64(blob);
+        if (openGeneration !== readerOpenGeneration) return;
+        const readerLoad = await readerFrameLoader('comic', openGeneration);
+        if (!readerLoad) return;
+        await readerLoad({
+          base64,
+          format,
+          bookTitle: BookMetadata.resolveTitle(book),
+          initialPage: Number(book.pageIndex || book.page || 0) || 0,
+          bookId: book.md5 || BookMetadata.bookIdentity(book),
+          readUrl: readPath || book.readUrl || book.url || '',
+        });
+        if (openGeneration === readerOpenGeneration) status.textContent = `Opened ${book.title || 'comic'}.`;
       }
 
       function pdfDownloadFilename(book) {
@@ -6522,22 +6597,35 @@
         }
 
         try {
-          if (book.blossomSha256) {
-            status.textContent = `Authorizing ${book.title || 'book'} download…`;
+          let torrentBlob = null;
+          try {
+            torrentBlob = await fetchDesktopTorrentCopy(book);
+          } catch (error) {
+            console.warn('Public torrent unavailable; using network fallback.', error);
           }
-          const blossomBlob = await fetchBlossomCopy(book, readPath);
-          if (openGeneration !== readerOpenGeneration) return;
-          if (blossomBlob) {
+          if (torrentBlob) {
+            const torrentFormat = await bookFormatForBlob(torrentBlob) || String(book.extension || '').toLowerCase();
+            if (torrentFormat === 'pdf') await displayPdf(torrentBlob, book, readPath, openGeneration);
+            else if (torrentFormat === 'fb2') await displayFB2(torrentBlob, book, readPath, openGeneration);
+            else if (torrentFormat === 'cbz' || torrentFormat === 'cbr') await displayComic(torrentBlob, book, readPath, openGeneration, torrentFormat);
+            else await displayEpub(torrentBlob, book, readPath, openGeneration);
+          } else {
+            if (book.blossomSha256) status.textContent = `Authorizing ${book.title || 'book'} download…`;
+            const blossomBlob = book.blossomSha256 ? await fetchBlossomCopy(book, readPath) : null;
+            if (openGeneration !== readerOpenGeneration) return;
+            if (blossomBlob) {
             const blossomFormat = await bookFormatForBlob(blossomBlob) || String(book.extension || '').toLowerCase();
             if (blossomFormat === 'pdf') {
             await displayPdf(blossomBlob, book, readPath, openGeneration);
           } else if (blossomFormat === 'fb2') {
             await displayFB2(blossomBlob, book, readPath, openGeneration);
+          } else if (blossomFormat === 'cbz' || blossomFormat === 'cbr') {
+            await displayComic(blossomBlob, book, readPath, openGeneration, blossomFormat);
           } else {
             status.textContent = `Opening ${book.title || 'book'}…`;
             await displayEpub(blossomBlob, book, readPath, openGeneration);
           }
-          } else if (String(book.extension || '').toLowerCase() === 'pdf' || /\.pdf(?:\?|$)/i.test(readPath)) {
+            } else if (String(book.extension || '').toLowerCase() === 'pdf' || /\.pdf(?:\?|$)/i.test(readPath)) {
             let blob = await cachedBookBlob(book, readPath).catch(() => null);
             if (openGeneration !== readerOpenGeneration) return;
             if (!blob) {
@@ -6550,7 +6638,7 @@
               void cacheBookBlob(book, readPath, blob).catch(() => {});
             }
             await displayPdf(blob, book, readPath, openGeneration);
-          } else if (String(book.extension || '').toLowerCase() === 'fb2' || /\.fb2(?:\.zip)?(?:\?|$)/i.test(readPath)) {
+            } else if (String(book.extension || '').toLowerCase() === 'fb2' || /\.fb2(?:\.zip)?(?:\?|$)/i.test(readPath)) {
             let blob = await cachedBookBlob(book, readPath).catch(() => null);
             if (!blob) {
               if (!readPath) throw new Error('No cached FB2 copy was found.');
@@ -6562,7 +6650,19 @@
               void cacheBookBlob(book, readPath, blob).catch(() => {});
             }
             await displayFB2(blob, book, readPath, openGeneration);
-          } else if (String(book.extension || '').toLowerCase() === 'epub' || /\/download(?:\?|$)/i.test(readPath) || (!readPath && isMd5(book.md5))) {
+            } else if (['cbz', 'cbr'].includes(String(book.extension || '').toLowerCase()) || /\.(?:cbz|cbr)(?:\?|$)/i.test(readPath)) {
+            let blob = await cachedBookBlob(book, readPath).catch(() => null);
+            if (!blob) {
+              if (!readPath) throw new Error('No cached comic archive was found.');
+              const response = await fetch(readPath);
+              if (!response.ok) throw new Error(`Comic download failed (${response.status}).`);
+              blob = await response.blob();
+              await enforceBlobSha256(book, blob);
+              void cacheBookBlob(book, readPath, blob).catch(() => {});
+            }
+            const format = await bookFormatForBlob(blob) || String(book.extension || '').toLowerCase();
+            await displayComic(blob, book, readPath, openGeneration, format);
+            } else if (String(book.extension || '').toLowerCase() === 'epub' || /\/download(?:\?|$)/i.test(readPath) || (!readPath && isMd5(book.md5))) {
             let blob = await cachedBookBlob(book, readPath).catch(() => null);
             if (openGeneration !== readerOpenGeneration) return;
             if (blob) {
@@ -6580,7 +6680,7 @@
             const format = await bookFormatForBlob(blob);
             if (format === 'pdf') await displayPdf(blob, book, readPath, openGeneration);
             else await displayEpub(blob, book, readPath, openGeneration);
-          } else if (/\/api\/files\/[a-f0-9]{32}(?:\?|$)/i.test(readPath)) {
+            } else if (/\/api\/files\/[a-f0-9]{32}(?:\?|$)/i.test(readPath)) {
             status.textContent = `Loading ${book.title || 'book'}…`;
             const response = await fetch(readPath);
             if (!response.ok) throw new Error(`Book download failed (${response.status}).`);
@@ -6591,10 +6691,12 @@
             if (format === 'pdf') await displayPdf(blob, book, readPath, openGeneration);
             else if (format === 'epub') await displayEpub(blob, book, readPath, openGeneration);
             else if (format === 'fb2') await displayFB2(blob, book, readPath, openGeneration);
+            else if (format === 'cbz' || format === 'cbr') await displayComic(blob, book, readPath, openGeneration, format);
             else throw new Error('The downloaded book format is not supported.');
             void cacheBookBlob(book, readPath, blob).catch(() => {});
           } else {
-            throw new Error('Only EPUB, PDF, and FB2 book files can be opened.');
+            throw new Error('Only EPUB, PDF, FB2, CBZ, and CBR book files can be opened.');
+            }
           }
         } catch (error) {
           status.textContent = `Could not open ${book.title || 'book'}: ${error?.message || error}`;

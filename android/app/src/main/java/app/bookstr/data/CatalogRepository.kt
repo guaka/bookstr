@@ -28,6 +28,8 @@ enum class BookFormat(val extension: String) {
     Epub("epub"),
     Pdf("pdf"),
     Fb2("fb2"),
+    Cbr("cbr"),
+    Cbz("cbz"),
     ;
 
     companion object {
@@ -36,10 +38,14 @@ enum class BookFormat(val extension: String) {
             if (normalized == "pdf") return Pdf
             if (normalized == "epub") return Epub
             if (normalized == "fb2" || normalized == "fb2.zip") return Fb2
+            if (normalized == "cbr") return Cbr
+            if (normalized == "cbz") return Cbz
             val path = url.substringBefore('?').substringBefore('#').lowercase()
             return when {
                 path.endsWith(".pdf") -> Pdf
                 path.endsWith(".fb2") || path.endsWith(".fb2.zip") -> Fb2
+                path.endsWith(".cbr") -> Cbr
+                path.endsWith(".cbz") -> Cbz
                 else -> Epub
             }
         }
@@ -232,12 +238,15 @@ class CatalogRepository(
         val format = when (file.extension.lowercase()) {
             "pdf" -> BookFormat.Pdf
             "fb2" -> BookFormat.Fb2
+            "cbr" -> BookFormat.Cbr
+            "cbz" -> BookFormat.Cbz
             else -> BookFormat.Epub
         }
         val embedded = when (format) {
             BookFormat.Epub -> readEpubMetadata(file)
             BookFormat.Pdf -> readPdfMetadata(file)
             BookFormat.Fb2 -> readFb2Metadata(file)
+            BookFormat.Cbr, BookFormat.Cbz -> Triple(null, null, null)
         }
         val matched = embedded.first?.let { title ->
             externalFavorites.firstOrNull {
@@ -456,6 +465,8 @@ class CatalogRepository(
                         ZipFile(file).use { archive -> archive.getEntry("META-INF/container.xml") != null }
                     }.getOrDefault(false)
             BookFormat.Fb2 -> isStructurallyValidFb2(file)
+            BookFormat.Cbr -> signature[0] == 0x52 && signature[1] == 0x61 && signature[2] == 0x72 && signature[3] == 0x21
+            BookFormat.Cbz -> signature[0] == 0x50 && signature[1] == 0x4b
         }
     }
 

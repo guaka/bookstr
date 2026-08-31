@@ -22,6 +22,9 @@ val syncReaderAssets by tasks.registering(Sync::class) {
     from(sharedReaderDirectory) {
         include("reader.html", "epub.min.js", "jszip.min.js")
     }
+    from(rootProject.file("../web")) {
+        include("comic-reader.html", "vendor/libarchive.js", "vendor/libarchive.wasm")
+    }
     from(sharedReaderSpeechFile)
     from(sharedReaderTypographyFile)
     into(generatedReaderAssets)

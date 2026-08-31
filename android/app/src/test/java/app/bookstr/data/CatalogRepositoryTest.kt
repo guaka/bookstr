@@ -148,6 +148,8 @@ class CatalogRepositoryTest {
         assertEquals(BookFormat.Epub, BookFormat.from("EPUB"))
         assertEquals(BookFormat.Pdf, BookFormat.from(null, "https://example.org/file.PDF?download=1"))
         assertEquals(BookFormat.Epub, BookFormat.from(null, "https://example.org/file.epub"))
+        assertEquals(BookFormat.Cbr, BookFormat.from("CBR"))
+        assertEquals(BookFormat.Cbz, BookFormat.from(null, "https://example.org/file.cbz?download=1"))
     }
 
     @Test

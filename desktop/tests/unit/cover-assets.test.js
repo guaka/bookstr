@@ -132,3 +132,50 @@ test('cover candidates accept legacy aliases and deterministic placeholder initi
   assert.ok(candidates.includes('https://images.example/legacy.jpg'));
   assert.ok(candidates.some(url => url.includes('e'.repeat(64))));
 });
+
+test('cover candidates reject unsafe hints and keep only usable public URLs', () => {
+  assert.equal(normalizeCoverUrl('http://images.example/cover.jpg', true), '');
+  assert.equal(normalizeCoverUrl('javascript:alert(1)', false), '');
+  assert.equal(normalizeCoverUrl('data:image/png;base64,abc', false), 'data:image/png;base64,abc');
+  assert.equal(normalizeCoverUrl('  https://images.example/cover.jpg  ', false), 'https://images.example/cover.jpg');
+
+  const candidates = bookCoverCandidates({
+    coverUrl: 'https://images.example/cover.jpg',
+    coverFormat: 'pdf',
+    coverId: 'not-a-number',
+  }, { desktop: true });
+  assert.ok(candidates.includes('https://images.example/cover.jpg'));
+  assert.ok(candidates.every(url => !url.startsWith('http://')));
+
+  for (const book of [
+    { cover_url: 'https://images.example/legacy.jpg' },
+    { thumbnail: 'https://images.example/thumbnail.jpg' },
+    { image: 'https://images.example/image.jpg' },
+    { metadata: { coverUrl: 'https://images.example/metadata.jpg' } },
+  ]) {
+    assert.ok(bookCoverCandidates(book, { desktop: true }).length > 1);
+  }
+});
+
+test('cover candidates accept legacy aliases and deterministic placeholder initials', () => {
+  assert.equal(normalizeCoverUrl('app://bookstr/cover.jpg', true), 'app://bookstr/cover.jpg');
+  assert.equal(normalizeCoverUrl('./cover.jpg', false), './cover.jpg');
+  assert.ok(decodeURIComponent(placeholderCoverUrl({ title: 'Ada' })).includes('>A</text>'));
+  assert.ok(decodeURIComponent(placeholderCoverUrl({ title: '123' })).includes('>1</text>'));
+  assert.ok(decodeURIComponent(placeholderCoverUrl({ title: '' })).includes('>B</text>'));
+  assert.ok(decodeURIComponent(placeholderCoverUrl()).includes('>B</text>'));
+  assert.ok(bookCoverCandidates({ md5: 'f'.repeat(32) }).some(url => url.endsWith(`/${'f'.repeat(32)}`)));
+
+  const candidates = bookCoverCandidates({
+    cover_url: '//images.example/legacy.jpg',
+    thumbnail: 'https://images.example/duplicate.jpg',
+    image: 'https://images.example/image.jpg',
+    metadata: { coverUrl: 'https://images.example/metadata.jpg' },
+    cover_sha256: 'e'.repeat(64),
+    cover_format: 'webp',
+    cover_id: 12,
+    isbn: '978-0-13-235088-4',
+  }, { desktop: false, blossomBase: '' });
+  assert.ok(candidates.includes('https://images.example/legacy.jpg'));
+  assert.ok(candidates.some(url => url.includes('e'.repeat(64))));
+});
