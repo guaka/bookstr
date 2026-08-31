@@ -16,9 +16,10 @@ test('legacy Blossom-only records stay metadata-only without contacting Blossom'
 
   try {
     const library = await electronApp.firstWindow();
-    const blossomRequests = [];
+    const blossomFileRequests = [];
     await library.route('https://blossom.bfr.ee/**', async route => {
-      blossomRequests.push(route.request().url());
+      const url = new URL(route.request().url());
+      if (!url.pathname.startsWith('/.well-known/')) blossomFileRequests.push(url.toString());
       await route.abort();
     });
     await library.evaluate(() => {
@@ -43,10 +44,11 @@ test('legacy Blossom-only records stay metadata-only without contacting Blossom'
     const title = library.getByText('Legacy Blossom Favorite', { exact: true }).first();
     await expect(title).toBeVisible();
     await title.click();
-    await expect(library.getByText(/Book details are available, but the book file could not be loaded/)).toBeVisible();
-    await expect(library.getByText(/No readable download or torrent is available for this record/)).toBeVisible();
+    await expect(library.getByText('This book is not stored locally')).toBeVisible();
+    await expect(library.getByText('Bookstr could not prepare a readable copy yet.')).toBeVisible();
+    await expect(library.locator('#read-metadata-fallback')).not.toContainText('blossom.bfr.ee');
     await expect(library.locator('#status')).toContainText('No cached or torrent copy was found for this book.');
-    expect(blossomRequests).toEqual([]);
+    expect(blossomFileRequests).toEqual([]);
   } finally {
     await electronApp.close();
   }

@@ -247,8 +247,8 @@ const desktopBridge = {
     acquire(record, options = {}) {
       return ipcRenderer.invoke('bookstr-desktop-library-acquire', { record, ...options });
     },
-    acquireLibgen(book) {
-      return ipcRenderer.invoke('bookstr-desktop-library-acquire-libgen', { book });
+    acquireLibgen(book, options = {}) {
+      return ipcRenderer.invoke('bookstr-desktop-library-acquire-libgen', { book, ...options });
     },
     onAcquisitionProgress(callback) {
       if (typeof callback !== 'function') return () => {};
@@ -292,6 +292,9 @@ const desktopBridge = {
     },
   },
   transfers: {
+    setPreferences(preferences) {
+      return ipcRenderer.invoke('bookstr-desktop-transfer-preferences', preferences);
+    },
     status() {
       return ipcRenderer.invoke('bookstr-desktop-transfer-status');
     },

@@ -116,7 +116,7 @@ test('public add reuses a live repository torrent and replaces a stale destroyed
 test('private handoff waits for asynchronous metadata and bridge cleanup is safe', async () => {
   const events = {};
   const client = {
-    torrents: [{ infohash: 'c'.repeat(40), numPeers: 2, downloaded: 7, uploaded: 3, private: true }],
+    torrents: [{ infohash: 'c'.repeat(40), numPeers: 2, downloaded: -84, uploaded: -3, progress: -0.84, private: true }],
     add() {
       return {
         once(name, handler) { events[name] = handler; },
@@ -132,7 +132,7 @@ test('private handoff waits for asynchronous metadata and bridge cleanup is safe
   await pending;
   assert.equal(events.peer, '192.0.2.12:6881');
   assert.deepEqual(bridge.active(), [{
-    infoHash: 'c'.repeat(40), bookId: '', name: '', magnetURI: '', torrentFile: '', privacy: 'private', progress: 0, downloaded: 7, uploaded: 3, peers: 2, seeding: false,
+    infoHash: 'c'.repeat(40), bookId: '', name: '', magnetURI: '', torrentFile: '', privacy: 'private', progress: 0, downloaded: 0, uploaded: 0, peers: 2, seeding: false,
   }]);
   await bridge.stop();
   assert.deepEqual(bridge.active(), []);
@@ -173,11 +173,13 @@ test('repository torrent downloads only the selected MD5 file', async () => {
   const result = await bridge.downloadSelected(Buffer.from('torrent metadata'), {
     path: '/tmp/bookstr-select',
     fileName: 'a'.repeat(32),
+    bookId: 'a'.repeat(32),
     onProgress: value => progress.push(value),
   });
   assert.equal(log.adds[0].options.deselect, true);
   assert.equal(log.priority, 10);
   assert.equal(result.file, wanted);
+  assert.deepEqual([...result.torrent.bookstrBookIds], ['a'.repeat(32)]);
   assert.equal(result.filePath, `/tmp/bookstr-select/r_1000/${'a'.repeat(32)}`);
   assert.deepEqual(progress.at(-1), { bytes: 42, totalBytes: 42, peers: 0 });
 });
@@ -201,4 +203,16 @@ test('public download waits for completion', async () => {
   const torrent = await bridge.downloadPublic('magnet:?xt=urn:btih:test', { path: '/tmp/bookstr' });
   assert.equal(torrent.infoHash, 'e'.repeat(40));
   assert.equal(log.adds[0].options.path, '/tmp/bookstr');
+});
+
+test('automatic seeding can stop completed torrents without interrupting downloads', async () => {
+  const bridge = new WebTorrentBridge();
+  const downloading = { progress: 0.4 };
+  const seeded = { progress: 1, done: true };
+  const markedSeed = { progress: 0.8, bookstrSeedingBookIds: new Set(['book-1']) };
+  const removed = [];
+  bridge.client = { torrents: [downloading, seeded, markedSeed] };
+  bridge.remove = async torrent => removed.push(torrent);
+  assert.deepEqual(await bridge.stopSeeding(), { stopped: 2 });
+  assert.deepEqual(removed, [seeded, markedSeed]);
 });

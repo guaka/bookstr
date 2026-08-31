@@ -207,15 +207,15 @@
       }
       .home-sync {
         display: flex;
-        justify-content: flex-end;
         align-items: center;
-        gap: 0.45rem;
-        min-height: 1.8rem;
+        gap: 0.3rem;
+        min-width: 0;
       }
       .home-sync button {
-        width: 1.75rem;
-        height: 1.75rem;
-        padding: 0.28rem;
+        width: 1.6rem;
+        height: 1.6rem;
+        flex: 0 0 auto;
+        padding: 0.25rem;
         border-radius: 50%;
       }
       .home-sync button svg {
@@ -226,8 +226,33 @@
         stroke-width: 1.8;
       }
       .home-sync-state {
+        display: inline-flex;
+        min-width: 0;
+        align-items: center;
+        gap: 0.28rem;
         color: var(--note-text, #666);
-        font-size: 0.75rem;
+        font-size: 0.7rem;
+        font-weight: 500;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .home-sync-state::before {
+        width: 0.42rem;
+        height: 0.42rem;
+        flex: 0 0 auto;
+        border-radius: 50%;
+        background: var(--muted-text, #777);
+        content: '';
+      }
+      .home-sync-state[data-state="ready"]::before {
+        background: var(--reading-progress);
+      }
+      .home-sync-state[data-state="syncing"]::before {
+        background: #d49a35;
+      }
+      .home-sync-state[data-state="failed"]::before {
+        background: var(--link-hover, #c74b32);
       }
       .row {
         display: grid;
@@ -366,21 +391,56 @@
         font-size: 0.72rem;
         word-break: break-all;
       }
+      .read-metadata-grid dd.metadata-authors {
+        display: -webkit-box;
+        overflow: hidden;
+        -webkit-box-orient: vertical;
+        -webkit-line-clamp: 2;
+      }
       .read-metadata-source {
         color: var(--muted-text, #777);
         font-size: 0.72rem;
         white-space: nowrap;
       }
+      #read-metadata-fallback-torrent {
+        width: fit-content;
+        max-width: 100%;
+        margin: 0.75rem 0 0;
+        padding: 0.42rem 0.66rem;
+        border-radius: 999px;
+        background: color-mix(in srgb, var(--reading-progress) 16%, transparent);
+        color: var(--reading-progress);
+        font-size: 0.8rem;
+        font-weight: 750;
+      }
+      #read-metadata-fallback-status {
+        display: grid;
+        gap: 0.18rem;
+        margin: 0.75rem 0 0;
+        padding: 0.72rem 0.82rem;
+        border: 1px solid color-mix(in srgb, var(--card-border, #ddd) 76%, transparent);
+        border-radius: 0.55rem;
+        background: color-mix(in srgb, var(--badge-bg, #f3f4f6) 72%, transparent);
+      }
+      .read-file-state-title { color: var(--page-text, #222); font-size: 0.84rem; font-weight: 750; }
+      .read-file-state-copy { color: var(--muted-text, #666); font-size: 0.78rem; line-height: 1.4; }
+      .read-file-state-meta {
+        margin-top: 0.12rem;
+        color: var(--muted-text, #777);
+        font-size: 0.68rem;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+      }
       #results {
         overflow-x: auto;
       }
       .book-table {
-        min-width: 760px;
+        min-width: 840px;
       }
       .book-table-head,
       .book-table-row {
         display: grid;
-        grid-template-columns: 42px minmax(13rem, 2fr) minmax(10rem, 1.25fr) 5rem 9rem 5rem 5rem 7.5rem;
+        grid-template-columns: 42px minmax(13rem, 2fr) minmax(10rem, 1.25fr) 6rem 5rem 9rem 5rem 5rem 7.5rem;
         align-items: center;
         column-gap: 0.55rem;
       }
@@ -463,7 +523,13 @@
       .result-cover-slot:hover {
         z-index: 30;
       }
-      .result-cover-slot:hover .result-cover {
+      .result-cover-slot.cover-lookup-pending {
+        cursor: progress;
+      }
+      .result-cover-slot.cover-lookup-pending .result-cover-placeholder {
+        opacity: 0.58;
+      }
+      .result-cover-slot.has-real-cover:hover .result-cover.is-real-cover {
         transform: scale(6);
         transform-origin: left center;
         box-shadow: 0 5px 20px rgba(0, 0, 0, 0.38);
@@ -489,7 +555,6 @@
 	  .rights-marker {
 		display: inline-flex;
 		align-items: center;
-		margin-right: 0.1rem;
 		border-radius: 0.3rem;
 		padding: 0.04rem 0.28rem;
 		background: transparent;
@@ -539,8 +604,13 @@
       body a.result-author:visited,
       body a.result-author:hover,
       body a.result-author:focus-visible {
+        display: block;
+        max-width: 100%;
+        overflow: hidden;
         color: var(--reading-progress);
         text-decoration: none;
+        text-overflow: ellipsis;
+        white-space: nowrap;
       }
       .result-availability {
         color: var(--reading-progress);
@@ -551,6 +621,32 @@
         align-items: center;
         gap: 0.38rem;
         white-space: nowrap;
+      }
+      .status-with-dot::before {
+        content: "";
+        width: 0.56rem;
+        height: 0.56rem;
+        flex: 0 0 0.56rem;
+        border-radius: 50%;
+        background: #8b949e;
+        box-shadow: 0 0 0 2px color-mix(in srgb, currentColor 10%, transparent);
+      }
+      .read-torrent-status {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.4rem;
+      }
+      .status-dot-waiting::before { background: #d89b2b; }
+      .status-dot-downloading::before { background: #3887d6; }
+      .status-dot-success::before { background: #2c9b63; }
+      .status-dot-error::before { background: #d24d49; }
+      .status-dot-waiting::before,
+      .status-dot-downloading::before {
+        animation: status-dot-pulse 1.25s ease-in-out infinite alternate;
+      }
+      @keyframes status-dot-pulse {
+        from { opacity: 0.48; transform: scale(0.82); }
+        to { opacity: 1; transform: scale(1); }
       }
       .availability-progress {
         display: inline-flex;
@@ -694,14 +790,17 @@
       }
       .home-column h3 {
         display: flex;
-        align-items: baseline;
+        align-items: center;
+        gap: 0.45rem;
         margin: 0 0 0.3rem;
       }
       .library-book-count {
-        margin-left: 0.45rem;
         color: var(--muted-text, #666);
         font-size: 0.68rem;
         font-weight: 400;
+      }
+      .home-column h3 .home-sync {
+        margin-left: auto;
       }
       .home-book-table {
         display: grid;
@@ -991,6 +1090,7 @@
         display: none !important;
       }
       body.book-open #reader-section {
+        position: relative;
         display: block !important;
         width: 100%;
         flex: 1 1 auto;
@@ -1009,6 +1109,15 @@
         height: 100%;
         min-height: 0;
         border: 0;
+      }
+      body.book-open #reader-frame[hidden] {
+        display: none;
+      }
+      body.book-open #reader-frame.reader-pending {
+        position: absolute;
+        inset: 0;
+        visibility: hidden;
+        pointer-events: none;
       }
       @media (max-width: 700px) {
         .home-search { flex-wrap: wrap; }
@@ -1172,7 +1281,8 @@
       .settings-section h3 {
         margin: 0 0 0.2rem;
         font-family: Georgia, 'Times New Roman', serif;
-        font-size: 1rem;
+        font-size: 1.15rem;
+        font-weight: 800;
       }
       .setting-option {
         display: flex;
@@ -1238,9 +1348,33 @@
       }
       #desktop-signer-status.signer-connected::before {
         content: '✓';
-        margin-right: 0.38rem;
+        grid-row: 1 / span 2;
+        align-self: center;
         color: #16803c;
         font-weight: 800;
+      }
+      #desktop-signer-status {
+        display: grid;
+        grid-template-columns: auto minmax(0, 1fr);
+        gap: 0.14rem 0.48rem;
+        align-items: center;
+      }
+      #desktop-signer-method {
+        min-width: 0;
+        font-size: 0.8rem;
+      }
+      #desktop-signer-npub {
+        min-width: 0;
+        overflow: hidden;
+        color: var(--muted-text, #666);
+        font-size: 0.68rem;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      #desktop-signer-storage {
+        grid-column: 2;
+        color: var(--muted-text, #666);
+        font-size: 0.68rem;
       }
       .desktop-signer {
         display: grid;
@@ -1263,6 +1397,10 @@
       .desktop-signer-row input { flex: 1; min-width: 0; }
       .desktop-signer details { font-size: 0.78rem; }
       .desktop-signer details[open] summary { margin-bottom: 0.45rem; }
+      .desktop-signer.signer-connected .desktop-signer-primary,
+      .desktop-signer.signer-connected details {
+        display: none;
+      }
       .settings-tab .settings-backdrop,
       .settings-tab #settings-close {
         display: none;
@@ -1289,12 +1427,12 @@
       }
       body.desktop-mode .settings-tab .settings-section { padding: 0.9rem 0; }
       body.desktop-mode .settings-tab .settings-section h3 {
-        margin-bottom: 0.65rem;
+        margin-bottom: 0.7rem;
         color: var(--reading-progress);
         font-family: inherit;
-        font-size: 0.68rem;
+        font-size: 0.82rem;
         font-weight: 800;
-        letter-spacing: 0.12em;
+        letter-spacing: 0.1em;
         text-transform: uppercase;
       }
       body.desktop-mode .settings-tab .setting-option,
@@ -1336,7 +1474,6 @@
         display: block;
         max-width: 46rem;
       }
-      body.desktop-mode .settings-tab .settings-preferences,
       body.desktop-mode .settings-tab .settings-appearance,
       body.desktop-mode .settings-tab .settings-nostr,
       body.desktop-mode .settings-tab .settings-dictionaries {
@@ -1378,19 +1515,14 @@
       .settings-tab .settings-dictionaries {
         grid-column: 1 / -1;
       }
-      .settings-tab .settings-preferences {
-        grid-column: 1;
-        grid-row: 2;
-        padding: 0.35rem 0.75rem 0.15rem 0;
-      }
       .settings-tab .settings-appearance {
         grid-column: 1;
-        grid-row: 3;
-        padding: 0.15rem 0.75rem 0.35rem 0;
+        grid-row: 2;
+        padding: 0.35rem 0.75rem 0.35rem 0;
       }
       .settings-tab .settings-nostr {
         grid-column: 2;
-        grid-row: 2 / span 2;
+        grid-row: 2;
         align-content: start;
         padding: 0.35rem 0 0.35rem 1rem;
         border-left: 1px solid var(--settings-border, #ddd);
@@ -1400,7 +1532,7 @@
         padding: 0.5rem 0.55rem;
       }
       .settings-tab .settings-dictionaries {
-        grid-row: 4;
+        grid-row: 3;
         margin-top: 0.2rem;
         padding-top: 0.65rem;
         border-top: 1px solid var(--settings-border, #ddd);
@@ -1449,7 +1581,6 @@
           padding: 0.75rem;
           box-shadow: none;
         }
-        .settings-tab .settings-preferences,
         .settings-tab .settings-appearance,
         .settings-tab .settings-nostr {
           padding-inline: 0;
@@ -1600,6 +1731,19 @@
         font-size: 0.75rem;
         text-align: right;
       }
+      .search-library-option {
+        display: inline-flex;
+        width: fit-content;
+        gap: 0.42rem;
+        align-items: center;
+        margin: 0.45rem 0 0.15rem;
+        color: var(--muted-text, #666);
+        cursor: pointer;
+        font-size: 0.76rem;
+      }
+      .search-library-option input {
+        margin: 0;
+      }
       .search-title {
         margin: 0 0 0.65rem;
         font-family: Georgia, 'Times New Roman', serif;
@@ -1629,6 +1773,25 @@
         color: var(--badge-text, #374151);
         font-size: 0.68rem;
         white-space: nowrap;
+      }
+      .search-source-toggle {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.38rem;
+        color: var(--page-text, #222);
+        cursor: pointer;
+        font-size: 0.75rem;
+        font-weight: 650;
+        white-space: nowrap;
+      }
+      .search-source-toggle input {
+        width: 1rem;
+        height: 1rem;
+        margin: 0;
+        accent-color: var(--reading-progress);
+      }
+      .search-sources-table tr.source-disabled td:not(:last-child) {
+        opacity: 0.46;
       }
       .search-source-progress {
         display: flex;
@@ -1834,7 +1997,7 @@
       </section>
 
       <section id="search-tab" class="card" data-tab-panel="search">
-        <h2 class="search-title">Search open books</h2>
+        <h2 class="search-title">Search books</h2>
         <p id="status" class="note" aria-live="polite"></p>
         <form id="search-form" class="row-3" autocomplete="off">
           <input id="query-input" placeholder="Search title, author, ISBN, publisher" aria-label="Book search query" />
@@ -1854,6 +2017,10 @@
             </label>
           </div>
         </form>
+        <label class="search-library-option">
+          <input id="search-auto-reading-top" class="search-auto-reading" type="checkbox" checked />
+          <span>Add opened books to Library</span>
+        </label>
         <p id="search-result-count" class="search-result-count" aria-live="polite">0 results</p>
         <ul id="search-source-progress" class="search-source-progress hidden" aria-label="Search source progress" aria-live="polite"></ul>
         <div id="results" class="results" aria-live="polite"></div>
@@ -1951,12 +2118,6 @@
             </div>
             <button id="settings-close" type="button" class="icon-btn" aria-label="Close settings">✕</button>
           </header>
-          <div class="settings-section settings-preferences">
-            <label class="setting-option">
-              <input id="auto-reading" type="checkbox" checked />
-              <span class="setting-copy"><strong>Reading library</strong><small>Add books when you open them.</small></span>
-            </label>
-          </div>
           <div class="settings-section settings-appearance">
             <h3>Reader</h3>
             <label class="setting-option theme-option">
@@ -2015,6 +2176,17 @@
             </div>
             <p id="speech-model-status" class="meta-note" role="status" aria-live="polite"></p>
           </div>
+          <div class="settings-section desktop-reader-settings settings-torrents">
+            <h3>Torrents</h3>
+            <label class="setting-option">
+              <input id="torrent-auto-download" type="checkbox" checked />
+              <span class="setting-copy"><strong>Automatically download books</strong><small>Start a torrent download when you open a book that is not stored locally.</small></span>
+            </label>
+            <label class="setting-option">
+              <input id="torrent-auto-seed" type="checkbox" checked />
+              <span class="setting-copy"><strong>Automatically seed downloaded books</strong><small>Share completed torrent books while the app is open.</small></span>
+            </label>
+          </div>
           <div class="settings-section settings-nostr">
             <h3>Nostr</h3>
             <div id="desktop-signer" class="desktop-signer hidden">
@@ -2043,8 +2215,12 @@
                   <button id="desktop-nsec-connect" type="button">Connect nsec</button>
                 </div>
               </details>
+              <div id="desktop-signer-status" class="settings-status" role="status" aria-live="polite">
+                <strong id="desktop-signer-method">No signer connected</strong>
+                <code id="desktop-signer-npub" class="hidden"></code>
+                <small id="desktop-signer-storage" class="hidden"></small>
+              </div>
               <button id="desktop-signer-disconnect" class="hidden" type="button">Disconnect signer</button>
-              <p id="desktop-signer-status" class="settings-status">No signer connected.</p>
             </div>
             <input id="nip7-enabled" class="hidden" type="checkbox" checked aria-hidden="true" tabindex="-1" />
             <p id="nip7-status" class="settings-status hidden" aria-hidden="true"></p>
@@ -2122,6 +2298,7 @@
       const BOOK_CACHE_DB_NAME = 'bookstr_epub_cache_v1';
       const BOOK_CACHE_STORAGE_LIMIT = 300 * 1024 * 1024;
       const BOOK_METADATA_CACHE_KEY = 'bookstr_metadata_cache_v1';
+      const SEARCH_SOURCE_SETTINGS_KEY = 'bookstr_search_sources_v1';
       const BOOK_METADATA_CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
       const SEARCH_CACHE_KEY = 'bookstr_search_cache_v1';
       const SEARCH_CACHE_TTL_MS = 10 * 60 * 1000;
@@ -2162,6 +2339,7 @@
       const homeFormatFilter = document.getElementById('home-format-filter');
       const homeSyncState = document.getElementById('home-sync-state');
       const homeSyncRefresh = document.getElementById('home-sync-refresh');
+      const homeSync = homeSyncState.closest('.home-sync');
       homeQueryInput.placeholder = 'Filter here · press Enter to search all books';
       const homeReadingList = document.getElementById('home-reading-list');
       const homeFavoritesList = document.getElementById('home-favorites-list');
@@ -2173,12 +2351,16 @@
       homeLibraryCount.className = 'library-book-count';
       homeLibraryCount.setAttribute('aria-live', 'polite');
       homeLibraryHeading?.append(homeLibraryCount);
+      if (homeLibraryHeading && homeSync) homeLibraryHeading.append(homeSync);
       homeFavoritesSection?.remove();
       const homeBookSorts = Object.create(null);
       const homeLibraryFilter = { language: '', format: '' };
       const desktopDownloadByBook = new Map();
       const desktopSeededBookIds = new Set();
+      const coverHoverLookups = new Map();
+      let desktopDownloadStatesReady = false;
       let desktopDownloadRenderTimer = 0;
+      let desktopDownloadStatusTimer = 0;
       const searchType = document.getElementById('search-type');
       const searchForm = document.getElementById('search-form');
       const resultsEl = document.getElementById('results');
@@ -2263,7 +2445,9 @@
       const settingsPanel = document.getElementById('settings-panel');
       const settingsBackdrop = document.getElementById('settings-backdrop');
       const settingsCloseBtn = document.getElementById('settings-close');
-      const autoReadingInput = document.getElementById('auto-reading');
+      const autoReadingInputs = [...document.querySelectorAll('.search-auto-reading')];
+      const torrentAutoDownloadInput = document.getElementById('torrent-auto-download');
+      const torrentAutoSeedInput = document.getElementById('torrent-auto-seed');
       const nip7EnabledInput = document.getElementById('nip7-enabled');
       const desktopSignerPanel = document.getElementById('desktop-signer');
       const desktopNip46Input = document.getElementById('desktop-nip46-input');
@@ -2277,6 +2461,9 @@
       const desktopNsecConnect = document.getElementById('desktop-nsec-connect');
       const desktopSignerDisconnect = document.getElementById('desktop-signer-disconnect');
       const desktopSignerStatus = document.getElementById('desktop-signer-status');
+      const desktopSignerMethod = document.getElementById('desktop-signer-method');
+      const desktopSignerNpub = document.getElementById('desktop-signer-npub');
+      const desktopSignerStorage = document.getElementById('desktop-signer-storage');
       const themeModeInput = document.getElementById('theme-mode');
       const readerFontInput = document.getElementById('reader-font');
       const readerAlignmentInput = document.getElementById('reader-alignment');
@@ -2308,6 +2495,8 @@
         followingLoaded: false,
         settings: {
           autoReading: true,
+          autoDownloadTorrents: true,
+          autoSeedTorrents: true,
           useNip7: true,
           theme: 'white',
           readerFont: 'arial',
@@ -3166,7 +3355,7 @@
             entry.author = tag[5] || entry.author || '';
             entry.language = tag[6] || entry.language || '';
             entry.source = tag[7] || entry.source || '';
-            entry.url = tag[3] || entry.url || contextUrl || '';
+            entry.url = entry.url || contextUrl || '';
             continue;
           }
           if (name === 'i' && tag[1]?.startsWith('isbn:') && /^(?:13|10)/.test(normalizeIsbnFromTag(tag[1].slice(5) || ''))) {
@@ -3184,22 +3373,36 @@
         return entries;
       }
 
-      function normalizeFavoriteFromRemote(ref) {
+      function normalizeFavoriteFromRemote(ref, { trustExplicitFormat = true } = {}) {
         const md5 = String(ref.md5 || '').trim().toLowerCase() || null;
-        const readUrl = ref.blossomUrl || ref.readUrl || ref.epubUrl || ref.downloadUrl || ref.url || '';
+        const explicitFormat = String(ref.blossomFormat || ref.format || ref.extension || '')
+          .replace(/^\./, '')
+          .toLowerCase();
+        const formatProvenance = String(ref.metadataProvenance?.extension || '');
+        const normalizedFormat = trustExplicitFormat || formatProvenance ? explicitFormat : '';
+        const readUrl = BookMetadata.canonicalReadUrl({
+          ...ref,
+          readUrl: ref.readUrl || ref.epubUrl || ref.downloadUrl || ref.url || '',
+        }, BOOKS_API_BASE);
         const sourceUrl = ref.sourceUrl || ref.url || readUrl;
         const title = BookMetadata.resolveTitle(ref, readUrl, window.location.href);
         const favoriteAddedAt = BookMetadata.normalizeFavoriteAddedAt(ref.favoriteAddedAt);
         const blossomSha256 = normalizeSha256(ref.blossomSha256 || '');
-        const stableId = blossomSha256 || md5 || null;
+        const sha256 = normalizeSha256(ref.sha256 || blossomSha256);
+        const libvaultMd5 = isMd5(ref.libvaultMd5) ? String(ref.libvaultMd5).trim().toLowerCase() : '';
+        const libgenId = Number(ref.libgenId || ref.libgen_id || 0);
+        const stableId = md5 || blossomSha256 || null;
         return {
           md5: stableId || pseudoIdForSeed(`${title}${readUrl}`),
+          libvaultMd5,
+          libgenId: Number.isSafeInteger(libgenId) && libgenId > 0 ? libgenId : 0,
           title,
           authors: ref.author || ref.authors || ref.creator || ref.bookAuthor || ref.metadata?.author || '',
           year: BookMetadata.yearForBook(ref),
           language: BookMetadata.languageForBook(ref),
-          extension: (ref.blossomFormat || ref.format || ref.extension || 'epub').replace(/^\./, '').toLowerCase(),
+          extension: normalizedFormat,
           blossomSha256,
+          sha256,
           readUrl,
           source: ref.source || 'nostr',
           sourceNativeId: ref.sourceNativeId || ref.source_native_id || '',
@@ -3215,7 +3418,10 @@
           furthestProgression: Number(ref.furthestProgression || 0) || 0,
           cfi: String(ref.cfi || ref.locator?.locations?.cfi || ref.locator?.href || ''),
           metadataLookupComplete: Boolean(ref.metadataLookupComplete),
-          metadataProvenance: ref.metadataProvenance && typeof ref.metadataProvenance === 'object' ? ref.metadataProvenance : {},
+          metadataProvenance: {
+            ...(ref.metadataProvenance && typeof ref.metadataProvenance === 'object' ? ref.metadataProvenance : {}),
+            ...(trustExplicitFormat && explicitFormat && !formatProvenance ? { extension: 'nostr' } : {}),
+          },
         };
       }
 
@@ -3303,7 +3509,7 @@
             progression: parsed.progression,
             furthestProgression: parsed.furthestProgression,
             cfi: parsed.cfi,
-            extension: String(payload.extension || payload.format || 'epub').toLowerCase(),
+            extension: String(payload.extension || payload.format || '').toLowerCase(),
             readUrl: payload.readUrl || '',
           };
         } catch {
@@ -3466,7 +3672,18 @@
         const known = [...state.favorites, ...state.reading, ...cachedMetadata]
           .find(book => BookMetadata.sameLibraryBook(book, remote));
         if (!known) return remote;
+        const remoteHasExplicitFormat = Boolean(remote.extension || remote.format);
+        const knownFormatProvenance = String(known.metadataProvenance?.extension || '');
         const enriched = BookMetadata.enrichBookMetadata(remote, known, 'local-cache');
+        // Older releases wrote "epub" when Nostr/catalog metadata omitted a
+        // format. Do not resurrect that legacy guess while preserving richer
+        // metadata. Inspected local bytes and explicit remote formats carry
+        // provenance and remain trusted.
+        if (!remoteHasExplicitFormat && !knownFormatProvenance) {
+          enriched.extension = '';
+          delete enriched.format;
+          delete enriched.metadataProvenance.extension;
+        }
         enriched.blossomSha256 ||= known.blossomSha256 || '';
         enriched.blossomUrl ||= known.blossomUrl || '';
         enriched.coverSha256 ||= known.coverSha256 || '';
@@ -3616,7 +3833,7 @@
           return nostrSyncTask;
         }
         const relayNames = nostrLibraryRelayNames();
-        setHomeSyncState('syncing', `Fetching ≤10 favorite snapshots, ≤100 reading events and ≤120 word events from ${relayNames}…`);
+        setHomeSyncState('syncing', `Syncing with ${relayNames}…`);
         const task = (async () => {
           const cached = readNostrSyncCache(pubkey);
           if (useCache && cached && isNostrCacheFresh(cached)) {
@@ -3642,11 +3859,7 @@
               status.textContent = 'Synced latest Nostr library data.';
             }
             lastNostrSyncAt = Date.now();
-            const account = publicKeyToNpub(pubkey) || pubkey;
-            const eventDetail = lastFavoritePullInfo?.id
-              ? ` · event ${lastFavoritePullInfo.id.slice(0, 12)}… · ${formatBuildDate(new Date(lastFavoritePullInfo.createdAt * 1000))}`
-              : '';
-            setHomeSyncState('ready', `${nostrSyncCounts(favorites, reading, words)} from ${relayNames} · ${account.slice(0, 16)}…${eventDetail}`);
+            setHomeSyncState('ready', `Synced · ${nostrSyncCounts(favorites, reading, words)}`);
             return true;
           } catch (error) {
             if (cached) {
@@ -4313,7 +4526,7 @@
         if (Array.isArray(reading)) {
           state.reading = BookMetadata.dedupeLibraryBooks(reading
             .filter(item => item && item.md5)
-            .map(item => normalizeFavoriteFromRemote(item))
+            .map(item => normalizeFavoriteFromRemote(item, { trustExplicitFormat: false }))
           ).sort((left, right) => Number(right.updatedAt || 0) - Number(left.updatedAt || 0));
           renderReading();
           if (activeReadingBook) {
@@ -4842,6 +5055,11 @@
         return terms.every(term => searchable.includes(term));
       }
 
+      function compactAuthorLabel(value, limit = 120) {
+        const authors = String(value || '').trim();
+        return authors.length > limit ? `${authors.slice(0, limit - 1).trimEnd()}…` : authors;
+      }
+
       function renderFavorites() {
         refreshSpeechVoiceMenus();
         favoritesList.innerHTML = '';
@@ -4860,8 +5078,8 @@
         }
         for (const entry of matches) {
           const item = document.createElement('li');
-          item.textContent = `${entry.title} · ${entry.authors}`;
-          item.title = `Open ${entry.title}`;
+          item.textContent = `${entry.title} · ${compactAuthorLabel(entry.authors)}`;
+          item.title = `${entry.title}${entry.authors ? ` — ${entry.authors}` : ''}`;
           item.style.cursor = 'pointer';
           item.addEventListener('click', () => openBook(entry));
           favoritesList.appendChild(item);
@@ -4886,8 +5104,8 @@
         }
         for (const entry of matches) {
           const item = document.createElement('li');
-          item.textContent = `${entry.title} · ${entry.authors}`;
-          item.title = `Open ${entry.title}`;
+          item.textContent = `${entry.title} · ${compactAuthorLabel(entry.authors)}`;
+          item.title = `${entry.title}${entry.authors ? ` — ${entry.authors}` : ''}`;
           item.style.cursor = 'pointer';
           item.addEventListener('click', () => openBook(entry));
           readingList.appendChild(item);
@@ -4895,8 +5113,8 @@
       }
 
       function bookCoverUrls(book) {
-        const md5 = String(book?.md5 || '').trim().toLowerCase();
-        const download = desktopDownloadByBook.get(md5);
+        const md5 = desktopTorrentBookId(book);
+        const download = desktopDownloadForBook(book);
         const localCoverUrl = isDesktopMode && isMd5(md5) && String(download?.status || '').toLowerCase() === 'ready'
           ? `app://bookstr/api/library-cover/${md5}`
           : '';
@@ -4905,6 +5123,74 @@
           key: md5 || BookMetadata.bookIdentity(book),
           localCoverUrl,
         });
+      }
+
+      function realCoverUrlsForBook(book) {
+        return bookCoverUrls(book).filter(url => url && !url.startsWith('data:image/'));
+      }
+
+      function tryRealCoverCandidates(book, slot) {
+        const candidates = realCoverUrlsForBook(book);
+        if (!slot || !candidates.length) return Promise.resolve(false);
+        slot.querySelector('.result-cover')?.remove();
+        const image = document.createElement('img');
+        image.className = 'result-cover';
+        image.alt = '';
+        image.loading = 'lazy';
+        slot.append(image);
+        image.src = candidates[0];
+        return new Promise(resolve => {
+          let settled = false;
+          const finish = value => {
+            if (settled) return;
+            settled = true;
+            resolve(value);
+          };
+          CoverAssets.attachImageFallback(image, candidates, {
+            key: String(book?.md5 || BookMetadata.bookIdentity(book) || '').trim().toLowerCase(),
+            onLoaded: (_url, result) => finish(Boolean(result?.isRealCover)),
+            onExhausted: () => finish(false),
+          });
+          window.setTimeout(() => finish(slot.classList.contains('has-real-cover')), 5000);
+        });
+      }
+
+      async function lookupCoverOnHover(book, slot) {
+        if (!slot || slot.classList.contains('has-real-cover')) return;
+        const key = String(book?.md5 || BookMetadata.bookIdentity(book) || '').trim().toLowerCase();
+        const previous = coverHoverLookups.get(key);
+        if (previous?.promise || Date.now() - Number(previous?.attemptedAt || 0) < 60_000) return;
+        const promise = (async () => {
+          slot.classList.add('cover-lookup-pending');
+          CoverAssets.retryBookCover(key);
+          if (await tryRealCoverCandidates(book, slot)) return;
+          const metadata = await remoteMetadataForBook(book).catch(() => null);
+          if (!metadata) return;
+          const update = item => {
+            if (!BookMetadata.sameLibraryBook(item, book)) return item;
+            const next = BookMetadata.enrichBookMetadata(item, metadata, 'cover-hover');
+            for (const field of ['coverId', 'coverUrl', 'isbn', 'sourceNativeId', 'sourceUrl']) {
+              if (metadata[field] !== '' && metadata[field] != null) next[field] = metadata[field];
+            }
+            return next;
+          };
+          state.reading = state.reading.map(update);
+          state.favorites = state.favorites.map(update);
+          localStorage.setItem(READING_KEY, JSON.stringify(state.reading));
+          localStorage.setItem(FAVORITES_KEY, JSON.stringify(state.favorites));
+          const cache = metadataCacheRead();
+          cache[BookMetadata.bookIdentity(book)] = { book: metadata, provenance: 'cover-hover', ts: Date.now() };
+          metadataCacheWrite(cache);
+          const refreshed = BookMetadata.mergeLibraryState(state.reading, state.favorites)
+            .find(item => BookMetadata.sameLibraryBook(item, book)) || { ...book, ...metadata };
+          CoverAssets.retryBookCover(key);
+          await tryRealCoverCandidates(refreshed, slot);
+        })().finally(() => {
+          slot.classList.remove('cover-lookup-pending');
+          coverHoverLookups.set(key, { attemptedAt: Date.now() });
+        });
+        coverHoverLookups.set(key, { promise, attemptedAt: 0 });
+        await promise;
       }
 
       function searchForAuthor(book) {
@@ -4916,10 +5202,28 @@
         void startSearch();
       }
 
+      function desktopBookIds(book) {
+        const libgenMd5 = BookMetadata.libgenTorrentMetadataForBook(book)?.md5 || '';
+        return [...new Set([libgenMd5, book?.libvaultMd5, book?.md5, book?.id, book?.sha256]
+          .map(value => String(value || '').trim().toLowerCase())
+          .filter(Boolean))];
+      }
+
+      function desktopTorrentBookId(book) {
+        return desktopBookIds(book).find(isMd5) || '';
+      }
+
+      function desktopDownloadForBook(book) {
+        for (const bookId of desktopBookIds(book)) {
+          const download = desktopDownloadByBook.get(bookId);
+          if (download) return download;
+        }
+        return null;
+      }
+
       function isBookReadableNow(book) {
         const cached = cachedBookKeys.has(bookCacheKey(book, book.readUrl || book.url));
-        const md5 = String(book?.md5 || '').trim().toLowerCase();
-        const download = desktopDownloadByBook.get(md5);
+        const download = desktopDownloadForBook(book);
         return cached
           || (isDesktopMode && ['ready', 'seeding'].includes(String(download?.status || '').toLowerCase()))
           || isBookSeeded(book)
@@ -4927,17 +5231,16 @@
       }
 
       function isBookSeeded(book) {
-        const identities = [book?.md5, book?.id, book?.sha256]
-          .map(value => String(value || '').trim().toLowerCase())
-          .filter(Boolean);
-        const download = desktopDownloadByBook.get(String(book?.md5 || '').trim().toLowerCase());
+        const identities = desktopBookIds(book);
+        const download = desktopDownloadForBook(book);
         return String(download?.status || '').toLowerCase() === 'seeding'
           || identities.some(identity => desktopSeededBookIds.has(identity));
       }
 
       function torrentStatusForBook(book) {
-        const md5 = String(book?.md5 || '').trim().toLowerCase();
-        const download = desktopDownloadByBook.get(md5);
+        const md5 = desktopTorrentBookId(book);
+        if (isDesktopMode && isMd5(md5) && !desktopDownloadStatesReady) return 'Looking for torrents';
+        const download = desktopDownloadForBook(book);
         if (isBookSeeded(book)) return 'Seeding';
         if (!download) {
           const hasTorrent = BookMetadata.torrentMetadataForBook(book)
@@ -4947,8 +5250,9 @@
         const status = String(download.status || '').toLowerCase();
         if (status === 'ready') return 'Ready';
         if (status === 'downloading') {
-          const total = Number(download.totalBytes || 0);
-          const percent = total > 0 ? Math.min(100, Math.round(Number(download.bytes || 0) / total * 100)) : 0;
+          const total = Math.max(0, Number(download.totalBytes || 0));
+          const bytes = Math.max(0, Number(download.bytes || 0));
+          const percent = total > 0 ? Math.max(0, Math.min(100, Math.round(bytes / total * 100))) : 0;
           const peers = Number(download.peers || 0);
           return `Downloading · ${percent}%${peers ? ` · ${peers} peer${peers === 1 ? '' : 's'}` : ''}`;
         }
@@ -4957,13 +5261,67 @@
         return 'Available';
       }
 
+      function torrentStatusClass(label) {
+        const status = String(label || '').toLowerCase();
+        if (status.startsWith('looking') || status.startsWith('finding') || status === 'queued') return 'status-dot-waiting';
+        if (status.startsWith('downloading')) return 'status-dot-downloading';
+        if (status === 'unavailable' || status === 'failed') return 'status-dot-error';
+        if (['available', 'ready', 'seeding', 'cached', 'torrent', 'gutenberg'].includes(status)) return 'status-dot-success';
+        return '';
+      }
+
       function updateReadTorrentStatus(book = activeReadingBook) {
         const torrent = document.getElementById('read-metadata-fallback-torrent');
         if (!torrent) return;
         const statusLabel = torrentStatusForBook(book)
-          || (isDesktopMode && isMd5(book?.md5) ? 'Checking availability' : '');
+          || (isDesktopMode && desktopTorrentBookId(book) ? 'Looking for torrents' : '');
         torrent.hidden = !statusLabel;
-        torrent.textContent = statusLabel ? `Torrent: ${statusLabel}` : '';
+        torrent.className = ['read-torrent-status', 'status-with-dot', torrentStatusClass(statusLabel)].filter(Boolean).join(' ');
+        torrent.textContent = statusLabel;
+        const note = document.getElementById('read-metadata-fallback-status');
+        if (note && book) {
+          updateReadMetadataFallbackDiagnostics(book, {
+            cacheStatus: note.dataset.cacheStatus || '',
+            error: note.dataset.error || '',
+          });
+        }
+      }
+
+      function activeDesktopDownloads() {
+        return [...desktopDownloadByBook.entries()].filter(([, download]) => (
+          ['downloading', 'finding-peers', 'queued'].includes(String(download?.status || '').toLowerCase())
+        ));
+      }
+
+      function desktopDownloadTitle(bookId) {
+        const library = BookMetadata.mergeLibraryState(state.reading, state.favorites);
+        return library.find(book => desktopBookIds(book).includes(bookId))?.title || 'book';
+      }
+
+      function desktopDownloadSummary() {
+        const active = activeDesktopDownloads();
+        if (!active.length) return '';
+        const downloading = active.filter(([, download]) => String(download.status || '').toLowerCase() === 'downloading');
+        const waiting = active.length - downloading.length;
+        const peers = active.reduce((sum, [, download]) => sum + Math.max(0, Number(download.peers || 0)), 0);
+        const bytes = downloading.reduce((sum, [, download]) => sum + Math.max(0, Number(download.bytes || 0)), 0);
+        const totalBytes = downloading.reduce((sum, [, download]) => sum + Math.max(0, Number(download.totalBytes || 0)), 0);
+        const percent = totalBytes > 0 ? Math.max(0, Math.min(100, Math.round(bytes / totalBytes * 100))) : 0;
+        if (active.length === 1) {
+          const [bookId] = active[0];
+          const label = downloading.length ? `Downloading ${desktopDownloadTitle(bookId)} · ${percent}%` : `Finding peers for ${desktopDownloadTitle(bookId)}`;
+          return `${label}${peers ? ` · ${peers} peer${peers === 1 ? '' : 's'}` : ''}`;
+        }
+        const details = [];
+        if (downloading.length && totalBytes > 0) details.push(`${percent}% overall`);
+        if (waiting) details.push(`${waiting} waiting`);
+        if (peers) details.push(`${peers} peers`);
+        return `${active.length} torrent downloads${details.length ? ` · ${details.join(' · ')}` : ''}`;
+      }
+
+      function updateDesktopDownloadSummary() {
+        const summary = desktopDownloadSummary();
+        if (summary && status.textContent !== summary) status.textContent = summary;
       }
 
       async function refreshDesktopDownloadStates() {
@@ -4972,6 +5330,7 @@
           desktopBridge.library.downloads().catch(() => []),
           desktopBridge?.transfers?.status?.().catch(() => []) || [],
         ]);
+        desktopDownloadStatesReady = true;
         desktopDownloadByBook.clear();
         for (const download of downloads || []) {
           const md5 = String(download?.bookId || '').trim().toLowerCase();
@@ -4979,9 +5338,14 @@
         }
         desktopSeededBookIds.clear();
         for (const transfer of transfers || []) {
-          const bookId = String(transfer?.bookId || '').trim().toLowerCase();
-          if (bookId && transfer?.seeding === true) desktopSeededBookIds.add(bookId);
+          if (transfer?.seeding !== true) continue;
+          const bookIds = Array.isArray(transfer?.bookIds) ? transfer.bookIds : [transfer?.bookId];
+          for (const value of bookIds) {
+            const bookId = String(value || '').trim().toLowerCase();
+            if (bookId) desktopSeededBookIds.add(bookId);
+          }
         }
+        updateDesktopDownloadSummary();
         updateReadTorrentStatus();
         if (activeTab === 'home') renderHome();
       }
@@ -4989,7 +5353,18 @@
       function renderBookTable(target, books, options = {}) {
         const sort = options.sort || { key: '', direction: 'asc' };
         const isCached = book => cachedBookKeys.has(bookCacheKey(book, book.readUrl || book.url));
-        const visible = sort.key ? BookMetadata.sortBooks(books, sort.key, sort.direction, isCached) : books.slice();
+        const availabilityLabel = book => {
+          if (isCached(book)) return 'Cached';
+          const torrentStatus = options.library ? torrentStatusForBook(book) : '';
+          if (torrentStatus) return torrentStatus;
+          const sources = BookMetadata.availabilitySourcesForBook(book, false);
+          if (sources.includes('Torrent')) return 'Torrent';
+          if (sources.includes('Gutenberg')) return 'Gutenberg';
+          return sources.find(item => item !== 'Metadata only') || '—';
+        };
+        const visible = sort.key
+          ? BookMetadata.sortBooks(books, sort.key, sort.direction, isCached, availabilityLabel)
+          : books.slice();
         target.innerHTML = '';
         if (!books.length) {
           target.innerHTML = `<p class="note">${escapeHtml(options.emptyText || 'No matches. Try a shorter query.')}</p>`;
@@ -5003,7 +5378,7 @@
         head.className = 'book-table-head';
         head.setAttribute('role', 'row');
         const columns = [
-          ['', ''], ['Title', 'title'], ['Author', 'author'], ['Year', 'year'],
+          ['', ''], ['Title', 'title'], ['Author', 'author'], ['Rights', 'rights'], ['Year', 'year'],
           ['Available', 'availability'], ['Format', 'format'], ['Language', 'language'], ['', ''],
         ];
         for (const [label, key] of columns) {
@@ -5027,17 +5402,8 @@
           const canOpen = options.routeOnly || (options.canOpen ? options.canOpen(book) : Boolean(options.onOpen));
           const readUrl = book.readUrl || book.url || '';
           const authorQuery = authorSearchName(book.authors);
-          const availabilitySources = BookMetadata.availabilitySourcesForBook(book, isCached(book));
-          const torrentStatus = options.library ? torrentStatusForBook(book) : '';
-          const availability = isCached(book)
-            ? 'Cached'
-            : torrentStatus
-              ? torrentStatus
-            : availabilitySources.includes('Torrent')
-              ? 'Torrent'
-              : availabilitySources.includes('Gutenberg')
-                ? 'Gutenberg'
-                : availabilitySources.find(item => item !== 'Metadata only') || '—';
+          const availability = availabilityLabel(book);
+          const availabilityClass = torrentStatusClass(availability);
           const downloadPercent = availability.match(/^Downloading · (\d+)%/)?.[1] || '';
           const availabilityMarkup = downloadPercent
             ? `Downloading <strong class="availability-progress">${escapeHtml(downloadPercent)}%</strong>`
@@ -5060,9 +5426,11 @@
             book.editionCount > 0 ? `${book.editionCount} editions` : '',
           ].filter(Boolean).join(' · ');
           const coverUrls = bookCoverUrls(book);
-          const coverUrl = coverUrls[0] || '';
           const coverPlaceholder = CoverAssets.placeholderCoverUrl(book);
+          const realCoverUrls = coverUrls.filter(url => url && !url.startsWith('data:image/'));
+          const coverUrl = realCoverUrls[0] || '';
           const coverKey = String(book?.md5 || BookMetadata.bookIdentity(book) || '').trim().toLowerCase();
+          const fullAuthors = String(book.authors || book.author || '').trim();
           const statusMarkup = options.library
             ? `${book.isFavorite ? '<svg class="favorite-status" viewBox="0 0 24 24" aria-label="Favorite" role="img"><path d="M12 21s-8-4.8-8-11a4.5 4.5 0 0 1 8-2.8A4.5 4.5 0 0 1 20 10c0 6.2-8 11-8 11Z"/></svg>' : ''}<button type="button" class="library-delete" data-action="delete-library" aria-label="Delete ${escapeHtml(book.title || 'book')} from library" title="Delete from library"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3m3 0-1 13H7L6 7m4 4v5m4-5v5"/></svg></button>`
             : `<button type="button" class="chip-btn" data-action="favorite" data-md5="${escapeHtml(book.md5)}" aria-label="${isFavoriteMd5(book.md5) ? 'Remove from favorites' : 'Add to favorites'}" title="${isFavoriteMd5(book.md5) ? 'Remove from favorites' : 'Add to favorites'}">${isFavoriteMd5(book.md5) ? '♥' : '♡'}</button>`;
@@ -5072,9 +5440,10 @@
           row.innerHTML = `
             <span class="result-cover-slot" role="cell"><img class="result-cover-placeholder" src="${escapeHtml(coverPlaceholder)}" alt="">${coverUrl ? `<img class="result-cover" src="${escapeHtml(coverUrl)}" alt="" loading="lazy">` : ''}</span>
             <span class="result-cell" role="cell">${canOpen ? `<a class="result-title ${titleAvailabilityClass}" data-action="open" href="#read=${encodeURIComponent(readRouteValue(book, readUrl))}">${escapeHtml(book.title)}</a>` : `<span class="result-title ${titleAvailabilityClass}">${escapeHtml(book.title)}</span>`}${titleDetails ? `<small>${titleDetails}</small>` : ''}</span>
-            <span class="result-cell" role="cell">${authorQuery ? `<a class="result-author" data-action="author-search" href="#search=${encodeURIComponent(authorQuery)}">${escapeHtml(book.authors)}</a>` : `<span class="result-author">${escapeHtml(book.authors || '')}</span>`}</span>
-			<span class="result-cell" role="cell">${rightsMarkerMarkup(book)}${escapeHtml(book.year || '—')}</span>
-            <span class="result-cell result-availability" role="cell"><span class="availability-primary">${availabilityMarkup}</span></span>
+            <span class="result-cell" role="cell">${authorQuery ? `<a class="result-author" data-action="author-search" href="#search=${encodeURIComponent(authorQuery)}" title="${escapeHtml(fullAuthors)}" aria-label="${escapeHtml(fullAuthors)}">${escapeHtml(fullAuthors)}</a>` : `<span class="result-author" title="${escapeHtml(fullAuthors)}" aria-label="${escapeHtml(fullAuthors)}">${escapeHtml(fullAuthors)}</span>`}</span>
+			<span class="result-cell result-rights" role="cell">${rightsMarkerMarkup(book)}</span>
+			<span class="result-cell result-year" role="cell">${escapeHtml(book.year || '—')}</span>
+            <span class="result-cell result-availability" role="cell"><span class="availability-primary${availabilityClass ? ` status-with-dot ${availabilityClass}` : ''}">${availabilityMarkup}</span></span>
             <span class="result-cell" role="cell">${escapeHtml(String(book.extension || book.format || '—').toLowerCase())}${Number(book.filesize) > 0 ? `<small>${escapeHtml(bytesLabel(book.filesize))}</small>` : ''}</span>
             <span class="result-cell" role="cell">${escapeHtml(languageCode ? languageCode.toUpperCase() : '—')}</span>
             <span class="row-actions home-book-status" role="cell">${statusMarkup}</span>
@@ -5084,7 +5453,9 @@
             event.preventDefault();
             options.onOpen?.(book);
           });
-          CoverAssets.attachImageFallback(row.querySelector('.result-cover'), coverUrls, { key: coverKey });
+          CoverAssets.attachImageFallback(row.querySelector('.result-cover'), realCoverUrls, { key: coverKey });
+          const coverSlot = row.querySelector('.result-cover-slot');
+          coverSlot?.addEventListener('mouseenter', () => void lookupCoverOnHover(book, coverSlot));
           row.querySelector('[data-action="author-search"]')?.addEventListener('click', (event) => {
             event.preventDefault();
             searchForAuthor(book);
@@ -5251,6 +5622,7 @@
             source: book.source || '',
             extension: book.extension || 'epub',
             blossomSha256: book.blossomSha256 || '',
+            sha256: book.sha256 || book.blossomSha256 || '',
             readUrl: book.readUrl || book.url || '',
 			...BookMetadata.normalizeRights(book),
             favoriteAddedAt: Math.floor(Date.now() / 1000)
@@ -5426,7 +5798,6 @@
       function showReadMetadataFallback(book) {
         const frame = document.getElementById('reader-frame');
         if (!frame?.parentElement) return;
-        const expectedBookId = String(book?.md5 || '').trim().toLowerCase();
         frame.parentElement.classList.add('metadata-fallback-visible');
         let panel = document.getElementById('read-metadata-fallback');
         if (!panel) {
@@ -5435,7 +5806,8 @@
           frame.parentElement.insertBefore(panel, frame);
         }
         panel.replaceChildren();
-        const coverUrl = book.coverUrl || (book.coverId ? `https://covers.openlibrary.org/b/id/${book.coverId}-L.jpg` : '');
+        const coverCandidates = bookCoverUrls(book).filter(url => url && !url.startsWith('data:image/'));
+        const coverUrl = coverCandidates[0] || '';
         panel.style.gridTemplateColumns = coverUrl ? 'minmax(0,9rem) minmax(0,1fr)' : 'minmax(0,1fr)';
         if (coverUrl) {
           const cover = document.createElement('img');
@@ -5443,6 +5815,9 @@
           cover.alt = '';
           cover.className = 'read-metadata-cover';
           panel.append(cover);
+          CoverAssets.attachImageFallback(cover, coverCandidates, {
+            key: String(book?.md5 || BookMetadata.bookIdentity(book) || '').trim().toLowerCase(),
+          });
         }
         const details = document.createElement('div');
         details.className = 'read-metadata-details';
@@ -5468,6 +5843,10 @@
           const description = document.createElement('dd');
           description.textContent = String(value);
           if (label === 'MD5' || label === 'SHA-256') description.className = 'metadata-digest';
+          if (label === 'Author') {
+            description.classList.add('metadata-authors');
+            description.title = String(value);
+          }
           metadata.append(term, description);
         }
 		const rights = BookMetadata.normalizeRights(book);
@@ -5493,14 +5872,13 @@
           rightsRow.append(source);
         }
 		metadata.append(rightsTerm, rightsRow);
-		details.append(metadata);
+        details.append(metadata);
         const torrent = document.createElement('p');
         torrent.id = 'read-metadata-fallback-torrent';
-        torrent.style.cssText = 'margin:.7rem 0 0;padding:.42rem .62rem;width:max-content;max-width:100%;border-radius:.35rem;background:color-mix(in srgb,var(--reading-progress) 16%,transparent);color:var(--reading-progress);font-size:.82rem;font-weight:750';
         details.append(torrent);
-        const note = document.createElement('p');
+        const note = document.createElement('div');
         note.id = 'read-metadata-fallback-status';
-        note.style.cssText = 'margin:.8rem 0 0;padding:.65rem .75rem;border-left:3px solid var(--reading-progress);background:var(--badge-bg,#f3f4f6);color:var(--muted);font-size:.82rem;line-height:1.4;white-space:pre-line;overflow-wrap:anywhere';
+        note.setAttribute('role', 'status');
         details.append(note);
         panel.append(details);
         panel.hidden = false;
@@ -5510,59 +5888,70 @@
           readPath: BookMetadata.canonicalReadUrl(book, BOOKS_API_BASE),
           cacheStatus: 'Checking local cache…',
         });
+        // Keep the previous reader out of view while the requested book is
+        // being resolved. Only the successful display path may reveal it.
         frame.hidden = false;
-        const hideWhenReadable = () => {
-          let epubReady = false;
-          try {
-            epubReady = Boolean(frame.contentDocument?.body?.dataset?.location);
-          } catch {}
-          const source = frame.getAttribute('src') || '';
-          const embeddedDocumentReady = source && !/reader\.html(?:\?|$)/.test(source);
-          if (epubReady || embeddedDocumentReady) {
-            const loadedBookId = String(frame.contentDocument?.body?.dataset?.bookId || '').trim().toLowerCase();
-            if (epubReady && expectedBookId && loadedBookId !== expectedBookId) return false;
-            panel.hidden = true;
-            panel.style.display = 'none';
-            frame.parentElement.classList.remove('metadata-fallback-visible');
-            return true;
-          }
-          return false;
-        };
-        frame.addEventListener('load', hideWhenReadable, { once: true });
-        let checks = 0;
-        const waitForReadableBook = () => {
-          if (hideWhenReadable() || checks++ > 450) return;
-          setTimeout(waitForReadableBook, 100);
-        };
-        waitForReadableBook();
+        frame.classList.add('reader-pending');
       }
 
-      function diagnosticUrl(value) {
-        if (!value) return 'None available';
-        try {
-          const parsed = new URL(value, window.location.href);
-          parsed.username = '';
-          parsed.password = '';
-          parsed.search = '';
-          parsed.hash = '';
-          return parsed.toString();
-        } catch {
-          return String(value);
+      function revealReadableBook(book, openGeneration) {
+        if (openGeneration !== readerOpenGeneration || !BookMetadata.sameLibraryBook(activeReadingBook, book)) return false;
+        const panel = document.getElementById('read-metadata-fallback');
+        if (panel) {
+          panel.hidden = true;
+          panel.style.display = 'none';
         }
+        readerFrame.hidden = false;
+        readerFrame.classList.remove('reader-pending');
+        readerFrame.parentElement?.classList.remove('metadata-fallback-visible');
+        return true;
       }
 
-      function updateReadMetadataFallbackDiagnostics(book, { readPath = '', cacheStatus = '', error = '' } = {}) {
+      function friendlyBookLoadError(error) {
+        const message = String(error?.message || error || '').trim();
+        if (!message) return '';
+        if (/duplicate torrent|already active/i.test(message)) return 'The torrent is already active. Bookstr will keep checking its progress.';
+        if (/absent from the repository/i.test(message)) return 'This edition was not found in the catalog torrent.';
+        if (/connect your nostr signer/i.test(message)) return 'Connect your Nostr signer in Settings so Bookstr can look up this torrent.';
+        if (/no readable download or torrent/i.test(message)) return 'No downloadable or torrent copy is currently available.';
+        return 'Bookstr could not prepare a readable copy yet.';
+      }
+
+      function updateReadMetadataFallbackDiagnostics(book, { cacheStatus = '', error = '' } = {}) {
         const note = document.getElementById('read-metadata-fallback-status');
         if (!note) return;
         const format = String(book?.extension || book?.format || 'unknown').replace(/^\./, '').toLowerCase();
-        const lines = [
-          'Book details are available, but the book file could not be loaded.',
-          `Format: ${format || 'unknown'}`,
-          `Local file/cache: ${cacheStatus || 'Not checked'}`,
-          `Source URL: ${diagnosticUrl(readPath || book?.readUrl || book?.url || '')}`,
-        ];
-        if (error) lines.push(`Error: ${error?.message || error}`);
-        note.textContent = lines.join('\n');
+        const torrent = torrentStatusForBook(book);
+        let title = 'This book is not stored locally';
+        let copy = friendlyBookLoadError(error) || 'Bookstr is checking for a readable copy.';
+        if (/^Downloading\b/i.test(torrent)) {
+          title = 'Downloading this book';
+          copy = 'It will open automatically when the file is ready.';
+        } else if (/^Finding peers\b/i.test(torrent)) {
+          title = 'Finding torrent peers';
+          copy = 'Bookstr will start downloading as soon as a peer responds.';
+        } else if (/^Available\b/i.test(torrent)) {
+          title = 'Available from the torrent library';
+          copy = 'Open the book to start downloading it.';
+        }
+        const localState = /found/i.test(cacheStatus) && !/^no\b/i.test(cacheStatus)
+          ? 'Local copy found'
+          : /checking/i.test(cacheStatus)
+            ? 'Checking local files'
+            : 'Not downloaded';
+        note.dataset.cacheStatus = cacheStatus;
+        note.dataset.error = String(error?.message || error || '');
+        note.replaceChildren();
+        const heading = document.createElement('strong');
+        heading.className = 'read-file-state-title';
+        heading.textContent = title;
+        const description = document.createElement('span');
+        description.className = 'read-file-state-copy';
+        description.textContent = copy;
+        const meta = document.createElement('small');
+        meta.className = 'read-file-state-meta';
+        meta.textContent = `${String(format || 'unknown').toUpperCase()} · ${localState}`;
+        note.append(heading, description, meta);
       }
 
       let readRouteGeneration = 0;
@@ -5571,6 +5960,9 @@
         const routeGeneration = ++readRouteGeneration;
         let book = await resolveReadRouteBook(bookRef);
         if (routeGeneration !== readRouteGeneration) return;
+        // Invalidate any pending reveal from the previously selected book,
+        // including routes that finish as metadata-only and never call openBook.
+        readerOpenGeneration += 1;
         activeReadingBook = book;
         activateTab('reading');
         showReadMetadataFallback(book);
@@ -5588,7 +5980,10 @@
         if (routeGeneration !== readRouteGeneration) return;
         const cachedFormat = await bookFormatForBlob(cached);
         if (routeGeneration !== readRouteGeneration) return;
-        if (cachedFormat) book = { ...book, extension: cachedFormat, format: cachedFormat };
+        if (cachedFormat) {
+          book = { ...book, extension: cachedFormat, format: cachedFormat };
+          rememberDetectedBookFormat(book, cachedFormat);
+        }
         let torrentAvailable = isDesktopMode
           && Boolean(isMd5(book?.md5) || BookMetadata.torrentMetadataForBook(book) || BookMetadata.libgenTorrentMetadataForBook(book));
         if (!readPath && !cached && !torrentAvailable && isDesktopMode) {
@@ -5599,6 +5994,7 @@
           });
           if (routeGeneration !== readRouteGeneration) return;
           if (resolvedTorrentBook) {
+            rememberResolvedTorrentMetadata(book, resolvedTorrentBook);
             book = resolvedTorrentBook;
             activeReadingBook = book;
             torrentAvailable = true;
@@ -5633,7 +6029,7 @@
           if (!peer) return book;
           const merged = { ...peer, ...book };
           if (BookMetadata.isPlaceholderTitle(merged.title)) merged.title = BookMetadata.resolveTitle(peer);
-          merged.readUrl ||= peer.readUrl || peer.url || peer.blossomUrl || '';
+          merged.readUrl ||= peer.readUrl || peer.url || '';
           merged.authors ||= peer.authors || peer.author || '';
           merged.year ||= peer.year || '';
           merged.language ||= peer.language || '';
@@ -5651,9 +6047,15 @@
       }
 
       function applyLibraryEnrichment(book, metadata, provenance) {
-        const update = item => BookMetadata.sameLibraryBook(item, book)
-          ? BookMetadata.enrichBookMetadata(item, metadata, provenance)
-          : item;
+        const update = item => {
+          if (!BookMetadata.sameLibraryBook(item, book)) return item;
+          const enriched = BookMetadata.enrichBookMetadata(item, metadata, provenance);
+          if (provenance === 'local-file' && metadata?.extension) {
+            enriched.extension = String(metadata.extension).replace(/^\./, '').toLowerCase();
+            enriched.metadataProvenance.extension = provenance;
+          }
+          return enriched;
+        };
         state.reading = state.reading.map(update);
         state.favorites = state.favorites.map(update);
       }
@@ -6122,7 +6524,72 @@
         };
       }
 
+      function matchingTorrentCatalogRecord(book, candidates) {
+        const torrentRecords = candidates.filter(candidate => BookMetadata.libgenTorrentMetadataForBook(candidate));
+        const isbn = BookMetadata.isbnForBook(book);
+        const exact = torrentRecords.find(candidate => (
+          (isbn && BookMetadata.isbnForBook(candidate) === isbn)
+          || BookMetadata.sameLibraryBook(book, candidate)
+        ));
+        if (exact) return exact;
+        const wantedTitle = String(BookMetadata.resolveTitle(book) || '').trim().toLocaleLowerCase();
+        const wantedAuthor = authorMatchKey(book?.authors || book?.author);
+        const wantedYear = String(book?.year || '').trim();
+        const wantedFormat = String(book?.extension || book?.format || '').replace(/^\./, '').toLowerCase();
+        const matches = torrentRecords.filter(candidate => {
+          const candidateIsbn = BookMetadata.isbnForBook(candidate);
+          const candidateYear = String(candidate?.year || '').trim();
+          const candidateFormat = String(candidate?.extension || candidate?.format || '').replace(/^\./, '').toLowerCase();
+          return String(candidate?.title || '').trim().toLocaleLowerCase() === wantedTitle
+            && wantedAuthor
+            && authorMatchKey(candidate?.authors || candidate?.author) === wantedAuthor
+            && (!isbn || !candidateIsbn || candidateIsbn === isbn)
+            && (!wantedYear || !candidateYear || candidateYear === wantedYear)
+            && (!wantedFormat || !candidateFormat || candidateFormat === wantedFormat);
+        });
+        if (matches.length === 1) return matches[0];
+        const wantedPublisher = String(book?.publisher || '').trim().toLocaleLowerCase();
+        return wantedPublisher
+          ? matches.find(candidate => String(candidate?.publisher || '').trim().toLocaleLowerCase() === wantedPublisher) || null
+          : null;
+      }
+
+      function resolvedTorrentBook(book, matched, provenance) {
+        return {
+          ...BookMetadata.enrichBookMetadata(book, matched, provenance),
+          md5: String(matched.md5 || matched.libvaultMd5 || '').toLowerCase(),
+          libgenId: Number(matched.libgenId || matched.libgen_id || matched.sourceNativeId || 0),
+        };
+      }
+
+      function rememberResolvedTorrentMetadata(original, resolved) {
+        const libvaultMd5 = String(resolved?.md5 || resolved?.libvaultMd5 || '').trim().toLowerCase();
+        const libgenId = Number(resolved?.libgenId || resolved?.libgen_id || 0);
+        if (!isMd5(libvaultMd5) || !Number.isSafeInteger(libgenId) || libgenId <= 0) return;
+        const update = item => BookMetadata.sameLibraryBook(item, original)
+          ? { ...item, libvaultMd5, libgenId, filesize: Number(resolved.filesize || item.filesize || 0) }
+          : item;
+        state.reading = state.reading.map(update);
+        state.favorites = state.favorites.map(update);
+        localStorage.setItem(READING_KEY, JSON.stringify(state.reading));
+        localStorage.setItem(FAVORITES_KEY, JSON.stringify(state.favorites));
+      }
+
+      async function searchLibVaultHTTPForTorrent(book) {
+        const isbn = BookMetadata.isbnForBook(book);
+        const title = BookMetadata.resolveTitle(book);
+        const query = isbn || (!BookMetadata.isPlaceholderTitle(title) ? title : '');
+        if (!query) return null;
+        const params = new URLSearchParams({ q: query, type: isbn ? 'isbn' : 'title', limit: '50' });
+        const response = await fetch(`${LIBVAULT_API_BASE}/search?${params}`);
+        if (!response.ok) return null;
+        const matched = matchingTorrentCatalogRecord(book, normalizeSearchBooks(await response.json(), 'libvault'));
+        return matched ? resolvedTorrentBook(book, matched, 'libvault') : null;
+      }
+
       async function resolvePrivateTorrentBook(book) {
+        const publicCatalogMatch = await searchLibVaultHTTPForTorrent(book).catch(() => null);
+        if (publicCatalogMatch) return publicCatalogMatch;
         if (!nostrSigner?.signEvent || !nostrSigner?.nip44?.encrypt || !nostrSigner?.nip44?.decrypt) {
           throw new Error('Connect your Nostr signer to search LibVault for this torrent.');
         }
@@ -6146,28 +6613,16 @@
           throw error;
         }
         const results = normalizeSearchBooks(response, 'libvault');
-        const torrentRecords = results.filter(candidate => BookMetadata.libgenTorrentMetadataForBook(candidate));
-        const exact = torrentRecords.find(candidate => (
-          (isbn && BookMetadata.isbnForBook(candidate) === isbn)
-          || BookMetadata.sameLibraryBook(book, candidate)
-        ));
-        const wantedTitle = String(title || '').trim().toLocaleLowerCase();
-        const wantedAuthor = authorMatchKey(book?.authors || book?.author);
-        const matched = exact || torrentRecords.find(candidate => (
-          String(candidate?.title || '').trim().toLocaleLowerCase() === wantedTitle
-          && wantedAuthor
-          && authorMatchKey(candidate?.authors || candidate?.author) === wantedAuthor
-        ));
+        const matched = matchingTorrentCatalogRecord(book, results);
         if (!matched) return null;
-        return {
-          ...BookMetadata.enrichBookMetadata(book, matched, 'all.books.party'),
-          md5: String(matched.md5).toLowerCase(),
-          libgenId: Number(matched.libgenId || matched.libgen_id || 0),
-        };
+        return resolvedTorrentBook(book, matched, 'all.books.party');
       }
 
       async function fetchDesktopTorrentCopy(book) {
         if (!isDesktopMode) return null;
+        if (!state.settings.autoDownloadTorrents) {
+          throw new Error('Automatic torrent downloads are disabled in Settings.');
+        }
         let torrentBook = BookMetadata.libgenTorrentMetadataForBook(book)
           ? book
           : await resolveLibVaultHTTPBook(book).catch(() => null) || book;
@@ -6194,21 +6649,20 @@
           libgenTorrent = BookMetadata.libgenTorrentMetadataForBook(torrentBook);
         }
         if (libgenTorrent && desktopBridge?.library?.acquireLibgen) {
-          status.textContent = `Finding torrent peers for ${torrentBook.title || 'book'}…`;
-          const stopProgress = desktopBridge.library.onAcquisitionProgress?.(progress => {
-            if (String(progress?.bookId || '').toLowerCase() !== libgenTorrent.md5) return;
-            const total = Number(progress.totalBytes || 0);
-            const percent = total > 0 ? ` · ${Math.min(100, Math.round(Number(progress.bytes || 0) / total * 100))}%` : '';
-            const peers = Number(progress.peers || 0);
-            status.textContent = peers > 0
-              ? `Downloading ${torrentBook.title || 'book'} from ${peers} torrent peer${peers === 1 ? '' : 's'}${percent}`
-              : `Finding torrent peers for ${torrentBook.title || 'book'}${percent}`;
-          }) || (() => {});
+          torrentBook = { ...torrentBook, md5: libgenTorrent.md5, libgenId: libgenTorrent.libgenId };
+          desktopDownloadByBook.set(libgenTorrent.md5, {
+            ...desktopDownloadByBook.get(libgenTorrent.md5),
+            bookId: libgenTorrent.md5,
+            status: 'finding-peers',
+          });
+          updateDesktopDownloadSummary();
           let result;
           try {
-            result = await desktopBridge.library.acquireLibgen(torrentBook);
+            result = await desktopBridge.library.acquireLibgen(torrentBook, {
+              autoSeed: state.settings.autoSeedTorrents,
+            });
           } finally {
-            stopProgress();
+            await refreshDesktopDownloadStates();
           }
           if (!result?.url) throw new Error('The torrent download did not produce a readable file.');
           const response = await fetch(result.url);
@@ -6230,6 +6684,7 @@
           sha256,
           torrentId,
           book,
+          autoSeed: state.settings.autoSeedTorrents,
         });
         if (!result?.url) throw new Error('The torrent download did not produce a readable file.');
         const response = await fetch(result.url);
@@ -6253,7 +6708,7 @@
         const type = String(blob.type || '').toLowerCase();
         if (type.includes('pdf')) return 'pdf';
         if (type.includes('fictionbook') || type.includes('fb2')) return 'fb2';
-        if (type.includes('zip')) {
+        if (type.includes('zip') || type.includes('epub')) {
           const inspected = await globalThis.BookstrFB2?.inspect(blob);
           if (inspected?.format === 'fb2') return 'fb2';
           try {
@@ -6264,7 +6719,6 @@
           } catch {}
           return 'epub';
         }
-        if (type.includes('epub')) return 'epub';
         try {
           const bytes = new Uint8Array(await blob.slice(0, 5).arrayBuffer());
           if (String.fromCharCode(...bytes) === '%PDF-') return 'pdf';
@@ -6273,7 +6727,9 @@
             if (inspected?.format === 'fb2') return 'fb2';
             try {
               const zip = await JSZip.loadAsync(blob, { checkCRC32: true, createFolders: false });
-              return Object.keys(zip.files).some(name => isComicImageName(name)) ? 'cbz' : 'epub';
+              const names = Object.keys(zip.files).map(name => name.replaceAll('\\', '/'));
+              if (names.some(name => /(^|\/)META-INF\/container\.xml$/i.test(name))) return 'epub';
+              return names.some(name => isComicImageName(name)) ? 'cbz' : 'epub';
             } catch {}
             return 'epub';
           }
@@ -6282,6 +6738,37 @@
           if (prefix.trimStart().startsWith('<')) return 'fb2';
         } catch {}
         return '';
+      }
+
+      function rememberDetectedBookFormat(book, format) {
+        const detected = String(format || '').replace(/^\./, '').toLowerCase();
+        if (!['epub', 'pdf', 'fb2', 'cbz', 'cbr'].includes(detected)) return;
+        const update = item => BookMetadata.sameLibraryBook(item, book)
+          ? {
+              ...item,
+              extension: detected,
+              format: detected,
+              metadataProvenance: { ...(item.metadataProvenance || {}), extension: 'detected-local' },
+            }
+          : item;
+        const previousReading = state.reading;
+        const previousFavorites = state.favorites;
+        state.reading = state.reading.map(update);
+        state.favorites = state.favorites.map(update);
+        if (activeReadingBook && BookMetadata.sameLibraryBook(activeReadingBook, book)) {
+          activeReadingBook = {
+            ...activeReadingBook,
+            extension: detected,
+            format: detected,
+            metadataProvenance: { ...(activeReadingBook.metadataProvenance || {}), extension: 'detected-local' },
+          };
+        }
+        if (state.reading.some((item, index) => item !== previousReading[index])) {
+          localStorage.setItem(READING_KEY, JSON.stringify(state.reading));
+        }
+        if (state.favorites.some((item, index) => item !== previousFavorites[index])) {
+          localStorage.setItem(FAVORITES_KEY, JSON.stringify(state.favorites));
+        }
       }
 
       function isComicImageName(name) {
@@ -6332,6 +6819,21 @@
         });
       }
 
+      async function purgeLegacyBookCache() {
+        cachedBookKeys.clear();
+        if (bookCacheDatabase) {
+          const database = await bookCacheDatabase.catch(() => null);
+          database?.close();
+          bookCacheDatabase = null;
+        }
+        return new Promise((resolve, reject) => {
+          const request = indexedDB.deleteDatabase(BOOK_CACHE_DB_NAME);
+          request.onsuccess = () => resolve();
+          request.onerror = () => reject(request.error || new Error('Could not remove the legacy book cache.'));
+          request.onblocked = () => reject(new Error('Could not remove the legacy book cache because it is still in use.'));
+        });
+      }
+
       function bookCacheKey(book, readUrl) {
         const md5 = String(book?.md5 || '').trim().toLowerCase();
         return isMd5(md5) ? md5 : String(readUrl || book?.readUrl || book?.url || book?.blossomUrl || '').trim();
@@ -6375,6 +6877,7 @@
       }
 
       async function cachedBookBlob(book, readUrl) {
+        if (isDesktopMode) return null;
         const key = bookCacheKey(book, readUrl);
         if (!key) return null;
         const record = (await bookCacheRecords()).find(item => cacheRecordMatches(item, book, readUrl));
@@ -6394,6 +6897,7 @@
       }
 
       async function cacheBookBlob(book, readUrl, blob) {
+        if (isDesktopMode) return;
         if (!(blob instanceof Blob) || !blob.size) return;
         const key = bookCacheKey(book, readUrl);
         if (!key || blob.size > BOOK_CACHE_STORAGE_LIMIT) return;
@@ -6601,7 +7105,7 @@
           { ...book, readUrl: readPath || book.readUrl || book.url || '' },
         );
         applyOpenReaderTypography();
-        if (openGeneration === readerOpenGeneration) status.textContent = `Opened ${book.title || 'book'}.`;
+        if (revealReadableBook(book, openGeneration)) status.textContent = `Opened ${book.title || 'book'}.`;
       }
 
       async function displayFB2(blob, book, readPath, openGeneration) {
@@ -6612,7 +7116,7 @@
         if (!readerLoad) return;
         await readerLoad(base64, book.cfi || '', state.settings.theme === 'dark' ? 'night' : state.settings.theme, book.md5 || BookMetadata.bookIdentity(book));
         applyOpenReaderTypography();
-        if (openGeneration === readerOpenGeneration) status.textContent = `Opened ${book.title || 'book'}.`;
+        if (revealReadableBook(book, openGeneration)) status.textContent = `Opened ${book.title || 'book'}.`;
       }
 
       async function displayComic(blob, book, readPath, openGeneration, format) {
@@ -6628,7 +7132,7 @@
           bookId: book.md5 || BookMetadata.bookIdentity(book),
           readUrl: readPath || book.readUrl || book.url || '',
         });
-        if (openGeneration === readerOpenGeneration) status.textContent = `Opened ${book.title || 'comic'}.`;
+        if (revealReadableBook(book, openGeneration)) status.textContent = `Opened ${book.title || 'comic'}.`;
       }
 
       function pdfDownloadFilename(book) {
@@ -6657,7 +7161,7 @@
         const readerLoad = await readerFrameLoader('pdf', openGeneration, book.md5 || BookMetadata.bookIdentity(book));
         if (!readerLoad) return;
         await readerLoad(options);
-        if (openGeneration === readerOpenGeneration) status.textContent = `Opened ${book.title || 'PDF'}.`;
+        if (revealReadableBook(book, openGeneration)) status.textContent = `Opened ${book.title || 'PDF'}.`;
       }
 
       document.addEventListener('keydown', event => {
@@ -6744,6 +7248,7 @@
           }
           if (torrentBlob) {
             const torrentFormat = await bookFormatForBlob(torrentBlob) || String(book.extension || '').toLowerCase();
+            rememberDetectedBookFormat(book, torrentFormat);
             if (torrentFormat === 'pdf') await displayPdf(torrentBlob, book, readPath, openGeneration);
             else if (torrentFormat === 'fb2') await displayFB2(torrentBlob, book, readPath, openGeneration);
             else if (torrentFormat === 'cbz' || torrentFormat === 'cbr') await displayComic(torrentBlob, book, readPath, openGeneration, torrentFormat);
@@ -6958,22 +7463,47 @@
         return sources;
       }
 
+      function disabledSearchSourceIds() {
+        const stored = safeJSONRead(localStorage.getItem(SEARCH_SOURCE_SETTINGS_KEY), []);
+        return new Set(Array.isArray(stored) ? stored.map(value => String(value || '')).filter(Boolean) : []);
+      }
+
+      function isSearchSourceEnabled(sourceId) {
+        return !disabledSearchSourceIds().has(String(sourceId || ''));
+      }
+
+      function setSearchSourceEnabled(sourceId, enabled) {
+        const disabled = disabledSearchSourceIds();
+        if (enabled) disabled.delete(sourceId);
+        else disabled.add(sourceId);
+        localStorage.setItem(SEARCH_SOURCE_SETTINGS_KEY, JSON.stringify([...disabled].sort()));
+      }
+
       function renderSearchSources() {
         renderSearchSourceProgress([]);
         const sources = searchSourceRegistry();
-        const rows = sources.map(source => `
-          <tr data-source="${escapeHtml(source.id)}">
+        const rows = sources.map(source => {
+          const enabled = isSearchSourceEnabled(source.id);
+          return `
+          <tr data-source="${escapeHtml(source.id)}" class="${enabled ? '' : 'source-disabled'}">
             <td data-label="Source"><strong>${escapeHtml(source.name)}</strong></td>
             <td data-label="Coverage">${escapeHtml(source.coverage)}</td>
             <td data-label="Delivers"><span class="source-deliveries">${source.deliveries.map(item => `<span class="source-delivery">${escapeHtml(item)}</span>`).join('')}</span></td>
-            <td data-label="Access">${escapeHtml(source.access)}</td>
-          </tr>`).join('');
+            <td data-label="Use"><label class="search-source-toggle"><input type="checkbox" data-action="toggle-search-source" data-source-id="${escapeHtml(source.id)}" ${enabled ? 'checked' : ''}><span>${enabled ? 'On' : 'Off'}</span></label></td>
+          </tr>`;
+        }).join('');
         resultsEl.innerHTML = `<section class="search-sources" aria-labelledby="search-sources-title">
           <h3 id="search-sources-title">Sources</h3>
           ${rows ? `<table id="search-sources-table" class="search-sources-table">
-            <thead><tr><th>Source</th><th>Coverage</th><th>Delivers</th><th>Access</th></tr></thead>
+            <thead><tr><th>Source</th><th>Coverage</th><th>Delivers</th><th>Use</th></tr></thead>
             <tbody>${rows}</tbody></table>` : '<p class="note">No book catalogs are configured.</p>'}
         </section>`;
+        resultsEl.querySelectorAll('[data-action="toggle-search-source"]').forEach(input => {
+          input.addEventListener('change', event => {
+            setSearchSourceEnabled(event.currentTarget.dataset.sourceId, event.currentTarget.checked);
+            renderSearchSources();
+          });
+        });
       }
 
       function renderSearchSourceProgress(entries) {
@@ -6999,7 +7529,8 @@
       }
 
       async function searchAvailableBookSources(query, onUpdate = () => {}) {
-        const sources = searchSourceRegistry();
+        const sources = searchSourceRegistry().filter(source => isSearchSourceEnabled(source.id));
+        if (!sources.length) throw new Error('No search sources are enabled. Clear the search to turn one on.');
         const arrivedBooks = [];
         const progress = sources.map(source => ({ source, state: 'pending', count: 0, error: null }));
         onUpdate(progress, []);
@@ -7037,6 +7568,7 @@
           query: String(query || '').trim().toLocaleLowerCase(),
           type: searchType.value || 'all',
           opdsFeeds: normalizePublicOPDSFeedSettings(state.settings.opdsFeeds),
+          sources: searchSourceRegistry().filter(source => isSearchSourceEnabled(source.id)).map(source => source.id).sort(),
         });
       }
 
@@ -7147,7 +7679,7 @@
         } catch (error) {
           if (searchGeneration !== activeSearchGeneration) return;
           status.textContent = `Search failed: ${error.message || error}`;
-          resultsEl.innerHTML = '<p class="note">Search failed. Check your network connection and try again.</p>';
+          resultsEl.innerHTML = `<p class="note">${escapeHtml(error.message || 'Search failed. Check your network connection and try again.')}</p>`;
           searchResultCount.textContent = '0 results';
           searchPagination.classList.add('hidden');
         }
@@ -7186,12 +7718,15 @@
             : signerState.mode === 'nsec'
               ? 'Connected with local nsec'
               : 'No signer connected';
-          const identity = signerState.pubkey ? ` · ${shortPubkey(signerState.pubkey)}` : '';
-          const storage = signerState.configured && !signerState.persistent
-            ? ' · available for this session only'
-            : '';
-          desktopSignerStatus.textContent = message || `${modeLabel}${identity}${storage}`;
           const connected = Boolean(signerState.configured);
+          const npub = signerState.pubkey ? publicKeyToNpub(signerState.pubkey) || shortPubkey(signerState.pubkey) : '';
+          desktopSignerMethod.textContent = message || modeLabel;
+          desktopSignerNpub.textContent = npub;
+          desktopSignerNpub.title = npub;
+          desktopSignerNpub.classList.toggle('hidden', !connected || !npub);
+          desktopSignerStorage.textContent = connected && !signerState.persistent ? 'Available for this session only' : '';
+          desktopSignerStorage.classList.toggle('hidden', !connected || signerState.persistent);
+          desktopSignerPanel.classList.toggle('signer-connected', connected);
           desktopSignerStatus.classList.toggle('signer-connected', connected);
           desktopSignerDisconnect.classList.toggle('hidden', !connected);
           desktopNip46QrStart.classList.toggle('hidden', connected);
@@ -7201,10 +7736,17 @@
           }
           return signerState;
         } catch (error) {
+          desktopSignerPanel.classList.remove('signer-connected');
           desktopSignerStatus.classList.remove('signer-connected');
-          desktopSignerStatus.textContent = `Signer status unavailable: ${error?.message || error}`;
+          desktopSignerMethod.textContent = `Signer status unavailable: ${error?.message || error}`;
+          desktopSignerNpub.classList.add('hidden');
+          desktopSignerStorage.classList.add('hidden');
           return null;
         }
+      }
+
+      function setDesktopSignerMessage(message) {
+        desktopSignerMethod.textContent = message;
       }
 
       function stopDesktopNip46QrPolling() {
@@ -7217,12 +7759,12 @@
         try {
           qrState = await nostrSigner.nip46QrStatus();
         } catch (error) {
-          desktopSignerStatus.textContent = `Could not check NIP-46 connection: ${error?.message || error}`;
+          setDesktopSignerMessage(`Could not check NIP-46 connection: ${error?.message || error}`);
           return;
         }
         if (qrState.status === 'waiting') return;
         if (qrState.status === 'authorizing') {
-          desktopSignerStatus.textContent = 'Signer approved. Finishing the secure connection…';
+          setDesktopSignerMessage('Signer approved. Finishing the secure connection…');
           return;
         }
         stopDesktopNip46QrPolling();
@@ -7233,7 +7775,7 @@
           await connectNip7({ silent: true });
           await refreshDesktopSignerStatus();
         } else if (qrState.status === 'failed') {
-          desktopSignerStatus.textContent = `NIP-46 connection failed: ${qrState.error || 'Signer did not connect.'}`;
+          setDesktopSignerMessage(`NIP-46 connection failed: ${qrState.error || 'Signer did not connect.'}`);
         }
       }
 
@@ -7245,7 +7787,7 @@
 
       async function startDesktopNip46Qr() {
         desktopNip46QrStart.disabled = true;
-        desktopSignerStatus.textContent = 'Preparing a secure NIP-46 invitation…';
+        setDesktopSignerMessage('Preparing a secure NIP-46 invitation…');
         try {
           const qrSession = await nostrSigner.startNip46Qr();
           desktopNip46QrUri = qrSession.uri;
@@ -7253,11 +7795,11 @@
           desktopNip46QrImage.hidden = false;
           desktopNip46Qr.classList.remove('hidden');
           desktopNip46QrStart.classList.add('hidden');
-          desktopSignerStatus.textContent = 'Waiting for your remote signer…';
+          setDesktopSignerMessage('Waiting for your remote signer…');
           stopDesktopNip46QrPolling();
           desktopNip46QrTimer = setInterval(() => void pollDesktopNip46Qr(), 1000);
         } catch (error) {
-          desktopSignerStatus.textContent = `Could not start NIP-46: ${error?.message || error}`;
+          setDesktopSignerMessage(`Could not start NIP-46: ${error?.message || error}`);
         } finally {
           desktopNip46QrStart.disabled = false;
         }
@@ -7277,12 +7819,12 @@
       async function connectDesktopNip46() {
         const input = desktopNip46Input.value.trim();
         if (!input) {
-          desktopSignerStatus.textContent = 'Paste a bunker:// connection or NIP-05 signer address.';
+          setDesktopSignerMessage('Paste a bunker:// connection or NIP-05 signer address.');
           desktopNip46Input.focus();
           return;
         }
         desktopNip46Connect.disabled = true;
-        desktopSignerStatus.textContent = 'Waiting for NIP-46 signer approval…';
+        setDesktopSignerMessage('Waiting for NIP-46 signer approval…');
         try {
           await nostrSigner.connectNip46(input);
           desktopNip46Input.value = '';
@@ -7290,7 +7832,7 @@
           await connectNip7({ silent: true });
           await refreshDesktopSignerStatus();
         } catch (error) {
-          desktopSignerStatus.textContent = `NIP-46 connection failed: ${error?.message || error}`;
+          setDesktopSignerMessage(`NIP-46 connection failed: ${error?.message || error}`);
         } finally {
           desktopNip46Connect.disabled = false;
         }
@@ -7299,7 +7841,7 @@
       async function connectDesktopNsec() {
         const secret = desktopNsecInput.value.trim();
         if (!secret) {
-          desktopSignerStatus.textContent = 'Paste an nsec1… key.';
+          setDesktopSignerMessage('Paste an nsec1… key.');
           desktopNsecInput.focus();
           return;
         }
@@ -7311,7 +7853,7 @@
           await connectNip7({ silent: true });
           await refreshDesktopSignerStatus();
         } catch (error) {
-          desktopSignerStatus.textContent = `nsec connection failed: ${error?.message || error}`;
+          setDesktopSignerMessage(`nsec connection failed: ${error?.message || error}`);
         } finally {
           desktopNsecConnect.disabled = false;
         }
@@ -7465,13 +8007,13 @@
           state.favorites = BookMetadata.dedupeLibraryBooks(favorites
             .filter(item => item && typeof item.md5 === 'string')
             .filter(item => item.md5)
-            .map(item => normalizeFavoriteFromRemote(item))
+            .map(item => normalizeFavoriteFromRemote(item, { trustExplicitFormat: false }))
           ).slice();
         }
         if (Array.isArray(reading)) {
           state.reading = BookMetadata.dedupeLibraryBooks(reading
             .filter(item => item && typeof item.md5 === 'string')
-            .map(item => normalizeFavoriteFromRemote(item))
+            .map(item => normalizeFavoriteFromRemote(item, { trustExplicitFormat: false }))
           )
             .sort((a, b) => Number(b.updatedAt || 0) - Number(a.updatedAt || 0))
             .slice();
@@ -7486,6 +8028,12 @@
         if (settings && typeof settings === 'object') {
           if (typeof settings.autoReading === 'boolean') {
             state.settings.autoReading = settings.autoReading;
+          }
+          if (typeof settings.autoDownloadTorrents === 'boolean') {
+            state.settings.autoDownloadTorrents = settings.autoDownloadTorrents;
+          }
+          if (typeof settings.autoSeedTorrents === 'boolean') {
+            state.settings.autoSeedTorrents = settings.autoSeedTorrents;
           }
           if (typeof settings.useNip7 === 'boolean') {
             state.settings.useNip7 = settings.useNip7;
@@ -7528,7 +8076,9 @@
           state.nip7.npub = nip7.npub;
         }
 
-        autoReadingInput.checked = Boolean(state.settings.autoReading);
+        for (const input of autoReadingInputs) input.checked = Boolean(state.settings.autoReading);
+        torrentAutoDownloadInput.checked = Boolean(state.settings.autoDownloadTorrents);
+        torrentAutoSeedInput.checked = Boolean(state.settings.autoSeedTorrents);
         nip7EnabledInput.checked = Boolean(state.settings.useNip7);
         themeModeInput.value = ['white', 'paper', 'dark'].includes(state.settings.theme) ? state.settings.theme : 'white';
         readerFontInput.value = state.settings.readerFont;
@@ -7545,6 +8095,10 @@
         renderWords();
         updateNip7Status();
         if (isDesktopMode) {
+          void desktopBridge?.transfers?.setPreferences?.({
+            autoDownload: state.settings.autoDownloadTorrents,
+            autoSeed: state.settings.autoSeedTorrents,
+          });
           state.settings.useNip7 = true;
           nip7EnabledInput.checked = true;
           void refreshDesktopSignerStatus().then(signerState => {
@@ -7817,7 +8371,9 @@
       }
 
       function applySettingsFromUI() {
-        state.settings.autoReading = autoReadingInput.checked;
+        state.settings.autoReading = autoReadingInputs[0]?.checked ?? true;
+        state.settings.autoDownloadTorrents = torrentAutoDownloadInput.checked;
+        state.settings.autoSeedTorrents = torrentAutoSeedInput.checked;
         state.settings.useNip7 = nip7EnabledInput.checked;
         state.settings.theme = themeModeInput.value;
         state.settings.readerFont = BookstrTypography.normalizeFont(readerFontInput.value);
@@ -8036,13 +8592,18 @@
         }
       });
 
-      autoReadingInput.addEventListener('change', applySettingsFromUI);
+      for (const input of autoReadingInputs) {
+        input.addEventListener('change', () => {
+          for (const peer of autoReadingInputs) peer.checked = input.checked;
+          applySettingsFromUI();
+        });
+      }
       nip7EnabledInput.addEventListener('change', applySettingsFromUI);
       desktopNip46QrStart.addEventListener('click', () => void startDesktopNip46Qr());
       desktopNip46QrCopy.addEventListener('click', async () => {
         if (!desktopNip46QrUri) return;
         await navigator.clipboard.writeText(desktopNip46QrUri);
-        desktopSignerStatus.textContent = 'NIP-46 connection link copied.';
+        setDesktopSignerMessage('NIP-46 connection link copied.');
       });
       desktopNip46QrCancel.addEventListener('click', () => void cancelDesktopNip46Qr());
       desktopNip46Connect.addEventListener('click', connectDesktopNip46);
@@ -8059,6 +8620,20 @@
       readerAlignmentInput.addEventListener('change', applySettingsFromUI);
       readerFontSizeInput.addEventListener('input', applySettingsFromUI);
       readerPaddingInput.addEventListener('input', applySettingsFromUI);
+      torrentAutoDownloadInput.addEventListener('change', () => {
+        applySettingsFromUI();
+        void desktopBridge?.transfers?.setPreferences?.({
+          autoDownload: state.settings.autoDownloadTorrents,
+          autoSeed: state.settings.autoSeedTorrents,
+        });
+      });
+      torrentAutoSeedInput.addEventListener('change', () => {
+        applySettingsFromUI();
+        void desktopBridge?.transfers?.setPreferences?.({
+          autoDownload: state.settings.autoDownloadTorrents,
+          autoSeed: state.settings.autoSeedTorrents,
+        });
+      });
       speechLanguageInput.addEventListener('change', () => {
         state.settings.speechLanguage = speechLanguageInput.value;
         refreshSpeechVoiceMenus();
@@ -8144,20 +8719,28 @@
       populateDictionaryTargetOptions('en');
       void refreshDictionaryTargetOptions('en');
       void renderDictionaryPacks();
-      void bookCacheRecords().then(records => {
-        cachedBookKeys.clear();
-        records.forEach(rememberCachedRecord);
-        if (activeTab === 'home') renderHome();
-      }).catch(() => {});
+      if (isDesktopMode) {
+        void purgeLegacyBookCache().then(() => {
+          if (activeTab === 'home') renderHome();
+        }).catch(() => {});
+      } else {
+        void bookCacheRecords().then(records => {
+          cachedBookKeys.clear();
+          records.forEach(rememberCachedRecord);
+          if (activeTab === 'home') renderHome();
+        }).catch(() => {});
+      }
       void refreshDesktopDownloadStates();
       window.setInterval(() => void refreshDesktopDownloadStates(), 5000);
       desktopBridge?.library?.onAcquisitionProgress?.(progress => {
         const md5 = String(progress?.bookId || '').trim().toLowerCase();
         if (!isMd5(md5)) return;
         desktopDownloadByBook.set(md5, { ...desktopDownloadByBook.get(md5), ...progress, status: 'downloading' });
-        if (activeReadingBook && String(activeReadingBook.md5 || '').trim().toLowerCase() === md5) {
+        if (activeReadingBook && desktopBookIds(activeReadingBook).includes(md5)) {
           updateReadTorrentStatus(activeReadingBook);
         }
+        clearTimeout(desktopDownloadStatusTimer);
+        desktopDownloadStatusTimer = setTimeout(updateDesktopDownloadSummary, 180);
         clearTimeout(desktopDownloadRenderTimer);
         desktopDownloadRenderTimer = setTimeout(() => {
           if (activeTab === 'home') renderHome();

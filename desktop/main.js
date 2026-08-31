@@ -33,6 +33,7 @@ const APP_ICON_PATH = path.join(__dirname, 'assets', 'icon-macos.png');
 const STATE_FILE = path.join(app.getPath('userData'), 'bookstr-desktop-state.json');
 const speechModelStore = new SpeechModelStore(path.join(app.getPath('userData'), 'speech-models'));
 const DESKTOP_NOSTR_STATE_KEY = 'desktopNostr';
+const TORRENT_PREFERENCES_STATE_KEY = 'torrentPreferences';
 const DESKTOP_NOSTR_SECRET_FIELD = 'secret';
 const BOOKSTR_DESKTOP_RELEASES_URL = 'https://github.com/guaka/bookstr/releases';
 const NOSTR_SIGNER_ENV_KEYS = [
@@ -878,6 +879,15 @@ async function saveState(state) {
   }
 }
 
+async function torrentPreferences() {
+  const state = await loadState();
+  const saved = isRecord(state[TORRENT_PREFERENCES_STATE_KEY]) ? state[TORRENT_PREFERENCES_STATE_KEY] : {};
+  return {
+    autoDownload: saved.autoDownload !== false,
+    autoSeed: saved.autoSeed !== false,
+  };
+}
+
 function clampBounds(stored) {
   const width = Number(stored?.width);
   const height = Number(stored?.height);
@@ -1264,6 +1274,7 @@ function setupIpcHandlers() {
       }
     }
     const result = await getAcquisitionManager().acquireLibgen(request.book, {
+      autoSeed: request.autoSeed !== false,
       onProgress: payload => {
         if (!event.sender.isDestroyed()) event.sender.send('bookstr-desktop-acquisition-progress', payload);
       },
@@ -1294,6 +1305,20 @@ function setupIpcHandlers() {
 
   ipcMain.handle('bookstr-desktop-transfer-status', async () => {
     return getTorrentBridge().active();
+  });
+  ipcMain.handle('bookstr-desktop-transfer-preferences', async (_event, request) => {
+    const current = await torrentPreferences();
+    if (!isRecord(request)) return current;
+    const next = {
+      autoDownload: typeof request.autoDownload === 'boolean' ? request.autoDownload : current.autoDownload,
+      autoSeed: typeof request.autoSeed === 'boolean' ? request.autoSeed : current.autoSeed,
+    };
+    await saveState({ [TORRENT_PREFERENCES_STATE_KEY]: next });
+    if (!next.autoSeed) await getTorrentBridge().stopSeeding();
+    else void getAcquisitionManager().resumeLibgenSeeds().catch(error => {
+      console.warn('Could not resume LibGen torrent seeding:', error);
+    });
+    return next;
   });
   ipcMain.handle('bookstr-desktop-transfer-seed-public', async (_event, request) => {
     if (!isRecord(request) || Object.keys(request).length !== 1 || typeof request.bookId !== 'string' || !request.bookId.trim()) {
@@ -1374,6 +1399,7 @@ function setupIpcHandlers() {
     getLibraryStore().registerLibraryFile({ bookId: book.id, relativePath, size: stat.size, sha256: fileDigest });
     const reader = getLibraryStore().openReader(book.id);
     if (!reader?.token) throw new Error('Downloaded book could not be opened.');
+    if (request.autoSeed === false) await getTorrentBridge().remove(torrent);
     return { url: `${APP_ORIGIN}/api/library-file/${reader.token}`, infoHash: String(torrent.infoHash || '') };
   });
   ipcMain.handle('bookstr-desktop-transfer-add-private', async (_event, request) => {
@@ -1541,6 +1567,11 @@ async function bootstrap() {
     console.warn('Could not register the Settings keyboard shortcut.');
   }
   await createLibraryWindow();
+  if ((await torrentPreferences()).autoSeed) {
+    void getAcquisitionManager().resumeLibgenSeeds().catch(error => {
+      console.warn('Could not resume LibGen torrent seeding:', error);
+    });
+  }
 }
 
 app.on('will-quit', () => {

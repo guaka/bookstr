@@ -132,9 +132,9 @@ function waitForTorrent(torrent, onProgress, signal, maxBytes) {
     torrent.on('done', () => finish());
     torrent.on('error', error => finish(error instanceof Error ? error : new Error(String(error))));
     torrent.on('download', () => {
-      const bytes = Number(torrent.downloaded || 0);
+      const bytes = Math.max(0, Number(torrent.downloaded || 0));
       if (bytes > maxBytes) return finish(new Error('torrent exceeded the maximum acquisition size'));
-      onProgress?.({ bytes, totalBytes: Number(torrent.length || 0) });
+      onProgress?.({ bytes, totalBytes: Math.max(0, Number(torrent.length || 0)) });
     });
     signal?.addEventListener?.('abort', abort, { once: true });
   });
@@ -179,7 +179,7 @@ function libgenTorrentMetadataURL(libgenId, baseURL = LIBGEN_TORRENT_METADATA_BA
 }
 
 class AcquisitionManager {
-  constructor({ store, importer, torrentBridge, fetchImpl = globalThis.fetch, stagingRoot, maxAttempts = 3, maxBytes = DEFAULT_MAX_ACQUISITION_BYTES, trustedOrigins = {} } = {}) {
+  constructor({ store, importer, torrentBridge, fetchImpl = globalThis.fetch, stagingRoot, maxAttempts = 3, maxBytes = DEFAULT_MAX_ACQUISITION_BYTES, trustedOrigins = {}, seedResumeIntervalMs = 1500, sleep = ms => new Promise(resolve => setTimeout(resolve, ms)) } = {}) {
     if (!store || !importer || !stagingRoot) throw new TypeError('store, importer, and stagingRoot are required');
     if (typeof fetchImpl !== 'function') throw new TypeError('fetchImpl is required');
     this.store = store;
@@ -192,12 +192,96 @@ class AcquisitionManager {
       ? Number(maxBytes)
       : DEFAULT_MAX_ACQUISITION_BYTES;
     this.trustedOrigins = trustedOrigins;
+    this.seedResumeIntervalMs = Math.max(0, Math.min(30_000, Number(seedResumeIntervalMs) || 0));
+    this.sleep = sleep;
+    this.resumeLibgenSeedsPromise = null;
+    this.libgenAcquisitionJobs = new Map();
   }
 
-  async acquireLibgen(book, { signal, onProgress } = {}) {
-    if (!this.torrentBridge?.downloadSelected) throw new Error('torrent bridge is not configured');
+  resumeLibgenSeeds() {
+    if (this.resumeLibgenSeedsPromise) return this.resumeLibgenSeedsPromise;
+    this.resumeLibgenSeedsPromise = this.#resumeLibgenSeeds().finally(() => {
+      this.resumeLibgenSeedsPromise = null;
+    });
+    return this.resumeLibgenSeedsPromise;
+  }
+
+  async #resumeLibgenSeeds() {
+    if (!this.torrentBridge?.downloadSelected) return { seeded: 0 };
+    const seedRoot = path.join(this.stagingRoot, 'libgen-seeds');
+    let seeded = 0;
+    for (const download of this.store.downloads()) {
+      if (String(download?.status).toLowerCase() !== 'ready' || String(download?.source).toLowerCase() !== 'torrent') continue;
+      const md5 = String(download.bookId || '').trim().toLowerCase();
+      const book = this.store.getBook(md5);
+      const libgenId = Number(book?.source_native_id || book?.sourceNativeId || 0);
+      if (!/^[a-f0-9]{32}$/.test(md5) || !Number.isSafeInteger(libgenId) || libgenId <= 0) continue;
+      const batch = Math.floor(libgenId / 1000) * 1000;
+      const seedFile = path.join(seedRoot, `r_${batch}`, md5);
+      const stats = await fsp.stat(seedFile).catch(() => null);
+      if (!stats?.isFile() || stats.size <= 0) continue;
+      try {
+        if (seeded > 0 && this.seedResumeIntervalMs > 0) {
+          await this.sleep(this.seedResumeIntervalMs);
+        }
+        const metadataURL = libgenTorrentMetadataURL(libgenId);
+        const response = await this.fetch(metadataURL, { redirect: 'error' });
+        if (!response?.ok) continue;
+        const metadata = Buffer.from(await response.arrayBuffer());
+        if (!metadata.length || metadata.length > MAX_TORRENT_METADATA_BYTES || metadata[0] !== 0x64) continue;
+        const selected = await this.torrentBridge.downloadSelected(metadata, {
+          path: seedRoot,
+          fileName: md5,
+          bookId: md5,
+          maxBytes: this.maxBytes,
+        });
+        selected.torrent.bookstrBookId = md5;
+        selected.torrent.bookstrSeedingBookIds ||= new Set();
+        selected.torrent.bookstrSeedingBookIds.add(md5);
+        seeded += 1;
+      } catch {
+        // The imported library copy remains readable even if its seed cannot resume.
+      }
+    }
+    return { seeded };
+  }
+
+  async acquireLibgen(book, { signal, onProgress, autoSeed = true } = {}) {
     const md5 = String(book?.md5 || '').trim().toLowerCase();
     if (!/^[a-f0-9]{32}$/.test(md5)) throw new TypeError('LibGen torrent acquisition requires an MD5 record identifier');
+    let job = this.libgenAcquisitionJobs.get(md5);
+    if (!job) {
+      job = { listeners: new Set(), lastProgress: null, promise: null };
+      job.promise = this.runLibgenAcquisition(book, {
+        signal,
+        autoSeed,
+        onProgress: progress => {
+          job.lastProgress = progress;
+          for (const listener of job.listeners) {
+            try { listener(progress); } catch { /* a closed view must not stop the download */ }
+          }
+        },
+      }).finally(() => {
+        if (this.libgenAcquisitionJobs.get(md5) === job) this.libgenAcquisitionJobs.delete(md5);
+      });
+      this.libgenAcquisitionJobs.set(md5, job);
+    }
+    if (typeof onProgress === 'function') {
+      job.listeners.add(onProgress);
+      if (job.lastProgress) queueMicrotask(() => {
+        try { onProgress(job.lastProgress); } catch { /* best effort progress replay */ }
+      });
+    }
+    try {
+      return await job.promise;
+    } finally {
+      if (typeof onProgress === 'function') job.listeners.delete(onProgress);
+    }
+  }
+
+  async runLibgenAcquisition(book, { signal, onProgress, autoSeed = true } = {}) {
+    if (!this.torrentBridge?.downloadSelected) throw new Error('torrent bridge is not configured');
+    const md5 = String(book?.md5 || '').trim().toLowerCase();
     const libgenId = Number(book?.libgenId || book?.libgen_id || book?.id);
     const extension = extensionFor(book?.extension || book?.format);
     const metadataURL = libgenTorrentMetadataURL(libgenId);
@@ -226,8 +310,13 @@ class AcquisitionManager {
     this.store.upsertBook(fields);
     this.store.setDownload({ bookId: md5, status: 'finding-peers', bytes: 0, totalBytes: expectedSize, source: 'torrent' });
     await fsp.mkdir(this.stagingRoot, { recursive: true });
-    const stageDir = await fsp.mkdtemp(path.join(this.stagingRoot, 'libgen-torrent-'));
+    const persistentSeedRoot = path.join(this.stagingRoot, 'libgen-seeds');
+    const stageDir = autoSeed
+      ? persistentSeedRoot
+      : await fsp.mkdtemp(path.join(this.stagingRoot, 'libgen-download-'));
+    await fsp.mkdir(stageDir, { recursive: true });
     let torrent;
+    let keepSeeding = false;
     try {
       const response = await this.fetch(metadataURL, { signal, redirect: 'error' });
       if (!response?.ok) throw new Error(`torrent metadata returned HTTP ${response?.status || 0}`);
@@ -240,6 +329,7 @@ class AcquisitionManager {
       const selected = await this.torrentBridge.downloadSelected(metadata, {
         path: stageDir,
         fileName: md5,
+        bookId: md5,
         signal,
         maxBytes: this.maxBytes,
         onProgress: progress => {
@@ -255,13 +345,21 @@ class AcquisitionManager {
       const storedBook = this.store.upsertBook({ ...fields, sha256: imported.sha256, filesize_bytes: imported.size });
       this.store.registerLibraryFile({ bookId: md5, relativePath: imported.relativePath, sizeBytes: imported.size, sha256: imported.sha256 });
       this.store.setDownload({ bookId: md5, status: 'ready', bytes: imported.size, totalBytes: imported.size, source: 'torrent', relativePath: imported.relativePath });
+      if (autoSeed) {
+        torrent.bookstrBookId = md5;
+        torrent.bookstrSeedingBookIds ||= new Set();
+        torrent.bookstrSeedingBookIds.add(md5);
+        keepSeeding = true;
+      }
       return { book: storedBook, source: 'torrent', sha256: imported.sha256, size: imported.size, extension: imported.extension };
     } catch (error) {
       this.store.setDownload({ bookId: md5, status: 'failed', source: 'torrent', error: error?.message || String(error) });
       throw error;
     } finally {
-      await destroyTorrent(this.torrentBridge, torrent);
-      await fsp.rm(stageDir, { recursive: true, force: true }).catch(() => {});
+      if (!keepSeeding) {
+        await destroyTorrent(this.torrentBridge, torrent);
+        await fsp.rm(stageDir, { recursive: true, force: true }).catch(() => {});
+      }
     }
   }
 

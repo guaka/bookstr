@@ -108,6 +108,23 @@ async function epubMetadata(bytes) {
   };
 }
 
+async function localBookFormat(bytes, filenameExtension = '') {
+  if (!Buffer.isBuffer(bytes) || !bytes.length) return '';
+  if (bytes.subarray(0, 5).toString('ascii') === '%PDF-') return 'pdf';
+  if (bytes.subarray(0, 4).toString('ascii') === 'Rar!') return 'cbr';
+  if (bytes[0] === 0x50 && bytes[1] === 0x4b) {
+    try {
+      const zip = await JSZip.loadAsync(bytes, { checkCRC32: true, createFolders: false });
+      const names = Object.keys(zip.files).map(name => name.replaceAll('\\', '/'));
+      if (names.some(name => /(^|\/)META-INF\/container\.xml$/i.test(name))) return 'epub';
+      if (names.some(name => /\.(?:jpe?g|png|gif|webp)$/i.test(name))) return 'cbz';
+    } catch {}
+  }
+  if (bytes.subarray(0, 4096).toString('utf8').match(/<FictionBook\b/i)) return 'fb2';
+  const fallback = String(filenameExtension || '').replace(/^\./, '').toLowerCase();
+  return ['epub', 'fb2', 'pdf', 'cbz', 'cbr'].includes(fallback) ? fallback : '';
+}
+
 function fb2Metadata(bytes) {
   const xml = bytes.toString('utf8');
   const titleInfo = xml.match(/<title-info\b[^>]*>([\s\S]*?)<\/title-info>/i)?.[1] || xml;
@@ -169,12 +186,15 @@ async function localBookMetadata({ bookId, bookPath }) {
   if (!safeCoverID(bookId) || !bookPath) return null;
   const stat = await fs.stat(bookPath);
   if (!stat.isFile() || stat.size <= 0 || stat.size > MAX_BOOK_BYTES) return null;
-  const extension = path.extname(bookPath).toLowerCase();
-  if (!['.epub', '.fb2'].includes(extension)) return null;
   const bytes = await fs.readFile(bookPath);
-  const metadata = extension === '.epub' ? await epubMetadata(bytes) : fb2Metadata(bytes);
-  if (!metadata) return null;
-  const useful = Object.fromEntries(Object.entries(metadata).filter(([, value]) => String(value || '').trim()));
+  const extension = await localBookFormat(bytes, path.extname(bookPath));
+  const metadata = extension === 'epub'
+    ? await epubMetadata(bytes)
+    : extension === 'fb2'
+      ? fb2Metadata(bytes)
+      : {};
+  const useful = Object.fromEntries(Object.entries({ extension, ...(metadata || {}) })
+    .filter(([, value]) => String(value || '').trim()));
   return Object.keys(useful).length ? useful : null;
 }
 
@@ -185,6 +205,7 @@ module.exports = {
   fb2Cover,
   fb2Metadata,
   localBookCover,
+  localBookFormat,
   localBookMetadata,
   safeCoverID,
 };

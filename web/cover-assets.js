@@ -21,6 +21,24 @@
     return `data:image/svg+xml,${encodeURIComponent(svg)}`;
   }
 
+  function gutenbergIdForCover(book) {
+    const tagged = String(book?.md5 || '').trim().match(/^gutenberg:(\d+)$/i)?.[1];
+    if (tagged) return tagged;
+    const source = String(book?.source || '').trim().toLowerCase();
+    const sourceId = String(book?.sourceNativeId || book?.source_native_id || '').trim();
+    if (source === 'gutenberg' && /^\d+$/.test(sourceId)) return sourceId;
+    for (const value of [book?.readUrl, book?.url, book?.sourceUrl, book?.source_url]) {
+      try {
+        const url = new URL(String(value || ''));
+        const trustedEndpoint = (url.protocol === 'app:' && url.hostname === 'bookstr')
+          || url.hostname === 'books-api.guaka.org';
+        const id = trustedEndpoint ? url.pathname.match(/^\/api\/books\/(\d+)(?:\/download)?\/?$/)?.[1] : '';
+        if (id) return id;
+      } catch {}
+    }
+    return '';
+  }
+
   function bookCoverCandidates(book, options = {}) {
     const desktop = Boolean(options.desktop);
     const key = String(options.key || book?.md5 || book?.sha256 || book?.title || '').trim().toLowerCase();
@@ -46,6 +64,26 @@
     if (coverId) add(`https://covers.openlibrary.org/b/id/${encodeURIComponent(coverId)}-M.jpg`);
     const isbn = String(root.BookMetadata?.isbnForBook?.(book) || '').trim();
     if (isbn) add(`https://covers.openlibrary.org/b/isbn/${encodeURIComponent(isbn)}-M.jpg?default=false`);
+    const openLibraryIds = [
+      book?.olid,
+      book?.openLibraryId,
+      book?.open_library_id,
+      book?.editionKey,
+      book?.edition_key,
+      book?.sourceNativeId,
+      book?.source_native_id,
+    ].map(value => String(value || '').trim().toUpperCase()).filter(value => /^OL\d+[MW]$/.test(value));
+    for (const olid of openLibraryIds) {
+      add(`https://covers.openlibrary.org/b/olid/${encodeURIComponent(olid)}-M.jpg?default=false`);
+    }
+    const gutenbergId = gutenbergIdForCover(book);
+    if (gutenbergId) add(`https://www.gutenberg.org/cache/epub/${gutenbergId}/pg${gutenbergId}.cover.medium.jpg`);
+    const source = String(book?.source || '').trim().toLowerCase();
+    const archiveId = String(book?.archiveIdentifier || book?.archive_identifier
+      || (source.includes('internet-archive') ? book?.sourceNativeId || book?.source_native_id : '') || '').trim();
+    if (archiveId && /^[a-z0-9._-]+$/i.test(archiveId)) {
+      add(`https://archive.org/services/img/${encodeURIComponent(archiveId)}`);
+    }
 
     const placeholder = placeholderCoverUrl(book);
     const failed = failedByBook.get(key);
@@ -65,11 +103,17 @@
     const markLoaded = () => {
       image.classList?.add('is-loaded');
       const url = candidates[index];
+      const isRealCover = Boolean(url && !url.startsWith('data:image/'));
+      image.classList?.toggle?.('is-real-cover', isRealCover);
+      image.closest?.('.result-cover-slot')?.classList?.toggle?.('has-real-cover', isRealCover);
       if (key && url && !url.startsWith('data:image/')) resolvedByBook.set(key, url);
+      options.onLoaded?.(url, { isRealCover });
     };
     image.addEventListener('load', markLoaded);
     image.addEventListener('error', () => {
       image.classList?.remove('is-loaded');
+      image.classList?.remove?.('is-real-cover');
+      image.closest?.('.result-cover-slot')?.classList?.remove?.('has-real-cover');
       const failedUrl = candidates[index];
       if (key && failedUrl && !failedUrl.startsWith('data:image/')) {
         if (!failedByBook.has(key)) failedByBook.set(key, new Set());
@@ -78,10 +122,18 @@
       }
       index += 1;
       if (index < candidates.length) image.src = candidates[index];
-      else image.remove?.();
+      else {
+        image.remove?.();
+        options.onExhausted?.();
+      }
     });
     if (image.complete && Number(image.naturalWidth || 0) > 0) markLoaded();
   }
 
-  root.CoverAssets = { attachImageFallback, bookCoverCandidates, normalizeCoverUrl, placeholderCoverUrl };
+  function retryBookCover(key) {
+    const normalized = String(key || '').trim().toLowerCase();
+    if (normalized) failedByBook.delete(normalized);
+  }
+
+  root.CoverAssets = { attachImageFallback, bookCoverCandidates, normalizeCoverUrl, placeholderCoverUrl, retryBookCover };
 })(typeof window !== 'undefined' ? window : globalThis);

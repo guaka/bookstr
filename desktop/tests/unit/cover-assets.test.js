@@ -8,7 +8,7 @@ globalThis.BookMetadata = {
 };
 require('../../../web/cover-assets');
 
-const { attachImageFallback, bookCoverCandidates, normalizeCoverUrl, placeholderCoverUrl } = globalThis.CoverAssets;
+const { attachImageFallback, bookCoverCandidates, normalizeCoverUrl, placeholderCoverUrl, retryBookCover } = globalThis.CoverAssets;
 
 test('desktop does not derive covers from private URLs or legacy hashes', () => {
   const candidates = bookCoverCandidates({
@@ -81,6 +81,25 @@ test('cover image fallback advances candidates and removes an exhausted image', 
   assert.equal(noAttributeImage.src, 'data:image/svg+xml,only');
 });
 
+test('placeholder hover can reset a failed cover candidate', () => {
+  const key = 'hover-retry';
+  const failed = 'https://images.example/hover-retry.jpg';
+  const listeners = {};
+  const image = {
+    src: failed,
+    getAttribute: () => failed,
+    addEventListener: (name, callback) => { listeners[name] = callback; },
+    classList: { remove() {} },
+    closest: () => null,
+    remove() {},
+  };
+  attachImageFallback(image, [failed], { key });
+  listeners.error();
+  assert.ok(!bookCoverCandidates({ coverUrl: failed }, { key }).includes(failed));
+  retryBookCover(key);
+  assert.ok(bookCoverCandidates({ coverUrl: failed }, { key }).includes(failed));
+});
+
 test('cover candidates reject unsafe hints and keep only usable public URLs', () => {
   assert.equal(normalizeCoverUrl('http://images.example/cover.jpg', true), '');
   assert.equal(normalizeCoverUrl('javascript:alert(1)', false), '');
@@ -126,6 +145,16 @@ test('cover candidates accept legacy aliases and deterministic placeholder initi
   }, { desktop: false });
   assert.ok(candidates.includes('https://images.example/legacy.jpg'));
   assert.ok(!candidates.some(url => url.includes('e'.repeat(64))));
+});
+
+test('desktop adds public catalog cover fallbacks without treating the letter placeholder as a real cover', () => {
+  const candidates = bookCoverCandidates({
+    md5: 'gutenberg:1661',
+    sourceNativeId: 'OL123M',
+  }, { desktop: true });
+  assert.ok(candidates.includes('https://www.gutenberg.org/cache/epub/1661/pg1661.cover.medium.jpg'));
+  assert.ok(candidates.includes('https://covers.openlibrary.org/b/olid/OL123M-M.jpg?default=false'));
+  assert.ok(candidates.at(-1).startsWith('data:image/svg+xml,'));
 });
 
 test('cover candidates reject unsafe hints and keep only usable public URLs', () => {

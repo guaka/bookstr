@@ -11,6 +11,7 @@ const pdfReaderHtml = await readFile(new URL('../pdf-reader.html', import.meta.u
 const pdfReaderJs = await readFile(new URL('../pdf-reader.js', import.meta.url), 'utf8');
 const desktopMain = await readFile(new URL('../../desktop/main.js', import.meta.url), 'utf8');
 const desktopPreload = await readFile(new URL('../../desktop/preload.js', import.meta.url), 'utf8');
+const desktopWebTorrent = await readFile(new URL('../../desktop/webtorrent-bridge.js', import.meta.url), 'utf8');
 const coverAssets = await readFile(new URL('../cover-assets.js', import.meta.url), 'utf8');
 const bookMetadata = await readFile(new URL('../book-metadata.js', import.meta.url), 'utf8');
 
@@ -34,9 +35,9 @@ test('Electron catalog search uses the allowlisted app protocol without a privat
 });
 
 test('Search explains active sources and fans out without private-first fallback', () => {
-  assert.match(html, /<h2 class="search-title">Search open books<\/h2>/);
+  assert.match(html, /<h2 class="search-title">Search books<\/h2>/);
   assert.match(html, /<table id="search-sources-table" class="search-sources-table">/);
-  assert.match(html, /<th>Source<\/th><th>Coverage<\/th><th>Delivers<\/th><th>Access<\/th>/);
+  assert.match(html, /<th>Source<\/th><th>Coverage<\/th><th>Delivers<\/th><th>Use<\/th>/);
   assert.match(html, /name: 'all\.books\.party'/);
   assert.match(html, /name: 'Unglue\.it'/);
   assert.doesNotMatch(html, /name: 'LibVault'/);
@@ -51,6 +52,16 @@ test('Search explains active sources and fans out without private-first fallback
   assert.match(html, /if \(!query\) \{\s*renderSearchSources\(\)/);
   assert.doesNotMatch(html, /Private search unavailable; trying the HTTP catalog/);
   assert.match(html, /@media \(max-width: 600px\)[\s\S]*\.search-sources-table td::before/);
+});
+
+test('Search sources are default-on, locally toggleable, and excluded from fan-out and cache identity', () => {
+  assert.match(html, /const SEARCH_SOURCE_SETTINGS_KEY = 'bookstr_search_sources_v1'/);
+  assert.match(html, /function disabledSearchSourceIds\(\)[\s\S]*?new Set\(Array\.isArray\(stored\)/);
+  assert.match(html, /data-action="toggle-search-source"[\s\S]*?\$\{enabled \? 'checked' : ''\}/);
+  assert.match(html, /setSearchSourceEnabled\(event\.currentTarget\.dataset\.sourceId, event\.currentTarget\.checked\)/);
+  assert.match(html, /searchSourceRegistry\(\)\.filter\(source => isSearchSourceEnabled\(source\.id\)\)/);
+  assert.match(html, /sources: searchSourceRegistry\(\)\.filter\(source => isSearchSourceEnabled\(source\.id\)\)\.map\(source => source\.id\)\.sort\(\)/);
+  assert.match(html, /No search sources are enabled\. Clear the search to turn one on\./);
 });
 
 test('search retains synced public OPDS sources without exposing feed editing in settings', () => {
@@ -200,6 +211,16 @@ test('Search keeps a persistent result count beside the paged results', () => {
   assert.doesNotMatch(html, /searchResultCount\.classList\.add\('hidden'\)/);
 });
 
+test('Search owns one control for adding opened books to the Library', () => {
+  assert.equal((html.match(/class="search-auto-reading"/g) || []).length, 1);
+  assert.equal((html.match(/Add opened books to Library/g) || []).length, 1);
+  assert.match(html, /id="search-auto-reading-top"[\s\S]*?id="results"/);
+  assert.match(html, /const autoReadingInputs = \[\.\.\.document\.querySelectorAll\('\.search-auto-reading'\)\]/);
+  assert.match(html, /for \(const peer of autoReadingInputs\) peer\.checked = input\.checked/);
+  assert.doesNotMatch(html, /id="auto-reading"/);
+  assert.doesNotMatch(html, /<strong>Reading library<\/strong><small>Add books when you open them\.<\/small>/);
+});
+
 test('Search stores result filters and paging in bookmarkable hash parameters', () => {
   assert.match(html, /function searchHashRoute\(/);
   assert.match(html, /params\.set\('language', language\)/);
@@ -246,7 +267,18 @@ test('Electron opens LibGen catalog records through their repository torrent bat
   assert.match(desktopMain, /source: 'local'/);
   assert.match(desktopMain, /getAcquisitionManager\(\)\.acquireLibgen\(request\.book/);
   assert.match(html, /if \(result\.sha256\) book\.sha256 = result\.sha256/);
-  assert.match(html, /Downloading \$\{torrentBook\.title \|\| 'book'\} from \$\{peers\} torrent peer/);
+  assert.match(html, /updateDesktopDownloadSummary\(\)/);
+});
+
+test('simultaneous torrent progress is combined into one stable status', () => {
+  assert.match(html, /function activeDesktopDownloads\(\)/);
+  assert.match(html, /function desktopDownloadSummary\(\)/);
+  assert.match(html, /return `\$\{active\.length\} torrent downloads\$\{details\.length \? ` · \$\{details\.join\(' · '\)\}` : ''\}`/);
+  assert.match(html, /details\.push\(`\$\{percent\}% overall`\)/);
+  assert.match(html, /details\.push\(`\$\{waiting\} waiting`\)/);
+  assert.match(html, /details\.push\(`\$\{peers\} peers`\)/);
+  assert.match(html, /desktopDownloadStatusTimer = setTimeout\(updateDesktopDownloadSummary, 180\)/);
+  assert.doesNotMatch(html, /status\.textContent = peers > 0[\s\S]*?Downloading \$\{torrentBook\.title/);
 });
 
 test('book opening canonicalizes stable Gutenberg IDs', () => {
@@ -277,12 +309,12 @@ test('Home and empty Search use distinct hash routes', () => {
   assert.match(html, /if \(route === 'search'\)/);
 });
 
-test('search results expose publication year in a sortable table', () => {
+test('search results expose separately sortable license and publication year columns', () => {
   assert.match(html, /className = 'book-table'/);
+  assert.match(html, /\['Rights', 'rights'\], \['Year', 'year'\]/);
   assert.match(html, /\['Year', 'year'\]/);
   assert.match(html, /function renderBookTable\(target, books, options = \{\}\)/);
-	assert.match(html, /rightsMarkerMarkup\(book\).*escapeHtml\(book\.year \|\| '—'\)/);
-	assert.match(html, /\.rights-marker[\s\S]*?margin-right: 0\.1rem[\s\S]*?background: transparent/);
+	assert.match(html, /result-rights[\s\S]*?rightsMarkerMarkup\(book\)[\s\S]*?result-year[\s\S]*?escapeHtml\(book\.year \|\| '—'\)/);
 });
 
 test('rights metadata is visible and preserved through library and Nostr flows', () => {
@@ -338,9 +370,9 @@ test('Home and Search share tables with covers and author search links', () => {
 });
 
 test('cover hover previews are substantially enlarged', () => {
-  assert.match(html, /\.result-cover-slot:hover \.result-cover[\s\S]*?transform: scale\(6\)/);
+  assert.match(html, /\.result-cover-slot\.has-real-cover:hover \.result-cover\.is-real-cover[\s\S]*?transform: scale\(6\)/);
   assert.match(html, /\.result-cover[\s\S]*?pointer-events: none/);
-  assert.match(html, /transition: transform 160ms ease 180ms/);
+  assert.match(html, /transform 160ms ease 180ms/);
 });
 
 test('table authors are green and only unavailable titles are red', () => {
@@ -378,10 +410,15 @@ test('reader retains legacy Blossom cache identities without constructing new Bl
   assert.doesNotMatch(html, /blossomUrl \|\|= `https:\/\/blossom\.bfr\.ee/);
 });
 
-test('EPUBs use persistent IndexedDB caching', () => {
+test('browser EPUBs use IndexedDB while Electron purges the legacy cache and keeps library metadata', () => {
   assert.match(html, /indexedDB\.open\(BOOK_CACHE_DB_NAME/);
   assert.match(html, /cachedBookBlob\(book, readPath\)/);
   assert.match(html, /cacheBookBlob\(book, readPath, blob\)/);
+  assert.match(html, /async function cachedBookBlob\(book, readUrl\) \{\s*if \(isDesktopMode\) return null/);
+  assert.match(html, /async function cacheBookBlob\(book, readUrl, blob\) \{\s*if \(isDesktopMode\) return/);
+  assert.match(html, /async function purgeLegacyBookCache\(\)/);
+  assert.match(html, /indexedDB\.deleteDatabase\(BOOK_CACHE_DB_NAME\)/);
+  assert.match(html, /if \(isDesktopMode\) \{\s*void purgeLegacyBookCache\(\)/);
   assert.match(html, /function cacheRecordMatches\(record, book, readUrl\)/);
   assert.match(html, /if \(record\.key !== key\) await bookCacheDelete\(record\.key\)/);
   assert.match(html, /records\.forEach\(rememberCachedRecord\)/);
@@ -396,6 +433,26 @@ test('EPUBs use persistent IndexedDB caching', () => {
   assert.match(html, /const readerLoad = await readerFrameLoader\('epub', openGeneration, book\.md5 \|\| BookMetadata\.bookIdentity\(book\)\)/);
   assert.match(html, /const routeGeneration = \+\+readRouteGeneration/);
   assert.match(html, /if \(routeGeneration !== readRouteGeneration\) return/);
+});
+
+test('octet-stream ZIPs with an EPUB container are not mistaken for comics just because they contain images', () => {
+  const signatureBranch = html.slice(html.indexOf("if (bytes[0] === 0x50 && bytes[1] === 0x4b)"));
+  assert.ok(signatureBranch.includes("const names = Object.keys(zip.files).map(name => name.replaceAll('\\\\', '/'));"));
+  assert.ok(signatureBranch.includes("if (names.some(name => /(^|\\/)META-INF\\/container\\.xml$/i.test(name))) return 'epub';"));
+  assert.ok(signatureBranch.includes("return names.some(name => isComicImageName(name)) ? 'cbz' : 'epub';"));
+});
+
+test('library formats avoid an EPUB default and trust inspected local bytes', () => {
+  assert.match(html, /const explicitFormat = String\(ref\.blossomFormat \|\| ref\.format \|\| ref\.extension \|\| ''\)/);
+  assert.match(html, /const normalizedFormat = trustExplicitFormat \|\| formatProvenance \? explicitFormat : ''/);
+  assert.match(html, /extension: String\(payload\.extension \|\| payload\.format \|\| ''\)\.toLowerCase\(\)/);
+  assert.match(html, /trustExplicitFormat && explicitFormat && !formatProvenance \? \{ extension: 'nostr' \}/);
+  assert.match(html, /normalizeFavoriteFromRemote\(item, \{ trustExplicitFormat: false \}\)/);
+  assert.match(html, /if \(!remoteHasExplicitFormat && !knownFormatProvenance\)/);
+  assert.match(html, /provenance === 'local-file' && metadata\?\.extension/);
+  assert.match(html, /function rememberDetectedBookFormat\(book, format\)/);
+  assert.match(html, /extension: 'detected-local'/);
+  assert.match(html, /rememberDetectedBookFormat\(book, torrentFormat\)/);
 });
 
 test('settings persist Arial and justified reader typography by default', () => {
@@ -566,7 +623,7 @@ test('compact favorites retain Blossom cover descriptors', () => {
 
 test('desktop covers skip private HTTP fallbacks and retry public cover candidates', () => {
   assert.match(html, /CoverAssets\.bookCoverCandidates\(book,[\s\S]*?desktop: isDesktopMode/);
-  assert.match(html, /CoverAssets\.attachImageFallback\(row\.querySelector\('\.result-cover'\), coverUrls, \{ key: coverKey \}\)/);
+  assert.match(html, /CoverAssets\.attachImageFallback\(row\.querySelector\('\.result-cover'\), realCoverUrls, \{ key: coverKey \}\)/);
   assert.doesNotMatch(coverAssets, /blossom\.bfr\.ee|blossomBase/);
   assert.ok(coverAssets.includes('lib\\.b\\.bfr\\.ee'));
   assert.match(coverAssets, /data:image\/svg\+xml/);
@@ -608,16 +665,33 @@ test('Home readable count uses the same availability rule as title coloring', ()
 test('Home reports live seeded books in each row and in the total', () => {
   assert.match(html, /const desktopSeededBookIds = new Set\(\)/);
   assert.match(html, /if \(isBookSeeded\(book\)\) return 'Seeding'/);
-  assert.match(html, /transfer\?\.seeding === true/);
+  assert.match(html, /transfer\?\.seeding !== true/);
+  assert.match(html, /Array\.isArray\(transfer\?\.bookIds\) \? transfer\.bookIds : \[transfer\?\.bookId\]/);
   assert.match(html, /const seedingCount = enrichedLibrary\.filter\(isBookSeeded\)\.length/);
   assert.match(html, /setInterval\(\(\) => void refreshDesktopDownloadStates\(\), 5000\)/);
 });
 
 test('book details show live torrent state while the file is not ready', () => {
   assert.match(html, /id = 'read-metadata-fallback-torrent'/);
-  assert.match(html, /torrent\.textContent = statusLabel \? `Torrent: \$\{statusLabel\}` : ''/);
+  assert.match(html, /torrent\.textContent = statusLabel/);
   assert.match(html, /statusLabel = torrentStatusForBook\(book\)/);
   assert.match(html, /updateReadTorrentStatus\(activeReadingBook\)/);
+  assert.match(html, /!desktopDownloadStatesReady\) return 'Looking for torrents'/);
+  assert.match(html, /desktopDownloadStatesReady = true/);
+  assert.match(html, /torrent\.className = \['read-torrent-status', 'status-with-dot', torrentStatusClass\(statusLabel\)\]/);
+  assert.match(html, /title = 'Downloading this book'/);
+  assert.match(html, /It will open automatically when the file is ready\./);
+  assert.doesNotMatch(html, /Source URL:/);
+  assert.doesNotMatch(html, /function diagnosticUrl\(/);
+});
+
+test('torrent messages use colored state dots', () => {
+  assert.match(html, /function torrentStatusClass\(label\)/);
+  assert.match(html, /status-dot-waiting::before \{ background: #d89b2b; \}/);
+  assert.match(html, /status-dot-downloading::before \{ background: #3887d6; \}/);
+  assert.match(html, /status-dot-success::before \{ background: #2c9b63; \}/);
+  assert.match(html, /status-dot-error::before \{ background: #d24d49; \}/);
+  assert.match(html, /availability-primary\$\{availabilityClass \? ` status-with-dot \$\{availabilityClass\}` : ''\}/);
 });
 
 test('book details use a compact metadata grid with human-readable digest and rights labels', () => {
@@ -626,17 +700,42 @@ test('book details use a compact metadata grid with human-readable digest and ri
   assert.match(html, /epub_opf: 'EPUB metadata'/);
   assert.match(html, /\.read-metadata-grid dd\.metadata-digest/);
   assert.match(html, /font-size: clamp\(1\.45rem, 2\.3vw, 2\.15rem\)/);
+  assert.match(html, /\.read-metadata-grid dd\.metadata-authors[\s\S]*?-webkit-line-clamp: 2/);
+});
+
+test('constrained author lists stay compact while retaining their full accessible value', () => {
+  assert.match(html, /\.result-author,[\s\S]*?text-overflow: ellipsis;[\s\S]*?white-space: nowrap/);
+  assert.match(html, /const fullAuthors = String\(book\.authors \|\| book\.author \|\| ''\)\.trim\(\)/);
+  assert.match(html, /class="result-author"[\s\S]*?title="\$\{escapeHtml\(fullAuthors\)\}"[\s\S]*?aria-label="\$\{escapeHtml\(fullAuthors\)\}"/);
+  assert.match(html, /function compactAuthorLabel\(value, limit = 120\)/);
+});
+
+test('hovering a placeholder retries public covers and performs a debounced metadata lookup', () => {
+  assert.match(html, /coverSlot\?\.addEventListener\('mouseenter', \(\) => void lookupCoverOnHover\(book, coverSlot\)\)/);
+  assert.match(html, /CoverAssets\.retryBookCover\(key\)/);
+  assert.match(html, /const metadata = await remoteMetadataForBook\(book\)\.catch/);
+  assert.match(html, /Date\.now\(\) - Number\(previous\?\.attemptedAt \|\| 0\) < 60_000/);
+  assert.match(html, /provenance: 'cover-hover'/);
 });
 
 test('metadata-only desktop books try an exact private LibVault torrent lookup before failing', () => {
   assert.match(html, /async function resolvePrivateTorrentBook\(book\)/);
+  assert.match(html, /const publicCatalogMatch = await searchLibVaultHTTPForTorrent\(book\)\.catch/);
+  assert.match(html, /if \(publicCatalogMatch\) return publicCatalogMatch;[\s\S]*?if \(!nostrSigner\?\.signEvent/);
+  assert.match(html, /fetch\(`\$\{LIBVAULT_API_BASE\}\/search\?\$\{params\}`\)/);
+  assert.match(html, /function matchingTorrentCatalogRecord\(book, candidates\)/);
+  assert.match(html, /candidateYear === wantedYear/);
+  assert.match(html, /candidateFormat === wantedFormat/);
   assert.match(html, /module\.searchLibVault\(query, isbn \? 'isbn' : 'title'/);
   assert.match(html, /signer: nostrSigner,[\s\S]*?publish: publishRelayEvent,[\s\S]*?onTrace: showNip17Trace/);
-  assert.match(html, /results\.filter\(candidate => BookMetadata\.libgenTorrentMetadataForBook\(candidate\)\)/);
+  assert.match(html, /candidates\.filter\(candidate => BookMetadata\.libgenTorrentMetadataForBook\(candidate\)\)/);
   assert.match(html, /BookMetadata\.sameLibraryBook\(book, candidate\)/);
   assert.match(html, /Looking for a torrent for \$\{book\.title \|\| 'book'\}/);
   assert.match(html, /const resolvedTorrentBook = await resolvePrivateTorrentBook\(book\)\.catch/);
+  assert.match(html, /rememberResolvedTorrentMetadata\(book, resolvedTorrentBook\)/);
+  assert.match(html, /libvaultMd5, libgenId/);
   assert.match(html, /BookMetadata\.libgenTorrentMetadataForBook\(book\)[\s\S]*?\? book[\s\S]*?: await resolveLibVaultHTTPBook/);
+  assert.match(html, /torrentBook = \{ \.\.\.torrentBook, md5: libgenTorrent\.md5, libgenId: libgenTorrent\.libgenId \}/);
   assert.match(html, /if \(!readPath && !cached && !torrentAvailable\) \{[\s\S]*?No readable download or torrent is available/);
 });
 
@@ -852,6 +951,14 @@ test('settings groups Nostr controls and connection status together', () => {
   assert.match(html, /settings-section settings-nostr[\s\S]*?<h3>Nostr<\/h3>[\s\S]*?id="nip7-enabled"[\s\S]*?id="nip7-status"/);
   assert.match(html, /#desktop-signer-status\.signer-connected::before\s*\{[\s\S]*?content: '✓';[\s\S]*?color: #16803c/);
   assert.match(html, /desktopSignerStatus\.classList\.toggle\('signer-connected', connected\)/);
+  assert.match(html, /desktopSignerPanel\.classList\.toggle\('signer-connected', connected\)/);
+  assert.match(html, /\.desktop-signer\.signer-connected \.desktop-signer-primary,[\s\S]*?\.desktop-signer\.signer-connected details[\s\S]*?display: none;/);
+  assert.doesNotMatch(html, /\.desktop-signer\.signer-connected \.settings-status/);
+  assert.match(html, /id="desktop-signer-method"/);
+  assert.match(html, /id="desktop-signer-npub"/);
+  assert.match(html, /const npub = signerState\.pubkey \? publicKeyToNpub\(signerState\.pubkey\)/);
+  assert.match(html, /desktopSignerMethod\.textContent = message \|\| modeLabel/);
+  assert.match(html, /desktopSignerNpub\.textContent = npub/);
   assert.match(html, /desktopNip46QrStart\.classList\.toggle\('hidden', connected\)/);
 });
 
@@ -880,10 +987,37 @@ test('Electron settings expose opt-in language voices and reader typography', ()
   assert.match(html, /BookMetadata\.mergeLibraryState\(state\.reading, state\.favorites\)[\s\S]*?BookstrSpeechSettings\.languagesForCodes\(\[\.\.\.bookLanguages, 'en', 'pt'\], displayNames\)/);
 });
 
-test('Nostr library sync reports its relay, requested data, and resulting counts', () => {
-  assert.match(html, /Fetching ≤10 favorite snapshots, ≤100 reading events and ≤120 word events from \$\{relayNames\}/);
+test('Electron settings expose default-on automatic torrent downloading and seeding', () => {
+  assert.match(html, /settings-torrents[\s\S]*?<h3>Torrents<\/h3>[\s\S]*?id="torrent-auto-download"[^>]*checked[\s\S]*?id="torrent-auto-seed"[^>]*checked/);
+  assert.match(html, /autoDownloadTorrents: true,[\s\S]*?autoSeedTorrents: true/);
+  assert.match(html, /Automatic torrent downloads are disabled in Settings/);
+  assert.match(html, /acquireLibgen\(torrentBook, \{[\s\S]*?autoSeed: state\.settings\.autoSeedTorrents/);
+  assert.match(html, /downloadPublic\(\{[\s\S]*?autoSeed: state\.settings\.autoSeedTorrents/);
+  assert.match(desktopPreload, /setPreferences\(preferences\)[\s\S]*?bookstr-desktop-transfer-preferences/);
+  assert.match(desktopMain, /if \(\(await torrentPreferences\(\)\)\.autoSeed\)/);
+  assert.match(desktopMain, /if \(!next\.autoSeed\) await getTorrentBridge\(\)\.stopSeeding\(\)/);
+  assert.match(html, /body\.desktop-mode \.settings-tab \.settings-section h3 \{[\s\S]*?font-size: 0\.82rem/);
+});
+
+test('torrent download percentages cannot render below zero or above one hundred', () => {
+  assert.match(html, /const bytes = Math\.max\(0, Number\(download\.bytes \|\| 0\)\);[\s\S]*?Math\.max\(0, Math\.min\(100, Math\.round\(bytes \/ total \* 100\)\)\)/);
+  assert.match(desktopWebTorrent, /bytes: safeCounter\(file\.downloaded\)/);
+  assert.match(desktopWebTorrent, /progress: Math\.min\(1, safeCounter\(torrent\.progress\)\)/);
+});
+
+test('downloaded book state keeps its SHA-256 bridge when the repository MD5 becomes available', () => {
+  assert.match(html, /const sha256 = normalizeSha256\(ref\.sha256 \|\| blossomSha256\)/);
+  assert.match(html, /stableId = md5 \|\| blossomSha256/);
+  assert.match(html, /sha256: book\.sha256 \|\| book\.blossomSha256 \|\| ''/);
+});
+
+test('Nostr library sync presents a compact state and resulting counts', () => {
+  assert.match(html, /Syncing with \$\{relayNames\}…/);
   assert.match(html, /\$\{favorites\.length\} favorites · \$\{reading\.length\} reading · \$\{words\.length\} words/);
-  assert.match(html, /from \$\{relayNames\} · \$\{account\.slice\(0, 16\)\}/);
+  assert.match(html, /setHomeSyncState\('ready', `Synced · \$\{nostrSyncCounts\(favorites, reading, words\)\}`\)/);
+  assert.doesNotMatch(html, /account\.slice\(0, 16\)/);
+  assert.doesNotMatch(html, /eventDetail/);
+  assert.match(html, /homeLibraryHeading\.append\(homeSync\)/);
 });
 
 test('vocabulary deletion publishes a durable encrypted tombstone before best-effort NIP-09 cleanup', () => {

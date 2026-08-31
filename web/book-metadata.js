@@ -354,12 +354,30 @@
       : sources.join(' · ');
   }
 
-  function sortBooks(books, key, direction = 'asc', isCached = () => false) {
+  function availabilitySortRank(value) {
+    const label = String(value || '').trim().toLowerCase();
+    if (label.includes('seeding')) return 0;
+    if (/\b(?:ready|cached|gutenberg|internet archive|oapen)\b/.test(label)) return 1;
+    if (label.includes('downloading')) return 2;
+    if (label.includes('finding peers') || label.includes('queued')) return 3;
+    if (/\b(?:available|torrent|webtorrent)\b/.test(label)) return 4;
+    if (!label || label === '—' || label.includes('metadata only')) return 5;
+    if (label.includes('unavailable') || label.includes('failed')) return 6;
+    return 5;
+  }
+
+  function sortBooks(books, key, direction = 'asc', isCached = () => false, availabilityLabel = null) {
     const value = book => {
       if (key === 'title') return book?.title || '';
       if (key === 'author') return book?.authors || book?.author || '';
+      if (key === 'rights') return rightsLabel(book);
       if (key === 'year') return Number.parseInt(book?.year, 10) || 0;
-      if (key === 'availability') return availabilityForBook(book);
+      if (key === 'availability') {
+        const label = typeof availabilityLabel === 'function'
+          ? availabilityLabel(book)
+          : availabilityForBook(book, isCached(book));
+        return availabilitySortRank(label);
+      }
       if (key === 'cached') return isCached(book) ? 1 : 0;
       if (key === 'format') return book?.extension || book?.format || '';
       if (key === 'language') {
@@ -399,10 +417,45 @@
       .join(':');
   }
 
+  function gutenbergIdForBook(book) {
+    const md5Match = String(book?.md5 || '').trim().match(/^gutenberg:(\d+)$/i);
+    if (md5Match) return md5Match[1];
+    const source = String(book?.source || '').trim().toLowerCase();
+    const sourceId = String(book?.sourceNativeId || book?.source_native_id || '').trim();
+    if (source === 'gutenberg' && /^\d+$/.test(sourceId)) return sourceId;
+    const readUrl = String(book?.readUrl || book?.url || book?.sourceUrl || book?.source_url || '');
+    try {
+      const url = new URL(readUrl);
+      const trustedEndpoint = (url.protocol === 'app:' && url.hostname === 'bookstr')
+        || url.hostname === 'books-api.guaka.org';
+      return trustedEndpoint ? url.pathname.match(/^\/api\/books\/(\d+)\/download\/?$/)?.[1] || '' : '';
+    } catch {
+      return '';
+    }
+  }
+
+  function isLocalGutenbergCopy(book) {
+    const readUrl = String(book?.readUrl || book?.url || '');
+    return Boolean(gutenbergIdForBook(book) && /^app:\/\/bookstr\//i.test(readUrl));
+  }
+
+  function preserveLocalGutenbergField(existing, incoming, key) {
+    if (!isLocalGutenbergCopy(existing) || isLocalGutenbergCopy(incoming)) return false;
+    return new Set(['md5', 'id', 'readUrl', 'url', 'sourceUrl', 'source_url', 'blossomSha256', 'sha256', 'progression', 'furthestProgression', 'cfi', 'updatedAt', 'lastReadAt']).has(key);
+  }
+
+  function preserveCanonicalMd5(existing, incoming, key) {
+    if (key !== 'md5') return false;
+    const current = String(existing?.md5 || '').trim();
+    const candidate = String(incoming?.md5 || '').trim();
+    return /^[a-f0-9]{32}$/i.test(current) && !/^[a-f0-9]{32}$/i.test(candidate);
+  }
+
   function dedupeLibraryBooks(books) {
     const merged = new Map();
     for (const book of books.filter(Boolean)) {
-      const identity = bookIdentity(book);
+      const matchingEntry = [...merged.entries()].find(([, candidate]) => sameLibraryBook(candidate, book));
+      const identity = matchingEntry?.[0] || bookIdentity(book);
       const existing = merged.get(identity);
       if (!existing) {
         merged.set(identity, { ...book, title: resolveTitle(book) });
@@ -416,6 +469,8 @@
       const title = incomingHasRealTitle ? incomingTitle : existingTitle;
       const next = { ...existing };
       for (const [key, value] of Object.entries(book)) {
+        if (preserveLocalGutenbergField(existing, book, key)) continue;
+        if (preserveCanonicalMd5(existing, book, key)) continue;
         if (value !== '' && value != null) next[key] = value;
         if ((key === 'author' || key === 'authors') && existingHasRealTitle && !incomingHasRealTitle) {
           next[key] = existing.authors || existing.author || next[key];
@@ -495,6 +550,20 @@
   }
 
   function sameLibraryBook(left, right) {
+    const leftGutenbergId = gutenbergIdForBook(left);
+    const rightGutenbergId = gutenbergIdForBook(right);
+    if (leftGutenbergId && rightGutenbergId) return leftGutenbergId === rightGutenbergId;
+    const contentDigests = book => new Set([
+      book?.sha256,
+      book?.blossomSha256,
+      book?.blossom_sha256,
+      /^[a-f0-9]{64}$/i.test(String(book?.md5 || '').trim()) ? book.md5 : '',
+    ]
+      .map(value => String(value || '').trim().toLowerCase())
+      .filter(value => /^[a-f0-9]{64}$/.test(value)));
+    const leftDigests = contentDigests(left);
+    const rightDigests = contentDigests(right);
+    if (leftDigests.size && rightDigests.size && [...leftDigests].some(digest => rightDigests.has(digest))) return true;
     const stableIds = book => new Set([book?.md5, book?.libvaultMd5, book?.id]
       .map(value => String(value || '').trim().toLowerCase())
       .filter(Boolean));
@@ -526,6 +595,8 @@
         const existingHasRealTitle = !isPlaceholderTitle(existingTitle);
         for (const [key, value] of Object.entries(book || {})) {
           if (value === '' || value == null) continue;
+          if (preserveLocalGutenbergField(entry, book, key)) continue;
+          if (preserveCanonicalMd5(entry, book, key)) continue;
           if ((key === 'author' || key === 'authors') && existingHasRealTitle && !incomingHasRealTitle) continue;
           entry[key] = value;
         }

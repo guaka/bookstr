@@ -12,6 +12,13 @@ test('empty Search shows a responsive table of active catalog sources', async ({
   await expect(table).toContainText('all.books.party');
   await expect(table).toContainText('Unglue.it');
   await expect(table).not.toContainText('LibVault');
+  const sourceToggles = table.locator('[data-action="toggle-search-source"]');
+  await expect(sourceToggles).toHaveCount(8);
+  await expect(sourceToggles.first()).toBeChecked();
+  await sourceToggles.first().uncheck();
+  await expect(table.locator('tr[data-source="all-books-party"]')).toHaveClass(/source-disabled/);
+  await page.reload();
+  await expect(page.locator('tr[data-source="all-books-party"] [data-action="toggle-search-source"]')).not.toBeChecked();
   await page.setViewportSize({ width: 390, height: 844 });
   await expect(table.locator('td[data-label="Delivers"]').first()).toBeVisible();
 });
@@ -260,9 +267,10 @@ test('an unavailable MD5 still shows its known book metadata', async ({ page }) 
   await expect(metadata).toContainText('Known Author');
   await expect(metadata).toContainText('2024');
   await expect(metadata).toContainText('pt');
-  await expect(metadata).toContainText('Local file/cache:');
-  await expect(metadata).toContainText('Source URL: https://unavailable.invalid/book.epub');
-  await expect(metadata).toContainText('Error:');
+  await expect(metadata).toContainText('This book is not stored locally');
+  await expect(metadata).toContainText('EPUB · Not downloaded');
+  await expect(metadata).not.toContainText('Source URL');
+  await expect(metadata).not.toContainText('unavailable.invalid');
 });
 
 test('an MD5 route reopens a legacy URL-keyed EPUB cache while offline', async ({ page }) => {
@@ -845,7 +853,7 @@ test('HTTP search results expose format filters and can be favorited in place', 
   await expect(page.locator('#results')).toContainText('Paper Boats');
   await expect(page.locator('#results')).toContainText('Paper Walls');
   const publicDomainRow = page.locator('#results .book-table-row').filter({ hasText: 'Paper Boats' });
-  await expect(publicDomainRow.locator('.result-cell').nth(2)).toContainText('1910');
+  await expect(publicDomainRow.locator('.result-year')).toHaveText('1910');
   await expect(publicDomainRow.locator('.rights-marker')).toHaveText('PD');
   const openLicenseRow = page.locator('#results .book-table-row').filter({ hasText: 'Paper Walls' });
   await expect(openLicenseRow.locator('.rights-marker')).toHaveText('CC BY-SA 4.0');
@@ -935,9 +943,9 @@ test('Home retries delayed NIP-07 and renders an iOS-shaped encrypted favorite',
   await page.goto('/#home');
   await expect(page.locator('#home-reading-list')).toContainText('Anna Karenina', { timeout: 12_000 });
   await expect(page.locator('#home-reading-list')).toContainText('Leo Tolstoy');
-  await expect(page.locator('#home-sync-state')).toContainText('event favorite-eve');
+  await expect(page.locator('#home-sync-state')).toContainText('Synced · 1 favorites · 1 reading · 1 words');
   await page.locator('#home-sync-refresh').click();
-  await expect(page.locator('#home-sync-state')).toContainText('event favorite-eve');
+  await expect(page.locator('#home-sync-state')).toContainText('Synced · 1 favorites · 1 reading · 1 words');
 });
 
 test('search pagination is bookmarkable and keeps the result count stable', async ({ page }) => {

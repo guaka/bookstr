@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 await import('../book-metadata.js');
 await import('../cover-assets.js');
 
-const { attachImageFallback, bookCoverCandidates, normalizeCoverUrl } = globalThis.CoverAssets;
+const { attachImageFallback, bookCoverCandidates, normalizeCoverUrl, retryBookCover } = globalThis.CoverAssets;
 
 test('desktop cover candidates ignore LibVault and prefer Open Library before blob fallbacks', () => {
   const sha256 = 'c'.repeat(64);
@@ -71,6 +71,25 @@ test('cover failures and successes stay stable across library rerenders', () => 
   assert.ok(!candidates.includes(failed));
 });
 
+test('an explicit retry makes previously failed cover candidates eligible again', () => {
+  const key = 'retry-book';
+  const failed = 'https://images.example/retry.jpg';
+  const listeners = {};
+  const image = {
+    src: failed,
+    getAttribute: () => failed,
+    addEventListener: (name, callback) => { listeners[name] = callback; },
+    classList: { remove() {} },
+    closest: () => null,
+    remove() {},
+  };
+  attachImageFallback(image, [failed], { key });
+  listeners.error();
+  assert.ok(!bookCoverCandidates({ title: 'Retry', coverUrl: failed }, { key }).includes(failed));
+  retryBookCover(key);
+  assert.ok(bookCoverCandidates({ title: 'Retry', coverUrl: failed }, { key }).includes(failed));
+});
+
 test('cover candidates use every metadata alias and prefer a ready local Electron cover', () => {
   const local = `app://bookstr/api/library-cover/${'a'.repeat(32)}`;
   const candidates = bookCoverCandidates({
@@ -84,4 +103,38 @@ test('cover candidates use every metadata alias and prefer a ready local Electro
     'https://images.example/second.jpg',
     'https://images.example/third.jpg',
   ]);
+});
+
+test('cover candidates add public Gutenberg, Open Library OLID, and Internet Archive fallbacks', () => {
+  const gutenberg = bookCoverCandidates({ md5: 'gutenberg:1661', title: 'Sherlock Holmes' }, { desktop: true });
+  assert.ok(gutenberg.includes('https://www.gutenberg.org/cache/epub/1661/pg1661.cover.medium.jpg'));
+  const openLibrary = bookCoverCandidates({ sourceNativeId: 'OL123M' }, { desktop: true });
+  assert.ok(openLibrary.includes('https://covers.openlibrary.org/b/olid/OL123M-M.jpg?default=false'));
+  const archive = bookCoverCandidates({ source: 'internet-archive', sourceNativeId: 'book_fixture_01' }, { desktop: true });
+  assert.ok(archive.includes('https://archive.org/services/img/book_fixture_01'));
+});
+
+test('only a successfully loaded real cover enables hover zoom', () => {
+  const listeners = {};
+  const imageClasses = new Set();
+  const slotClasses = new Set();
+  const image = {
+    src: 'https://images.example/cover.jpg',
+    getAttribute: () => 'https://images.example/cover.jpg',
+    addEventListener: (name, callback) => { listeners[name] = callback; },
+    classList: {
+      add: name => imageClasses.add(name),
+      remove: name => imageClasses.delete(name),
+      toggle: (name, enabled) => enabled ? imageClasses.add(name) : imageClasses.delete(name),
+    },
+    closest: () => ({ classList: {
+      add: name => slotClasses.add(name),
+      remove: name => slotClasses.delete(name),
+      toggle: (name, enabled) => enabled ? slotClasses.add(name) : slotClasses.delete(name),
+    } }),
+  };
+  attachImageFallback(image, ['https://images.example/cover.jpg']);
+  listeners.load();
+  assert.equal(imageClasses.has('is-real-cover'), true);
+  assert.equal(slotClasses.has('has-real-cover'), true);
 });

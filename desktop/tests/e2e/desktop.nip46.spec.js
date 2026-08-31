@@ -71,6 +71,12 @@ test('approved NIP-46 QR signer becomes active, updates settings, and persists w
     const signerStatus = library.locator('#desktop-signer-status');
     await expect(signerStatus).toContainText('Connected with NIP-46 remote signer');
     await expect(signerStatus).toHaveClass(/signer-connected/);
+    await expect(signerStatus).toBeVisible();
+    await expect(library.locator('#desktop-signer-npub')).toHaveText(/^npub1/);
+    await expect(library.locator('#desktop-signer-npub')).toHaveAttribute('title', /^npub1/);
+    await expect(library.locator('.desktop-signer-primary')).toBeHidden();
+    await expect(library.locator('#desktop-signer details')).toBeHidden();
+    await expect(library.getByRole('button', { name: 'Disconnect signer' })).toBeVisible();
     await expect(library.getByRole('button', { name: 'Connect with QR code' })).toBeHidden();
     expect(await signerStatus.evaluate(element => getComputedStyle(element, '::before').content)).toBe('"✓"');
 

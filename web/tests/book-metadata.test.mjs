@@ -408,6 +408,18 @@ test('sorts books by text and year without mutating the source list', () => {
   assert.deepEqual(books.map(book => book.title), ['Zulu', 'Alpha']);
 });
 
+test('sorts books by their displayed license marker', () => {
+  const books = [
+    { title: 'Unknown', rights_status: 'unknown' },
+    { title: 'Public domain', rights_status: 'public_domain' },
+    { title: 'Creative Commons', license: 'CC BY-SA 4.0' },
+  ];
+  assert.deepEqual(
+    sortBooks(books, 'rights').map(book => rightsLabel(book)),
+    ['©', 'CC BY-SA 4.0', 'PD'],
+  );
+});
+
 test('sorts availability and cached state', () => {
   const books = [
     { title: 'Local', md5: 'a'.repeat(32) },
@@ -415,6 +427,35 @@ test('sorts availability and cached state', () => {
   ];
   assert.deepEqual(sortBooks(books, 'availability').map(book => book.title), ['Local', 'Remote']);
   assert.deepEqual(sortBooks(books, 'cached', 'desc', book => book.title === 'Remote').map(book => book.title), ['Remote', 'Local']);
+});
+
+test('sorts availability by usefulness instead of alphabetically', () => {
+  const books = [
+    { title: 'Unavailable' },
+    { title: 'Available' },
+    { title: 'Finding' },
+    { title: 'Downloading' },
+    { title: 'Ready' },
+    { title: 'Seeding' },
+    { title: 'Unknown' },
+  ];
+  const labels = new Map([
+    ['Unavailable', 'Unavailable'],
+    ['Available', 'Available'],
+    ['Finding', 'Finding peers'],
+    ['Downloading', 'Downloading · 42%'],
+    ['Ready', 'Cached'],
+    ['Seeding', 'Seeding'],
+    ['Unknown', '—'],
+  ]);
+  assert.deepEqual(
+    sortBooks(books, 'availability', 'asc', () => false, book => labels.get(book.title)).map(book => book.title),
+    ['Seeding', 'Ready', 'Downloading', 'Finding', 'Available', 'Unknown', 'Unavailable'],
+  );
+  assert.deepEqual(
+    sortBooks(books, 'availability', 'desc', () => false, book => labels.get(book.title)).map(book => book.title),
+    ['Unavailable', 'Unknown', 'Available', 'Finding', 'Downloading', 'Ready', 'Seeding'],
+  );
 });
 
 test('sorts books by language', () => {
@@ -478,6 +519,42 @@ test('does not merge different IDs merely because titles match', () => {
     { md5: '2'.repeat(32), title: 'Little Brother', authors: 'Cory Doctorow' },
   ]);
   assert.equal(books.length, 2);
+});
+
+test('merges a cached Gutenberg copy with its catalog record while preserving local reading state', () => {
+  const cached = {
+    md5: '4e380df6664160703b706b3b690f1a63b1242c2c5085c30ee79727f0177230b0',
+    title: 'The Adventures of Sherlock Holmes',
+    authors: 'Doyle, Arthur Conan, 1859-1930',
+    year: '1999',
+    language: 'en',
+    extension: 'epub',
+    readUrl: 'app://bookstr/api/books/1661/download',
+    rights_status: 'public_domain',
+    progression: 0.42,
+    cfi: 'epubcfi(/6/4!/4/2)',
+    updatedAt: 200,
+  };
+  const catalog = {
+    md5: 'gutenberg:1661',
+    title: 'The Adventures of Sherlock Holmes',
+    authors: 'Doyle, Arthur Conan, 1859-1930',
+    extension: 'epub',
+    readUrl: 'https://books-api.guaka.org/api/books/1661/download',
+    coverId: 6717853,
+    updatedAt: 100,
+  };
+  assert.equal(sameLibraryBook(cached, catalog), true);
+  const [merged] = mergeLibraryState([cached], [catalog]);
+  assert.equal(merged.md5, cached.md5);
+  assert.equal(merged.readUrl, cached.readUrl);
+  assert.equal(merged.progression, 0.42);
+  assert.equal(merged.cfi, cached.cfi);
+  assert.equal(merged.coverId, 6717853);
+  assert.equal(merged.isReading, true);
+  assert.equal(merged.isFavorite, true);
+  assert.equal(dedupeLibraryBooks([cached, catalog]).length, 1);
+  assert.equal(sameLibraryBook(cached, { ...catalog, md5: 'gutenberg:48320', readUrl: 'https://books-api.guaka.org/api/books/48320/download' }), false);
 });
 
 test('different stable IDs never merge through a shared URL or ISBN', () => {
@@ -1080,6 +1157,35 @@ test('sameLibraryBook matches md5 and libvaultMd5 across different key fields', 
   const fromCatalog = { md5: md5.toUpperCase() };
 
   assert.equal(sameLibraryBook(fromShared, fromCatalog), true);
+});
+
+test('a downloaded LibGen record merges with a legacy SHA-addressed favorite', () => {
+  const md5 = '1'.repeat(32);
+  const sha256 = 'a'.repeat(64);
+  const downloaded = {
+    md5,
+    sha256,
+    title: 'Scale',
+    authors: 'Greg Egan',
+    extension: 'epub',
+    updatedAt: 200,
+  };
+  const legacyFavorite = {
+    md5: sha256,
+    blossomSha256: sha256,
+    title: 'Scale',
+    authors: 'Egan, Greg',
+    extension: 'epub',
+    favoriteAddedAt: 100,
+  };
+
+  assert.equal(sameLibraryBook(downloaded, legacyFavorite), true);
+  assert.equal(dedupeLibraryBooks([legacyFavorite, downloaded]).length, 1);
+  const library = mergeLibraryState([downloaded], [legacyFavorite]);
+  assert.equal(library.length, 1);
+  assert.equal(library[0].md5, md5, 'the real repository MD5 must remain the status key');
+  assert.equal(library[0].isReading, true);
+  assert.equal(library[0].isFavorite, true);
 });
 
 test('sameLibraryBook does not fall back to URL when both sides have distinct stable IDs', () => {

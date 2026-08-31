@@ -27,6 +27,11 @@ function safePath(value) {
   return path.resolve(value);
 }
 
+function safeCounter(value) {
+  const number = Number(value);
+  return Number.isFinite(number) ? Math.max(0, number) : 0;
+}
+
 function safePeerAddress(value) {
   const peer = String(value || '').trim();
   // WebTorrent accepts an address string for Node/TCP peers. Do not accept
@@ -60,21 +65,29 @@ function seedOptions({ sha256, extension, trackers }) {
 
 function torrentSummary(torrent, privacy) {
   if (!torrent) return null;
+  const seededBookIds = torrent.bookstrSeedingBookIds instanceof Set
+    ? [...torrent.bookstrSeedingBookIds].map(value => String(value || '')).filter(Boolean)
+    : [];
   const torrentFile = torrent.torrentFile && Buffer.isBuffer(torrent.torrentFile)
     ? torrent.torrentFile.toString('base64')
     : '';
+  const seeding = seededBookIds.length > 0 || Boolean(torrent.done || Number(torrent.progress) >= 1);
+  const bookIds = seededBookIds.length
+    ? seededBookIds
+    : seeding && torrent.bookstrBookId ? [String(torrent.bookstrBookId)] : [];
   return {
     infoHash: String(torrent.infoHash || torrent.infohash || ''),
-    bookId: String(torrent.bookstrBookId || ''),
+    bookId: bookIds[0] || String(torrent.bookstrBookId || ''),
+    ...(bookIds.length ? { bookIds } : {}),
     name: String(torrent.name || ''),
     magnetURI: String(torrent.magnetURI || ''),
     torrentFile,
     privacy,
-    progress: Number.isFinite(Number(torrent.progress)) ? Number(torrent.progress) : 0,
-    downloaded: Number(torrent.downloaded || 0),
-    uploaded: Number(torrent.uploaded || 0),
+    progress: Math.min(1, safeCounter(torrent.progress)),
+    downloaded: safeCounter(torrent.downloaded),
+    uploaded: safeCounter(torrent.uploaded),
     peers: Array.isArray(torrent.wires) ? torrent.wires.length : Number(torrent.numPeers || 0),
-    seeding: Boolean(torrent.done || Number(torrent.progress) >= 1),
+    seeding,
   };
 }
 
@@ -149,7 +162,11 @@ class WebTorrentBridge {
     const client = await this.start();
     const existing = typeof client.get === 'function' ? await client.get(torrentId).catch(() => null) : null;
     if (existing && !existing.destroyed) {
-      if (bookId) existing.bookstrBookId = String(bookId);
+      if (bookId) {
+        existing.bookstrBookId = String(bookId);
+        existing.bookstrBookIds ||= new Set();
+        existing.bookstrBookIds.add(String(bookId));
+      }
       return existing;
     }
     if (existing) await this.remove(existing);
@@ -159,16 +176,20 @@ class WebTorrentBridge {
       deselect: deselect === true,
     };
     const torrent = client.add(torrentId, options);
-    if (torrent && bookId) torrent.bookstrBookId = String(bookId);
+    if (torrent && bookId) {
+      torrent.bookstrBookId = String(bookId);
+      torrent.bookstrBookIds ||= new Set();
+      torrent.bookstrBookIds.add(String(bookId));
+    }
     return torrent;
   }
 
-  async downloadSelected(torrentId, { path: downloadPath, fileName, signal, maxBytes, onProgress } = {}) {
+  async downloadSelected(torrentId, { path: downloadPath, fileName, bookId, signal, maxBytes, onProgress } = {}) {
     const wantedName = String(fileName || '').trim().toLowerCase();
     if (!wantedName || wantedName.includes('/') || wantedName.includes('\\')) {
       throw new TypeError('selected torrent file name is invalid');
     }
-    const torrent = await this.addPublic(torrentId, { path: downloadPath, deselect: true });
+    const torrent = await this.addPublic(torrentId, { path: downloadPath, deselect: true, bookId });
     try {
       const waitForMetadata = async () => {
         if (Array.isArray(torrent.files) && torrent.files.length) return;
@@ -195,8 +216,8 @@ class WebTorrentBridge {
       if (signal?.aborted) throw new Error('torrent download aborted');
       file.select(10);
       const report = () => onProgress?.({
-        bytes: Number(file.downloaded || 0),
-        totalBytes: Number(file.length || 0),
+        bytes: safeCounter(file.downloaded),
+        totalBytes: safeCounter(file.length),
         peers: Array.isArray(torrent.wires) ? torrent.wires.length : Number(torrent.numPeers || 0),
       });
       report();
@@ -308,6 +329,17 @@ class WebTorrentBridge {
     return this.client && Array.isArray(this.client.torrents)
       ? this.client.torrents.map(torrent => torrentSummary(torrent, torrent.private ? 'private' : 'public'))
       : [];
+  }
+
+  async stopSeeding() {
+    if (!this.client || !Array.isArray(this.client.torrents)) return { stopped: 0 };
+    const torrents = [...this.client.torrents].filter(torrent => (
+      torrent.bookstrSeedingBookIds instanceof Set
+      || torrent.done
+      || Number(torrent.progress) >= 1
+    ));
+    for (const torrent of torrents) await this.remove(torrent);
+    return { stopped: torrents.length };
   }
 
   async stop() {

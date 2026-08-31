@@ -141,6 +141,14 @@ test('libstr desktop app opens with preload bridge', async () => {
     await expect(firstWindow.locator('#search-sources-table')).not.toContainText('LibVault');
     await expect(firstWindow.locator('#search-sources-table')).not.toContainText('LitRes');
     await expect(firstWindow.locator('#search-type option[value="content"]')).toHaveCount(0);
+    const sourceToggles = firstWindow.locator('[data-action="toggle-search-source"]');
+    await expect(sourceToggles).toHaveCount(8);
+    await expect(sourceToggles.first()).toBeChecked();
+    await sourceToggles.first().uncheck();
+    await expect(firstWindow.locator('tr[data-source="all-books-party"]')).toHaveClass(/source-disabled/);
+    await firstWindow.reload();
+    await expect(firstWindow.locator('tr[data-source="all-books-party"] [data-action="toggle-search-source"]')).not.toBeChecked();
+    await firstWindow.locator('tr[data-source="all-books-party"] [data-action="toggle-search-source"]').check();
 
     await firstWindow.evaluate(() => {
       state.favorites = [{ md5: 'a', title: 'English book', language: 'en' }, { md5: 'b', title: 'Portuguese book', language: 'pt-PT' }];
@@ -205,7 +213,23 @@ test('libstr desktop app opens with preload bridge', async () => {
     await expect(firstWindow.locator('#reader-font-size-value')).toHaveText('125%');
     await expect(firstWindow.locator('#reader-padding-value')).toHaveText('40 px');
     await expect(firstWindow.locator('#speech-rate-value')).toHaveText('1.10×');
+    await expect(firstWindow.locator('#torrent-auto-download')).toBeChecked();
+    await expect(firstWindow.locator('#torrent-auto-seed')).toBeChecked();
+    await firstWindow.locator('#torrent-auto-download').uncheck();
+    await firstWindow.locator('#torrent-auto-seed').uncheck();
+    await expect.poll(() => firstWindow.evaluate(() => window.bookstrDesktop.transfers.setPreferences())).toEqual({
+      autoDownload: false,
+      autoSeed: false,
+    });
+    await firstWindow.locator('#torrent-auto-download').check();
+    await firstWindow.locator('#torrent-auto-seed').check();
+    await expect.poll(() => firstWindow.evaluate(() => window.bookstrDesktop.transfers.setPreferences())).toEqual({
+      autoDownload: true,
+      autoSeed: true,
+    });
     expect(await firstWindow.evaluate(() => JSON.parse(localStorage.getItem('bookstr_reader_settings_v1')))).toMatchObject({
+      autoDownloadTorrents: true,
+      autoSeedTorrents: true,
       readerFont: 'arial',
       readerAlignment: 'justified',
       readerFontPercent: 125,
@@ -257,6 +281,8 @@ test('libstr desktop app opens with preload bridge', async () => {
     await expect(firstWindow.locator('#desktop-signer-status')).not.toContainText('[object Promise]');
     await expect(firstWindow.locator('#desktop-signer-status')).toContainText('npub1');
     await expect(firstWindow.locator('#desktop-signer-status')).toHaveClass(/signer-connected/);
+    await expect(firstWindow.locator('#desktop-signer-status')).toBeVisible();
+    await expect(firstWindow.locator('#desktop-signer-npub')).toHaveText(/^npub1/);
     await expect(firstWindow.getByRole('button', { name: 'Connect with QR code' })).toBeHidden();
 
     const localSigner = await firstWindow.evaluate(async () => ({

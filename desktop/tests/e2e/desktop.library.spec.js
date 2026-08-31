@@ -79,6 +79,7 @@ test('Library reports useful local torrent states', async () => {
     ['d'.repeat(32), 'Ready Book'],
     ['e'.repeat(32), 'Unavailable Book'],
   ].map(([md5, title]) => ({ md5, title, authors: 'Fixture Author', extension: 'epub' }));
+  books[0].authors = Array.from({ length: 80 }, (_, index) => `Fixture Author ${index + 1}`).join(', ');
   books.push({
     md5: 'f'.repeat(32),
     libgenId: 1234,
@@ -92,7 +93,7 @@ test('Library reports useful local torrent states', async () => {
   // catches startup hydration, which is the path used by a real library.
   seedDesktopStore(launch.userData, books, [
     { bookId: books[1].md5, status: 'finding-peers', source: 'torrent' },
-    { bookId: books[2].md5, status: 'downloading', bytes: 40, totalBytes: 100, source: 'torrent' },
+    { bookId: books[2].md5, status: 'downloading', bytes: -84, totalBytes: 100, source: 'torrent' },
     { bookId: books[3].md5, status: 'ready', bytes: 100, totalBytes: 100, source: 'torrent' },
     { bookId: books[4].md5, status: 'failed', source: 'torrent', error: 'fixture unavailable' },
     { bookId: books[6].md5, status: 'seeding', bytes: 100, totalBytes: 100, source: 'torrent' },
@@ -105,14 +106,180 @@ test('Library reports useful local torrent states', async () => {
 
     await expect(page.locator('.library-book-count')).toHaveText('7 books · 2 readable now · 1 seeding');
     await expect(libraryRow(page, books[0].title).locator('.result-availability')).toHaveText('—');
+    const compactAuthors = libraryRow(page, books[0].title).locator('.result-author');
+    await expect(compactAuthors).toHaveAttribute('title', books[0].authors);
+    await expect(compactAuthors).toHaveAttribute('aria-label', books[0].authors);
+    await expect.poll(() => compactAuthors.evaluate(element => ({
+      clipped: element.scrollWidth > element.clientWidth,
+      whiteSpace: getComputedStyle(element).whiteSpace,
+    }))).toEqual({ clipped: true, whiteSpace: 'nowrap' });
+    await expect.poll(() => libraryRow(page, books[0].title).evaluate(element => element.getBoundingClientRect().height)).toBeLessThan(70);
     await expect(libraryRow(page, books[1].title).locator('.result-availability')).toHaveText('Finding peers');
+    await expect(libraryRow(page, books[1].title).locator('.availability-primary')).toHaveClass(/status-dot-waiting/);
     const downloading = libraryRow(page, books[2].title).locator('.result-availability');
-    await expect(downloading).toHaveText('Downloading 40%');
-    await expect(downloading.locator('.availability-progress')).toHaveText('40%');
+    await expect(downloading).toHaveText('Downloading 0%');
+    await expect(downloading.locator('.availability-progress')).toHaveText('0%');
+    await expect(downloading.locator('.availability-primary')).toHaveClass(/status-dot-downloading/);
     await expect(libraryRow(page, books[3].title).locator('.result-availability')).toHaveText('Ready');
+    await expect(libraryRow(page, books[3].title).locator('.availability-primary')).toHaveClass(/status-dot-success/);
     await expect(libraryRow(page, books[4].title).locator('.result-availability')).toHaveText('Unavailable');
+    await expect(libraryRow(page, books[4].title).locator('.availability-primary')).toHaveClass(/status-dot-error/);
     await expect(libraryRow(page, books[5].title).locator('.result-availability')).toHaveText('Available');
     await expect(libraryRow(page, books[6].title).locator('.result-availability')).toHaveText('Seeding');
+    await expect(libraryRow(page, books[0].title).locator('.result-cover-slot')).not.toHaveClass(/has-real-cover/);
+    await page.evaluate(book => {
+      showReadMetadataFallback(book);
+      updateReadTorrentStatus(book);
+    }, books[2]);
+    await expect(page.locator('#read-metadata-fallback-torrent')).toHaveText('Downloading · 0%');
+    await expect(page.locator('#read-metadata-fallback-status')).toContainText('Downloading this book');
+    await expect(page.locator('#read-metadata-fallback-status')).toContainText('It will open automatically when the file is ready.');
+    await expect(page.locator('#read-metadata-fallback-status')).toContainText('EPUB · Checking local files');
+    await expect(page.locator('#read-metadata-fallback')).not.toContainText('Source URL');
+    await page.getByRole('button', { name: 'Home' }).click();
+    await page.getByRole('button', { name: 'Available', exact: true }).click();
+    await expect(page.locator('.book-table-row .result-title')).toHaveText([
+      books[6].title,
+      books[3].title,
+      books[2].title,
+      books[1].title,
+      books[5].title,
+      books[0].title,
+      books[4].title,
+    ]);
+  } finally {
+    await app.close();
+  }
+});
+
+test('Electron drops IndexedDB book files but keeps their Library entries torrent-available', async () => {
+  const launch = electronArgs('cache-phaseout-user-data');
+  const book = {
+    md5: '7'.repeat(32),
+    libgenId: 4321,
+    sourceNativeId: '4321',
+    title: 'Former Cache Fixture',
+    authors: 'Fixture Author',
+    extension: 'epub',
+  };
+  const app = await electron.launch({ args: launch.args });
+  try {
+    const page = await app.firstWindow();
+    await seedLibrary(page, [book]);
+    await page.evaluate(async item => {
+      const database = await new Promise((resolve, reject) => {
+        const request = indexedDB.open('bookstr_epub_cache_v1', 1);
+        request.onupgradeneeded = () => request.result.createObjectStore('books', { keyPath: 'key' });
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error);
+      });
+      await new Promise((resolve, reject) => {
+        const request = database.transaction('books', 'readwrite').objectStore('books').put({
+          key: item.md5,
+          md5: item.md5,
+          title: item.title,
+          extension: item.extension,
+          blob: new Blob(['legacy cached bytes'], { type: 'application/epub+zip' }),
+          size: 19,
+        });
+        request.onsuccess = resolve;
+        request.onerror = () => reject(request.error);
+      });
+      database.close();
+    }, book);
+    await page.reload();
+
+    await expect(libraryRow(page, book.title)).toBeVisible();
+    await expect(libraryRow(page, book.title).locator('.result-availability')).toHaveText('Available');
+    await expect.poll(() => page.evaluate(async () => {
+      const database = await new Promise((resolve, reject) => {
+        const request = indexedDB.open('bookstr_epub_cache_v1', 1);
+        request.onupgradeneeded = () => request.result.createObjectStore('books', { keyPath: 'key' });
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error);
+      });
+      const count = await new Promise((resolve, reject) => {
+        const request = database.transaction('books').objectStore('books').count();
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error);
+      });
+      database.close();
+      return count;
+    })).toBe(0);
+  } finally {
+    await app.close();
+  }
+});
+
+test('a successful torrent download does not duplicate its legacy SHA-addressed favorite', async () => {
+  const launch = electronArgs('download-dedupe-user-data');
+  const md5 = 'a'.repeat(32);
+  const sha256 = 'b'.repeat(64);
+  const downloaded = { md5, sha256, title: 'Scale', authors: 'Greg Egan', extension: 'epub', year: '2023' };
+  const favorite = { md5: sha256, blossomSha256: sha256, title: 'Scale', authors: 'Egan, Greg', extension: 'epub', year: '2023' };
+  seedDesktopStore(launch.userData, [downloaded], [
+    { bookId: md5, status: 'ready', bytes: 100, totalBytes: 100, source: 'torrent' },
+  ]);
+  const app = await electron.launch({ args: launch.args });
+  try {
+    const page = await app.firstWindow();
+    await page.evaluate(({ reading, favorites }) => {
+      localStorage.setItem('bookstr_reader_settings_v1', JSON.stringify({ autoReading: true, useNip7: false, theme: 'white' }));
+      localStorage.setItem('bookstr_reading_library_v1', JSON.stringify(reading));
+      localStorage.setItem('bookstr_nostr_favorites_v1', JSON.stringify(favorites));
+    }, { reading: [downloaded], favorites: [favorite] });
+    await page.reload();
+    await page.locator('#home-query-input').fill('');
+
+    await expect(page.locator('.library-book-count')).toHaveText('1 book · 1 readable now · 0 seeding');
+    await expect(page.locator('.book-table-row')).toHaveCount(1);
+    await expect(libraryRow(page, 'Scale').locator('.result-availability')).toHaveText('Ready');
+
+    await page.reload();
+    await page.locator('#home-query-input').fill('');
+    await expect(page.locator('.library-book-count')).toHaveText('1 book · 1 readable now · 0 seeding');
+    await expect(page.locator('.book-table-row')).toHaveCount(1);
+    await expect(libraryRow(page, 'Scale').locator('.result-availability')).toHaveText('Ready');
+  } finally {
+    await app.close();
+  }
+});
+
+test('SHA library records keep showing their resolved torrent download after navigation', async () => {
+  const launch = electronArgs('sha-download-status-user-data');
+  const libvaultMd5 = 'c'.repeat(32);
+  const book = {
+    md5: '9'.repeat(64),
+    sha256: '9'.repeat(64),
+    libvaultMd5,
+    libgenId: 800080,
+    title: 'SHA Download Fixture',
+    authors: 'Fixture Author',
+    extension: 'epub',
+  };
+  seedDesktopStore(launch.userData, [{
+    ...book,
+    id: libvaultMd5,
+    md5: libvaultMd5,
+    sourceNativeId: String(book.libgenId),
+  }], [{
+    bookId: libvaultMd5,
+    status: 'downloading',
+    bytes: 37,
+    totalBytes: 100,
+    source: 'torrent',
+  }]);
+  const app = await electron.launch({ args: launch.args });
+  try {
+    const page = await app.firstWindow();
+    await seedLibrary(page, [book]);
+    await page.reload();
+    const row = libraryRow(page, book.title);
+    await expect(row.locator('.result-availability')).toHaveText('Downloading 37%');
+    await expect(row.locator('.availability-progress')).toHaveText('37%');
+    await page.getByRole('button', { name: 'Search, Command 3' }).click();
+    await page.getByRole('button', { name: 'Home, Command 1' }).click();
+    await expect(libraryRow(page, book.title).locator('.result-availability')).toHaveText('Downloading 37%');
   } finally {
     await app.close();
   }
@@ -145,8 +312,91 @@ test('Library extracts and displays a downloaded EPUB cover inside Electron', as
     const cover = row.locator('.result-cover');
     await expect(cover).toHaveAttribute('src', `app://bookstr/api/library-cover/${md5}`);
     await expect(cover).toHaveClass(/is-loaded/);
+    await expect(cover).toHaveClass(/is-real-cover/);
+    await expect(row.locator('.result-cover-slot')).toHaveClass(/has-real-cover/);
     await expect.poll(() => cover.evaluate(image => image.naturalWidth > 0)).toBe(true);
-    await expect(row.locator('.result-cell').nth(5)).toHaveText('EN');
+    await expect(row.locator('.result-cell').nth(6)).toHaveText('EN');
+    await expect.poll(() => page.evaluate(async bookId => {
+      const reader = await window.bookstrDesktop.library.openReader(bookId);
+      const response = await fetch(`app://bookstr/api/library-file/${reader.token}`);
+      return bookFormatForBlob(await response.blob());
+    }, md5)).toBe('epub');
+  } finally {
+    await app.close();
+  }
+});
+
+test('Library corrects a legacy EPUB guess after inspecting downloaded CBZ bytes', async () => {
+  const launch = electronArgs('local-cbz-format-user-data');
+  const md5 = '7'.repeat(32);
+  const title = 'Mortelle Adele Comic Fixture';
+  const libraryRoot = path.join(launch.userData, 'library');
+  const relativePath = `books/${md5}.epub`;
+  fs.mkdirSync(path.join(libraryRoot, 'books'), { recursive: true });
+  const bytes = await minimalCBZ();
+  fs.writeFileSync(path.join(libraryRoot, relativePath), bytes);
+  const store = new LibraryStore({ dbPath: path.join(libraryRoot, 'library.sqlite'), libraryRoot });
+  try {
+    store.upsertBook({ id: md5, md5, title, authors: 'Mr Tan', extension: 'epub' });
+    store.registerLibraryFile({ bookId: md5, relativePath, sizeBytes: bytes.length });
+    store.setDownload({ bookId: md5, status: 'ready', bytes: bytes.length, totalBytes: bytes.length, source: 'torrent' });
+  } finally {
+    store.close();
+  }
+
+  const app = await electron.launch({ args: launch.args });
+  try {
+    const page = await app.firstWindow();
+    await seedLibrary(page, [{ md5, title, authors: 'Mr Tan', extension: 'epub', source: 'nostr' }]);
+    await page.reload();
+    const row = libraryRow(page, title);
+    await expect(row.locator('.result-cell').nth(5)).toHaveText('cbz');
+  } finally {
+    await app.close();
+  }
+});
+
+test('hovering a placeholder retries metadata and replaces it with a discovered cover', async () => {
+  const launch = electronArgs('hover-cover-user-data');
+  const book = {
+    md5: '8'.repeat(32),
+    title: 'Hover Cover Discovery Fixture',
+    authors: 'Coverless Fixture Author',
+    extension: 'epub',
+  };
+  const app = await electron.launch({ args: launch.args });
+  try {
+    const page = await app.firstWindow();
+    let searchRequests = 0;
+    await app.context().route('https://openlibrary.org/search.json?**', async route => {
+      searchRequests += 1;
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify(searchRequests === 1 ? { docs: [] } : {
+          docs: [{
+            key: '/works/OL987654W',
+            title: book.title,
+            author_name: [book.authors],
+            cover_i: 987654,
+          }],
+        }),
+      });
+    });
+    await app.context().route('https://covers.openlibrary.org/b/id/987654-M.jpg', route => route.fulfill({
+      status: 200,
+      contentType: 'image/png',
+      body: COVER_PNG,
+    }));
+    await seedLibrary(page, [book]);
+    await page.reload();
+    await expect.poll(() => searchRequests).toBeGreaterThanOrEqual(1);
+    const slot = libraryRow(page, book.title).locator('.result-cover-slot');
+    await expect(slot).not.toHaveClass(/has-real-cover/);
+    await slot.hover();
+    await expect.poll(() => searchRequests).toBeGreaterThanOrEqual(2);
+    await expect(slot).toHaveClass(/has-real-cover/);
+    await expect(slot.locator('.result-cover')).toHaveAttribute('src', 'https://covers.openlibrary.org/b/id/987654-M.jpg');
   } finally {
     await app.close();
   }
@@ -212,6 +462,64 @@ test('Library opens FB2 and CBZ books through their format-specific readers', as
     await expect(reader.locator('#title')).toHaveText(cbz.title);
     await expect(reader.locator('#count')).toHaveText('1 / 1');
     await expect(reader.locator('#stage img')).toBeVisible();
+  } finally {
+    await app.close();
+  }
+});
+
+test('switching from a comic archive to an EPUB replaces the pagination reader', async () => {
+  const launch = electronArgs('comic-to-epub-user-data');
+  const app = await electron.launch({ args: launch.args });
+  try {
+    const page = await app.firstWindow();
+    const comic = { md5: '6'.repeat(32), title: 'Pagination Fixture', extension: 'cbz', readUrl: 'https://files.test/pagination.cbz' };
+    const epub = { md5: '7'.repeat(32), title: 'Actual EPUB Fixture', extension: 'epub', readUrl: 'https://files.test/actual.epub' };
+    await app.context().route('https://lib.b.bfr.ee/api/books/**', route => route.fulfill({ status: 404, body: '{}' }));
+    await app.context().route('https://lib.b.bfr.ee/api/nostr', route => route.fulfill({ status: 404, body: '{}' }));
+    await app.context().route(comic.readUrl, async route => route.fulfill({ status: 200, contentType: 'application/vnd.comicbook+zip', body: await minimalCBZ() }));
+    await app.context().route(epub.readUrl, async route => route.fulfill({ status: 200, contentType: 'application/epub+zip', body: await minimalEpub(epub.title, 'This is the actual EPUB text.') }));
+    await seedLibrary(page, [comic, epub]);
+    await page.reload();
+
+    await page.getByRole('link', { name: comic.title }).click();
+    let reader = page.frameLocator('#reader-frame');
+    await expect(reader.locator('#count')).toHaveText('1 / 1');
+    await page.getByRole('button', { name: 'Home' }).click();
+    await page.getByRole('link', { name: epub.title }).click();
+
+    await expect(page.locator('#reader-frame')).toHaveAttribute('src', /reader\.html\?load=/);
+    reader = page.frameLocator('#reader-frame');
+    await expect(reader.locator('body')).toHaveAttribute('data-book-id', epub.md5, { timeout: 45_000 });
+    await expect(reader.frameLocator('#viewer iframe').locator('body')).toContainText('This is the actual EPUB text.');
+    await expect(reader.locator('#count')).toHaveCount(0);
+  } finally {
+    await app.close();
+  }
+});
+
+test('a failed EPUB open hides the previous book reader instead of showing stale pagination', async () => {
+  const launch = electronArgs('stale-reader-fallback-user-data');
+  const app = await electron.launch({ args: launch.args });
+  try {
+    const page = await app.firstWindow();
+    const comic = { md5: '8'.repeat(32), title: 'Previous Comic Fixture', extension: 'cbz', readUrl: 'https://files.test/previous.cbz' };
+    const missing = { md5: '9'.repeat(32), title: 'Missing EPUB Fixture', extension: 'epub' };
+    await app.context().route('https://lib.b.bfr.ee/api/books/**', route => route.fulfill({ status: 404, body: '{}' }));
+    await app.context().route('https://lib.b.bfr.ee/api/nostr', route => route.fulfill({ status: 404, body: '{}' }));
+    await app.context().route(comic.readUrl, async route => route.fulfill({ status: 200, contentType: 'application/vnd.comicbook+zip', body: await minimalCBZ() }));
+    await seedLibrary(page, [comic, missing]);
+    await page.reload();
+    await page.locator('#home-query-input').fill('');
+
+    await page.getByRole('link', { name: comic.title }).click();
+    await expect(page.frameLocator('#reader-frame').locator('#count')).toHaveText('1 / 1');
+    await page.getByRole('button', { name: 'Home' }).click();
+    await page.getByRole('link', { name: missing.title }).click();
+
+    await expect(page.locator('#read-metadata-fallback')).toBeVisible();
+    await expect(page.locator('#read-metadata-fallback h1')).toHaveText(missing.title);
+    await expect(page.locator('#read-metadata-fallback-status')).toContainText('This book is not stored locally');
+    await expect(page.locator('#reader-frame')).toBeHidden();
   } finally {
     await app.close();
   }

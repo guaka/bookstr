@@ -12,6 +12,7 @@ const {
   fb2Cover,
   fb2Metadata,
   localBookCover,
+  localBookFormat,
   localBookMetadata,
   safeCoverID,
 } = require('../../library-cover');
@@ -41,6 +42,14 @@ test('extracts language and identity metadata from an EPUB package', async () =>
   });
 });
 
+test('detects EPUB and comic archive bytes independently of a misleading filename extension', async () => {
+  assert.equal(await localBookFormat(await coveredEpub(), '.cbz'), 'epub');
+  const comic = new JSZip();
+  comic.file('001.png', PNG);
+  assert.equal(await localBookFormat(await comic.generateAsync({ type: 'nodebuffer' }), '.epub'), 'cbz');
+  assert.equal(await localBookFormat(Buffer.concat([Buffer.from('Rar!'), Buffer.alloc(32)]), '.epub'), 'cbr');
+});
+
 test('extracts an FB2 coverpage binary', () => {
   const xml = Buffer.from(`<FictionBook xmlns:l="http://www.w3.org/1999/xlink"><description><title-info><coverpage><image l:href="#front-art"/></coverpage></title-info></description><binary id="front-art" content-type="image/png">${PNG.toString('base64')}</binary></FictionBook>`);
   const cover = fb2Cover(xml);
@@ -65,6 +74,7 @@ test('caches a local cover by a filesystem-safe book digest', async t => {
   const first = await localBookCover({ bookId, bookPath, cacheDir });
   const second = await localBookCover({ bookId, bookPath, cacheDir });
   const metadata = await localBookMetadata({ bookId, bookPath });
+  assert.equal(metadata.extension, 'epub');
   assert.equal(first.cached, false);
   assert.equal(second.cached, true);
   assert.equal(second.path, path.join(cacheDir, `${bookId}.png`));
