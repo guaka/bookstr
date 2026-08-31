@@ -24,14 +24,19 @@ final class LibraryReaderUITests: XCTestCase {
     func testEPUBNavigationSearchAndPDFRenderingJourney() throws {
         let (back, chapter) = openEPUB()
         let initialY = chapter.frame.minY
+        let reader = app.webViews["epub-reader-webview"]
+        XCTAssertTrue(reader.waitForExistence(timeout: 5))
 
-        app.swipeLeft()
+        reader.swipeLeft(velocity: .fast)
+        if !waitForY(chapter, below: initialY - 80) {
+            reader.swipeLeft(velocity: .fast)
+        }
         XCTAssertTrue(waitForY(chapter, below: initialY - 80), "Swiping left did not advance the EPUB")
         let afterLeftY = chapter.frame.minY
 
-        app.swipeRight()
+        reader.swipeRight(velocity: .fast)
         if !waitForY(chapter, above: afterLeftY + 80) {
-            app.swipeRight()
+            reader.swipeRight(velocity: .fast)
         }
         XCTAssertTrue(waitForY(chapter, above: afterLeftY + 80), "Swiping right did not return to the previous EPUB page")
         attachScreenshot(named: "epub-navigation-restored")

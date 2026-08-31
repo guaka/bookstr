@@ -88,7 +88,8 @@ let package = Package(
                 "VocabularyRepositoryTests.swift",
                 "WordNavigationStateTests.swift",
                 "WordSortOrderingTests.swift",
-            ]
+            ],
+            resources: [.copy("Fixtures/Comics")]
         ),
     ]
 )

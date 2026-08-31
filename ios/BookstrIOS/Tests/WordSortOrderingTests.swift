@@ -66,6 +66,7 @@ final class WordSortOrderingCoverageTests: XCTestCase {
         ]
 
         for ordering in orderings {
+            XCTAssertEqual(ordering.id, ordering.rawValue)
             XCTAssertFalse(ordering.label.isEmpty)
             XCTAssertFalse(ordering.shortLabel.isEmpty)
         }

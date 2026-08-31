@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "capturedAt": "2026-08-28T21:17:01Z",
+  "capturedAt": "2026-08-31T15:38:00Z",
   "suites": {
     "web": {
       "minimumTests": 669,
@@ -35,13 +35,13 @@
       }
     },
     "ios": {
-      "minimumTests": 272,
-      "source": "https://github.com/guaka/bookstr/actions/runs/33196276547",
-      "commit": "ec908c6b9765bcd71f21e8b59a643cbb58c4c67d",
+      "minimumTests": 421,
+      "source": "https://github.com/guaka/bookstr/actions/runs/33409270523",
+      "commit": "e2858cbb9aba0b1527d7cf8de247e7c04bdb5257",
       "metrics": {
-        "Statements": 63.33,
-        "Functions": 64.81,
-        "Lines": 66.12
+        "Statements": 92.55,
+        "Functions": 94.53,
+        "Lines": 100
       }
     }
   }

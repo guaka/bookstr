@@ -8,8 +8,15 @@ import UIKit
 enum LibraryUITestFixtures {
     static let epubID = "ui-test-alice-epub"
     static let pdfID = "ui-test-alice-pdf"
+    static let cbzID = "ui-test-comic-cbz"
+    static let cbrID = "ui-test-comic-cbr"
 
     static func install(fileStore: JSONFileStore, settings: SettingsRepository) {
+        let arguments = ProcessInfo.processInfo.arguments
+        if arguments.contains("--ui-testing-preserve-library-state"),
+           FileManager.default.fileExists(atPath: fileStore.bookFileURL(bookId: cbzID, format: .cbz).path) {
+            return
+        }
         settings.theme = .night
         settings.authMode = .none
         settings.pubkeyHex = nil
@@ -23,6 +30,7 @@ enum LibraryUITestFixtures {
             pageIndex: 0,
             pageOffset: 0
         ))
+        settings.saveReaderSelection(ReaderSelection(bookId: epubID, format: .epub, selectedAt: 1))
 
         let epub = CatalogBook(
             id: epubID, title: "Alice EPUB Fixture", author: "Lewis Carroll",
@@ -34,14 +42,41 @@ enum LibraryUITestFixtures {
             epubUrl: "", coverUrl: nil, sourceUrl: nil, isbn: nil, libvaultMd5: nil,
             format: .pdf, blossomSha256: nil, year: "1865"
         )
+        let cbz = CatalogBook(
+            id: cbzID, title: "Comic CBZ Fixture", author: "Bookstr Tests",
+            epubUrl: "", coverUrl: nil, sourceUrl: nil, isbn: nil, libvaultMd5: nil,
+            format: .cbz, blossomSha256: nil, year: "2026", language: "pt-BR"
+        )
+        let cbr = CatalogBook(
+            id: cbrID, title: "Comic CBR Fixture", author: "Public domain",
+            epubUrl: "", coverUrl: nil, sourceUrl: nil, isbn: nil, libvaultMd5: nil,
+            format: .cbr, blossomSha256: nil, year: nil
+        )
 
         try? epubData().write(to: fileStore.bookFileURL(bookId: epubID, format: .epub), options: .atomic)
         try? pdfData().write(to: fileStore.bookFileURL(bookId: pdfID, format: .pdf), options: .atomic)
-        fileStore.save("downloaded-books.json", value: [epub, pdf])
+        copyBundledFixture(
+            named: "bookstr-test-comic", extension: "cbz",
+            to: fileStore.bookFileURL(bookId: cbzID, format: .cbz)
+        )
+        copyBundledFixture(
+            named: "bobby-make-believe-public-domain", extension: "cbr",
+            to: fileStore.bookFileURL(bookId: cbrID, format: .cbr)
+        )
+        fileStore.save("downloaded-books.json", value: [epub, pdf, cbz, cbr])
         fileStore.save("book_progress.json", value: [
             BookProgress(bookId: epubID, progression: 0.01, cfi: "", updatedAt: 2),
             BookProgress(bookId: pdfID, progression: 0.8, cfi: "", updatedAt: 1),
+            BookProgress(bookId: cbzID, progression: 0, cfi: "comic:0:3", updatedAt: 0),
+            BookProgress(bookId: cbrID, progression: 0, cfi: "comic:0:4", updatedAt: 0),
         ])
+    }
+
+    private static func copyBundledFixture(named name: String, extension fileExtension: String, to target: URL) {
+        guard let source = Bundle.main.url(forResource: name, withExtension: fileExtension, subdirectory: "Comics")
+                ?? Bundle.main.url(forResource: name, withExtension: fileExtension),
+              let data = try? Data(contentsOf: source) else { return }
+        try? data.write(to: target, options: .atomic)
     }
 
     private static func pdfData() -> Data {

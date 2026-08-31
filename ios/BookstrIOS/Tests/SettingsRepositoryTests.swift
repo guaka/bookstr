@@ -307,6 +307,13 @@ final class SettingsRepositoryCoverageTests: XCTestCase {
         XCTAssertNil(repo.readerSession())
         repo.clearReaderSession()
 
+        XCTAssertNil(repo.readerSelection())
+        let selection = ReaderSelection(bookId: "comic", format: .cbr, selectedAt: 42)
+        repo.saveReaderSelection(selection)
+        XCTAssertEqual(repo.readerSelection(), selection)
+        defaults.set(Data([0xff]), forKey: "reader_selection")
+        XCTAssertNil(repo.readerSelection())
+
         repo.cacheNostrFavorites(pubkey: "ABC", plaintext: "favorites", eventId: "")
         XCTAssertEqual(repo.cachedNostrFavorites(pubkey: "abc"), "favorites")
         XCTAssertNil(repo.cachedFavoritesEventId(pubkey: "abc"))
@@ -342,12 +349,31 @@ final class SettingsRepositoryCoverageTests: XCTestCase {
         XCTAssertFalse(repo.keepsCollectionDownloaded("one"))
         XCTAssertTrue(repo.keepsCollectionDownloaded("two"))
     }
+
+    func testPublishedSpeechAndReaderSettersPersistValues() {
+        let suite = "bookstr-settings-setters-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let repo = SettingsRepository(defaults: defaults, keychain: MemorySecureStore())
+        repo.theme = .night
+        repo.readerFont = .georgia
+        repo.readerAlignment = .left
+        repo.speechVoiceIdentifier = "voice-id"
+        repo.speechRate = 0.75
+        XCTAssertEqual(defaults.string(forKey: "theme"), "night")
+        XCTAssertEqual(defaults.string(forKey: "reader_font"), "georgia")
+        XCTAssertEqual(defaults.string(forKey: "reader_alignment"), "left")
+        XCTAssertEqual(defaults.string(forKey: "speech_voice"), "voice-id")
+        XCTAssertEqual(defaults.double(forKey: "speech_rate"), 0.75)
+    }
 }
 
 final class KeychainStoreCoverageTests: XCTestCase {
     func testKeychainSetDeleteAndMissingReadPaths() {
         let keychain = KeychainStore(service: "bookstr-coverage-\(UUID().uuidString)")
-        _ = keychain.set(key: "value", value: "secret")
+        if keychain.set(key: "value", value: "secret") {
+            XCTAssertEqual(keychain.get(key: "value"), "secret")
+        }
         _ = keychain.set(key: "value", value: nil)
         XCTAssertNil(keychain.get(key: "value"))
         XCTAssertTrue(keychain.set(key: "missing", value: nil))

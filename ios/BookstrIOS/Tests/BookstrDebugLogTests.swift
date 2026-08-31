@@ -48,4 +48,13 @@ final class BookstrDebugLogTests: XCTestCase {
         let second = BookstrDebugLog(store: store, filename: name, retention: 3_600, capacity: 50)
         XCTAssertEqual(second.snapshot().map(\.message), ["survives"])
     }
+
+    func testSeedInitializesLogWithoutLoadingDisk() {
+        let entry = BookstrDebugLogEntry(at: Date(), category: "test", message: "seeded")
+        let log = BookstrDebugLog(
+            store: JSONFileStore(subdirectory: "bookstr/debug-tests-\(UUID().uuidString)"),
+            seed: [entry]
+        )
+        XCTAssertEqual(log.snapshot(), [entry])
+    }
 }

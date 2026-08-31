@@ -105,8 +105,13 @@ test('CodeQL scans every main push while gating pull requests by language', asyn
   assert.equal([...workflow.matchAll(/event_name != 'pull_request'/g)].length, 5);
   assert.match(workflow, /cancel-in-progress: \$\{\{ github\.event_name == 'pull_request' \}\}/);
   assert.match(workflow, /runs-on: macos-26[\s\S]*languages: swift/);
+  assert.match(workflow, /permissions:\n\s+actions: read/);
   assert.match(workflow, /languages: java-kotlin\n\s+build-mode: manual/);
   assert.match(workflow, /run: \.\/gradlew --no-daemon assembleDebug/);
+  assert.match(workflow, /languages: swift\n\s+build-mode: manual/);
+  assert.match(workflow, /-destination 'generic\/platform=iOS Simulator'/);
+  assert.match(workflow, /-skipPackagePluginValidation/);
+  assert.equal([...workflow.matchAll(/upload: never/g)].length, 5);
 });
 
 test('Android CI shares one cached Gradle invocation across unit build tasks', async () => {

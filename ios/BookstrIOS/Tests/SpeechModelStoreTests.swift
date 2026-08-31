@@ -7,6 +7,18 @@ import XCTest
 #endif
 
 final class SpeechModelStoreTests: XCTestCase {
+    private final class MockURLProtocol: URLProtocol {
+        override class func canInit(with request: URLRequest) -> Bool { true }
+        override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+        override func startLoading() {
+            let response = HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!
+            client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+            client?.urlProtocol(self, didLoad: Data("data".utf8))
+            client?.urlProtocolDidFinishLoading(self)
+        }
+        override func stopLoading() {}
+    }
+
     private var root: URL!
 
     override func setUp() {
@@ -50,6 +62,13 @@ final class SpeechModelStoreTests: XCTestCase {
             url?.absoluteString,
             "https://huggingface.co/csukuangfj/vits-piper-pt_PT-tugao-medium/resolve/rev/espeak-ng-data/lang/roa/pt"
         )
+        XCTAssertEqual(SpeechEngineID.allCases.map(\.id), ["system", "kokoro_en", "piper_pt_pt"])
+        XCTAssertTrue(kokoro.dataDirectory.path.hasSuffix("espeak-ng-data"))
+        XCTAssertTrue(kokoro.tokensURL.path.hasSuffix("tokens.txt"))
+        let savedRoot = SpeechModelCatalog.rootDirectoryOverride
+        SpeechModelCatalog.rootDirectoryOverride = nil
+        XCTAssertTrue(SpeechModelCatalog.rootDirectory.path.contains("bookstr/speech-models"))
+        SpeechModelCatalog.rootDirectoryOverride = savedRoot
     }
 
     @MainActor
@@ -88,6 +107,41 @@ final class SpeechModelStoreTests: XCTestCase {
         XCTAssertEqual(store.lastErrorEngine, .kokoroEnglish)
         XCTAssertNotNil(store.errorMessage)
         XCTAssertFalse(store.isInstalled(.kokoroEnglish))
+    }
+
+    func testURLSessionDownloaderUsesInjectedSession() async throws {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [MockURLProtocol.self]
+        let (url, response) = try await URLSessionSpeechDownloader(session: URLSession(configuration: configuration))
+            .download(from: URL(string: "https://example.test/model")!)
+        defer { try? FileManager.default.removeItem(at: url) }
+        XCTAssertEqual((response as? HTTPURLResponse)?.statusCode, 200)
+        XCTAssertEqual(try Data(contentsOf: url), Data("data".utf8))
+    }
+
+    @MainActor
+    func testInstallReplacesDuplicateDestination() async {
+        let invalid = SpeechModelStore(
+            downloader: FixtureSpeechDownloader(payload: Data("data".utf8)),
+            sourceURLBuilder: { _, _, _ in nil }
+        )
+        await invalid.install(.kokoroEnglish)
+        XCTAssertEqual(invalid.lastErrorEngine, .kokoroEnglish)
+
+        SpeechModelCatalog.modelsOverride = [
+            SpeechModelSpec(
+                id: .kokoroEnglish, repository: "example/model", revision: "revision",
+                files: [
+                    .init(path: "same.bin", expectedBytes: nil),
+                    .init(path: "same.bin", expectedBytes: nil),
+                ],
+                kind: .vits(model: "same.bin")
+            )
+        ]
+        let duplicate = SpeechModelStore(downloader: FixtureSpeechDownloader(payload: Data("data".utf8)))
+        await duplicate.install(.kokoroEnglish)
+        XCTAssertNil(duplicate.errorMessage)
+        XCTAssertEqual(duplicate.completedFiles, 2)
     }
 }
 

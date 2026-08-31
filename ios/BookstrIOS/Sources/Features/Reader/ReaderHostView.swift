@@ -12,9 +12,11 @@ struct ReaderHostView: View {
     var initialLocator: String? = nil
     var highlightLocator: String? = nil
     var highlightKind: ReaderHighlightKind? = nil
+    var presentationOrigin: ReaderPresentationOrigin = .user
     var showsReaderChrome: Bool = true
     var onClose: (() -> Void)? = nil
     @State private var localURL: URL?
+    @State private var resolvedFormat: BookFormat?
     // The host must render a concrete view on its first frame. Starting with
     // an empty conditional Group can prevent SwiftUI from mounting this view,
     // so its opening task never runs and a full-screen cover stays black.
@@ -28,18 +30,21 @@ struct ReaderHostView: View {
     @StateObject private var epubController = EPUBReaderController()
     @StateObject private var pdfController = PDFReaderController()
     @StateObject private var fb2Controller = FB2ReaderController()
+    @StateObject private var comicController = ComicReaderController()
+
+    private var activeFormat: BookFormat { resolvedFormat ?? book.format }
 
     var body: some View {
         Group {
             if loading {
-                ProgressView("Opening \(book.format.rawValue.uppercased())...")
+                ProgressView("Opening \(activeFormat.rawValue.uppercased())...")
             } else if let error {
                 VStack(spacing: 12) {
                     Text(error).foregroundStyle(.red)
                     Button("Retry") { Task { await openBook() } }
                 }
             } else if let localURL {
-                if book.format == .pdf {
+                if activeFormat == .pdf {
                     PDFReaderView(
                         book: book,
                         fileURL: localURL,
@@ -47,14 +52,27 @@ struct ReaderHostView: View {
                         controller: pdfController
                     )
                     .padding(.top, 48)
-                } else if book.format == .fb2 {
+                } else if activeFormat == .fb2 {
                     FB2ReaderView(
                         book: book,
                         fileURL: localURL,
                         controller: fb2Controller,
                         initialLocator: initialLocator,
                         onProgress: { progression, locator in
-                            container.progressRepository.save(bookId: book.id, progression: progression, cfi: locator)
+                            persistProgress(progression, locator: locator, format: .fb2)
+                        }
+                    )
+                    .padding(.top, 48)
+                    .padding(.bottom, 5)
+                } else if activeFormat == .cbr || activeFormat == .cbz {
+                    ComicReaderView(
+                        book: book,
+                        format: activeFormat,
+                        fileURL: localURL,
+                        controller: comicController,
+                        initialLocator: initialLocator,
+                        onProgress: { progression, locator in
+                            persistProgress(progression, locator: locator, format: activeFormat)
                         }
                     )
                     .padding(.top, 48)
@@ -75,7 +93,7 @@ struct ReaderHostView: View {
         .statusBarHidden(showsReaderChrome)
         .persistentSystemOverlays(showsReaderChrome ? .hidden : .automatic)
         .overlay {
-            if book.format == .epub, let readerError = epubController.errorMessage {
+            if activeFormat == .epub, let readerError = epubController.errorMessage {
                 VStack(spacing: 12) {
                     Text(readerError).foregroundStyle(.red).multilineTextAlignment(.center)
                     Button("Back to Library", action: closeReader)
@@ -86,8 +104,27 @@ struct ReaderHostView: View {
             }
         }
         .overlay {
-            if book.format == .epub, localURL != nil, !epubController.ready, epubController.errorMessage == nil {
+            if activeFormat == .epub, localURL != nil, !epubController.ready, epubController.errorMessage == nil {
                 ProgressView(epubController.loadingStage + "…")
+                    .padding(16)
+                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+            }
+        }
+        .overlay {
+            if (activeFormat == .cbr || activeFormat == .cbz), let readerError = comicController.errorMessage {
+                VStack(spacing: 12) {
+                    Text(readerError).foregroundStyle(.red).multilineTextAlignment(.center)
+                    Button("Back to Library", action: closeReader)
+                }
+                .padding(24)
+                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
+                .padding()
+            }
+        }
+        .overlay {
+            if (activeFormat == .cbr || activeFormat == .cbz), localURL != nil,
+               !comicController.ready, comicController.errorMessage == nil {
+                ProgressView(comicController.loadingStage + "…")
                     .padding(16)
                     .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
             }
@@ -103,7 +140,7 @@ struct ReaderHostView: View {
                     if !hasTableOfContents {
                         ContentUnavailableView("No contents", systemImage: "list.bullet",
                                                description: Text("This book does not provide a table of contents."))
-                    } else if book.format == .epub {
+                    } else if activeFormat == .epub {
                         List(epubController.sections) { section in
                             Button {
                                 showSections = false
@@ -118,7 +155,7 @@ struct ReaderHostView: View {
                                 }
                             }
                         }
-                    } else if book.format == .fb2 {
+                    } else if activeFormat == .fb2 {
                         List(fb2Controller.sections) { section in
                             Button {
                                 showSections = false
@@ -165,13 +202,14 @@ struct ReaderHostView: View {
         .sheet(isPresented: $showRightsDetails) {
             RightsDetailsView(item: RightsDetailsItem(
                 title: book.title, author: book.author, year: book.year,
-                format: book.format.rawValue,
-                rights: book.format == .epub ? epubController.rights : book.rights
+                format: activeFormat.rawValue,
+                rights: activeFormat == .epub ? epubController.rights : book.rights
             ))
         }
         .sheet(isPresented: $showSearch) { readerSearchSheet }
         .task { await openBook() }
         .onAppear {
+            dismissKeyboard()
             updateIdleTimer()
             syncPlaybackSpeech()
         }
@@ -242,12 +280,12 @@ struct ReaderHostView: View {
             Spacer(minLength: 0)
 
             Button { showRightsDetails = true } label: {
-                RightsBadge(rights: book.format == .epub ? epubController.rights : book.rights)
+                RightsBadge(rights: activeFormat == .epub ? epubController.rights : book.rights)
             }
             .buttonStyle(.plain)
             .accessibilityHint("Shows the complete rights statement and source")
 
-            if book.format == .epub {
+            if activeFormat == .epub {
                 Button {
                     epubController.toggleSpeech()
                     syncPlaybackSpeech()
@@ -260,7 +298,7 @@ struct ReaderHostView: View {
                 .accessibilityIdentifier("reader-speech-toggle")
             }
 
-            if book.format == .fb2 {
+            if activeFormat == .fb2 {
                 Button {
                     fb2Controller.toggleSpeech(playback: fb2SpeechChoice)
                     syncPlaybackSpeech()
@@ -282,7 +320,30 @@ struct ReaderHostView: View {
                 .accessibilityIdentifier("reader-contents")
             }
 
-            searchButton
+            if activeFormat == .epub || activeFormat == .pdf || activeFormat == .fb2 {
+                searchButton
+            }
+
+            if activeFormat == .cbr || activeFormat == .cbz {
+                Menu {
+                    Button("Zoom In", systemImage: "plus.magnifyingglass") {
+                        comicController.zoomIn()
+                    }
+                    .disabled(comicController.zoomScale >= ComicReaderController.maximumZoom)
+                    Button("Fit Page", systemImage: "arrow.down.right.and.arrow.up.left") {
+                        comicController.fitPage()
+                    }
+                    Button("Zoom Out", systemImage: "minus.magnifyingglass") {
+                        comicController.zoomOut()
+                    }
+                    .disabled(comicController.zoomScale <= ComicReaderController.minimumZoom)
+                } label: {
+                    Image(systemName: "magnifyingglass")
+                        .frame(width: 40, height: 40)
+                }
+                .accessibilityLabel("Comic zoom, \(Int(round(comicController.zoomScale * 100))) percent")
+                .accessibilityIdentifier("reader-comic-zoom")
+            }
         }
         .foregroundStyle(container.settingsRepository.theme.background)
         .padding(.leading, 6)
@@ -296,9 +357,10 @@ struct ReaderHostView: View {
     }
 
     private var hasTableOfContents: Bool {
-        if book.format == .epub { return epubController.hasTableOfContents }
-        if book.format == .fb2 { return !fb2Controller.sections.isEmpty }
-        return !pdfController.tableOfContents.isEmpty
+        if activeFormat == .epub { return epubController.hasTableOfContents }
+        if activeFormat == .fb2 { return !fb2Controller.sections.isEmpty }
+        if activeFormat == .pdf { return !pdfController.tableOfContents.isEmpty }
+        return false
     }
 
     private var fb2SpeechChoice: SpeechPlaybackChoice {
@@ -329,7 +391,7 @@ struct ReaderHostView: View {
     }
 
     private func syncPlaybackSpeech() {
-        switch book.format {
+        switch activeFormat {
         case .epub:
             playback.updateSpeechState(
                 retained: epubController.isSpeechRetained,
@@ -348,7 +410,7 @@ struct ReaderHostView: View {
     }
 
     private func toggleActiveSpeech() {
-        switch book.format {
+        switch activeFormat {
         case .epub:
             epubController.toggleSpeech()
         case .fb2:
@@ -404,7 +466,7 @@ struct ReaderHostView: View {
 
     @ViewBuilder
     private var searchResultsList: some View {
-        if book.format == .epub {
+        if activeFormat == .epub {
             List(epubController.searchResults) { result in
                 Button {
                     showSearch = false
@@ -417,7 +479,7 @@ struct ReaderHostView: View {
                 }
                 .accessibilityIdentifier("reader-search-result-epub-\(result.sectionIndex)")
             }
-        } else if book.format == .fb2 {
+        } else if activeFormat == .fb2 {
             List(fb2Controller.searchResults) { result in
                 Button {
                     showSearch = false
@@ -450,22 +512,22 @@ struct ReaderHostView: View {
     }
 
     private var isSearching: Bool {
-        if book.format == .epub { return epubController.searching }
-        if book.format == .fb2 { return fb2Controller.searching }
+        if activeFormat == .epub { return epubController.searching }
+        if activeFormat == .fb2 { return fb2Controller.searching }
         return pdfController.searching
     }
 
     private var searchResultCount: Int {
-        if book.format == .epub { return epubController.searchResults.count }
-        if book.format == .fb2 { return fb2Controller.searchResults.count }
+        if activeFormat == .epub { return epubController.searchResults.count }
+        if activeFormat == .fb2 { return fb2Controller.searchResults.count }
         return pdfController.searchResults.count
     }
 
     private func performSearch() {
         let query = searchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
         guard query.count >= 2 else { return }
-        if book.format == .epub { epubController.search(query) }
-        else if book.format == .fb2 { fb2Controller.search(query) }
+        if activeFormat == .epub { epubController.search(query) }
+        else if activeFormat == .fb2 { fb2Controller.search(query) }
         else { pdfController.search(query) }
     }
 
@@ -475,12 +537,15 @@ struct ReaderHostView: View {
 
     @ViewBuilder
     private var readerBottomBar: some View {
-        let progress = book.format == .epub ? epubController.progression :
-            (book.format == .fb2 ? fb2Controller.progression : pdfController.progression)
-        let furthest = book.format == .epub ? epubController.furthestProgression :
-            (book.format == .fb2 ? fb2Controller.furthestProgression : pdfController.furthestProgression)
-        if (book.format == .epub && epubController.ready) || (book.format == .pdf && localURL != nil) ||
-            (book.format == .fb2 && fb2Controller.ready) {
+        let progress = activeFormat == .epub ? epubController.progression :
+            (activeFormat == .fb2 ? fb2Controller.progression :
+                ((activeFormat == .cbr || activeFormat == .cbz) ? comicController.progression : pdfController.progression))
+        let furthest = activeFormat == .epub ? epubController.furthestProgression :
+            (activeFormat == .fb2 ? fb2Controller.furthestProgression :
+                ((activeFormat == .cbr || activeFormat == .cbz) ? comicController.furthestProgression : pdfController.furthestProgression))
+        if (activeFormat == .epub && epubController.ready) || (activeFormat == .pdf && localURL != nil) ||
+            (activeFormat == .fb2 && fb2Controller.ready) ||
+            ((activeFormat == .cbr || activeFormat == .cbz) && comicController.ready) {
             CurvedReaderProgress(
                 progress: progress,
                 furthest: furthest,
@@ -496,12 +561,12 @@ struct ReaderHostView: View {
             .accessibilityValue(
                 "\(Int(round(100 * progress))) percent"
             )
-            .accessibilityIdentifier("reader-progress-\(book.format.rawValue)")
+            .accessibilityIdentifier("reader-progress-\(activeFormat.rawValue)")
         }
     }
 
     private var readerByline: String {
-        [book.author.isEmpty ? nil : book.author, book.year]
+        [book.author.isEmpty ? nil : book.author, book.year, book.language?.uppercased()]
             .compactMap { $0 }
             .joined(separator: " · ")
     }
@@ -510,18 +575,71 @@ struct ReaderHostView: View {
         loading = true
         error = nil
         do {
-            if let preparedURL {
-                localURL = preparedURL
+            let openedURL = if let preparedURL {
+                preparedURL
             } else {
-                localURL = try await container.catalogRepository.ensureDownloaded(book: book)
+                try await container.catalogRepository.ensureDownloaded(book: book)
             }
             let saved = container.progressRepository.get(bookId: book.id)
+            let format = CatalogRepository.detectedFormat(fileURL: openedURL) ?? book.format
+            resolvedFormat = format
+            if presentationOrigin == .user {
+                container.settingsRepository.saveReaderSelection(
+                    ReaderSelection(bookId: book.id, format: format)
+                )
+            }
             epubController.furthestProgression = saved.progression
             fb2Controller.furthestProgression = saved.progression
+            comicController.furthestProgression = saved.progression
+            saveReaderSession(
+                format: format,
+                locator: saved.cfi.isEmpty ? initialLocator : saved.cfi
+            )
+            localURL = openedURL
         } catch {
             self.error = error.localizedDescription
         }
         loading = false
+    }
+
+    private func persistProgress(_ progression: Double, locator: String, format: BookFormat) {
+        container.progressRepository.save(bookId: book.id, progression: progression, cfi: locator)
+        saveReaderSession(format: format, locator: locator)
+    }
+
+    private func saveReaderSession(format: BookFormat, locator: String?) {
+        let pageIndex: Int
+        if format == .cbr || format == .cbz {
+            pageIndex = ComicReaderController.page(from: locator)
+        } else if format == .pdf,
+                  let value = locator?.split(separator: ":").dropFirst().first.flatMap({ Int($0) }) {
+            pageIndex = value
+        } else {
+            pageIndex = 0
+        }
+        container.settingsRepository.saveReaderSession(ReaderSession(
+            bookId: book.id,
+            bookTitle: book.title,
+            format: format,
+            author: book.author,
+            year: book.year,
+            locator: locator,
+            pageIndex: pageIndex,
+            pageOffset: 0,
+            rightsStatus: book.rightsStatus,
+            license: book.license,
+            licenseUrl: book.licenseUrl,
+            rightsSource: book.rightsSource
+        ))
+    }
+
+    private func dismissKeyboard() {
+        UIApplication.shared.sendAction(
+            #selector(UIResponder.resignFirstResponder),
+            to: nil,
+            from: nil,
+            for: nil
+        )
     }
 }
 

@@ -215,6 +215,43 @@ final class LibraryViewModel: ObservableObject {
         }
     }
 
+    static func filtered(_ books: [CatalogBook], by query: String) -> [CatalogBook] {
+        let terms = filterTerms(query)
+        guard !terms.isEmpty else { return books }
+        return books.filter { book in
+            matchesFilter(
+                terms,
+                values: [book.title, book.author, book.isbn, book.year, book.language, book.format.rawValue]
+            )
+        }
+    }
+
+    static func filtered(_ favorites: [ExternalFavorite], by query: String) -> [ExternalFavorite] {
+        let terms = filterTerms(query)
+        guard !terms.isEmpty else { return favorites }
+        return favorites.filter { favorite in
+            matchesFilter(
+                terms,
+                values: [favorite.title, favorite.author, favorite.isbn, favorite.year, favorite.format]
+            )
+        }
+    }
+
+    private static func filterTerms(_ query: String) -> [String] {
+        normalizedFilterText(query)
+            .split(whereSeparator: \.isWhitespace)
+            .map(String.init)
+    }
+
+    private static func matchesFilter(_ terms: [String], values: [String?]) -> Bool {
+        let searchable = normalizedFilterText(values.compactMap { $0 }.joined(separator: " "))
+        return terms.allSatisfy(searchable.contains)
+    }
+
+    private static func normalizedFilterText(_ value: String) -> String {
+        value.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
+    }
+
     private func externalMD5(_ favorite: ExternalFavorite) -> String? {
         let candidate = (favorite.libvaultMd5 ?? favorite.key).lowercased()
         guard candidate.count == 32, candidate.allSatisfy(\.isHexDigit) else { return nil }
