@@ -215,21 +215,35 @@ test('libstr desktop app opens with preload bridge', async () => {
     await expect(firstWindow.locator('#speech-rate-value')).toHaveText('1.10×');
     await expect(firstWindow.locator('#torrent-auto-download')).toBeChecked();
     await expect(firstWindow.locator('#torrent-auto-seed')).toBeChecked();
+    await expect(firstWindow.locator('#torrent-download-limit')).toHaveValue('10000000');
+    await expect(firstWindow.locator('#torrent-upload-limit')).toHaveValue('1000000');
     await firstWindow.locator('#torrent-auto-download').uncheck();
     await firstWindow.locator('#torrent-auto-seed').uncheck();
     await expect.poll(() => firstWindow.evaluate(() => window.bookstrDesktop.transfers.setPreferences())).toEqual({
       autoDownload: false,
       autoSeed: false,
+      downloadLimit: 10000000,
+      uploadLimit: 1000000,
     });
     await firstWindow.locator('#torrent-auto-download').check();
     await firstWindow.locator('#torrent-auto-seed').check();
     await expect.poll(() => firstWindow.evaluate(() => window.bookstrDesktop.transfers.setPreferences())).toEqual({
       autoDownload: true,
       autoSeed: true,
+      downloadLimit: 10000000,
+      uploadLimit: 1000000,
+    });
+    await firstWindow.locator('#torrent-download-limit').selectOption('5000000');
+    await firstWindow.locator('#torrent-upload-limit').selectOption('500000');
+    await expect.poll(() => firstWindow.evaluate(() => window.bookstrDesktop.transfers.setPreferences())).toMatchObject({
+      downloadLimit: 5000000,
+      uploadLimit: 500000,
     });
     expect(await firstWindow.evaluate(() => JSON.parse(localStorage.getItem('bookstr_reader_settings_v1')))).toMatchObject({
       autoDownloadTorrents: true,
       autoSeedTorrents: true,
+      torrentDownloadLimit: 5000000,
+      torrentUploadLimit: 500000,
       readerFont: 'arial',
       readerAlignment: 'justified',
       readerFontPercent: 125,
