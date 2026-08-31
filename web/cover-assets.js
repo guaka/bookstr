@@ -1,5 +1,4 @@
 (function attachCoverAssets(root) {
-  const BLOSSOM_BASE = 'https://blossom.bfr.ee';
   const failedByBook = new Map();
   const resolvedByBook = new Map();
 
@@ -47,14 +46,6 @@
     if (coverId) add(`https://covers.openlibrary.org/b/id/${encodeURIComponent(coverId)}-M.jpg`);
     const isbn = String(root.BookMetadata?.isbnForBook?.(book) || '').trim();
     if (isbn) add(`https://covers.openlibrary.org/b/isbn/${encodeURIComponent(isbn)}-M.jpg?default=false`);
-
-    const coverSha256 = String(book?.coverSha256 || book?.cover_sha256 || '').trim().toLowerCase();
-    if (/^[a-f0-9]{64}$/.test(coverSha256)) {
-      const format = String(book?.coverFormat || book?.cover_format || '').replace(/^\./, '').toLowerCase();
-      const formats = ['jpg', 'jpeg', 'png', 'webp'];
-      if (formats.includes(format)) formats.unshift(format);
-      for (const extension of [...new Set(formats)]) add(`${options.blossomBase || BLOSSOM_BASE}/${coverSha256}.${extension}`);
-    }
 
     const placeholder = placeholderCoverUrl(book);
     const failed = failedByBook.get(key);

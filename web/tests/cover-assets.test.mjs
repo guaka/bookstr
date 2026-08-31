@@ -16,7 +16,7 @@ test('desktop cover candidates ignore LibVault and prefer Open Library before bl
     coverId: 12345,
   }, { desktop: true });
   assert.equal(candidates[0], 'https://covers.openlibrary.org/b/id/12345-M.jpg');
-  assert.ok(candidates.indexOf(`https://blossom.bfr.ee/${sha256}.jpg`) > 0);
+  assert.ok(!candidates.some(url => url.includes(sha256)));
   assert.ok(candidates.at(-1).startsWith('data:image/svg+xml,'));
   assert.ok(!candidates.some(url => url.includes('lib.b.bfr.ee')));
   assert.equal(normalizeCoverUrl(`https://lib.b.bfr.ee/api/covers/${'d'.repeat(32)}`, false), '');

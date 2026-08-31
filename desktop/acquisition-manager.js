@@ -162,8 +162,13 @@ function sourceKey(provider, candidate, recordId) {
   return raw.length <= 256 ? raw : raw.slice(0, 256);
 }
 
-function destroyTorrent(torrent) {
-  try { torrent?.destroy?.(); } catch { /* best effort cleanup */ }
+async function destroyTorrent(torrentBridge, torrent) {
+  if (!torrent) return;
+  if (typeof torrentBridge?.remove === 'function') {
+    await torrentBridge.remove(torrent).catch(() => {});
+    return;
+  }
+  try { torrent.destroy?.(); } catch { /* best effort cleanup */ }
 }
 
 function libgenTorrentMetadataURL(libgenId, baseURL = LIBGEN_TORRENT_METADATA_BASE_URL) {
@@ -255,7 +260,7 @@ class AcquisitionManager {
       this.store.setDownload({ bookId: md5, status: 'failed', source: 'torrent', error: error?.message || String(error) });
       throw error;
     } finally {
-      destroyTorrent(torrent);
+      await destroyTorrent(this.torrentBridge, torrent);
       await fsp.rm(stageDir, { recursive: true, force: true }).catch(() => {});
     }
   }
@@ -376,7 +381,7 @@ class AcquisitionManager {
       // A torrent owns its peer connections and partially downloaded files;
       // every rejection path must release it before the staging directory is
       // removed by acquire().
-      destroyTorrent(torrent);
+      await destroyTorrent(this.torrentBridge, torrent);
       throw error;
     }
   }

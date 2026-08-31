@@ -300,19 +300,26 @@ test('derives Gutenberg downloads from source-native IDs', () => {
   );
 });
 
-test('leaves non-Gutenberg Blossom URLs unchanged', () => {
+test('does not promote a legacy Blossom field to a readable URL', () => {
   assert.equal(
     canonicalReadUrl({ blossomUrl: 'https://blossom.test/file.epub' }),
-    'https://blossom.test/file.epub',
+    '',
   );
 });
 
-test('prefers Blossom over a LibVault read endpoint', () => {
+test('rejects the retired Blossom host even when it is stored as a direct read URL', () => {
+  assert.equal(
+    canonicalReadUrl({ readUrl: `https://blossom.bfr.ee/${'b'.repeat(64)}.epub` }),
+    '',
+  );
+});
+
+test('does not use Blossom to replace a retired LibVault read endpoint', () => {
   assert.equal(canonicalReadUrl({
     md5: 'a'.repeat(32),
     readUrl: 'https://lib.b.bfr.ee/api/read/' + 'a'.repeat(32),
     blossomUrl: 'https://blossom.example/' + 'b'.repeat(64),
-  }), 'https://blossom.example/' + 'b'.repeat(64));
+  }), '');
 });
 
 test('never uses a legacy LibVault read endpoint as a book source', () => {
@@ -360,7 +367,7 @@ test('does not invent metadata endpoints for arbitrary EPUB URLs', () => {
 });
 
 test('classifies supported book availability sources', () => {
-  assert.equal(availabilityForBook({ blossomSha256: 'abc' }), 'Blossom');
+  assert.equal(availabilityForBook({ blossomSha256: 'abc' }), 'Metadata only');
   assert.equal(availabilityForBook({ readUrl: 'https://books-api.guaka.org/api/books/48320/download' }), 'Gutenberg');
   assert.equal(availabilityForBook({ md5: 'a'.repeat(32) }), 'Metadata only');
   assert.equal(availabilityForBook({ readUrl: 'https://example.test/book.epub' }), 'Metadata only');
@@ -386,7 +393,7 @@ test('normalizeReadUrl resolves relative URLs using the provided base', () => {
 test('reports multiple availability sources including cache', () => {
   assert.deepEqual(
     availabilitySourcesForBook({ md5: 'a'.repeat(32), blossomUrl: 'https://blossom.test/a' }, true),
-    ['Blossom', 'Cached'],
+    ['Metadata only', 'Cached'],
   );
 });
 
@@ -504,7 +511,7 @@ test('keeps a known read URL when a partial duplicate omits it', () => {
 });
 
 test('shows every availability source when several source hints exist', () => {
-  assert.equal(availabilityForBook({ md5: 'a'.repeat(32), blossomUrl: 'https://blossom.test/a' }), 'Blossom');
+  assert.equal(availabilityForBook({ md5: 'a'.repeat(32), blossomUrl: 'https://blossom.test/a' }), 'Metadata only');
 });
 
 test('matches library books by stable ID, then URL, then ISBN', () => {
@@ -704,7 +711,7 @@ test('metadataEndpointForReadUrl preserves only canonical Gutenberg download URL
 test('availabilitySourcesForBook deduplicates repeated sources', () => {
   assert.deepEqual(
     availabilitySourcesForBook({ source: 'gutenberg', readUrl: 'https://books-api.guaka.org/api/books/48320/download', blossomUrl: 'https://blossom.example/file.epub' }, true),
-    ['Gutenberg', 'Blossom', 'Cached'],
+    ['Gutenberg', 'Cached'],
   );
   assert.deepEqual(
     availabilitySourcesForBook({ source: 'gutenberg', md5: 'gutenberg:48320' }, false),
@@ -1182,14 +1189,14 @@ test('availabilitySourcesForBook treats /api/read urls as metadata-only', () => 
   );
 });
 
-test('availabilitySourcesForBook respects explicit blossom source hints', () => {
+test('availabilitySourcesForBook treats explicit Blossom hints as legacy metadata', () => {
   assert.deepEqual(
     availabilitySourcesForBook({ source: 'blossom-cdn', blossomSha256: 'abc' }),
-    ['Blossom'],
+    ['Metadata only'],
   );
   assert.deepEqual(
     availabilitySourcesForBook({ source: 'blossom-cdn', blossomSha256: 'abc' }, true),
-    ['Blossom', 'Cached'],
+    ['Metadata only', 'Cached'],
   );
 });
 
@@ -1229,13 +1236,13 @@ test('isbnForBook normalizes direct ISBN13 values and keeps checksum', () => {
   );
 });
 
-test('availabilitySourcesForBook exposes blossom-only favorites as source list', () => {
+test('availabilitySourcesForBook exposes Blossom-only favorites as metadata-only', () => {
   assert.deepEqual(
     availabilitySourcesForBook({
       blossomSha256: 'b'.repeat(64),
       title: 'Remote',
     }),
-    ['Blossom'],
+    ['Metadata only'],
   );
 });
 
@@ -1347,17 +1354,17 @@ test('metadataEndpointForReadUrl returns empty on parse errors', () => {
   assert.equal(metadataEndpointForReadUrl('://not-a-url'), '');
 });
 
-test('canonicalReadUrl preserves direct blossom URLs', () => {
+test('canonicalReadUrl ignores legacy Blossom-only URLs', () => {
   assert.equal(
     canonicalReadUrl({ blossomUrl: 'https://example.test/download' }),
-    'https://example.test/download',
+    '',
   );
 });
 
-test('canonicalReadUrl preserves unparseable fallback URLs', () => {
+test('canonicalReadUrl ignores unparseable legacy Blossom fallback URLs', () => {
   assert.equal(
     canonicalReadUrl({ blossomUrl: '::://bad-url' }),
-    '::://bad-url',
+    '',
   );
 });
 

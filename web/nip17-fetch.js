@@ -7,7 +7,6 @@ const LIBVAULT_SEARCH_TYPE = 'libvault.search';
 const LIBVAULT_SEARCH_RESPONSE_TYPE = 'libvault.search.result';
 const LIBVAULT_FAVORITES_TYPE = 'libvault.favorites.sync';
 const DEFAULT_RELAY = 'wss://relay.nomadwiki.org';
-const LIBVAULT_API = 'https://lib.b.bfr.ee/api';
 const TWO_DAYS_SECONDS = 2 * 24 * 60 * 60;
 const GIFT_WRAP_TTL_SECONDS = 10 * 60;
 
@@ -372,95 +371,8 @@ export async function searchLibVault(query, searchType = 'all', options = {}) {
   }
 }
 
-function wait(milliseconds, signal) {
-  return new Promise(resolve => {
-    const timer = setTimeout(resolve, milliseconds);
-    signal?.addEventListener('abort', () => {
-      clearTimeout(timer);
-      resolve();
-    }, { once: true });
-  });
-}
-
-export async function monitorLibVaultFetch(md5, options = {}) {
-  const normalized = String(md5 || '').toLowerCase();
-  if (!validHex(normalized, 32)) throw new Error('A LibVault MD5 is required to monitor a fetch');
-  const fetchImpl = options.fetchImpl || fetch;
-  const onProgress = typeof options.onProgress === 'function' ? options.onProgress : () => {};
-  const signal = options.signal;
-  const intervalMs = Number.isFinite(options.intervalMs) ? options.intervalMs : 2000;
-  const timeoutMs = Number.isFinite(options.timeoutMs) ? options.timeoutMs : 3 * 60 * 60 * 1000;
-  const deadline = Date.now() + timeoutMs;
-  let lastStatus = '';
-
-  const report = progress => {
-    const fingerprint = JSON.stringify(progress);
-    if (fingerprint !== lastStatus) {
-      lastStatus = fingerprint;
-      onProgress(progress);
-    }
-  };
-
-  report({ status: 'waiting' });
-  while (!signal?.aborted && Date.now() < deadline) {
-    try {
-      const jobResponse = await fetchImpl(`${LIBVAULT_API}/jobs?md5=${normalized}`, { headers: { Accept: 'application/json' }, signal });
-      if (jobResponse.ok) {
-        const job = await jobResponse.json();
-        if (job.status === 'failed') {
-          const result = { status: 'failed', error: job.error || 'LibVault could not fetch this book' };
-          report(result);
-          return result;
-        }
-        if (job.status === 'ready') {
-          const blossomResponse = await fetchImpl(`${LIBVAULT_API}/blossom/${normalized}`, { headers: { Accept: 'application/json' }, signal });
-          if (blossomResponse.ok) {
-            const blossom = await blossomResponse.json();
-            if (blossom.status === 'ready' && validHex(blossom.sha256, 64) && /^https:\/\//i.test(String(blossom.url || ''))) {
-              const result = { status: 'ready', blossom };
-              report(result);
-              return result;
-            }
-          }
-          report({ status: 'publishing' });
-        } else {
-          report({
-            status: job.status || 'queued',
-            bytes: Number(job.bytes || 0),
-            total: Number(job.total || 0),
-            source: String(job.source || ''),
-          });
-        }
-      }
-    } catch (error) {
-      if (signal?.aborted) return { status: 'cancelled' };
-      report({ status: 'waiting', error: error?.message || String(error) });
-    }
-    await wait(intervalMs, signal);
-  }
-  if (signal?.aborted) return { status: 'cancelled' };
-  const result = { status: 'failed', error: 'Timed out waiting for LibVault' };
-  report(result);
-  return result;
-}
-
-export async function lookupLibVaultBlossomState(md5, fetchImpl = fetch) {
-  const normalized = String(md5 || '').toLowerCase();
-  if (!validHex(normalized, 32)) return null;
-  const response = await fetchImpl(`${LIBVAULT_API}/blossom/${normalized}`, { headers: { Accept: 'application/json' } });
-  if (!response.ok) return null;
-  return response.json();
-}
-
-export async function lookupLibVaultBlossom(md5, fetchImpl = fetch) {
-  const blossom = await lookupLibVaultBlossomState(md5, fetchImpl);
-  if (!blossom) return null;
-  if (blossom.status !== 'ready' || !validHex(blossom.sha256, 64) || !/^https:\/\//i.test(String(blossom.url || ''))) return null;
-  return blossom;
-}
-
 export {
-  LIBVAULT_API, LIBVAULT_NIP05, LIBVAULT_NIP05_URL, LIBVAULT_FETCH_TYPE,
+  LIBVAULT_NIP05, LIBVAULT_NIP05_URL, LIBVAULT_FETCH_TYPE,
   LIBVAULT_RESOLVE_TYPE, LIBVAULT_RESOLVE_RESPONSE_TYPE,
   LIBVAULT_SEARCH_TYPE, LIBVAULT_SEARCH_RESPONSE_TYPE, LIBVAULT_FAVORITES_TYPE,
 };

@@ -116,6 +116,8 @@ test('cross-device favorites retain iOS metadata and expose retryable Home sync'
   assert.match(html, /syncNostrLibraryFromNip7\(\{ useCache: false \}\)/);
   assert.match(html, /Showing cached library · sync failed · retry/);
   assert.match(html, /lastFavoritePullInfo\.id\.slice\(0, 12\)/);
+  assert.match(html, /formatBuildDate\(new Date\(lastFavoritePullInfo\.createdAt \* 1000\)\)/);
+  assert.doesNotMatch(html, /toLocaleString\(\)/);
 });
 
 test('footer links to the latest released Android APK', () => {
@@ -221,9 +223,11 @@ test('Search requires whole query tokens instead of prefix matches', () => {
   assert.match(html, /books = books\.filter\(book => matchesExactSearchTokens\(book, query, searchType\.value \|\| 'all'\)\)/);
 });
 
-test('desktop availability prefers torrent and hides Blossom from library rows', () => {
-  assert.match(html, /filter\(source => !isDesktopMode \|\| source !== 'Blossom'\)/);
-  assert.match(html, /isDesktopMode && isMd5\(book\?\.md5\)[\s\S]*?availabilitySources\.unshift\('Torrent'\)/);
+test('desktop availability only marks records with resolved torrent metadata as available', () => {
+  assert.doesNotMatch(html, /source !== 'Blossom'/);
+  assert.match(html, /const hasTorrent = BookMetadata\.torrentMetadataForBook\(book\)[\s\S]*?BookMetadata\.libgenTorrentMetadataForBook\(book\)/);
+  assert.match(html, /return isDesktopMode && hasTorrent \? 'Available' : ''/);
+  assert.doesNotMatch(html, /availabilitySources\.unshift\('Torrent'\)/);
   assert.match(html, /const availability = isCached\(book\)[\s\S]*?availabilitySources\.includes\('Torrent'\)[\s\S]*?availabilitySources\.includes\('Gutenberg'\)[\s\S]*?: '—'/);
   assert.match(html, /class="availability-primary"/);
   assert.doesNotMatch(html, /secondaryAvailability/);
@@ -247,15 +251,15 @@ test('Electron opens LibGen catalog records through their repository torrent bat
 
 test('book opening canonicalizes stable Gutenberg IDs', () => {
   assert.match(html, /const readPath = BookMetadata\.canonicalReadUrl\(book, BOOKS_API_BASE\)/);
+  assert.match(html, /isDesktopGutenbergDownload = \/\^app:\\\/\\\/bookstr\\\/api\\\/books\\\/\\d\+\\\/download/);
+  assert.match(html, /\|\| isDesktopGutenbergDownload\) \{[\s\S]*?openResolvedReadRoute\(bookRef\)/);
 });
 
-test('LibVault books use MD5 hash routes and resolve through Blossom', () => {
+test('LibVault books keep stable MD5 routes without a Blossom download fallback', () => {
   assert.match(html, /return isMd5\(md5\) \? md5/);
   assert.match(html, /legacyMd5 = routeValue\.match/);
-  assert.match(html, /const suppliedUrl = String\(book\.blossomUrl \|\| readPath/);
-  assert.match(html, /fetch\(downloadUrl/);
-  assert.match(html, /BookMetadata\.desktopBlossomProxyUrl\(blossomUrl, sha256, window\.location\.href\)/);
-  assert.match(desktopMain, /const blossomResponse = await proxyBlossomRequest\(request, net\.fetch, BLOSSOM_PROXY_BASE_URL\)/);
+  assert.doesNotMatch(html, /fetchBlossomCopy|desktopBlossomProxyUrl/);
+  assert.doesNotMatch(desktopMain, /proxyBlossomRequest|BLOSSOM_PROXY_BASE_URL/);
   assert.match(html, /BookMetadata\.mergeLibraryState\(state\.reading, state\.favorites\)/);
   assert.match(html, /pendingReadBookId = String\(bookRef\)\.toLowerCase\(\)/);
   assert.match(html, /function bookCacheKey\(book, readUrl\)[\s\S]*?isMd5\(md5\) \? md5/);
@@ -277,7 +281,8 @@ test('search results expose publication year in a sortable table', () => {
   assert.match(html, /className = 'book-table'/);
   assert.match(html, /\['Year', 'year'\]/);
   assert.match(html, /function renderBookTable\(target, books, options = \{\}\)/);
-	assert.match(html, /escapeHtml\(book\.year \|\| '—'\).*rightsMarkerMarkup\(book\)/);
+	assert.match(html, /rightsMarkerMarkup\(book\).*escapeHtml\(book\.year \|\| '—'\)/);
+	assert.match(html, /\.rights-marker[\s\S]*?margin-right: 0\.1rem[\s\S]*?background: transparent/);
 });
 
 test('rights metadata is visible and preserved through library and Nostr flows', () => {
@@ -368,9 +373,9 @@ test('library sync does not poll LibVault or Blossom publication jobs', () => {
   assert.doesNotMatch(html, /favoriteBlossomRefreshRetryTimer/);
 });
 
-test('reader recovers legacy LibVault lookup URLs to the canonical Blossom server', () => {
-  assert.match(html, /candidate\.hostname\.toLowerCase\(\) === 'blossom\.bfr\.ee'/);
-  assert.match(html, /blossomUrl \|\|= `https:\/\/blossom\.bfr\.ee\/\$\{sha256\}`/);
+test('reader retains legacy Blossom cache identities without constructing new Blossom URLs', () => {
+  assert.match(html, /book\?\.blossomUrl/);
+  assert.doesNotMatch(html, /blossomUrl \|\|= `https:\/\/blossom\.bfr\.ee/);
 });
 
 test('EPUBs use persistent IndexedDB caching', () => {
@@ -561,8 +566,8 @@ test('compact favorites retain Blossom cover descriptors', () => {
 
 test('desktop covers skip private HTTP fallbacks and retry public cover candidates', () => {
   assert.match(html, /CoverAssets\.bookCoverCandidates\(book,[\s\S]*?desktop: isDesktopMode/);
-  assert.match(html, /CoverAssets\.attachImageFallback\(row\.querySelector\('\.result-cover'\), coverUrls\)/);
-  assert.match(coverAssets, /blossom\.bfr\.ee/);
+  assert.match(html, /CoverAssets\.attachImageFallback\(row\.querySelector\('\.result-cover'\), coverUrls, \{ key: coverKey \}\)/);
+  assert.doesNotMatch(coverAssets, /blossom\.bfr\.ee|blossomBase/);
   assert.ok(coverAssets.includes('lib\\.b\\.bfr\\.ee'));
   assert.match(coverAssets, /data:image\/svg\+xml/);
 });
@@ -588,14 +593,51 @@ test('Home shows the deduplicated library book count inline after its heading', 
   assert.match(html, /`\$\{library\.length\} \$\{library\.length === 1 \? 'book' : 'books'\}`/);
   assert.match(html, /`\$\{matchingBooks\.length\} of \$\{library\.length\} books`/);
   assert.match(html, /const readableCount = matchingBooks\.filter\(isBookReadableNow\)\.length/);
-  assert.match(html, /`\$\{visibleCount\} · \$\{readableCount\} readable now`/);
+  assert.match(html, /`\$\{visibleCount\} · \$\{readableCount\} readable now · \$\{seedingCount\} seeding`/);
 });
 
 test('Home readable count uses the same availability rule as title coloring', () => {
   assert.match(html, /function isBookReadableNow\(book\)/);
   assert.match(html, /cachedBookKeys\.has\(bookCacheKey\(book, book\.readUrl \|\| book\.url\)\)/);
+  assert.match(html, /String\(download\?\.status \|\| ''\)\.toLowerCase\(\) === 'ready'/);
   assert.match(html, /Boolean\(BookMetadata\.canonicalReadUrl\(book, BOOKS_API_BASE\)\)/);
+  assert.doesNotMatch(html, /function isBookReadableNow\(book\)[\s\S]{0,500}isMd5\(book\?\.md5\)/);
   assert.match(html, /const readableNow = isBookReadableNow\(book\)/);
+});
+
+test('Home reports live seeded books in each row and in the total', () => {
+  assert.match(html, /const desktopSeededBookIds = new Set\(\)/);
+  assert.match(html, /if \(isBookSeeded\(book\)\) return 'Seeding'/);
+  assert.match(html, /transfer\?\.seeding === true/);
+  assert.match(html, /const seedingCount = enrichedLibrary\.filter\(isBookSeeded\)\.length/);
+  assert.match(html, /setInterval\(\(\) => void refreshDesktopDownloadStates\(\), 5000\)/);
+});
+
+test('book details show live torrent state while the file is not ready', () => {
+  assert.match(html, /id = 'read-metadata-fallback-torrent'/);
+  assert.match(html, /torrent\.textContent = statusLabel \? `Torrent: \$\{statusLabel\}` : ''/);
+  assert.match(html, /statusLabel = torrentStatusForBook\(book\)/);
+  assert.match(html, /updateReadTorrentStatus\(activeReadingBook\)/);
+});
+
+test('book details use a compact metadata grid with human-readable digest and rights labels', () => {
+  assert.match(html, /metadata\.className = 'read-metadata-grid'/);
+  assert.match(html, /digestLabel = \/\^\[a-f0-9\]\{64\}\$\/i\.test\(digest\) \? 'SHA-256' : 'MD5'/);
+  assert.match(html, /epub_opf: 'EPUB metadata'/);
+  assert.match(html, /\.read-metadata-grid dd\.metadata-digest/);
+  assert.match(html, /font-size: clamp\(1\.45rem, 2\.3vw, 2\.15rem\)/);
+});
+
+test('metadata-only desktop books try an exact private LibVault torrent lookup before failing', () => {
+  assert.match(html, /async function resolvePrivateTorrentBook\(book\)/);
+  assert.match(html, /module\.searchLibVault\(query, isbn \? 'isbn' : 'title'/);
+  assert.match(html, /signer: nostrSigner,[\s\S]*?publish: publishRelayEvent,[\s\S]*?onTrace: showNip17Trace/);
+  assert.match(html, /results\.filter\(candidate => BookMetadata\.libgenTorrentMetadataForBook\(candidate\)\)/);
+  assert.match(html, /BookMetadata\.sameLibraryBook\(book, candidate\)/);
+  assert.match(html, /Looking for a torrent for \$\{book\.title \|\| 'book'\}/);
+  assert.match(html, /const resolvedTorrentBook = await resolvePrivateTorrentBook\(book\)\.catch/);
+  assert.match(html, /BookMetadata\.libgenTorrentMetadataForBook\(book\)[\s\S]*?\? book[\s\S]*?: await resolveLibVaultHTTPBook/);
+  assert.match(html, /if \(!readPath && !cached && !torrentAvailable\) \{[\s\S]*?No readable download or torrent is available/);
 });
 
 test('Home does not inject LibVault files during background library sync', () => {
@@ -715,6 +757,12 @@ test('desktop pane shortcuts use the constrained preload callback', () => {
   assert.doesNotMatch(html, /class="app-header-left app-home"/);
 });
 
+test('long reading metadata cannot shrink the header buttons', () => {
+  assert.match(html, /\.app-header-right \{[\s\S]*?flex: 0 0 auto;[\s\S]*?min-width: max-content;/);
+  assert.match(html, /\.header-tab \{[\s\S]*?flex: 0 0 auto;/);
+  assert.match(html, /\.header-book-meta \{[\s\S]*?min-width: 0;[\s\S]*?text-overflow: ellipsis;/);
+});
+
 test('embedded readers persist progress, debounce Nostr publication, and ask before advancing to Nostr', () => {
   assert.match(html, /event\.data\?\.type === 'bookstr-reader-progress'/);
   assert.match(html, /queueReadingProgressPublish\(merged\)/);
@@ -745,9 +793,10 @@ test('desktop NIP-46 QR image stays hidden until it has a source', () => {
 
 test('desktop NIP-46 approval activates and persists the signer with all Bookstr permissions', () => {
   assert.match(desktopMain, /const NIP46_CONNECTION_RELAYS = \[[\s\S]*?relay\.nomadwiki\.org[\s\S]*?relay\.damus\.io[\s\S]*?relay\.primal\.net/);
-  for (const permission of ['get_public_key', 'nip44_encrypt', 'nip44_decrypt', 'sign_event:3', 'sign_event:5', 'sign_event:22242', 'sign_event:24242', 'sign_event:30003', 'sign_event:30078']) {
+  for (const permission of ['get_public_key', 'nip44_encrypt', 'nip44_decrypt', 'sign_event:3', 'sign_event:5', 'sign_event:22242', 'sign_event:30003', 'sign_event:30078']) {
     assert.match(desktopMain, new RegExp(`'${permission}'`));
   }
+  assert.doesNotMatch(desktopMain, /'sign_event:24242'/);
   assert.match(desktopMain, /status: 'authorizing'/);
   assert.match(desktopMain, /nip46SignerParams\(\{ skipSwitchRelays: true \}\)/);
   assert.match(html, /function enableDesktopNostrSigner\(\)[\s\S]*?localStorage\.setItem\(SETTINGS_KEY, JSON\.stringify\(state\.settings\)\)/);

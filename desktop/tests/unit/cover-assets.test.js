@@ -10,15 +10,14 @@ require('../../../web/cover-assets');
 
 const { attachImageFallback, bookCoverCandidates, normalizeCoverUrl, placeholderCoverUrl } = globalThis.CoverAssets;
 
-test('desktop uses public cover candidates instead of private LibVault image URLs', () => {
-  const sha256 = 'c'.repeat(64);
+test('desktop does not derive covers from private URLs or legacy hashes', () => {
   const candidates = bookCoverCandidates({
     md5: 'd'.repeat(32),
     title: 'Covered Book',
     coverUrl: `https://lib.b.bfr.ee/api/covers/${'d'.repeat(32)}`,
-    coverSha256: sha256,
+    coverSha256: 'c'.repeat(64),
   }, { desktop: true });
-  assert.equal(candidates[0], `https://blossom.bfr.ee/${sha256}.jpg`);
+  assert.equal(candidates.length, 1);
   assert.ok(candidates.at(-1).startsWith('data:image/svg+xml,'));
   assert.ok(!candidates.some(url => url.includes('lib.b.bfr.ee')));
 });
@@ -33,7 +32,7 @@ test('cover URL normalization keeps public and web-relative images', () => {
   assert.equal(normalizeCoverUrl('http://insecure.example/cover.jpg', false), '');
 });
 
-test('web cover candidates avoid LibVault and honor public cover formats and bases', () => {
+test('web cover candidates ignore legacy hashes and use public catalog covers', () => {
   const md5 = 'a'.repeat(32);
   const sha256 = 'b'.repeat(64);
   const candidates = bookCoverCandidates({
@@ -42,13 +41,9 @@ test('web cover candidates avoid LibVault and honor public cover formats and bas
     coverSha256: sha256,
     coverFormat: '.png',
     coverId: 42,
-  }, {
-    desktop: false,
-    blossomBase: 'https://media.example',
-  });
+  }, { desktop: false });
   assert.equal(candidates[0], 'https://covers.openlibrary.org/b/id/42-M.jpg');
-  assert.ok(candidates.includes(`https://media.example/${sha256}.png`));
-  assert.equal(candidates.filter(url => url.endsWith('.png')).length, 1);
+  assert.ok(!candidates.some(url => url.includes(sha256)));
   assert.ok(candidates.includes('https://covers.openlibrary.org/b/id/42-M.jpg'));
   assert.ok(!candidates.some(url => url.includes('lib.b.bfr.ee')));
   assert.ok(decodeURIComponent(candidates.at(-1)).includes('>B</text>'));
@@ -128,9 +123,9 @@ test('cover candidates accept legacy aliases and deterministic placeholder initi
     cover_format: 'webp',
     cover_id: 12,
     isbn: '978-0-13-235088-4',
-  }, { desktop: false, blossomBase: '' });
+  }, { desktop: false });
   assert.ok(candidates.includes('https://images.example/legacy.jpg'));
-  assert.ok(candidates.some(url => url.includes('e'.repeat(64))));
+  assert.ok(!candidates.some(url => url.includes('e'.repeat(64))));
 });
 
 test('cover candidates reject unsafe hints and keep only usable public URLs', () => {
@@ -175,7 +170,7 @@ test('cover candidates accept legacy aliases and deterministic placeholder initi
     cover_format: 'webp',
     cover_id: 12,
     isbn: '978-0-13-235088-4',
-  }, { desktop: false, blossomBase: '' });
+  }, { desktop: false });
   assert.ok(candidates.includes('https://images.example/legacy.jpg'));
-  assert.ok(candidates.some(url => url.includes('e'.repeat(64))));
+  assert.ok(!candidates.some(url => url.includes('e'.repeat(64))));
 });

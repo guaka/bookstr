@@ -65,6 +65,7 @@ function torrentSummary(torrent, privacy) {
     : '';
   return {
     infoHash: String(torrent.infoHash || torrent.infohash || ''),
+    bookId: String(torrent.bookstrBookId || ''),
     name: String(torrent.name || ''),
     magnetURI: String(torrent.magnetURI || ''),
     torrentFile,
@@ -73,6 +74,7 @@ function torrentSummary(torrent, privacy) {
     downloaded: Number(torrent.downloaded || 0),
     uploaded: Number(torrent.uploaded || 0),
     peers: Array.isArray(torrent.wires) ? torrent.wires.length : Number(torrent.numPeers || 0),
+    seeding: Boolean(torrent.done || Number(torrent.progress) >= 1),
   };
 }
 
@@ -102,7 +104,7 @@ class WebTorrentBridge {
     return this.client;
   }
 
-  async seedPublic(filePath, { sha256, extension = 'epub', size, publicSeedAllowed = true, onSeed } = {}) {
+  async seedPublic(filePath, { sha256, extension = 'epub', size, publicSeedAllowed = true, bookId, onSeed } = {}) {
     if (!publicSeedAllowed) throw new Error('rights policy does not allow public seeding');
     const input = safePath(filePath);
     const client = await this.start();
@@ -113,6 +115,7 @@ class WebTorrentBridge {
       const finish = torrent => {
         if (settled) return;
         settled = true;
+        if (torrent && bookId) torrent.bookstrBookId = String(bookId);
         const result = {
           torrent,
           descriptor: {
@@ -142,14 +145,22 @@ class WebTorrentBridge {
     });
   }
 
-  async addPublic(torrentId, { path: downloadPath, announce, deselect = false } = {}) {
+  async addPublic(torrentId, { path: downloadPath, announce, deselect = false, bookId } = {}) {
     const client = await this.start();
+    const existing = typeof client.get === 'function' ? await client.get(torrentId).catch(() => null) : null;
+    if (existing && !existing.destroyed) {
+      if (bookId) existing.bookstrBookId = String(bookId);
+      return existing;
+    }
+    if (existing) await this.remove(existing);
     const options = {
       path: downloadPath ? safePath(downloadPath) : this.dataDir,
       announce: Array.isArray(announce) && announce.length ? announce : this.trackers,
       deselect: deselect === true,
     };
-    return client.add(torrentId, options);
+    const torrent = client.add(torrentId, options);
+    if (torrent && bookId) torrent.bookstrBookId = String(bookId);
+    return torrent;
   }
 
   async downloadSelected(torrentId, { path: downloadPath, fileName, signal, maxBytes, onProgress } = {}) {
@@ -215,9 +226,20 @@ class WebTorrentBridge {
       }
       return { torrent, file, filePath };
     } catch (error) {
-      try { torrent.destroy?.(); } catch { /* best effort cleanup */ }
+      await this.remove(torrent);
       throw error;
     }
+  }
+
+  async remove(torrent) {
+    if (!torrent) return;
+    if (this.client && typeof this.client.remove === 'function') {
+      try {
+        await this.client.remove(torrent);
+        return;
+      } catch { /* fall through to direct cleanup */ }
+    }
+    try { torrent.destroy?.(); } catch { /* best effort cleanup */ }
   }
 
   async downloadPublic(torrentId, options = {}) {

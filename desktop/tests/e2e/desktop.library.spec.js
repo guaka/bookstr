@@ -73,12 +73,21 @@ function libraryRow(page, title) {
 test('Library reports useful local torrent states', async () => {
   const launch = electronArgs('availability-user-data');
   const books = [
-    ['a'.repeat(32), 'Available Book'],
+    ['a'.repeat(32), 'Metadata-only Book'],
     ['b'.repeat(32), 'Finding Book'],
     ['c'.repeat(32), 'Downloading Book'],
     ['d'.repeat(32), 'Ready Book'],
     ['e'.repeat(32), 'Unavailable Book'],
   ].map(([md5, title]) => ({ md5, title, authors: 'Fixture Author', extension: 'epub' }));
+  books.push({
+    md5: 'f'.repeat(32),
+    libgenId: 1234,
+    sourceNativeId: '1234',
+    title: 'Available Book',
+    authors: 'Fixture Author',
+    extension: 'epub',
+  });
+  books.push({ md5: '1'.repeat(32), title: 'Seeding Book', authors: 'Fixture Author', extension: 'epub' });
   // Seed before Electron opens its long-lived SQLite connection. This also
   // catches startup hydration, which is the path used by a real library.
   seedDesktopStore(launch.userData, books, [
@@ -86,6 +95,7 @@ test('Library reports useful local torrent states', async () => {
     { bookId: books[2].md5, status: 'downloading', bytes: 40, totalBytes: 100, source: 'torrent' },
     { bookId: books[3].md5, status: 'ready', bytes: 100, totalBytes: 100, source: 'torrent' },
     { bookId: books[4].md5, status: 'failed', source: 'torrent', error: 'fixture unavailable' },
+    { bookId: books[6].md5, status: 'seeding', bytes: 100, totalBytes: 100, source: 'torrent' },
   ]);
   const app = await electron.launch({ args: launch.args });
   try {
@@ -93,11 +103,16 @@ test('Library reports useful local torrent states', async () => {
     await seedLibrary(page, books);
     await page.reload();
 
-    await expect(libraryRow(page, books[0].title).locator('.result-availability')).toHaveText('Available');
+    await expect(page.locator('.library-book-count')).toHaveText('7 books · 2 readable now · 1 seeding');
+    await expect(libraryRow(page, books[0].title).locator('.result-availability')).toHaveText('—');
     await expect(libraryRow(page, books[1].title).locator('.result-availability')).toHaveText('Finding peers');
-    await expect(libraryRow(page, books[2].title).locator('.result-availability')).toHaveText('Downloading · 40%');
+    const downloading = libraryRow(page, books[2].title).locator('.result-availability');
+    await expect(downloading).toHaveText('Downloading 40%');
+    await expect(downloading.locator('.availability-progress')).toHaveText('40%');
     await expect(libraryRow(page, books[3].title).locator('.result-availability')).toHaveText('Ready');
     await expect(libraryRow(page, books[4].title).locator('.result-availability')).toHaveText('Unavailable');
+    await expect(libraryRow(page, books[5].title).locator('.result-availability')).toHaveText('Available');
+    await expect(libraryRow(page, books[6].title).locator('.result-availability')).toHaveText('Seeding');
   } finally {
     await app.close();
   }
@@ -227,6 +242,11 @@ test('metadata-only failures stay compact, scrollable, and tied to the requested
     const panel = page.locator('#read-metadata-fallback');
     await expect(panel).toBeVisible();
     await expect(panel.locator('h1')).toHaveText(book.title);
+    await expect(panel.locator('.read-metadata-grid')).toBeVisible();
+    for (const label of ['Author', 'Format', 'MD5', 'Rights']) {
+      await expect(panel.locator('.read-metadata-grid dt', { hasText: label })).toBeVisible();
+    }
+    await expect(panel.locator('.metadata-digest')).toHaveText(book.md5);
     const layout = await page.evaluate(() => {
       const section = document.querySelector('#reader-section');
       const panel = document.querySelector('#read-metadata-fallback');
@@ -236,11 +256,16 @@ test('metadata-only failures stay compact, scrollable, and tied to the requested
         panelWidth: panel.getBoundingClientRect().width,
         viewportWidth: innerWidth,
         titleSize: parseFloat(getComputedStyle(title).fontSize),
+        headerButtonWidths: [...document.querySelectorAll('.app-header-right .header-tab')]
+          .filter(button => !button.classList.contains('hidden'))
+          .map(button => button.getBoundingClientRect().width),
       };
     });
     expect(layout.overflowY).toBe('auto');
     expect(layout.panelWidth).toBeLessThanOrEqual(layout.viewportWidth);
     expect(layout.titleSize).toBeLessThanOrEqual(42);
+    expect(layout.headerButtonWidths.length).toBeGreaterThan(0);
+    expect(layout.headerButtonWidths.every(width => width >= 32)).toBe(true);
   } finally {
     await app.close();
   }

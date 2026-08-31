@@ -83,9 +83,10 @@
       }
       .app-header-right {
         display: flex;
+        flex: 0 0 auto;
         gap: 0.12rem;
         align-items: center;
-        min-width: 0;
+        min-width: max-content;
         margin-left: 0;
         order: -1;
       }
@@ -170,6 +171,7 @@
       }
       .header-tab {
         display: grid;
+        flex: 0 0 auto;
         place-items: center;
         width: 1.72rem;
         height: 1.72rem;
@@ -304,6 +306,71 @@
         opacity: 1;
         transform: translate(-50%, 0);
       }
+      #read-metadata-fallback {
+        box-sizing: border-box;
+        width: min(100%, 54rem);
+        margin: clamp(0.6rem, 2vw, 1.4rem) auto;
+        padding: clamp(0.85rem, 2vw, 1.35rem);
+        display: grid;
+        grid-template-columns: minmax(0, 8rem) minmax(0, 1fr);
+        gap: clamp(0.8rem, 2vw, 1.3rem);
+        align-items: start;
+        border: 1px solid color-mix(in srgb, var(--card-border, #ddd) 72%, transparent);
+        border-radius: 0.7rem;
+        background: color-mix(in srgb, var(--card-bg, #fff) 88%, transparent);
+      }
+      .read-metadata-cover {
+        display: block;
+        width: 100%;
+        max-height: 13rem;
+        border-radius: 0.35rem;
+        object-fit: contain;
+        box-shadow: 0 0.5rem 1.5rem rgb(0 0 0 / 0.18);
+      }
+      .read-metadata-details {
+        min-width: 0;
+      }
+      #read-metadata-fallback .read-metadata-title {
+        margin: 0 0 0.75rem;
+        font-family: 'Iowan Old Style', Georgia, serif;
+        font-size: clamp(1.45rem, 2.3vw, 2.15rem);
+        line-height: 1.08;
+        overflow-wrap: anywhere;
+      }
+      .read-metadata-grid {
+        display: grid;
+        grid-template-columns: max-content minmax(0, 1fr);
+        gap: 0.34rem 0.75rem;
+        margin: 0;
+        padding: 0;
+      }
+      .read-metadata-grid dt {
+        color: var(--muted-text, #777);
+        font-size: 0.7rem;
+        font-weight: 750;
+        letter-spacing: 0.055em;
+        line-height: 1.45;
+        text-transform: uppercase;
+      }
+      .read-metadata-grid dd {
+        min-width: 0;
+        margin: 0;
+        color: var(--page-text, #222);
+        font-size: 0.86rem;
+        line-height: 1.45;
+        overflow-wrap: anywhere;
+      }
+      .read-metadata-grid dd.metadata-digest {
+        color: var(--muted-text, #777);
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 0.72rem;
+        word-break: break-all;
+      }
+      .read-metadata-source {
+        color: var(--muted-text, #777);
+        font-size: 0.72rem;
+        white-space: nowrap;
+      }
       #results {
         overflow-x: auto;
       }
@@ -313,7 +380,7 @@
       .book-table-head,
       .book-table-row {
         display: grid;
-        grid-template-columns: 42px minmax(13rem, 2fr) minmax(10rem, 1.25fr) 5rem 7.5rem 5rem 5rem 7.5rem;
+        grid-template-columns: 42px minmax(13rem, 2fr) minmax(10rem, 1.25fr) 5rem 9rem 5rem 5rem 7.5rem;
         align-items: center;
         column-gap: 0.55rem;
       }
@@ -422,10 +489,10 @@
 	  .rights-marker {
 		display: inline-flex;
 		align-items: center;
-		margin-left: 0.3rem;
+		margin-right: 0.1rem;
 		border-radius: 0.3rem;
 		padding: 0.04rem 0.28rem;
-		background: var(--badge-bg, #eee);
+		background: transparent;
 		color: var(--muted-text, #666);
 		font-size: 0.65rem;
 		font-weight: 750;
@@ -482,7 +549,21 @@
       .availability-primary {
         display: inline-flex;
         align-items: center;
+        gap: 0.38rem;
         white-space: nowrap;
+      }
+      .availability-progress {
+        display: inline-flex;
+        align-items: center;
+        min-width: 2.8rem;
+        justify-content: center;
+        border-radius: 0.35rem;
+        padding: 0.08rem 0.34rem;
+        background: color-mix(in srgb, var(--reading-progress) 20%, transparent);
+        color: var(--reading-progress);
+        font-size: 0.78rem;
+        font-variant-numeric: tabular-nums;
+        font-weight: 800;
       }
       .result-tags {
         display: flex;
@@ -2096,6 +2177,7 @@
       const homeBookSorts = Object.create(null);
       const homeLibraryFilter = { language: '', format: '' };
       const desktopDownloadByBook = new Map();
+      const desktopSeededBookIds = new Set();
       let desktopDownloadRenderTimer = 0;
       const searchType = document.getElementById('search-type');
       const searchForm = document.getElementById('search-form');
@@ -3562,7 +3644,7 @@
             lastNostrSyncAt = Date.now();
             const account = publicKeyToNpub(pubkey) || pubkey;
             const eventDetail = lastFavoritePullInfo?.id
-              ? ` · event ${lastFavoritePullInfo.id.slice(0, 12)}… · ${new Date(lastFavoritePullInfo.createdAt * 1000).toLocaleString()}`
+              ? ` · event ${lastFavoritePullInfo.id.slice(0, 12)}… · ${formatBuildDate(new Date(lastFavoritePullInfo.createdAt * 1000))}`
               : '';
             setHomeSyncState('ready', `${nostrSyncCounts(favorites, reading, words)} from ${relayNames} · ${account.slice(0, 16)}…${eventDetail}`);
             return true;
@@ -4836,36 +4918,71 @@
 
       function isBookReadableNow(book) {
         const cached = cachedBookKeys.has(bookCacheKey(book, book.readUrl || book.url));
+        const md5 = String(book?.md5 || '').trim().toLowerCase();
+        const download = desktopDownloadByBook.get(md5);
         return cached
-          || (isDesktopMode && Boolean(isMd5(book?.md5) || BookMetadata.torrentMetadataForBook(book) || BookMetadata.libgenTorrentMetadataForBook(book)))
+          || (isDesktopMode && ['ready', 'seeding'].includes(String(download?.status || '').toLowerCase()))
+          || isBookSeeded(book)
           || Boolean(BookMetadata.canonicalReadUrl(book, BOOKS_API_BASE));
+      }
+
+      function isBookSeeded(book) {
+        const identities = [book?.md5, book?.id, book?.sha256]
+          .map(value => String(value || '').trim().toLowerCase())
+          .filter(Boolean);
+        const download = desktopDownloadByBook.get(String(book?.md5 || '').trim().toLowerCase());
+        return String(download?.status || '').toLowerCase() === 'seeding'
+          || identities.some(identity => desktopSeededBookIds.has(identity));
       }
 
       function torrentStatusForBook(book) {
         const md5 = String(book?.md5 || '').trim().toLowerCase();
         const download = desktopDownloadByBook.get(md5);
-        if (!download) return isDesktopMode && isMd5(md5) ? 'Available' : '';
+        if (isBookSeeded(book)) return 'Seeding';
+        if (!download) {
+          const hasTorrent = BookMetadata.torrentMetadataForBook(book)
+            || BookMetadata.libgenTorrentMetadataForBook(book);
+          return isDesktopMode && hasTorrent ? 'Available' : '';
+        }
         const status = String(download.status || '').toLowerCase();
         if (status === 'ready') return 'Ready';
         if (status === 'downloading') {
           const total = Number(download.totalBytes || 0);
           const percent = total > 0 ? Math.min(100, Math.round(Number(download.bytes || 0) / total * 100)) : 0;
           const peers = Number(download.peers || 0);
-          return `Downloading${percent ? ` · ${percent}%` : ''}${peers ? ` · ${peers} peer${peers === 1 ? '' : 's'}` : ''}`;
+          return `Downloading · ${percent}%${peers ? ` · ${peers} peer${peers === 1 ? '' : 's'}` : ''}`;
         }
         if (status === 'finding-peers' || status === 'queued') return 'Finding peers';
         if (status === 'failed') return 'Unavailable';
         return 'Available';
       }
 
+      function updateReadTorrentStatus(book = activeReadingBook) {
+        const torrent = document.getElementById('read-metadata-fallback-torrent');
+        if (!torrent) return;
+        const statusLabel = torrentStatusForBook(book)
+          || (isDesktopMode && isMd5(book?.md5) ? 'Checking availability' : '');
+        torrent.hidden = !statusLabel;
+        torrent.textContent = statusLabel ? `Torrent: ${statusLabel}` : '';
+      }
+
       async function refreshDesktopDownloadStates() {
         if (!isDesktopMode || !desktopBridge?.library?.downloads) return;
-        const downloads = await desktopBridge.library.downloads().catch(() => []);
+        const [downloads, transfers] = await Promise.all([
+          desktopBridge.library.downloads().catch(() => []),
+          desktopBridge?.transfers?.status?.().catch(() => []) || [],
+        ]);
         desktopDownloadByBook.clear();
         for (const download of downloads || []) {
           const md5 = String(download?.bookId || '').trim().toLowerCase();
           if (isMd5(md5)) desktopDownloadByBook.set(md5, download);
         }
+        desktopSeededBookIds.clear();
+        for (const transfer of transfers || []) {
+          const bookId = String(transfer?.bookId || '').trim().toLowerCase();
+          if (bookId && transfer?.seeding === true) desktopSeededBookIds.add(bookId);
+        }
+        updateReadTorrentStatus();
         if (activeTab === 'home') renderHome();
       }
 
@@ -4910,11 +5027,7 @@
           const canOpen = options.routeOnly || (options.canOpen ? options.canOpen(book) : Boolean(options.onOpen));
           const readUrl = book.readUrl || book.url || '';
           const authorQuery = authorSearchName(book.authors);
-          const availabilitySources = BookMetadata.availabilitySourcesForBook(book, isCached(book))
-            .filter(source => !isDesktopMode || source !== 'Blossom');
-          if (isDesktopMode && isMd5(book?.md5) && !availabilitySources.includes('Torrent')) {
-            availabilitySources.unshift('Torrent');
-          }
+          const availabilitySources = BookMetadata.availabilitySourcesForBook(book, isCached(book));
           const torrentStatus = options.library ? torrentStatusForBook(book) : '';
           const availability = isCached(book)
             ? 'Cached'
@@ -4925,6 +5038,10 @@
               : availabilitySources.includes('Gutenberg')
                 ? 'Gutenberg'
                 : availabilitySources.find(item => item !== 'Metadata only') || '—';
+          const downloadPercent = availability.match(/^Downloading · (\d+)%/)?.[1] || '';
+          const availabilityMarkup = downloadPercent
+            ? `Downloading <strong class="availability-progress">${escapeHtml(downloadPercent)}%</strong>`
+            : escapeHtml(availability);
           const readableNow = isBookReadableNow(book);
           const titleAvailabilityClass = readableNow ? 'readable' : 'unavailable';
           const rawLanguage = BookMetadata.languageForBook(book);
@@ -4956,8 +5073,8 @@
             <span class="result-cover-slot" role="cell"><img class="result-cover-placeholder" src="${escapeHtml(coverPlaceholder)}" alt="">${coverUrl ? `<img class="result-cover" src="${escapeHtml(coverUrl)}" alt="" loading="lazy">` : ''}</span>
             <span class="result-cell" role="cell">${canOpen ? `<a class="result-title ${titleAvailabilityClass}" data-action="open" href="#read=${encodeURIComponent(readRouteValue(book, readUrl))}">${escapeHtml(book.title)}</a>` : `<span class="result-title ${titleAvailabilityClass}">${escapeHtml(book.title)}</span>`}${titleDetails ? `<small>${titleDetails}</small>` : ''}</span>
             <span class="result-cell" role="cell">${authorQuery ? `<a class="result-author" data-action="author-search" href="#search=${encodeURIComponent(authorQuery)}">${escapeHtml(book.authors)}</a>` : `<span class="result-author">${escapeHtml(book.authors || '')}</span>`}</span>
-			<span class="result-cell" role="cell">${escapeHtml(book.year || '—')}${rightsMarkerMarkup(book)}</span>
-            <span class="result-cell result-availability" role="cell"><span class="availability-primary">${escapeHtml(availability)}</span></span>
+			<span class="result-cell" role="cell">${rightsMarkerMarkup(book)}${escapeHtml(book.year || '—')}</span>
+            <span class="result-cell result-availability" role="cell"><span class="availability-primary">${availabilityMarkup}</span></span>
             <span class="result-cell" role="cell">${escapeHtml(String(book.extension || book.format || '—').toLowerCase())}${Number(book.filesize) > 0 ? `<small>${escapeHtml(bytesLabel(book.filesize))}</small>` : ''}</span>
             <span class="result-cell" role="cell">${escapeHtml(languageCode ? languageCode.toUpperCase() : '—')}</span>
             <span class="row-actions home-book-status" role="cell">${statusMarkup}</span>
@@ -5315,7 +5432,6 @@
         if (!panel) {
           panel = document.createElement('article');
           panel.id = 'read-metadata-fallback';
-          panel.style.cssText = 'box-sizing:border-box;max-width:58rem;margin:clamp(.6rem,2vw,1.5rem) auto;padding:clamp(.75rem,2vw,1.5rem);display:grid;grid-template-columns:minmax(0,9rem) minmax(0,1fr);gap:clamp(.75rem,2vw,1.4rem);align-items:start';
           frame.parentElement.insertBefore(panel, frame);
         }
         panel.replaceChildren();
@@ -5325,38 +5441,39 @@
           const cover = document.createElement('img');
           cover.src = coverUrl;
           cover.alt = '';
-          cover.style.cssText = 'display:block;width:100%;max-height:14rem;object-fit:contain;box-shadow:0 .5rem 1.5rem rgb(0 0 0 / .18)';
+          cover.className = 'read-metadata-cover';
           panel.append(cover);
         }
         const details = document.createElement('div');
+        details.className = 'read-metadata-details';
         const title = document.createElement('h1');
+        title.className = 'read-metadata-title';
         title.textContent = book.title || 'Book';
-        title.style.cssText = 'margin:0 0 .45rem;font-size:clamp(1.45rem,2.8vw,2.6rem);line-height:1.04;overflow-wrap:anywhere';
         details.append(title);
+        const metadata = document.createElement('dl');
+        metadata.className = 'read-metadata-grid';
+        const digest = String(book.md5 || book.sha256 || '').trim();
+        const digestLabel = /^[a-f0-9]{64}$/i.test(digest) ? 'SHA-256' : 'MD5';
         for (const [label, value] of [
           ['Author', book.author || book.authors],
           ['Published', book.year],
           ['Language', book.language],
           ['Format', book.extension || book.format],
           ['Publisher', book.publisher],
-          ['MD5', book.md5],
+          [digestLabel, digest],
         ]) {
           if (!value || value === '--') continue;
-          const row = document.createElement('p');
-          row.style.cssText = 'margin:.22rem 0;color:var(--muted);font-size:.88rem';
-          const strong = document.createElement('strong');
-          strong.textContent = `${label}: `;
-          strong.style.color = 'var(--ink, currentColor)';
-          row.append(strong, document.createTextNode(String(value)));
-          details.append(row);
+          const term = document.createElement('dt');
+          term.textContent = label;
+          const description = document.createElement('dd');
+          description.textContent = String(value);
+          if (label === 'MD5' || label === 'SHA-256') description.className = 'metadata-digest';
+          metadata.append(term, description);
         }
 		const rights = BookMetadata.normalizeRights(book);
-		const rightsRow = document.createElement('p');
-		rightsRow.style.cssText = 'margin:.22rem 0;color:var(--muted);font-size:.88rem';
-		const rightsStrong = document.createElement('strong');
-		rightsStrong.textContent = 'Rights: ';
-		rightsStrong.style.color = 'var(--ink, currentColor)';
-		rightsRow.append(rightsStrong);
+		const rightsTerm = document.createElement('dt');
+		rightsTerm.textContent = 'Rights';
+		const rightsRow = document.createElement('dd');
 		const rightsText = rights.license || BookMetadata.rightsAccessibleLabel(book);
 		if (rights.license_url) {
 		  const link = document.createElement('a');
@@ -5368,8 +5485,19 @@
 		} else {
 		  rightsRow.append(document.createTextNode(rightsText));
 		}
-		if (rights.rights_source) rightsRow.append(document.createTextNode(` · ${rights.rights_source}`));
-		details.append(rightsRow);
+		if (rights.rights_source) {
+          const source = document.createElement('span');
+          source.className = 'read-metadata-source';
+          const sourceLabels = { epub_opf: 'EPUB metadata', fb2_description: 'FB2 metadata', metadata: 'Embedded metadata' };
+          source.textContent = ` · ${sourceLabels[rights.rights_source] || String(rights.rights_source).replaceAll('_', ' ')}`;
+          rightsRow.append(source);
+        }
+		metadata.append(rightsTerm, rightsRow);
+		details.append(metadata);
+        const torrent = document.createElement('p');
+        torrent.id = 'read-metadata-fallback-torrent';
+        torrent.style.cssText = 'margin:.7rem 0 0;padding:.42rem .62rem;width:max-content;max-width:100%;border-radius:.35rem;background:color-mix(in srgb,var(--reading-progress) 16%,transparent);color:var(--reading-progress);font-size:.82rem;font-weight:750';
+        details.append(torrent);
         const note = document.createElement('p');
         note.id = 'read-metadata-fallback-status';
         note.style.cssText = 'margin:.8rem 0 0;padding:.65rem .75rem;border-left:3px solid var(--reading-progress);background:var(--badge-bg,#f3f4f6);color:var(--muted);font-size:.82rem;line-height:1.4;white-space:pre-line;overflow-wrap:anywhere';
@@ -5377,6 +5505,7 @@
         panel.append(details);
         panel.hidden = false;
         panel.style.display = 'grid';
+        updateReadTorrentStatus(book);
         updateReadMetadataFallbackDiagnostics(book, {
           readPath: BookMetadata.canonicalReadUrl(book, BOOKS_API_BASE),
           cacheStatus: 'Checking local cache…',
@@ -5460,13 +5589,27 @@
         const cachedFormat = await bookFormatForBlob(cached);
         if (routeGeneration !== readRouteGeneration) return;
         if (cachedFormat) book = { ...book, extension: cachedFormat, format: cachedFormat };
-        const torrentAvailable = isDesktopMode
+        let torrentAvailable = isDesktopMode
           && Boolean(isMd5(book?.md5) || BookMetadata.torrentMetadataForBook(book) || BookMetadata.libgenTorrentMetadataForBook(book));
+        if (!readPath && !cached && !torrentAvailable && isDesktopMode) {
+          status.textContent = `Looking for a torrent for ${book.title || 'book'}…`;
+          const resolvedTorrentBook = await resolvePrivateTorrentBook(book).catch(error => {
+            cacheError = error;
+            return null;
+          });
+          if (routeGeneration !== readRouteGeneration) return;
+          if (resolvedTorrentBook) {
+            book = resolvedTorrentBook;
+            activeReadingBook = book;
+            torrentAvailable = true;
+            updateReadTorrentStatus(book);
+          }
+        }
         if (!readPath && !cached && !torrentAvailable) {
           updateReadMetadataFallbackDiagnostics(book, {
             readPath,
             cacheStatus: 'No local cached copy found',
-            error: 'No readable download or torrent is available for this record.',
+            error: cacheError || 'No readable download or torrent is available for this record.',
           });
           if (isMd5(bookRef) && state.settings.useNip7 && nostrSigner) {
             pendingReadBookId = String(bookRef).toLowerCase();
@@ -5874,7 +6017,8 @@
           ? `${library.length} ${library.length === 1 ? 'book' : 'books'}`
           : `${matchingBooks.length} of ${library.length} books`;
         const readableCount = matchingBooks.filter(isBookReadableNow).length;
-        homeLibraryCount.textContent = `${visibleCount} · ${readableCount} readable now`;
+        const seedingCount = enrichedLibrary.filter(isBookSeeded).length;
+        homeLibraryCount.textContent = `${visibleCount} · ${readableCount} readable now · ${seedingCount} seeding`;
         renderHomeBookList(homeReadingList, matchingBooks, 'No books match these filters.');
       }
 
@@ -5978,9 +6122,55 @@
         };
       }
 
+      async function resolvePrivateTorrentBook(book) {
+        if (!nostrSigner?.signEvent || !nostrSigner?.nip44?.encrypt || !nostrSigner?.nip44?.decrypt) {
+          throw new Error('Connect your Nostr signer to search LibVault for this torrent.');
+        }
+        const isbn = BookMetadata.isbnForBook(book);
+        const title = BookMetadata.resolveTitle(book);
+        const query = isbn || (!BookMetadata.isPlaceholderTitle(title) ? title : '');
+        if (!query) return null;
+        nip17FetchModule ||= import('./nip17-fetch.js');
+        let response;
+        try {
+          response = await nip17FetchModule.then(module => module.searchLibVault(query, isbn ? 'isbn' : 'title', {
+            signer: nostrSigner,
+            publish: publishRelayEvent,
+            onTrace: showNip17Trace,
+            limit: 50,
+          }));
+        } catch (error) {
+          if (/signer|public key|nip-44/i.test(String(error?.message || error))) {
+            throw new Error('Connect your Nostr signer to search LibVault for this torrent.');
+          }
+          throw error;
+        }
+        const results = normalizeSearchBooks(response, 'libvault');
+        const torrentRecords = results.filter(candidate => BookMetadata.libgenTorrentMetadataForBook(candidate));
+        const exact = torrentRecords.find(candidate => (
+          (isbn && BookMetadata.isbnForBook(candidate) === isbn)
+          || BookMetadata.sameLibraryBook(book, candidate)
+        ));
+        const wantedTitle = String(title || '').trim().toLocaleLowerCase();
+        const wantedAuthor = authorMatchKey(book?.authors || book?.author);
+        const matched = exact || torrentRecords.find(candidate => (
+          String(candidate?.title || '').trim().toLocaleLowerCase() === wantedTitle
+          && wantedAuthor
+          && authorMatchKey(candidate?.authors || candidate?.author) === wantedAuthor
+        ));
+        if (!matched) return null;
+        return {
+          ...BookMetadata.enrichBookMetadata(book, matched, 'all.books.party'),
+          md5: String(matched.md5).toLowerCase(),
+          libgenId: Number(matched.libgenId || matched.libgen_id || 0),
+        };
+      }
+
       async function fetchDesktopTorrentCopy(book) {
         if (!isDesktopMode) return null;
-        let torrentBook = await resolveLibVaultHTTPBook(book).catch(() => null) || book;
+        let torrentBook = BookMetadata.libgenTorrentMetadataForBook(book)
+          ? book
+          : await resolveLibVaultHTTPBook(book).catch(() => null) || book;
         Object.assign(book, torrentBook);
         let libgenTorrent = BookMetadata.libgenTorrentMetadataForBook(torrentBook);
         if (!libgenTorrent && isMd5(torrentBook?.md5)) {
@@ -7756,7 +7946,8 @@
           if (legacyMd5) {
             history.replaceState(null, '', `${window.location.pathname}${window.location.search}#read=${legacyMd5}`);
           }
-          if (isMd5(bookRef) || /^(?:book:|https?:|blob:)/i.test(bookRef)) {
+          const isDesktopGutenbergDownload = /^app:\/\/bookstr\/api\/books\/\d+\/download(?:[?#]|$)/i.test(bookRef);
+          if (isMd5(bookRef) || /^(?:book:|https?:|blob:)/i.test(bookRef) || isDesktopGutenbergDownload) {
             void openResolvedReadRoute(bookRef);
           }
           return;
@@ -7959,10 +8150,14 @@
         if (activeTab === 'home') renderHome();
       }).catch(() => {});
       void refreshDesktopDownloadStates();
+      window.setInterval(() => void refreshDesktopDownloadStates(), 5000);
       desktopBridge?.library?.onAcquisitionProgress?.(progress => {
         const md5 = String(progress?.bookId || '').trim().toLowerCase();
         if (!isMd5(md5)) return;
         desktopDownloadByBook.set(md5, { ...desktopDownloadByBook.get(md5), ...progress, status: 'downloading' });
+        if (activeReadingBook && String(activeReadingBook.md5 || '').trim().toLowerCase() === md5) {
+          updateReadTorrentStatus(activeReadingBook);
+        }
         clearTimeout(desktopDownloadRenderTimer);
         desktopDownloadRenderTimer = setTimeout(() => {
           if (activeTab === 'home') renderHome();

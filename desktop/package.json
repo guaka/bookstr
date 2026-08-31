@@ -57,7 +57,6 @@
       "../shared/contracts/device-registry-nip78.mjs",
       "../shared/contracts/device-transfer-v1.mjs",
       "assets/icon-macos.png",
-      "blossom-proxy.js",
       "catalog-proxy.js",
       "dictionary-proxy.js",
       "webtorrent-bridge.js",

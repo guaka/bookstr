@@ -180,7 +180,7 @@ test('a metadata-only Electron search result opens its book page', async () => {
     await expect(page).toHaveURL(/#read=book%3A/);
     await expect(page.locator('#read-metadata-fallback')).toBeVisible();
     await expect(page.locator('#read-metadata-fallback h1')).toHaveText('Clickable Metadata Result');
-    await expect(page.locator('#read-metadata-fallback-status')).toContainText('No readable download or torrent is available');
+    await expect(page.locator('#read-metadata-fallback-status')).toContainText('Connect your Nostr signer to search LibVault for this torrent');
   } finally {
     await app.close();
   }

@@ -30,10 +30,8 @@ test('web Blossom builder rejects non-string inputs and encodes UTF-8 headers', 
   assert.deepEqual(JSON.parse(Buffer.from(header.slice(6), 'base64').toString('utf8')), event);
 });
 
-test('web shell delegates Blossom requests and headers to the shared adapter', async () => {
+test('web shell no longer loads or invokes Blossom authorization', async () => {
   const html = await readFile(new URL('../index.html', import.meta.url), 'utf8');
-  assert.match(html, /<script src="blossom-authorization\.js"><\/script>/);
-  assert.match(html, /BookstrBlossomAuthorization\.unsignedGetEvent\(/);
-  assert.match(html, /BookstrBlossomAuthorization\.authorizationHeader\(event\)/);
-  assert.doesNotMatch(html, /function encodeBase64Utf8/);
+  assert.doesNotMatch(html, /<script src="blossom-authorization\.js"><\/script>/);
+  assert.doesNotMatch(html, /BookstrBlossomAuthorization/);
 });

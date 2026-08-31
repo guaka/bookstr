@@ -1327,6 +1327,7 @@ function setupIpcHandlers() {
       extension,
       size,
       publicSeedAllowed: true,
+      bookId: book.id,
     });
     return result.summary || null;
   });
@@ -1359,6 +1360,7 @@ function setupIpcHandlers() {
       : Buffer.from(rawTorrentId, 'base64');
     const torrent = await getTorrentBridge().downloadPublic(torrentId, {
       path: libraryDataDir,
+      bookId: book.id,
     });
     const file = Array.isArray(torrent.files) && torrent.files.length === 1 ? torrent.files[0] : null;
     const relativePath = libraryRelativePath(file?.path);

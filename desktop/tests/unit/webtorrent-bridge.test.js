@@ -39,7 +39,7 @@ test('public seed enforces rights, stable naming, trackers, and upload cap', asy
   const log = { adds: [] };
   const bridge = new WebTorrentBridge({ clientFactory: fakeClientFactory(log), dataDir: '/tmp/bookstr' });
   const digest = 'c'.repeat(64);
-  const result = await bridge.seedPublic('/tmp/example.epub', { sha256: digest, size: 42 });
+  const result = await bridge.seedPublic('/tmp/example.epub', { sha256: digest, size: 42, bookId: 'book-1' });
   assert.equal(log.clientOptions.uploadLimit, PUBLIC_UPLOAD_LIMIT);
   assert.equal(log.throttle, PUBLIC_UPLOAD_LIMIT);
   assert.equal(log.seed.options.name, `${digest}.epub`);
@@ -47,6 +47,8 @@ test('public seed enforces rights, stable naming, trackers, and upload cap', asy
   assert.equal(result.descriptor.info.length, 42);
   assert.equal(result.summary.magnetURI.startsWith('magnet:?xt=urn:btih:'), true);
   assert.equal(result.summary.torrentFile, Buffer.from('metadata').toString('base64'));
+  assert.equal(result.summary.bookId, 'book-1');
+  assert.equal(result.summary.seeding, true);
   await bridge.stop();
   assert.equal(log.destroyed, true);
 });
@@ -91,6 +93,26 @@ test('validates transfer inputs and uses safe public defaults', async () => {
   await assert.rejects(() => bridge.seedPublic('/tmp/book.epub', { sha256: 'f'.repeat(64), extension: 'not/an-extension' }), /extension/);
 });
 
+test('public add reuses a live repository torrent and replaces a stale destroyed one', async () => {
+  let existing = { infoHash: 'a'.repeat(40), destroyed: false };
+  const fresh = { infoHash: 'a'.repeat(40), destroyed: false };
+  const log = { adds: 0, removed: [] };
+  const client = {
+    torrents: [existing],
+    async get() { return existing; },
+    add() { log.adds += 1; return fresh; },
+    async remove(torrent) { log.removed.push(torrent); existing = null; },
+  };
+  const bridge = new WebTorrentBridge({ clientFactory: async () => client });
+  assert.equal(await bridge.addPublic(Buffer.from('torrent metadata')), existing);
+  assert.equal(log.adds, 0);
+
+  existing.destroyed = true;
+  assert.equal(await bridge.addPublic(Buffer.from('torrent metadata')), fresh);
+  assert.deepEqual(log.removed, [{ infoHash: 'a'.repeat(40), destroyed: true }]);
+  assert.equal(log.adds, 1);
+});
+
 test('private handoff waits for asynchronous metadata and bridge cleanup is safe', async () => {
   const events = {};
   const client = {
@@ -110,7 +132,7 @@ test('private handoff waits for asynchronous metadata and bridge cleanup is safe
   await pending;
   assert.equal(events.peer, '192.0.2.12:6881');
   assert.deepEqual(bridge.active(), [{
-    infoHash: 'c'.repeat(40), name: '', magnetURI: '', torrentFile: '', privacy: 'private', progress: 0, downloaded: 7, uploaded: 3, peers: 2,
+    infoHash: 'c'.repeat(40), bookId: '', name: '', magnetURI: '', torrentFile: '', privacy: 'private', progress: 0, downloaded: 7, uploaded: 3, peers: 2, seeding: false,
   }]);
   await bridge.stop();
   assert.deepEqual(bridge.active(), []);
