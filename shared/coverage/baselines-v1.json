@@ -20,7 +20,7 @@
       "metrics": {
         "Lines": 100,
         "Branches": 88.68,
-        "Functions": 94.97
+        "Functions": 100
       }
     },
     "android": {
