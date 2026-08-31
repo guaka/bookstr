@@ -497,25 +497,6 @@
         border: 0;
         font-size: 1.2rem;
       }
-      .favorite-fetch-progress {
-        display: inline-flex;
-        width: 0.85rem;
-        height: 0.85rem;
-        flex: 0 0 auto;
-        align-items: center;
-        justify-content: center;
-        color: var(--reading-progress);
-        font-size: 0.72rem;
-        font-weight: 800;
-      }
-      .favorite-fetch-progress.pending::before {
-        width: 0.6rem;
-        height: 0.6rem;
-        background: color-mix(in srgb, var(--reading-progress) 70%, transparent);
-        border-radius: 50%;
-        content: '';
-      }
-      .favorite-fetch-progress.failed { color: #b42318; }
       #search-form input:focus,
       #search-form select:focus {
         outline: 2px solid var(--reading-progress);
@@ -1767,7 +1748,6 @@
             <option value="author">Author</option>
             <option value="isbn">ISBN</option>
             <option value="publisher">Publisher</option>
-            <option value="content">Inside downloaded books</option>
           </select>
           <div id="search-result-filters" class="search-result-filters hidden" aria-label="Filter search results">
             <label id="search-language-filter-wrap" class="search-result-filter hidden">
@@ -2055,8 +2035,6 @@
       };
       const NOSTR_QUERY_TIMEOUT_MS = 5000;
       const NOSTR_AUTH_QUERY_TIMEOUT_MS = 30000;
-      const NOSTR_SEARCH_READY_TIMEOUT_MS = 8000;
-      const NOSTR_SEARCH_RESPONSE_TIMEOUT_MS = 20000;
       const SEARCH_RESULT_LIMIT = 200;
       const SEARCH_RESULT_PAGE_SIZE = 50;
 
@@ -2947,12 +2925,6 @@
             ['bookstr-chunks', String(chunks.length), prefix],
           ]);
         }
-        nip17FetchModule ||= import('./nip17-fetch.js');
-        const libvault = await nip17FetchModule;
-        await libvault.sendLibVaultFavoritesSync(state.favorites, {
-          signer: nostrSigner,
-          publish: publishRelayEvent,
-        });
         saveNostrSyncCache(pubkey, {
           favorites: state.favorites,
           reading: state.reading,
@@ -2972,171 +2944,6 @@
       }
 
       let nip17FetchModule;
-      const favoriteFetchProgress = new Map();
-      const favoriteFetchMonitors = new Map();
-
-      function favoriteFetchLabel(progress) {
-        if (!progress) return '';
-        const title = progress.title || 'Book';
-        if (progress.status === 'requesting') return `Requesting ${title} from LibVault…`;
-        if (progress.status === 'waiting') return `LibVault accepted ${title}; waiting for the download to start…`;
-        if (progress.status === 'publishing') return `Downloaded ${title}; publishing it to Blossom…`;
-        if (progress.status === 'ready') return `${title} is ready on Blossom.`;
-        if (progress.status === 'failed') return `LibVault could not fetch ${title}: ${progress.error || 'unknown error'}`;
-        if (progress.total > 0) {
-          const percent = Math.min(100, Math.floor(progress.bytes / progress.total * 100));
-          return `Fetching ${title}: ${percent}% · ${bytesLabel(progress.bytes)} / ${bytesLabel(progress.total)}`;
-        }
-        return progress.source === 'torrent'
-          ? `Fetching ${title}: finding available sources…`
-          : `Fetching ${title}: contacting book sources…`;
-      }
-
-      function favoriteFetchStatusMarkup(md5) {
-        const progress = favoriteFetchProgress.get(String(md5 || '').toLowerCase());
-        if (!progress) return `<span class="favorite-fetch-progress hidden" data-favorite-fetch="${escapeHtml(md5 || '')}"></span>`;
-        const label = favoriteFetchLabel(progress);
-        const complete = progress.status === 'ready';
-        const failed = progress.status === 'failed';
-        return `<span class="favorite-fetch-progress ${complete ? 'ready' : failed ? 'failed' : 'pending'}" data-favorite-fetch="${escapeHtml(md5 || '')}" role="status" aria-label="${escapeHtml(label)}" title="${escapeHtml(label)}">${complete ? '✓' : failed ? '!' : ''}</span>`;
-      }
-
-      function setFavoriteFetchProgress(book, update) {
-        const md5 = String(book?.md5 || '').toLowerCase();
-        if (!isMd5(md5)) return;
-        const progress = { ...update, title: book.title || 'Book' };
-        favoriteFetchProgress.set(md5, progress);
-        const label = favoriteFetchLabel(progress);
-        if (status.textContent !== label) status.textContent = label;
-        document.querySelectorAll(`[data-favorite-fetch="${md5}"]`).forEach(node => {
-          node.outerHTML = favoriteFetchStatusMarkup(md5);
-        });
-      }
-
-      function saveReadyFavorite(book, blossom) {
-        const favorite = state.favorites.find(item => item.md5 === book.md5);
-        if (!favorite) return;
-        favorite.blossomSha256 = blossom.sha256;
-        favorite.blossomUrl = blossom.url;
-        favorite.readUrl = blossom.url;
-        favorite.extension = blossom.format || favorite.extension;
-        localStorage.setItem(FAVORITES_KEY, JSON.stringify(state.favorites));
-        renderFavorites();
-        renderHome();
-        queueFavoriteSync();
-      }
-
-      let favoriteBlossomRefreshTask;
-      let favoriteBlossomRefreshRetryTimer;
-      let favoriteBlossomRefreshRetryCount = 0;
-      function refreshFavoriteBlossomCopies() {
-        if (favoriteBlossomRefreshTask) return favoriteBlossomRefreshTask;
-        const pending = BookMetadata.dedupeLibraryBooks([...state.favorites, ...state.reading])
-          .filter(book => isMd5(book.md5)
-            && (!/^[a-f0-9]{64}$/i.test(String(book.blossomSha256 || ''))
-              || !/^https:\/\//i.test(String(book.blossomUrl || ''))));
-        if (!pending.length) return Promise.resolve(0);
-        nip17FetchModule ||= import('./nip17-fetch.js');
-        let publishing = 0;
-        let cachedFound = 0;
-        favoriteBlossomRefreshTask = nip17FetchModule.then(async module => {
-          let found = 0;
-          const queue = pending.slice();
-          const worker = async () => {
-            while (queue.length) {
-              const book = queue.shift();
-              const blossom = await module.lookupLibVaultBlossomState(book.md5).catch(() => null);
-              if (blossom?.status === 'publishing') {
-                publishing += 1;
-                const localReadUrl = `${LIBVAULT_API_BASE}/files/${book.md5}`;
-                if (!BookMetadata.canonicalReadUrl(book, BOOKS_API_BASE)) {
-                  const update = item => BookMetadata.sameLibraryBook(item, book)
-                    ? { ...item, readUrl: localReadUrl }
-                    : item;
-                  state.favorites = state.favorites.map(update);
-                  state.reading = state.reading.map(update);
-                  cachedFound += 1;
-                }
-              }
-              if (blossom?.status !== 'ready'
-                || !/^[a-f0-9]{64}$/i.test(String(blossom.sha256 || ''))
-                || !/^https:\/\//i.test(String(blossom.url || ''))) continue;
-              const update = item => BookMetadata.sameLibraryBook(item, book) ? {
-                ...item,
-                blossomSha256: blossom.sha256,
-                blossomUrl: blossom.url,
-                readUrl: blossom.url,
-                extension: blossom.format || item.extension,
-              } : item;
-              state.favorites = state.favorites.map(update);
-              state.reading = state.reading.map(update);
-              found += 1;
-            }
-          };
-          await Promise.all(Array.from({ length: Math.min(4, queue.length) }, worker));
-          if (found || cachedFound) {
-            localStorage.setItem(FAVORITES_KEY, JSON.stringify(state.favorites));
-            localStorage.setItem(READING_KEY, JSON.stringify(state.reading));
-            renderFavorites();
-            renderReading();
-            renderHome();
-            const newlyReadable = found + cachedFound;
-            status.textContent = found
-              ? `Found ${newlyReadable} newly readable library book${newlyReadable === 1 ? '' : 's'}${cachedFound ? '; some are using LibVault while Blossom finishes' : ' on Blossom'}.`
-              : `Found ${newlyReadable} newly readable library book${newlyReadable === 1 ? '' : 's'} in LibVault; Blossom is still publishing.`;
-            queueFavoriteSync();
-          }
-          return found;
-        }).finally(() => {
-          favoriteBlossomRefreshTask = null;
-          if (publishing > 0 && favoriteBlossomRefreshRetryCount < 6 && !favoriteBlossomRefreshRetryTimer) {
-            favoriteBlossomRefreshRetryCount += 1;
-            favoriteBlossomRefreshRetryTimer = setTimeout(() => {
-              favoriteBlossomRefreshRetryTimer = null;
-              void refreshFavoriteBlossomCopies();
-            }, 5000);
-          } else if (publishing === 0) {
-            favoriteBlossomRefreshRetryCount = 0;
-          }
-        });
-        return favoriteBlossomRefreshTask;
-      }
-
-      function requestFavoriteFromLibVault(book) {
-        if (!state.settings.useNip7 || !nostrSigner?.nip44?.encrypt) return Promise.resolve();
-        if (!isMd5(book?.md5)) return Promise.resolve();
-        favoriteFetchMonitors.get(book.md5)?.abort();
-        const controller = new AbortController();
-        favoriteFetchMonitors.set(book.md5, controller);
-        setFavoriteFetchProgress(book, { status: 'requesting' });
-        nip17FetchModule ||= import('./nip17-fetch.js');
-        return nip17FetchModule
-          .then(module => module.sendLibVaultFetchRequest({
-            ...book,
-            catalogUrl: BookMetadata.canonicalCatalogUrl(book),
-          }, {
-            signer: nostrSigner,
-            publish: publishRelayEvent,
-          }))
-          .then((result) => {
-            setFavoriteFetchProgress(book, { status: 'waiting' });
-            if (!isMd5(book.md5)) return result;
-            void nip17FetchModule.then(module => module.monitorLibVaultFetch(book.md5, {
-              signal: controller.signal,
-              onProgress: progress => {
-                setFavoriteFetchProgress(book, progress);
-                if (progress.status === 'ready') saveReadyFavorite(book, progress.blossom);
-              },
-            })).finally(() => {
-              if (favoriteFetchMonitors.get(book.md5) === controller) favoriteFetchMonitors.delete(book.md5);
-            });
-            return result;
-          })
-          .catch(error => {
-            if (favoriteFetchMonitors.get(book.md5) === controller) favoriteFetchMonitors.delete(book.md5);
-            setFavoriteFetchProgress(book, { status: 'failed', error: error?.message || String(error) });
-          });
-      }
 
       function sortByUpdatedAt(items) {
         return [...items].sort((a, b) => Number(b.updatedAt || 0) - Number(a.updatedAt || 0));
@@ -3734,7 +3541,6 @@
               reading: readingSnapshotForNostrCache(),
               words: state.words,
             });
-            await refreshFavoriteBlossomCopies();
             if (document.activeElement !== null) {
               status.textContent = 'Synced latest Nostr library data.';
             }
@@ -4714,10 +4520,6 @@
         const wasReading = state.reading.some(item => BookMetadata.sameLibraryBook(item, book));
         state.favorites = state.favorites.filter(item => !BookMetadata.sameLibraryBook(item, book));
         state.reading = state.reading.filter(item => !BookMetadata.sameLibraryBook(item, book));
-        const md5 = String(book?.md5 || '').toLowerCase();
-        favoriteFetchMonitors.get(md5)?.abort();
-        favoriteFetchMonitors.delete(md5);
-        favoriteFetchProgress.delete(md5);
         localStorage.setItem(FAVORITES_KEY, JSON.stringify(state.favorites));
         localStorage.setItem(READING_KEY, JSON.stringify(state.reading));
         if (state.nip7.pubkey) {
@@ -5123,8 +4925,8 @@
           const coverUrls = bookCoverUrls(book);
           const coverUrl = coverUrls[0] || '';
           const statusMarkup = options.library
-            ? `${book.isFavorite ? '<svg class="favorite-status" viewBox="0 0 24 24" aria-label="Favorite" role="img"><path d="M12 21s-8-4.8-8-11a4.5 4.5 0 0 1 8-2.8A4.5 4.5 0 0 1 20 10c0 6.2-8 11-8 11Z"/></svg>' : ''}${favoriteFetchStatusMarkup(book.md5)}<button type="button" class="library-delete" data-action="delete-library" aria-label="Delete ${escapeHtml(book.title || 'book')} from library" title="Delete from library"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3m3 0-1 13H7L6 7m4 4v5m4-5v5"/></svg></button>`
-            : `${favoriteFetchStatusMarkup(book.md5)}<button type="button" class="chip-btn" data-action="favorite" data-md5="${escapeHtml(book.md5)}" aria-label="${isFavoriteMd5(book.md5) ? 'Remove from favorites' : 'Add to favorites'}" title="${isFavoriteMd5(book.md5) ? 'Remove from favorites' : 'Add to favorites'}">${isFavoriteMd5(book.md5) ? '♥' : '♡'}</button>`;
+            ? `${book.isFavorite ? '<svg class="favorite-status" viewBox="0 0 24 24" aria-label="Favorite" role="img"><path d="M12 21s-8-4.8-8-11a4.5 4.5 0 0 1 8-2.8A4.5 4.5 0 0 1 20 10c0 6.2-8 11-8 11Z"/></svg>' : ''}<button type="button" class="library-delete" data-action="delete-library" aria-label="Delete ${escapeHtml(book.title || 'book')} from library" title="Delete from library"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3m3 0-1 13H7L6 7m4 4v5m4-5v5"/></svg></button>`
+            : `<button type="button" class="chip-btn" data-action="favorite" data-md5="${escapeHtml(book.md5)}" aria-label="${isFavoriteMd5(book.md5) ? 'Remove from favorites' : 'Add to favorites'}" title="${isFavoriteMd5(book.md5) ? 'Remove from favorites' : 'Add to favorites'}">${isFavoriteMd5(book.md5) ? '♥' : '♡'}</button>`;
           const row = document.createElement('article');
           row.className = 'book-table-row';
           row.setAttribute('role', 'row');
@@ -5292,14 +5094,7 @@
           return;
         }
         const exists = state.favorites.findIndex(item => item.md5 === book.md5);
-        const added = exists < 0;
         if (exists >= 0) {
-          favoriteFetchMonitors.get(book.md5)?.abort();
-          favoriteFetchMonitors.delete(book.md5);
-          favoriteFetchProgress.delete(book.md5);
-          document.querySelectorAll(`[data-favorite-fetch="${book.md5}"]`).forEach(node => {
-            node.outerHTML = favoriteFetchStatusMarkup(book.md5);
-          });
           removeById(state.favorites, book.md5);
           if (button) {
             button.textContent = '♡';
@@ -5333,8 +5128,7 @@
         renderFavorites();
         renderButtonsState();
         updateReadingFavoriteButton();
-        if (added && isMd5(book.md5)) requestFavoriteFromLibVault(book).finally(queueFavoriteSync);
-        else queueFavoriteSync();
+        queueFavoriteSync();
       }
 
       function updateReadingFavoriteButton() {
@@ -6982,23 +6776,6 @@
         }
       }
 
-      async function searchViaNostr(query) {
-        if (!state.settings.useNip7 || !nostrSigner?.signEvent || !nostrSigner?.nip44?.encrypt || !nostrSigner?.nip44?.decrypt) {
-          throw new Error('Nostr search is not connected');
-        }
-        nip17FetchModule ||= import('./nip17-fetch.js');
-        const module = await nip17FetchModule;
-        const response = await module.searchLibVault(query, searchType.value || 'all', {
-          signer: nostrSigner,
-          publish: publishRelayEvent,
-          limit: SEARCH_RESULT_LIMIT,
-          readyTimeoutMs: NOSTR_SEARCH_READY_TIMEOUT_MS,
-          responseTimeoutMs: NOSTR_SEARCH_RESPONSE_TIMEOUT_MS,
-          onTrace: showNip17Trace,
-        });
-        return searchType.value === 'content' ? response : normalizeSearchBooks(response, 'libvault');
-      }
-
       async function searchLitresPublicDomain(query) {
         const response = await fetch(`${BOOKS_API_BASE}/litres/search?q=${encodeURIComponent(query)}&limit=${SEARCH_RESULT_LIMIT}`);
         const payload = await response.json().catch(() => ({}));
@@ -7015,11 +6792,6 @@
         const records = await adapter.searchOPDSFeed(feed, query);
         const books = records.map(record => adapter.providerRecordToBook(record, feed.url)).filter(Boolean);
         return dedupeBooks(normalizeSearchBooks({ books }, adapter.providerForOPDSFeed(feed)));
-      }
-
-      function privateBookSearchAvailable() {
-        return Boolean(state.settings.useNip7 && state.nip7.pubkey && nostrSigner?.signEvent
-          && nostrSigner?.nip44?.encrypt && nostrSigner?.nip44?.decrypt);
       }
 
       function searchSourceRegistry() {
@@ -7072,17 +6844,12 @@
             search: query => searchCustomOPDSFeed(feed, query),
           });
         }
-        if (privateBookSearchAvailable()) sources.push({
-          id: 'libvault', name: 'LibVault', coverage: 'Your connected private catalog and cache',
-          deliveries: ['Metadata', 'EPUB', 'PDF', 'Full text'], access: 'Private', search: searchViaNostr,
-        });
         return sources;
       }
 
       function renderSearchSources() {
         renderSearchSourceProgress([]);
-        const contentOnly = searchType.value === 'content';
-        const sources = searchSourceRegistry().filter(source => !contentOnly || source.id === 'libvault');
+        const sources = searchSourceRegistry();
         const rows = sources.map(source => `
           <tr data-source="${escapeHtml(source.id)}">
             <td data-label="Source"><strong>${escapeHtml(source.name)}</strong></td>
@@ -7094,7 +6861,7 @@
           <h3 id="search-sources-title">Sources</h3>
           ${rows ? `<table id="search-sources-table" class="search-sources-table">
             <thead><tr><th>Source</th><th>Coverage</th><th>Delivers</th><th>Access</th></tr></thead>
-            <tbody>${rows}</tbody></table>` : '<p class="note">Connect LibVault to search inside downloaded books.</p>'}
+            <tbody>${rows}</tbody></table>` : '<p class="note">No book catalogs are configured.</p>'}
         </section>`;
       }
 
@@ -7158,7 +6925,6 @@
         return JSON.stringify({
           query: String(query || '').trim().toLocaleLowerCase(),
           type: searchType.value || 'all',
-          pubkey: privateBookSearchAvailable() ? state.nip7.pubkey : '',
           opdsFeeds: normalizePublicOPDSFeedSettings(state.settings.opdsFeeds),
         });
       }
@@ -7227,23 +6993,6 @@
         searchResultCount.textContent = '0 results';
         searchPagination.classList.add('hidden');
         resetNip17Exchange();
-        if (searchType.value === 'content') {
-          status.textContent = 'Searching inside downloaded books…';
-          try {
-            const response = await searchViaNostr(query);
-            const passages = renderPassageResults(response);
-            status.textContent = `Found ${passages.length} matching passage${passages.length === 1 ? '' : 's'}.`;
-            replaceSearchHash();
-          } catch (error) {
-            showNip17Trace({ direction: 'error', error: error?.message || String(error) });
-            const reason = error?.message || String(error);
-            status.textContent = `Inside-book search unavailable: ${reason}`;
-            resultsEl.innerHTML = '<p class="note">Inside-book search is unavailable. Check the Nostr connection or try again later.</p>';
-            searchResultCount.textContent = '0 passages';
-            searchPagination.classList.add('hidden');
-          }
-          return;
-        }
         const cachedBooks = cachedSearchBooks(query);
         if (cachedBooks) {
           renderSearchSourceProgress([]);
@@ -7258,7 +7007,7 @@
           renderButtonsState();
           return;
         }
-        status.textContent = 'Searching privately through LibVault…';
+        status.textContent = 'Searching public book catalogs…';
         try {
           const searchResponse = await searchAvailableBookSources(query, (progress, arrivedBooks) => {
             renderSearchSourceProgress(progress);
@@ -8297,7 +8046,6 @@
         : formatBuildDate(fileTime);
 
       loadState();
-      void refreshFavoriteBlossomCopies();
       void enrichLibraryMetadata();
       applyHashRoute();
       if (activeTab === 'home') {

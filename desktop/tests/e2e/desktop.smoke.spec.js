@@ -138,6 +138,8 @@ test('libstr desktop app opens with preload bridge', async () => {
 
     await firstWindow.getByRole('button', { name: 'Search' }).click();
     await expect(firstWindow.locator('#search-tab')).toBeVisible();
+    await expect(firstWindow.locator('#search-sources-table')).not.toContainText('LibVault');
+    await expect(firstWindow.locator('#search-type option[value="content"]')).toHaveCount(0);
 
     await firstWindow.evaluate(() => {
       state.favorites = [{ md5: 'a', title: 'English book', language: 'en' }, { md5: 'b', title: 'Portuguese book', language: 'pt-PT' }];

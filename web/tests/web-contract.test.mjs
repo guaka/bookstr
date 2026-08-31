@@ -14,9 +14,9 @@ const desktopPreload = await readFile(new URL('../../desktop/preload.js', import
 const coverAssets = await readFile(new URL('../cover-assets.js', import.meta.url), 'utf8');
 const bookMetadata = await readFile(new URL('../book-metadata.js', import.meta.url), 'utf8');
 
-test('Electron megasearch uses the allowlisted app protocol and requires a connected private signer', () => {
+test('Electron catalog search uses the allowlisted app protocol without a private signer', () => {
   assert.match(html, /const BOOKS_API_BASE = window\.bookstrDesktop\s*\? 'app:\/\/bookstr\/api'/);
-  assert.match(html, /state\.settings\.useNip7 && state\.nip7\.pubkey && nostrSigner\?\.signEvent/);
+  assert.doesNotMatch(html, /function privateBookSearchAvailable\(\)/);
   assert.match(desktopMain, /const \{ proxyCatalogRequest \} = require\('\.\/catalog-proxy'\)/);
   assert.match(desktopMain, /const catalogResponse = await proxyCatalogRequest\(request, net\.fetch\)/);
   assert.match(html, /async function searchProjectGutenberg\(query\)/);
@@ -39,7 +39,7 @@ test('Search explains active sources and fans out without private-first fallback
   assert.match(html, /<th>Source<\/th><th>Coverage<\/th><th>Delivers<\/th><th>Access<\/th>/);
   assert.match(html, /name: 'all\.books\.party'/);
   assert.match(html, /name: 'Unglue\.it'/);
-  assert.match(html, /name: 'LibVault'/);
+  assert.doesNotMatch(html, /name: 'LibVault'/);
   assert.match(
     html,
     /async function searchAvailableBookSources\(query, onUpdate = \(\) => \{\}\)/,
@@ -128,30 +128,22 @@ test('browser traffic uses the Cloudflare books API', () => {
   assert.doesNotMatch(html, /localhost:11111\/api|books\.guaka\.org\/api\/search/);
 });
 
-test('search includes private LibVault NIP-17 alongside public catalog sources', () => {
-  assert.match(html, /async function searchViaNostr\(query\)/);
-  assert.match(html, /module\.searchLibVault\(query, searchType\.value \|\| 'all'/);
-  assert.match(html, /id: 'libvault'[\s\S]*?search: searchViaNostr/);
+test('search uses public catalog sources without private LibVault search', () => {
+  assert.doesNotMatch(html, /async function searchViaNostr\(query\)/);
+  assert.doesNotMatch(html, /module\.searchLibVault\(/);
+  assert.doesNotMatch(html, /id: 'libvault'[\s\S]*?search:/);
   assert.match(html, /const outcomes = await Promise\.all\(sources\.map/);
   assert.match(html, /const books = await source\.search\(query\)/);
-  assert.match(html, /const NOSTR_SEARCH_READY_TIMEOUT_MS = 8000/);
-  assert.match(html, /const NOSTR_SEARCH_RESPONSE_TIMEOUT_MS = 20000/);
-  assert.match(html, /responseTimeoutMs: NOSTR_SEARCH_RESPONSE_TIMEOUT_MS/);
   assert.match(html, /const SEARCH_RESULT_LIMIT = 200/);
-  assert.match(html, /limit: SEARCH_RESULT_LIMIT/);
   assert.match(html, /limit=\$\{SEARCH_RESULT_LIMIT\}/);
   assert.doesNotMatch(html, /search\?q=\$\{encodeURIComponent\(query\)\}&limit=20/);
 });
 
-test('Search offers private inside-book passage search without catalog fallback', () => {
-  assert.match(html, /<option value="content">Inside downloaded books<\/option>/);
-  assert.match(html, /searchType\.value === 'content'/);
-  assert.match(html, /renderPassageResults\(response\)/);
-  assert.match(html, /Inside-book search unavailable:/);
-  assert.match(html, /Inside-book search is unavailable\. Check the Nostr connection or try again later\./);
-  assert.match(html, /if \(searchType\.value === 'content'\) \{[\s\S]*?return;[\s\S]*?Searching privately through LibVault/);
-  assert.match(html, /PassageResults\.passageResultsMarkup\(entries\)/);
-  assert.match(html, /contentSearchBooks\.find/);
+test('Search no longer exposes LibVault inside-book search', () => {
+  assert.doesNotMatch(html, /<option value="content">/);
+  assert.doesNotMatch(html, /searchType\.value === 'content'/);
+  assert.doesNotMatch(html, /Searching privately through LibVault/);
+  assert.match(html, /Searching public book catalogs/);
 });
 
 test('authors stay green on Home and Search even when links are globally red', () => {
@@ -218,9 +210,8 @@ test('Search stores result filters and paging in bookmarkable hash parameters', 
   assert.match(html, /replaceSearchHash\(\)/);
 });
 
-test('favorite fetch progress uses a calm static marker', () => {
-  assert.match(html, /\.favorite-fetch-progress\.pending::before[\s\S]*?background:/);
-  assert.doesNotMatch(html, /favorite-fetch-spin/);
+test('favorites do not show LibVault fetch progress', () => {
+  assert.doesNotMatch(html, /favorite-fetch-progress/);
 });
 
 test('Search requires whole query tokens instead of prefix matches', () => {
@@ -362,23 +353,10 @@ test('table formats use lowercase names', () => {
   assert.doesNotMatch(html, /String\(book\.extension \|\| book\.format \|\| '—'\)\.toUpperCase\(\)/);
 });
 
-test('the complete merged library refreshes newly available Blossom copies', () => {
-  assert.match(html, /function refreshFavoriteBlossomCopies\(\)/);
-  assert.match(html, /BookMetadata\.dedupeLibraryBooks\(\[\.\.\.state\.favorites, \.\.\.state\.reading\]\)/);
-  assert.match(html, /lookupLibVaultBlossomState\(book\.md5\)/);
-  assert.match(html, /state\.favorites = state\.favorites\.map\(update\)/);
-  assert.match(html, /state\.reading = state\.reading\.map\(update\)/);
-  assert.match(html, /const newlyReadable = found \+ cachedFound/);
-  assert.match(html, /Found \$\{newlyReadable\} newly readable library book/);
-  assert.match(html, /await refreshFavoriteBlossomCopies\(\)/);
-  assert.match(html, /void refreshFavoriteBlossomCopies\(\)/);
-});
-
-test('Home retries LibVault books that are still publishing to Blossom', () => {
-  assert.match(html, /lookupLibVaultBlossomState\(book\.md5\)/);
-  assert.match(html, /if \(blossom\?\.status === 'publishing'\) \{[\s\S]*?publishing \+= 1/);
-  assert.match(html, /favoriteBlossomRefreshRetryTimer = setTimeout/);
-  assert.match(html, /}, 5000\)/);
+test('library sync does not poll LibVault or Blossom publication jobs', () => {
+  assert.doesNotMatch(html, /function refreshFavoriteBlossomCopies\(\)/);
+  assert.doesNotMatch(html, /lookupLibVaultBlossomState\(book\.md5\)/);
+  assert.doesNotMatch(html, /favoriteBlossomRefreshRetryTimer/);
 });
 
 test('reader recovers legacy LibVault lookup URLs to the canonical Blossom server', () => {
@@ -401,7 +379,7 @@ test('EPUBs use persistent IndexedDB caching', () => {
   assert.match(html, /readinessTimer = setInterval\(resolveWhenReady, 50\)/);
   assert.match(html, /clearInterval\(readinessTimer\)/);
   assert.match(html, /readerFrame\.src = `\$\{readerPath\}\?load=\$\{navigationId\}`/);
-  assert.match(html, /const readerLoad = await readerFrameLoader\('epub', openGeneration\)/);
+  assert.match(html, /const readerLoad = await readerFrameLoader\('epub', openGeneration, book\.md5 \|\| BookMetadata\.bookIdentity\(book\)\)/);
   assert.match(html, /const routeGeneration = \+\+readRouteGeneration/);
   assert.match(html, /if \(routeGeneration !== readRouteGeneration\) return/);
 });
@@ -426,7 +404,7 @@ test('PDFs are fetched and displayed inside the Bookstr reader pane', () => {
   assert.match(html, /PDF download failed/);
   assert.match(html, /await displayPdf\(blob, book, readPath, openGeneration\)/);
   assert.match(html, /const readerPath = kind === 'pdf' \? 'pdf-reader\.html' : kind === 'fb2' \? 'fb2-reader\.html' : kind === 'comic' \? 'comic-reader\.html' : 'reader\.html'/);
-  assert.match(html, /const readerLoad = await readerFrameLoader\('pdf', openGeneration\)/);
+  assert.match(html, /const readerLoad = await readerFrameLoader\('pdf', openGeneration, book\.md5 \|\| BookMetadata\.bookIdentity\(book\)\)/);
   assert.match(html, /filename: pdfDownloadFilename\(book\)/);
   assert.match(html, /return `\$\{safeTitle \|\| 'Bookstr book'\}\.pdf`/);
   assert.match(html, /String\.fromCharCode\(\.\.\.bytes\) === '%PDF-'/);
@@ -439,8 +417,8 @@ test('PDFs are fetched and displayed inside the Bookstr reader pane', () => {
 });
 
 test('desktop EPUB and PDF readers stay inside the main reading pane', () => {
-  assert.match(html, /const readerLoad = await readerFrameLoader\('epub', openGeneration\)/);
-  assert.match(html, /const readerLoad = await readerFrameLoader\('pdf', openGeneration\)/);
+  assert.match(html, /const readerLoad = await readerFrameLoader\('epub', openGeneration, book\.md5 \|\| BookMetadata\.bookIdentity\(book\)\)/);
+  assert.match(html, /const readerLoad = await readerFrameLoader\('pdf', openGeneration, book\.md5 \|\| BookMetadata\.bookIdentity\(book\)\)/);
   assert.doesNotMatch(html, /async function openInDesktopReader/);
   assert.equal((desktopMain.match(/new BrowserWindow\(/g) || []).length, 1);
   assert.match(desktopMain, /mainWindow\.once\('ready-to-show',[\s\S]*?mainWindow\.maximize\(\);[\s\S]*?mainWindow\.show\(\)/);
@@ -550,18 +528,12 @@ test('favorites are not truncated to fifty items', () => {
   assert.doesNotMatch(html, /state\.favorites[^;]*slice\(0,\s*50\)/s);
 });
 
-test('favoriting requests the book privately from LibVault over NIP-17', () => {
-  assert.match(html, /import\('\.\/nip17-fetch\.js'\)/);
-  assert.match(html, /requestFavoriteFromLibVault\(book\)/);
-  assert.match(html, /publish: publishRelayEvent/);
-});
-
-test('favorite fetch progress stays visible through download and Blossom publication', () => {
-  assert.match(html, /monitorLibVaultFetch\(book\.md5/);
-  assert.match(html, /favorite-fetch-progress/);
-  assert.match(html, /Fetching \$\{title\}: \$\{percent\}%/);
-  assert.match(html, /publishing it to Blossom/);
-  assert.match(html, /saveReadyFavorite\(book, progress\.blossom\)/);
+test('favoriting syncs only through the user Nostr collection', () => {
+  assert.doesNotMatch(html, /requestFavoriteFromLibVault\(book\)/);
+  assert.doesNotMatch(html, /sendLibVaultFavoritesSync\(/);
+  assert.doesNotMatch(html, /monitorLibVaultFetch\(book\.md5/);
+  assert.doesNotMatch(html, /favorite-fetch-progress/);
+  assert.match(html, /queueFavoriteSync\(\)/);
 });
 
 test('compact favorites retain cached metadata and resolve LibVault IDs', () => {
@@ -617,11 +589,9 @@ test('Home readable count uses the same availability rule as title coloring', ()
   assert.match(html, /const readableNow = isBookReadableNow\(book\)/);
 });
 
-test('Home uses cached LibVault files while their Blossom copies publish', () => {
-  assert.match(html, /const localReadUrl = `\$\{LIBVAULT_API_BASE\}\/files\/\$\{book\.md5\}`/);
-  assert.match(html, /\? \{ \.\.\.item, readUrl: localReadUrl \}/);
-  assert.match(html, /some are using LibVault while Blossom finishes/);
-  assert.match(html, /favoriteBlossomRefreshRetryCount < 6/);
+test('Home does not inject LibVault files during background library sync', () => {
+  assert.doesNotMatch(html, /const localReadUrl = `\$\{LIBVAULT_API_BASE\}\/files\/\$\{book\.md5\}`/);
+  assert.doesNotMatch(html, /some are using LibVault while Blossom finishes/);
 });
 
 test('Home can delete a book locally and across synced clients', () => {
