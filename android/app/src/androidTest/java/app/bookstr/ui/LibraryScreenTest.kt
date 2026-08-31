@@ -243,6 +243,42 @@ class LibraryScreenTest {
     }
 
     @Test
+    fun bookDetailsStayVisibleWithProgressAndPublicationMetadata() {
+        val book = CatalogBook(
+            id = "screenshot-details",
+            title = "The Screenshot Review",
+            author = "Visible Author",
+            epubUrl = "https://blossom.example/review.epub",
+            coverUrl = null,
+            sourceUrl = "https://publisher.example/review",
+            isbn = "9781234567890",
+            year = "2026",
+            blossomSha256 = "f".repeat(64),
+        )
+        composeRule.setContent {
+            LibraryScreen(
+                books = listOf(book),
+                favoriteIds = setOf(book.id),
+                externalFavorites = emptyList(),
+                progress = mapOf(book.id to BookProgress(book.id, 0.73, "cfi", 1L)),
+                loading = false,
+                error = null,
+                onRefresh = {},
+                onOpenBook = {},
+                onOpenExternal = {},
+                publicationSize = { 3L * 1024 * 1024 },
+            )
+        }
+
+        composeRule.onAllNodesWithText("The Screenshot Review")[0].performTouchInput { longClick() }
+        composeRule.onNodeWithText("Book details").assertIsDisplayed()
+        composeRule.onNodeWithText("Visible Author").assertIsDisplayed()
+        composeRule.onNodeWithText("9781234567890").assertIsDisplayed()
+        composeRule.onNodeWithText("73%").assertIsDisplayed()
+        composeRule.onNodeWithText("3.0 MB").assertIsDisplayed()
+    }
+
+    @Test
     fun searchesFavoritesByTitleAndFormat() {
         val epub = CatalogBook(
             id = "epub",
