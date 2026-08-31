@@ -364,12 +364,27 @@
         gap: 0.5rem;
       }
       .result-cover {
+        position: absolute;
+        inset: 0;
         width: 100%;
         height: 100%;
         object-fit: cover;
         pointer-events: none;
         background: var(--badge-bg, #eee);
-        transition: transform 160ms ease 180ms, box-shadow 160ms ease 180ms;
+        opacity: 0;
+        transition: opacity 100ms ease, transform 160ms ease 180ms, box-shadow 160ms ease 180ms;
+      }
+      .result-cover.is-loaded,
+      .result-cover-placeholder {
+        opacity: 1;
+      }
+      .result-cover-placeholder {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        pointer-events: none;
       }
       .result-cover-slot {
         position: relative;
@@ -4808,8 +4823,15 @@
       }
 
       function bookCoverUrls(book) {
+        const md5 = String(book?.md5 || '').trim().toLowerCase();
+        const download = desktopDownloadByBook.get(md5);
+        const localCoverUrl = isDesktopMode && isMd5(md5) && String(download?.status || '').toLowerCase() === 'ready'
+          ? `app://bookstr/api/library-cover/${md5}`
+          : '';
         return CoverAssets.bookCoverCandidates(book, {
           desktop: isDesktopMode,
+          key: md5 || BookMetadata.bookIdentity(book),
+          localCoverUrl,
         });
       }
 
@@ -4933,6 +4955,8 @@
           ].filter(Boolean).join(' · ');
           const coverUrls = bookCoverUrls(book);
           const coverUrl = coverUrls[0] || '';
+          const coverPlaceholder = CoverAssets.placeholderCoverUrl(book);
+          const coverKey = String(book?.md5 || BookMetadata.bookIdentity(book) || '').trim().toLowerCase();
           const statusMarkup = options.library
             ? `${book.isFavorite ? '<svg class="favorite-status" viewBox="0 0 24 24" aria-label="Favorite" role="img"><path d="M12 21s-8-4.8-8-11a4.5 4.5 0 0 1 8-2.8A4.5 4.5 0 0 1 20 10c0 6.2-8 11-8 11Z"/></svg>' : ''}<button type="button" class="library-delete" data-action="delete-library" aria-label="Delete ${escapeHtml(book.title || 'book')} from library" title="Delete from library"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3m3 0-1 13H7L6 7m4 4v5m4-5v5"/></svg></button>`
             : `<button type="button" class="chip-btn" data-action="favorite" data-md5="${escapeHtml(book.md5)}" aria-label="${isFavoriteMd5(book.md5) ? 'Remove from favorites' : 'Add to favorites'}" title="${isFavoriteMd5(book.md5) ? 'Remove from favorites' : 'Add to favorites'}">${isFavoriteMd5(book.md5) ? '♥' : '♡'}</button>`;
@@ -4940,7 +4964,7 @@
           row.className = 'book-table-row';
           row.setAttribute('role', 'row');
           row.innerHTML = `
-            <span class="result-cover-slot" role="cell">${coverUrl ? `<img class="result-cover" src="${escapeHtml(coverUrl)}" alt="" loading="lazy">` : ''}</span>
+            <span class="result-cover-slot" role="cell"><img class="result-cover-placeholder" src="${escapeHtml(coverPlaceholder)}" alt="">${coverUrl ? `<img class="result-cover" src="${escapeHtml(coverUrl)}" alt="" loading="lazy">` : ''}</span>
             <span class="result-cell" role="cell">${canOpen ? `<a class="result-title ${titleAvailabilityClass}" data-action="open" href="#read=${encodeURIComponent(readRouteValue(book, readUrl))}">${escapeHtml(book.title)}</a>` : `<span class="result-title ${titleAvailabilityClass}">${escapeHtml(book.title)}</span>`}${titleDetails ? `<small>${titleDetails}</small>` : ''}</span>
             <span class="result-cell" role="cell">${authorQuery ? `<a class="result-author" data-action="author-search" href="#search=${encodeURIComponent(authorQuery)}">${escapeHtml(book.authors)}</a>` : `<span class="result-author">${escapeHtml(book.authors || '')}</span>`}</span>
 			<span class="result-cell" role="cell">${escapeHtml(book.year || '—')}${rightsMarkerMarkup(book)}</span>
@@ -4954,7 +4978,7 @@
             event.preventDefault();
             options.onOpen?.(book);
           });
-          CoverAssets.attachImageFallback(row.querySelector('.result-cover'), coverUrls);
+          CoverAssets.attachImageFallback(row.querySelector('.result-cover'), coverUrls, { key: coverKey });
           row.querySelector('[data-action="author-search"]')?.addEventListener('click', (event) => {
             event.preventDefault();
             searchForAuthor(book);

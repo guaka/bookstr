@@ -24,6 +24,7 @@ const { SpeechModelStore } = require('./speech-model-store');
 const { WebTorrentBridge } = require('./webtorrent-bridge');
 const { LibraryStore } = require('./library-store');
 const { LibraryImporter, hashFile, safeExtension } = require('./library-import');
+const { localBookCover, safeCoverID } = require('./library-cover');
 const { AcquisitionManager } = require('./acquisition-manager');
 const { ElectronDevicePairing } = require('./device-pairing');
 
@@ -1449,6 +1450,29 @@ function setupIpcHandlers() {
 function setupProtocol(targetSession) {
   targetSession.protocol.handle(APP_PROTOCOL, async (request) => {
     const parsed = new URL(request.url);
+    const libraryCoverMatch = parsed.pathname.match(/^\/api\/library-cover\/([a-f0-9]{32}(?:[a-f0-9]{32})?)$/i);
+    if (parsed.host === APP_HOST && libraryCoverMatch) {
+      const bookId = safeCoverID(libraryCoverMatch[1]);
+      try {
+        const { filePath } = await resolveRegisteredLibraryFile(bookId);
+        const cover = await localBookCover({
+          bookId,
+          bookPath: filePath,
+          cacheDir: path.join(libraryDataDir, 'covers'),
+        });
+        if (!cover) return new Response('Not found', { status: 404 });
+        return new Response(cover.bytes, {
+          status: 200,
+          headers: {
+            'Content-Type': cover.mime,
+            'Cache-Control': 'private, max-age=86400',
+            'X-Content-Type-Options': 'nosniff',
+          },
+        });
+      } catch {
+        return new Response('Not found', { status: 404 });
+      }
+    }
     const libraryFileMatch = parsed.pathname.match(/^\/api\/library-file\/([A-Za-z0-9_-]{32,})$/);
     if (parsed.host === APP_HOST && libraryFileMatch) {
       const entry = getLibraryStore().resolveReaderToken(libraryFileMatch[1]);

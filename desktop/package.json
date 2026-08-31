@@ -64,6 +64,7 @@
       "device-pairing.js",
       "library-store.js",
       "library-import.js",
+      "library-cover.js",
       "acquisition-manager.js",
       "main.js",
       "preload.js",

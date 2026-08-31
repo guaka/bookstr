@@ -48,3 +48,40 @@ test('image fallback advances candidates and removes an exhausted image', () => 
   listeners.error();
   assert.equal(image.removed, true);
 });
+
+test('cover failures and successes stay stable across library rerenders', () => {
+  const key = 'stable-book';
+  const failed = 'https://images.example/missing.jpg';
+  const working = 'https://images.example/working.jpg';
+  const listeners = {};
+  const classes = new Set();
+  const image = {
+    src: failed,
+    getAttribute: () => failed,
+    addEventListener: (name, callback) => { listeners[name] = callback; },
+    classList: { add: name => classes.add(name), remove: name => classes.delete(name) },
+  };
+  attachImageFallback(image, [failed, working], { key });
+  listeners.error();
+  assert.equal(image.src, working);
+  listeners.load();
+  assert.equal(classes.has('is-loaded'), true);
+  const candidates = bookCoverCandidates({ title: 'Stable', coverUrl: failed, thumbnail: working }, { key });
+  assert.equal(candidates[0], working);
+  assert.ok(!candidates.includes(failed));
+});
+
+test('cover candidates use every metadata alias and prefer a ready local Electron cover', () => {
+  const local = `app://bookstr/api/library-cover/${'a'.repeat(32)}`;
+  const candidates = bookCoverCandidates({
+    coverUrl: 'https://images.example/first.jpg',
+    thumbnail: 'https://images.example/second.jpg',
+    metadata: { cover_url: 'https://images.example/third.jpg' },
+  }, { desktop: true, key: 'aliases', localCoverUrl: local });
+  assert.deepEqual(candidates.slice(0, 4), [
+    local,
+    'https://images.example/first.jpg',
+    'https://images.example/second.jpg',
+    'https://images.example/third.jpg',
+  ]);
+});

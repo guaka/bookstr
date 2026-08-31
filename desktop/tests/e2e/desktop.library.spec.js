@@ -23,7 +23,9 @@ function seedDesktopStore(userData, books, downloads = []) {
   }
 }
 
-async function minimalEpub(title, body = title) {
+const COVER_PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=', 'base64');
+
+async function minimalEpub(title, body = title, { cover = false } = {}) {
   const zip = new JSZip();
   zip.file('mimetype', 'application/epub+zip', { compression: 'STORE' });
   zip.file('META-INF/container.xml', `<?xml version="1.0"?>
@@ -33,9 +35,10 @@ async function minimalEpub(title, body = title) {
   zip.file('OEBPS/content.opf', `<?xml version="1.0" encoding="UTF-8"?>
     <package version="3.0" xmlns="http://www.idpf.org/2007/opf" unique-identifier="book-id">
       <metadata xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:identifier id="book-id">urn:test:${title}</dc:identifier><dc:title>${title}</dc:title><dc:language>en</dc:language></metadata>
-      <manifest><item id="chapter" href="chapter.xhtml" media-type="application/xhtml+xml"/></manifest>
+      <manifest>${cover ? '<item id="cover-art" href="front.png" media-type="image/png" properties="cover-image"/>' : ''}<item id="chapter" href="chapter.xhtml" media-type="application/xhtml+xml"/></manifest>
       <spine><itemref idref="chapter"/></spine>
     </package>`);
+  if (cover) zip.file('OEBPS/front.png', COVER_PNG);
   zip.file('OEBPS/chapter.xhtml', `<?xml version="1.0" encoding="UTF-8"?><html xmlns="http://www.w3.org/1999/xhtml"><body><h1>${title}</h1><p>${body}</p></body></html>`);
   return zip.generateAsync({ type: 'nodebuffer', mimeType: 'application/epub+zip' });
 }
@@ -95,6 +98,39 @@ test('Library reports useful local torrent states', async () => {
     await expect(libraryRow(page, books[2].title).locator('.result-availability')).toHaveText('Downloading · 40%');
     await expect(libraryRow(page, books[3].title).locator('.result-availability')).toHaveText('Ready');
     await expect(libraryRow(page, books[4].title).locator('.result-availability')).toHaveText('Unavailable');
+  } finally {
+    await app.close();
+  }
+});
+
+test('Library extracts and displays a downloaded EPUB cover inside Electron', async () => {
+  const launch = electronArgs('local-cover-user-data');
+  const md5 = '9'.repeat(32);
+  const title = 'Embedded Cover Fixture';
+  const libraryRoot = path.join(launch.userData, 'library');
+  const relativePath = `books/${md5}.epub`;
+  fs.mkdirSync(path.join(libraryRoot, 'books'), { recursive: true });
+  const bytes = await minimalEpub(title, title, { cover: true });
+  fs.writeFileSync(path.join(libraryRoot, relativePath), bytes);
+  const store = new LibraryStore({ dbPath: path.join(libraryRoot, 'library.sqlite'), libraryRoot });
+  try {
+    store.upsertBook({ id: md5, md5, title, authors: 'Fixture Author', extension: 'epub' });
+    store.registerLibraryFile({ bookId: md5, relativePath, sizeBytes: bytes.length });
+    store.setDownload({ bookId: md5, status: 'ready', bytes: bytes.length, totalBytes: bytes.length, source: 'torrent' });
+  } finally {
+    store.close();
+  }
+
+  const app = await electron.launch({ args: launch.args });
+  try {
+    const page = await app.firstWindow();
+    await seedLibrary(page, [{ md5, title, authors: 'Fixture Author', extension: 'epub' }]);
+    await page.reload();
+    const row = libraryRow(page, title);
+    const cover = row.locator('.result-cover');
+    await expect(cover).toHaveAttribute('src', `app://bookstr/api/library-cover/${md5}`);
+    await expect(cover).toHaveClass(/is-loaded/);
+    await expect.poll(() => cover.evaluate(image => image.naturalWidth > 0)).toBe(true);
   } finally {
     await app.close();
   }
