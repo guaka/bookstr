@@ -35,6 +35,9 @@ targets:
         buildPhase: resources
       - path: ../web/vendor/libarchive.wasm
         buildPhase: resources
+      - path: BookstrIOS/Tests/Fixtures/Comics
+        type: folder
+        buildPhase: resources
     dependencies:
       - package: swift-nostr
         product: NostrConnect
@@ -113,4 +116,12 @@ schemes:
     test:
       targets:
         - BookstrIOSTests
+        - BookstrIOSUITests
+  BookstrIOSE2E:
+    build:
+      targets:
+        BookstrIOS: all
+        BookstrIOSUITests: [test]
+    test:
+      targets:
         - BookstrIOSUITests

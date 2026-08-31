@@ -93,8 +93,10 @@
 		E5CFD1579621AE2283BFD00D /* libarchive.js in Resources */ = {isa = PBXBuildFile; fileRef = 0F5936C976BE2751CBDDF64B /* libarchive.js */; };
 		E79B008989C4A235038038D3 /* SpeechLanguageSettingsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3BACA8524B2B608D6CF08F99 /* SpeechLanguageSettingsTests.swift */; };
 		E9189CE13B04BC4BB10DCC7E /* ReaderEditMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F47F40A84E93CF7EB2E410D /* ReaderEditMenu.swift */; };
+		EA99B1D58BA8DB24464D24EC /* ComicReaderUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF91D0FCB6132E4378FA51A2 /* ComicReaderUITests.swift */; };
 		ECED948769215AC00C1EF8FC /* ReaderPlaybackSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2E5BBC1560C066A2E245A7F7 /* ReaderPlaybackSession.swift */; };
 		F446FCE99A3743EA9AF006E9 /* ReaderRelocation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 143998C6E16766DF9B9163DC /* ReaderRelocation.swift */; };
+		F5F52E446B44FEFDED9867A3 /* Comics in Resources */ = {isa = PBXBuildFile; fileRef = 419AAE77CAA8F1142870DBA2 /* Comics */; };
 		FBC9C4C06B284E0B6EA35CE0 /* reader-typography.js in Resources */ = {isa = PBXBuildFile; fileRef = 7A6FD2C6392542614B1B003E /* reader-typography.js */; };
 		FBDEC08587AE518C8EBAFCED /* SettingsRepository.swift in Sources */ = {isa = PBXBuildFile; fileRef = 22DDF63A8FC739853B993022 /* SettingsRepository.swift */; };
 		FC133E8CF49FBFA03C75CDF3 /* ComicReaderView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9C26BF9A865ED02252061DB0 /* ComicReaderView.swift */; };
@@ -151,6 +153,7 @@
 		314B0428834E8C5F54350105 /* SearchFavoriteMatcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SearchFavoriteMatcher.swift; sourceTree = "<group>"; };
 		3BACA8524B2B608D6CF08F99 /* SpeechLanguageSettingsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeechLanguageSettingsTests.swift; sourceTree = "<group>"; };
 		3F064B459CD09413B2C08909 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		419AAE77CAA8F1142870DBA2 /* Comics */ = {isa = PBXFileReference; lastKnownFileType = folder; name = Comics; path = BookstrIOS/Tests/Fixtures/Comics; sourceTree = SOURCE_ROOT; };
 		4232605E9E8A0830608191B3 /* DictionaryRepositoryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DictionaryRepositoryTests.swift; sourceTree = "<group>"; };
 		42C001384DD0FD23C8CC71C2 /* BookstrDebugLog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BookstrDebugLog.swift; sourceTree = "<group>"; };
 		452650E3247A1315589B1C5D /* VocabularyRepository.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VocabularyRepository.swift; sourceTree = "<group>"; };
@@ -210,6 +213,7 @@
 		F8C09F8FB0209744C1E8810E /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
 		F98AFAF7A917C5DBDE7B2FD1 /* WordFilterMatching.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WordFilterMatching.swift; sourceTree = "<group>"; };
 		FCD9820EF78EE6965850690D /* FavoriteOutboxTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FavoriteOutboxTests.swift; sourceTree = "<group>"; };
+		FF91D0FCB6132E4378FA51A2 /* ComicReaderUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComicReaderUITests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -313,6 +317,7 @@
 			isa = PBXGroup;
 			children = (
 				E0DF2EDCF4158B6E8ED62815 /* AppShellUITests.swift */,
+				FF91D0FCB6132E4378FA51A2 /* ComicReaderUITests.swift */,
 				C98C5936529AA8D4AB76BAA9 /* LibraryReaderUITests.swift */,
 			);
 			name = UITests;
@@ -442,6 +447,7 @@
 		AA0BA622039A0D274FA42EBA = {
 			isa = PBXGroup;
 			children = (
+				419AAE77CAA8F1142870DBA2 /* Comics */,
 				7C7BF4BCDAD578F43296B6EE /* BookstrIOS */,
 				6F275A7A45B4942BE0D42F40 /* reader */,
 				512BAA00C48CF1EF52AB3649 /* Sources */,
@@ -628,6 +634,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				456ADF4B906E1F7DEDD361C7 /* Assets.xcassets in Resources */,
+				F5F52E446B44FEFDED9867A3 /* Comics in Resources */,
 				9432960634D4D1BF2D33AF80 /* comic-reader.html in Resources */,
 				709D50D811534188160D1010 /* epub.min.js in Resources */,
 				5C91CCB9730E1FDFA63FF167 /* jszip.min.js in Resources */,
@@ -647,6 +654,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				C74A17F70AE65B4AC53CAF9E /* AppShellUITests.swift in Sources */,
+				EA99B1D58BA8DB24464D24EC /* ComicReaderUITests.swift in Sources */,
 				13D8078FE0DC6E1D200CED98 /* LibraryReaderUITests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

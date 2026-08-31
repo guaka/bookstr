@@ -20,7 +20,10 @@ test('comic reader supports bounded CBZ and CBR page extraction and navigation',
   assert.match(comicReader, /split\('\/'\)\.includes\('\.\.'\)/);
   assert.match(comicReader, /overflow:auto;overscroll-behavior:contain;touch-action:pan-x pan-y/);
   assert.match(comicReader, /function layoutImage\(reset=false\)/);
-  assert.match(comicReader, /if\(scale>FIT_SCALE\+\.01\)return/);
+  assert.match(comicReader, /scale<=FIT_SCALE\+\.01/);
+  assert.match(comicReader, /fast=Math\.abs\(deltaX\)\/elapsed>\.35/);
+  assert.match(comicReader, /touchend.*finishGesture/);
+  assert.match(comicReader, /now-lastFlipAt>300/);
   assert.doesNotMatch(comicReader, /setPassword/);
 });
 

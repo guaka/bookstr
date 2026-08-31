@@ -124,7 +124,9 @@ struct RootView: View {
             _ = await container.nostrSyncService.retryPendingFavorites()
             guard !attemptedInitialContinuation else { return }
             attemptedInitialContinuation = true
-            guard !ProcessInfo.processInfo.arguments.contains("--ui-testing-library-fixtures") else { return }
+            let arguments = ProcessInfo.processInfo.arguments
+            guard !arguments.contains("--ui-testing-library-fixtures")
+                    || arguments.contains("--ui-testing-open-continuation") else { return }
             openContinuation(reportMissing: false)
         }
         .onChange(of: scenePhase) { _, phase in

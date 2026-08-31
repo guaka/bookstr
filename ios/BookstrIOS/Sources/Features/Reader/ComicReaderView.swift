@@ -16,6 +16,10 @@ final class ComicReaderController: ObservableObject {
     @Published var loadingStage = "Opening comic"
     @Published var errorMessage: String?
     @Published var zoomScale = fitZoom
+    @Published var panX = 0
+    @Published var panY = 0
+    @Published var maximumPanX = 0
+    @Published var maximumPanY = 0
 
     fileprivate weak var webView: WKWebView?
 
@@ -36,6 +40,18 @@ final class ComicReaderController: ObservableObject {
 
     func updateZoom(_ value: Double) {
         zoomScale = min(max(value, Self.minimumZoom), Self.maximumZoom)
+    }
+
+    func updatePan(x: Int, y: Int, maximumX: Int, maximumY: Int) {
+        panX = max(0, x)
+        panY = max(0, y)
+        maximumPanX = max(0, maximumX)
+        maximumPanY = max(0, maximumY)
+    }
+
+    var accessibilityValue: String {
+        "Page \(pageIndex + 1) of \(pageCount), zoom \(Int(round(zoomScale * 100))) percent, "
+            + "horizontal scroll \(panX) of \(maximumPanX), vertical scroll \(panY) of \(maximumPanY)"
     }
 
     private func setZoom(_ value: Double) {
@@ -95,7 +111,8 @@ struct ComicReaderView: UIViewRepresentable {
         webView.allowsBackForwardNavigationGestures = false
         webView.allowsLinkPreview = false
         webView.accessibilityIdentifier = "comic-reader-webview"
-        webView.accessibilityLabel = "(format.rawValue.uppercased()) comic reader"
+        webView.accessibilityLabel = "\(format.rawValue.uppercased()) comic reader"
+        webView.accessibilityValue = controller.accessibilityValue
         controller.webView = webView
 
         if let readerURL = URL(string: "bookstr-comic://app/comic-reader.html") {
@@ -108,6 +125,7 @@ struct ComicReaderView: UIViewRepresentable {
 
     func updateUIView(_ webView: WKWebView, context: Context) {
         controller.webView = webView
+        webView.accessibilityValue = controller.accessibilityValue
     }
 
     static let bridgeScript = """
@@ -117,6 +135,7 @@ struct ComicReaderView: UIViewRepresentable {
       window.BookstrComic = {
         onComicProgress: (pageIndex, pageCount) => send('progress', { pageIndex, pageCount }),
         onComicZoom: value => send('zoom', Number(value)),
+        onComicPan: value => send('pan', value),
         onComicError: value => send('error', String(value || 'Could not open comic archive.'))
       };
     })();
@@ -245,6 +264,13 @@ struct ComicReaderView: UIViewRepresentable {
             case "zoom":
                 guard let value = body["value"] as? NSNumber else { return }
                 controller.updateZoom(value.doubleValue)
+            case "pan":
+                guard let value = body["value"] as? [String: Any],
+                      let x = (value["x"] as? NSNumber)?.intValue,
+                      let y = (value["y"] as? NSNumber)?.intValue,
+                      let maximumX = (value["maximumX"] as? NSNumber)?.intValue,
+                      let maximumY = (value["maximumY"] as? NSNumber)?.intValue else { return }
+                controller.updatePan(x: x, y: y, maximumX: maximumX, maximumY: maximumY)
             default:
                 break
             }
