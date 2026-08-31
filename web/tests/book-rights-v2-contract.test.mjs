@@ -40,6 +40,13 @@ test('rights adapter safely handles malformed metadata and every inferred policy
   assert.equal(publicSeedAllowed({ rights: { status: 'open-license', redistribution: 'allowed' } }), true);
   assert.equal(publicSeedAllowed({ rights_status: 'copyright', license: 'All rights reserved' }), false);
   assert.equal(normalizeRightsV2({ license: 'CC BY-NC 4.0' }).redistribution, 'noncommercial');
+  const contradictory = normalizeRightsV2({
+    rights_status: 'copyrighted',
+    license: 'All rights reserved. http://creativecommons.org/licenses/by-nc-sa/2.5/The online version is Creative Commons Noncommercial Sharealike.',
+  });
+  assert.equal(contradictory.rights_status, 'open_license');
+  assert.equal(contradictory.license_url, 'http://creativecommons.org/licenses/by-nc-sa/2.5/');
+  assert.equal(contradictory.redistribution, 'noncommercial');
   assert.equal(normalizeRightsV2({ license: 'Do not redistribute' }).redistribution, 'forbidden');
   const linked = normalizeRightsV2({ license: 'Open publication license (https://example.test/license).', metadata: { rightsSource: 'metadata', jurisdiction: 'EU', attribution: 'Author' } });
   assert.equal(linked.rights_status, 'open_license');

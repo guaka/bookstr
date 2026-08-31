@@ -424,13 +424,6 @@
       }
       .read-file-state-title { color: var(--page-text, #222); font-size: 0.84rem; font-weight: 750; }
       .read-file-state-copy { color: var(--muted-text, #666); font-size: 0.78rem; line-height: 1.4; }
-      .read-file-state-meta {
-        margin-top: 0.12rem;
-        color: var(--muted-text, #777);
-        font-size: 0.68rem;
-        letter-spacing: 0.04em;
-        text-transform: uppercase;
-      }
       #results {
         overflow-x: auto;
       }
@@ -2186,6 +2179,26 @@
               <input id="torrent-auto-seed" type="checkbox" checked />
               <span class="setting-copy"><strong>Automatically seed downloaded books</strong><small>Share completed torrent books while the app is open.</small></span>
             </label>
+            <label class="setting-option settings-control-row">
+              <span class="setting-copy"><strong>Download limit</strong><small>Maximum combined torrent download speed.</small></span>
+              <select id="torrent-download-limit" aria-label="Torrent download limit">
+                <option value="1000000">1 MB/s</option>
+                <option value="5000000">5 MB/s</option>
+                <option value="10000000" selected>10 MB/s</option>
+                <option value="25000000">25 MB/s</option>
+                <option value="-1">Unlimited</option>
+              </select>
+            </label>
+            <label class="setting-option settings-control-row">
+              <span class="setting-copy"><strong>Upload limit</strong><small>Maximum combined torrent seeding speed.</small></span>
+              <select id="torrent-upload-limit" aria-label="Torrent upload limit">
+                <option value="128000">128 kB/s</option>
+                <option value="500000">500 kB/s</option>
+                <option value="1000000" selected>1 MB/s</option>
+                <option value="5000000">5 MB/s</option>
+                <option value="-1">Unlimited</option>
+              </select>
+            </label>
           </div>
           <div class="settings-section settings-nostr">
             <h3>Nostr</h3>
@@ -2357,6 +2370,7 @@
       const homeLibraryFilter = { language: '', format: '' };
       const desktopDownloadByBook = new Map();
       const desktopSeededBookIds = new Set();
+      const desktopTransferRates = { download: 0, upload: 0 };
       const coverHoverLookups = new Map();
       let desktopDownloadStatesReady = false;
       let desktopDownloadRenderTimer = 0;
@@ -2475,6 +2489,8 @@
       const speechVoiceInput = document.getElementById('speech-voice');
       const speechRateInput = document.getElementById('speech-rate');
       const speechRateValue = document.getElementById('speech-rate-value');
+      const torrentDownloadLimitInput = document.getElementById('torrent-download-limit');
+      const torrentUploadLimitInput = document.getElementById('torrent-upload-limit');
       const speechModelButtons = [...document.querySelectorAll('[id^="speech-model-"]:not(#speech-model-status)')];
       const speechModelStatus = document.getElementById('speech-model-status');
       const npubButton = document.getElementById('npub-button');
@@ -2497,6 +2513,8 @@
           autoReading: true,
           autoDownloadTorrents: true,
           autoSeedTorrents: true,
+          torrentDownloadLimit: 10000000,
+          torrentUploadLimit: 1000000,
           useNip7: true,
           theme: 'white',
           readerFont: 'arial',
@@ -4296,13 +4314,8 @@
         return dedupeBooks(normalizeSearchBooks({ books }, 'global-digital-library'));
       }
 
-      function internetArchiveFile(files) {
-        const available = (Array.isArray(files) ? files : []).filter(file => (
-          file?.name && file.private !== 'true' && !/[\\/]_?meta\.xml$/i.test(file.name)
-        ));
-        return available.find(file => /epub/i.test(file.format || '') || /\.epub$/i.test(file.name))
-          || available.find(file => /pdf/i.test(file.format || '') || /\.pdf$/i.test(file.name))
-          || null;
+      function internetArchiveFile(files, metadata = {}) {
+        return BookMetadata.internetArchiveFile(files, metadata);
       }
 
       async function searchInternetArchive(query) {
@@ -4316,9 +4329,9 @@
           const metadataResponse = await fetch(`${BOOKS_API_BASE}/internet-archive/metadata?id=${encodeURIComponent(id)}`);
           const metadataPayload = await metadataResponse.json().catch(() => ({}));
           if (!metadataResponse.ok) return null;
-          const file = internetArchiveFile(metadataPayload.files);
-          if (!file) return null;
           const metadata = metadataPayload.metadata || {};
+          const file = internetArchiveFile(metadataPayload.files, metadata);
+          if (!file) return null;
           const extension = /\.epub$/i.test(file.name) || /epub/i.test(file.format || '') ? 'epub' : 'pdf';
           return {
             id,
@@ -4371,6 +4384,13 @@
           i++;
         }
         return `${n.toFixed(i === 0 ? 0 : 1)} ${units[i]}`;
+      }
+
+      function transferRateLabel(value) {
+        const rate = Math.max(0, Number(value) || 0);
+        if (rate < 1000) return `${Math.round(rate)} B/s`;
+        if (rate < 1000 * 1000) return `${(rate / 1000).toFixed(rate < 10 * 1000 ? 1 : 0)} kB/s`;
+        return `${(rate / (1000 * 1000)).toFixed(rate < 10 * 1000 * 1000 ? 1 : 0)} MB/s`;
       }
 
 	  function rightsMarkerMarkup(book) {
@@ -5221,6 +5241,12 @@
         return null;
       }
 
+      function desktopDownloadIds(download) {
+        return [...new Set([download?.bookId, download?.md5, download?.sha256]
+          .map(value => String(value || '').trim().toLowerCase())
+          .filter(Boolean))];
+      }
+
       function isBookReadableNow(book) {
         const cached = cachedBookKeys.has(bookCacheKey(book, book.readUrl || book.url));
         const download = desktopDownloadForBook(book);
@@ -5333,16 +5359,24 @@
         desktopDownloadStatesReady = true;
         desktopDownloadByBook.clear();
         for (const download of downloads || []) {
-          const md5 = String(download?.bookId || '').trim().toLowerCase();
-          if (isMd5(md5)) desktopDownloadByBook.set(md5, download);
+          for (const identity of desktopDownloadIds(download)) {
+            desktopDownloadByBook.set(identity, download);
+          }
         }
         desktopSeededBookIds.clear();
+        desktopTransferRates.download = 0;
+        desktopTransferRates.upload = 0;
         for (const transfer of transfers || []) {
+          desktopTransferRates.download += Math.max(0, Number(transfer?.downloadSpeed || 0));
+          desktopTransferRates.upload += Math.max(0, Number(transfer?.uploadSpeed || 0));
           if (transfer?.seeding !== true) continue;
           const bookIds = Array.isArray(transfer?.bookIds) ? transfer.bookIds : [transfer?.bookId];
           for (const value of bookIds) {
             const bookId = String(value || '').trim().toLowerCase();
-            if (bookId) desktopSeededBookIds.add(bookId);
+            if (!bookId) continue;
+            desktopSeededBookIds.add(bookId);
+            const download = desktopDownloadByBook.get(bookId);
+            for (const identity of desktopDownloadIds(download)) desktopSeededBookIds.add(identity);
           }
         }
         updateDesktopDownloadSummary();
@@ -5841,7 +5875,18 @@
           const term = document.createElement('dt');
           term.textContent = label;
           const description = document.createElement('dd');
-          description.textContent = String(value);
+          if (label === 'Author' && authorSearchName(value)) {
+            const link = document.createElement('a');
+            link.href = `#search=${encodeURIComponent(authorSearchName(value))}`;
+            link.textContent = String(value);
+            link.addEventListener('click', event => {
+              event.preventDefault();
+              searchForAuthor(book);
+            });
+            description.append(link);
+          } else {
+            description.textContent = String(value);
+          }
           if (label === 'MD5' || label === 'SHA-256') description.className = 'metadata-digest';
           if (label === 'Author') {
             description.classList.add('metadata-authors');
@@ -5853,7 +5898,7 @@
 		const rightsTerm = document.createElement('dt');
 		rightsTerm.textContent = 'Rights';
 		const rightsRow = document.createElement('dd');
-		const rightsText = rights.license || BookMetadata.rightsAccessibleLabel(book);
+		const rightsText = BookMetadata.rightsAccessibleLabel(book);
 		if (rights.license_url) {
 		  const link = document.createElement('a');
 		  link.href = rights.license_url;
@@ -5867,7 +5912,7 @@
 		if (rights.rights_source) {
           const source = document.createElement('span');
           source.className = 'read-metadata-source';
-          const sourceLabels = { epub_opf: 'EPUB metadata', fb2_description: 'FB2 metadata', metadata: 'Embedded metadata' };
+          const sourceLabels = { epub_opf: 'EPUB metadata', epub_content: 'EPUB content', fb2_description: 'FB2 metadata', metadata: 'Embedded metadata' };
           source.textContent = ` · ${sourceLabels[rights.rights_source] || String(rights.rights_source).replaceAll('_', ' ')}`;
           rightsRow.append(source);
         }
@@ -5920,7 +5965,6 @@
       function updateReadMetadataFallbackDiagnostics(book, { cacheStatus = '', error = '' } = {}) {
         const note = document.getElementById('read-metadata-fallback-status');
         if (!note) return;
-        const format = String(book?.extension || book?.format || 'unknown').replace(/^\./, '').toLowerCase();
         const torrent = torrentStatusForBook(book);
         let title = 'This book is not stored locally';
         let copy = friendlyBookLoadError(error) || 'Bookstr is checking for a readable copy.';
@@ -5934,11 +5978,6 @@
           title = 'Available from the torrent library';
           copy = 'Open the book to start downloading it.';
         }
-        const localState = /found/i.test(cacheStatus) && !/^no\b/i.test(cacheStatus)
-          ? 'Local copy found'
-          : /checking/i.test(cacheStatus)
-            ? 'Checking local files'
-            : 'Not downloaded';
         note.dataset.cacheStatus = cacheStatus;
         note.dataset.error = String(error?.message || error || '');
         note.replaceChildren();
@@ -5948,10 +5987,7 @@
         const description = document.createElement('span');
         description.className = 'read-file-state-copy';
         description.textContent = copy;
-        const meta = document.createElement('small');
-        meta.className = 'read-file-state-meta';
-        meta.textContent = `${String(format || 'unknown').toUpperCase()} · ${localState}`;
-        note.append(heading, description, meta);
+        note.append(heading, description);
       }
 
       let readRouteGeneration = 0;
@@ -6420,7 +6456,10 @@
           : `${matchingBooks.length} of ${library.length} books`;
         const readableCount = matchingBooks.filter(isBookReadableNow).length;
         const seedingCount = enrichedLibrary.filter(isBookSeeded).length;
-        homeLibraryCount.textContent = `${visibleCount} · ${readableCount} readable now · ${seedingCount} seeding`;
+        const transferRates = isDesktopMode
+          ? ` · ↓ ${transferRateLabel(desktopTransferRates.download)} · ↑ ${transferRateLabel(desktopTransferRates.upload)}`
+          : '';
+        homeLibraryCount.textContent = `${visibleCount} · ${readableCount} readable now · ${seedingCount} seeding${transferRates}`;
         renderHomeBookList(homeReadingList, matchingBooks, 'No books match these filters.');
       }
 
@@ -6525,33 +6564,7 @@
       }
 
       function matchingTorrentCatalogRecord(book, candidates) {
-        const torrentRecords = candidates.filter(candidate => BookMetadata.libgenTorrentMetadataForBook(candidate));
-        const isbn = BookMetadata.isbnForBook(book);
-        const exact = torrentRecords.find(candidate => (
-          (isbn && BookMetadata.isbnForBook(candidate) === isbn)
-          || BookMetadata.sameLibraryBook(book, candidate)
-        ));
-        if (exact) return exact;
-        const wantedTitle = String(BookMetadata.resolveTitle(book) || '').trim().toLocaleLowerCase();
-        const wantedAuthor = authorMatchKey(book?.authors || book?.author);
-        const wantedYear = String(book?.year || '').trim();
-        const wantedFormat = String(book?.extension || book?.format || '').replace(/^\./, '').toLowerCase();
-        const matches = torrentRecords.filter(candidate => {
-          const candidateIsbn = BookMetadata.isbnForBook(candidate);
-          const candidateYear = String(candidate?.year || '').trim();
-          const candidateFormat = String(candidate?.extension || candidate?.format || '').replace(/^\./, '').toLowerCase();
-          return String(candidate?.title || '').trim().toLocaleLowerCase() === wantedTitle
-            && wantedAuthor
-            && authorMatchKey(candidate?.authors || candidate?.author) === wantedAuthor
-            && (!isbn || !candidateIsbn || candidateIsbn === isbn)
-            && (!wantedYear || !candidateYear || candidateYear === wantedYear)
-            && (!wantedFormat || !candidateFormat || candidateFormat === wantedFormat);
-        });
-        if (matches.length === 1) return matches[0];
-        const wantedPublisher = String(book?.publisher || '').trim().toLocaleLowerCase();
-        return wantedPublisher
-          ? matches.find(candidate => String(candidate?.publisher || '').trim().toLocaleLowerCase() === wantedPublisher) || null
-          : null;
+        return BookMetadata.matchingTorrentCatalogRecord(book, candidates);
       }
 
       function resolvedTorrentBook(book, matched, provenance) {
@@ -8035,6 +8048,12 @@
           if (typeof settings.autoSeedTorrents === 'boolean') {
             state.settings.autoSeedTorrents = settings.autoSeedTorrents;
           }
+          if ([-1, 1000000, 5000000, 10000000, 25000000].includes(Number(settings.torrentDownloadLimit))) {
+            state.settings.torrentDownloadLimit = Number(settings.torrentDownloadLimit);
+          }
+          if ([-1, 128000, 500000, 1000000, 5000000].includes(Number(settings.torrentUploadLimit))) {
+            state.settings.torrentUploadLimit = Number(settings.torrentUploadLimit);
+          }
           if (typeof settings.useNip7 === 'boolean') {
             state.settings.useNip7 = settings.useNip7;
           }
@@ -8079,6 +8098,8 @@
         for (const input of autoReadingInputs) input.checked = Boolean(state.settings.autoReading);
         torrentAutoDownloadInput.checked = Boolean(state.settings.autoDownloadTorrents);
         torrentAutoSeedInput.checked = Boolean(state.settings.autoSeedTorrents);
+        torrentDownloadLimitInput.value = String(state.settings.torrentDownloadLimit);
+        torrentUploadLimitInput.value = String(state.settings.torrentUploadLimit);
         nip7EnabledInput.checked = Boolean(state.settings.useNip7);
         themeModeInput.value = ['white', 'paper', 'dark'].includes(state.settings.theme) ? state.settings.theme : 'white';
         readerFontInput.value = state.settings.readerFont;
@@ -8098,6 +8119,8 @@
           void desktopBridge?.transfers?.setPreferences?.({
             autoDownload: state.settings.autoDownloadTorrents,
             autoSeed: state.settings.autoSeedTorrents,
+            downloadLimit: state.settings.torrentDownloadLimit,
+            uploadLimit: state.settings.torrentUploadLimit,
           });
           state.settings.useNip7 = true;
           nip7EnabledInput.checked = true;
@@ -8374,6 +8397,8 @@
         state.settings.autoReading = autoReadingInputs[0]?.checked ?? true;
         state.settings.autoDownloadTorrents = torrentAutoDownloadInput.checked;
         state.settings.autoSeedTorrents = torrentAutoSeedInput.checked;
+        state.settings.torrentDownloadLimit = Number(torrentDownloadLimitInput.value);
+        state.settings.torrentUploadLimit = Number(torrentUploadLimitInput.value);
         state.settings.useNip7 = nip7EnabledInput.checked;
         state.settings.theme = themeModeInput.value;
         state.settings.readerFont = BookstrTypography.normalizeFont(readerFontInput.value);
@@ -8625,6 +8650,8 @@
         void desktopBridge?.transfers?.setPreferences?.({
           autoDownload: state.settings.autoDownloadTorrents,
           autoSeed: state.settings.autoSeedTorrents,
+          downloadLimit: state.settings.torrentDownloadLimit,
+          uploadLimit: state.settings.torrentUploadLimit,
         });
       });
       torrentAutoSeedInput.addEventListener('change', () => {
@@ -8632,6 +8659,22 @@
         void desktopBridge?.transfers?.setPreferences?.({
           autoDownload: state.settings.autoDownloadTorrents,
           autoSeed: state.settings.autoSeedTorrents,
+          downloadLimit: state.settings.torrentDownloadLimit,
+          uploadLimit: state.settings.torrentUploadLimit,
+        });
+      });
+      torrentDownloadLimitInput.addEventListener('change', () => {
+        applySettingsFromUI();
+        void desktopBridge?.transfers?.setPreferences?.({
+          downloadLimit: state.settings.torrentDownloadLimit,
+          uploadLimit: state.settings.torrentUploadLimit,
+        });
+      });
+      torrentUploadLimitInput.addEventListener('change', () => {
+        applySettingsFromUI();
+        void desktopBridge?.transfers?.setPreferences?.({
+          downloadLimit: state.settings.torrentDownloadLimit,
+          uploadLimit: state.settings.torrentUploadLimit,
         });
       });
       speechLanguageInput.addEventListener('change', () => {

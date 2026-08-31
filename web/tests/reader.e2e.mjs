@@ -268,7 +268,7 @@ test('an unavailable MD5 still shows its known book metadata', async ({ page }) 
   await expect(metadata).toContainText('2024');
   await expect(metadata).toContainText('pt');
   await expect(metadata).toContainText('This book is not stored locally');
-  await expect(metadata).toContainText('EPUB · Not downloaded');
+  await expect(metadata.locator('.read-file-state-meta')).toHaveCount(0);
   await expect(metadata).not.toContainText('Source URL');
   await expect(metadata).not.toContainText('unavailable.invalid');
 });
@@ -1022,6 +1022,38 @@ test('a search result opens its EPUB in the Bookstr reader', async ({ page }) =>
   )[0]?.rights_source)).toBe('epub_opf');
 });
 
+test('the reader discovers a Creative Commons license in EPUB front or back matter', async ({ page }) => {
+  const md5 = 'abababababababababababababababab';
+  const downloadUrl = 'https://files.test/body-rights.epub';
+  const epub = await minimalEpub(
+    'Body Rights Reader',
+    'Copyright 2004. This work is licensed at https://creativecommons.org/licenses/by-sa/4.0/.',
+  );
+  await page.route('https://books-api.guaka.org/api/search**', route => route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify({ books: [{ md5, title: 'Body Rights Reader', extension: 'epub', readUrl: downloadUrl }] }),
+  }));
+  await page.route(downloadUrl, route => route.fulfill({
+    status: 200,
+    contentType: 'application/epub+zip',
+    body: epub,
+  }));
+
+  await page.goto('/#search=body-rights');
+  await page.getByRole('link', { name: 'Body Rights Reader' }).click();
+
+  await expect.poll(async () => page.evaluate(() => JSON.parse(
+    localStorage.getItem('bookstr_reading_library_v1') || '[]',
+  )[0]?.license)).toBe('https://creativecommons.org/licenses/by-sa/4.0/');
+  await expect.poll(async () => page.evaluate(() => JSON.parse(
+    localStorage.getItem('bookstr_reading_library_v1') || '[]',
+  )[0]?.rights_source)).toBe('epub_content');
+  await expect.poll(async () => page.evaluate(() => JSON.parse(
+    localStorage.getItem('bookstr_reading_library_v1') || '[]',
+  )[0]?.rights_status)).toBe('open_license');
+});
+
 test('Yochai Benkler search ranks an available edition first and opens the actual book', async ({ page }) => {
   const archiveId = 'the-wealth-of-networks';
   const filename = 'The_Wealth_of_Networks.epub';
@@ -1090,4 +1122,43 @@ test('Yochai Benkler search ranks an available edition first and opens the actua
   await expect(page.locator('#status')).toContainText('cached results');
   await expect(page.locator('#search-result-count')).toHaveText('2 results');
   expect(archiveSearchCalls).toBe(1);
+});
+
+test('Internet Archive borrow-only EPUB derivatives are not presented as readable links', async ({ page }) => {
+  await page.addInitScript(() => {
+    localStorage.setItem('bookstr_search_sources_v1', JSON.stringify([
+      'all-books-party', 'unglueit', 'gutenberg', 'oapen',
+      'open-textbook-library', 'doab', 'global-digital-library',
+    ]));
+  });
+  await page.route('https://books-api.guaka.org/api/internet-archive/search**', route => route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify({ response: { docs: [{
+      identifier: 'cryptonomicon0000step',
+      title: 'Cryptonomicon',
+      creator: 'Stephenson, Neal',
+      year: 1999,
+    }] } }),
+  }));
+  await page.route('https://books-api.guaka.org/api/internet-archive/metadata**', route => route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify({
+      metadata: {
+        title: 'Cryptonomicon',
+        creator: 'Stephenson, Neal',
+        'access-restricted-item': 'true',
+      },
+      files: [
+        { name: 'cryptonomicon.epub', format: 'EPUB', private: 'true', size: '1900000' },
+        { name: 'cryptonomicon_lcp.epub', format: 'LCP Encrypted EPUB', size: '2000000' },
+        { name: 'cryptonomicon_encrypted.pdf', format: 'ACS Encrypted PDF', size: '50000000' },
+      ],
+    }),
+  }));
+
+  await page.goto('/#search=Cryptonomicon');
+  await expect(page.locator('#results .book-table-row')).toHaveCount(0);
+  await expect(page.locator('#results')).not.toContainText('Internet Archive');
 });

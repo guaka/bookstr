@@ -701,6 +701,8 @@ test('book details use a compact metadata grid with human-readable digest and ri
   assert.match(html, /\.read-metadata-grid dd\.metadata-digest/);
   assert.match(html, /font-size: clamp\(1\.45rem, 2\.3vw, 2\.15rem\)/);
   assert.match(html, /\.read-metadata-grid dd\.metadata-authors[\s\S]*?-webkit-line-clamp: 2/);
+  assert.match(html, /link\.href = `#search=\$\{encodeURIComponent\(authorSearchName\(value\)\)\}`/);
+  assert.match(html, /link\.addEventListener\('click',[\s\S]*?searchForAuthor\(book\)/);
 });
 
 test('constrained author lists stay compact while retaining their full accessible value', () => {
@@ -724,12 +726,16 @@ test('metadata-only desktop books try an exact private LibVault torrent lookup b
   assert.match(html, /if \(publicCatalogMatch\) return publicCatalogMatch;[\s\S]*?if \(!nostrSigner\?\.signEvent/);
   assert.match(html, /fetch\(`\$\{LIBVAULT_API_BASE\}\/search\?\$\{params\}`\)/);
   assert.match(html, /function matchingTorrentCatalogRecord\(book, candidates\)/);
-  assert.match(html, /candidateYear === wantedYear/);
-  assert.match(html, /candidateFormat === wantedFormat/);
+  assert.match(html, /BookMetadata\.matchingTorrentCatalogRecord\(book, candidates\)/);
+  assert.match(bookMetadata, /const titleRank = candidate =>/);
+  assert.match(bookMetadata, /overlap \/ candidateTokens\.length >= 0\.6/);
+  assert.match(bookMetadata, /const formatRank = \{ epub: 4, pdf: 3, fb2: 2/);
+  assert.match(bookMetadata, /candidateYear === wantedYear/);
+  assert.match(bookMetadata, /right\.formatRank - left\.formatRank/);
   assert.match(html, /module\.searchLibVault\(query, isbn \? 'isbn' : 'title'/);
   assert.match(html, /signer: nostrSigner,[\s\S]*?publish: publishRelayEvent,[\s\S]*?onTrace: showNip17Trace/);
-  assert.match(html, /candidates\.filter\(candidate => BookMetadata\.libgenTorrentMetadataForBook\(candidate\)\)/);
-  assert.match(html, /BookMetadata\.sameLibraryBook\(book, candidate\)/);
+  assert.match(bookMetadata, /candidates\.filter\(candidate => libgenTorrentMetadataForBook\(candidate\)\)/);
+  assert.match(bookMetadata, /sameLibraryBook\(book, candidate\)/);
   assert.match(html, /Looking for a torrent for \$\{book\.title \|\| 'book'\}/);
   assert.match(html, /const resolvedTorrentBook = await resolvePrivateTorrentBook\(book\)\.catch/);
   assert.match(html, /rememberResolvedTorrentMetadata\(book, resolvedTorrentBook\)/);
@@ -737,6 +743,15 @@ test('metadata-only desktop books try an exact private LibVault torrent lookup b
   assert.match(html, /BookMetadata\.libgenTorrentMetadataForBook\(book\)[\s\S]*?\? book[\s\S]*?: await resolveLibVaultHTTPBook/);
   assert.match(html, /torrentBook = \{ \.\.\.torrentBook, md5: libgenTorrent\.md5, libgenId: libgenTorrent\.libgenId \}/);
   assert.match(html, /if \(!readPath && !cached && !torrentAvailable\) \{[\s\S]*?No readable download or torrent is available/);
+});
+
+test('Internet Archive search excludes borrow-only and encrypted derivatives', () => {
+  assert.match(html, /function internetArchiveFile\(files, metadata = \{\}\)/);
+  assert.match(html, /BookMetadata\.internetArchiveFile\(files, metadata\)/);
+  assert.match(bookMetadata, /access-restricted-item/);
+  assert.match(bookMetadata, /String\(file\.private \|\| ''\)\.toLowerCase\(\)/);
+  assert.match(bookMetadata, /\(\?:encrypted\|lcp\|acsm\)/);
+  assert.match(html, /internetArchiveFile\(metadataPayload\.files, metadata\)/);
 });
 
 test('Home does not inject LibVault files during background library sync', () => {

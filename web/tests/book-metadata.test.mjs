@@ -28,6 +28,8 @@ const {
   bookIdentity,
   availabilityForBook,
   availabilitySourcesForBook,
+  internetArchiveFile,
+  matchingTorrentCatalogRecord,
   sortBooks,
   dedupeLibraryBooks,
   matchesBookFilter,
@@ -113,6 +115,22 @@ test('formats rights markers and accessible distinctions', () => {
   assert.equal(rightsLabel({}), '©');
   assert.equal(rightsAccessibleLabel({ rights_status: 'copyrighted' }), 'Copyrighted');
   assert.equal(rightsAccessibleLabel({}), 'No open license identified');
+  const contradictory = {
+    rights_status: 'copyrighted',
+    license: 'Copyright (C) 2006. License: All rights reserved. http://creativecommons.org/licenses/by-nc-sa/2.5/The online version is available under a Creative Commons Noncommercial Sharealike license.',
+  };
+  assert.equal(normalizeRights(contradictory).rights_status, 'open_license');
+  assert.equal(normalizeRights(contradictory).license_url, 'http://creativecommons.org/licenses/by-nc-sa/2.5/');
+  assert.equal(rightsLabel(contradictory), 'CC BY-NC-SA 2.5');
+  assert.equal(rightsAccessibleLabel(contradictory), 'CC BY-NC-SA 2.5');
+  assert.equal(
+    rightsAccessibleLabel({ license: 'Copyright 2005-2023 Karl Fogel, under the CreativeCommons Attribution-ShareAlike (4.0) license.' }),
+    'CC BY-SA 4.0',
+  );
+  assert.equal(
+    rightsAccessibleLabel({ license: 'This book is distributed under a Creative Commons Attribution-NonCommercial-ShareAlike 3.0 license.' }),
+    'CC BY-NC-SA 3.0',
+  );
 });
 
 test('sorts cached books through the caller-provided cache lookup', () => {
@@ -427,6 +445,53 @@ test('sorts availability and cached state', () => {
   ];
   assert.deepEqual(sortBooks(books, 'availability').map(book => book.title), ['Local', 'Remote']);
   assert.deepEqual(sortBooks(books, 'cached', 'desc', book => book.title === 'Remote').map(book => book.title), ['Remote', 'Local']);
+});
+
+test('matches a contributor-heavy Open Library record to its readable subtitle edition', () => {
+  const selected = matchingTorrentCatalogRecord({
+    md5: 'openlibrary:116726829',
+    title: 'Antifragile',
+    authors: 'Nassim Nicholas Taleb Genís Sánchez Barberán Albino Santos Mosquera',
+  }, [
+    { md5: '6aa0b2c29d7992041f99024e15f60a20', libgenId: 1521282, title: 'Antifragile Software. Building Adaptable Software with Microservices', authors: 'Russ Miles', extension: 'pdf' },
+    { md5: '50a679620938decf0ce68af644d7622d', libgenId: 3142093, title: 'Antifragile', authors: 'Nassim Nicholas Taleb', extension: 'pdf' },
+    { md5: '8fc96e17b7f73759bb8d7d9b852d6626', libgenId: 2519660, title: 'Antifragile Things That Gain from Disorder', authors: 'Nassim Nicholas Taleb', extension: 'pdf' },
+    { md5: '2edbe4a27b0587cad214c20b9ff83d26', libgenId: 1023589, title: 'Antifragile: Things That Gain from Disorder', authors: 'Nassim Nicholas Taleb', extension: 'epub' },
+    { md5: '936ef3a61c52235bb69bca164333c4b0', libgenId: 1022876, title: 'Antifragile: Things That Gain from Disorder', authors: 'Nassim Nicholas Taleb', extension: 'mobi' },
+  ]);
+  assert.equal(selected?.md5, '2edbe4a27b0587cad214c20b9ff83d26');
+});
+
+test('keeps different readable formats of the same library identity', () => {
+  const epub = { md5: 'shared-record', title: 'Cryptonomicon', extension: 'epub', isbn: '9780380973460' };
+  const pdf = { md5: 'shared-record', title: 'Cryptonomicon', extension: 'pdf', isbn: '9780380973460' };
+  assert.equal(sameLibraryBook(epub, pdf), false);
+  assert.deepEqual(
+    mergeLibraryState([epub, pdf], []).map(book => book.extension),
+    ['epub', 'pdf'],
+  );
+});
+
+test('prefers EPUB among exact ISBN candidates during automatic resolution', () => {
+  const selected = matchingTorrentCatalogRecord({ isbn: '9780061792571' }, [
+    { md5: '1'.repeat(32), libgenId: 1, isbn: '9780061792571', extension: 'pdf' },
+    { md5: '2'.repeat(32), libgenId: 2, isbn: '9780061792571', extension: 'epub' },
+  ]);
+  assert.equal(selected?.extension, 'epub');
+});
+
+test('selects only directly readable Internet Archive files and prefers EPUB', () => {
+  const files = [
+    { name: 'book.pdf', format: 'Text PDF', size: '200' },
+    { name: 'book.epub', format: 'EPUB', size: '100' },
+  ];
+  assert.equal(internetArchiveFile(files)?.name, 'book.epub');
+  assert.equal(internetArchiveFile(files, { 'access-restricted-item': 'true' }), null);
+  assert.equal(internetArchiveFile([
+    { name: 'book.epub', format: 'EPUB', private: true },
+    { name: 'book_lcp.epub', format: 'LCP Encrypted EPUB' },
+    { name: 'book_encrypted.pdf', format: 'ACS Encrypted PDF' },
+  ]), null);
 });
 
 test('sorts availability by usefulness instead of alphabetically', () => {

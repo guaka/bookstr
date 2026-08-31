@@ -139,7 +139,7 @@ test('opening Electron can resume completed LibGen seeds from persistent torrent
   const md5 = 'c'.repeat(32);
   const libgenId = 2412930;
   const seedRoot = path.join(root, 'staging', 'libgen-seeds');
-  const seedFile = path.join(seedRoot, 'r_2412000', md5);
+  const seedFile = path.join(seedRoot, '2412000', md5);
   await fsp.mkdir(path.dirname(seedFile), { recursive: true });
   await fsp.writeFile(seedFile, 'seed bytes');
   store.upsertBook({ id: md5, md5, title: 'Persistent Seed', extension: 'epub', sourceNativeId: String(libgenId) });
@@ -154,12 +154,65 @@ test('opening Electron can resume completed LibGen seeds from persistent torrent
     },
   };
 
-  assert.deepEqual(await manager.resumeLibgenSeeds(), { seeded: 1 });
+  assert.deepEqual(await manager.resumeLibgenSeeds(), { seeded: 1, resumed: 0 });
   assert.equal(options.path, seedRoot);
   assert.equal(options.fileName, md5);
   assert.equal(options.bookId, md5);
   assert.deepEqual([...torrent.bookstrSeedingBookIds], [md5]);
   assert.equal(torrent.bookstrBookId, md5);
+}));
+
+test('startup reconstructs missing retained torrent payloads from verified library files', () => withManager(async ({ manager, store, root }) => {
+  const md5 = 'e'.repeat(32);
+  const libgenId = 4082731;
+  const bytes = Buffer.from('verified library payload');
+  const relativePath = `books/${crypto.createHash('sha256').update(bytes).digest('hex')}.epub`;
+  const libraryFile = path.join(root, 'library', relativePath);
+  const seedFile = path.join(root, 'staging', 'libgen-seeds', '4082000', md5);
+  await fsp.mkdir(path.dirname(libraryFile), { recursive: true });
+  await fsp.writeFile(libraryFile, bytes);
+  store.upsertBook({ id: md5, md5, title: 'Rebuilt Seed', extension: 'epub', sourceNativeId: String(libgenId) });
+  store.registerLibraryFile({ bookId: md5, relativePath, sizeBytes: bytes.length });
+  store.setDownload({ bookId: md5, status: 'ready', source: 'torrent', bytes: bytes.length, totalBytes: bytes.length });
+  manager.fetch = async () => ({ ok: true, arrayBuffer: async () => Buffer.from('d4:test4:datae') });
+  manager.torrentBridge = {
+    async downloadSelected() {
+      return { filePath: seedFile, torrent: {} };
+    },
+  };
+
+  assert.deepEqual(await manager.resumeLibgenSeeds(), { seeded: 1, resumed: 0 });
+  assert.deepEqual(await fsp.readFile(seedFile), bytes);
+  assert.equal((await fsp.stat(seedFile)).ino, (await fsp.stat(libraryFile)).ino);
+}));
+
+test('startup resumes interrupted LibGen downloads in the background', () => withManager(async ({ manager, store }) => {
+  const md5 = 'f'.repeat(32);
+  const libgenId = 4082731;
+  const bytes = Buffer.from('resumed torrent payload');
+  store.upsertBook({ id: md5, md5, title: 'Interrupted Download', extension: 'epub', sourceNativeId: String(libgenId) });
+  store.setDownload({ bookId: md5, status: 'downloading', source: 'torrent', bytes: 4, totalBytes: bytes.length });
+  manager.seedResumeIntervalMs = 0;
+  manager.fetch = async () => ({ ok: true, arrayBuffer: async () => Buffer.from('d4:test4:datae') });
+  let started;
+  const downloadStarted = new Promise(resolve => { started = resolve; });
+  manager.torrentBridge = {
+    async downloadSelected(_metadata, options) {
+      started(options);
+      const filePath = path.join(options.path, '4082000', md5);
+      await fsp.mkdir(path.dirname(filePath), { recursive: true });
+      await fsp.writeFile(filePath, bytes);
+      options.onProgress({ bytes: bytes.length, totalBytes: bytes.length });
+      return { filePath, torrent: {} };
+    },
+  };
+
+  assert.deepEqual(await manager.resumeLibgenSeeds(), { seeded: 0, resumed: 1 });
+  const options = await downloadStarted;
+  assert.equal(options.fileName, md5);
+  assert.equal(options.bookId, md5);
+  await manager.libgenAcquisitionJobs.get(md5)?.promise;
+  assert.equal(store.downloads().find(item => item.bookId === md5).status, 'ready');
 }));
 
 test('startup resumes eligible LibGen seeds gradually instead of all at once', () => withManager(async ({ manager, store, root }) => {
@@ -184,7 +237,7 @@ test('startup resumes eligible LibGen seeds gradually instead of all at once', (
     },
   };
 
-  assert.deepEqual(await manager.resumeLibgenSeeds(), { seeded: 2 });
+  assert.deepEqual(await manager.resumeLibgenSeeds(), { seeded: 2, resumed: 0 });
   assert.deepEqual(waits, [1500]);
 }));
 

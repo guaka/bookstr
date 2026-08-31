@@ -7,7 +7,9 @@ const PUBLIC_TRACKERS = Object.freeze([
   'wss://tracker.openwebtorrent.com',
   'wss://tracker.webtorrent.dev',
 ]);
-const PUBLIC_UPLOAD_LIMIT = 1024 * 1024;
+const DEFAULT_DOWNLOAD_LIMIT = 10 * 1000 * 1000;
+const PUBLIC_UPLOAD_LIMIT = 1000 * 1000;
+const MAX_TRANSFER_LIMIT = 1000 * 1000 * 1000;
 const PIECE_LENGTH = 256 * 1024;
 
 function safeDigest(value) {
@@ -30,6 +32,13 @@ function safePath(value) {
 function safeCounter(value) {
   const number = Number(value);
   return Number.isFinite(number) ? Math.max(0, number) : 0;
+}
+
+function safeTransferLimit(value, fallback) {
+  const rate = Number(value);
+  if (rate === -1) return -1;
+  if (!Number.isFinite(rate) || rate < 16 * 1000 || rate > MAX_TRANSFER_LIMIT) return fallback;
+  return Math.round(rate);
 }
 
 function safePeerAddress(value) {
@@ -87,12 +96,14 @@ function torrentSummary(torrent, privacy) {
     downloaded: safeCounter(torrent.downloaded),
     uploaded: safeCounter(torrent.uploaded),
     peers: Array.isArray(torrent.wires) ? torrent.wires.length : Number(torrent.numPeers || 0),
+    downloadSpeed: safeCounter(torrent.downloadSpeed),
+    uploadSpeed: safeCounter(torrent.uploadSpeed),
     seeding,
   };
 }
 
 class WebTorrentBridge {
-  constructor({ clientFactory, dataDir, trackers = PUBLIC_TRACKERS, uploadLimit = PUBLIC_UPLOAD_LIMIT } = {}) {
+  constructor({ clientFactory, dataDir, trackers = PUBLIC_TRACKERS, downloadLimit = DEFAULT_DOWNLOAD_LIMIT, uploadLimit = PUBLIC_UPLOAD_LIMIT } = {}) {
     this.clientFactory = clientFactory || (async options => {
       const module = await import('webtorrent');
       const Client = module.default || module;
@@ -101,20 +112,31 @@ class WebTorrentBridge {
     this.dataDir = dataDir ? path.resolve(dataDir) : undefined;
     this.trackers = [...new Set(trackers.map(value => String(value || '').trim()).filter(value => /^wss?:\/\//i.test(value)))];
     if (!this.trackers.length) this.trackers = [...PUBLIC_TRACKERS];
-    this.uploadLimit = Number.isFinite(Number(uploadLimit)) && Number(uploadLimit) >= 0
-      ? Math.round(Number(uploadLimit))
-      : PUBLIC_UPLOAD_LIMIT;
+    this.downloadLimit = safeTransferLimit(downloadLimit, DEFAULT_DOWNLOAD_LIMIT);
+    this.uploadLimit = safeTransferLimit(uploadLimit, PUBLIC_UPLOAD_LIMIT);
     this.client = null;
   }
 
   async start() {
     if (this.client) return this.client;
     this.client = await this.clientFactory({
+      downloadLimit: this.downloadLimit,
       uploadLimit: this.uploadLimit,
       path: this.dataDir,
     });
+    if (typeof this.client.throttleDownload === 'function') this.client.throttleDownload(this.downloadLimit);
     if (typeof this.client.throttleUpload === 'function') this.client.throttleUpload(this.uploadLimit);
     return this.client;
+  }
+
+  async setLimits({ downloadLimit, uploadLimit } = {}) {
+    this.downloadLimit = safeTransferLimit(downloadLimit, this.downloadLimit);
+    this.uploadLimit = safeTransferLimit(uploadLimit, this.uploadLimit);
+    if (this.client) {
+      this.client.throttleDownload?.(this.downloadLimit);
+      this.client.throttleUpload?.(this.uploadLimit);
+    }
+    return { downloadLimit: this.downloadLimit, uploadLimit: this.uploadLimit };
   }
 
   async seedPublic(filePath, { sha256, extension = 'epub', size, publicSeedAllowed = true, bookId, onSeed } = {}) {
@@ -359,6 +381,7 @@ class WebTorrentBridge {
 module.exports = {
   WebTorrentBridge,
   PUBLIC_TRACKERS,
+  DEFAULT_DOWNLOAD_LIMIT,
   PUBLIC_UPLOAD_LIMIT,
   PIECE_LENGTH,
   safePeerAddress,

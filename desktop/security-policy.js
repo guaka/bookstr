@@ -5,7 +5,7 @@ function appContentSecurityPolicy(nonce = '') {
     "base-uri 'self';",
     "connect-src 'self' https: wss:;",
     "font-src 'self' https: data:;",
-    "img-src 'self' https: data:;",
+    "img-src 'self' https: data: blob:;",
     `script-src 'self' 'wasm-unsafe-eval'${nonceSource};`,
     "style-src 'self' 'unsafe-inline';",
     "worker-src 'self' blob:;",

@@ -255,6 +255,7 @@
     let lastSpeechCfi = "";
     let activeDictionary = null;
     let bookLoadGeneration = 0;
+    let discoveredRightsNotice = "";
     const READER_SETTINGS_KEY = "bookstr_reader_settings_v1";
     function storedReaderSettings() {
       try {
@@ -348,7 +349,7 @@
       return String(value || "").trim();
     }
 
-    function reportBookMetadata() {
+    function reportBookMetadata(rightsOverride = "", rightsSource = "") {
       const metadata = book && book.packaging && book.packaging.metadata;
       if (!metadata) return;
       const payload = {
@@ -356,12 +357,52 @@
         bookId: currentBookId,
         title: metadataText(metadata.title),
         author: metadataText(metadata.creator || metadata.author),
-        rights: metadataText(metadata.rights)
+        rights: rightsOverride || metadataText(metadata.rights),
+        rights_source: rightsSource || (metadataText(metadata.rights) ? "epub_opf" : "")
       };
       if (window.parent !== window) window.parent.postMessage(payload, window.location.origin);
       if (window.AndroidBridge && AndroidBridge.onMetadata) {
         AndroidBridge.onMetadata(JSON.stringify(payload));
       }
+    }
+
+    function creativeCommonsNotice(value) {
+      const text = String(value || "");
+      const url = text.match(/https?:\/\/(?:www\.)?creativecommons\.org\/(?:licenses\/[a-z-]+|publicdomain\/zero)\/\d(?:\.\d)?\/?/i);
+      if (url) return url[0];
+      const phrase = text.match(/creative\s*commons.{0,80}?(attribution|noncommercial|sharealike|no derivatives).{0,80}?(\d(?:\.\d)?)/i);
+      return phrase ? phrase[0] : "";
+    }
+
+    function reportDiscoveredRights(notice, generation = bookLoadGeneration) {
+      if (!notice || notice === discoveredRightsNotice || generation !== bookLoadGeneration) return;
+      discoveredRightsNotice = notice;
+      if (desktopReaderBook) Object.assign(desktopReaderBook, {
+        rights_status: "unknown",
+        license: notice,
+        license_url: "",
+        rights_source: "epub_content"
+      });
+      reportBookMetadata(notice, "epub_content");
+    }
+
+    async function discoverSpineRights() {
+      const sections = Array.from(book?.spine?.spineItems || []);
+      if (!sections.length) return "";
+      const named = sections.filter(section => /(?:copy(?:right)?|rights?|licen[cs]e|legal|colophon)/i.test(`${section?.idref || ""} ${section?.href || ""}`));
+      const candidates = [...new Set([...named, ...sections.slice(0, 3), ...sections.slice(-3)])].slice(0, 8);
+      for (const section of candidates) {
+        try {
+          const document = await section.load(book.load.bind(book));
+          const links = Array.from(document?.querySelectorAll?.("a[href]") || [], link => link.getAttribute("href") || "").join(" ");
+          const notice = creativeCommonsNotice(`${links} ${document?.documentElement?.textContent || ""}`);
+          section.unload?.();
+          if (notice) return notice;
+        } catch {
+          section.unload?.();
+        }
+      }
+      return "";
     }
 
     function normalizeDesktopBookMetadata(payloadBook, readUrl = "") {
@@ -584,6 +625,7 @@
 
     function openBook(source, cfi, theme, highlightCfi, bookId, desktopPayloadBook = null) {
       const generation = ++bookLoadGeneration;
+      discoveredRightsNotice = "";
       desktopReaderBook = desktopPayloadBook && typeof desktopPayloadBook === "object" ? normalizeDesktopBookMetadata(desktopPayloadBook) : null;
       desktopReaderFurthestProgress = 0;
       desktopReaderProgress = null;
@@ -613,12 +655,16 @@
         book = nextBook;
         reportBookMetadata();
         const embeddedRights = String(book.packaging?.metadata?.rights || "").trim();
-        if (embeddedRights && desktopReaderBook) {
-          Object.assign(desktopReaderBook, {
-            rights_status: "unknown",
-            license: embeddedRights,
-            license_url: "",
-            rights_source: "epub_opf"
+        if (embeddedRights) {
+          if (desktopReaderBook) Object.assign(desktopReaderBook, {
+              rights_status: "unknown",
+              license: embeddedRights,
+              license_url: "",
+              rights_source: "epub_opf"
+            });
+        } else {
+          void discoverSpineRights().then(discoveredRights => {
+            reportDiscoveredRights(discoveredRights, generation);
           });
         }
         rendition = nextBook.renderTo("viewer", {
@@ -632,6 +678,10 @@
         rendition.on("rendered", function(_, view) {
           const contentDocument = view && view.contents && view.contents.document;
           if (contentDocument) {
+            if (!embeddedRights) {
+              const links = Array.from(contentDocument.querySelectorAll("a[href]"), link => link.getAttribute("href") || "").join(" ");
+              reportDiscoveredRights(creativeCommonsNotice(`${links} ${contentDocument.documentElement?.textContent || ""}`), generation);
+            }
             installSwipeNavigation(contentDocument);
             installWheelNavigation(contentDocument);
             applyTypographyToDocument(contentDocument);

@@ -25,7 +25,7 @@ function seedDesktopStore(userData, books, downloads = []) {
 
 const COVER_PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=', 'base64');
 
-async function minimalEpub(title, body = title, { cover = false } = {}) {
+async function minimalEpub(title, body = title, { cover = false, inlineImage = false } = {}) {
   const zip = new JSZip();
   zip.file('mimetype', 'application/epub+zip', { compression: 'STORE' });
   zip.file('META-INF/container.xml', `<?xml version="1.0"?>
@@ -35,11 +35,12 @@ async function minimalEpub(title, body = title, { cover = false } = {}) {
   zip.file('OEBPS/content.opf', `<?xml version="1.0" encoding="UTF-8"?>
     <package version="3.0" xmlns="http://www.idpf.org/2007/opf" unique-identifier="book-id">
       <metadata xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:identifier id="book-id">urn:test:${title}</dc:identifier><dc:title>${title}</dc:title><dc:language>en</dc:language></metadata>
-      <manifest>${cover ? '<item id="cover-art" href="front.png" media-type="image/png" properties="cover-image"/>' : ''}<item id="chapter" href="chapter.xhtml" media-type="application/xhtml+xml"/></manifest>
+      <manifest>${cover ? '<item id="cover-art" href="front.png" media-type="image/png" properties="cover-image"/>' : ''}${inlineImage ? '<item id="illustration" href="illustration.png" media-type="image/png"/>' : ''}<item id="chapter" href="chapter.xhtml" media-type="application/xhtml+xml"/></manifest>
       <spine><itemref idref="chapter"/></spine>
     </package>`);
   if (cover) zip.file('OEBPS/front.png', COVER_PNG);
-  zip.file('OEBPS/chapter.xhtml', `<?xml version="1.0" encoding="UTF-8"?><html xmlns="http://www.w3.org/1999/xhtml"><body><h1>${title}</h1><p>${body}</p></body></html>`);
+  if (inlineImage) zip.file('OEBPS/illustration.png', COVER_PNG);
+  zip.file('OEBPS/chapter.xhtml', `<?xml version="1.0" encoding="UTF-8"?><html xmlns="http://www.w3.org/1999/xhtml"><body><h1>${title}</h1><p>${body}</p>${inlineImage ? '<img id="embedded-illustration" src="illustration.png" alt="Embedded illustration"/>' : ''}</body></html>`);
   return zip.generateAsync({ type: 'nodebuffer', mimeType: 'application/epub+zip' });
 }
 
@@ -134,7 +135,7 @@ test('Library reports useful local torrent states', async () => {
     await expect(page.locator('#read-metadata-fallback-torrent')).toHaveText('Downloading · 0%');
     await expect(page.locator('#read-metadata-fallback-status')).toContainText('Downloading this book');
     await expect(page.locator('#read-metadata-fallback-status')).toContainText('It will open automatically when the file is ready.');
-    await expect(page.locator('#read-metadata-fallback-status')).toContainText('EPUB · Checking local files');
+    await expect(page.locator('#read-metadata-fallback-status .read-file-state-meta')).toHaveCount(0);
     await expect(page.locator('#read-metadata-fallback')).not.toContainText('Source URL');
     await page.getByRole('button', { name: 'Home' }).click();
     await page.getByRole('button', { name: 'Available', exact: true }).click();
@@ -211,6 +212,56 @@ test('Electron drops IndexedDB book files but keeps their Library entries torren
   }
 });
 
+test('metadata-only Open Library records resolve subtitle and contributor variants to a readable torrent edition', async () => {
+  const launch = electronArgs('openlibrary-torrent-match-user-data');
+  const app = await electron.launch({ args: launch.args });
+  try {
+    const page = await app.firstWindow();
+    await page.waitForFunction(() => Boolean(globalThis.BookMetadata?.matchingTorrentCatalogRecord));
+    const selected = await page.evaluate(() => window.BookMetadata.matchingTorrentCatalogRecord({
+      md5: 'openlibrary:116726829',
+      title: 'Antifragile',
+      authors: 'Nassim Nicholas Taleb Genís Sánchez Barberán Albino Santos Mosquera',
+    }, [
+      {
+        md5: '6aa0b2c29d7992041f99024e15f60a20',
+        libgenId: 1521282,
+        title: 'Antifragile Software. Building Adaptable Software with Microservices',
+        authors: 'Russ Miles',
+        extension: 'pdf',
+      },
+      {
+        md5: '8fc96e17b7f73759bb8d7d9b852d6626',
+        libgenId: 2519660,
+        title: 'Antifragile Things That Gain from Disorder',
+        authors: 'Nassim Nicholas Taleb',
+        extension: 'pdf',
+      },
+      {
+        md5: '2edbe4a27b0587cad214c20b9ff83d26',
+        libgenId: 1023589,
+        title: 'Antifragile: Things That Gain from Disorder',
+        authors: 'Nassim Nicholas Taleb',
+        extension: 'epub',
+      },
+      {
+        md5: '936ef3a61c52235bb69bca164333c4b0',
+        libgenId: 1022876,
+        title: 'Antifragile: Things That Gain from Disorder',
+        authors: 'Nassim Nicholas Taleb',
+        extension: 'mobi',
+      },
+    ]));
+    expect(selected).toMatchObject({
+      md5: '2edbe4a27b0587cad214c20b9ff83d26',
+      libgenId: 1023589,
+      extension: 'epub',
+    });
+  } finally {
+    await app.close();
+  }
+});
+
 test('a successful torrent download does not duplicate its legacy SHA-addressed favorite', async () => {
   const launch = electronArgs('download-dedupe-user-data');
   const md5 = 'a'.repeat(32);
@@ -240,6 +291,47 @@ test('a successful torrent download does not duplicate its legacy SHA-addressed 
     await expect(page.locator('.library-book-count')).toHaveText('1 book · 1 readable now · 0 seeding');
     await expect(page.locator('.book-table-row')).toHaveCount(1);
     await expect(libraryRow(page, 'Scale').locator('.result-availability')).toHaveText('Ready');
+  } finally {
+    await app.close();
+  }
+});
+
+test('SHA-addressed library rows inherit seeding status from their LibGen download', async () => {
+  const launch = electronArgs('sha-seeding-alias-user-data');
+  const libvaultMd5 = '7'.repeat(32);
+  const sha256 = '8'.repeat(64);
+  const stored = {
+    md5: libvaultMd5,
+    sha256,
+    title: 'Aliased Seed',
+    authors: 'Fixture Author',
+    extension: 'epub',
+  };
+  const favorite = {
+    md5: sha256,
+    sha256,
+    title: stored.title,
+    authors: stored.authors,
+    extension: stored.extension,
+  };
+  seedDesktopStore(launch.userData, [stored], [{
+    bookId: libvaultMd5,
+    status: 'seeding',
+    bytes: 100,
+    totalBytes: 100,
+    source: 'torrent',
+  }]);
+  const app = await electron.launch({ args: launch.args });
+  try {
+    const page = await app.firstWindow();
+    await seedLibrary(page, [favorite]);
+    await page.reload();
+
+    const row = libraryRow(page, favorite.title);
+    await expect(page.locator('.library-book-count')).toHaveText('1 book · 1 readable now · 1 seeding');
+    await expect(row.locator('.result-availability')).toHaveText('Seeding');
+    await expect(row.locator('.result-title')).toHaveClass(/readable/);
+    await expect(row.locator('.result-title')).not.toHaveClass(/unavailable/);
   } finally {
     await app.close();
   }
@@ -497,6 +589,33 @@ test('switching from a comic archive to an EPUB replaces the pagination reader',
   }
 });
 
+test('EPUB reader resolves and displays images embedded in the archive', async () => {
+  const launch = electronArgs('epub-inline-image-user-data');
+  const md5 = '3'.repeat(32);
+  const title = 'Embedded EPUB Illustration Fixture';
+  const bytes = await minimalEpub(title, 'Illustrated EPUB body.', { inlineImage: true });
+  const app = await electron.launch({ args: launch.args });
+  try {
+    const page = await app.firstWindow();
+    await page.evaluate(payload => { void window.bookstrDesktop.openReader(payload); }, {
+      kind: 'epub',
+      base64: bytes.toString('base64'),
+      book: { md5, title, extension: 'epub' },
+    });
+    await page.waitForURL('app://bookstr/reader.html');
+
+    const image = page.frameLocator('#viewer iframe').locator('#embedded-illustration');
+    await expect(image).toBeVisible();
+    await expect.poll(() => image.evaluate(node => ({
+      complete: node.complete,
+      width: node.naturalWidth,
+      height: node.naturalHeight,
+    }))).toEqual({ complete: true, width: 1, height: 1 });
+  } finally {
+    await app.close();
+  }
+});
+
 test('a failed EPUB open hides the previous book reader instead of showing stale pagination', async () => {
   const launch = electronArgs('stale-reader-fallback-user-data');
   const app = await electron.launch({ args: launch.args });
@@ -574,6 +693,32 @@ test('metadata-only failures stay compact, scrollable, and tied to the requested
     expect(layout.titleSize).toBeLessThanOrEqual(42);
     expect(layout.headerButtonWidths.length).toBeGreaterThan(0);
     expect(layout.headerButtonWidths.every(width => width >= 32)).toBe(true);
+  } finally {
+    await app.close();
+  }
+});
+
+test('book details author links open an author search', async () => {
+  const launch = electronArgs('book-detail-author-link-user-data');
+  const app = await electron.launch({ args: launch.args });
+  try {
+    const page = await app.firstWindow();
+    const book = {
+      md5: '4'.repeat(32),
+      title: 'The Singularity Is Nearer',
+      authors: 'Ray Kurzweil',
+      year: '2024',
+      extension: 'epub',
+    };
+    await app.context().route('https://lib.b.bfr.ee/api/books/**', route => route.fulfill({ status: 404, body: '{}' }));
+    await app.context().route('https://lib.b.bfr.ee/api/search?**', route => route.fulfill({ status: 200, contentType: 'application/json', body: '{"books":[]}' }));
+    await seedLibrary(page, [book]);
+    await page.reload();
+    await page.getByRole('link', { name: book.title }).click();
+
+    await page.locator('#read-metadata-fallback').getByRole('link', { name: book.authors }).click();
+    await expect(page.locator('#search-type')).toHaveValue('author');
+    await expect(page.locator('#query-input')).toHaveValue(book.authors);
   } finally {
     await app.close();
   }

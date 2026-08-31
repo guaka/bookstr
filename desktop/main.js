@@ -20,7 +20,7 @@ const { proxyCatalogRequest } = require('./catalog-proxy');
 const { proxyDictionaryRequest } = require('./dictionary-proxy');
 const { appContentSecurityPolicy } = require('./security-policy');
 const { SpeechModelStore } = require('./speech-model-store');
-const { WebTorrentBridge } = require('./webtorrent-bridge');
+const { WebTorrentBridge, DEFAULT_DOWNLOAD_LIMIT, PUBLIC_UPLOAD_LIMIT } = require('./webtorrent-bridge');
 const { LibraryStore } = require('./library-store');
 const { LibraryImporter, hashFile, safeExtension } = require('./library-import');
 const { localBookCover, localBookMetadata, safeCoverID } = require('./library-cover');
@@ -885,6 +885,8 @@ async function torrentPreferences() {
   return {
     autoDownload: saved.autoDownload !== false,
     autoSeed: saved.autoSeed !== false,
+    downloadLimit: Number.isFinite(Number(saved.downloadLimit)) ? Number(saved.downloadLimit) : DEFAULT_DOWNLOAD_LIMIT,
+    uploadLimit: Number.isFinite(Number(saved.uploadLimit)) ? Number(saved.uploadLimit) : PUBLIC_UPLOAD_LIMIT,
   };
 }
 
@@ -1312,10 +1314,15 @@ function setupIpcHandlers() {
     const next = {
       autoDownload: typeof request.autoDownload === 'boolean' ? request.autoDownload : current.autoDownload,
       autoSeed: typeof request.autoSeed === 'boolean' ? request.autoSeed : current.autoSeed,
+      downloadLimit: request.downloadLimit === undefined ? current.downloadLimit : Number(request.downloadLimit),
+      uploadLimit: request.uploadLimit === undefined ? current.uploadLimit : Number(request.uploadLimit),
     };
+    const limits = await getTorrentBridge().setLimits(next);
+    next.downloadLimit = limits.downloadLimit;
+    next.uploadLimit = limits.uploadLimit;
     await saveState({ [TORRENT_PREFERENCES_STATE_KEY]: next });
     if (!next.autoSeed) await getTorrentBridge().stopSeeding();
-    else void getAcquisitionManager().resumeLibgenSeeds().catch(error => {
+    else void getAcquisitionManager().resumeLibgenSeeds({ autoSeed: true }).catch(error => {
       console.warn('Could not resume LibGen torrent seeding:', error);
     });
     return next;
@@ -1567,11 +1574,11 @@ async function bootstrap() {
     console.warn('Could not register the Settings keyboard shortcut.');
   }
   await createLibraryWindow();
-  if ((await torrentPreferences()).autoSeed) {
-    void getAcquisitionManager().resumeLibgenSeeds().catch(error => {
-      console.warn('Could not resume LibGen torrent seeding:', error);
-    });
-  }
+  const preferences = await torrentPreferences();
+  await getTorrentBridge().setLimits(preferences);
+  void getAcquisitionManager().resumeLibgenSeeds({ autoSeed: preferences.autoSeed }).catch(error => {
+    console.warn('Could not resume LibGen torrent transfers:', error);
+  });
 }
 
 app.on('will-quit', () => {

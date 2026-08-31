@@ -198,32 +198,88 @@ class AcquisitionManager {
     this.libgenAcquisitionJobs = new Map();
   }
 
-  resumeLibgenSeeds() {
+  resumeLibgenSeeds({ autoSeed = true } = {}) {
     if (this.resumeLibgenSeedsPromise) return this.resumeLibgenSeedsPromise;
-    this.resumeLibgenSeedsPromise = this.#resumeLibgenSeeds().finally(() => {
+    this.resumeLibgenSeedsPromise = this.#resumeLibgenSeeds({ autoSeed }).finally(() => {
       this.resumeLibgenSeedsPromise = null;
     });
     return this.resumeLibgenSeedsPromise;
   }
 
-  async #resumeLibgenSeeds() {
-    if (!this.torrentBridge?.downloadSelected) return { seeded: 0 };
+  async #resumeLibgenSeeds({ autoSeed = true } = {}) {
+    if (!this.torrentBridge?.downloadSelected) return { seeded: 0, resumed: 0 };
     const seedRoot = path.join(this.stagingRoot, 'libgen-seeds');
     let seeded = 0;
+    let resumed = 0;
+    let started = 0;
     for (const download of this.store.downloads()) {
-      if (String(download?.status).toLowerCase() !== 'ready' || String(download?.source).toLowerCase() !== 'torrent') continue;
+      const status = String(download?.status).toLowerCase();
+      if (String(download?.source).toLowerCase() !== 'torrent') continue;
       const md5 = String(download.bookId || '').trim().toLowerCase();
       const book = this.store.getBook(md5);
       const libgenId = Number(book?.source_native_id || book?.sourceNativeId || 0);
       if (!/^[a-f0-9]{32}$/.test(md5) || !Number.isSafeInteger(libgenId) || libgenId <= 0) continue;
+      if (['queued', 'finding-peers', 'downloading', 'retrying'].includes(status)) {
+        if (started > 0 && this.seedResumeIntervalMs > 0) await this.sleep(this.seedResumeIntervalMs);
+        started += 1;
+        resumed += 1;
+        void this.acquireLibgen({
+          ...book,
+          id: libgenId,
+          libgenId,
+          filesize_bytes: Number(download.totalBytes || book?.filesize_bytes || 0),
+        }, { autoSeed }).catch(() => {
+          // The persisted failure is enough; another view can retry explicitly.
+        });
+        continue;
+      }
+      if (status !== 'ready' || !autoSeed) continue;
       const batch = Math.floor(libgenId / 1000) * 1000;
-      const seedFile = path.join(seedRoot, `r_${batch}`, md5);
-      const stats = await fsp.stat(seedFile).catch(() => null);
+      const seedCandidates = [
+        path.join(seedRoot, String(batch), md5),
+        path.join(seedRoot, `r_${batch}`, md5),
+      ];
+      let seedFile = '';
+      let stats = null;
+      for (const candidate of seedCandidates) {
+        const candidateStats = await fsp.stat(candidate).catch(() => null);
+        if (candidateStats?.isFile() && candidateStats.size > 0) {
+          seedFile = candidate;
+          stats = candidateStats;
+          break;
+        }
+      }
+      if (!seedFile) {
+        try {
+          const registration = this.store.libraryFile?.(md5);
+          if (registration?.relativePath) {
+            const libraryFile = this.importer.resolveRelativePath(registration.relativePath);
+            const libraryStats = await fsp.stat(libraryFile).catch(() => null);
+            const expectedSize = Math.max(0, Number(download.totalBytes || download.bytes || registration.sizeBytes || 0));
+            if (libraryStats?.isFile() && libraryStats.size > 0 && (!expectedSize || libraryStats.size === expectedSize)) {
+              seedFile = seedCandidates[0];
+              await fsp.mkdir(path.dirname(seedFile), { recursive: true });
+              await fsp.link(libraryFile, seedFile);
+              stats = await fsp.stat(seedFile).catch(() => null);
+            }
+          }
+        } catch (error) {
+          if (error?.code === 'EXDEV' && seedFile) {
+            const registration = this.store.libraryFile?.(md5);
+            const libraryFile = registration?.relativePath
+              ? this.importer.resolveRelativePath(registration.relativePath)
+              : '';
+            if (libraryFile) await fsp.copyFile(libraryFile, seedFile, fs.constants.COPYFILE_EXCL).catch(() => {});
+            stats = await fsp.stat(seedFile).catch(() => null);
+          } else if (error?.code === 'EEXIST' && seedFile) {
+            stats = await fsp.stat(seedFile).catch(() => null);
+          }
+        }
+      }
       if (!stats?.isFile() || stats.size <= 0) continue;
       try {
-        if (seeded > 0 && this.seedResumeIntervalMs > 0) {
-          await this.sleep(this.seedResumeIntervalMs);
-        }
+        if (started > 0 && this.seedResumeIntervalMs > 0) await this.sleep(this.seedResumeIntervalMs);
+        started += 1;
         const metadataURL = libgenTorrentMetadataURL(libgenId);
         const response = await this.fetch(metadataURL, { redirect: 'error' });
         if (!response?.ok) continue;
@@ -243,7 +299,7 @@ class AcquisitionManager {
         // The imported library copy remains readable even if its seed cannot resume.
       }
     }
-    return { seeded };
+    return { seeded, resumed };
   }
 
   async acquireLibgen(book, { signal, onProgress, autoSeed = true } = {}) {

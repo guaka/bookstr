@@ -223,7 +223,14 @@ class LibraryStore {
   }
 
   downloads() {
-    return this.db.prepare('SELECT book_id AS bookId, status, bytes, total_bytes AS totalBytes, source, error, updated_at AS updatedAt FROM downloads ORDER BY updated_at DESC').all().map(row => ({ ...row }));
+    return this.db.prepare(`
+      SELECT downloads.book_id AS bookId, downloads.status, downloads.bytes,
+        downloads.total_bytes AS totalBytes, downloads.source, downloads.error,
+        downloads.updated_at AS updatedAt, books.sha256, books.md5
+      FROM downloads
+      LEFT JOIN books ON books.id = downloads.book_id
+      ORDER BY downloads.updated_at DESC
+    `).all().map(row => ({ ...row }));
   }
 
   registerLibraryFile(file = {}) {

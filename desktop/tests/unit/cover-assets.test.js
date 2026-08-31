@@ -157,6 +157,45 @@ test('desktop adds public catalog cover fallbacks without treating the letter pl
   assert.ok(candidates.at(-1).startsWith('data:image/svg+xml,'));
 });
 
+test('Internet Archive identifiers add a public cover candidate', () => {
+  const candidates = bookCoverCandidates({
+    source: 'internet-archive',
+    sourceNativeId: 'safe_archive-id.1',
+  }, { desktop: true });
+  assert.equal(candidates[0], 'https://archive.org/services/img/safe_archive-id.1');
+});
+
+test('a loaded real cover updates visual state, callbacks, and preferred candidate order', () => {
+  const url = 'https://images.example/loaded.jpg';
+  const changes = [];
+  const slotChanges = [];
+  let loaded;
+  const image = {
+    src: url,
+    complete: true,
+    naturalWidth: 120,
+    getAttribute: () => url,
+    classList: {
+      add: value => changes.push(['add', value]),
+      toggle: (value, enabled) => changes.push(['toggle', value, enabled]),
+    },
+    closest: () => ({ classList: { toggle: (value, enabled) => slotChanges.push([value, enabled]) } }),
+    addEventListener() {},
+  };
+  attachImageFallback(image, [url], {
+    key: 'loaded-cover',
+    onLoaded: (value, detail) => { loaded = { value, detail }; },
+  });
+  assert.deepEqual(loaded, { value: url, detail: { isRealCover: true } });
+  assert.ok(changes.some(change => change.join(':') === 'add:is-loaded'));
+  assert.ok(changes.some(change => change.join(':') === 'toggle:is-real-cover:true'));
+  assert.deepEqual(slotChanges, [['has-real-cover', true]]);
+  assert.equal(bookCoverCandidates({
+    coverUrl: 'https://images.example/other.jpg',
+    thumbnail: url,
+  }, { key: 'loaded-cover' })[0], url);
+});
+
 test('cover candidates reject unsafe hints and keep only usable public URLs', () => {
   assert.equal(normalizeCoverUrl('http://images.example/cover.jpg', true), '');
   assert.equal(normalizeCoverUrl('javascript:alert(1)', false), '');

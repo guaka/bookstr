@@ -50,6 +50,32 @@ test('detects EPUB and comic archive bytes independently of a misleading filenam
   assert.equal(await localBookFormat(Buffer.concat([Buffer.from('Rar!'), Buffer.alloc(32)]), '.epub'), 'cbr');
 });
 
+test('detects every supported local image signature and an FB2 document without relying on its filename', async () => {
+  const gif = Buffer.alloc(32);
+  gif.write('GIF89a', 0, 'ascii');
+  const webp = Buffer.alloc(32);
+  webp.write('RIFF', 0, 'ascii');
+  webp.write('WEBP', 8, 'ascii');
+  assert.equal(detectImage(gif)?.mime, 'image/gif');
+  assert.equal(detectImage(webp)?.mime, 'image/webp');
+  assert.equal(await localBookFormat(Buffer.from('<FictionBook><description/></FictionBook>'), '.bin'), 'fb2');
+});
+
+test('returns no EPUB cover when the package has no usable image', async () => {
+  const zip = new JSZip();
+  zip.file('META-INF/container.xml', '<container><rootfiles><rootfile full-path="book.opf"/></rootfiles></container>');
+  zip.file('book.opf', '<package><metadata><dc:title xmlns:dc="dc">Coverless</dc:title></metadata><manifest/></package>');
+  assert.equal(await epubCover(await zip.generateAsync({ type: 'nodebuffer' })), null);
+});
+
+test('finds an EPUB package document when container.xml is absent', async () => {
+  const zip = new JSZip();
+  zip.file('OPS/fallback.opf', '<package><metadata><dc:title xmlns:dc="dc">Fallback OPF</dc:title><dc:language xmlns:dc="dc">en</dc:language></metadata><manifest/></package>');
+  assert.deepEqual(await epubMetadata(await zip.generateAsync({ type: 'nodebuffer' })), {
+    title: 'Fallback OPF', authors: '', language: 'en', isbn: '',
+  });
+});
+
 test('extracts an FB2 coverpage binary', () => {
   const xml = Buffer.from(`<FictionBook xmlns:l="http://www.w3.org/1999/xlink"><description><title-info><coverpage><image l:href="#front-art"/></coverpage></title-info></description><binary id="front-art" content-type="image/png">${PNG.toString('base64')}</binary></FictionBook>`);
   const cover = fb2Cover(xml);
@@ -61,6 +87,24 @@ test('extracts FB2 language metadata', () => {
   const xml = Buffer.from('<FictionBook><description><title-info><book-title>Fixture FB2</book-title><author><first-name>Ada</first-name><last-name>Lovelace</last-name></author><lang>en</lang></title-info><publish-info><isbn>9780000000000</isbn></publish-info></description></FictionBook>');
   assert.deepEqual(fb2Metadata(xml), {
     title: 'Fixture FB2', authors: 'Ada Lovelace', language: 'en', isbn: '9780000000000',
+  });
+});
+
+test('falls back to a cover-named FB2 binary when coverpage metadata is absent', () => {
+  const xml = Buffer.from(`<FictionBook><binary id="front-cover" content-type="image/png">${PNG.toString('base64')}</binary></FictionBook>`);
+  assert.equal(fb2Cover(xml)?.mime, 'image/png');
+});
+
+test('local FB2 metadata decodes valid entities and discards invalid numeric entities', async t => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'bookstr-fb2-metadata-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const bookPath = path.join(root, 'book.fb2');
+  fs.writeFileSync(bookPath, Buffer.from('<FictionBook><description><title-info><book-title>A &#65; &#x42; &#0; &#x110000;</book-title><author><first-name>Ada</first-name><middle-name>&amp;</middle-name><last-name>Lovelace</last-name></author><lang>en</lang></title-info></description></FictionBook>'));
+  assert.deepEqual(await localBookMetadata({ bookId: 'b'.repeat(32), bookPath }), {
+    extension: 'fb2',
+    title: 'A A B',
+    authors: 'Ada & Lovelace',
+    language: 'en',
   });
 });
 
