@@ -108,4 +108,50 @@ final class SnippetRepositoryTests: XCTestCase {
         XCTAssertEqual(legacy.updatedAt, 1_700_000_000_000)
         XCTAssertFalse(legacy.deleted)
     }
+
+    func testAllSortsActiveSnippetsAndParseRemoteCoversWireFallbacks() throws {
+        let repo = SnippetRepository(fileStore: JSONFileStore(subdirectory: "bookstr-snippet-test-\(UUID().uuidString)"))
+        let old = try XCTUnwrap(SnippetRepository.parseRemote([
+            "syncId": "OLDER", "text": " Older ", "bookId": "book", "bookTitle": "Direct title",
+            "format": "not-real", "createdAt": Int64(10), "updatedAt": 11.9,
+            "author": "Author", "isbn": "isbn", "locator": "location"
+        ]))
+        let recent = try XCTUnwrap(SnippetRepository.parseRemote([
+            "id": "NEWER", "text": "Newer", "bookId": "book", "title": "Legacy title",
+            "format": "cbr", "createdAt": NSNumber(value: 12), "lastSeenAt": "20", "deleted": false
+        ]))
+        let deleted = try XCTUnwrap(SnippetRepository.parseRemote([
+            "id": "DELETED", "text": "Gone", "bookId": "book", "createdAt": 30, "deleted": true
+        ]))
+        XCTAssertTrue(repo.mergeRemote(old))
+        XCTAssertTrue(repo.mergeRemote(recent))
+        XCTAssertTrue(repo.mergeRemote(deleted))
+        XCTAssertEqual(repo.all().map(\.syncId), ["newer", "older"])
+        XCTAssertEqual(old.format, .epub)
+        XCTAssertEqual(old.updatedAt, 11)
+        XCTAssertEqual(recent.format, .cbr)
+        XCTAssertEqual(recent.updatedAt, 20)
+        XCTAssertEqual(recent.bookTitle, "Legacy title")
+        XCTAssertTrue(deleted.deleted)
+    }
+
+    func testParseRemoteRejectsMissingRequiredFieldsAndHandlesNumericForms() throws {
+        XCTAssertNil(SnippetRepository.parseRemote([:]))
+        XCTAssertNil(SnippetRepository.parseRemote(["id": "", "text": "text", "bookId": "book"]))
+        XCTAssertNil(SnippetRepository.parseRemote(["id": "id", "text": "  ", "bookId": "book"]))
+        XCTAssertNil(SnippetRepository.parseRemote(["id": "id", "text": "text", "bookId": ""]))
+
+        let integer = try XCTUnwrap(SnippetRepository.parseRemote([
+            "id": "int", "text": "text", "bookId": "book", "createdAt": 4, "updatedAt": 5
+        ]))
+        let number = try XCTUnwrap(SnippetRepository.parseRemote([
+            "id": "number", "text": "text", "bookId": "book",
+            "createdAt": NSNumber(value: 6), "updatedAt": "invalid"
+        ]))
+        XCTAssertEqual(integer.updatedAt, 5)
+        XCTAssertEqual(number.createdAt, 6)
+        XCTAssertEqual(number.updatedAt, 6)
+        XCTAssertEqual(number.author, "")
+        XCTAssertEqual(number.locator, "")
+    }
 }

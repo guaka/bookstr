@@ -71,12 +71,16 @@ enum PublicationUtilities {
         return fromExternalFavorite(favorite)
     }
 
-    static func sha256(fileURL: URL, chunkSize: Int = 1_048_576) -> String? {
+    static func sha256(
+        fileURL: URL,
+        chunkSize: Int = 1_048_576,
+        readChunk: (FileHandle, Int) throws -> Data? = { try $0.read(upToCount: $1) }
+    ) -> String? {
         guard chunkSize > 0, let handle = try? FileHandle(forReadingFrom: fileURL) else { return nil }
         defer { try? handle.close() }
         var hasher = SHA256()
         do {
-            while let data = try handle.read(upToCount: chunkSize), !data.isEmpty {
+            while let data = try readChunk(handle, chunkSize), !data.isEmpty {
                 hasher.update(data: data)
             }
             return hasher.finalize().map { String(format: "%02x", $0) }.joined()
@@ -127,7 +131,7 @@ enum PublicationUtilities {
 
     /// Validate CBZ from its central directory so arbitrary ZIP downloads are
     /// not mislabeled as EPUBs or comics. Page payloads stay mapped on disk.
-    private static func zipContainsComicImage(fileURL: URL) -> Bool {
+    static func zipContainsComicImage(fileURL: URL) -> Bool {
         guard let data = try? Data(contentsOf: fileURL, options: [.mappedIfSafe]), data.count >= 22 else { return false }
         let searchStart = max(data.startIndex, data.endIndex - 65_557)
         var cursor = data.endIndex - 22
@@ -178,7 +182,7 @@ enum PublicationUtilities {
         return entry == directoryEnd && readableImages > 0
     }
 
-    private static func isComicImageName(_ name: String) -> Bool {
+    static func isComicImageName(_ name: String) -> Bool {
         let lower = name.lowercased()
         guard !lower.contains("/__macosx/"), !lower.hasPrefix("__macosx/") else { return false }
         return [".jpg", ".jpeg", ".png", ".gif", ".webp"].contains { lower.hasSuffix($0) }
@@ -198,7 +202,6 @@ enum PublicationUtilities {
     private final class ComicInfoParser: NSObject, XMLParserDelegate {
         var language: String?
         private var value = ""
-        private var invalid = false
 
         func parser(_ parser: XMLParser, didStartElement elementName: String,
                     namespaceURI: String?, qualifiedName qName: String?, attributes attributeDict: [String: String] = [:]) {
@@ -221,15 +224,10 @@ enum PublicationUtilities {
             value = ""
         }
 
-        func parser(_ parser: XMLParser, foundSkippedEntity name: String) {
-            invalid = true
-            parser.abortParsing()
-        }
-
-        var isValid: Bool { !invalid && language != nil }
+        var isValid: Bool { language != nil }
     }
 
-    private static func parseComicInfoLanguage(_ data: Data) -> String? {
+    static func parseComicInfoLanguage(_ data: Data) -> String? {
         guard !data.isEmpty, data.count <= maxComicMetadataBytes else { return nil }
         let source = String(decoding: data, as: UTF8.self)
         guard source.range(of: "<!DOCTYPE", options: .caseInsensitive) == nil,
@@ -395,8 +393,6 @@ enum PublicationUtilities {
             _ = path.popLast()
             value = ""
         }
-
-        func parser(_ parser: XMLParser, foundSkippedEntity name: String) { invalid = true; parser.abortParsing() }
 
         var isValid: Bool { rootSeen && !invalid && title != nil && sectionCount > 0 }
     }

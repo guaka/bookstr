@@ -54,5 +54,7 @@ final class ReaderRelocationTests: XCTestCase {
         XCTAssertEqual(try XCTUnwrap(ReaderRelocation.jsonInt(NSNumber(value: 4.9))), 4)
         XCTAssertEqual(try XCTUnwrap(ReaderRelocation.jsonInt(7)), 7)
         XCTAssertEqual(try XCTUnwrap(ReaderRelocation.jsonInt("9")), 9)
+        XCTAssertNil(ReaderRelocation.jsonDouble(Date()))
+        XCTAssertNil(ReaderRelocation.jsonInt(Date()))
     }
 }

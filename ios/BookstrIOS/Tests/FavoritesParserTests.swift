@@ -2931,4 +2931,80 @@ final class FavoritesParserTests: XCTestCase {
         XCTAssertEqual(refs[0].url, "https://example.org/valid")
         XCTAssertEqual(refs[0].addedAt, 1_700_000_001)
     }
+
+    func testFavoriteDefaultModelsAndComputedRightsAreUsable() {
+        XCTAssertEqual(SharedFavorites(), SharedFavorites(bookIds: [], external: []))
+        XCTAssertEqual(CollectionSnapshot(), CollectionSnapshot(collections: [], tombstones: []))
+
+        let external = ExternalFavorite(
+            key: "external", title: "Open book", author: nil, year: nil,
+            url: "https://example.test/book.cbz", isbn: nil, libvaultMd5: nil, format: "cbz",
+            blossomSha256: nil, blossomUrl: nil, rightsStatus: "open_license", license: "CC BY 4.0"
+        )
+        XCTAssertEqual(external.id, "external")
+        XCTAssertEqual(external.rights.compactLabel, "CC BY 4.0")
+
+        let ref = SharedFavoriteRef(
+            bookstrId: "book", url: "https://example.test/book.cbz", title: "Comic", format: "cbz",
+            rightsStatus: "public_domain", license: "Public domain"
+        )
+        XCTAssertEqual(ref.rights.status, .publicDomain)
+    }
+
+    func testFavoriteConvenienceSerializationUsesCurrentTimestampFallback() throws {
+        let ref = SharedFavoriteRef(bookstrId: "book", title: "Comic", format: "cbz", addedAt: 0)
+        let serialized = FavoritesParser.serializeSharedFavoriteTags([ref])
+        let tags = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(serialized.utf8)) as? [[String]])
+        XCTAssertEqual(tags.first, ["bookstr-collection", "2"])
+        XCTAssertEqual(tags.first { $0.first == "book" }?[1], "bookstr")
+        XCTAssertGreaterThan(Int64(tags.first { $0.first == "book" }?[3] ?? "0") ?? 0, 0)
+        XCTAssertEqual(FavoritesParser.parseSharedFavoriteTags(serialized).first?.bookstrId, "book")
+    }
+
+    func testCompactTagsCoverEveryIdentityAndOptionalLocatorCombination() {
+        let md5 = String(repeating: "a", count: 32)
+        let sha = String(repeating: "b", count: 64)
+        let refs = [
+            SharedFavoriteRef(libvaultMd5: md5, title: "Archive", blossomSha256: sha,
+                              blossomUrl: "https://example.test/archive.cbr", addedAt: -1),
+            SharedFavoriteRef(blossomSha256: sha, blossomUrl: "https://example.test/blob", addedAt: 2),
+            SharedFavoriteRef(bookstrId: "book", url: "https://example.test/book", addedAt: 3),
+            SharedFavoriteRef(isbn: "978-1-2345-6789-7", url: "https://example.test/isbn", addedAt: 4),
+            SharedFavoriteRef(url: "https://example.test/url", addedAt: 5),
+            SharedFavoriteRef(title: "No identity")
+        ]
+        let tags = FavoritesParser.compactItemTags(refs: refs, fallbackAddedAt: 99)
+        XCTAssertTrue(tags.contains { $0.prefix(3) == ["book", "libvault", md5] })
+        XCTAssertTrue(tags.contains { $0.prefix(3) == ["book", "blossom", sha] })
+        XCTAssertTrue(tags.contains { $0.prefix(3) == ["book", "bookstr", "book"] })
+        XCTAssertTrue(tags.contains { $0.prefix(3) == ["book", "isbn", "9781234567897"] })
+        XCTAssertTrue(tags.contains { $0.prefix(3) == ["book", "url", "https://example.test/url"] })
+        XCTAssertTrue(tags.contains { $0.first == "blossom" })
+    }
+
+    func testSearchFavoriteMatcherCoversStableURLAndMetadataPaths() {
+        let result = BookSearchResult(
+            id: "result", source: "source", title: "Title", author: "Author", year: nil,
+            publisher: nil, language: nil, format: .epub, downloadUrl: "https://example.test/book.epub",
+            coverUrl: nil, rating: 0, editionCount: 0
+        )
+        let base = ExternalFavorite(
+            key: "different", title: "Other", author: nil, year: nil,
+            url: nil, isbn: nil, libvaultMd5: nil, format: nil, blossomSha256: nil, blossomUrl: nil
+        )
+        XCTAssertTrue(SearchFavoriteMatcher.matches(
+            result,
+            favorite: ExternalFavorite(
+                key: "result", title: "Other", author: nil, year: nil,
+                url: nil, isbn: nil, libvaultMd5: nil, format: nil, blossomSha256: nil, blossomUrl: nil
+            )
+        ))
+        var byURL = base
+        byURL = ExternalFavorite(
+            key: byURL.key, title: byURL.title, author: byURL.author, year: nil,
+            url: result.downloadUrl, isbn: nil, libvaultMd5: nil, format: nil, blossomSha256: nil, blossomUrl: nil
+        )
+        XCTAssertTrue(SearchFavoriteMatcher.matches(result, favorite: byURL))
+        XCTAssertFalse(SearchFavoriteMatcher.matches(result, favorite: base))
+    }
 }

@@ -170,6 +170,20 @@ export function parseLLVM(report) {
   ];
   return metrics.flatMap(([key, label]) => {
     const totals = files.reduce((result, file) => {
+      if (key === 'lines' && Array.isArray(file?.segments) && file.segments.length > 0) {
+        // Swift emits duplicate coverage mappings for synthesized/default-argument
+        // expansions. Count each executable physical source line once so the line
+        // metric cannot move merely because the compiler duplicated a mapping.
+        const lines = new Map();
+        for (const segment of file.segments) {
+          const [line, , executionCount, hasCount] = segment;
+          if (!hasCount) continue;
+          lines.set(line, Boolean(lines.get(line)) || number(executionCount) > 0);
+        }
+        result.count += lines.size;
+        result.covered += [...lines.values()].filter(Boolean).length;
+        return result;
+      }
       result.count += number(file?.summary?.[key]?.count);
       result.covered += number(file?.summary?.[key]?.covered);
       return result;

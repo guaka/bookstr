@@ -23,6 +23,95 @@ final class ReaderAssetContractTests: XCTestCase {
         )
     }
 
+    func testCBRComicMetadataPathHandlesFreeLicensedArchive() throws {
+        let fileURL = try comicFixture(named: "bobby-make-believe-public-domain", extension: "cbr")
+        XCTAssertEqual(PublicationUtilities.detectedFormat(fileURL: fileURL), .cbr)
+        let metadata = PublicationUtilities.comicMetadata(fileURL: fileURL, format: .cbr)
+        XCTAssertNil(metadata?.language)
+    }
+
+    func testPublicationDetectionReturnsNilForUnknownAndTruncatedFiles() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("bookstr-publication-coverage-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let unknown = directory.appendingPathComponent("unknown.bin")
+        try Data("not a publication".utf8).write(to: unknown)
+        XCTAssertNil(PublicationUtilities.detectedFormat(fileURL: unknown))
+
+        let fakeZip = directory.appendingPathComponent("truncated.cbz")
+        try Data([0x50, 0x4b, 0x03, 0x04]).write(to: fakeZip)
+        XCTAssertEqual(PublicationUtilities.detectedFormat(fileURL: fakeZip), .epub)
+        XCTAssertNil(PublicationUtilities.comicMetadata(fileURL: fakeZip, format: .cbz))
+    }
+
+    func testComicMetadataParserRejectsUnsafeAndMalformedLanguages() {
+        XCTAssertNil(PublicationUtilities.parseComicInfoLanguage(Data()))
+        XCTAssertNil(PublicationUtilities.parseComicInfoLanguage(Data(repeating: 0x41, count: 1_048_577)))
+        XCTAssertNil(PublicationUtilities.parseComicInfoLanguage(Data("<!DOCTYPE ComicInfo><ComicInfo/>".utf8)))
+        XCTAssertNil(PublicationUtilities.parseComicInfoLanguage(Data("<!ENTITY bad 'x'><ComicInfo/>".utf8)))
+        XCTAssertNil(PublicationUtilities.parseComicInfoLanguage(Data("<ComicInfo><LanguageISO>invalid!</LanguageISO></ComicInfo>".utf8)))
+        XCTAssertNil(PublicationUtilities.parseComicInfoLanguage(Data("<ComicInfo><Title>None</Title></ComicInfo>".utf8)))
+        XCTAssertEqual(
+            PublicationUtilities.parseComicInfoLanguage(
+                Data("<c:ComicInfo xmlns:c='urn:comic'><c:LanguageISO> EN_us </c:LanguageISO></c:ComicInfo>".utf8)
+            ),
+            "en-us"
+        )
+    }
+
+    func testComicImageNameFilteringCoversSupportedExtensionsAndJunkFolders() {
+        for name in ["page.JPG", "page.jpeg", "page.png", "page.gif", "page.webp"] {
+            XCTAssertTrue(PublicationUtilities.isComicImageName(name), name)
+        }
+        XCTAssertFalse(PublicationUtilities.isComicImageName("page.txt"))
+        XCTAssertFalse(PublicationUtilities.isComicImageName("__MACOSX/page.jpg"))
+        XCTAssertFalse(PublicationUtilities.isComicImageName("folder/__MACOSX/page.jpg"))
+    }
+
+    func testComicZipScannerCanBeCalledDirectlyForValidAndTruncatedArchives() throws {
+        let valid = try comicFixture(named: "bookstr-test-comic", extension: "cbz")
+        XCTAssertTrue(PublicationUtilities.zipContainsComicImage(fileURL: valid))
+        let missing = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".cbz")
+        XCTAssertFalse(PublicationUtilities.zipContainsComicImage(fileURL: missing))
+        let zeros = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".cbz")
+        defer { try? FileManager.default.removeItem(at: zeros) }
+        try Data(repeating: 0, count: 23).write(to: zeros)
+        XCTAssertFalse(PublicationUtilities.zipContainsComicImage(fileURL: zeros))
+        XCTAssertNil(PublicationUtilities.comicMetadata(fileURL: zeros, format: .cbz))
+    }
+
+    func testComicMetadataReturnsNilForZipWithoutComicInfo() throws {
+        let encoded = "UEsDBBQAAAAIAI+eHF2swOoxXQAAAJsAAAAIAAAAYm9vay5mYjJVjkEKgDAMBF9U8oGQg4gv8AO2jRAsTbE56O+tClKPOzssi5MEE82D6kYYuYZdyg0ITSyxk7wqoW+1ewCNvKbFOCJ0EKG34bfjNZ6ElcMbC818GEJp3gfhlaB/cwFQSwECFAMUAAAACACPnhxdrMDqMV0AAACbAAAACAAAAAAAAAAAAAAAgAEAAAAAYm9vay5mYjJQSwUGAAAAAAEAAQA2AAAAgwAAAAAA"
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".cbz")
+        defer { try? FileManager.default.removeItem(at: url) }
+        try XCTUnwrap(Data(base64Encoded: encoded)).write(to: url)
+        XCTAssertNil(PublicationUtilities.comicMetadata(fileURL: url, format: .cbz))
+    }
+
+    func testFB2MetadataRejectsNestedFictionBookRoots() throws {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".fb2")
+        defer { try? FileManager.default.removeItem(at: url) }
+        let xml = "<FictionBook><FictionBook><description><title-info><book-title>Nested</book-title></title-info></description><body><section/></body></FictionBook></FictionBook>"
+        try Data(xml.utf8).write(to: url)
+        XCTAssertNil(PublicationUtilities.fb2Metadata(fileURL: url))
+    }
+
+    func testPublicationHashReturnsNilWhenFileHandleCannotReadDirectory() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("bookstr-hash-directory-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        XCTAssertNil(PublicationUtilities.sha256(fileURL: directory))
+
+        let file = directory.appendingPathComponent("readable")
+        try Data("content".utf8).write(to: file)
+        XCTAssertNil(PublicationUtilities.sha256(fileURL: file) { _, _ in
+            throw CocoaError(.fileReadUnknown)
+        })
+    }
+
 #if !SWIFT_PACKAGE
     func testFreeLicensedCBRFixtureContainsFourReadableJPEGPages() throws {
         let fileURL = try comicFixture(named: "bobby-make-believe-public-domain", extension: "cbr")
