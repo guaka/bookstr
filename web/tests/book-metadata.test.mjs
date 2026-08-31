@@ -33,7 +33,34 @@ const {
   mergeLibraryState,
   enrichBookMetadata,
   isbnForBook,
+  torrentMetadataForBook,
 } = globalThis.BookMetadata;
+
+test('normalizes public torrent metadata without requiring a Blossom URL', () => {
+  assert.deepEqual(torrentMetadataForBook({
+    torrent_id: 'magnet:?xt=urn:btih:abc',
+    torrent_announce: ['wss://tracker.example'],
+  }), {
+    torrentId: 'magnet:?xt=urn:btih:abc',
+    torrentFile: '',
+    announce: ['wss://tracker.example'],
+  });
+  assert.deepEqual(torrentMetadataForBook({
+    torrent: { magnetURI: 'magnet:?xt=urn:btih:def', torrentFile: 'base64-metadata', announce: ['wss://tracker.example'] },
+  }), {
+    torrentId: 'magnet:?xt=urn:btih:def',
+    torrentFile: 'base64-metadata',
+    announce: ['wss://tracker.example'],
+  });
+  assert.equal(torrentMetadataForBook({ title: 'No transfer' }), null);
+});
+
+test('reports WebTorrent availability when a public torrent is present', () => {
+  assert.equal(availabilityForBook({
+    title: 'Torrent book',
+    torrentId: 'magnet:?xt=urn:btih:abc',
+  }), 'WebTorrent');
+});
 
 test('normalizes explicit rights evidence without inferring from age or source', () => {
   assert.deepEqual(normalizeRights({ copyright: false, source: 'gutenberg' }), {

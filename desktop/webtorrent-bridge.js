@@ -132,6 +132,25 @@ class WebTorrentBridge {
     return client.add(torrentId, options);
   }
 
+  async downloadPublic(torrentId, options = {}) {
+    const torrent = await this.addPublic(torrentId, options);
+    if (torrent.done) return torrent;
+    if (typeof torrent.once !== 'function') throw new Error('Public torrent does not expose completion events.');
+    await new Promise((resolve, reject) => {
+      const finish = () => {
+        torrent.removeListener?.('error', fail);
+        resolve();
+      };
+      const fail = error => {
+        torrent.removeListener?.('done', finish);
+        reject(error);
+      };
+      torrent.once('done', finish);
+      torrent.once('error', fail);
+    });
+    return torrent;
+  }
+
   async addPrivate(torrentId, { path: downloadPath } = {}) {
     const client = await this.start();
     return client.add(torrentId, {

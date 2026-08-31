@@ -229,6 +229,9 @@ const desktopBridge = {
     addPublic(request) {
       return ipcRenderer.invoke('bookstr-desktop-transfer-add-public', request);
     },
+    downloadPublic(request) {
+      return ipcRenderer.invoke('bookstr-desktop-transfer-download-public', request);
+    },
     addPrivate(request) {
       return ipcRenderer.invoke('bookstr-desktop-transfer-add-private', request);
     },

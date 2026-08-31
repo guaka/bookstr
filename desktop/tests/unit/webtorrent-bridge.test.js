@@ -2,6 +2,7 @@
 
 const assert = require('node:assert/strict');
 const test = require('node:test');
+const { EventEmitter } = require('node:events');
 const {
   WebTorrentBridge,
   PUBLIC_TRACKERS,
@@ -66,4 +67,25 @@ test('private add disables all public discovery', async () => {
 test('public seeding requires explicit rights permission', async () => {
   const bridge = new WebTorrentBridge({ clientFactory: fakeClientFactory({ adds: [] }) });
   await assert.rejects(() => bridge.seedPublic('/tmp/book.epub', { sha256: 'd'.repeat(64), publicSeedAllowed: false }), /rights policy/);
+});
+
+test('public download waits for completion', async () => {
+  const log = { adds: [] };
+  const bridge = new WebTorrentBridge({ clientFactory: async options => ({
+    torrents: [],
+    throttleUpload() {},
+    add(id, addOptions) {
+      log.adds.push({ id, options: addOptions });
+      const torrent = new EventEmitter();
+      torrent.infoHash = 'e'.repeat(40);
+      torrent.files = [{ path: '/tmp/bookstr/book.epub' }];
+      this.torrents.push(torrent);
+      setImmediate(() => torrent.emit('done'));
+      return torrent;
+    },
+    destroy(callback) { callback?.(); },
+  }) });
+  const torrent = await bridge.downloadPublic('magnet:?xt=urn:btih:test', { path: '/tmp/bookstr' });
+  assert.equal(torrent.infoHash, 'e'.repeat(40));
+  assert.equal(log.adds[0].options.path, '/tmp/bookstr');
 });
