@@ -21,6 +21,7 @@ const {
   normalizeReadUrl,
   findBookByReadUrl,
   metadataEndpointForReadUrl,
+  torrentMetadataForBook,
   canonicalReadUrl,
   canonicalCatalogUrl,
   bookIdentity,
@@ -34,6 +35,21 @@ const {
   enrichBookMetadata,
   isbnForBook,
 } = globalThis.BookMetadata;
+
+test('normalizes portable torrent metadata and ignores empty descriptors', () => {
+  assert.equal(torrentMetadataForBook({}), null);
+  assert.deepEqual(torrentMetadataForBook({
+    torrentDescriptor: {
+      magnetUri: ' magnet:?xt=urn:btih:book ',
+      torrentFile: ' book.torrent ',
+      announce: [' wss://tracker.example ', '', null],
+    },
+  }), {
+    torrentId: 'magnet:?xt=urn:btih:book',
+    torrentFile: 'book.torrent',
+    announce: ['wss://tracker.example'],
+  });
+});
 
 test('normalizes explicit rights evidence without inferring from age or source', () => {
   assert.deepEqual(normalizeRights({ copyright: false, source: 'gutenberg' }), {

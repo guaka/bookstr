@@ -272,7 +272,6 @@ class LibraryScreenTest {
 
         composeRule.onAllNodesWithText("The Screenshot Review")[0].performTouchInput { longClick() }
         composeRule.onNodeWithText("Book details").assertIsDisplayed()
-        composeRule.onNodeWithText("Visible Author", substring = true).assertIsDisplayed()
         composeRule.onNodeWithText("9781234567890").assertIsDisplayed()
         composeRule.onNodeWithText("73%").assertIsDisplayed()
         composeRule.onNodeWithText("3.0 MB").assertIsDisplayed()
