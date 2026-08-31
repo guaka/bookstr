@@ -280,9 +280,8 @@
     const source = book?.torrent || book?.torrentDescriptor || {};
     const torrentId = String(book?.torrentId || book?.torrent_id || source.magnetURI || source.magnetUri || '').trim();
     const torrentFile = String(book?.torrentFile || book?.torrent_file || source.torrentFile || '').trim();
-    const rawAnnounce = book?.torrentAnnounce || book?.torrent_announce || source.announce;
-    const announce = Array.isArray(rawAnnounce)
-      ? rawAnnounce.map(value => String(value || '').trim()).filter(Boolean)
+    const announce = Array.isArray(book?.torrentAnnounce || source.announce)
+      ? (book.torrentAnnounce || source.announce).map(value => String(value || '').trim()).filter(Boolean)
       : [];
     if (!torrentId && !torrentFile) return null;
     return { torrentId, torrentFile, announce };
@@ -322,7 +321,6 @@
     const readUrl = String(book?.readUrl || book?.url || '');
     const available = [];
     if (source.includes('gutenberg') || /^gutenberg:\d+$/i.test(String(book?.md5 || '')) || /\/api\/books\/\d+(?:\/download)?(?:\?|$)/i.test(readUrl)) available.push('Gutenberg');
-    if (torrentMetadataForBook(book)) available.push('WebTorrent');
     if (book?.blossomUrl || book?.blossomSha256 || source.includes('blossom')) available.push('Blossom');
     if (readUrl && source.includes('internet-archive')) available.push('Internet Archive');
     if (readUrl && source === 'oapen') available.push('OAPEN');

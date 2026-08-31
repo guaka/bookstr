@@ -79,12 +79,14 @@ test('libstr desktop app opens with preload bridge', async () => {
       version: window.bookstrDesktop?.version,
       hasOpenReader: typeof window.bookstrDesktop?.openReader === 'function',
       hasDesktopSigner: typeof window.bookstrDesktop?.signer?.status === 'function',
+      hasSpeechModels: typeof window.bookstrDesktop?.speechModels?.install === 'function',
       hasBrowserNip07: !!window.nostr,
     }));
 
     expect(bridge.version).toBe(1);
     expect(bridge.hasOpenReader).toBe(true);
     expect(bridge.hasDesktopSigner).toBe(true);
+    expect(bridge.hasSpeechModels).toBe(true);
     expect(bridge.hasBrowserNip07).toBe(false);
     expect(await firstWindow.locator('a.app-header-left').count()).toBe(0);
     await expect.poll(() => firstWindow.locator('.brand-mark').evaluate(image => image.complete && image.naturalWidth > 0)).toBe(true);
@@ -137,15 +139,51 @@ test('libstr desktop app opens with preload bridge', async () => {
     await firstWindow.getByRole('button', { name: 'Search' }).click();
     await expect(firstWindow.locator('#search-tab')).toBeVisible();
 
+    await firstWindow.evaluate(() => {
+      state.favorites = [{ md5: 'a', title: 'English book', language: 'en' }, { md5: 'b', title: 'Portuguese book', language: 'pt-PT' }];
+      state.reading = [{ md5: 'c', title: 'Spanish book', language: 'es' }];
+      refreshSpeechVoiceMenus();
+    });
+
     await firstWindow.keyboard.press(process.platform === 'darwin' ? 'Meta+,' : 'Control+,');
     await expect(firstWindow.locator('#settings-modal')).toBeVisible();
     await expect(firstWindow.locator('#desktop-signer')).toBeVisible();
     await expect(firstWindow.getByText('NIP-46 remote signer')).toBeVisible();
     await expect(firstWindow.locator('#desktop-nip46-qr')).toBeHidden();
     await expect(firstWindow.locator('#desktop-nip46-qr-image')).toBeHidden();
-    await expect(firstWindow.locator('#speech-voice-en')).toContainText(/Kokoro|Best installed voice/);
-    await expect(firstWindow.locator('#speech-voice-pt')).toContainText(/Tugão|Best installed voice/);
-    await expect(firstWindow.getByText('Optional voices are never downloaded or selected automatically.')).toBeVisible();
+    await expect(firstWindow.locator('#speech-language')).toBeVisible();
+    await expect(firstWindow.locator('#speech-voice')).toContainText('Best installed voice');
+    await expect(firstWindow.locator('#speech-language')).toContainText('English');
+    await expect(firstWindow.locator('#speech-language')).toContainText('Portuguese');
+    await expect(firstWindow.locator('#speech-language')).toContainText('Spanish');
+    await expect(firstWindow.locator('#speech-language')).not.toContainText('German');
+    expect(await firstWindow.locator('#speech-language option').count()).toBe(3);
+    const kokoroModel = firstWindow.locator('#speech-model-kokoro_en');
+    const tugaoModel = firstWindow.locator('#speech-model-piper_pt_pt');
+    await expect(kokoroModel).toBeVisible();
+    await expect(kokoroModel).toContainText('Download Kokoro');
+    await expect(tugaoModel).toBeHidden();
+    const englishVoiceOptions = await firstWindow.locator('#speech-voice option').count();
+    await firstWindow.evaluate(() => refreshSpeechModels([{
+      id: 'kokoro_en', label: 'Kokoro · English', language: 'en', approximateBytes: 352_148_969,
+      fileCount: 11, installed: true, installing: false, completedFiles: 0, error: '',
+    }, {
+      id: 'piper_pt_pt', label: 'Tugão · Português (Portugal)', language: 'pt', approximateBytes: 63_939_446,
+      fileCount: 9, installed: false, installing: false, completedFiles: 0, error: '',
+    }]));
+    await expect(kokoroModel).toHaveClass(/speech-model-delete/);
+    await expect(kokoroModel).toContainText('Delete Kokoro');
+    expect(await firstWindow.locator('#speech-voice option').count()).toBe(englishVoiceOptions);
+    await firstWindow.locator('#speech-language').selectOption('pt');
+    await expect(kokoroModel).toBeHidden();
+    await expect(tugaoModel).toBeVisible();
+    await expect(firstWindow.locator('#speech-voice')).toContainText('Best installed voice');
+    await firstWindow.locator('#speech-language').selectOption('es');
+    await expect(kokoroModel).toBeHidden();
+    await expect(tugaoModel).toBeHidden();
+    await expect(firstWindow.locator('#speech-voice')).toContainText('Best installed voice');
+    await firstWindow.locator('#speech-language').selectOption('en');
+    await firstWindow.evaluate(() => refreshSpeechModels());
     await firstWindow.locator('#reader-font').selectOption('arial');
     await firstWindow.locator('#reader-alignment').selectOption('justified');
     await firstWindow.locator('#reader-font-size').evaluate(input => {
@@ -165,6 +203,8 @@ test('libstr desktop app opens with preload bridge', async () => {
       speechRate: 1.1,
       speechVoiceEnglish: '',
       speechVoicePortuguese: '',
+      speechVoices: { en: '' },
+      speechLanguage: 'en',
     });
 
     const settingsAccelerator = await electronApp.evaluate(({ Menu }) => {
@@ -190,6 +230,8 @@ test('libstr desktop app opens with preload bridge', async () => {
       settingsItem?.click();
     });
     await expect(firstWindow.locator('#settings-modal')).toBeVisible();
+    await expect(firstWindow.locator('#opds-feeds')).toHaveCount(0);
+    await expect(firstWindow.getByRole('heading', { name: 'Public OPDS feeds' })).toHaveCount(0);
 
     await firstWindow.getByRole('button', { name: 'Connect with QR code' }).click();
     await expect(firstWindow.getByAltText('NIP-46 connection QR code')).toHaveAttribute('src', /^data:image\/png;base64,/);
@@ -204,6 +246,8 @@ test('libstr desktop app opens with preload bridge', async () => {
     await expect(firstWindow.locator('#desktop-signer-status')).toContainText('Connected with local nsec');
     await expect(firstWindow.locator('#desktop-signer-status')).not.toContainText('[object Promise]');
     await expect(firstWindow.locator('#desktop-signer-status')).toContainText('npub1');
+    await expect(firstWindow.locator('#desktop-signer-status')).toHaveClass(/signer-connected/);
+    await expect(firstWindow.getByRole('button', { name: 'Connect with QR code' })).toBeHidden();
 
     const localSigner = await firstWindow.evaluate(async () => ({
       pubkey: await window.bookstrDesktop.signer.getPublicKey(),
@@ -263,6 +307,28 @@ test('desktop pane shortcuts work from controls and the single reader window', a
     await library.keyboard.press(shortcut(1));
     await expect(library.locator('#home-tab')).toBeVisible();
     await expect.poll(() => library.evaluate(() => location.hash.startsWith('#home'))).toBe(true);
+  } finally {
+    await electronApp.close();
+  }
+});
+
+test('desktop home filtering keeps the matching in-progress book visible', async () => {
+  const electronApp = await electron.launch({ args: electronArgs() });
+
+  try {
+    const library = await electronApp.firstWindow();
+    await library.evaluate(() => {
+      localStorage.setItem('bookstr_reading_library_v1', JSON.stringify([
+        { md5: '1'.repeat(32), title: 'Visible Reading Journey', authors: 'Reader', extension: 'epub', progression: 0.6 },
+        { md5: '2'.repeat(32), title: 'Another Book', authors: 'Reader', extension: 'epub', progression: 0 },
+      ]));
+    });
+    await library.reload();
+    await expect(library.locator('#home-reading-list')).toContainText('Visible Reading Journey');
+    await library.locator('#home-query-input').fill('journey');
+    await expect(library.locator('#home-reading-list')).toContainText('Visible Reading Journey');
+    await expect(library.locator('#home-reading-list').getByRole('img', { name: 'Currently reading' })).toBeVisible();
+    await expect(library.locator('#home-reading-list')).not.toContainText('Another Book');
   } finally {
     await electronApp.close();
   }
@@ -354,8 +420,17 @@ test('desktop downloads dictionaries through its same-origin proxy', async () =>
   try {
     const library = await electronApp.firstWindow();
     await library.getByRole('button', { name: 'Settings' }).click();
+    const source = library.locator('#dictionary-source');
+    const target = library.locator('#dictionary-target');
+    await expect(source.locator('option')).toHaveCount(26);
+    await expect(target.locator('option')).toHaveCount(25);
+    await expect(target.locator('option[value="en"]')).toHaveText('English');
+    await expect(target.locator('option[value="pt"]')).toHaveCount(0);
+    await source.selectOption('en');
+    await expect(target.locator('option[value="en"]')).toHaveCount(0);
+    await expect(target.locator('option[value="pt"]')).toHaveText('Portuguese');
     await library.locator('#dictionary-source').selectOption('pt');
-    await library.locator('#dictionary-target').selectOption('en');
+    await target.selectOption('en');
     await library.locator('#dictionary-install').click();
     await expect(library.locator('#dictionary-status')).toHaveText('Installed Portuguese → English.');
     await expect(library.locator('#dictionary-packs')).toContainText('Portuguese → English');
@@ -376,6 +451,29 @@ test('desktop downloads dictionaries through its same-origin proxy', async () =>
   } finally {
     await electronApp.close();
     await server.close();
+  }
+});
+
+test('desktop keeps dictionary destinations available when dictionary storage cannot open', async () => {
+  const electronApp = await electron.launch({ args: electronArgs() });
+  try {
+    const library = await electronApp.firstWindow();
+    await library.addInitScript(() => {
+      const nativeOpen = IDBFactory.prototype.open;
+      IDBFactory.prototype.open = function open(name, ...args) {
+        if (name === 'bookstr_dictionaries_v1') throw new Error('Dictionary storage fixture unavailable');
+        return nativeOpen.call(this, name, ...args);
+      };
+    });
+    await library.reload();
+    await library.getByRole('button', { name: 'Settings' }).click();
+    await expect(library.locator('#dictionary-source')).toHaveValue('pt');
+    await expect(library.locator('#dictionary-target option')).toHaveCount(25);
+    await expect(library.locator('#dictionary-target option[value="en"]')).toHaveText('English');
+    await expect(library.locator('#dictionary-target')).toBeEnabled();
+    await expect(library.locator('#dictionary-install')).toBeEnabled();
+  } finally {
+    await electronApp.close();
   }
 });
 

@@ -21,6 +21,7 @@ const {
   normalizeReadUrl,
   findBookByReadUrl,
   metadataEndpointForReadUrl,
+  torrentMetadataForBook,
   canonicalReadUrl,
   canonicalCatalogUrl,
   bookIdentity,
@@ -33,33 +34,21 @@ const {
   mergeLibraryState,
   enrichBookMetadata,
   isbnForBook,
-  torrentMetadataForBook,
 } = globalThis.BookMetadata;
 
-test('normalizes public torrent metadata without requiring a Blossom URL', () => {
+test('normalizes portable torrent metadata and ignores empty descriptors', () => {
+  assert.equal(torrentMetadataForBook({}), null);
   assert.deepEqual(torrentMetadataForBook({
-    torrent_id: 'magnet:?xt=urn:btih:abc',
-    torrent_announce: ['wss://tracker.example'],
+    torrentDescriptor: {
+      magnetUri: ' magnet:?xt=urn:btih:book ',
+      torrentFile: ' book.torrent ',
+      announce: [' wss://tracker.example ', '', null],
+    },
   }), {
-    torrentId: 'magnet:?xt=urn:btih:abc',
-    torrentFile: '',
+    torrentId: 'magnet:?xt=urn:btih:book',
+    torrentFile: 'book.torrent',
     announce: ['wss://tracker.example'],
   });
-  assert.deepEqual(torrentMetadataForBook({
-    torrent: { magnetURI: 'magnet:?xt=urn:btih:def', torrentFile: 'base64-metadata', announce: ['wss://tracker.example'] },
-  }), {
-    torrentId: 'magnet:?xt=urn:btih:def',
-    torrentFile: 'base64-metadata',
-    announce: ['wss://tracker.example'],
-  });
-  assert.equal(torrentMetadataForBook({ title: 'No transfer' }), null);
-});
-
-test('reports WebTorrent availability when a public torrent is present', () => {
-  assert.equal(availabilityForBook({
-    title: 'Torrent book',
-    torrentId: 'magnet:?xt=urn:btih:abc',
-  }), 'WebTorrent');
 });
 
 test('normalizes explicit rights evidence without inferring from age or source', () => {
@@ -90,6 +79,14 @@ test('formats rights markers and accessible distinctions', () => {
   assert.equal(rightsAccessibleLabel({}), 'No open license identified');
 });
 
+test('sorts cached books through the caller-provided cache lookup', () => {
+  const books = sortBooks([
+    { id: 'uncached', title: 'A' },
+    { id: 'cached', title: 'B' },
+  ], 'cached', 'desc', book => book.id === 'cached');
+  assert.deepEqual(books.map(book => book.id), ['cached', 'uncached']);
+});
+
 test('keeps license URLs safe and preserves explicit metadata during partial refreshes', () => {
   assert.equal(normalizeRights({ license_url: 'javascript:alert(1)' }).license_url, '');
   assert.equal(
@@ -108,6 +105,11 @@ test('metadataObject parses object payloads and ignores invalid payloads', () =>
     title: 'Remote',
   });
   assert.deepEqual(metadataObject('{ invalid json }'), {});
+});
+
+test('metadata helpers safely retain malformed URL text without deriving a title', () => {
+  assert.equal(resolveTitle({ title: 'Untitled book' }, 'https://%', 'https://books.example/'), 'Untitled book');
+  assert.equal(normalizeReadUrl('https://%', 'https://books.example/'), 'https://%');
 });
 
 test('normalizes and preserves the earliest favorite addition time', () => {
@@ -908,6 +910,11 @@ test('sortBooks supports descending cached ordering', () => {
   const ordered = sortBooks(books, 'cached', 'desc', book => book?.isCached === true);
   assert.equal(ordered[0].title, 'Cached old');
   assert.equal(ordered[1].title, 'Fresh favorite');
+});
+
+test('sortBooks uses an uncached default when no cache lookup is provided', () => {
+  const books = [{ title: 'Zulu' }, { title: 'Alpha' }];
+  assert.deepEqual(sortBooks(books, 'cached').map(book => book.title), ['Alpha', 'Zulu']);
 });
 
 test('bookIdentity strips URL fragments when using URL fallback', () => {

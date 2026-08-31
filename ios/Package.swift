@@ -70,6 +70,7 @@ let package = Package(
                 "BookRightsV1ContractTests.swift",
                 "BookstrDebugLogTests.swift",
                 "DictionaryRepositoryTests.swift",
+                "DictionaryRepositoryCoverageTests.swift",
                 "CatalogProviderRecordV1ContractTests.swift",
                 "FavoritesParserTests.swift",
                 "NostrClientProgressTests.swift",

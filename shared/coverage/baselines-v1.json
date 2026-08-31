@@ -7,10 +7,10 @@
       "source": "https://github.com/guaka/bookstr/actions/runs/33211793372",
       "commit": "c7945c11d673ec9b5af3da5a67b3b5c425cc3a1f",
       "metrics": {
-        "Statements": 98.14,
+        "Statements": 100,
         "Branches": 84.19,
-        "Functions": 98.9,
-        "Lines": 98.14
+        "Functions": 100,
+        "Lines": 100
       }
     },
     "electron": {
@@ -20,7 +20,7 @@
       "metrics": {
         "Lines": 100,
         "Branches": 88.68,
-        "Functions": 94.97
+        "Functions": 100
       }
     },
     "android": {

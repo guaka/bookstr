@@ -16,18 +16,24 @@ test('renders a Bookstr coverage table with portable metric aliases and a stable
         { label: 'Functions', value: 98 }, { label: 'Lines', value: 100 },
       ] },
       { id: 'android', suite: 'Android', status: 'failing', knownTests: 3, coverage: [{ label: 'Instructions', value: 90 }, { label: 'Methods', value: 80 }] },
+      { id: 'web-e2e', suite: 'Web e2e', status: 'failing', results: { tests: 2, passed: 2, failed: 0, flaky: 1 }, coverage: [] },
     ],
   });
   assert.match(report, /<!-- bookstr-coverage-report:web -->/);
-  assert.match(report, /\| Web \| Passing \| 10\/10 \| 100\.00% \| 99\.50% \| 98\.00% \| 100\.00% \|/);
-  assert.match(report, /\| Android \| Failing \| 3 \| 90\.00% \| n\/a \| 80\.00% \| n\/a \|/);
+  assert.match(report, /\| Web \| 🟢 Passing \| 🟢 10\/10 \| 🟢 100\.00% \| 🟡 99\.50% \| 🟡 98\.00% \| 🟢 100\.00% \|/);
+  assert.match(report, /\| Android \| 🔴 Failing \| 3 \| 🟡 90\.00% \| — \| 🟡 80\.00% \| — \|/);
+  assert.match(report, /— means that suite does not emit that metric/);
+  assert.match(report, /\| iOS \| ⚪ Not run \| — \| — \| — \| — \| — \|/);
+  assert.match(report, /\| Web e2e \| 🟡 Flaky \| 🟡 2\/2 \(1 flaky\) \|/);
+  assert.match(report, /no relevant files changed/);
+  assert.match(report, /\[Download e2e screenshots\]\(https:\/\/github\.com\/guaka\/bookstr\/actions\/runs\/42#artifacts\)/);
   assert.match(report, /Report details/);
 });
 
 test('renders an explicit empty state and sanitizes markdown values', () => {
   const report = renderCoverageReport({ workflow: 'CI|danger', reports: [{ suite: 'Web|x', status: 'unknown' }] });
   assert.match(report, /Workflow: \*\*CI danger\*\*/);
-  assert.match(report, /\| Web x \| Failing \| n\/a \|/);
+  assert.match(report, /\| Web x \| 🔴 Failing \| — \|/);
   assert.doesNotMatch(report, /\[Open workflow run\]/);
   assert.match(renderCoverageReport({ marker: 'android', reports: [] }), /No coverage artifact/);
 });
@@ -68,4 +74,6 @@ test('PR workflow consumes all platform overview artifacts with write access iso
   assert.match(workflow, /issues: write/);
   assert.match(workflow, /github\.rest\.issues\.updateComment/);
   assert.match(workflow, /github\.rest\.issues\.createComment/);
+  assert.match(workflow, /REPORT_MARKER: \$\{\{ github\.event\.workflow_run\.name \}\}/);
+  assert.match(workflow, /pull-requests: write/);
 });

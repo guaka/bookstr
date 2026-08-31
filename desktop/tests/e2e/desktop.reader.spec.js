@@ -159,6 +159,7 @@ test('Desktop EPUB reader supports speech control transitions', async () => {
     await firstWindow.evaluate(() => localStorage.setItem('bookstr_reader_settings_v1', JSON.stringify({
       speechVoiceEnglish: 'kokoro-heart',
       speechVoicePortuguese: '',
+      speechVoices: { en: 'kokoro-heart' },
       speechRate: 1.1,
       readerFont: 'arial',
       readerAlignment: 'justified',
@@ -219,6 +220,7 @@ test('Desktop PDF reader supports speech control transitions', async () => {
     await firstWindow.evaluate(() => localStorage.setItem('bookstr_reader_settings_v1', JSON.stringify({
       speechVoiceEnglish: 'kokoro-heart',
       speechVoicePortuguese: '',
+      speechVoices: { en: 'kokoro-heart' },
       speechRate: 1.1,
     })));
     const pdf = minimalPdf(Array.from({ length: 55 }, (_, index) => 'pdfword' + index).join(' ') + '.');

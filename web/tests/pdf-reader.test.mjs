@@ -417,6 +417,13 @@ test('pdf-reader supports desktop payload normalization, rendering, and speech c
   assert.equal(env.progress.length > reportedBefore, true);
   assert.equal(env.speech.createCalls > 0, true);
 
+  env.zoomOutButton.click();
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert.equal(env.zoomLabel.textContent, '85%');
+  env.zoomInButton.click();
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert.equal(env.zoomLabel.textContent, '100%');
+
   const progressBeforeScroll = env.progress.length;
   env.window.__triggers.trigger('scroll');
   env.window.__triggers.trigger('scroll');
@@ -461,6 +468,8 @@ test('pdf-reader supports desktop payload normalization, rendering, and speech c
       parentProgress.push({ payload, origin });
     },
   };
+  PdfReaderTest.reportPdfProgress(2);
+  assert.equal(parentProgress.at(-1).payload.cfi, 'page:2');
   env.window.__triggers.trigger('beforeunload');
   assert.equal(parentProgress.at(-1).payload.type, 'bookstr-reader-progress');
   assert.equal(parentProgress.at(-1).origin, 'app://bookstr');
@@ -481,6 +490,19 @@ test('pdf-reader supports desktop payload normalization, rendering, and speech c
   assert.equal(env.speech.lastOptions.rate, 1);
   assert.equal(env.speech.lastOptions.voiceIdentifier, 'portuguese-voice');
   env.controls.stop.click();
+
+  const buildPlan = env.window.BookstrSpeech.buildPlan;
+  env.window.BookstrSpeech.buildPlan = () => ({ text: '', chunks: [], language: 'en' });
+  await PdfReaderTest.startPdfSpeech();
+  assert.equal(env.controls.play.disabled, false);
+  env.window.BookstrSpeech.buildPlan = buildPlan;
+
+  PdfReaderTest.setPdfSpeechState('playing');
+  env.document.hidden = true;
+  const stopsBeforeVisibilityChange = env.speech.stopCalls;
+  env.window.__triggers.trigger('visibilitychange');
+  assert.equal(env.speech.stopCalls, stopsBeforeVisibilityChange + 1);
+  env.document.hidden = false;
 
   assert.equal(env.controls.play.disabled, false);
   assert.equal(env.controls.pause.disabled, true);
@@ -522,4 +544,10 @@ test('pdf-reader remains usable without desktop speech support and reports load 
     /Invalid character|invalid/i,
   );
   assert.match(env.message.textContent, /Could not display PDF/);
+
+  delete env.window.__bookstrGetDocument;
+  await assert.rejects(
+    env.window.loadPdf({ base64: 'VGVzdA==', filename: 'invalid.pdf' }),
+    /PDF|document|header|format/i,
+  );
 });

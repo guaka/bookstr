@@ -4,6 +4,7 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -142,6 +143,13 @@ jobs:
           name: bookstr-web-playwright-${{ github.run_id }}
           path: web-playwright.json
           if-no-files-found: warn
+      - name: Upload web e2e screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bookstr-e2e-screenshots-web-${{ github.run_id }}
+          path: web/test-results/**/*.png
+          if-no-files-found: error
       - name: Record web test overview
         if: always()
         env:
@@ -189,7 +197,7 @@ jobs:
         run: |
           started=$(date +%s)
           set +e
-          npm run test:coverage | tee electron-tests.tap
+          npm run test:coverage:ci | tee electron-tests.tap
           status=${PIPESTATUS[0]}
           echo "duration_ms=$((($(date +%s) - started) * 1000))" >> "$GITHUB_OUTPUT"
           exit "$status"
@@ -202,15 +210,18 @@ jobs:
       - name: Install Electron test dependencies
         if: always()
         run: npx playwright install-deps
-      - name: Run Electron smoke tests
+      - name: Run Electron smoke and local WebTorrent tests
         id: electron_e2e
         if: always()
         continue-on-error: true
         run: |
           started=$(date +%s)
           set +e
-          xvfb-run -a npx playwright test tests/e2e/desktop.smoke.spec.js --reporter=json > electron-playwright.json
+          npm run test:e2e:torrent
+          torrent_status=$?
+          xvfb-run -a npx playwright test tests/e2e/desktop.smoke.spec.js tests/e2e/desktop.device-transfer.spec.js --reporter=json > electron-playwright.json
           status=$?
+          if [ "$torrent_status" -ne 0 ]; then status="$torrent_status"; fi
           echo "duration_ms=$((($(date +%s) - started) * 1000))" >> "$GITHUB_OUTPUT"
           exit "$status"
       - name: Record Electron test overview
@@ -225,6 +236,13 @@ jobs:
         run: |
           node scripts/test-overview.mjs record --id electron --suite Electron --status "$UNIT_STATUS" --results-format tap --results desktop/electron-tests.tap --coverage-format node --coverage desktop/electron-tests.tap --duration-ms "$UNIT_DURATION_MS" --output test-overview/electron.json --recorded "$(date -u +%FT%TZ)" --run-url "$RUN_URL" --commit "$GITHUB_SHA"
           node scripts/test-overview.mjs record --id electron-e2e --suite "Electron e2e" --status "$E2E_STATUS" --results-format playwright --results desktop/electron-playwright.json --duration-ms "$E2E_DURATION_MS" --output test-overview/electron-e2e.json --recorded "$(date -u +%FT%TZ)" --run-url "$RUN_URL" --commit "$GITHUB_SHA"
+      - name: Upload Electron e2e screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bookstr-e2e-screenshots-electron-${{ github.run_id }}
+          path: desktop/test-results/**/*.png
+          if-no-files-found: error
       - name: Enforce Electron coverage baseline
         if: always()
         working-directory: .

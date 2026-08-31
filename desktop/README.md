@@ -2,15 +2,15 @@
 
 This directory contains the Electron shell for the libstr desktop app. It loads
 the existing web reader UI from `../web` through a custom `app://bookstr` protocol,
-keeps reading inside the main library window, and synchronizes reading progress
-through an isolated preload bridge. The desktop uses the bundled WebTorrent
-client for public and private transfers; it does not bundle Transmission or
-Iroh.
+keeps reading inside the main library window, opens one reader window per opened
+book, and synchronizes reading progress through an isolated preload bridge. The
+desktop uses the bundled WebTorrent client for public and private transfers; it
+does not bundle Transmission or Iroh.
 
 ## Run locally
 
 ```bash
-cd /Users/k/code/playground/libvault/bookstr/desktop
+cd bookstr/desktop
 npm install
 npm start
 ```
@@ -18,7 +18,7 @@ npm start
 ## Test
 
 ```bash
-cd /Users/k/code/playground/libvault/bookstr/desktop
+cd bookstr/desktop
 npm install
 npm run test
 npm run test:e2e:smoke
@@ -27,6 +27,16 @@ npm run test:e2e:reader
 
 The test suite uses Playwright Electron mode to validate bootstrap, preload bridge,
 and reader read-aloud behavior.
+
+To run the complete Electron end-to-end suite in the pinned Linux test container:
+
+```bash
+cd desktop
+npm run test:e2e:docker
+```
+
+The Docker command builds from the repository root, runs as Playwright's
+unprivileged user under Xvfb, and removes the test container when it finishes.
 
 ## Package (CI/release)
 
@@ -50,4 +60,6 @@ and reader read-aloud behavior.
   bridge (`window.bookstrDesktop`).
 - `window.bookstrDesktop.transfers` exposes status, rights-gated public seeding,
   and public/private torrent admission without exposing library paths.
+- `window.bookstrDesktop.library.acquire(record)` selects an eligible HTTPS or
+  torrent source, retries safely, and imports only after checksum verification.
 - External links are opened in the system browser.

@@ -1,6 +1,7 @@
 'use strict';
 
 const path = require('node:path');
+const net = require('node:net');
 
 const PUBLIC_TRACKERS = Object.freeze([
   'wss://tracker.openwebtorrent.com',
@@ -24,6 +25,24 @@ function safeExtension(value) {
 function safePath(value) {
   if (typeof value !== 'string' || !value.trim() || value.includes('\0')) throw new TypeError('filePath must be a valid local path');
   return path.resolve(value);
+}
+
+function safePeerAddress(value) {
+  const peer = String(value || '').trim();
+  // WebTorrent accepts an address string for Node/TCP peers. Do not accept
+  // hostnames here: this value can arrive through the renderer IPC boundary,
+  // and resolving arbitrary names would turn private transfer into SSRF.
+  const ipv4 = /^(?:\d{1,3}\.){3}\d{1,3}:(\d{1,5})$/;
+  const ipv6 = /^\[([0-9a-f:]+)\]:(\d{1,5})$/i;
+  const ipv4Match = ipv4.exec(peer);
+  const ipv6Match = ipv6.exec(peer);
+  const match = ipv4Match || ipv6Match;
+  const port = Number(match?.[ipv4Match ? 1 : 2]);
+  const host = ipv4Match ? peer.slice(0, peer.lastIndexOf(':')) : ipv6Match?.[1];
+  if (!match || !net.isIP(host) || port < 1 || port > 65535) {
+    throw new TypeError('private peer handoff must be an IP address and port');
+  }
+  return peer;
 }
 
 function seedOptions({ sha256, extension, trackers }) {
@@ -132,28 +151,10 @@ class WebTorrentBridge {
     return client.add(torrentId, options);
   }
 
-  async downloadPublic(torrentId, options = {}) {
-    const torrent = await this.addPublic(torrentId, options);
-    if (torrent.done) return torrent;
-    if (typeof torrent.once !== 'function') throw new Error('Public torrent does not expose completion events.');
-    await new Promise((resolve, reject) => {
-      const finish = () => {
-        torrent.removeListener?.('error', fail);
-        resolve();
-      };
-      const fail = error => {
-        torrent.removeListener?.('done', finish);
-        reject(error);
-      };
-      torrent.once('done', finish);
-      torrent.once('error', fail);
-    });
-    return torrent;
-  }
-
-  async addPrivate(torrentId, { path: downloadPath } = {}) {
+  async addPrivate(torrentId, { path: downloadPath, peer } = {}) {
+    const peerAddress = safePeerAddress(peer);
     const client = await this.start();
-    return client.add(torrentId, {
+    const torrent = client.add(torrentId, {
       path: downloadPath ? safePath(downloadPath) : this.dataDir,
       private: true,
       announce: [],
@@ -162,6 +163,29 @@ class WebTorrentBridge {
       utPex: false,
       lsd: false,
     });
+    // An info hash is available synchronously for the supported private
+    // handoff inputs (magnet/info-hash/torrent bytes). If a compatible client
+    // resolves it asynchronously, wait for the same event before calling the
+    // WebTorrent API; addPeer() is invalid before that point.
+    if (torrent.infoHash) {
+      this.addPeer(torrent, peerAddress);
+    } else if (typeof torrent.once === 'function') {
+      await new Promise((resolve, reject) => {
+        const onInfoHash = () => {
+          try {
+            this.addPeer(torrent, peerAddress);
+            resolve();
+          } catch (error) {
+            reject(error);
+          }
+        };
+        torrent.once('infoHash', onInfoHash);
+        torrent.once('error', reject);
+      });
+    } else {
+      throw new Error('private torrent did not expose an info hash before peer handoff');
+    }
+    return torrent;
   }
 
   addPeer(torrent, peer) {
@@ -195,4 +219,5 @@ module.exports = {
   PUBLIC_TRACKERS,
   PUBLIC_UPLOAD_LIMIT,
   PIECE_LENGTH,
+  safePeerAddress,
 };

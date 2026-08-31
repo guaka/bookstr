@@ -73,6 +73,37 @@ final class WordNavigationStateTests: XCTestCase {
         XCTAssertEqual(words.requestToken, 2)
     }
 
+    func testSavedMarkRequestPreservesKindAndLocator() {
+        let navigation = WordNavigationState()
+
+        navigation.request(kind: .mark, locator: " epubcfi(mark) ")
+
+        XCTAssertEqual(
+            navigation.requestedHighlight,
+            SavedHighlightRequest(kind: .mark, locator: "epubcfi(mark)", text: "")
+        )
+        XCTAssertNil(navigation.requestedWord)
+        XCTAssertEqual(navigation.requestToken, 1)
+    }
+
+    func testSavedWordRequestMatchesExactLocatorBeforeDuplicateText() {
+        let navigation = WordNavigationState()
+        let first = makeWord(key: "first", cfi: "epubcfi(first)")
+        let second = makeWord(key: "second", cfi: "epubcfi(second)")
+        let request = SavedHighlightRequest(kind: .word, locator: second.cfi, text: "Test")
+
+        XCTAssertEqual(navigation.matchingWord(for: request, in: [first, second])?.key, "second")
+    }
+
+    func testSavedMarkMatchesExactLocator() {
+        let navigation = WordNavigationState()
+        let first = makeMark(id: "first", locator: "epubcfi(first)")
+        let second = makeMark(id: "second", locator: "epubcfi(second)")
+        let request = SavedHighlightRequest(kind: .mark, locator: second.locator, text: "")
+
+        XCTAssertEqual(navigation.matchingMark(for: request, in: [first, second])?.syncId, "second")
+    }
+
     func testMatchingWordReturnsNilWhenNoVocabularySaved() {
         let words = WordNavigationState()
 
@@ -356,5 +387,23 @@ final class WordNavigationStateTests: XCTestCase {
         XCTAssertNotNil(words.matchingWord(for: "THREE", in: catalog))
         XCTAssertEqual(words.matchingWord(for: "TWO", in: catalog)?.key, "en:two")
         XCTAssertEqual(words.matchingWord(for: "three", in: catalog)?.key, "en:three")
+    }
+
+    private func makeWord(key: String, cfi: String) -> VocabularyWord {
+        VocabularyWord(
+            key: key, word: "Test", language: "en", syncId: key,
+            bookId: "book", bookTitle: "Book", cfi: cfi,
+            contextSentence: "A test.", partOfSpeech: "noun", definitions: ["A test."],
+            translation: nil, sourceUrl: "", lookupCount: 1,
+            firstSeenAt: 1, lastSeenAt: 1, deleted: false
+        )
+    }
+
+    private func makeMark(id: String, locator: String) -> BookSnippet {
+        BookSnippet(
+            syncId: id, text: "Marked text", bookId: "book", bookTitle: "Book",
+            author: "Author", isbn: nil, format: .epub, locator: locator,
+            createdAt: 1, updatedAt: 1, deleted: false
+        )
     }
 }

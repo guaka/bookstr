@@ -16,6 +16,21 @@ test('empty Search shows a responsive table of active catalog sources', async ({
   await expect(table.locator('td[data-label="Delivers"]').first()).toBeVisible();
 });
 
+test('home filtering keeps the matching in-progress book visible', async ({ page }) => {
+  await page.addInitScript(() => {
+    localStorage.setItem('bookstr_reading_library_v1', JSON.stringify([
+      { md5: '1'.repeat(32), title: 'Visible Reading Journey', authors: 'Reader', extension: 'epub', progression: 0.6 },
+      { md5: '2'.repeat(32), title: 'Another Book', authors: 'Reader', extension: 'epub', progression: 0 },
+    ]));
+  });
+  await page.goto('/#home');
+  await expect(page.locator('#home-reading-list')).toContainText('Visible Reading Journey');
+  await page.locator('#home-query-input').fill('journey');
+  await expect(page.locator('#home-reading-list')).toContainText('Visible Reading Journey');
+  await expect(page.locator('#home-reading-list').getByRole('img', { name: 'Currently reading' })).toBeVisible();
+  await expect(page.locator('#home-reading-list')).not.toContainText('Another Book');
+});
+
 async function minimalEpub(title, body = title, rights = '') {
   const zip = new JSZip();
   zip.file('mimetype', 'application/epub+zip', { compression: 'STORE' });
@@ -797,10 +812,12 @@ test('HTTP search results expose format filters and can be favorited in place', 
   await expect(openLicenseRow.locator('.rights-marker')).toHaveText('CC BY-SA 4.0');
   await expect(page.locator('#search-format-filter')).toBeVisible();
 
-  await page.locator('#search-format-filter').selectOption('pdf');
+  const formatFilter = page.locator('#search-format-filter');
+  await formatFilter.selectOption('pdf');
+  await expect(formatFilter).toHaveValue('pdf');
   await expect(page.locator('#search-result-count')).toHaveText('1 of 2 results');
-  await expect(page.locator('#results')).toContainText('Paper Walls');
-  await expect(page.locator('#results')).not.toContainText('Paper Boats');
+  await expect(page.locator('#results .book-table-row')).toHaveCount(1);
+  await expect(page.locator('#results .book-table-row')).toContainText('Paper Walls');
 
   const favorite = page.locator('#results button[data-action="favorite"]').first();
   await favorite.click();

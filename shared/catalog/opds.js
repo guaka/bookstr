@@ -103,12 +103,7 @@ export function discoverOpenSearchTemplate(documentXML, baseURL) {
 export function resolveOPDSSearchURL(search, query, baseURL) {
   const href = typeof search === 'string' ? search : search?.href;
   if (!href) return null;
-  let resolved;
-  try {
-    resolved = templateURL(href, baseURL);
-  } catch {
-    return null;
-  }
+  const resolved = templateURL(href, baseURL);
   const encoded = encodeURIComponent(String(query || '').trim());
   if (!encoded) return resolved;
   if (/\{[?&][^}]+\}/.test(resolved)) {

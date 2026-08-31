@@ -181,11 +181,12 @@ final class DictionaryRepository {
         let installed = Self.packSpecs.filter {
             FileManager.default.fileExists(atPath: packURL($0.id).path)
         }
-        for candidate in candidates {
-            let matches = installed.compactMap { lookupOffline(word: candidate, pack: $0) }
-            if !matches.isEmpty { return matches }
+        return installed.compactMap { pack in
+            for candidate in candidates {
+                if let match = lookupOffline(word: candidate, pack: pack) { return match }
+            }
+            return nil
         }
-        return []
     }
 
     private func lookupOffline(word: String, language: String) -> DictionaryLookup? {

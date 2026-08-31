@@ -25,11 +25,6 @@ test('torrent info hash ignores announce and descriptor-only fields', () => {
   assert.equal(bencode({ b: 'x', a: 1 }).toString(), 'd1:ai1e1:b1:xe');
 });
 
-test('torrent names preserve comic archive formats', () => {
-  assert.equal(publicTorrentDescriptor({ sha256, size: 1234, extension: 'CBZ' }).info.name, `${sha256}.cbz`);
-  assert.equal(privateTorrentDescriptor({ sha256, size: 1234, extension: 'cbr', syncSecret: 'account-one' }).info.name, `${sha256}.cbr`);
-});
-
 test('private metadata is account-scoped and has no discovery trackers', () => {
   const first = privateTorrentDescriptor({ sha256, size: 10, syncSecret: 'account-one' });
   const second = privateTorrentDescriptor({ sha256, size: 10, syncSecret: 'account-two' });

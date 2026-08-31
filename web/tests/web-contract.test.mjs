@@ -53,7 +53,7 @@ test('Search explains active sources and fans out without private-first fallback
   assert.match(html, /@media \(max-width: 600px\)[\s\S]*\.search-sources-table td::before/);
 });
 
-test('search registers lawful LitRes and configured public OPDS FB2 sources', () => {
+test('search retains synced public OPDS sources without exposing feed editing in settings', () => {
   assert.match(html, /async function searchLitresPublicDomain\(query\)/);
   assert.match(html, /\/litres\/search\?q=/);
   assert.match(html, /name: 'LitRes Public Domain'/);
@@ -61,7 +61,7 @@ test('search registers lawful LitRes and configured public OPDS FB2 sources', ()
   assert.match(html, /getOPDSSourcesModule\(\)/);
   assert.match(html, /opds-/);
   assert.match(html, /deliveries: \['Metadata', 'FB2'\]/);
-  assert.match(html, /id="opds-feeds"/);
+  assert.doesNotMatch(html, /id="opds-feeds"|Public OPDS feeds|settings-opds|opds-feed-input/);
   assert.match(html, /function normalizePublicOPDSFeedSettings\(value\)/);
   assert.match(html, /bookstr-opds-feeds/);
   assert.match(html, /bookstr-opds-feed/);
@@ -405,7 +405,7 @@ test('PDFs are fetched and displayed inside the Bookstr reader pane', () => {
   assert.match(html, /new Blob\(\[blob\], \{ type: 'application\/pdf' \}\)/);
   assert.match(html, /PDF download failed/);
   assert.match(html, /await displayPdf\(blob, book, readPath, openGeneration\)/);
-  assert.match(html, /const readerPath = kind === 'pdf' \? 'pdf-reader\.html' : kind === 'fb2' \? 'fb2-reader\.html' : 'reader\.html'/);
+  assert.match(html, /const readerPath = kind === 'pdf' \? 'pdf-reader\.html' : kind === 'fb2' \? 'fb2-reader\.html' : kind === 'comic' \? 'comic-reader\.html' : 'reader\.html'/);
   assert.match(html, /const readerLoad = await readerFrameLoader\('pdf', openGeneration\)/);
   assert.match(html, /filename: pdfDownloadFilename\(book\)/);
   assert.match(html, /return `\$\{safeTitle \|\| 'Bookstr book'\}\.pdf`/);
@@ -700,6 +700,7 @@ test('desktop content security policy permits secure Nostr relay sockets', async
   const desktopPackage = JSON.parse(await readFile(new URL('../../desktop/package.json', import.meta.url), 'utf8'));
   assert.match(desktopPolicy, /connect-src 'self' https: wss:;/);
   assert.ok(desktopPackage.build.files.includes('security-policy.js'));
+  assert.ok(desktopPackage.build.files.includes('device-pairing.js'));
 });
 
 test('desktop pane shortcuts use the constrained preload callback', () => {
@@ -772,11 +773,19 @@ test('Electron windows and packages use the Bookstr app icon', async () => {
     offset += length + 12;
   }
   const pixels = inflateSync(Buffer.concat(idatChunks));
-  assert.match(desktopMain, /const APP_ICON_PATH = process\.platform === 'darwin'[\s\S]*?icon-macos\.png[\s\S]*?apple-touch-icon\.png/);
+  assert.match(desktopMain, /const APP_ICON_PATH = path\.join\(__dirname, 'assets', 'icon-macos\.png'\)/);
   assert.match(desktopMain, /title: 'libstr',[\s\S]*?icon: APP_ICON_PATH/);
   assert.equal((desktopMain.match(/new BrowserWindow\(/g) || []).length, 1);
   assert.match(desktopMain, /app\.dock\.setIcon\(APP_ICON_PATH\)/);
-  assert.equal(desktopPackage.build.icon, '../web/public/apple-touch-icon.png');
+  assert.equal(desktopPackage.build.icon, 'assets/icon-macos.png');
+  assert.equal(desktopPackage.build.win.icon, 'assets/icon-macos.png');
+  assert.equal(desktopPackage.build.linux.icon, 'assets/icon-macos.png');
+  assert.equal(desktopPackage.desktopName, 'app.bookstr.desktop.desktop');
+  assert.equal(desktopPackage.build.linux.syncDesktopName, true);
+  assert.equal(desktopPackage.build.linux.desktop.entry.StartupWMClass, 'app.bookstr.desktop');
+  assert.match(desktopMain, /const DESKTOP_APP_ID = 'app\.bookstr\.desktop'/);
+  assert.match(desktopMain, /process\.platform === 'linux'[\s\S]*?app\.setDesktopName\(`\$\{DESKTOP_APP_ID\}\.desktop`\)/);
+  assert.match(desktopMain, /process\.platform === 'win32'[\s\S]*?app\.setAppUserModelId\(DESKTOP_APP_ID\)/);
   assert.equal(macIcon.toString('ascii', 1, 4), 'PNG');
   assert.equal(macIcon.readUInt32BE(16), 1024);
   assert.equal(macIcon.readUInt32BE(20), 1024);
@@ -794,19 +803,38 @@ test('Electron identifies development builds with a Bookstr timestamp version', 
 
 test('settings groups Nostr controls and connection status together', () => {
   assert.match(html, /settings-section settings-nostr[\s\S]*?<h3>Nostr<\/h3>[\s\S]*?id="nip7-enabled"[\s\S]*?id="nip7-status"/);
+  assert.match(html, /#desktop-signer-status\.signer-connected::before\s*\{[\s\S]*?content: '✓';[\s\S]*?color: #16803c/);
+  assert.match(html, /desktopSignerStatus\.classList\.toggle\('signer-connected', connected\)/);
+  assert.match(html, /desktopNip46QrStart\.classList\.toggle\('hidden', connected\)/);
+});
+
+test('offline dictionary destinations populate before storage responds', () => {
+  assert.match(html, /function populateDictionaryTargetOptions\(preferredTarget = '', installed = new Set\(\)\)/);
+  assert.match(html, /dictionarySource\.addEventListener\('change',[\s\S]*?populateDictionaryTargetOptions\(\);[\s\S]*?refreshDictionaryTargetOptions\(\)/);
+  assert.match(html, /populateDictionaryTargetOptions\('en'\);[\s\S]*?refreshDictionaryTargetOptions\('en'\)/);
+  assert.match(html, /try \{[\s\S]*?await dictionaryRecords\(\)[\s\S]*?\} catch \{\}[\s\S]*?populateDictionaryTargetOptions/);
 });
 
 test('Electron settings expose opt-in language voices and reader typography', () => {
-  assert.match(html, /desktop-reader-settings settings-speech[\s\S]*?id="speech-voice-en"[\s\S]*?id="speech-voice-pt"[\s\S]*?id="speech-rate"/);
-  assert.match(html, /Kokoro for English[\s\S]*?Tugão for Portuguese/);
-  assert.match(html, /Optional voices are never downloaded or selected automatically/);
+  assert.match(html, /desktop-reader-settings settings-speech[\s\S]*?id="speech-language"[\s\S]*?id="speech-voice"[\s\S]*?id="speech-rate"/);
+  assert.match(html, /id="speech-model-kokoro_en"[\s\S]*?id="speech-model-piper_pt_pt"[\s\S]*?id="speech-model-status"/);
+  assert.match(html, /speech-model-delete[\s\S]*?color: #b42318/);
+  assert.match(html, /button\.hidden = button\.dataset\.language !== selectedLanguage/);
+  assert.match(html, /speech-settings\.js/);
   assert.match(html, /id="reader-font"[\s\S]*?<option value="arial">Arial<\/option>[\s\S]*?id="reader-alignment"[\s\S]*?<option value="justified">Justified<\/option>[\s\S]*?id="reader-font-size"/);
-  assert.match(html, /speechVoiceEnglish:[\s\S]*?speechVoicePortuguese:[\s\S]*?speechRate:/);
+  assert.match(html, /speechVoices:[\s\S]*?speechLanguage:[\s\S]*?speechRate:/);
   assert.match(html, /notifyOpenReaderSettings\(\)/);
   assert.match(readerHtml, /voiceIdentifier: selectedSpeechVoice\(plan\.language\)/);
   assert.match(readerHtml, /BookstrTypography\.normalizeFont\([\s\S]*?currentReaderSettings\.readerFont/);
   assert.match(readerHtml, /BookstrTypography\.css\(readerFontFamily, readerAlignment\)/);
   assert.match(pdfReaderJs, /voiceIdentifier: selectedPdfSpeechVoice\(plan\.language\)/);
+  assert.match(html, /BookMetadata\.mergeLibraryState\(state\.reading, state\.favorites\)[\s\S]*?BookstrSpeechSettings\.languagesForCodes\(\[\.\.\.bookLanguages, 'en', 'pt'\], displayNames\)/);
+});
+
+test('Nostr library sync reports its relay, requested data, and resulting counts', () => {
+  assert.match(html, /Fetching ≤10 favorite snapshots, ≤100 reading events and ≤120 word events from \$\{relayNames\}/);
+  assert.match(html, /\$\{favorites\.length\} favorites · \$\{reading\.length\} reading · \$\{words\.length\} words/);
+  assert.match(html, /from \$\{relayNames\} · \$\{account\.slice\(0, 16\)\}/);
 });
 
 test('vocabulary deletion publishes a durable encrypted tombstone before best-effort NIP-09 cleanup', () => {
@@ -878,5 +906,5 @@ test('reader-open route always updates hash with encoded book identity', () => {
 
 test('reader never navigates its iframe to an untrusted book URL', () => {
   assert.doesNotMatch(html, /readerFrame\.src\s*=\s*readPath/);
-  assert.match(html, /throw new Error\('Only EPUB, PDF, and FB2 book files can be opened\.'\)/);
+  assert.match(html, /throw new Error\('Only EPUB, PDF, FB2, CBZ, and CBR book files can be opened\.'\)/);
 });
