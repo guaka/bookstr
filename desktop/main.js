@@ -167,6 +167,12 @@ function ensureLibraryPath(value) {
     : '';
 }
 
+function libraryRelativePath(filePath) {
+  const candidate = ensureLibraryPath(filePath);
+  if (!candidate) return '';
+  return path.relative(path.resolve(libraryDataDir), candidate).replaceAll(path.sep, '/');
+}
+
 function getTorrentBridge() {
   if (!torrentBridge) {
     torrentBridge = new WebTorrentBridge({ dataDir: path.join(libraryDataDir, 'torrents') });
@@ -1298,6 +1304,43 @@ function setupIpcHandlers() {
     const torrent = await getTorrentBridge().addPublic(String(request.torrentId), { path: downloadPath || undefined });
     return { infoHash: String(torrent.infoHash || '') };
   });
+  ipcMain.handle('bookstr-desktop-transfer-download-public', async (_event, request) => {
+    if (!isRecord(request) || !request.torrentId || !request.bookId) {
+      throw new Error('Invalid public torrent download request.');
+    }
+    if (isRecord(request.book)) {
+      getLibraryStore().upsertBook({
+        ...request.book,
+        id: request.book.id || request.book.md5 || request.bookId,
+        sha256: request.book.sha256 || request.sha256 || request.book.blossomSha256,
+      });
+    }
+    const book = getLibraryStore().getBook(request.bookId);
+    const digest = normalizeHex(request.sha256 || book?.sha256);
+    if (!book || !digest || book.sha256.toLowerCase() !== digest) {
+      throw new Error('Public torrent download requires a matching library book digest.');
+    }
+    const rawTorrentId = String(request.torrentId);
+    const torrentId = /^magnet:|^https?:/i.test(rawTorrentId)
+      ? rawTorrentId
+      : Buffer.from(rawTorrentId, 'base64');
+    const torrent = await getTorrentBridge().downloadPublic(torrentId, {
+      path: libraryDataDir,
+    });
+    const file = Array.isArray(torrent.files) && torrent.files.length === 1 ? torrent.files[0] : null;
+    const relativePath = libraryRelativePath(file?.path);
+    if (!relativePath) throw new Error('Public torrent did not produce a safe library file.');
+    const stat = await fs.stat(path.join(libraryDataDir, relativePath));
+    if (!stat.isFile() || stat.size !== Number(book.filesize_bytes || stat.size)) {
+      throw new Error('Downloaded torrent file size does not match the catalog.');
+    }
+    const fileDigest = crypto.createHash('sha256').update(await fs.readFile(path.join(libraryDataDir, relativePath)).then(bytes => bytes)).digest('hex');
+    if (fileDigest !== digest) throw new Error('Downloaded torrent file SHA-256 does not match the catalog.');
+    getLibraryStore().registerLibraryFile({ bookId: book.id, relativePath, size: stat.size, sha256: fileDigest });
+    const reader = getLibraryStore().openReader(book.id);
+    if (!reader?.token) throw new Error('Downloaded book could not be opened.');
+    return { url: `${APP_ORIGIN}/api/library-file/${reader.token}`, infoHash: String(torrent.infoHash || '') };
+  });
   ipcMain.handle('bookstr-desktop-transfer-add-private', async (_event, request) => {
     if (!isRecord(request) || !request.torrentId) throw new Error('Invalid private transfer request.');
     const downloadPath = request.path ? ensureLibraryPath(request.path) : '';
@@ -1378,11 +1421,18 @@ function setupIpcHandlers() {
 
 function setupProtocol(targetSession) {
   targetSession.protocol.handle(APP_PROTOCOL, async (request) => {
+    const parsed = new URL(request.url);
+    const libraryFileMatch = parsed.pathname.match(/^\/api\/library-file\/([A-Za-z0-9_-]{32,})$/);
+    if (parsed.host === APP_HOST && libraryFileMatch) {
+      const entry = getLibraryStore().resolveReaderToken(libraryFileMatch[1]);
+      if (!entry) return new Response('Not found', { status: 404 });
+      const file = await fs.readFile(entry.path);
+      return new Response(file, { headers: { 'Content-Type': MIME_TYPES.get(path.extname(entry.path).toLowerCase()) || 'application/octet-stream' } });
+    }
     const blossomResponse = await proxyBlossomRequest(request, net.fetch, BLOSSOM_PROXY_BASE_URL);
     if (blossomResponse) return blossomResponse;
     const catalogResponse = await proxyCatalogRequest(request, net.fetch);
     if (catalogResponse) return catalogResponse;
-    const parsed = new URL(request.url);
     if (parsed.host !== APP_HOST) {
       return new Response('Unknown host', { status: 404 });
     }

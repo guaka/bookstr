@@ -2,6 +2,7 @@
 
 const assert = require('node:assert/strict');
 const test = require('node:test');
+const { EventEmitter } = require('node:events');
 const {
   WebTorrentBridge,
   PUBLIC_TRACKERS,
@@ -117,4 +118,25 @@ test('private handoff waits for asynchronous metadata and bridge cleanup is safe
 
   const noPeerBridge = new WebTorrentBridge({ clientFactory: async () => ({ add: () => ({ infoHash: 'a'.repeat(40) }) }) });
   await assert.rejects(() => noPeerBridge.addPrivate('private-id', { peer: '192.0.2.12:6881' }), /does not support peer connections/);
+});
+
+test('public download waits for completion', async () => {
+  const log = { adds: [] };
+  const bridge = new WebTorrentBridge({ clientFactory: async options => ({
+    torrents: [],
+    throttleUpload() {},
+    add(id, addOptions) {
+      log.adds.push({ id, options: addOptions });
+      const torrent = new EventEmitter();
+      torrent.infoHash = 'e'.repeat(40);
+      torrent.files = [{ path: '/tmp/bookstr/book.epub' }];
+      this.torrents.push(torrent);
+      setImmediate(() => torrent.emit('done'));
+      return torrent;
+    },
+    destroy(callback) { callback?.(); },
+  }) });
+  const torrent = await bridge.downloadPublic('magnet:?xt=urn:btih:test', { path: '/tmp/bookstr' });
+  assert.equal(torrent.infoHash, 'e'.repeat(40));
+  assert.equal(log.adds[0].options.path, '/tmp/bookstr');
 });
