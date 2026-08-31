@@ -54,7 +54,7 @@ class ComicReaderActivity : ComponentActivity() {
                     val saved = app.catalogRepository.getProgress(bookId)
                     val encoded = withContext(Dispatchers.IO) { Base64.encodeToString(archive.readBytes(), Base64.NO_WRAP) }
                     val initial = saved?.cfi?.substringAfter("comic:")?.substringBefore(':')?.toIntOrNull() ?: saved?.progression?.toInt() ?: 0
-                    view.evaluateJavascript("loadComic({format:${quote(format.extension)},bookTitle:${quote(intent.getStringExtra(EXTRA_TITLE) ?: \"Comic\")},base64:${quote(encoded)},initialPage:$initial})", null)
+                    view.evaluateJavascript("loadComic({format:${quote(format.extension)},bookTitle:${quote(intent.getStringExtra(EXTRA_TITLE) ?: "Comic")},base64:${quote(encoded)},initialPage:$initial})", null)
                 }
             }
         }
