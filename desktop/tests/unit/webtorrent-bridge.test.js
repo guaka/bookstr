@@ -6,6 +6,7 @@ const test = require('node:test');
 const {
   WebTorrentBridge,
   PUBLIC_TRACKERS,
+  PUBLIC_ICE_SERVERS,
   DEFAULT_DOWNLOAD_LIMIT,
   PUBLIC_UPLOAD_LIMIT,
   safePeerAddress,
@@ -55,6 +56,30 @@ test('public seed enforces rights, stable naming, trackers, and upload cap', asy
   assert.equal(result.summary.seeding, true);
   await bridge.stop();
   assert.equal(log.destroyed, true);
+});
+
+test('Electron enables browser-compatible torrent peers with cross-platform WebRTC and STUN', async () => {
+  const log = { adds: [] };
+  const wrtc = { RTCPeerConnection() {} };
+  const bridge = new WebTorrentBridge({
+    clientFactory: fakeClientFactory(log),
+    webRTCFactory: async () => wrtc,
+  });
+  await bridge.start();
+  assert.equal(bridge.webRTCEnabled, true);
+  assert.equal(log.clientOptions.tracker.wrtc, wrtc);
+  assert.deepEqual(log.clientOptions.tracker.rtcConfig.iceServers, PUBLIC_ICE_SERVERS);
+});
+
+test('Electron retains ordinary torrent support when WebRTC is unavailable', async () => {
+  const log = { adds: [] };
+  const bridge = new WebTorrentBridge({
+    clientFactory: fakeClientFactory(log),
+    webRTCFactory: async () => null,
+  });
+  await bridge.start();
+  assert.equal(bridge.webRTCEnabled, false);
+  assert.equal(log.clientOptions.tracker, undefined);
 });
 
 test('private add disables all public discovery', async () => {

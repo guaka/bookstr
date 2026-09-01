@@ -35,7 +35,7 @@ test('dedupeLibraryBooks preserves real author when incoming title is placeholde
   assert.equal(books[0].author, 'Real author');
 });
 
-test('availabilityForBook keeps cached metadata precedence while retaining source tags', () => {
+test('availabilityForBook keeps cached metadata precedence while ignoring retired Blossom tags', () => {
   assert.equal(
     availabilityForBook(
       {
@@ -45,7 +45,7 @@ test('availabilityForBook keeps cached metadata precedence while retaining sourc
       },
       true,
     ),
-    'Blossom · Cached',
+    'Cached',
   );
 });
 

@@ -120,5 +120,8 @@
     "nostr-tools": "^2.25.0",
     "qrcode": "^1.5.4",
     "webtorrent": "^3.0.21"
+  },
+  "optionalDependencies": {
+    "@roamhq/wrtc": "^0.10.0"
   }
 }

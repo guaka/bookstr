@@ -13,6 +13,25 @@ WEBTORRENT_BUNDLE = Path(__file__).resolve().parent / "desktop/node_modules/webt
 UPSTREAM = "https://all.books.party"
 LIBGEN_TORRENT_BASE = "https://annas-archive.gl/dyn/small_file/torrents/external/libgen_rs_non_fic"
 WEBTORRENT_BRIDGE = "http://127.0.0.1:11112/join"
+WEBTORRENT_DOWNLOAD_BRIDGE = "http://127.0.0.1:11112/download"
+
+
+def libgen_torrent(md5, libgen_id):
+    if libgen_id <= 0:
+        raise ValueError("libgen_id must be a positive integer")
+    if len(md5) != 32 or any(character not in "0123456789abcdef" for character in md5):
+        raise ValueError("md5 must be a 32-character hexadecimal digest")
+    batch = libgen_id // 1000 * 1000
+    upstream_url = f"{LIBGEN_TORRENT_BASE}/r_{batch}.torrent"
+    response = subprocess.run(
+        ["curl", "--fail", "--silent", "--show-error", "--location", "--max-time", "20", upstream_url],
+        check=False,
+        capture_output=True,
+    )
+    if response.returncode != 0:
+        detail = response.stderr.decode("utf-8", errors="replace").strip()
+        raise FileNotFoundError(f"repository torrent not found: {detail}")
+    return response.stdout
 
 
 def start_webtorrent_bridge(body, md5):
@@ -55,24 +74,34 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 
         try:
             parsed = urllib.parse.urlsplit(self.path)
-            if parsed.path == "/api/libgen-torrent":
+            if parsed.path in ("/api/libgen-torrent", "/api/libgen-file"):
                 values = urllib.parse.parse_qs(parsed.query).get("libgen_id", [])
                 libgen_id = int(values[0]) if len(values) == 1 else 0
                 md5_values = urllib.parse.parse_qs(parsed.query).get("md5", [])
                 md5 = md5_values[0].strip().lower() if len(md5_values) == 1 else ""
-                if libgen_id <= 0:
-                    return self.send_error(400, "libgen_id must be a positive integer")
-                batch = libgen_id // 1000 * 1000
-                upstream_url = f"{LIBGEN_TORRENT_BASE}/r_{batch}.torrent"
-                response = subprocess.run(
-                    ["curl", "--fail", "--silent", "--show-error", "--location", "--max-time", "20", upstream_url],
-                    check=False,
-                    capture_output=True,
-                )
-                if response.returncode != 0:
-                    detail = response.stderr.decode("utf-8", errors="replace").strip()
-                    return self.send_error(404, f"repository torrent not found: {detail}")
-                body = response.stdout
+                try:
+                    body = libgen_torrent(md5, libgen_id)
+                except ValueError as error:
+                    return self.send_error(400, str(error))
+                except FileNotFoundError as error:
+                    return self.send_error(404, str(error))
+                if parsed.path == "/api/libgen-file":
+                    bridge_url = f"{WEBTORRENT_DOWNLOAD_BRIDGE}?file={urllib.parse.quote(md5)}"
+                    bridge_request = urllib.request.Request(
+                        bridge_url,
+                        data=body,
+                        method="POST",
+                        headers={"Content-Type": "application/x-bittorrent"},
+                    )
+                    with urllib.request.urlopen(bridge_request, timeout=1800) as response:
+                        book = response.read()
+                    self.send_response(200)
+                    self.send_header("Content-Type", "application/octet-stream")
+                    self.send_header("Content-Length", str(len(book)))
+                    self.send_header("Cache-Control", "no-store")
+                    self.end_headers()
+                    self.wfile.write(book)
+                    return
                 start_webtorrent_bridge(body, md5)
                 self.send_response(200)
                 self.send_header("Content-Type", "application/x-bittorrent")

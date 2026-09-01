@@ -6,6 +6,10 @@ export const PUBLIC_TRACKERS = Object.freeze([
   'wss://tracker.openwebtorrent.com',
   'wss://tracker.webtorrent.dev',
 ]);
+export const PUBLIC_ICE_SERVERS = Object.freeze([
+  Object.freeze({ urls: 'stun:stun.cloudflare.com:3478' }),
+  Object.freeze({ urls: 'stun:stun.l.google.com:19302' }),
+]);
 export const PIECE_LENGTH = 256 * 1024;
 
 function torrentID(value) {

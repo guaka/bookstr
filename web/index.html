@@ -2345,7 +2345,8 @@
       const NOSTR_SYNC_CACHE_PREFIX = 'bookstr_nostr_sync_v1_';
       const NOSTR_SYNC_CACHE_TTL_MS = 30 * 60 * 1000;
       const NIP7_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
-      const BOOKS_API_BASE = typeof window.bookstrDesktop?.openReader === 'function'
+      const BOOKS_API_BASE = window.location.protocol === 'app:'
+        && typeof window.bookstrDesktop?.openReader === 'function'
         ? 'app://bookstr/api'
         : 'https://books-api.guaka.org/api';
       const WIKDICT_BASE = `${BOOKS_API_BASE}/dictionaries`;
@@ -2479,7 +2480,7 @@
       let pendingReadBookId = '';
       let activeTab = 'home';
       const desktopBridge = window.bookstrDesktop || null;
-      const isDesktopMode = Boolean(desktopBridge?.openReader);
+      const isDesktopMode = window.location.protocol === 'app:' && Boolean(desktopBridge?.openReader);
       document.body.classList.toggle('desktop-mode', isDesktopMode);
       if (isDesktopMode) {
         document.title = 'libstr';
@@ -6918,7 +6919,12 @@
           import(BROWSER_WEBTORRENT_MODULE),
           import('./webtorrent-transfer.js'),
         ]).then(([clientModule, transferModule]) => ({
-          client: new clientModule.default({ dht: false }),
+          client: new clientModule.default({
+            dht: false,
+            tracker: {
+              rtcConfig: { iceServers: transferModule.PUBLIC_ICE_SERVERS },
+            },
+          }),
           transferModule,
         }));
         return browserWebTorrentRuntimePromise;
@@ -6943,12 +6949,21 @@
         const libgenTorrent = BookMetadata.libgenTorrentMetadataForBook(torrentBook);
         const publicTorrent = BookMetadata.torrentMetadataForBook(torrentBook);
         if (!libgenTorrent && !publicTorrent) return null;
-        const { client, transferModule } = await browserWebTorrentRuntime();
         let torrentId = publicTorrent?.torrentId || publicTorrent?.torrentFile || '';
         let fileName = String(torrentBook.md5 || '').trim().toLowerCase();
         if (libgenTorrent) {
           if (libgenTorrent.libgenId >= LIBGEN_RS_REPOSITORY_ID_LIMIT) {
             throw new Error('The private catalogue returned a general record ID instead of LibGen repository metadata.');
+          }
+          if (['localhost', '127.0.0.1', '::1'].includes(window.location.hostname)) {
+            addBookToLibrary(torrentBook);
+            showBrowserWebTorrentStatus(`Downloading ${torrentBook.title || 'book'} with the local torrent bridge…`);
+            const nativeResponse = await fetch(`/api/libgen-file?libgen_id=${encodeURIComponent(libgenTorrent.libgenId)}&md5=${encodeURIComponent(libgenTorrent.md5)}`);
+            if (!nativeResponse.ok) throw new Error(`Local torrent download failed (${nativeResponse.status}).`);
+            const blob = await nativeResponse.blob();
+            await enforceBlobSha256(torrentBook, blob);
+            showBrowserWebTorrentStatus(`Ready · local torrent bridge is seeding ${torrentBook.title || 'book'}`);
+            return blob;
           }
           showBrowserWebTorrentStatus(`Loading torrent metadata for ${torrentBook.title || 'book'}…`);
           const metadataResponse = await fetch(`/api/libgen-torrent?libgen_id=${encodeURIComponent(libgenTorrent.libgenId)}&md5=${encodeURIComponent(libgenTorrent.md5)}`);
@@ -6957,6 +6972,7 @@
           fileName = libgenTorrent.md5;
         }
         if (!torrentId || !fileName) return null;
+        const { client, transferModule } = await browserWebTorrentRuntime();
         addBookToLibrary(torrentBook);
         showBrowserWebTorrentStatus(`Finding peers for ${torrentBook.title || 'book'}…`);
         const result = await transferModule.downloadPublicTorrentFile(client, torrentId, {

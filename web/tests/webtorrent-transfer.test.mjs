@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { addPrivateTorrent, addPublicTorrent, createPrivatePeer, downloadPublicTorrentFile, seedPublicTorrent, serializePrivatePeerSignal } from '../webtorrent-transfer.js';
+import { addPrivateTorrent, addPublicTorrent, createPrivatePeer, downloadPublicTorrentFile, PUBLIC_ICE_SERVERS, seedPublicTorrent, serializePrivatePeerSignal } from '../webtorrent-transfer.js';
 
 class FakeTorrent {
   constructor() { this.listeners = new Map(); this.infoHash = 'd'.repeat(40); this.progress = 1; }
@@ -43,6 +43,13 @@ test('browser public and private adapters configure discovery boundaries', () =>
   assert.equal(calls[1].opts.private, true);
   assert.equal(calls[1].torrent.peer, peer);
   assert.throws(() => addPrivateTorrent(client, 'magnet:?xt=urn:btih:def'), /peer handoff/);
+});
+
+test('browser torrent peers use multiple STUN services for direct connectivity', () => {
+  assert.deepEqual(PUBLIC_ICE_SERVERS, [
+    { urls: 'stun:stun.cloudflare.com:3478' },
+    { urls: 'stun:stun.l.google.com:19302' },
+  ]);
 });
 
 test('browser WebTorrent downloads only the requested repository file', async () => {

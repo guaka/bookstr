@@ -1,7 +1,7 @@
 import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
-import { mkdir } from 'node:fs/promises';
+import { mkdir, readFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
@@ -20,6 +20,15 @@ function reply(response, status, value) {
   const body = Buffer.from(JSON.stringify(value));
   response.writeHead(status, {
     'Content-Type': 'application/json; charset=UTF-8',
+    'Content-Length': body.length,
+    'Cache-Control': 'no-store',
+  });
+  response.end(body);
+}
+
+function replyBytes(response, status, body) {
+  response.writeHead(status, {
+    'Content-Type': 'application/octet-stream',
     'Content-Length': body.length,
     'Cache-Control': 'no-store',
   });
@@ -71,14 +80,24 @@ const server = http.createServer(async (request, response) => {
     if (request.method === 'GET' && url.pathname === '/health') {
       return reply(response, 200, { ok: true, torrents: bridge.active() });
     }
-    if (request.method !== 'POST' || url.pathname !== '/join') {
+    if (request.method !== 'POST' || !['/join', '/download'].includes(url.pathname)) {
       return reply(response, 404, { error: 'not found' });
     }
     const wantedFile = String(url.searchParams.get('file') || '').trim().toLowerCase();
     if (!/^[a-f0-9]{32}$/.test(wantedFile)) {
       return reply(response, 400, { error: 'file must be an MD5 torrent file name' });
     }
-    const torrent = await joinTorrent(await readBody(request), wantedFile);
+    const torrentBytes = await readBody(request);
+    if (url.pathname === '/download') {
+      const result = await bridge.downloadSelected(torrentBytes, {
+        fileName: wantedFile,
+        maxBytes: 512 * 1024 * 1024,
+      });
+      const body = await readFile(result.filePath);
+      console.log(`[webtorrent bridge] downloaded ${wantedFile} from ${result.torrent.infoHash}`);
+      return replyBytes(response, 200, body);
+    }
+    const torrent = await joinTorrent(torrentBytes, wantedFile);
     console.log(`[webtorrent bridge] joined ${torrent.infoHash} for ${wantedFile}`);
     return reply(response, 200, {
       infoHash: torrent.infoHash,

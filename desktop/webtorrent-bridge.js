@@ -7,6 +7,10 @@ const PUBLIC_TRACKERS = Object.freeze([
   'wss://tracker.openwebtorrent.com',
   'wss://tracker.webtorrent.dev',
 ]);
+const PUBLIC_ICE_SERVERS = Object.freeze([
+  Object.freeze({ urls: 'stun:stun.cloudflare.com:3478' }),
+  Object.freeze({ urls: 'stun:stun.l.google.com:19302' }),
+]);
 const DEFAULT_DOWNLOAD_LIMIT = 10 * 1000 * 1000;
 const PUBLIC_UPLOAD_LIMIT = 1000 * 1000;
 const MAX_TRANSFER_LIMIT = 1000 * 1000 * 1000;
@@ -103,26 +107,44 @@ function torrentSummary(torrent, privacy) {
 }
 
 class WebTorrentBridge {
-  constructor({ clientFactory, dataDir, trackers = PUBLIC_TRACKERS, downloadLimit = DEFAULT_DOWNLOAD_LIMIT, uploadLimit = PUBLIC_UPLOAD_LIMIT } = {}) {
+  constructor({ clientFactory, webRTCFactory, dataDir, trackers = PUBLIC_TRACKERS, iceServers = PUBLIC_ICE_SERVERS, downloadLimit = DEFAULT_DOWNLOAD_LIMIT, uploadLimit = PUBLIC_UPLOAD_LIMIT } = {}) {
     this.clientFactory = clientFactory || (async options => {
       const module = await import('webtorrent');
       const Client = module.default || module;
       return new Client(options);
     });
+    this.webRTCFactory = webRTCFactory || (clientFactory ? null : async () => {
+      try {
+        return require('@roamhq/wrtc');
+      } catch (error) {
+        console.warn(`WebRTC torrent peers are unavailable: ${error?.message || error}`);
+        return null;
+      }
+    });
     this.dataDir = dataDir ? path.resolve(dataDir) : undefined;
     this.trackers = [...new Set(trackers.map(value => String(value || '').trim()).filter(value => /^wss?:\/\//i.test(value)))];
     if (!this.trackers.length) this.trackers = [...PUBLIC_TRACKERS];
+    this.iceServers = Array.isArray(iceServers) ? iceServers.filter(server => server && typeof server === 'object') : [];
     this.downloadLimit = safeTransferLimit(downloadLimit, DEFAULT_DOWNLOAD_LIMIT);
     this.uploadLimit = safeTransferLimit(uploadLimit, PUBLIC_UPLOAD_LIMIT);
     this.client = null;
+    this.webRTCEnabled = false;
   }
 
   async start() {
     if (this.client) return this.client;
+    const wrtc = await this.webRTCFactory?.();
+    this.webRTCEnabled = Boolean(wrtc?.RTCPeerConnection);
     this.client = await this.clientFactory({
       downloadLimit: this.downloadLimit,
       uploadLimit: this.uploadLimit,
       path: this.dataDir,
+      ...(this.webRTCEnabled ? {
+        tracker: {
+          wrtc,
+          rtcConfig: { iceServers: this.iceServers },
+        },
+      } : {}),
     });
     if (typeof this.client.throttleDownload === 'function') this.client.throttleDownload(this.downloadLimit);
     if (typeof this.client.throttleUpload === 'function') this.client.throttleUpload(this.uploadLimit);
@@ -381,6 +403,7 @@ class WebTorrentBridge {
 module.exports = {
   WebTorrentBridge,
   PUBLIC_TRACKERS,
+  PUBLIC_ICE_SERVERS,
   DEFAULT_DOWNLOAD_LIMIT,
   PUBLIC_UPLOAD_LIMIT,
   PIECE_LENGTH,

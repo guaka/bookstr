@@ -272,11 +272,11 @@ test('favoriteAddedTag rejects invalid ids and timestamps', () => {
   assert.equal(favoriteAddedTag('a'.repeat(32), -1), null);
 });
 
-test('finds reading metadata by readUrl, url, or Blossom URL', () => {
+test('finds reading metadata by readUrl or url and ignores retired Blossom URLs', () => {
   const reading = [{ title: 'Scale', readUrl: 'https://books-api.guaka.org/api/books/48320/download' }];
   const favorites = [{ title: 'Other', blossomUrl: 'https://blossom.example/abc.epub' }];
   assert.equal(findBookByReadUrl('https://books-api.guaka.org/api/books/48320/download', reading, favorites)?.title, 'Scale');
-  assert.equal(findBookByReadUrl('https://blossom.example/abc.epub', reading, favorites)?.title, 'Other');
+  assert.equal(findBookByReadUrl('https://blossom.example/abc.epub', reading, favorites), null);
 });
 
 test('returns null when findBookByReadUrl cannot match any book', () => {
@@ -1181,7 +1181,7 @@ test('dedupeLibraryBooks keeps a real author when duplicate has placeholder titl
   assert.equal(deduped[0].author, 'Real Author');
 });
 
-test('findBookByReadUrl matches blossom URL entries with URL normalization', () => {
+test('findBookByReadUrl ignores blossom URL entries', () => {
   const book = findBookByReadUrl(
     'https://example.test/book.epub#reader',
     [
@@ -1191,7 +1191,7 @@ test('findBookByReadUrl matches blossom URL entries with URL normalization', () 
     [{ readUrl: 'https://books-api.guaka.org/api/read/123', title: 'Legacy ignored' }],
   );
 
-  assert.equal(book?.title, 'Normalized by hash');
+  assert.equal(book, null);
 });
 
 test('findBookByReadUrl matches url field entries with normalized fragments', () => {
