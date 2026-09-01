@@ -53,11 +53,11 @@ function statusFrom(value) {
 }
 
 function inferStatus(status, license, licenseURL, copyright) {
-  if (status !== 'unknown') return status;
-  if (typeof copyright === 'boolean') return copyright ? 'copyrighted' : 'public_domain';
   const evidence = `${license} ${licenseURL}`.toLowerCase();
   if (/public[ -]domain|no known copyright restrictions|creativecommons\.org\/publicdomain\/(?:zero|mark)|\bcc0(?:\s|$|[./-])/.test(evidence)) return 'public_domain';
-  if (/creative commons|creativecommons\.org\/licenses\/|\bcc[ -]?by|gnu free documentation|\bgfdl\b|free art license|open publication license|unlicense/.test(evidence)) return 'open_license';
+  if (/creative\s*commons|creativecommons\.org\/licenses\/|\bcc[ -]?by|gnu free documentation|\bgfdl\b|free art license|open publication license|unlicense/.test(evidence)) return 'open_license';
+  if (status !== 'unknown') return status;
+  if (typeof copyright === 'boolean') return copyright ? 'copyrighted' : 'public_domain';
   if (/all rights reserved|copyrighted|copyright ©|^©/.test(evidence)) return 'copyrighted';
   return 'unknown';
 }
@@ -66,8 +66,8 @@ function inferRedistribution(value, status, license, licenseURL) {
   const explicit = clean(value).toLowerCase().replace(/[ -]+/g, '_');
   if (REDISTRIBUTION.has(explicit)) return explicit;
   const evidence = `${license} ${licenseURL}`.toLowerCase();
-  if (/forbidden|no redistribution|do not redistribute|all rights reserved/.test(evidence)) return 'forbidden';
   if (/noncommercial|non-commercial|\b(?:cc[- ]?by[- ]?nc|cc[- ]?nc)\b|\/by-nc(?:[-/]|\b)/.test(evidence)) return 'noncommercial';
+  if (/forbidden|no redistribution|do not redistribute|all rights reserved/.test(evidence)) return 'forbidden';
   if (status === 'public_domain' || status === 'open_license') return 'allowed';
   return 'unknown';
 }
@@ -82,7 +82,8 @@ export function normalizeRightsV2(ref = {}) {
     metadata.license_url, metadata.licenseUrl,
   ));
   if (!licenseURL) {
-    const match = rawLicense.match(/https?:\/\/[^\s<>"']+/i);
+    const match = rawLicense.match(/https?:\/\/(?:www\.)?creativecommons\.org\/(?:licenses\/[a-z-]+|publicdomain\/zero)\/\d(?:\.\d)?\/?/i)
+      || rawLicense.match(/https?:\/\/[^\s<>"']+/i);
     if (match) licenseURL = safeURL(match[0].replace(/[),.;]+$/, ''));
   }
   const status = inferStatus(statusFrom(first(

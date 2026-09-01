@@ -4,7 +4,7 @@
   const HEX_PUBKEY = /^[0-9a-f]{64}$/;
   const TRUSTROOTS_USERNAME_NAMESPACE = 'org.trustroots:username';
   const BOOK_TAGS = new Set([
-    'libvault', 'libvault-book', 'bookstr', 'bookstr-book', 'blossom',
+    'libvault', 'libvault-book', 'bookstr', 'bookstr-book',
   ]);
 
   function normalizedPubkey(value) {
@@ -185,7 +185,7 @@
       if (!Array.isArray(tag) || typeof tag[0] !== 'string') return false;
       if (BOOK_TAGS.has(tag[0])) return Boolean(String(tag[1] || '').trim());
       if (tag[0] === 'book') {
-        return ['libvault', 'bookstr', 'isbn', 'url', 'blossom'].includes(String(tag[1] || '').toLowerCase())
+        return ['libvault', 'bookstr', 'isbn', 'url'].includes(String(tag[1] || '').toLowerCase())
           && Boolean(String(tag[2] || '').trim());
       }
       return tag[0] === 'i' && /^isbn:/i.test(String(tag[1] || ''));

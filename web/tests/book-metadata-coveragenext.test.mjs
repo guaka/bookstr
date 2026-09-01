@@ -50,13 +50,13 @@ test('canonicalReadUrl keeps malformed legacy api/read URLs unchanged', () => {
   );
 });
 
-test('canonicalReadUrl preserves a malformed direct Blossom hint', () => {
+test('canonicalReadUrl ignores a malformed retired Blossom hint', () => {
   assert.equal(
     canonicalReadUrl({
       blossomUrl: 'not-a-valid-url',
       readUrl: 'https://example.test/guide.epub#chapter=2',
     }),
-    'not-a-valid-url',
+    'https://example.test/guide.epub#chapter=2',
   );
 });
 
@@ -75,13 +75,13 @@ test('sameLibraryBook requires stable IDs overlap before URL fallback when IDs e
   );
 });
 
-test('findBookByReadUrl matches by blossom URL and normalizes query', () => {
+test('findBookByReadUrl ignores retired blossom URL fields', () => {
   const hit = findBookByReadUrl(
     'https://blossom.example.com/guide.epub?download=1',
     [{ blossomUrl: 'https://blossom.example.com/guide.epub#reader', title: 'Guide' }],
   );
 
-  assert.equal(hit?.title, 'Guide');
+  assert.equal(hit, null);
 });
 
 test('bookIdentity prefers md5 over URL fallback and normalizes URL fallback', () => {

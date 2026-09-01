@@ -1,11 +1,13 @@
 'use strict';
 
 const assert = require('node:assert/strict');
-const test = require('node:test');
 const { EventEmitter } = require('node:events');
+const test = require('node:test');
 const {
   WebTorrentBridge,
   PUBLIC_TRACKERS,
+  PUBLIC_ICE_SERVERS,
+  DEFAULT_DOWNLOAD_LIMIT,
   PUBLIC_UPLOAD_LIMIT,
   safePeerAddress,
 } = require('../../webtorrent-bridge');
@@ -15,7 +17,8 @@ function fakeClientFactory(log) {
     log.clientOptions = options;
     const client = {
       torrents: [],
-      throttleUpload(rate) { log.throttle = rate; },
+      throttleDownload(rate) { log.downloadThrottle = rate; },
+      throttleUpload(rate) { log.uploadThrottle = rate; },
       seed(input, options, callback) {
         log.seed = { input, options };
         const torrent = { infoHash: 'a'.repeat(40), name: options.name, magnetURI: 'magnet:?xt=urn:btih:' + 'a'.repeat(40), torrentFile: Buffer.from('metadata'), progress: 1, ready: true, wires: [] };
@@ -39,16 +42,52 @@ test('public seed enforces rights, stable naming, trackers, and upload cap', asy
   const log = { adds: [] };
   const bridge = new WebTorrentBridge({ clientFactory: fakeClientFactory(log), dataDir: '/tmp/bookstr' });
   const digest = 'c'.repeat(64);
-  const result = await bridge.seedPublic('/tmp/example.epub', { sha256: digest, size: 42 });
+  const result = await bridge.seedPublic('/tmp/example.epub', { sha256: digest, size: 42, bookId: 'book-1' });
   assert.equal(log.clientOptions.uploadLimit, PUBLIC_UPLOAD_LIMIT);
-  assert.equal(log.throttle, PUBLIC_UPLOAD_LIMIT);
+  assert.equal(log.clientOptions.downloadLimit, DEFAULT_DOWNLOAD_LIMIT);
+  assert.equal(log.uploadThrottle, PUBLIC_UPLOAD_LIMIT);
+  assert.equal(log.downloadThrottle, DEFAULT_DOWNLOAD_LIMIT);
   assert.equal(log.seed.options.name, `${digest}.epub`);
   assert.deepEqual(log.seed.options.announceList, PUBLIC_TRACKERS.map(url => [url]));
   assert.equal(result.descriptor.info.length, 42);
   assert.equal(result.summary.magnetURI.startsWith('magnet:?xt=urn:btih:'), true);
   assert.equal(result.summary.torrentFile, Buffer.from('metadata').toString('base64'));
+  assert.equal(result.summary.bookId, 'book-1');
+  assert.equal(result.summary.seeding, true);
   await bridge.stop();
   assert.equal(log.destroyed, true);
+});
+
+test('Electron enables browser-compatible torrent peers with cross-platform WebRTC and STUN', async () => {
+  const log = { adds: [] };
+  const wrtc = { RTCPeerConnection() {} };
+  const bridge = new WebTorrentBridge({
+    clientFactory: fakeClientFactory(log),
+    webRTCFactory: async () => wrtc,
+  });
+  await bridge.start();
+  assert.equal(bridge.webRTCEnabled, true);
+  assert.equal(log.clientOptions.tracker.wrtc, wrtc);
+  assert.deepEqual(log.clientOptions.tracker.rtcConfig.iceServers, PUBLIC_ICE_SERVERS);
+});
+
+test('the packaged WebRTC runtime can create torrent data channels', () => {
+  const wrtc = require('@roamhq/wrtc');
+  const peer = new wrtc.RTCPeerConnection({ iceServers: PUBLIC_ICE_SERVERS });
+  const channel = peer.createDataChannel('bookstr-torrent');
+  assert.equal(channel.label, 'bookstr-torrent');
+  peer.close();
+});
+
+test('Electron retains ordinary torrent support when WebRTC is unavailable', async () => {
+  const log = { adds: [] };
+  const bridge = new WebTorrentBridge({
+    clientFactory: fakeClientFactory(log),
+    webRTCFactory: async () => null,
+  });
+  await bridge.start();
+  assert.equal(bridge.webRTCEnabled, false);
+  assert.equal(log.clientOptions.tracker, undefined);
 });
 
 test('private add disables all public discovery', async () => {
@@ -72,7 +111,7 @@ test('public seeding requires explicit rights permission', async () => {
   await assert.rejects(() => bridge.seedPublic('/tmp/book.epub', { sha256: 'd'.repeat(64), publicSeedAllowed: false }), /rights policy/);
 });
 
-test('validates transfer inputs and uses safe public defaults', async () => {
+test('validates transfer inputs and preserves an explicit unlimited upload rate', async () => {
   assert.equal(safePeerAddress('[2001:db8::1]:6881'), '[2001:db8::1]:6881');
   for (const peer of ['', '192.0.2.1:0', '192.0.2.1:65536', 'example.test:6881', '999.0.0.1:6881']) {
     assert.throws(() => safePeerAddress(peer), /IP address and port/);
@@ -82,19 +121,62 @@ test('validates transfer inputs and uses safe public defaults', async () => {
     clientFactory: fakeClientFactory(log),
     trackers: ['https://unsafe.example', 'wss://tracker.example', 'wss://tracker.example'],
     uploadLimit: -1,
+    downloadLimit: -1,
   });
   await bridge.addPublic('public-id');
   assert.deepEqual(log.adds[0].options.announce, ['wss://tracker.example']);
-  assert.equal(log.clientOptions.uploadLimit, PUBLIC_UPLOAD_LIMIT);
+  assert.equal(log.clientOptions.uploadLimit, -1);
+  assert.equal(log.clientOptions.downloadLimit, -1);
   await assert.rejects(() => bridge.seedPublic('', { sha256: 'f'.repeat(64) }), /valid local path/);
   await assert.rejects(() => bridge.seedPublic('/tmp/book.epub', { sha256: 'not-a-digest' }), /sha256/);
   await assert.rejects(() => bridge.seedPublic('/tmp/book.epub', { sha256: 'f'.repeat(64), extension: 'not/an-extension' }), /extension/);
 });
 
+test('live transfer limits apply immediately and summaries expose rates', async () => {
+  const log = { adds: [] };
+  const bridge = new WebTorrentBridge({ clientFactory: fakeClientFactory(log) });
+  const client = await bridge.start();
+  client.torrents.push({
+    infoHash: 'e'.repeat(40),
+    progress: 0.5,
+    downloadSpeed: 1_250_000,
+    uploadSpeed: 240_000,
+    wires: [],
+  });
+  assert.deepEqual(await bridge.setLimits({ downloadLimit: 5_000_000, uploadLimit: 500_000 }), {
+    downloadLimit: 5_000_000,
+    uploadLimit: 500_000,
+  });
+  assert.equal(log.downloadThrottle, 5_000_000);
+  assert.equal(log.uploadThrottle, 500_000);
+  assert.equal(bridge.active()[0].downloadSpeed, 1_250_000);
+  assert.equal(bridge.active()[0].uploadSpeed, 240_000);
+});
+
+test('public add reuses a live repository torrent and replaces a stale destroyed one', async () => {
+  let existing = { infoHash: 'a'.repeat(40), destroyed: false };
+  const fresh = { infoHash: 'a'.repeat(40), destroyed: false };
+  const log = { adds: 0, removed: [] };
+  const client = {
+    torrents: [existing],
+    async get() { return existing; },
+    add() { log.adds += 1; return fresh; },
+    async remove(torrent) { log.removed.push(torrent); existing = null; },
+  };
+  const bridge = new WebTorrentBridge({ clientFactory: async () => client });
+  assert.equal(await bridge.addPublic(Buffer.from('torrent metadata')), existing);
+  assert.equal(log.adds, 0);
+
+  existing.destroyed = true;
+  assert.equal(await bridge.addPublic(Buffer.from('torrent metadata')), fresh);
+  assert.deepEqual(log.removed, [{ infoHash: 'a'.repeat(40), destroyed: true }]);
+  assert.equal(log.adds, 1);
+});
+
 test('private handoff waits for asynchronous metadata and bridge cleanup is safe', async () => {
   const events = {};
   const client = {
-    torrents: [{ infohash: 'c'.repeat(40), numPeers: 2, downloaded: 7, uploaded: 3, private: true }],
+    torrents: [{ infohash: 'c'.repeat(40), numPeers: 2, downloaded: -84, uploaded: -3, progress: -0.84, private: true }],
     add() {
       return {
         once(name, handler) { events[name] = handler; },
@@ -110,7 +192,7 @@ test('private handoff waits for asynchronous metadata and bridge cleanup is safe
   await pending;
   assert.equal(events.peer, '192.0.2.12:6881');
   assert.deepEqual(bridge.active(), [{
-    infoHash: 'c'.repeat(40), name: '', magnetURI: '', torrentFile: '', privacy: 'private', progress: 0, downloaded: 7, uploaded: 3, peers: 2,
+    infoHash: 'c'.repeat(40), bookId: '', name: '', magnetURI: '', torrentFile: '', privacy: 'private', progress: 0, downloaded: 0, uploaded: 0, peers: 2, downloadSpeed: 0, uploadSpeed: 0, seeding: false,
   }]);
   await bridge.stop();
   assert.deepEqual(bridge.active(), []);
@@ -118,6 +200,48 @@ test('private handoff waits for asynchronous metadata and bridge cleanup is safe
 
   const noPeerBridge = new WebTorrentBridge({ clientFactory: async () => ({ add: () => ({ infoHash: 'a'.repeat(40) }) }) });
   await assert.rejects(() => noPeerBridge.addPrivate('private-id', { peer: '192.0.2.12:6881' }), /does not support peer connections/);
+});
+
+test('repository torrent downloads only the selected MD5 file', async () => {
+  const log = { adds: [] };
+  const wanted = new EventEmitter();
+  wanted.path = `r_1000/${'a'.repeat(32)}`;
+  wanted.length = 42;
+  wanted.downloaded = 0;
+  wanted.done = false;
+  wanted.select = priority => {
+    log.priority = priority;
+    setImmediate(() => {
+      wanted.downloaded = wanted.length;
+      wanted.done = true;
+      wanted.emit('done');
+    });
+  };
+  const torrent = new EventEmitter();
+  torrent.path = '/tmp/bookstr-select';
+  torrent.files = [{ path: `r_1000/${'b'.repeat(32)}`, length: 10 }, wanted];
+  const bridge = new WebTorrentBridge({
+    clientFactory: async () => ({
+      torrents: [],
+      add(id, options) {
+        log.adds.push({ id, options });
+        return torrent;
+      },
+    }),
+  });
+  const progress = [];
+  const result = await bridge.downloadSelected(Buffer.from('torrent metadata'), {
+    path: '/tmp/bookstr-select',
+    fileName: 'a'.repeat(32),
+    bookId: 'a'.repeat(32),
+    onProgress: value => progress.push(value),
+  });
+  assert.equal(log.adds[0].options.deselect, true);
+  assert.equal(log.priority, 10);
+  assert.equal(result.file, wanted);
+  assert.deepEqual([...result.torrent.bookstrBookIds], ['a'.repeat(32)]);
+  assert.equal(result.filePath, `/tmp/bookstr-select/r_1000/${'a'.repeat(32)}`);
+  assert.deepEqual(progress.at(-1), { bytes: 42, totalBytes: 42, peers: 0 });
 });
 
 test('public download waits for completion', async () => {
@@ -139,4 +263,16 @@ test('public download waits for completion', async () => {
   const torrent = await bridge.downloadPublic('magnet:?xt=urn:btih:test', { path: '/tmp/bookstr' });
   assert.equal(torrent.infoHash, 'e'.repeat(40));
   assert.equal(log.adds[0].options.path, '/tmp/bookstr');
+});
+
+test('automatic seeding can stop completed torrents without interrupting downloads', async () => {
+  const bridge = new WebTorrentBridge();
+  const downloading = { progress: 0.4 };
+  const seeded = { progress: 1, done: true };
+  const markedSeed = { progress: 0.8, bookstrSeedingBookIds: new Set(['book-1']) };
+  const removed = [];
+  bridge.client = { torrents: [downloading, seeded, markedSeed] };
+  bridge.remove = async torrent => removed.push(torrent);
+  assert.deepEqual(await bridge.stopSeeding(), { stopped: 2 });
+  assert.deepEqual(removed, [seeded, markedSeed]);
 });

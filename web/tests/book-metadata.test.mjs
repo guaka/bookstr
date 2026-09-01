@@ -22,11 +22,14 @@ const {
   findBookByReadUrl,
   metadataEndpointForReadUrl,
   torrentMetadataForBook,
+  libgenTorrentMetadataForBook,
   canonicalReadUrl,
   canonicalCatalogUrl,
   bookIdentity,
   availabilityForBook,
   availabilitySourcesForBook,
+  internetArchiveFile,
+  matchingTorrentCatalogRecord,
   sortBooks,
   dedupeLibraryBooks,
   matchesBookFilter,
@@ -49,6 +52,15 @@ test('normalizes portable torrent metadata and ignores empty descriptors', () =>
     torrentFile: 'book.torrent',
     announce: ['wss://tracker.example'],
   });
+});
+
+test('recognizes LibGen repository torrent metadata from catalog identifiers', () => {
+  assert.deepEqual(libgenTorrentMetadataForBook({
+    md5: 'a'.repeat(32),
+    libgenId: 2412930,
+  }), { md5: 'a'.repeat(32), libgenId: 2412930, batch: 2412000 });
+  assert.equal(libgenTorrentMetadataForBook({ md5: 'a'.repeat(32) }), null);
+  assert.equal(libgenTorrentMetadataForBook({ md5: 'not-an-md5', libgenId: 10 }), null);
 });
 
 test('normalizes public torrent metadata without requiring a Blossom URL', () => {
@@ -103,6 +115,22 @@ test('formats rights markers and accessible distinctions', () => {
   assert.equal(rightsLabel({}), '©');
   assert.equal(rightsAccessibleLabel({ rights_status: 'copyrighted' }), 'Copyrighted');
   assert.equal(rightsAccessibleLabel({}), 'No open license identified');
+  const contradictory = {
+    rights_status: 'copyrighted',
+    license: 'Copyright (C) 2006. License: All rights reserved. http://creativecommons.org/licenses/by-nc-sa/2.5/The online version is available under a Creative Commons Noncommercial Sharealike license.',
+  };
+  assert.equal(normalizeRights(contradictory).rights_status, 'open_license');
+  assert.equal(normalizeRights(contradictory).license_url, 'http://creativecommons.org/licenses/by-nc-sa/2.5/');
+  assert.equal(rightsLabel(contradictory), 'CC BY-NC-SA 2.5');
+  assert.equal(rightsAccessibleLabel(contradictory), 'CC BY-NC-SA 2.5');
+  assert.equal(
+    rightsAccessibleLabel({ license: 'Copyright 2005-2023 Karl Fogel, under the CreativeCommons Attribution-ShareAlike (4.0) license.' }),
+    'CC BY-SA 4.0',
+  );
+  assert.equal(
+    rightsAccessibleLabel({ license: 'This book is distributed under a Creative Commons Attribution-NonCommercial-ShareAlike 3.0 license.' }),
+    'CC BY-NC-SA 3.0',
+  );
 });
 
 test('sorts cached books through the caller-provided cache lookup', () => {
@@ -159,6 +187,16 @@ test('preserves common language metadata shapes', () => {
   assert.equal(languageForBook({ languages: ['nl', 'en'] }), 'nl');
   assert.equal(languageForBook({ metadata: { language: { code: 'DE' } } }), 'de');
   assert.equal(languageForBook({ metadata: JSON.stringify({ lang: 'fr' }) }), 'fr');
+});
+
+test('normalizes common language names and bibliographic codes', () => {
+  assert.equal(languageForBook({ language: 'English' }), 'en');
+  assert.equal(languageForBook({ language: 'eng' }), 'en');
+  assert.equal(languageForBook({ language: '/languages/fre' }), 'fr');
+  assert.equal(languageForBook({ language: 'Portuguese; English' }), 'pt');
+  assert.equal(languageForBook({ language: 'cat' }), 'cat');
+  assert.equal(languageForBook({ language: 'Basque' }), 'basque');
+  assert.equal(languageForBook({ language: 'unknown' }), '');
 });
 
 test('extracts language from object-based metadata language lists', () => {
@@ -234,11 +272,11 @@ test('favoriteAddedTag rejects invalid ids and timestamps', () => {
   assert.equal(favoriteAddedTag('a'.repeat(32), -1), null);
 });
 
-test('finds reading metadata by readUrl, url, or Blossom URL', () => {
+test('finds reading metadata by readUrl or url and ignores retired Blossom URLs', () => {
   const reading = [{ title: 'Scale', readUrl: 'https://books-api.guaka.org/api/books/48320/download' }];
   const favorites = [{ title: 'Other', blossomUrl: 'https://blossom.example/abc.epub' }];
   assert.equal(findBookByReadUrl('https://books-api.guaka.org/api/books/48320/download', reading, favorites)?.title, 'Scale');
-  assert.equal(findBookByReadUrl('https://blossom.example/abc.epub', reading, favorites)?.title, 'Other');
+  assert.equal(findBookByReadUrl('https://blossom.example/abc.epub', reading, favorites), null);
 });
 
 test('returns null when findBookByReadUrl cannot match any book', () => {
@@ -280,19 +318,53 @@ test('derives Gutenberg downloads from source-native IDs', () => {
   );
 });
 
-test('leaves non-Gutenberg Blossom URLs unchanged', () => {
+test('rewrites Electron-only book URLs for the active browser API', () => {
   assert.equal(
-    canonicalReadUrl({ blossomUrl: 'https://blossom.test/file.epub' }),
-    'https://blossom.test/file.epub',
+    canonicalReadUrl(
+      { readUrl: 'app://bookstr/api/books/48320/download?download=1' },
+      'https://books-api.guaka.org/api',
+    ),
+    'https://books-api.guaka.org/api/books/48320/download?download=1',
   );
 });
 
-test('prefers Blossom over a LibVault read endpoint', () => {
+test('keeps Electron-only URLs inside Electron and rejects unsupported app routes', () => {
+  assert.equal(
+    canonicalReadUrl(
+      { readUrl: 'app://bookstr/api/books/48320/download' },
+      'app://bookstr/api',
+    ),
+    'app://bookstr/api/books/48320/download',
+  );
+  assert.equal(
+    canonicalReadUrl(
+      { readUrl: 'app://bookstr/api/books/48320' },
+      'https://books-api.guaka.org/api',
+    ),
+    '',
+  );
+});
+
+test('does not promote a legacy Blossom field to a readable URL', () => {
+  assert.equal(
+    canonicalReadUrl({ blossomUrl: 'https://blossom.test/file.epub' }),
+    '',
+  );
+});
+
+test('rejects the retired Blossom host even when it is stored as a direct read URL', () => {
+  assert.equal(
+    canonicalReadUrl({ readUrl: `https://blossom.bfr.ee/${'b'.repeat(64)}.epub` }),
+    '',
+  );
+});
+
+test('does not use Blossom to replace a retired LibVault read endpoint', () => {
   assert.equal(canonicalReadUrl({
     md5: 'a'.repeat(32),
     readUrl: 'https://lib.b.bfr.ee/api/read/' + 'a'.repeat(32),
     blossomUrl: 'https://blossom.example/' + 'b'.repeat(64),
-  }), 'https://blossom.example/' + 'b'.repeat(64));
+  }), '');
 });
 
 test('never uses a legacy LibVault read endpoint as a book source', () => {
@@ -332,6 +404,10 @@ test('builds canonical Open Library work and edition links', () => {
     canonicalCatalogUrl({ source: 'openlibrary', sourceNativeId: 'OL123M' }),
     'https://openlibrary.org/books/OL123M',
   );
+  assert.equal(
+    canonicalCatalogUrl({ md5: 'openlibrary:126499640' }),
+    'https://openlibrary.org/works/OL126499640W',
+  );
   assert.equal(canonicalCatalogUrl({ source: 'gutenberg', sourceNativeId: '34527' }), '');
 });
 
@@ -340,7 +416,7 @@ test('does not invent metadata endpoints for arbitrary EPUB URLs', () => {
 });
 
 test('classifies supported book availability sources', () => {
-  assert.equal(availabilityForBook({ blossomSha256: 'abc' }), 'Blossom');
+  assert.equal(availabilityForBook({ blossomSha256: 'abc' }), 'Metadata only');
   assert.equal(availabilityForBook({ readUrl: 'https://books-api.guaka.org/api/books/48320/download' }), 'Gutenberg');
   assert.equal(availabilityForBook({ md5: 'a'.repeat(32) }), 'Metadata only');
   assert.equal(availabilityForBook({ readUrl: 'https://example.test/book.epub' }), 'Metadata only');
@@ -366,7 +442,7 @@ test('normalizeReadUrl resolves relative URLs using the provided base', () => {
 test('reports multiple availability sources including cache', () => {
   assert.deepEqual(
     availabilitySourcesForBook({ md5: 'a'.repeat(32), blossomUrl: 'https://blossom.test/a' }, true),
-    ['Blossom', 'Cached'],
+    ['Metadata only', 'Cached'],
   );
 });
 
@@ -381,6 +457,18 @@ test('sorts books by text and year without mutating the source list', () => {
   assert.deepEqual(books.map(book => book.title), ['Zulu', 'Alpha']);
 });
 
+test('sorts books by their displayed license marker', () => {
+  const books = [
+    { title: 'Unknown', rights_status: 'unknown' },
+    { title: 'Public domain', rights_status: 'public_domain' },
+    { title: 'Creative Commons', license: 'CC BY-SA 4.0' },
+  ];
+  assert.deepEqual(
+    sortBooks(books, 'rights').map(book => rightsLabel(book)),
+    ['©', 'CC BY-SA 4.0', 'PD'],
+  );
+});
+
 test('sorts availability and cached state', () => {
   const books = [
     { title: 'Local', md5: 'a'.repeat(32) },
@@ -388,6 +476,82 @@ test('sorts availability and cached state', () => {
   ];
   assert.deepEqual(sortBooks(books, 'availability').map(book => book.title), ['Local', 'Remote']);
   assert.deepEqual(sortBooks(books, 'cached', 'desc', book => book.title === 'Remote').map(book => book.title), ['Remote', 'Local']);
+});
+
+test('matches a contributor-heavy Open Library record to its readable subtitle edition', () => {
+  const selected = matchingTorrentCatalogRecord({
+    md5: 'openlibrary:116726829',
+    title: 'Antifragile',
+    authors: 'Nassim Nicholas Taleb Genís Sánchez Barberán Albino Santos Mosquera',
+  }, [
+    { md5: '6aa0b2c29d7992041f99024e15f60a20', libgenId: 1521282, title: 'Antifragile Software. Building Adaptable Software with Microservices', authors: 'Russ Miles', extension: 'pdf' },
+    { md5: '50a679620938decf0ce68af644d7622d', libgenId: 3142093, title: 'Antifragile', authors: 'Nassim Nicholas Taleb', extension: 'pdf' },
+    { md5: '8fc96e17b7f73759bb8d7d9b852d6626', libgenId: 2519660, title: 'Antifragile Things That Gain from Disorder', authors: 'Nassim Nicholas Taleb', extension: 'pdf' },
+    { md5: '2edbe4a27b0587cad214c20b9ff83d26', libgenId: 1023589, title: 'Antifragile: Things That Gain from Disorder', authors: 'Nassim Nicholas Taleb', extension: 'epub' },
+    { md5: '936ef3a61c52235bb69bca164333c4b0', libgenId: 1022876, title: 'Antifragile: Things That Gain from Disorder', authors: 'Nassim Nicholas Taleb', extension: 'mobi' },
+  ]);
+  assert.equal(selected?.md5, '2edbe4a27b0587cad214c20b9ff83d26');
+});
+
+test('keeps different readable formats of the same library identity', () => {
+  const epub = { md5: 'shared-record', title: 'Cryptonomicon', extension: 'epub', isbn: '9780380973460' };
+  const pdf = { md5: 'shared-record', title: 'Cryptonomicon', extension: 'pdf', isbn: '9780380973460' };
+  assert.equal(sameLibraryBook(epub, pdf), false);
+  assert.deepEqual(
+    mergeLibraryState([epub, pdf], []).map(book => book.extension),
+    ['epub', 'pdf'],
+  );
+});
+
+test('prefers EPUB among exact ISBN candidates during automatic resolution', () => {
+  const selected = matchingTorrentCatalogRecord({ isbn: '9780061792571' }, [
+    { md5: '1'.repeat(32), libgenId: 1, isbn: '9780061792571', extension: 'pdf' },
+    { md5: '2'.repeat(32), libgenId: 2, isbn: '9780061792571', extension: 'epub' },
+  ]);
+  assert.equal(selected?.extension, 'epub');
+});
+
+test('selects only directly readable Internet Archive files and prefers EPUB', () => {
+  const files = [
+    { name: 'book.pdf', format: 'Text PDF', size: '200' },
+    { name: 'book.epub', format: 'EPUB', size: '100' },
+  ];
+  assert.equal(internetArchiveFile(files)?.name, 'book.epub');
+  assert.equal(internetArchiveFile(files, { 'access-restricted-item': 'true' }), null);
+  assert.equal(internetArchiveFile([
+    { name: 'book.epub', format: 'EPUB', private: true },
+    { name: 'book_lcp.epub', format: 'LCP Encrypted EPUB' },
+    { name: 'book_encrypted.pdf', format: 'ACS Encrypted PDF' },
+  ]), null);
+});
+
+test('sorts availability by usefulness instead of alphabetically', () => {
+  const books = [
+    { title: 'Unavailable' },
+    { title: 'Available' },
+    { title: 'Finding' },
+    { title: 'Downloading' },
+    { title: 'Ready' },
+    { title: 'Seeding' },
+    { title: 'Unknown' },
+  ];
+  const labels = new Map([
+    ['Unavailable', 'Unavailable'],
+    ['Available', 'Available'],
+    ['Finding', 'Finding peers'],
+    ['Downloading', 'Downloading · 42%'],
+    ['Ready', 'Cached'],
+    ['Seeding', 'Seeding'],
+    ['Unknown', '—'],
+  ]);
+  assert.deepEqual(
+    sortBooks(books, 'availability', 'asc', () => false, book => labels.get(book.title)).map(book => book.title),
+    ['Seeding', 'Ready', 'Downloading', 'Finding', 'Available', 'Unknown', 'Unavailable'],
+  );
+  assert.deepEqual(
+    sortBooks(books, 'availability', 'desc', () => false, book => labels.get(book.title)).map(book => book.title),
+    ['Unavailable', 'Unknown', 'Available', 'Finding', 'Downloading', 'Ready', 'Seeding'],
+  );
 });
 
 test('sorts books by language', () => {
@@ -453,6 +617,42 @@ test('does not merge different IDs merely because titles match', () => {
   assert.equal(books.length, 2);
 });
 
+test('merges a cached Gutenberg copy with its catalog record while preserving local reading state', () => {
+  const cached = {
+    md5: '4e380df6664160703b706b3b690f1a63b1242c2c5085c30ee79727f0177230b0',
+    title: 'The Adventures of Sherlock Holmes',
+    authors: 'Doyle, Arthur Conan, 1859-1930',
+    year: '1999',
+    language: 'en',
+    extension: 'epub',
+    readUrl: 'app://bookstr/api/books/1661/download',
+    rights_status: 'public_domain',
+    progression: 0.42,
+    cfi: 'epubcfi(/6/4!/4/2)',
+    updatedAt: 200,
+  };
+  const catalog = {
+    md5: 'gutenberg:1661',
+    title: 'The Adventures of Sherlock Holmes',
+    authors: 'Doyle, Arthur Conan, 1859-1930',
+    extension: 'epub',
+    readUrl: 'https://books-api.guaka.org/api/books/1661/download',
+    coverId: 6717853,
+    updatedAt: 100,
+  };
+  assert.equal(sameLibraryBook(cached, catalog), true);
+  const [merged] = mergeLibraryState([cached], [catalog]);
+  assert.equal(merged.md5, cached.md5);
+  assert.equal(merged.readUrl, cached.readUrl);
+  assert.equal(merged.progression, 0.42);
+  assert.equal(merged.cfi, cached.cfi);
+  assert.equal(merged.coverId, 6717853);
+  assert.equal(merged.isReading, true);
+  assert.equal(merged.isFavorite, true);
+  assert.equal(dedupeLibraryBooks([cached, catalog]).length, 1);
+  assert.equal(sameLibraryBook(cached, { ...catalog, md5: 'gutenberg:48320', readUrl: 'https://books-api.guaka.org/api/books/48320/download' }), false);
+});
+
 test('different stable IDs never merge through a shared URL or ISBN', () => {
   const sharedUrl = 'https://lib.b.bfr.ee/#search?favorites=1';
   const books = dedupeLibraryBooks([
@@ -484,7 +684,7 @@ test('keeps a known read URL when a partial duplicate omits it', () => {
 });
 
 test('shows every availability source when several source hints exist', () => {
-  assert.equal(availabilityForBook({ md5: 'a'.repeat(32), blossomUrl: 'https://blossom.test/a' }), 'Blossom');
+  assert.equal(availabilityForBook({ md5: 'a'.repeat(32), blossomUrl: 'https://blossom.test/a' }), 'Metadata only');
 });
 
 test('matches library books by stable ID, then URL, then ISBN', () => {
@@ -684,7 +884,7 @@ test('metadataEndpointForReadUrl preserves only canonical Gutenberg download URL
 test('availabilitySourcesForBook deduplicates repeated sources', () => {
   assert.deepEqual(
     availabilitySourcesForBook({ source: 'gutenberg', readUrl: 'https://books-api.guaka.org/api/books/48320/download', blossomUrl: 'https://blossom.example/file.epub' }, true),
-    ['Gutenberg', 'Blossom', 'Cached'],
+    ['Gutenberg', 'Cached'],
   );
   assert.deepEqual(
     availabilitySourcesForBook({ source: 'gutenberg', md5: 'gutenberg:48320' }, false),
@@ -1008,7 +1208,7 @@ test('dedupeLibraryBooks keeps a real author when duplicate has placeholder titl
   assert.equal(deduped[0].author, 'Real Author');
 });
 
-test('findBookByReadUrl matches blossom URL entries with URL normalization', () => {
+test('findBookByReadUrl ignores blossom URL entries', () => {
   const book = findBookByReadUrl(
     'https://example.test/book.epub#reader',
     [
@@ -1018,7 +1218,7 @@ test('findBookByReadUrl matches blossom URL entries with URL normalization', () 
     [{ readUrl: 'https://books-api.guaka.org/api/read/123', title: 'Legacy ignored' }],
   );
 
-  assert.equal(book?.title, 'Normalized by hash');
+  assert.equal(book, null);
 });
 
 test('findBookByReadUrl matches url field entries with normalized fragments', () => {
@@ -1053,6 +1253,35 @@ test('sameLibraryBook matches md5 and libvaultMd5 across different key fields', 
   const fromCatalog = { md5: md5.toUpperCase() };
 
   assert.equal(sameLibraryBook(fromShared, fromCatalog), true);
+});
+
+test('a downloaded LibGen record merges with a legacy SHA-addressed favorite', () => {
+  const md5 = '1'.repeat(32);
+  const sha256 = 'a'.repeat(64);
+  const downloaded = {
+    md5,
+    sha256,
+    title: 'Scale',
+    authors: 'Greg Egan',
+    extension: 'epub',
+    updatedAt: 200,
+  };
+  const legacyFavorite = {
+    md5: sha256,
+    blossomSha256: sha256,
+    title: 'Scale',
+    authors: 'Egan, Greg',
+    extension: 'epub',
+    favoriteAddedAt: 100,
+  };
+
+  assert.equal(sameLibraryBook(downloaded, legacyFavorite), true);
+  assert.equal(dedupeLibraryBooks([legacyFavorite, downloaded]).length, 1);
+  const library = mergeLibraryState([downloaded], [legacyFavorite]);
+  assert.equal(library.length, 1);
+  assert.equal(library[0].md5, md5, 'the real repository MD5 must remain the status key');
+  assert.equal(library[0].isReading, true);
+  assert.equal(library[0].isFavorite, true);
 });
 
 test('sameLibraryBook does not fall back to URL when both sides have distinct stable IDs', () => {
@@ -1162,14 +1391,14 @@ test('availabilitySourcesForBook treats /api/read urls as metadata-only', () => 
   );
 });
 
-test('availabilitySourcesForBook respects explicit blossom source hints', () => {
+test('availabilitySourcesForBook treats explicit Blossom hints as legacy metadata', () => {
   assert.deepEqual(
     availabilitySourcesForBook({ source: 'blossom-cdn', blossomSha256: 'abc' }),
-    ['Blossom'],
+    ['Metadata only'],
   );
   assert.deepEqual(
     availabilitySourcesForBook({ source: 'blossom-cdn', blossomSha256: 'abc' }, true),
-    ['Blossom', 'Cached'],
+    ['Metadata only', 'Cached'],
   );
 });
 
@@ -1209,13 +1438,13 @@ test('isbnForBook normalizes direct ISBN13 values and keeps checksum', () => {
   );
 });
 
-test('availabilitySourcesForBook exposes blossom-only favorites as source list', () => {
+test('availabilitySourcesForBook exposes Blossom-only favorites as metadata-only', () => {
   assert.deepEqual(
     availabilitySourcesForBook({
       blossomSha256: 'b'.repeat(64),
       title: 'Remote',
     }),
-    ['Blossom'],
+    ['Metadata only'],
   );
 });
 
@@ -1327,17 +1556,17 @@ test('metadataEndpointForReadUrl returns empty on parse errors', () => {
   assert.equal(metadataEndpointForReadUrl('://not-a-url'), '');
 });
 
-test('canonicalReadUrl preserves direct blossom URLs', () => {
+test('canonicalReadUrl ignores legacy Blossom-only URLs', () => {
   assert.equal(
     canonicalReadUrl({ blossomUrl: 'https://example.test/download' }),
-    'https://example.test/download',
+    '',
   );
 });
 
-test('canonicalReadUrl preserves unparseable fallback URLs', () => {
+test('canonicalReadUrl ignores unparseable legacy Blossom fallback URLs', () => {
   assert.equal(
     canonicalReadUrl({ blossomUrl: '::://bad-url' }),
-    '::://bad-url',
+    '',
   );
 });
 

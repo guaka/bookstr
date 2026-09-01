@@ -46,6 +46,9 @@ test('FB2 reader asset is wired to structural parsing and safe progress reportin
   assert.match(reader, /cfi:locator\(\)/);
   assert.match(reader, /window\.nextPage/);
   assert.match(reader, /window\.prevPage/);
+  assert.match(reader, /--reader-padding:24px/);
+  assert.match(reader, /settings\.readerPadding/);
+  assert.match(reader, /window\.setReaderTypography=\(font,alignment,padding\)/);
 });
 
 test('FB2 parser asset rejects active XML content and external navigation', () => {

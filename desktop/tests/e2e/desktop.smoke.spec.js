@@ -138,6 +138,17 @@ test('libstr desktop app opens with preload bridge', async () => {
 
     await firstWindow.getByRole('button', { name: 'Search' }).click();
     await expect(firstWindow.locator('#search-tab')).toBeVisible();
+    await expect(firstWindow.locator('#search-sources-table')).not.toContainText('LibVault');
+    await expect(firstWindow.locator('#search-sources-table')).not.toContainText('LitRes');
+    await expect(firstWindow.locator('#search-type option[value="content"]')).toHaveCount(0);
+    const sourceToggles = firstWindow.locator('[data-action="toggle-search-source"]');
+    await expect(sourceToggles).toHaveCount(8);
+    await expect(sourceToggles.first()).toBeChecked();
+    await sourceToggles.first().uncheck();
+    await expect(firstWindow.locator('tr[data-source="all-books-party"]')).toHaveClass(/source-disabled/);
+    await firstWindow.reload();
+    await expect(firstWindow.locator('tr[data-source="all-books-party"] [data-action="toggle-search-source"]')).not.toBeChecked();
+    await firstWindow.locator('tr[data-source="all-books-party"] [data-action="toggle-search-source"]').check();
 
     await firstWindow.evaluate(() => {
       state.favorites = [{ md5: 'a', title: 'English book', language: 'en' }, { md5: 'b', title: 'Portuguese book', language: 'pt-PT' }];
@@ -153,6 +164,7 @@ test('libstr desktop app opens with preload bridge', async () => {
     await expect(firstWindow.locator('#desktop-nip46-qr-image')).toBeHidden();
     await expect(firstWindow.locator('#speech-language')).toBeVisible();
     await expect(firstWindow.locator('#speech-voice')).toContainText('Best installed voice');
+    await expect(firstWindow.locator('#reader-padding')).toBeVisible();
     await expect(firstWindow.locator('#speech-language')).toContainText('English');
     await expect(firstWindow.locator('#speech-language')).toContainText('Portuguese');
     await expect(firstWindow.locator('#speech-language')).toContainText('Spanish');
@@ -190,16 +202,52 @@ test('libstr desktop app opens with preload bridge', async () => {
       input.value = '125';
       input.dispatchEvent(new Event('input', { bubbles: true }));
     });
+    await firstWindow.locator('#reader-padding').evaluate(input => {
+      input.value = '40';
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    });
     await firstWindow.locator('#speech-rate').evaluate(input => {
       input.value = '1.10';
       input.dispatchEvent(new Event('input', { bubbles: true }));
     });
     await expect(firstWindow.locator('#reader-font-size-value')).toHaveText('125%');
+    await expect(firstWindow.locator('#reader-padding-value')).toHaveText('40 px');
     await expect(firstWindow.locator('#speech-rate-value')).toHaveText('1.10×');
+    await expect(firstWindow.locator('#torrent-auto-download')).toBeChecked();
+    await expect(firstWindow.locator('#torrent-auto-seed')).toBeChecked();
+    await expect(firstWindow.locator('#torrent-download-limit')).toHaveValue('10000000');
+    await expect(firstWindow.locator('#torrent-upload-limit')).toHaveValue('1000000');
+    await firstWindow.locator('#torrent-auto-download').uncheck();
+    await firstWindow.locator('#torrent-auto-seed').uncheck();
+    await expect.poll(() => firstWindow.evaluate(() => window.bookstrDesktop.transfers.setPreferences())).toEqual({
+      autoDownload: false,
+      autoSeed: false,
+      downloadLimit: 10000000,
+      uploadLimit: 1000000,
+    });
+    await firstWindow.locator('#torrent-auto-download').check();
+    await firstWindow.locator('#torrent-auto-seed').check();
+    await expect.poll(() => firstWindow.evaluate(() => window.bookstrDesktop.transfers.setPreferences())).toEqual({
+      autoDownload: true,
+      autoSeed: true,
+      downloadLimit: 10000000,
+      uploadLimit: 1000000,
+    });
+    await firstWindow.locator('#torrent-download-limit').selectOption('5000000');
+    await firstWindow.locator('#torrent-upload-limit').selectOption('500000');
+    await expect.poll(() => firstWindow.evaluate(() => window.bookstrDesktop.transfers.setPreferences())).toMatchObject({
+      downloadLimit: 5000000,
+      uploadLimit: 500000,
+    });
     expect(await firstWindow.evaluate(() => JSON.parse(localStorage.getItem('bookstr_reader_settings_v1')))).toMatchObject({
+      autoDownloadTorrents: true,
+      autoSeedTorrents: true,
+      torrentDownloadLimit: 5000000,
+      torrentUploadLimit: 500000,
       readerFont: 'arial',
       readerAlignment: 'justified',
       readerFontPercent: 125,
+      readerPadding: 40,
       speechRate: 1.1,
       speechVoiceEnglish: '',
       speechVoicePortuguese: '',
@@ -247,6 +295,8 @@ test('libstr desktop app opens with preload bridge', async () => {
     await expect(firstWindow.locator('#desktop-signer-status')).not.toContainText('[object Promise]');
     await expect(firstWindow.locator('#desktop-signer-status')).toContainText('npub1');
     await expect(firstWindow.locator('#desktop-signer-status')).toHaveClass(/signer-connected/);
+    await expect(firstWindow.locator('#desktop-signer-status')).toBeVisible();
+    await expect(firstWindow.locator('#desktop-signer-npub')).toHaveText(/^npub1/);
     await expect(firstWindow.getByRole('button', { name: 'Connect with QR code' })).toBeHidden();
 
     const localSigner = await firstWindow.evaluate(async () => ({
@@ -327,7 +377,7 @@ test('desktop home filtering keeps the matching in-progress book visible', async
     await expect(library.locator('#home-reading-list')).toContainText('Visible Reading Journey');
     await library.locator('#home-query-input').fill('journey');
     await expect(library.locator('#home-reading-list')).toContainText('Visible Reading Journey');
-    await expect(library.locator('#home-reading-list').getByRole('img', { name: 'Currently reading' })).toBeVisible();
+    await expect(library.locator('#home-reading-list').getByRole('img', { name: 'Currently reading' })).toHaveCount(0);
     await expect(library.locator('#home-reading-list')).not.toContainText('Another Book');
   } finally {
     await electronApp.close();
@@ -515,33 +565,52 @@ test('desktop footer stays in the viewport bottom-right without covering content
   }
 });
 
-test('desktop favorites load public Blossom covers instead of private API images', async () => {
+test('desktop favorites discover independent Open Library covers without LibVault', async () => {
   const electronApp = await electron.launch({ args: electronArgs() });
   const md5 = 'd'.repeat(32);
-  const coverSha256 = 'c'.repeat(64);
-  const blossomCover = `https://blossom.bfr.ee/${coverSha256}.jpg`;
+  const openLibraryCover = 'https://covers.openlibrary.org/b/id/12345-M.jpg';
 
   try {
     const library = await electronApp.firstWindow();
-    await library.route(blossomCover, route => route.fulfill({
+    let libVaultMetadataRequests = 0;
+    await library.route(`https://lib.b.bfr.ee/api/books/${md5}`, route => {
+      libVaultMetadataRequests += 1;
+      return route.fulfill({ status: 503 });
+    });
+    await library.route('https://openlibrary.org/search.json?**', route => route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ docs: [{
+        key: '/works/OL123W',
+        title: 'Covered Book',
+        author_name: ['Fixture Author'],
+        cover_i: 12345,
+        first_publish_year: 2024,
+        language: ['eng'],
+        edition_count: 1,
+      }] }),
+    }));
+    await library.route(openLibraryCover, route => route.fulfill({
       status: 200,
       contentType: 'image/svg+xml',
       body: '<svg xmlns="http://www.w3.org/2000/svg" width="40" height="56"><rect width="40" height="56" fill="#2f5d50"/></svg>',
     }));
-    await library.evaluate(({ md5: id, coverSha256: coverHash }) => {
+    await library.evaluate(id => {
       localStorage.setItem('bookstr_nostr_favorites_v1', JSON.stringify([{
         md5: id,
         title: 'Covered Book',
         authors: 'Fixture Author',
-        coverUrl: `https://lib.b.bfr.ee/api/covers/${id}`,
-        coverSha256: coverHash,
+        year: '2024',
+        language: 'eng',
+        extension: 'epub',
       }]));
-    }, { md5, coverSha256 });
+    }, md5);
     await library.reload();
 
     const cover = library.locator('.result-cover').first();
-    await expect(cover).toHaveAttribute('src', blossomCover);
+    await expect(cover).toHaveAttribute('src', openLibraryCover, { timeout: 15_000 });
     await expect.poll(() => cover.evaluate(image => image.complete && image.naturalWidth > 0)).toBe(true);
+    expect(libVaultMetadataRequests).toBe(0);
   } finally {
     await electronApp.close();
   }

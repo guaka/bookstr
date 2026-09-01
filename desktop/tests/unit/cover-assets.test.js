@@ -8,17 +8,16 @@ globalThis.BookMetadata = {
 };
 require('../../../web/cover-assets');
 
-const { attachImageFallback, bookCoverCandidates, normalizeCoverUrl, placeholderCoverUrl } = globalThis.CoverAssets;
+const { attachImageFallback, bookCoverCandidates, normalizeCoverUrl, placeholderCoverUrl, retryBookCover } = globalThis.CoverAssets;
 
-test('desktop uses public cover candidates instead of private LibVault image URLs', () => {
-  const sha256 = 'c'.repeat(64);
+test('desktop does not derive covers from private URLs or legacy hashes', () => {
   const candidates = bookCoverCandidates({
     md5: 'd'.repeat(32),
     title: 'Covered Book',
     coverUrl: `https://lib.b.bfr.ee/api/covers/${'d'.repeat(32)}`,
-    coverSha256: sha256,
+    coverSha256: 'c'.repeat(64),
   }, { desktop: true });
-  assert.equal(candidates[0], `https://blossom.bfr.ee/${sha256}.jpg`);
+  assert.equal(candidates.length, 1);
   assert.ok(candidates.at(-1).startsWith('data:image/svg+xml,'));
   assert.ok(!candidates.some(url => url.includes('lib.b.bfr.ee')));
 });
@@ -33,7 +32,7 @@ test('cover URL normalization keeps public and web-relative images', () => {
   assert.equal(normalizeCoverUrl('http://insecure.example/cover.jpg', false), '');
 });
 
-test('web cover candidates retain LibVault fallback and honor cover formats and bases', () => {
+test('web cover candidates ignore legacy hashes and use public catalog covers', () => {
   const md5 = 'a'.repeat(32);
   const sha256 = 'b'.repeat(64);
   const candidates = bookCoverCandidates({
@@ -42,15 +41,11 @@ test('web cover candidates retain LibVault fallback and honor cover formats and 
     coverSha256: sha256,
     coverFormat: '.png',
     coverId: 42,
-  }, {
-    desktop: false,
-    blossomBase: 'https://media.example',
-    libVaultCoverBase: 'https://library.example/covers',
-  });
-  assert.equal(candidates[0], `https://media.example/${sha256}.png`);
-  assert.equal(candidates.filter(url => url.endsWith('.png')).length, 1);
+  }, { desktop: false });
+  assert.equal(candidates[0], 'https://covers.openlibrary.org/b/id/42-M.jpg');
+  assert.ok(!candidates.some(url => url.includes(sha256)));
   assert.ok(candidates.includes('https://covers.openlibrary.org/b/id/42-M.jpg'));
-  assert.ok(candidates.includes(`https://library.example/covers/${md5}`));
+  assert.ok(!candidates.some(url => url.includes('lib.b.bfr.ee')));
   assert.ok(decodeURIComponent(candidates.at(-1)).includes('>B</text>'));
   assert.equal(bookCoverCandidates({}, { desktop: true }).length, 1);
 });
@@ -86,51 +81,23 @@ test('cover image fallback advances candidates and removes an exhausted image', 
   assert.equal(noAttributeImage.src, 'data:image/svg+xml,only');
 });
 
-test('cover candidates reject unsafe hints and keep only usable public URLs', () => {
-  assert.equal(normalizeCoverUrl('http://images.example/cover.jpg', true), '');
-  assert.equal(normalizeCoverUrl('javascript:alert(1)', false), '');
-  assert.equal(normalizeCoverUrl('data:image/png;base64,abc', false), 'data:image/png;base64,abc');
-  assert.equal(normalizeCoverUrl('  https://images.example/cover.jpg  ', false), 'https://images.example/cover.jpg');
-
-  const candidates = bookCoverCandidates({
-    coverUrl: 'https://images.example/cover.jpg',
-    coverFormat: 'pdf',
-    coverId: 'not-a-number',
-  }, { desktop: true });
-  assert.ok(candidates.includes('https://images.example/cover.jpg'));
-  assert.ok(candidates.every(url => !url.startsWith('http://')));
-
-  for (const book of [
-    { cover_url: 'https://images.example/legacy.jpg' },
-    { thumbnail: 'https://images.example/thumbnail.jpg' },
-    { image: 'https://images.example/image.jpg' },
-    { metadata: { coverUrl: 'https://images.example/metadata.jpg' } },
-  ]) {
-    assert.ok(bookCoverCandidates(book, { desktop: true }).length > 1);
-  }
-});
-
-test('cover candidates accept legacy aliases and deterministic placeholder initials', () => {
-  assert.equal(normalizeCoverUrl('app://bookstr/cover.jpg', true), 'app://bookstr/cover.jpg');
-  assert.equal(normalizeCoverUrl('./cover.jpg', false), './cover.jpg');
-  assert.ok(decodeURIComponent(placeholderCoverUrl({ title: 'Ada' })).includes('>A</text>'));
-  assert.ok(decodeURIComponent(placeholderCoverUrl({ title: '123' })).includes('>1</text>'));
-  assert.ok(decodeURIComponent(placeholderCoverUrl({ title: '' })).includes('>B</text>'));
-  assert.ok(decodeURIComponent(placeholderCoverUrl()).includes('>B</text>'));
-  assert.ok(bookCoverCandidates({ md5: 'f'.repeat(32) }).some(url => url.endsWith(`/${'f'.repeat(32)}`)));
-
-  const candidates = bookCoverCandidates({
-    cover_url: '//images.example/legacy.jpg',
-    thumbnail: 'https://images.example/duplicate.jpg',
-    image: 'https://images.example/image.jpg',
-    metadata: { coverUrl: 'https://images.example/metadata.jpg' },
-    cover_sha256: 'e'.repeat(64),
-    cover_format: 'webp',
-    cover_id: 12,
-    isbn: '978-0-13-235088-4',
-  }, { desktop: false, blossomBase: '' });
-  assert.ok(candidates.includes('https://images.example/legacy.jpg'));
-  assert.ok(candidates.some(url => url.includes('e'.repeat(64))));
+test('placeholder hover can reset a failed cover candidate', () => {
+  const key = 'hover-retry';
+  const failed = 'https://images.example/hover-retry.jpg';
+  const listeners = {};
+  const image = {
+    src: failed,
+    getAttribute: () => failed,
+    addEventListener: (name, callback) => { listeners[name] = callback; },
+    classList: { remove() {} },
+    closest: () => null,
+    remove() {},
+  };
+  attachImageFallback(image, [failed], { key });
+  listeners.error();
+  assert.ok(!bookCoverCandidates({ coverUrl: failed }, { key }).includes(failed));
+  retryBookCover(key);
+  assert.ok(bookCoverCandidates({ coverUrl: failed }, { key }).includes(failed));
 });
 
 test('cover candidates reject unsafe hints and keep only usable public URLs', () => {
@@ -164,7 +131,7 @@ test('cover candidates accept legacy aliases and deterministic placeholder initi
   assert.ok(decodeURIComponent(placeholderCoverUrl({ title: '123' })).includes('>1</text>'));
   assert.ok(decodeURIComponent(placeholderCoverUrl({ title: '' })).includes('>B</text>'));
   assert.ok(decodeURIComponent(placeholderCoverUrl()).includes('>B</text>'));
-  assert.ok(bookCoverCandidates({ md5: 'f'.repeat(32) }).some(url => url.endsWith(`/${'f'.repeat(32)}`)));
+  assert.equal(bookCoverCandidates({ md5: 'f'.repeat(32) }).length, 1);
 
   const candidates = bookCoverCandidates({
     cover_url: '//images.example/legacy.jpg',
@@ -175,7 +142,103 @@ test('cover candidates accept legacy aliases and deterministic placeholder initi
     cover_format: 'webp',
     cover_id: 12,
     isbn: '978-0-13-235088-4',
-  }, { desktop: false, blossomBase: '' });
+  }, { desktop: false });
   assert.ok(candidates.includes('https://images.example/legacy.jpg'));
-  assert.ok(candidates.some(url => url.includes('e'.repeat(64))));
+  assert.ok(!candidates.some(url => url.includes('e'.repeat(64))));
+});
+
+test('desktop adds public catalog cover fallbacks without treating the letter placeholder as a real cover', () => {
+  const candidates = bookCoverCandidates({
+    md5: 'gutenberg:1661',
+    sourceNativeId: 'OL123M',
+  }, { desktop: true });
+  assert.ok(candidates.includes('https://www.gutenberg.org/cache/epub/1661/pg1661.cover.medium.jpg'));
+  assert.ok(candidates.includes('https://covers.openlibrary.org/b/olid/OL123M-M.jpg?default=false'));
+  assert.ok(candidates.at(-1).startsWith('data:image/svg+xml,'));
+});
+
+test('Internet Archive identifiers add a public cover candidate', () => {
+  const candidates = bookCoverCandidates({
+    source: 'internet-archive',
+    sourceNativeId: 'safe_archive-id.1',
+  }, { desktop: true });
+  assert.equal(candidates[0], 'https://archive.org/services/img/safe_archive-id.1');
+});
+
+test('a loaded real cover updates visual state, callbacks, and preferred candidate order', () => {
+  const url = 'https://images.example/loaded.jpg';
+  const changes = [];
+  const slotChanges = [];
+  let loaded;
+  const image = {
+    src: url,
+    complete: true,
+    naturalWidth: 120,
+    getAttribute: () => url,
+    classList: {
+      add: value => changes.push(['add', value]),
+      toggle: (value, enabled) => changes.push(['toggle', value, enabled]),
+    },
+    closest: () => ({ classList: { toggle: (value, enabled) => slotChanges.push([value, enabled]) } }),
+    addEventListener() {},
+  };
+  attachImageFallback(image, [url], {
+    key: 'loaded-cover',
+    onLoaded: (value, detail) => { loaded = { value, detail }; },
+  });
+  assert.deepEqual(loaded, { value: url, detail: { isRealCover: true } });
+  assert.ok(changes.some(change => change.join(':') === 'add:is-loaded'));
+  assert.ok(changes.some(change => change.join(':') === 'toggle:is-real-cover:true'));
+  assert.deepEqual(slotChanges, [['has-real-cover', true]]);
+  assert.equal(bookCoverCandidates({
+    coverUrl: 'https://images.example/other.jpg',
+    thumbnail: url,
+  }, { key: 'loaded-cover' })[0], url);
+});
+
+test('cover candidates reject unsafe hints and keep only usable public URLs', () => {
+  assert.equal(normalizeCoverUrl('http://images.example/cover.jpg', true), '');
+  assert.equal(normalizeCoverUrl('javascript:alert(1)', false), '');
+  assert.equal(normalizeCoverUrl('data:image/png;base64,abc', false), 'data:image/png;base64,abc');
+  assert.equal(normalizeCoverUrl('  https://images.example/cover.jpg  ', false), 'https://images.example/cover.jpg');
+
+  const candidates = bookCoverCandidates({
+    coverUrl: 'https://images.example/cover.jpg',
+    coverFormat: 'pdf',
+    coverId: 'not-a-number',
+  }, { desktop: true });
+  assert.ok(candidates.includes('https://images.example/cover.jpg'));
+  assert.ok(candidates.every(url => !url.startsWith('http://')));
+
+  for (const book of [
+    { cover_url: 'https://images.example/legacy.jpg' },
+    { thumbnail: 'https://images.example/thumbnail.jpg' },
+    { image: 'https://images.example/image.jpg' },
+    { metadata: { coverUrl: 'https://images.example/metadata.jpg' } },
+  ]) {
+    assert.ok(bookCoverCandidates(book, { desktop: true }).length > 1);
+  }
+});
+
+test('cover candidates accept legacy aliases and deterministic placeholder initials', () => {
+  assert.equal(normalizeCoverUrl('app://bookstr/cover.jpg', true), 'app://bookstr/cover.jpg');
+  assert.equal(normalizeCoverUrl('./cover.jpg', false), './cover.jpg');
+  assert.ok(decodeURIComponent(placeholderCoverUrl({ title: 'Ada' })).includes('>A</text>'));
+  assert.ok(decodeURIComponent(placeholderCoverUrl({ title: '123' })).includes('>1</text>'));
+  assert.ok(decodeURIComponent(placeholderCoverUrl({ title: '' })).includes('>B</text>'));
+  assert.ok(decodeURIComponent(placeholderCoverUrl()).includes('>B</text>'));
+  assert.equal(bookCoverCandidates({ md5: 'f'.repeat(32) }).length, 1);
+
+  const candidates = bookCoverCandidates({
+    cover_url: '//images.example/legacy.jpg',
+    thumbnail: 'https://images.example/duplicate.jpg',
+    image: 'https://images.example/image.jpg',
+    metadata: { coverUrl: 'https://images.example/metadata.jpg' },
+    cover_sha256: 'e'.repeat(64),
+    cover_format: 'webp',
+    cover_id: 12,
+    isbn: '978-0-13-235088-4',
+  }, { desktop: false });
+  assert.ok(candidates.includes('https://images.example/legacy.jpg'));
+  assert.ok(!candidates.some(url => url.includes('e'.repeat(64))));
 });

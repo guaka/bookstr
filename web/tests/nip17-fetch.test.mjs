@@ -1,16 +1,16 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
 
 import {
   LIBVAULT_FETCH_TYPE,
   LIBVAULT_FAVORITES_TYPE,
   LIBVAULT_NIP05,
+  LIBVAULT_RESOLVE_RESPONSE_TYPE,
+  LIBVAULT_RESOLVE_TYPE,
   LIBVAULT_SEARCH_RESPONSE_TYPE,
-  LIBVAULT_API,
   libvaultBookRef,
-  lookupLibVaultBlossom,
-  lookupLibVaultBlossomState,
-  monitorLibVaultFetch,
+  resolveLibVaultBook,
   resolveLibVaultService,
   sendLibVaultFetchRequest,
   sendLibVaultFavoritesSync,
@@ -18,6 +18,12 @@ import {
   unwrapLibVaultResponse,
 } from '../nip17-fetch.js';
 import * as nostrTools from '../vendor/nostr-tools.js';
+
+const nip17Source = await readFile(new URL('../nip17-fetch.js', import.meta.url), 'utf8');
+
+test('NIP-17 no longer contains LibVault job or Blossom publication helpers', () => {
+  assert.doesNotMatch(nip17Source, /\/jobs\?|\/blossom\/|monitorLibVaultFetch|lookupLibVaultBlossom/);
+});
 
 const servicePubkey = '8'.repeat(64);
 const senderPubkey = '7'.repeat(64);
@@ -365,140 +371,6 @@ test('the real NIP-44 implementation lets the LibVault key unwrap the request', 
   assert.equal(rumor.kind, 14);
   assert.equal(request.type, LIBVAULT_FETCH_TYPE);
   assert.equal(request.book.md5, 'b'.repeat(32));
-});
-
-test('reports download and Blossom publication progress', async () => {
-  const responses = [
-    { ok: false, status: 404 },
-    { ok: true, json: async () => ({ status: 'fetching', bytes: 25, total: 100, source: 'torrent' }) },
-    { ok: true, json: async () => ({ status: 'ready', bytes: 100, total: 100 }) },
-    { ok: true, json: async () => ({ status: 'publishing' }) },
-    { ok: true, json: async () => ({ status: 'ready', bytes: 100, total: 100 }) },
-    { ok: true, json: async () => ({
-      status: 'ready',
-      sha256: 'c'.repeat(64),
-      url: `https://blossom.bfr.ee/${'c'.repeat(64)}.epub`,
-      format: 'epub',
-    }) },
-  ];
-  const progress = [];
-  const result = await monitorLibVaultFetch('a'.repeat(32), {
-    intervalMs: 0,
-    timeoutMs: 1000,
-    fetchImpl: async () => responses.shift(),
-    onProgress: update => progress.push(update),
-  });
-
-  assert.deepEqual(progress.map(update => update.status), ['waiting', 'fetching', 'publishing', 'ready']);
-  assert.equal(progress[1].bytes, 25);
-  assert.equal(result.blossom.sha256, 'c'.repeat(64));
-});
-
-test('monitorLibVaultFetch normalizes string progress counters to numbers', async () => {
-  const progress = [];
-  const updates = [
-    { status: 'fetching', bytes: '25', total: '100', source: 'torrent' },
-    { status: 'ready', bytes: '100', total: '100' },
-  ];
-  const result = await monitorLibVaultFetch('a'.repeat(32), {
-    intervalMs: 0,
-    timeoutMs: 1000,
-    fetchImpl: async url => {
-      if (url.includes('/jobs?md5=')) {
-        const payload = updates.shift();
-        return {
-          ok: true,
-          json: async () => payload,
-        };
-      }
-      return {
-        ok: true,
-        json: async () => ({
-          status: 'ready',
-          sha256: 'c'.repeat(64),
-          url: `https://blossom.bfr.ee/${'c'.repeat(64)}.epub`,
-          format: 'epub',
-        }),
-      };
-    },
-    onProgress: update => progress.push(update),
-  });
-
-  const fetching = progress.find(update => update.status === 'fetching');
-  assert.equal(fetching.bytes, 25);
-  assert.equal(fetching.total, 100);
-  assert.equal(result.status, 'ready');
-  assert.equal(result.blossom.sha256, 'c'.repeat(64));
-});
-
-test('monitorLibVaultFetch reports unknown job states as queued and eventually times out', async () => {
-  const progress = [];
-  const result = await monitorLibVaultFetch('a'.repeat(32), {
-    intervalMs: 0,
-    timeoutMs: 12,
-    onProgress: update => progress.push(update),
-    fetchImpl: async () => ({
-      ok: true,
-      json: async () => ({ status: 'queued', bytes: '12', total: '100' }),
-    }),
-  });
-
-  assert.equal(progress[0]?.status, 'waiting');
-  assert.equal(progress[1]?.status, 'queued');
-  assert.equal(progress[1]?.bytes, 12);
-  assert.equal(progress[1]?.total, 100);
-  assert.equal(progress.at(-1)?.status, 'failed');
-  assert.equal(result.status, 'failed');
-  assert.equal(result.error, 'Timed out waiting for LibVault');
-});
-
-test('monitorLibVaultFetch reports a failed blossom lookup as publishing when invalid payload is returned', async () => {
-  const progress = [];
-  const result = await monitorLibVaultFetch('a'.repeat(32), {
-    intervalMs: 0,
-    timeoutMs: 20,
-    onProgress: update => progress.push(update),
-    fetchImpl: async url => {
-      if (url.includes('/jobs?md5=')) {
-        return {
-          ok: true,
-          json: async () => ({ status: 'ready', bytes: 10, total: 20 }),
-        };
-      }
-      return {
-        ok: true,
-        json: async () => ({ status: 'ready', sha256: 'bad-sha256', url: 'https://blossom.example/book.epub' }),
-      };
-    },
-  });
-
-  assert.equal(result.status, 'failed');
-  assert.equal(progress.at(-1).status, 'failed');
-  assert.equal(progress.some(update => update.status === 'publishing'), true);
-});
-
-test('looks up newly published Blossom copies for existing favorites', async () => {
-  const blossom = await lookupLibVaultBlossom('d'.repeat(32), async url => {
-    assert.match(url, /\/api\/blossom\/d{32}$/);
-    return {
-      ok: true,
-      json: async () => ({
-        status: 'ready',
-        sha256: 'e'.repeat(64),
-        url: `https://blossom.bfr.ee/${'e'.repeat(64)}.epub`,
-        format: 'epub',
-      }),
-    };
-  });
-  assert.equal(blossom.sha256, 'e'.repeat(64));
-});
-
-test('preserves publishing state so the library can retry availability', async () => {
-  const blossom = await lookupLibVaultBlossomState('d'.repeat(32), async () => ({
-    ok: true,
-    json: async () => ({ status: 'publishing', md5: 'd'.repeat(32) }),
-  }));
-  assert.equal(blossom.status, 'publishing');
 });
 
 test('sends a private search and returns its matching response', async () => {
@@ -1025,145 +897,6 @@ test('searchLibVault ignores mismatched response IDs and times out', async () =>
   );
 });
 
-test('lookupLibVaultBlossom ignores non-https blossom URLs', async () => {
-  const blossom = await lookupLibVaultBlossom('a'.repeat(32), async () => ({
-    ok: true,
-    json: async () => ({ status: 'ready', sha256: 'b'.repeat(64), url: 'http://blossom.example/file.epub' }),
-  }));
-  assert.equal(blossom, null);
-});
-
-test('lookupLibVaultBlossom rejects a ready response with invalid sha256', async () => {
-  const blossom = await lookupLibVaultBlossom('a'.repeat(32), async () => ({
-    ok: true,
-    json: async () => ({ status: 'ready', sha256: 'too-short', url: 'https://blossom.example/file.epub' }),
-  }));
-  assert.equal(blossom, null);
-});
-
-test('monitorLibVaultFetch reports publishing when blossom is not yet ready', async () => {
-  const progress = [];
-  const result = await monitorLibVaultFetch('a'.repeat(32), {
-    intervalMs: 0,
-    timeoutMs: 20,
-    onProgress: update => progress.push(update),
-    fetchImpl: async () => ({
-      ok: true,
-      json: async () => ({ status: 'ready', bytes: 10, total: 10 }),
-    }),
-  });
-
-  assert.equal(result.status, 'failed');
-  assert.equal(progress.some(update => update.status === 'publishing'), true);
-  assert.equal(progress.at(-1)?.status, 'failed');
-});
-
-test('monitorLibVaultFetch keeps reporting publishing when blossom URL is invalid', async () => {
-  const progress = [];
-  const result = await monitorLibVaultFetch('a'.repeat(32), {
-    intervalMs: 0,
-    timeoutMs: 10,
-    onProgress: update => progress.push(update),
-    fetchImpl: async url => {
-      if (url.includes('/jobs?md5=')) {
-        return {
-          ok: true,
-          json: async () => ({ status: 'ready' }),
-        };
-      }
-      if (url.includes('/blossom/')) {
-        return {
-          ok: true,
-          json: async () => ({
-            status: 'ready',
-            sha256: 'c'.repeat(64),
-            url: 'http://blossom.example.com/file.epub',
-          }),
-        };
-      }
-      throw new Error(`unexpected monitor endpoint: ${url}`);
-    },
-  });
-
-  assert.equal(result.status, 'failed');
-  assert.equal(progress.some(update => update.status === 'publishing'), true);
-  assert.equal(progress[0]?.status, 'waiting');
-  assert.equal(progress.at(-1).status, 'failed');
-});
-
-test('monitorLibVaultFetch keeps polling when blossom payload is not ready', async () => {
-  const progress = [];
-  const result = await monitorLibVaultFetch('a'.repeat(32), {
-    intervalMs: 0,
-    timeoutMs: 12,
-    onProgress: update => progress.push(update),
-    fetchImpl: async url => {
-      if (url.includes('/jobs?md5=')) {
-        return {
-          ok: true,
-          json: async () => ({ status: 'ready' }),
-        };
-      }
-      if (url.includes('/blossom/')) {
-        return {
-          ok: true,
-          json: async () => ({ sha256: 'c'.repeat(64), url: 'https://blossom.example/file.epub' }),
-        };
-      }
-      throw new Error(`unexpected monitor endpoint: ${url}`);
-    },
-  });
-
-  assert.equal(result.status, 'failed');
-  assert.equal(result.error, 'Timed out waiting for LibVault');
-  assert.equal(progress[0]?.status, 'waiting');
-  assert.equal(progress.some(update => update.status === 'publishing'), true);
-});
-
-test('monitorLibVaultFetch returns cancelled when aborted during polling', async () => {
-  const controller = new AbortController();
-  setTimeout(() => controller.abort(), 1);
-  const progress = [];
-  const result = await monitorLibVaultFetch('a'.repeat(32), {
-    intervalMs: 20,
-    timeoutMs: 200,
-    signal: controller.signal,
-    onProgress: update => progress.push(update),
-    fetchImpl: async () => ({
-      ok: false,
-      status: 503,
-      json: async () => ({}),
-    }),
-  });
-
-  assert.equal(result.status, 'cancelled');
-  assert.equal(progress[0]?.status, 'waiting');
-});
-
-test('monitorLibVaultFetch exits as cancelled when the signal is already aborted', async () => {
-  const controller = new AbortController();
-  controller.abort();
-  const result = await monitorLibVaultFetch('a'.repeat(32), {
-    signal: controller.signal,
-    intervalMs: 0,
-    timeoutMs: 10,
-    fetchImpl: async () => {
-      assert.fail('monitor should not call fetch after signal is already aborted');
-    },
-  });
-
-  assert.equal(result.status, 'cancelled');
-});
-
-test('lookupLibVaultBlossom filters out non-ready states', async () => {
-  const blossom = await lookupLibVaultBlossom('a'.repeat(32), async () => ({
-    ok: true,
-    json: async () => ({ status: 'publishing' }),
-  }));
-
-  assert.equal(blossom, null);
-});
-
 test('unwrapLibVaultResponse rejects malformed wrapped payload JSON', async () => {
   const signer = { nip44: { decrypt: async () => '{malformed' } };
   await assert.rejects(
@@ -1230,33 +963,6 @@ test('unwrapLibVaultResponse rejects a rumor without a sender p-tag', async () =
   );
 
   assert.equal(response, null);
-});
-
-test('lookupLibVaultBlossom requires a ready blossom URL', async () => {
-  const blossom = await lookupLibVaultBlossom('a'.repeat(32), async () => ({
-    ok: true,
-    json: async () => ({ status: 'ready', sha256: 'b'.repeat(64) }),
-  }));
-
-  assert.equal(blossom, null);
-});
-
-test('monitorLibVaultFetch reports unknown job statuses without rewriting them', async () => {
-  const progress = [];
-  const result = await monitorLibVaultFetch('a'.repeat(32), {
-    intervalMs: 0,
-    timeoutMs: 5,
-    onProgress: update => progress.push(update),
-    fetchImpl: async () => ({
-      ok: true,
-      json: async () => ({ status: 'preparing', bytes: 1, total: 10, source: 'peer' }),
-    }),
-  });
-
-  assert.equal(result.status, 'failed');
-  assert.equal(result.error, 'Timed out waiting for LibVault');
-  assert.equal(progress.some(update => update.status === 'preparing'), true);
-  assert.equal(progress.at(-1).status, 'failed');
 });
 
 test('searchLibVault surfaces relay readiness failures', async () => {
@@ -1447,62 +1153,6 @@ test('sendLibVaultFetchRequest propagates publish failures', async () => {
   );
 });
 
-test('monitorLibVaultFetch treats non-ok jobs endpoint response as waiting then timed out', async () => {
-  const start = Date.now();
-  const result = await monitorLibVaultFetch('a'.repeat(32), {
-    intervalMs: 0,
-    timeoutMs: 5,
-    fetchImpl: async () => ({ ok: false, status: 503 }),
-  });
-
-  assert.equal(result.status, 'failed');
-  assert.equal(result.error, 'Timed out waiting for LibVault');
-  assert.ok(Date.now() - start >= 0);
-});
-
-test('monitorLibVaultFetch suppresses duplicate progress updates', async () => {
-  const progress = [];
-  const result = await monitorLibVaultFetch('a'.repeat(32), {
-    intervalMs: 0,
-    timeoutMs: 8,
-    onProgress: update => progress.push(update),
-    fetchImpl: async () => ({
-      ok: true,
-      json: async () => ({ status: 'queued', bytes: 1, total: 10, source: 'peer' }),
-    }),
-  });
-
-  assert.equal(progress[0].status, 'waiting');
-  assert.equal(progress.filter(update => update.status === 'queued').length, 1);
-  assert.equal(result.status, 'failed');
-  assert.equal(result.error, 'Timed out waiting for LibVault');
-  assert.equal(progress.at(-1).status, 'failed');
-});
-
-test('monitorLibVaultFetch treats missing job status as queued', async () => {
-  const progress = [];
-  const result = await monitorLibVaultFetch('a'.repeat(32), {
-    intervalMs: 0,
-    timeoutMs: 5,
-    onProgress: update => progress.push(update),
-    fetchImpl: async () => ({
-      ok: true,
-      json: async () => ({ bytes: 3, total: 10, source: 'peer' }),
-    }),
-  });
-
-  assert.equal(progress[0].status, 'waiting');
-  assert.equal(progress.some(update => update.status === 'queued'), true);
-  assert.equal(result.status, 'failed');
-  assert.equal(result.error, 'Timed out waiting for LibVault');
-  assert.equal(progress.at(-1).status, 'failed');
-});
-
-test('lookupLibVaultBlossomState rejects invalid md5 identifiers', async () => {
-  const blossom = await lookupLibVaultBlossomState('not-md5', async () => ({ ok: true, json: async () => ({}) }));
-  assert.equal(blossom, null);
-});
-
 test('searchLibVault rejects missing relay publisher', async () => {
   const signer = {
     getPublicKey: async () => senderPubkey,
@@ -1586,44 +1236,6 @@ test('searchLibVault normalizes query, search type, and limit', async () => {
   assert.equal(payloads[0].limit, 200);
   assert.equal(sent.tags[0]?.[0], 'p');
   assert.equal(sent.tags[0]?.[1], servicePubkey);
-});
-
-test('monitorLibVaultFetch keeps waiting when fetch throws', async () => {
-  const progress = [];
-  const result = await monitorLibVaultFetch('a'.repeat(32), {
-    intervalMs: 0,
-    timeoutMs: 5,
-    onProgress: update => progress.push(update),
-    fetchImpl: async () => {
-      throw new Error('network temporary failure');
-    },
-  });
-
-  assert.equal(result.status, 'failed');
-  assert.equal(result.error, 'Timed out waiting for LibVault');
-  assert.equal(progress[0].status, 'waiting');
-  assert.equal(progress.at(-1).status, 'failed');
-});
-
-
-test('monitorLibVaultFetch treats malformed job payloads as waiting until timeout', async () => {
-  const progress = [];
-  const result = await monitorLibVaultFetch('a'.repeat(32), {
-    intervalMs: 0,
-    timeoutMs: 10,
-    onProgress: update => progress.push(update),
-    fetchImpl: async () => ({
-      ok: true,
-      json: async () => {
-        throw new Error('malformed job response');
-      },
-    }),
-  });
-
-  assert.equal(result.status, 'failed');
-  assert.equal(result.error, 'Timed out waiting for LibVault');
-  assert.equal(progress[0]?.status, 'waiting');
-  assert.equal(progress.some(update => update.status === 'waiting'), true);
 });
 
 test('resolveLibVaultService rejects invalid NIP-05 pubkeys', async () => {
@@ -2189,21 +1801,6 @@ test('searchLibVault enforces a minimum limit of 1', async () => {
   assert.equal(sentPayload.limit, 1);
 });
 
-test('monitorLibVaultFetch reports failed status from jobs response', async () => {
-  const result = await monitorLibVaultFetch('a'.repeat(32), {
-    intervalMs: 0,
-    timeoutMs: 20,
-    fetchImpl: async () => ({
-      ok: true,
-      json: async () => ({ status: 'failed', error: 'indexer is temporarily unavailable' }),
-    }),
-  });
-
-  assert.equal(result.status, 'failed');
-  assert.equal(result.error, 'indexer is temporarily unavailable');
-});
-
-
 test('resolveLibVaultService deduplicates duplicate relays', async () => {
   const service = await resolveLibVaultService(async () => ({
     ok: true,
@@ -2325,57 +1922,6 @@ test('sendLibVaultFavoritesSync requires a Nostr signer with NIP-44 support', as
   );
 });
 
-test('lookupLibVaultBlossomState refuses invalid MD5 input', async () => {
-  const state = await lookupLibVaultBlossomState('not-an-md5', async () => ({
-    ok: true,
-    json: async () => ({ status: 'ready' }),
-  }));
-
-  assert.equal(state, null);
-});
-
-test('lookupLibVaultBlossomState normalizes uppercase MD5 identifiers', async () => {
-  let requestUrl;
-  const uppercaseMd5 = 'A'.repeat(32);
-  const state = await lookupLibVaultBlossomState(uppercaseMd5, async (url) => {
-    requestUrl = url;
-    return {
-      ok: true,
-      json: async () => ({ status: 'ready', sha256: 'b'.repeat(64), url: 'https://blossom.example/file.epub' }),
-    };
-  });
-
-  assert.equal(requestUrl, `${LIBVAULT_API}/blossom/${uppercaseMd5.toLowerCase()}`);
-  assert.equal(state.status, 'ready');
-});
-
-test('monitorLibVaultFetch keeps waiting when job endpoint is temporarily unavailable', async () => {
-  const calls = [];
-  const result = await monitorLibVaultFetch('a'.repeat(32), {
-    intervalMs: 0,
-    timeoutMs: 5,
-    fetchImpl: async () => {
-      calls.push(Date.now());
-      return {
-        ok: false,
-        status: 503,
-        json: async () => ({}),
-      };
-    },
-  });
-
-  assert.equal(result.status, 'failed');
-  assert.equal(result.error, 'Timed out waiting for LibVault');
-  assert.ok(calls.length >= 1);
-});
-
-test('monitorLibVaultFetch rejects invalid MD5 input', async () => {
-  await assert.rejects(
-    () => monitorLibVaultFetch('not-a-md5', { intervalMs: 0 }),
-    /A LibVault MD5 is required/,
-  );
-});
-
 test('sendLibVaultFetchRequest passes through signer public key case normalization', async () => {
   const signer = {
     getPublicKey: async () => senderPubkey.toUpperCase(),
@@ -2436,27 +1982,6 @@ test('sendLibVaultFetchRequest fails when no relay publisher is provided', async
       }),
     }),
     /No Nostr relay publisher is available/,
-  );
-});
-
-test('lookupLibVaultBlossomState ignores failed blossom endpoints', async () => {
-  const state = await lookupLibVaultBlossomState('a'.repeat(32), async () => ({
-    ok: false,
-    status: 503,
-  }));
-
-  assert.equal(state, null);
-});
-
-test('lookupLibVaultBlossomState propagates json parsing errors', async () => {
-  await assert.rejects(
-    () => lookupLibVaultBlossomState('a'.repeat(32), async () => ({
-      ok: true,
-      json: async () => {
-        throw new Error('Malformed JSON payload');
-      },
-    })),
-    /Malformed JSON payload/,
   );
 });
 
@@ -3790,22 +3315,6 @@ test('searchLibVault ignores non-object EVENT payload and resolves from a valid 
   assert.equal(response.books?.[0]?.title, 'Non-object payload ignored reply');
 });
 
-test('lookupLibVaultBlossomState rejects malformed md5 identifiers', async () => {
-  const blossom = await lookupLibVaultBlossomState('not-an-md5', async () => ({
-    ok: true,
-    json: async () => ({ status: 'ready', sha256: 'a'.repeat(64), url: 'https://blossom.example/file.epub' }),
-  }));
-
-  assert.equal(blossom, null);
-});
-
-test('monitorLibVaultFetch rejects invalid identifiers before polling', async () => {
-  await assert.rejects(
-    () => monitorLibVaultFetch('not-an-md5', { intervalMs: 0, timeoutMs: 20 }),
-    /A LibVault MD5 is required to monitor a fetch/,
-  );
-});
-
 test('searchLibVault clamps oversized limits to the maximum', async () => {
   const sender = senderPubkey;
   let capturedLimit;
@@ -3858,6 +3367,162 @@ test('searchLibVault clamps oversized limits to the maximum', async () => {
   assert.equal(sentPayload?.request_id?.length > 0, true);
   assert.equal(response.status, 'ready');
   assert.equal(response.books[0]?.title, 'Limited Search');
+});
+
+test('resolveLibVaultBook requests metadata only and returns LibGen torrent identifiers', async () => {
+  const md5 = 'd'.repeat(32);
+  let sentPayload;
+  const result = await resolveLibVaultBook({ md5, title: 'Compact favorite' }, {
+    signer: {
+      getPublicKey: async () => senderPubkey,
+      nip44: { encrypt: async () => '{}', decrypt: async () => '' },
+      signEvent: async event => ({ ...event, id: 'seed', pubkey: senderPubkey, sig: 'signed' }),
+    },
+    fetchImpl: async () => discoveryResponse(),
+    loadTools: async () => ({
+      generateSecretKey: () => new Uint8Array(32).fill(7),
+      finalizeEvent: event => ({ ...event, id: 'wrap', pubkey: 'f'.repeat(64), sig: 'wrapped' }),
+      nip19: { npubEncode: pubkey => `npub:${pubkey}` },
+      nip44: { v2: { utils: { getConversationKey: () => new Uint8Array(32).fill(8) }, encrypt: plaintext => `wrapped:${plaintext}` } },
+      verifyEvent: () => true,
+    }),
+    publish: async () => true,
+    onTrace: trace => { if (trace.direction === 'sent') sentPayload = trace.payload; },
+    listen: ({ requestID }) => ({
+      ready: Promise.resolve(), arm: () => {}, close: () => {},
+      result: Promise.resolve({
+        type: LIBVAULT_RESOLVE_RESPONSE_TYPE,
+        request_id: requestID,
+        status: 'ready',
+        book: { md5, id: 2412930, extension: 'pdf', filesize_bytes: 12345 },
+      }),
+    }),
+  });
+
+  assert.equal(sentPayload.type, LIBVAULT_RESOLVE_TYPE);
+  assert.equal(sentPayload.book.md5, md5);
+  assert.equal(result.id, 2412930);
+  assert.equal(result.filesize_bytes, 12345);
+});
+
+test('resolveLibVaultBook rejects unavailable signers, relays, and unusable responses', async () => {
+  const md5 = 'd'.repeat(32);
+  const signer = {
+    getPublicKey: async () => senderPubkey,
+    nip44: { encrypt: async () => '{}', decrypt: async () => '' },
+    signEvent: async event => ({ ...event, id: 'seed', pubkey: senderPubkey, sig: 'signed' }),
+  };
+  const options = response => ({
+    signer,
+    fetchImpl: async () => discoveryResponse(),
+    loadTools: async () => ({
+      generateSecretKey: () => new Uint8Array(32).fill(7),
+      finalizeEvent: event => ({ ...event, id: 'wrap', pubkey: 'f'.repeat(64), sig: 'wrapped' }),
+      nip44: { v2: { utils: { getConversationKey: () => new Uint8Array(32).fill(8) }, encrypt: plaintext => `wrapped:${plaintext}` } },
+      verifyEvent: () => true,
+    }),
+    publish: async () => true,
+    listen: ({ requestID }) => ({
+      ready: Promise.resolve(), arm: () => {}, close: () => {},
+      result: Promise.resolve({ request_id: requestID, ...response }),
+    }),
+  });
+
+  await assert.rejects(() => resolveLibVaultBook({ md5 }, {}), /Nostr signer with NIP-44 support/);
+  await assert.rejects(() => resolveLibVaultBook({ md5 }, { signer }), /No Nostr relay publisher/);
+  await assert.rejects(() => resolveLibVaultBook({ md5 }, {
+    ...options({}), signer: { ...signer, getPublicKey: async () => 'invalid' },
+  }), /invalid public key/);
+  const noPublisher = options({});
+  delete noPublisher.publish;
+  await assert.rejects(() => resolveLibVaultBook({ md5 }, noPublisher), /No Nostr relay publisher/);
+  await assert.rejects(() => resolveLibVaultBook({ md5 }, {
+    ...options({}), publish: async () => false,
+  }), /No relay accepted/);
+  await assert.rejects(() => resolveLibVaultBook({ md5 }, options({
+    type: 'wrong.type', status: 'ready', book: { md5, id: 1 },
+  })), /response was invalid/);
+  await assert.rejects(() => resolveLibVaultBook({ md5 }, options({
+    type: LIBVAULT_RESOLVE_RESPONSE_TYPE, status: 'not_found', error: 'missing catalog record',
+  })), /missing catalog record/);
+  await assert.rejects(() => resolveLibVaultBook({ md5 }, options({
+    type: LIBVAULT_RESOLVE_RESPONSE_TYPE, status: 'ready', book: { md5 },
+  })), /usable LibGen torrent metadata/);
+});
+
+test('resolveLibVaultBook receives a metadata result through its default WebSocket listener', async () => {
+  const md5 = 'e'.repeat(32);
+  const sockets = [];
+  let sentPayload;
+
+  class FakeWebSocket {
+    constructor() {
+      this.handlers = {};
+      this.subscriptions = new Set();
+      sockets.push(this);
+      setTimeout(() => this.emit('open'), 0);
+    }
+    addEventListener(name, handler) { (this.handlers[name] ||= []).push(handler); }
+    send(message) {
+      const packet = JSON.parse(message);
+      if (packet?.[0] === 'REQ') {
+        this.subscriptions.add(packet[1]);
+        setTimeout(() => this.emit('message', { data: JSON.stringify(['EOSE', packet[1]]) }), 0);
+      }
+    }
+    reply(subscription) {
+      this.emit('message', { data: JSON.stringify(['EVENT', subscription, {
+        kind: 1059, pubkey: servicePubkey, created_at: Math.floor(Date.now() / 1000),
+        tags: [['p', senderPubkey]], content: 'resolve-wrap',
+      }]) });
+    }
+    close() {}
+    emit(name, event) { (this.handlers[name] || []).forEach(handler => handler(event)); }
+  }
+
+  const result = await resolveLibVaultBook({ md5 }, {
+    signer: {
+      getPublicKey: async () => senderPubkey,
+      nip44: {
+        encrypt: async () => '{}',
+        decrypt: async (_peer, ciphertext) => {
+          if (ciphertext === 'resolve-wrap') return JSON.stringify({
+            kind: 13, pubkey: servicePubkey, created_at: Math.floor(Date.now() / 1000),
+            tags: [], content: 'resolve-rumor',
+          });
+          const rumor = {
+            kind: 14, pubkey: servicePubkey, created_at: Math.floor(Date.now() / 1000),
+            tags: [['p', senderPubkey]],
+            content: JSON.stringify({
+              type: LIBVAULT_RESOLVE_RESPONSE_TYPE, request_id: sentPayload.request_id,
+              status: 'ready', book: { md5, id: 2412930, extension: 'pdf', filesize_bytes: 12345 },
+            }),
+          };
+          rumor.id = nostrTools.getEventHash(rumor);
+          return JSON.stringify(rumor);
+        },
+      },
+      signEvent: async event => ({ ...event, id: 'seed', pubkey: senderPubkey, sig: 'signed' }),
+    },
+    fetchImpl: async () => discoveryResponse(),
+    loadTools: async () => ({
+      generateSecretKey: () => new Uint8Array(32).fill(7),
+      finalizeEvent: event => ({ ...event, id: 'wrap', pubkey: 'f'.repeat(64), sig: 'wrapped' }),
+      nip19: { npubEncode: pubkey => `npub:${pubkey}` },
+      nip44: { v2: { utils: { getConversationKey: () => new Uint8Array(32).fill(8) }, encrypt: plaintext => `wrapped:${plaintext}` } },
+      verifyEvent: () => true,
+    }),
+    publish: async () => {
+      for (const socket of sockets) for (const subscription of socket.subscriptions) socket.reply(subscription);
+      return true;
+    },
+    onTrace: trace => { if (trace.direction === 'sent') sentPayload = trace.payload; },
+    WebSocketImpl: FakeWebSocket,
+    responseTimeoutMs: 1000,
+  });
+
+  assert.equal(result.md5, md5);
+  assert.equal(result.id, 2412930);
 });
 
 test('libvaultBookRef ignores an invalid md5 and keeps normalized isbn', () => {

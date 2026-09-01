@@ -145,7 +145,7 @@ test('enrichBookMetadata keeps an existing read URL when incoming metadata has n
   assert.equal(merged.title, 'Base title');
 });
 
-test('availabilitySourcesForBook deduplicates repeated source hints', () => {
+test('availabilitySourcesForBook deduplicates supported source hints and ignores retired Blossom metadata', () => {
   assert.deepEqual(
     availabilitySourcesForBook({
       readUrl: 'https://books-api.guaka.org/api/books/48320/download?download=1',
@@ -153,7 +153,7 @@ test('availabilitySourcesForBook deduplicates repeated source hints', () => {
       blossomSha256: 'abc',
       blossomUrl: 'https://blossom.example/file.epub',
     }),
-    ['Gutenberg', 'Blossom'],
+    ['Gutenberg'],
   );
 });
 
@@ -162,6 +162,14 @@ test('availabilitySourcesForBook recognizes gutenberg from source hint alone', (
     availabilitySourcesForBook({ source: 'gutenberg' }),
     ['Gutenberg'],
   );
+});
+
+test('availability sorting keeps an unknown live label with metadata-only records', () => {
+  const books = [{ title: 'Unknown' }, { title: 'Ready' }];
+  const sorted = sortBooks(books, 'availability', 'asc', () => false, book => (
+    book.title === 'Ready' ? 'Ready' : 'Custom peer state'
+  ));
+  assert.deepEqual(sorted.map(book => book.title), ['Ready', 'Unknown']);
 });
 
 test('findBookByReadUrl prefers the url field only when readUrl is unavailable', () => {
@@ -428,14 +436,14 @@ test('metadataEndpointForReadUrl rejects non-lowercase download suffix', () => {
   );
 });
 
-test('availabilitySourcesForBook includes blossom source when blossom host marker is explicit', () => {
+test('availabilitySourcesForBook treats explicit retired Blossom markers as metadata only', () => {
   assert.deepEqual(
     availabilitySourcesForBook({
       source: 'blossom-cdn',
       readUrl: 'https://lib.b.bfr.ee/api/read/f123',
       blossomSha256: 'abc',
     }),
-    ['Blossom'],
+    ['Metadata only'],
   );
 });
 

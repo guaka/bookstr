@@ -62,4 +62,12 @@ unprivileged user under Xvfb, and removes the test container when it finishes.
   and public/private torrent admission without exposing library paths.
 - `window.bookstrDesktop.library.acquire(record)` selects an eligible HTTPS or
   torrent source, retries safely, and imports only after checksum verification.
+- Clicking a LibVault catalog record checks the local library first. If the
+  file is absent and the library entry contains only an MD5, Bookstr resolves
+  its numeric LibGen ID through the read-only `libvault.resolve` NIP-17 request.
+  Electron then opens the record's 1,000-book repository torrent in deselected
+  mode, downloads only the MD5-named file, and imports it locally.
+- Desktop library rows present these records as **Torrent** rather than showing
+  Blossom availability. Blossom remains a legacy compatibility fallback during
+  migration.
 - External links are opened in the system browser.

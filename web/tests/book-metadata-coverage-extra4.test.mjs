@@ -93,14 +93,14 @@ test('metadataObject rejects non-object JSON values', () => {
   assert.deepEqual(metadataObject('123'), {});
 });
 
-test('availabilitySourcesForBook keeps case-insensitive source hints and cache flag', () => {
+test('availabilitySourcesForBook keeps supported source hints and treats retired Blossom hints as metadata', () => {
   assert.deepEqual(
     availabilitySourcesForBook({ source: 'GuTeNbErG' }),
     ['Gutenberg'],
   );
   assert.deepEqual(
     availabilitySourcesForBook({ source: 'BlOsSoM-cdn', blossomSha256: 'a'.repeat(64) }, true),
-    ['Blossom', 'Cached'],
+    ['Metadata only', 'Cached'],
   );
 });
 
@@ -203,20 +203,20 @@ test('availabilityForBook collapses metadata+cached state to cached', () => {
   );
 });
 
-test('availabilityForBook combines multiple non-cached sources', () => {
+test('availabilityForBook ignores retired Blossom sources when combining availability', () => {
   assert.equal(
     availabilityForBook({
       readUrl: 'https://books-api.guaka.org/api/books/48320/download',
       blossomUrl: 'https://blossom.example.com/book.epub',
     }),
-    'Gutenberg · Blossom',
+    'Gutenberg',
   );
   assert.equal(
     availabilityForBook({
       readUrl: 'https://books-api.guaka.org/api/books/48320/download',
       blossomUrl: 'https://blossom.example.com/book.epub',
     }, true),
-    'Gutenberg · Blossom · Cached',
+    'Gutenberg · Cached',
   );
 });
 
@@ -335,7 +335,7 @@ test('metadataEndpointForReadUrl returns empty for non-numeric api book ids', ()
   );
 });
 
-test('findBookByReadUrl matches by readUrl, url, or blossomUrl with fragments normalized', () => {
+test('findBookByReadUrl matches readUrl and url but ignores retired blossomUrl fields', () => {
   const books = [
     { readUrl: 'https://example.test/books/guide.epub?download=1#reader', title: 'A' },
     { url: 'https://example.test/books/other.epub', title: 'B' },
@@ -344,7 +344,7 @@ test('findBookByReadUrl matches by readUrl, url, or blossomUrl with fragments no
 
   assert.equal(findBookByReadUrl('https://example.test/books/guide.epub?download=1', books).title, 'A');
   assert.equal(findBookByReadUrl('https://example.test/books/other.epub#section', books).title, 'B');
-  assert.equal(findBookByReadUrl('https://blossom.test/file.epub', books).title, 'C');
+  assert.equal(findBookByReadUrl('https://blossom.test/file.epub', books), null);
 });
 
 test('findBookByReadUrl matches a collection entry in later argument lists', () => {
@@ -510,14 +510,14 @@ test('mergeFavoriteEntry keeps earliest favorite timestamp and ignores blank fie
   assert.equal(first.favoriteAddedAt, 1700000001);
 });
 
-test('availabilitySourcesForBook uses case-insensitive Blossom source hints even without blossom metadata', () => {
+test('availabilitySourcesForBook treats case-insensitive retired Blossom hints as metadata only', () => {
   assert.deepEqual(
     availabilitySourcesForBook({ source: 'BlOsSoM' }),
-    ['Blossom'],
+    ['Metadata only'],
   );
   assert.deepEqual(
     availabilitySourcesForBook({ source: 'BLossOM', md5: 'A'.repeat(32) }, true),
-    ['Blossom', 'Cached'],
+    ['Metadata only', 'Cached'],
   );
 });
 

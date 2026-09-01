@@ -103,6 +103,8 @@ test('reader keyboard handlers and zoom UI are present', () => {
   assert.match(reader, /rendition\.themes\.fontSize\(readerFontPercent \+ "%"\);/);
   assert.match(reader, /<script src="reader-typography.js"><\/script>/);
   assert.match(reader, /BookstrTypography.css/);
+  assert.match(reader, /BookstrTypography\.css\(readerFontFamily, readerAlignment, readerPadding\)/);
+  assert.match(reader, /window\.setReaderTypography = function\(font, alignment, padding\)/);
   assert.match(reader, /window.setReaderTypography/);
   assert.match(reader, /window\.prevPage/);
   assert.match(reader, /window\.nextPage/);

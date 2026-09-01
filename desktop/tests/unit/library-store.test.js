@@ -24,11 +24,15 @@ test('local catalog upserts and Unicode search are available in Electron', () =>
 }));
 
 test('download and linked-folder APIs never return filesystem paths', () => withStore(store => {
-  store.upsertBook({ id: 'book-1', title: 'Book' });
+  store.upsertBook({ id: 'book-1', md5: 'a'.repeat(32), sha256: 'b'.repeat(64), title: 'Book' });
   store.setDownload({ bookId: 'book-1', status: 'ready', relativePath: 'books/book.epub', bytes: 3, totalBytes: 3, source: 'webtorrent' });
   store.registerLibraryFile({ bookId: 'book-1', relativePath: 'books/book.epub', size: 3 });
   store.linkFolder({ relativePath: 'linked', label: 'Linked' });
   assert.equal(Object.hasOwn(store.downloads()[0], 'relativePath'), false);
+  assert.equal(store.downloads()[0].md5, 'a'.repeat(32));
+  assert.equal(store.downloads()[0].sha256, 'b'.repeat(64));
+  assert.equal(store.downloads()[0].title, 'Book');
+  assert.equal(store.downloads()[0].sourceNativeId, '');
   assert.deepEqual(store.linkedFolders(), [{ id: store.linkedFolders()[0].id, label: 'Linked', enabled: true }]);
   const reader = store.openReader('book-1');
   assert.match(reader.token, /^[A-Za-z0-9_-]+$/);

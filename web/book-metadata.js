@@ -51,7 +51,35 @@
       metadata.book?.title,
     ];
     const title = candidates.map(value => String(value || '').trim()).find(value => !isPlaceholderTitle(value));
-    return title || titleFromUrl(readUrl || source.readUrl || source.blossomUrl || source.url, baseUrl) || 'Untitled book';
+    return title || titleFromUrl(readUrl || source.readUrl || source.url, baseUrl) || 'Untitled book';
+  }
+
+  const LANGUAGE_ALIASES = {
+    eng: 'en', english: 'en',
+    por: 'pt', portuguese: 'pt', português: 'pt', portugues: 'pt',
+    fra: 'fr', fre: 'fr', french: 'fr', français: 'fr', francais: 'fr',
+    deu: 'de', ger: 'de', german: 'de', deutsch: 'de',
+    spa: 'es', spanish: 'es', español: 'es', espanol: 'es',
+    ita: 'it', italian: 'it', italiano: 'it',
+    nld: 'nl', dut: 'nl', dutch: 'nl', nederlands: 'nl',
+    rus: 'ru', russian: 'ru', русский: 'ru',
+    zho: 'zh', chi: 'zh', chinese: 'zh', 中文: 'zh',
+    jpn: 'ja', japanese: 'ja', 日本語: 'ja',
+    ara: 'ar', arabic: 'ar', pol: 'pl', polish: 'pl',
+    swe: 'sv', swedish: 'sv', nor: 'no', norwegian: 'no',
+    dan: 'da', danish: 'da', fin: 'fi', finnish: 'fi',
+    ces: 'cs', cze: 'cs', czech: 'cs', ukr: 'uk', ukrainian: 'uk',
+    tur: 'tr', turkish: 'tr', ell: 'el', gre: 'el', greek: 'el',
+    heb: 'he', hebrew: 'he', lat: 'la', latin: 'la',
+  };
+
+  function normalizeLanguage(value) {
+    const raw = String(value || '').trim().toLowerCase();
+    const first = raw.split(/[,;|]/, 1)[0].trim().replace(/^\/languages\//, '').replaceAll('_', '-');
+    if (!first || ['unknown', 'und', 'undefined', 'null', 'multi', 'multiple'].includes(first)) return '';
+    return LANGUAGE_ALIASES[first]
+      || (/^[a-z]{2,3}(?:-[a-z0-9]{2,8})*$/.test(first) ? first : '')
+      || (/^[\p{L}][\p{L} .'-]{1,40}$/u.test(first) ? first : '');
   }
 
   function languageForBook(ref) {
@@ -61,8 +89,8 @@
       || (Array.isArray(source.languages) ? source.languages[0] : source.languages)
       || metadata.language || metadata.lang
       || (Array.isArray(metadata.languages) ? metadata.languages[0] : metadata.languages);
-    if (raw && typeof raw === 'object') return String(raw.code || raw.id || raw.name || '').trim().toLowerCase();
-    return String(raw || '').trim().toLowerCase();
+    if (raw && typeof raw === 'object') return normalizeLanguage(raw.code || raw.id || raw.name || '');
+    return normalizeLanguage(raw);
   }
 
   function yearForBook(ref) {
@@ -90,6 +118,26 @@
     return ['null', 'undefined'].includes(cleaned.toLowerCase()) ? '' : cleaned;
   }
 
+  function creativeCommonsLicense(license, licenseUrl = '') {
+    const evidence = `${license || ''} ${licenseUrl || ''}`;
+    const urlMatch = evidence.match(/creativecommons\.org\/(?:licenses\/([a-z-]+)|publicdomain\/(zero))\/(\d(?:\.\d)?)/i);
+    if (urlMatch) {
+      const code = urlMatch[2] ? 'CC0' : `CC ${urlMatch[1].toUpperCase()}`;
+      return `${code} ${urlMatch[3]}`;
+    }
+    const textMatch = evidence.match(/\b(CC0|CC[ -]BY(?:-NC)?(?:-ND|-SA)?)(?:[ -]?(\d(?:\.\d)?))?\b/i);
+    if (textMatch) return `${textMatch[1].toUpperCase().replace('CC-', 'CC ')}${textMatch[2] ? ` ${textMatch[2]}` : ''}`;
+    if (!/creative\s*commons/i.test(evidence)) return '';
+    const terms = [
+      /attribution/i.test(evidence) ? 'BY' : '',
+      /noncommercial|non-commercial/i.test(evidence) ? 'NC' : '',
+      /no derivatives|no-derivatives/i.test(evidence) ? 'ND' : '',
+      /sharealike|share-alike|share alike/i.test(evidence) ? 'SA' : '',
+    ].filter(Boolean);
+    const version = evidence.match(/creative\s*commons[\s\S]{0,120}?\(?(\d(?:\.\d)?)\)?/i)?.[1] || '';
+    return `CC${terms.length ? ` ${terms.join('-')}` : ''}${version ? ` ${version}` : ''}`;
+  }
+
   function normalizeRights(ref) {
     const source = ref && typeof ref === 'object' ? ref : {};
     const metadata = metadataObject(source.metadata);
@@ -107,18 +155,20 @@
     );
     const copyright = source.copyright ?? metadata.copyright;
     if (!licenseUrl) {
-      const match = license.match(/https?:\/\/[^\s<>"']+/i);
+      const match = license.match(/https?:\/\/(?:www\.)?creativecommons\.org\/(?:licenses\/[a-z-]+|publicdomain\/zero)\/\d(?:\.\d)?\/?/i)
+        || license.match(/https?:\/\/[^\s<>"']+/i);
       if (match) licenseUrl = safeLicenseUrl(match[0].replace(/[),.;]+$/, ''));
     }
-    if (rightsStatus === 'unknown' && typeof copyright === 'boolean') {
+    const evidence = `${license} ${licenseUrl}`.toLowerCase();
+    if (/public[ -]domain|no known copyright restrictions|creativecommons\.org\/publicdomain\/(?:zero|mark)|\bcc0(?:\s|$|[./-])/.test(evidence)) {
+      rightsStatus = 'public_domain';
+    } else if (/creative\s*commons|creativecommons\.org\/licenses\/|\bcc[ -]?by|gnu free documentation|\bgfdl\b|free art license|open publication license|unlicense/.test(evidence)) {
+      rightsStatus = 'open_license';
+    } else if (rightsStatus === 'unknown' && typeof copyright === 'boolean') {
       rightsStatus = copyright ? 'copyrighted' : 'public_domain';
       if (!copyright && !license) license = 'Public domain in the U.S.';
-    }
-    if (rightsStatus === 'unknown') {
-      const evidence = `${license} ${licenseUrl}`.toLowerCase();
-      if (/public[ -]domain|no known copyright restrictions|creativecommons\.org\/publicdomain\/(?:zero|mark)|\bcc0(?:\s|$|[./-])/.test(evidence)) rightsStatus = 'public_domain';
-      else if (/creative commons|creativecommons\.org\/licenses\/|\bcc[ -]?by|gnu free documentation|\bgfdl\b|free art license|open publication license|unlicense/.test(evidence)) rightsStatus = 'open_license';
-      else if (/all rights reserved|copyrighted|copyright ©|^©/.test(evidence)) rightsStatus = 'copyrighted';
+    } else if (rightsStatus === 'unknown' && /all rights reserved|copyrighted|copyright ©|^©/.test(evidence)) {
+      rightsStatus = 'copyrighted';
     }
     return {
       rights_status: rightsStatus,
@@ -132,9 +182,9 @@
 
   function rightsLabel(ref) {
     const rights = normalizeRights(ref);
-    const cc = rights.license.match(/\b(CC0|CC[ -]BY(?:-NC)?(?:-ND|-SA)?)(?:[ -]?(\d(?:\.\d)?))?\b/i);
-    if (rights.rights_status === 'public_domain') return cc?.[1]?.toUpperCase() === 'CC0' ? 'CC0' : 'PD';
-    if (rights.rights_status === 'open_license') return cc ? `${cc[1].toUpperCase()}${cc[2] ? ` ${cc[2]}` : ''}` : 'OPEN';
+    const cc = creativeCommonsLicense(rights.license, rights.license_url);
+    if (rights.rights_status === 'public_domain') return cc.startsWith('CC0') ? 'CC0' : 'PD';
+    if (rights.rights_status === 'open_license') return cc || 'OPEN';
     return '©';
   }
 
@@ -142,6 +192,8 @@
     const rights = normalizeRights(ref);
     if (rights.rights_status === 'copyrighted') return 'Copyrighted';
     if (rights.rights_status === 'unknown') return 'No open license identified';
+    const cc = creativeCommonsLicense(rights.license, rights.license_url);
+    if (cc) return cc;
     return rights.license || (rights.rights_status === 'public_domain' ? 'Public domain' : 'Open license');
   }
 
@@ -239,7 +291,7 @@
       } catch { return normalized; }
     };
     const wanted = comparable(readUrl);
-    return collections.flat().find(book => [book?.readUrl, book?.url, book?.blossomUrl]
+    return collections.flat().find(book => [book?.readUrl, book?.url]
       .some(value => value && comparable(value) === wanted)) || null;
   }
 
@@ -251,26 +303,6 @@
       url.search = '';
       url.hash = '';
       return url.href;
-    } catch {
-      return '';
-    }
-  }
-
-  function desktopBlossomProxyUrl(blossomUrl, sha256, appBaseUrl) {
-    const hash = String(sha256 || '').trim().toLowerCase();
-    if (!/^[a-f0-9]{64}$/.test(hash)) return '';
-    let source;
-    try {
-      source = new URL(blossomUrl);
-    } catch {
-      return '';
-    }
-    if (source.protocol !== 'https:' || source.hostname.toLowerCase() !== 'blossom.bfr.ee') return '';
-    const name = source.pathname.split('/').filter(Boolean).pop() || '';
-    const match = name.match(/^([a-f0-9]{64})(\.(?:epub|pdf|fb2(?:\.zip)?|cbr|cbz))?$/i);
-    if (!match || match[1].toLowerCase() !== hash) return '';
-    try {
-      return new URL(`/api/blossom/${hash}${String(match[2] || '').toLowerCase()}`, appBaseUrl).toString();
     } catch {
       return '';
     }
@@ -288,25 +320,39 @@
     return { torrentId, torrentFile, announce };
   }
 
+  function libgenTorrentMetadataForBook(book) {
+    const md5 = String(book?.md5 || book?.libvaultMd5 || '').trim().toLowerCase();
+    const libgenId = Number(book?.libgenId || book?.libgen_id || book?.sourceNativeId || book?.source_native_id || '');
+    if (!/^[a-f0-9]{32}$/.test(md5) || !Number.isSafeInteger(libgenId) || libgenId <= 0) return null;
+    return { md5, libgenId, batch: Math.floor(libgenId / 1000) * 1000 };
+  }
+
   function canonicalReadUrl(book, apiBase = 'https://books-api.guaka.org/api') {
     const gutenbergId = String(book?.md5 || book?.id || '').match(/^gutenberg:(\d+)$/i)?.[1]
       || (String(book?.source || '').toLowerCase() === 'gutenberg' && /^\d+$/.test(String(book?.sourceNativeId || ''))
         ? String(book.sourceNativeId)
         : '');
     if (gutenbergId) return `${String(apiBase).replace(/\/$/, '')}/books/${gutenbergId}/download`;
-    const direct = String(book?.blossomUrl || book?.readUrl || book?.url || '');
+    const direct = String(book?.readUrl || book?.url || '');
     if (!direct) return '';
     try {
       const url = new URL(direct);
       if (/^\/api\/read\/[a-f0-9]{32}\/?$/i.test(url.pathname)) return '';
+      if (url.hostname.toLowerCase() === 'blossom.bfr.ee') return '';
+      if (url.protocol === 'app:' && url.hostname.toLowerCase() === 'bookstr') {
+        const match = url.pathname.match(/^\/api(\/books\/\d+\/download\/?)$/);
+        if (!match) return '';
+        return `${String(apiBase).replace(/\/$/, '')}${match[1]}${url.search}`;
+      }
     } catch {}
     return direct;
   }
 
   function canonicalCatalogUrl(book) {
     const source = String(book?.source || '').trim().toLowerCase();
-    if (source !== 'openlibrary') return '';
-    const rawId = String(book?.sourceNativeId || book?.source_native_id || '').trim();
+    const legacyId = String(book?.md5 || book?.id || '').trim().match(/^openlibrary:(.+)$/i)?.[1] || '';
+    if (source !== 'openlibrary' && !legacyId) return '';
+    const rawId = String(book?.sourceNativeId || book?.source_native_id || legacyId).trim();
     if (!rawId) return '';
     const olid = /^OL\d+[WM]$/i.test(rawId)
       ? rawId.toUpperCase()
@@ -323,7 +369,7 @@
     const available = [];
     if (source.includes('gutenberg') || /^gutenberg:\d+$/i.test(String(book?.md5 || '')) || /\/api\/books\/\d+(?:\/download)?(?:\?|$)/i.test(readUrl)) available.push('Gutenberg');
     if (torrentMetadataForBook(book)) available.push('WebTorrent');
-    if (book?.blossomUrl || book?.blossomSha256 || source.includes('blossom')) available.push('Blossom');
+    if (libgenTorrentMetadataForBook(book)) available.push('Torrent');
     if (readUrl && source.includes('internet-archive')) available.push('Internet Archive');
     if (readUrl && source === 'oapen') available.push('OAPEN');
     if (!available.length) available.push('Metadata only');
@@ -338,12 +384,118 @@
       : sources.join(' · ');
   }
 
-  function sortBooks(books, key, direction = 'asc', isCached = () => false) {
+  function availabilitySortRank(value) {
+    const label = String(value || '').trim().toLowerCase();
+    if (label.includes('seeding')) return 0;
+    if (/\b(?:ready|cached|gutenberg|internet archive|oapen)\b/.test(label)) return 1;
+    if (label.includes('downloading')) return 2;
+    if (label.includes('finding peers') || label.includes('queued')) return 3;
+    if (/\b(?:available|torrent|webtorrent)\b/.test(label)) return 4;
+    if (!label || label === '—' || label.includes('metadata only')) return 5;
+    if (label.includes('unavailable') || label.includes('failed')) return 6;
+    return 5;
+  }
+
+  function internetArchiveFile(files, metadata = {}) {
+    if (['true', '1'].includes(String(metadata?.['access-restricted-item'] || '').toLowerCase())) return null;
+    const available = (Array.isArray(files) ? files : []).filter(file => (
+      file?.name
+      && !['true', '1'].includes(String(file.private || '').toLowerCase())
+      && !/[\\/]_?meta\.xml$/i.test(file.name)
+      && !/(?:encrypted|lcp|acsm)/i.test(String(file.format || ''))
+      && !/(?:_lcp|\.lcp)\.epub$|_encrypted\.pdf$|\.acsm$/i.test(file.name)
+    ));
+    return available.find(file => /epub/i.test(file.format || '') || /\.epub$/i.test(file.name))
+      || available.find(file => /pdf/i.test(file.format || '') || /\.pdf$/i.test(file.name))
+      || null;
+  }
+
+  function matchingTorrentCatalogRecord(book, candidates = []) {
+    const torrentRecords = candidates.filter(candidate => libgenTorrentMetadataForBook(candidate));
+    const isbn = isbnForBook(book);
+    const formatRank = { epub: 4, pdf: 3, fb2: 2, cbz: 1, cbr: 1 };
+    const exact = torrentRecords.filter(candidate => (
+      (isbn && isbnForBook(candidate) === isbn) || sameLibraryBook(book, candidate)
+    )).map((candidate, index) => ({
+      candidate,
+      index,
+      formatRank: formatRank[String(candidate?.extension || candidate?.format || '').replace(/^\./, '').toLowerCase()] || 0,
+    })).filter(entry => entry.formatRank > 0)
+      .sort((left, right) => right.formatRank - left.formatRank || left.index - right.index);
+    if (exact.length) return exact[0].candidate;
+    const normalizeWords = value => String(value || '').normalize('NFKD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLocaleLowerCase()
+      .replace(/[^\p{L}\p{N}]+/gu, ' ')
+      .trim();
+    const wantedRawTitle = String(resolveTitle(book) || '').trim().toLocaleLowerCase();
+    const wantedTitle = normalizeWords(wantedRawTitle);
+    const titleRank = candidate => {
+      const offered = normalizeWords(candidate?.title);
+      if (!wantedTitle || !offered) return 0;
+      if (offered === wantedTitle) return 4;
+      const rawOffered = String(candidate?.title || '').trim().toLocaleLowerCase();
+      if (rawOffered.startsWith(wantedRawTitle)) {
+        const suffix = rawOffered.slice(wantedRawTitle.length).trimStart();
+        if (/^[:\-–—]/.test(suffix)) return 3;
+        if (/^\./.test(suffix)) return 2;
+      }
+      return 0;
+    };
+    const wantedAuthors = normalizeWords(book?.authors || book?.author);
+    const wantedAuthorTokens = new Set(wantedAuthors.split(' ').filter(word => word.length > 1));
+    const authorRank = candidate => {
+      const candidateAuthors = normalizeWords(candidate?.authors || candidate?.author);
+      const candidateTokens = [...new Set(candidateAuthors.split(' ').filter(word => word.length > 1))];
+      if (!wantedAuthorTokens.size || !candidateTokens.length) return 0;
+      const overlap = candidateTokens.filter(word => wantedAuthorTokens.has(word)).length;
+      return overlap >= Math.min(2, candidateTokens.length) && overlap / candidateTokens.length >= 0.6
+        ? overlap / candidateTokens.length + (wantedAuthors.startsWith(candidateAuthors) ? 0.25 : 0)
+        : 0;
+    };
+    const wantedYear = String(book?.year || '').trim();
+    const wantedLanguage = normalizeWords(languageForBook(book));
+    const wantedPublisher = normalizeWords(book?.publisher);
+    const matches = torrentRecords.map((candidate, index) => {
+      const candidateIsbn = isbnForBook(candidate);
+      const candidateYear = String(candidate?.year || '').trim();
+      const candidateFormat = String(candidate?.extension || candidate?.format || '').replace(/^\./, '').toLowerCase();
+      const candidateLanguage = normalizeWords(languageForBook(candidate));
+      const candidateTitleRank = titleRank(candidate);
+      const candidateAuthorRank = authorRank(candidate);
+      const eligible = candidateTitleRank > 0
+        && candidateAuthorRank > 0
+        && (!isbn || !candidateIsbn || candidateIsbn === isbn)
+        && (!wantedYear || !candidateYear || candidateYear === wantedYear)
+        && (!wantedLanguage || !candidateLanguage || candidateLanguage === wantedLanguage)
+        && candidateFormat in formatRank;
+      if (!eligible) return null;
+      const publisherBonus = wantedPublisher && normalizeWords(candidate?.publisher) === wantedPublisher ? 5 : 0;
+      const languageBonus = wantedLanguage && candidateLanguage === wantedLanguage ? 5 : 0;
+      return {
+        candidate,
+        index,
+        formatRank: formatRank[candidateFormat],
+        score: candidateTitleRank * 100 + candidateAuthorRank * 10
+          + (formatRank[candidateFormat] || 0) + publisherBonus + languageBonus,
+      };
+    }).filter(Boolean).sort((left, right) => right.formatRank - left.formatRank
+      || right.score - left.score || left.index - right.index);
+    return matches[0]?.candidate || null;
+  }
+
+  function sortBooks(books, key, direction = 'asc', isCached = () => false, availabilityLabel = null) {
     const value = book => {
       if (key === 'title') return book?.title || '';
       if (key === 'author') return book?.authors || book?.author || '';
+      if (key === 'rights') return rightsLabel(book);
       if (key === 'year') return Number.parseInt(book?.year, 10) || 0;
-      if (key === 'availability') return availabilityForBook(book);
+      if (key === 'availability') {
+        const label = typeof availabilityLabel === 'function'
+          ? availabilityLabel(book)
+          : availabilityForBook(book, isCached(book));
+        return availabilitySortRank(label);
+      }
       if (key === 'cached') return isCached(book) ? 1 : 0;
       if (key === 'format') return book?.extension || book?.format || '';
       if (key === 'language') {
@@ -376,17 +528,52 @@
     if (blossomSha256) return `sha256:${blossomSha256}`;
     const isbn = isbnForBook(book);
     if (isbn) return `isbn:${isbn}`;
-    const readUrl = book?.readUrl || book?.url || book?.blossomUrl;
+    const readUrl = book?.readUrl || book?.url;
     if (readUrl) return `url:${normalizeReadUrl(readUrl)}`;
     return ['title', resolveTitle(book), book?.authors || book?.author || '', yearForBook(book), languageForBook(book)]
       .map(value => String(value || '').trim().toLowerCase())
       .join(':');
   }
 
+  function gutenbergIdForBook(book) {
+    const md5Match = String(book?.md5 || '').trim().match(/^gutenberg:(\d+)$/i);
+    if (md5Match) return md5Match[1];
+    const source = String(book?.source || '').trim().toLowerCase();
+    const sourceId = String(book?.sourceNativeId || book?.source_native_id || '').trim();
+    if (source === 'gutenberg' && /^\d+$/.test(sourceId)) return sourceId;
+    const readUrl = String(book?.readUrl || book?.url || book?.sourceUrl || book?.source_url || '');
+    try {
+      const url = new URL(readUrl);
+      const trustedEndpoint = (url.protocol === 'app:' && url.hostname === 'bookstr')
+        || url.hostname === 'books-api.guaka.org';
+      return trustedEndpoint ? url.pathname.match(/^\/api\/books\/(\d+)\/download\/?$/)?.[1] || '' : '';
+    } catch {
+      return '';
+    }
+  }
+
+  function isLocalGutenbergCopy(book) {
+    const readUrl = String(book?.readUrl || book?.url || '');
+    return Boolean(gutenbergIdForBook(book) && /^app:\/\/bookstr\//i.test(readUrl));
+  }
+
+  function preserveLocalGutenbergField(existing, incoming, key) {
+    if (!isLocalGutenbergCopy(existing) || isLocalGutenbergCopy(incoming)) return false;
+    return new Set(['md5', 'id', 'readUrl', 'url', 'sourceUrl', 'source_url', 'blossomSha256', 'sha256', 'progression', 'furthestProgression', 'cfi', 'updatedAt', 'lastReadAt']).has(key);
+  }
+
+  function preserveCanonicalMd5(existing, incoming, key) {
+    if (key !== 'md5') return false;
+    const current = String(existing?.md5 || '').trim();
+    const candidate = String(incoming?.md5 || '').trim();
+    return /^[a-f0-9]{32}$/i.test(current) && !/^[a-f0-9]{32}$/i.test(candidate);
+  }
+
   function dedupeLibraryBooks(books) {
     const merged = new Map();
     for (const book of books.filter(Boolean)) {
-      const identity = bookIdentity(book);
+      const matchingEntry = [...merged.entries()].find(([, candidate]) => sameLibraryBook(candidate, book));
+      const identity = matchingEntry?.[0] || bookIdentity(book);
       const existing = merged.get(identity);
       if (!existing) {
         merged.set(identity, { ...book, title: resolveTitle(book) });
@@ -400,6 +587,8 @@
       const title = incomingHasRealTitle ? incomingTitle : existingTitle;
       const next = { ...existing };
       for (const [key, value] of Object.entries(book)) {
+        if (preserveLocalGutenbergField(existing, book, key)) continue;
+        if (preserveCanonicalMd5(existing, book, key)) continue;
         if (value !== '' && value != null) next[key] = value;
         if ((key === 'author' || key === 'authors') && existingHasRealTitle && !incomingHasRealTitle) {
           next[key] = existing.authors || existing.author || next[key];
@@ -463,6 +652,7 @@
       torrentId: incoming.torrentId || incoming.torrent_id || incoming.magnetURI || incoming.magnet_uri || incoming.torrent?.magnetURI || '',
       torrentFile: incoming.torrentFile || incoming.torrent_file || incoming.torrent?.torrentFile || '',
       torrentAnnounce: incoming.torrentAnnounce || incoming.torrent_announce || incoming.torrent?.announce || [],
+      libgenId: incoming.libgenId || incoming.libgen_id || incoming.sourceNativeId || incoming.source_native_id || '',
       ...normalizeRights(incoming),
     };
     for (const [field, value] of Object.entries(fields)) {
@@ -478,6 +668,25 @@
   }
 
   function sameLibraryBook(left, right) {
+    const format = book => String(book?.extension || book?.format || '')
+      .trim().toLowerCase().replace(/^\./, '');
+    const leftFormat = format(left);
+    const rightFormat = format(right);
+    if (leftFormat && rightFormat && leftFormat !== rightFormat) return false;
+    const leftGutenbergId = gutenbergIdForBook(left);
+    const rightGutenbergId = gutenbergIdForBook(right);
+    if (leftGutenbergId && rightGutenbergId) return leftGutenbergId === rightGutenbergId;
+    const contentDigests = book => new Set([
+      book?.sha256,
+      book?.blossomSha256,
+      book?.blossom_sha256,
+      /^[a-f0-9]{64}$/i.test(String(book?.md5 || '').trim()) ? book.md5 : '',
+    ]
+      .map(value => String(value || '').trim().toLowerCase())
+      .filter(value => /^[a-f0-9]{64}$/.test(value)));
+    const leftDigests = contentDigests(left);
+    const rightDigests = contentDigests(right);
+    if (leftDigests.size && rightDigests.size && [...leftDigests].some(digest => rightDigests.has(digest))) return true;
     const stableIds = book => new Set([book?.md5, book?.libvaultMd5, book?.id]
       .map(value => String(value || '').trim().toLowerCase())
       .filter(Boolean));
@@ -509,6 +718,8 @@
         const existingHasRealTitle = !isPlaceholderTitle(existingTitle);
         for (const [key, value] of Object.entries(book || {})) {
           if (value === '' || value == null) continue;
+          if (preserveLocalGutenbergField(entry, book, key)) continue;
+          if (preserveCanonicalMd5(entry, book, key)) continue;
           if ((key === 'author' || key === 'authors') && existingHasRealTitle && !incomingHasRealTitle) continue;
           entry[key] = value;
         }
@@ -539,6 +750,7 @@
     isPlaceholderTitle,
     resolveTitle,
     languageForBook,
+    normalizeLanguage,
     yearForBook,
     normalizeRights,
     preferredRights,
@@ -553,12 +765,14 @@
     normalizeReadUrl,
     findBookByReadUrl,
     metadataEndpointForReadUrl,
-    desktopBlossomProxyUrl,
     torrentMetadataForBook,
+    libgenTorrentMetadataForBook,
     canonicalReadUrl,
     canonicalCatalogUrl,
     availabilityForBook,
     availabilitySourcesForBook,
+    internetArchiveFile,
+    matchingTorrentCatalogRecord,
     sortBooks,
     dedupeLibraryBooks,
     matchesBookFilter,

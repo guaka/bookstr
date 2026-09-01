@@ -16,14 +16,14 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const QRCode = require('qrcode');
 const { normalizeProgressPayload } = require('../web/desktop-progress');
-const { proxyBlossomRequest } = require('./blossom-proxy');
 const { proxyCatalogRequest } = require('./catalog-proxy');
 const { proxyDictionaryRequest } = require('./dictionary-proxy');
 const { appContentSecurityPolicy } = require('./security-policy');
 const { SpeechModelStore } = require('./speech-model-store');
-const { WebTorrentBridge } = require('./webtorrent-bridge');
+const { WebTorrentBridge, DEFAULT_DOWNLOAD_LIMIT, PUBLIC_UPLOAD_LIMIT } = require('./webtorrent-bridge');
 const { LibraryStore } = require('./library-store');
 const { LibraryImporter, hashFile, safeExtension } = require('./library-import');
+const { localBookCover, localBookMetadata, safeCoverID } = require('./library-cover');
 const { AcquisitionManager } = require('./acquisition-manager');
 const { ElectronDevicePairing } = require('./device-pairing');
 
@@ -33,6 +33,7 @@ const APP_ICON_PATH = path.join(__dirname, 'assets', 'icon-macos.png');
 const STATE_FILE = path.join(app.getPath('userData'), 'bookstr-desktop-state.json');
 const speechModelStore = new SpeechModelStore(path.join(app.getPath('userData'), 'speech-models'));
 const DESKTOP_NOSTR_STATE_KEY = 'desktopNostr';
+const TORRENT_PREFERENCES_STATE_KEY = 'torrentPreferences';
 const DESKTOP_NOSTR_SECRET_FIELD = 'secret';
 const BOOKSTR_DESKTOP_RELEASES_URL = 'https://github.com/guaka/bookstr/releases';
 const NOSTR_SIGNER_ENV_KEYS = [
@@ -57,7 +58,6 @@ const NIP46_PERMISSIONS = [
   'sign_event:3',
   'sign_event:5',
   'sign_event:22242',
-  'sign_event:24242',
   'sign_event:30003',
   'sign_event:30078',
 ];
@@ -76,9 +76,6 @@ const LIBRARY_PANES = [
 ];
 const DICTIONARY_PROXY_BASE_URL = process.env.NODE_ENV === 'test'
   ? process.env.BOOKSTR_DESKTOP_TEST_DICTIONARY_BASE_URL
-  : undefined;
-const BLOSSOM_PROXY_BASE_URL = process.env.NODE_ENV === 'test'
-  ? process.env.BOOKSTR_DESKTOP_TEST_BLOSSOM_BASE_URL
   : undefined;
 
 function timestampVersion(now = new Date()) {
@@ -882,6 +879,17 @@ async function saveState(state) {
   }
 }
 
+async function torrentPreferences() {
+  const state = await loadState();
+  const saved = isRecord(state[TORRENT_PREFERENCES_STATE_KEY]) ? state[TORRENT_PREFERENCES_STATE_KEY] : {};
+  return {
+    autoDownload: saved.autoDownload !== false,
+    autoSeed: saved.autoSeed !== false,
+    downloadLimit: Number.isFinite(Number(saved.downloadLimit)) ? Number(saved.downloadLimit) : DEFAULT_DOWNLOAD_LIMIT,
+    uploadLimit: Number.isFinite(Number(saved.uploadLimit)) ? Number(saved.uploadLimit) : PUBLIC_UPLOAD_LIMIT,
+  };
+}
+
 function clampBounds(stored) {
   const width = Number(stored?.width);
   const height = Number(stored?.height);
@@ -1187,6 +1195,16 @@ function setupIpcHandlers() {
     });
   });
   ipcMain.handle('bookstr-desktop-library-book', (_event, bookId) => getLibraryStore().getBook(bookId));
+  ipcMain.handle('bookstr-desktop-library-metadata', async (_event, bookId) => {
+    const id = safeCoverID(bookId);
+    if (!id) return null;
+    try {
+      const { filePath } = await resolveRegisteredLibraryFile(id);
+      return await localBookMetadata({ bookId: id, bookPath: filePath });
+    } catch {
+      return null;
+    }
+  });
   ipcMain.handle('bookstr-desktop-library-import', async (_event, request) => {
     if (!isRecord(request)) throw new Error('Invalid library import request.');
     const selection = await dialog.showOpenDialog({
@@ -1239,6 +1257,34 @@ function setupIpcHandlers() {
     });
     return result;
   });
+  ipcMain.handle('bookstr-desktop-library-acquire-libgen', async (event, request) => {
+    if (!isRecord(request) || !isRecord(request.book)) throw new Error('Invalid LibGen torrent acquisition request.');
+    const bookId = String(request.book.md5 || '').trim().toLowerCase();
+    if (/^[a-f0-9]{32}$/.test(bookId)) {
+      try {
+        await resolveRegisteredLibraryFile(bookId);
+        const localReader = getLibraryStore().openReader(bookId);
+        if (localReader?.token) {
+          return {
+            book: getLibraryStore().getBook(bookId),
+            source: 'local',
+            url: `${APP_ORIGIN}/api/library-file/${localReader.token}`,
+          };
+        }
+      } catch {
+        // Missing or changed local files fall through to a fresh torrent fetch.
+      }
+    }
+    const result = await getAcquisitionManager().acquireLibgen(request.book, {
+      autoSeed: request.autoSeed !== false,
+      onProgress: payload => {
+        if (!event.sender.isDestroyed()) event.sender.send('bookstr-desktop-acquisition-progress', payload);
+      },
+    });
+    const reader = getLibraryStore().openReader(result.book.id);
+    if (!reader?.token) throw new Error('Downloaded torrent book could not be opened.');
+    return { ...result, url: `${APP_ORIGIN}/api/library-file/${reader.token}` };
+  });
   ipcMain.handle('bookstr-desktop-device-status', () => getDevicePairing().status());
   ipcMain.handle('bookstr-desktop-device-registry', () => loadTrustedDeviceRegistry());
   ipcMain.handle('bookstr-desktop-device-announce', (_event, options) => getDevicePairing().announce(isRecord(options) ? options : {}));
@@ -1261,6 +1307,25 @@ function setupIpcHandlers() {
 
   ipcMain.handle('bookstr-desktop-transfer-status', async () => {
     return getTorrentBridge().active();
+  });
+  ipcMain.handle('bookstr-desktop-transfer-preferences', async (_event, request) => {
+    const current = await torrentPreferences();
+    if (!isRecord(request)) return current;
+    const next = {
+      autoDownload: typeof request.autoDownload === 'boolean' ? request.autoDownload : current.autoDownload,
+      autoSeed: typeof request.autoSeed === 'boolean' ? request.autoSeed : current.autoSeed,
+      downloadLimit: request.downloadLimit === undefined ? current.downloadLimit : Number(request.downloadLimit),
+      uploadLimit: request.uploadLimit === undefined ? current.uploadLimit : Number(request.uploadLimit),
+    };
+    const limits = await getTorrentBridge().setLimits(next);
+    next.downloadLimit = limits.downloadLimit;
+    next.uploadLimit = limits.uploadLimit;
+    await saveState({ [TORRENT_PREFERENCES_STATE_KEY]: next });
+    if (!next.autoSeed) await getTorrentBridge().stopSeeding();
+    else void getAcquisitionManager().resumeLibgenSeeds({ autoSeed: true }).catch(error => {
+      console.warn('Could not resume LibGen torrent seeding:', error);
+    });
+    return next;
   });
   ipcMain.handle('bookstr-desktop-transfer-seed-public', async (_event, request) => {
     if (!isRecord(request) || Object.keys(request).length !== 1 || typeof request.bookId !== 'string' || !request.bookId.trim()) {
@@ -1294,6 +1359,7 @@ function setupIpcHandlers() {
       extension,
       size,
       publicSeedAllowed: true,
+      bookId: book.id,
     });
     return result.summary || null;
   });
@@ -1326,6 +1392,7 @@ function setupIpcHandlers() {
       : Buffer.from(rawTorrentId, 'base64');
     const torrent = await getTorrentBridge().downloadPublic(torrentId, {
       path: libraryDataDir,
+      bookId: book.id,
     });
     const file = Array.isArray(torrent.files) && torrent.files.length === 1 ? torrent.files[0] : null;
     const relativePath = libraryRelativePath(file?.path);
@@ -1339,6 +1406,7 @@ function setupIpcHandlers() {
     getLibraryStore().registerLibraryFile({ bookId: book.id, relativePath, size: stat.size, sha256: fileDigest });
     const reader = getLibraryStore().openReader(book.id);
     if (!reader?.token) throw new Error('Downloaded book could not be opened.');
+    if (request.autoSeed === false) await getTorrentBridge().remove(torrent);
     return { url: `${APP_ORIGIN}/api/library-file/${reader.token}`, infoHash: String(torrent.infoHash || '') };
   });
   ipcMain.handle('bookstr-desktop-transfer-add-private', async (_event, request) => {
@@ -1422,6 +1490,29 @@ function setupIpcHandlers() {
 function setupProtocol(targetSession) {
   targetSession.protocol.handle(APP_PROTOCOL, async (request) => {
     const parsed = new URL(request.url);
+    const libraryCoverMatch = parsed.pathname.match(/^\/api\/library-cover\/([a-f0-9]{32}(?:[a-f0-9]{32})?)$/i);
+    if (parsed.host === APP_HOST && libraryCoverMatch) {
+      const bookId = safeCoverID(libraryCoverMatch[1]);
+      try {
+        const { filePath } = await resolveRegisteredLibraryFile(bookId);
+        const cover = await localBookCover({
+          bookId,
+          bookPath: filePath,
+          cacheDir: path.join(libraryDataDir, 'covers'),
+        });
+        if (!cover) return new Response('Not found', { status: 404 });
+        return new Response(cover.bytes, {
+          status: 200,
+          headers: {
+            'Content-Type': cover.mime,
+            'Cache-Control': 'private, max-age=86400',
+            'X-Content-Type-Options': 'nosniff',
+          },
+        });
+      } catch {
+        return new Response('Not found', { status: 404 });
+      }
+    }
     const libraryFileMatch = parsed.pathname.match(/^\/api\/library-file\/([A-Za-z0-9_-]{32,})$/);
     if (parsed.host === APP_HOST && libraryFileMatch) {
       const entry = getLibraryStore().resolveReaderToken(libraryFileMatch[1]);
@@ -1429,8 +1520,6 @@ function setupProtocol(targetSession) {
       const file = await fs.readFile(entry.path);
       return new Response(file, { headers: { 'Content-Type': MIME_TYPES.get(path.extname(entry.path).toLowerCase()) || 'application/octet-stream' } });
     }
-    const blossomResponse = await proxyBlossomRequest(request, net.fetch, BLOSSOM_PROXY_BASE_URL);
-    if (blossomResponse) return blossomResponse;
     const catalogResponse = await proxyCatalogRequest(request, net.fetch);
     if (catalogResponse) return catalogResponse;
     if (parsed.host !== APP_HOST) {
@@ -1485,6 +1574,11 @@ async function bootstrap() {
     console.warn('Could not register the Settings keyboard shortcut.');
   }
   await createLibraryWindow();
+  const preferences = await torrentPreferences();
+  await getTorrentBridge().setLimits(preferences);
+  void getAcquisitionManager().resumeLibgenSeeds({ autoSeed: preferences.autoSeed }).catch(error => {
+    console.warn('Could not resume LibGen torrent transfers:', error);
+  });
 }
 
 app.on('will-quit', () => {

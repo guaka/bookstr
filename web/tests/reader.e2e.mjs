@@ -4,6 +4,37 @@ import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url);
 const JSZip = require('../jszip.min.js');
 
+test('Settings connects to a NIP-07 extension that appears after page load', async ({ page }) => {
+  const pubkey = '7'.repeat(64);
+  await page.goto('/#settings');
+
+  await expect(page.locator('#nip7-status')).toContainText('not connected yet');
+
+  await page.evaluate(key => {
+    window.__nip7EnableCalls = 0;
+    window.nostr = {
+      enable() {
+        window.__nip7EnableCalls += 1;
+      },
+      getPublicKey() {
+        return Promise.resolve(key);
+      },
+      signEvent(event) {
+        return Promise.resolve({ ...event, id: 'signed-event', pubkey: key, sig: 'f'.repeat(128) });
+      },
+      nip44: {
+        decrypt: async () => '[]',
+        encrypt: async (_recipient, plaintext) => plaintext,
+      },
+    };
+  }, pubkey);
+
+  await page.locator('#nip7-connect').click();
+  await expect(page.locator('#nip7-status')).toContainText('Connected as npub1');
+  await expect(page.locator('#nip7-connect')).toHaveText('Reconnect NIP-07');
+  await expect.poll(() => page.evaluate(() => window.__nip7EnableCalls)).toBe(1);
+});
+
 test('empty Search shows a responsive table of active catalog sources', async ({ page }) => {
   await page.goto('/#search');
   const table = page.locator('#search-sources-table');
@@ -12,6 +43,13 @@ test('empty Search shows a responsive table of active catalog sources', async ({
   await expect(table).toContainText('all.books.party');
   await expect(table).toContainText('Unglue.it');
   await expect(table).not.toContainText('LibVault');
+  const sourceToggles = table.locator('[data-action="toggle-search-source"]');
+  await expect(sourceToggles).toHaveCount(8);
+  await expect(sourceToggles.first()).toBeChecked();
+  await sourceToggles.first().uncheck();
+  await expect(table.locator('tr[data-source="all-books-party"]')).toHaveClass(/source-disabled/);
+  await page.reload();
+  await expect(page.locator('tr[data-source="all-books-party"] [data-action="toggle-search-source"]')).not.toBeChecked();
   await page.setViewportSize({ width: 390, height: 844 });
   await expect(table.locator('td[data-label="Delivers"]').first()).toBeVisible();
 });
@@ -27,7 +65,7 @@ test('home filtering keeps the matching in-progress book visible', async ({ page
   await expect(page.locator('#home-reading-list')).toContainText('Visible Reading Journey');
   await page.locator('#home-query-input').fill('journey');
   await expect(page.locator('#home-reading-list')).toContainText('Visible Reading Journey');
-  await expect(page.locator('#home-reading-list').getByRole('img', { name: 'Currently reading' })).toBeVisible();
+  await expect(page.locator('#home-reading-list').getByRole('img', { name: 'Currently reading' })).toHaveCount(0);
   await expect(page.locator('#home-reading-list')).not.toContainText('Another Book');
 });
 
@@ -207,16 +245,19 @@ for (const book of books) {
   });
 }
 
-test('legacy LibVault links become MD5 routes and open the Blossom copy', async ({ page }) => {
+test('legacy LibVault links become MD5 routes without reopening a retired Blossom copy', async ({ page }) => {
   const md5 = 'f5277d56f3ecec3912e1b2b60cbd0eed';
   const legacyUrl = `https://lib.b.bfr.ee/api/read/${md5}`;
   const blossomUrl = 'https://books-api.guaka.org/api/books/30142/download';
-  const epub = await minimalEpub('Little Brother');
-  await page.route(blossomUrl, route => route.fulfill({
+  let blossomRequests = 0;
+  await page.route(blossomUrl, route => {
+    blossomRequests += 1;
+    return route.fulfill({
     status: 200,
     contentType: 'application/epub+zip',
-    body: epub,
-  }));
+    body: Buffer.from('retired'),
+    });
+  });
 
   await page.addInitScript(({ md5, legacyUrl, blossomUrl }) => {
     localStorage.setItem('bookstr_nostr_favorites_v1', JSON.stringify([{
@@ -232,10 +273,10 @@ test('legacy LibVault links become MD5 routes and open the Blossom copy', async 
   await page.goto(`/#read=${encodeURIComponent(legacyUrl)}`);
 
   await expect(page).toHaveURL(new RegExp(`#read=${md5}$`));
-  await expect(page.locator('#reader-frame')).toHaveAttribute('src', /reader\.html/);
-  await expect(page.frameLocator('#reader-frame').locator('body')).toHaveAttribute('data-location', /epubcfi\(/, {
-    timeout: 45_000,
-  });
+  await expect(page.locator('#read-metadata-fallback')).toBeVisible();
+  await expect(page.locator('#read-metadata-fallback')).toContainText('This book is not stored locally');
+  await expect(page.locator('#reader-frame')).not.toHaveAttribute('src', /reader\.html/);
+  expect(blossomRequests).toBe(0);
 });
 
 test('an unavailable MD5 still shows its known book metadata', async ({ page }) => {
@@ -260,9 +301,10 @@ test('an unavailable MD5 still shows its known book metadata', async ({ page }) 
   await expect(metadata).toContainText('Known Author');
   await expect(metadata).toContainText('2024');
   await expect(metadata).toContainText('pt');
-  await expect(metadata).toContainText('Local file/cache:');
-  await expect(metadata).toContainText('Source URL: https://unavailable.invalid/book.epub');
-  await expect(metadata).toContainText('Error:');
+  await expect(metadata).toContainText('This book is not stored locally');
+  await expect(metadata.locator('.read-file-state-meta')).toHaveCount(0);
+  await expect(metadata).not.toContainText('Source URL');
+  await expect(metadata).not.toContainText('unavailable.invalid');
 });
 
 test('an MD5 route reopens a legacy URL-keyed EPUB cache while offline', async ({ page }) => {
@@ -442,6 +484,45 @@ test('switching EPUBs quickly leaves only the newest book in the reader', async 
   await expect(reader.locator('body')).toHaveAttribute('data-book-id', /^sha256:[a-f0-9]{64}$/, { timeout: 45_000 });
   await expect(reader.locator('#viewer > .epub-container')).toHaveCount(1);
   await expect(reader.frameLocator('#viewer iframe').locator('body')).toContainText('Newest second book');
+});
+
+test('a previously loaded EPUB cannot satisfy the next MD5 while it is loading', async ({ page }) => {
+  const first = { md5: '1'.repeat(32), title: 'First loaded EPUB', url: 'https://files.test/first-loaded.epub' };
+  const second = { md5: '2'.repeat(32), title: 'Second loading EPUB', url: 'https://files.test/second-loading.epub' };
+  const [firstEpub, secondEpub] = await Promise.all([
+    minimalEpub(first.title),
+    minimalEpub(second.title),
+  ]);
+  await page.addInitScript(books => {
+    localStorage.setItem('bookstr_nostr_favorites_v1', JSON.stringify(books.map(book => ({
+      md5: book.md5,
+      title: book.title,
+      extension: 'epub',
+      readUrl: book.url,
+    }))));
+  }, [first, second]);
+  await page.route(first.url, route => route.fulfill({
+    status: 200,
+    contentType: 'application/epub+zip',
+    body: firstEpub,
+  }));
+  await page.route(second.url, async route => {
+    await new Promise(resolve => setTimeout(resolve, 1200));
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/epub+zip',
+      body: secondEpub,
+    });
+  });
+
+  await page.goto(`/#read=${first.md5}`);
+  const reader = page.frameLocator('#reader-frame');
+  await expect(reader.locator('body')).toHaveAttribute('data-book-id', first.md5, { timeout: 45_000 });
+  await page.evaluate(md5 => { window.location.hash = `read=${md5}`; }, second.md5);
+  await expect(page.locator('#read-metadata-fallback')).toBeVisible();
+  await expect(page.locator('#read-metadata-fallback h1')).toHaveText(second.title);
+  await expect(reader.locator('body')).toHaveAttribute('data-book-id', second.md5, { timeout: 45_000 });
+  await expect(reader.frameLocator('#viewer iframe').locator('body')).toContainText(second.title);
 });
 
 test('EPUB reader keeps desktop speech controls hidden in the browser', async ({ page }) => {
@@ -677,7 +758,7 @@ test('saved words can be filtered by context and sorted alphabetically', async (
   await expect(headings).toHaveText(['apple', 'zebra']);
 });
 
-test('the reading favorite button toggles a known book without leaving the reader', async ({ page }) => {
+test('a reading-library book is kept in the library without a favorite button', async ({ page }) => {
   const md5 = '77777777777777777777777777777777';
   const downloadUrl = 'https://files.test/favorite-reader.epub';
   await page.addInitScript(({ md5, downloadUrl }) => {
@@ -696,21 +777,10 @@ test('the reading favorite button toggles a known book without leaving the reade
   }));
 
   await page.goto(`/#read=${md5}`);
-  const favoriteButton = page.locator('#reading-favorite-btn');
-  await expect(favoriteButton).toBeVisible();
-  await expect(favoriteButton).toHaveAttribute('aria-pressed', 'false');
-
-  await favoriteButton.click();
-  await expect(favoriteButton).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.locator('#reading-favorite-btn')).toHaveCount(0);
   await expect.poll(async () => page.evaluate(() => JSON.parse(
     localStorage.getItem('bookstr_nostr_favorites_v1') || '[]',
   ).map(item => item.title))).toContain('Favorite from Reader');
-
-  await favoriteButton.click();
-  await expect(favoriteButton).toHaveAttribute('aria-pressed', 'false');
-  await expect.poll(async () => page.evaluate(() => JSON.parse(
-    localStorage.getItem('bookstr_nostr_favorites_v1') || '[]',
-  ).length)).toBe(0);
 });
 
 test('settings persist the selected reading theme after reopening the app', async ({ page }) => {
@@ -806,7 +876,7 @@ test('HTTP search results expose format filters and can be favorited in place', 
   await expect(page.locator('#results')).toContainText('Paper Boats');
   await expect(page.locator('#results')).toContainText('Paper Walls');
   const publicDomainRow = page.locator('#results .book-table-row').filter({ hasText: 'Paper Boats' });
-  await expect(publicDomainRow.locator('.result-cell').nth(2)).toContainText('1910');
+  await expect(publicDomainRow.locator('.result-year')).toHaveText('1910');
   await expect(publicDomainRow.locator('.rights-marker')).toHaveText('PD');
   const openLicenseRow = page.locator('#results .book-table-row').filter({ hasText: 'Paper Walls' });
   await expect(openLicenseRow.locator('.rights-marker')).toHaveText('CC BY-SA 4.0');
@@ -819,9 +889,9 @@ test('HTTP search results expose format filters and can be favorited in place', 
   await expect(page.locator('#results .book-table-row')).toHaveCount(1);
   await expect(page.locator('#results .book-table-row')).toContainText('Paper Walls');
 
-  const favorite = page.locator('#results button[data-action="favorite"]').first();
-  await favorite.click();
-  await expect(favorite).toHaveAttribute('aria-label', 'Remove from favorites');
+  const addToLibrary = page.locator('#results button[data-action="add-library"]').first();
+  await addToLibrary.click();
+  await expect(addToLibrary).toHaveAttribute('aria-label', 'Already in library');
   await expect.poll(async () => page.evaluate(() => JSON.parse(
     localStorage.getItem('bookstr_nostr_favorites_v1') || '[]',
   )[0]?.title)).toBe('Paper Walls');
@@ -896,9 +966,9 @@ test('Home retries delayed NIP-07 and renders an iOS-shaped encrypted favorite',
   await page.goto('/#home');
   await expect(page.locator('#home-reading-list')).toContainText('Anna Karenina', { timeout: 12_000 });
   await expect(page.locator('#home-reading-list')).toContainText('Leo Tolstoy');
-  await expect(page.locator('#home-sync-state')).toContainText('event favorite-eve');
+  await expect(page.locator('#home-sync-state')).toContainText('Synced · 1 favorites · 0 reading · 0 words');
   await page.locator('#home-sync-refresh').click();
-  await expect(page.locator('#home-sync-state')).toContainText('event favorite-eve');
+  await expect(page.locator('#home-sync-state')).toContainText('Synced · 1 favorites · 0 reading · 0 words');
 });
 
 test('search pagination is bookmarkable and keeps the result count stable', async ({ page }) => {
@@ -975,6 +1045,38 @@ test('a search result opens its EPUB in the Bookstr reader', async ({ page }) =>
   )[0]?.rights_source)).toBe('epub_opf');
 });
 
+test('the reader discovers a Creative Commons license in EPUB front or back matter', async ({ page }) => {
+  const md5 = 'abababababababababababababababab';
+  const downloadUrl = 'https://files.test/body-rights.epub';
+  const epub = await minimalEpub(
+    'Body Rights Reader',
+    'Copyright 2004. This work is licensed at https://creativecommons.org/licenses/by-sa/4.0/.',
+  );
+  await page.route('https://books-api.guaka.org/api/search**', route => route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify({ books: [{ md5, title: 'Body Rights Reader', extension: 'epub', readUrl: downloadUrl }] }),
+  }));
+  await page.route(downloadUrl, route => route.fulfill({
+    status: 200,
+    contentType: 'application/epub+zip',
+    body: epub,
+  }));
+
+  await page.goto('/#search=body-rights');
+  await page.getByRole('link', { name: 'Body Rights Reader' }).click();
+
+  await expect.poll(async () => page.evaluate(() => JSON.parse(
+    localStorage.getItem('bookstr_reading_library_v1') || '[]',
+  )[0]?.license)).toBe('https://creativecommons.org/licenses/by-sa/4.0/');
+  await expect.poll(async () => page.evaluate(() => JSON.parse(
+    localStorage.getItem('bookstr_reading_library_v1') || '[]',
+  )[0]?.rights_source)).toBe('epub_content');
+  await expect.poll(async () => page.evaluate(() => JSON.parse(
+    localStorage.getItem('bookstr_reading_library_v1') || '[]',
+  )[0]?.rights_status)).toBe('open_license');
+});
+
 test('Yochai Benkler search ranks an available edition first and opens the actual book', async ({ page }) => {
   const archiveId = 'the-wealth-of-networks';
   const filename = 'The_Wealth_of_Networks.epub';
@@ -1043,4 +1145,43 @@ test('Yochai Benkler search ranks an available edition first and opens the actua
   await expect(page.locator('#status')).toContainText('cached results');
   await expect(page.locator('#search-result-count')).toHaveText('2 results');
   expect(archiveSearchCalls).toBe(1);
+});
+
+test('Internet Archive borrow-only EPUB derivatives are not presented as readable links', async ({ page }) => {
+  await page.addInitScript(() => {
+    localStorage.setItem('bookstr_search_sources_v1', JSON.stringify([
+      'all-books-party', 'unglueit', 'gutenberg', 'oapen',
+      'open-textbook-library', 'doab', 'global-digital-library',
+    ]));
+  });
+  await page.route('https://books-api.guaka.org/api/internet-archive/search**', route => route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify({ response: { docs: [{
+      identifier: 'cryptonomicon0000step',
+      title: 'Cryptonomicon',
+      creator: 'Stephenson, Neal',
+      year: 1999,
+    }] } }),
+  }));
+  await page.route('https://books-api.guaka.org/api/internet-archive/metadata**', route => route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify({
+      metadata: {
+        title: 'Cryptonomicon',
+        creator: 'Stephenson, Neal',
+        'access-restricted-item': 'true',
+      },
+      files: [
+        { name: 'cryptonomicon.epub', format: 'EPUB', private: 'true', size: '1900000' },
+        { name: 'cryptonomicon_lcp.epub', format: 'LCP Encrypted EPUB', size: '2000000' },
+        { name: 'cryptonomicon_encrypted.pdf', format: 'ACS Encrypted PDF', size: '50000000' },
+      ],
+    }),
+  }));
+
+  await page.goto('/#search=Cryptonomicon');
+  await expect(page.locator('#results .book-table-row')).toHaveCount(0);
+  await expect(page.locator('#results')).not.toContainText('Internet Archive');
 });
