@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { addPrivateTorrent, addPublicTorrent, createPrivatePeer, seedPublicTorrent, serializePrivatePeerSignal } from '../webtorrent-transfer.js';
+import { addPrivateTorrent, addPublicTorrent, createPrivatePeer, downloadPublicTorrentFile, seedPublicTorrent, serializePrivatePeerSignal } from '../webtorrent-transfer.js';
 
 class FakeTorrent {
   constructor() { this.listeners = new Map(); this.infoHash = 'd'.repeat(40); this.progress = 1; }
@@ -43,6 +43,55 @@ test('browser public and private adapters configure discovery boundaries', () =>
   assert.equal(calls[1].opts.private, true);
   assert.equal(calls[1].torrent.peer, peer);
   assert.throws(() => addPrivateTorrent(client, 'magnet:?xt=urn:btih:def'), /peer handoff/);
+});
+
+test('browser WebTorrent downloads only the requested repository file', async () => {
+  const events = [];
+  const wanted = {
+    path: `batch/${'a'.repeat(32)}`,
+    length: 4,
+    downloaded: 2,
+    select(priority) { this.priority = priority; },
+    async blob() { this.downloaded = 4; return new Blob(['book']); },
+  };
+  const torrent = new FakeTorrent();
+  torrent.files = [{ path: 'batch/other', length: 2 }, wanted];
+  torrent.numPeers = 2;
+  const client = {
+    add(_id, options, callback) {
+      this.options = options;
+      queueMicrotask(() => callback(torrent));
+      return torrent;
+    },
+  };
+  const result = await downloadPublicTorrentFile(client, new Uint8Array([1]), {
+    fileName: 'a'.repeat(32),
+    onProgress: progress => events.push(progress),
+  });
+  assert.equal(client.options.deselect, true);
+  assert.equal(wanted.priority, 10);
+  assert.equal(await result.blob.text(), 'book');
+  assert.deepEqual(events.map(event => [event.downloaded, event.total, event.peers]), [[2, 4, 2], [4, 4, 2]]);
+});
+
+test('browser selective download rejects missing and oversized repository files', async () => {
+  const clientFor = file => ({
+    add(_id, _options, callback) {
+      const torrent = new FakeTorrent();
+      torrent.files = file ? [file] : [];
+      queueMicrotask(() => callback(torrent));
+      return torrent;
+    },
+  });
+  await assert.rejects(
+    downloadPublicTorrentFile(clientFor(null), 'magnet:?xt=urn:btih:abc', { fileName: 'missing' }),
+    /absent from the repository torrent/,
+  );
+  await assert.rejects(
+    downloadPublicTorrentFile(clientFor({ name: 'large', length: 5 }), 'magnet:?xt=urn:btih:abc', { fileName: 'large', maxBytes: 4 }),
+    /exceeds the maximum size/,
+  );
+  assert.throws(() => downloadPublicTorrentFile(clientFor(null), 'id', { fileName: '../bad' }), /safe torrent file name/);
 });
 
 test('browser private adapter turns encrypted offer/answer signals into a WebTorrent peer', () => {

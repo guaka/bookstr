@@ -51,7 +51,7 @@
       metadata.book?.title,
     ];
     const title = candidates.map(value => String(value || '').trim()).find(value => !isPlaceholderTitle(value));
-    return title || titleFromUrl(readUrl || source.readUrl || source.blossomUrl || source.url, baseUrl) || 'Untitled book';
+    return title || titleFromUrl(readUrl || source.readUrl || source.url, baseUrl) || 'Untitled book';
   }
 
   const LANGUAGE_ALIASES = {
@@ -291,7 +291,7 @@
       } catch { return normalized; }
     };
     const wanted = comparable(readUrl);
-    return collections.flat().find(book => [book?.readUrl, book?.url, book?.blossomUrl]
+    return collections.flat().find(book => [book?.readUrl, book?.url]
       .some(value => value && comparable(value) === wanted)) || null;
   }
 
@@ -523,7 +523,7 @@
     if (blossomSha256) return `sha256:${blossomSha256}`;
     const isbn = isbnForBook(book);
     if (isbn) return `isbn:${isbn}`;
-    const readUrl = book?.readUrl || book?.url || book?.blossomUrl;
+    const readUrl = book?.readUrl || book?.url;
     if (readUrl) return `url:${normalizeReadUrl(readUrl)}`;
     return ['title', resolveTitle(book), book?.authors || book?.author || '', yearForBook(book), languageForBook(book)]
       .map(value => String(value || '').trim().toLowerCase())

@@ -4,6 +4,37 @@ import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url);
 const JSZip = require('../jszip.min.js');
 
+test('Settings connects to a NIP-07 extension that appears after page load', async ({ page }) => {
+  const pubkey = '7'.repeat(64);
+  await page.goto('/#settings');
+
+  await expect(page.locator('#nip7-status')).toContainText('not connected yet');
+
+  await page.evaluate(key => {
+    window.__nip7EnableCalls = 0;
+    window.nostr = {
+      enable() {
+        window.__nip7EnableCalls += 1;
+      },
+      getPublicKey() {
+        return Promise.resolve(key);
+      },
+      signEvent(event) {
+        return Promise.resolve({ ...event, id: 'signed-event', pubkey: key, sig: 'f'.repeat(128) });
+      },
+      nip44: {
+        decrypt: async () => '[]',
+        encrypt: async (_recipient, plaintext) => plaintext,
+      },
+    };
+  }, pubkey);
+
+  await page.locator('#nip7-connect').click();
+  await expect(page.locator('#nip7-status')).toContainText('Connected as npub1');
+  await expect(page.locator('#nip7-connect')).toHaveText('Reconnect NIP-07');
+  await expect.poll(() => page.evaluate(() => window.__nip7EnableCalls)).toBe(1);
+});
+
 test('empty Search shows a responsive table of active catalog sources', async ({ page }) => {
   await page.goto('/#search');
   const table = page.locator('#search-sources-table');
@@ -724,7 +755,7 @@ test('saved words can be filtered by context and sorted alphabetically', async (
   await expect(headings).toHaveText(['apple', 'zebra']);
 });
 
-test('the reading favorite button toggles a known book without leaving the reader', async ({ page }) => {
+test('a reading-library book is kept in the library without a favorite button', async ({ page }) => {
   const md5 = '77777777777777777777777777777777';
   const downloadUrl = 'https://files.test/favorite-reader.epub';
   await page.addInitScript(({ md5, downloadUrl }) => {
@@ -743,21 +774,10 @@ test('the reading favorite button toggles a known book without leaving the reade
   }));
 
   await page.goto(`/#read=${md5}`);
-  const favoriteButton = page.locator('#reading-favorite-btn');
-  await expect(favoriteButton).toBeVisible();
-  await expect(favoriteButton).toHaveAttribute('aria-pressed', 'false');
-
-  await favoriteButton.click();
-  await expect(favoriteButton).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.locator('#reading-favorite-btn')).toHaveCount(0);
   await expect.poll(async () => page.evaluate(() => JSON.parse(
     localStorage.getItem('bookstr_nostr_favorites_v1') || '[]',
   ).map(item => item.title))).toContain('Favorite from Reader');
-
-  await favoriteButton.click();
-  await expect(favoriteButton).toHaveAttribute('aria-pressed', 'false');
-  await expect.poll(async () => page.evaluate(() => JSON.parse(
-    localStorage.getItem('bookstr_nostr_favorites_v1') || '[]',
-  ).length)).toBe(0);
 });
 
 test('settings persist the selected reading theme after reopening the app', async ({ page }) => {
@@ -866,9 +886,9 @@ test('HTTP search results expose format filters and can be favorited in place', 
   await expect(page.locator('#results .book-table-row')).toHaveCount(1);
   await expect(page.locator('#results .book-table-row')).toContainText('Paper Walls');
 
-  const favorite = page.locator('#results button[data-action="favorite"]').first();
-  await favorite.click();
-  await expect(favorite).toHaveAttribute('aria-label', 'Remove from favorites');
+  const addToLibrary = page.locator('#results button[data-action="add-library"]').first();
+  await addToLibrary.click();
+  await expect(addToLibrary).toHaveAttribute('aria-label', 'Already in library');
   await expect.poll(async () => page.evaluate(() => JSON.parse(
     localStorage.getItem('bookstr_nostr_favorites_v1') || '[]',
   )[0]?.title)).toBe('Paper Walls');

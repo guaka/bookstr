@@ -153,6 +153,61 @@ export function addPublicTorrent(client, id, { path, trackers = PUBLIC_TRACKERS,
   return torrent;
 }
 
+export function downloadPublicTorrentFile(client, id, {
+  fileName,
+  trackers = PUBLIC_TRACKERS,
+  maxBytes = 512 * 1024 * 1024,
+  onProgress,
+} = {}) {
+  if (!client || typeof client.add !== 'function') throw new TypeError('a WebTorrent client is required');
+  const wanted = String(fileName || '').trim().toLowerCase();
+  if (!wanted || wanted.includes('/') || wanted.includes('\\')) throw new TypeError('fileName must be a safe torrent file name');
+  const limit = Number(maxBytes);
+  if (!Number.isSafeInteger(limit) || limit <= 0) throw new TypeError('maxBytes must be a positive safe integer');
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const fail = error => {
+      if (settled) return;
+      settled = true;
+      reject(error instanceof Error ? error : new Error(String(error || 'WebTorrent failed')));
+    };
+    try {
+      const torrent = client.add(id, {
+        announce: trackerList(trackers),
+        deselect: true,
+      }, async readyTorrent => {
+        try {
+          const file = readyTorrent.files?.find(candidate => (
+            String(candidate?.path || candidate?.name || '').split(/[\\/]/).at(-1)?.toLowerCase() === wanted
+          ));
+          if (!file) throw new Error(`${wanted} is absent from the repository torrent`);
+          if (!Number.isSafeInteger(Number(file.length)) || file.length <= 0 || file.length > limit) {
+            throw new Error('torrent book file is invalid or exceeds the maximum size');
+          }
+          file.select?.(10);
+          const report = () => onProgress?.({
+            ...progressPayload(readyTorrent, 'public'),
+            downloaded: Math.max(0, Number(file.downloaded || 0)),
+            total: Number(file.length),
+          });
+          readyTorrent.on?.('download', report);
+          report();
+          const blob = await file.blob();
+          report();
+          if (settled) return;
+          settled = true;
+          resolve({ blob, file, torrent: readyTorrent, summary: progressPayload(readyTorrent, 'public') });
+        } catch (error) {
+          fail(error);
+        }
+      });
+      torrent.on?.('error', fail);
+    } catch (error) {
+      fail(error);
+    }
+  });
+}
+
 export function addPrivateTorrent(client, id, {
   path,
   peer,

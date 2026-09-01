@@ -75,6 +75,11 @@ test('a slower previous Electron search cannot overwrite a newer query', async (
   const app = await electron.launch({ args: electronArgs() });
   try {
     const page = await app.firstWindow();
+    await app.context().route('https://lib.b.bfr.ee/api/search**', route => route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ books: [] }),
+    }));
     await page.addInitScript(() => {
       const originalFetch = window.fetch.bind(window);
       window.fetch = async (input, init) => {
@@ -181,6 +186,11 @@ test('a metadata-only Electron search result opens its book page', async () => {
     await expect(page.locator('#read-metadata-fallback')).toBeVisible();
     await expect(page.locator('#read-metadata-fallback h1')).toHaveText('Clickable Metadata Result');
     await expect(page.locator('#read-metadata-fallback-status')).toContainText('Connect your Nostr signer in Settings');
+    await expect(page.locator('.read-file-attempts-title')).toHaveText('What Libstr tried');
+    await expect(page.locator('.read-file-attempts')).toContainText('Local library: No downloaded copy was found.');
+    await expect(page.locator('.read-file-attempts')).toContainText('Direct download: This record does not provide a direct file URL.');
+    await expect(page.locator('.read-file-attempts')).toContainText('Public torrent catalogue: No compatible EPUB, PDF, FB2, or comic edition matched this metadata.');
+    await expect(page.locator('.read-file-attempts')).toContainText('Private Nostr lookup: Not tried because no Nostr signer is connected.');
   } finally {
     await app.close();
   }

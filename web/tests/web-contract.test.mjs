@@ -14,6 +14,7 @@ const desktopPreload = await readFile(new URL('../../desktop/preload.js', import
 const desktopWebTorrent = await readFile(new URL('../../desktop/webtorrent-bridge.js', import.meta.url), 'utf8');
 const coverAssets = await readFile(new URL('../cover-assets.js', import.meta.url), 'utf8');
 const bookMetadata = await readFile(new URL('../book-metadata.js', import.meta.url), 'utf8');
+const webdev = await readFile(new URL('../../webdev.py', import.meta.url), 'utf8');
 
 test('Electron catalog search uses the allowlisted app protocol without a private signer', () => {
   assert.match(html, /const BOOKS_API_BASE = window\.bookstrDesktop\s*\? 'app:\/\/bookstr\/api'/);
@@ -344,6 +345,15 @@ test('torrent acquisition does not fall back to LibVault managed copies', () => 
   assert.doesNotMatch(html, /LIBVAULT_API_BASE\}\/fetch/);
   assert.doesNotMatch(html, /LIBVAULT_API_BASE\}\/jobs/);
   assert.match(html, /result = await desktopBridge\.library\.acquireLibgen\(torrentBook\)/);
+});
+
+test('the web client never turns Blossom response data into readable content', () => {
+  assert.doesNotMatch(html, /payload\?\.blossoms/);
+  assert.doesNotMatch(html, /payload\?\.covers/);
+  assert.doesNotMatch(html, /\|\| blossom\.url/);
+  assert.doesNotMatch(html, /book\?\.blossomUrl[\s\S]{0,80}bookCache/);
+  assert.doesNotMatch(bookMetadata, /source\.blossomUrl/);
+  assert.doesNotMatch(bookMetadata, /book\?\.readUrl \|\| book\?\.url \|\| book\?\.blossomUrl/);
 });
 
 test('read links remain addressable when a book has no MD5', () => {
@@ -722,11 +732,13 @@ test('hovering a placeholder retries public covers and performs a debounced meta
   assert.match(html, /provenance: 'cover-hover'/);
 });
 
-test('metadata-only desktop books try an exact private LibVault torrent lookup before failing', () => {
-  assert.match(html, /async function resolvePrivateTorrentBook\(book\)/);
-  assert.match(html, /const publicCatalogMatch = await searchLibVaultHTTPForTorrent\(book\)\.catch/);
-  assert.match(html, /if \(publicCatalogMatch\) return publicCatalogMatch;[\s\S]*?if \(!nostrSigner\?\.signEvent/);
-  assert.match(html, /fetch\(`\$\{LIBVAULT_API_BASE\}\/search\?\$\{params\}`\)/);
+test('metadata-only books resolve repository torrent metadata through private NIP-17', () => {
+  assert.match(html, /async function resolvePrivateTorrentBook\(book, \{ onAttempt \} = \{\}\)/);
+  assert.match(html, /if \(query\) \{[\s\S]*?module\.searchLibVault\(query, isbn \? 'isbn' : 'title'/);
+  assert.match(html, /module\.resolveLibVaultBook\(\{ \.\.\.book, md5 \}, options\)/);
+  assert.match(html, /module\.searchLibVault\(query, isbn \? 'isbn' : 'title'/);
+  assert.doesNotMatch(html, /LIBVAULT_API_BASE/);
+  assert.doesNotMatch(html, /fetch\([^\n]*lib\.b\.bfr\.ee/);
   assert.match(html, /function matchingTorrentCatalogRecord\(book, candidates\)/);
   assert.match(html, /BookMetadata\.matchingTorrentCatalogRecord\(book, candidates\)/);
   assert.match(bookMetadata, /const titleRank = candidate =>/);
@@ -734,17 +746,25 @@ test('metadata-only desktop books try an exact private LibVault torrent lookup b
   assert.match(bookMetadata, /const formatRank = \{ epub: 4, pdf: 3, fb2: 2/);
   assert.match(bookMetadata, /candidateYear === wantedYear/);
   assert.match(bookMetadata, /right\.formatRank - left\.formatRank/);
-  assert.match(html, /module\.searchLibVault\(query, isbn \? 'isbn' : 'title'/);
   assert.match(html, /signer: nostrSigner,[\s\S]*?publish: publishRelayEvent,[\s\S]*?onTrace: showNip17Trace/);
   assert.match(bookMetadata, /candidates\.filter\(candidate => libgenTorrentMetadataForBook\(candidate\)\)/);
   assert.match(bookMetadata, /sameLibraryBook\(book, candidate\)/);
   assert.match(html, /Looking for a torrent for \$\{book\.title \|\| 'book'\}/);
-  assert.match(html, /const resolvedTorrentBook = await resolvePrivateTorrentBook\(book\)\.catch/);
+  assert.match(html, /resolvePrivateTorrentBook\(book, \{ onAttempt: setAttempt \}\)\.catch/);
   assert.match(html, /rememberResolvedTorrentMetadata\(book, resolvedTorrentBook\)/);
   assert.match(html, /libvaultMd5, libgenId/);
-  assert.match(html, /BookMetadata\.libgenTorrentMetadataForBook\(book\)[\s\S]*?\? book[\s\S]*?: await resolveLibVaultHTTPBook/);
+  assert.doesNotMatch(html, /searchPublicTorrentCatalog/);
   assert.match(html, /torrentBook = \{ \.\.\.torrentBook, md5: libgenTorrent\.md5, libgenId: libgenTorrent\.libgenId \}/);
   assert.match(html, /if \(!readPath && !cached && !torrentAvailable\) \{[\s\S]*?No readable download or torrent is available/);
+});
+
+test('unavailable book details explain each acquisition attempt', () => {
+  assert.match(html, /What Libstr tried/);
+  assert.match(html, /label: 'Local library'/);
+  assert.match(html, /label: 'Direct download'/);
+  assert.match(html, /label: 'Private Nostr lookup'/);
+  assert.match(html, /className = 'read-file-attempts'/);
+  assert.match(html, /attempts: safeJSONRead\(note\.dataset\.attempts, \[\]\)/);
 });
 
 test('Internet Archive search excludes borrow-only and encrypted derivatives', () => {
@@ -767,10 +787,22 @@ test('Home can delete a book locally and across synced clients', () => {
   assert.match(html, /async function deleteLibraryBook\(book\)/);
   assert.match(html, /state\.favorites = state\.favorites\.filter\(item => !BookMetadata\.sameLibraryBook\(item, book\)\)/);
   assert.match(html, /state\.reading = state\.reading\.filter\(item => !BookMetadata\.sameLibraryBook\(item, book\)\)/);
-  assert.match(html, /if \(wasFavorite\) tasks\.push\(syncFavoritesToNostr\(\)\)/);
+  assert.match(html, /if \(wasFavorite\) tasks\.push\(syncFavoriteDeletionToNostr\(\)\)/);
+  assert.match(html, /async function syncFavoriteDeletionToNostr\(\)/);
+  assert.match(html, /const previousEvents = await previousFavoriteSnapshotEvents\(pubkey\)/);
+  assert.match(html, /kind: 5,[\s\S]*?tags: deletedIds\.map\(id => \['e', id\]\)/);
   assert.match(html, /if \(wasReading\) tasks\.push\(publishReadingDeletion\(book\)\)/);
   assert.match(html, /content: JSON\.stringify\(\{ bookId, deleted: true, updatedAt: now \* 1000 \}\)/);
   assert.match(html, /if \(parsed\.deleted\)/);
+});
+
+test('Library membership replaces favorite hearts and active downloads join the library', () => {
+  assert.doesNotMatch(html, /id="reading-favorite-btn"/);
+  assert.doesNotMatch(html, /class="favorite-status"/);
+  assert.match(html, /data-action="add-library"/);
+  assert.match(html, /function rememberDownloadingBooks\(downloads\)/);
+  assert.match(html, /activeStatuses = new Set\(\['queued', 'finding-peers', 'downloading', 'retrying'\]\)/);
+  assert.match(html, /addBookToLibrary\(torrentBook\)/);
 });
 
 test('Home can refresh and sync Open Library and all.books metadata without LibVault', () => {
@@ -972,7 +1004,16 @@ test('Electron identifies development builds with a Bookstr timestamp version', 
 });
 
 test('settings groups Nostr controls and connection status together', () => {
+  const openSettingsSource = html.match(/function openSettings[\s\S]*?\n      function closeSettings/)?.[0] || '';
   assert.match(html, /settings-section settings-nostr[\s\S]*?<h3>Nostr<\/h3>[\s\S]*?id="nip7-enabled"[\s\S]*?id="nip7-status"/);
+  assert.match(html, /class="browser-nip7"[\s\S]*?Browser extension \(NIP-07\)[\s\S]*?id="nip7-connect"/);
+  assert.match(html, /nip7ConnectButton\.addEventListener\('click', \(\) => void connectNip7\(\)\)/);
+  assert.match(html, /let nostrSigner = isDesktopMode \? desktopBridge\?\.signer : globalThis\.nostr/);
+  assert.match(html, /function currentNostrSigner\(\)[\s\S]*?globalThis\.nostr !== nostrSigner[\s\S]*?nostrSigner = globalThis\.nostr/);
+  assert.match(html, /if \(state\.nip7\.pubkey\) \{\s*void connectNip7\(\{ silent: true, quick: hasFreshNip7Status \}\)/);
+  assert.doesNotMatch(openSettingsSource, /connectNip7\(/);
+  assert.match(html, /\.settings-tab \.settings-panel \{[\s\S]*?width: min\(46rem, calc\(100vw - 2\.5rem\)\);[\s\S]*?border-radius: 1\.15rem/);
+  assert.match(html, /\.settings-tab \.settings-nostr,[\s\S]*?\.settings-tab \.settings-dictionaries[\s\S]*?border-top:/);
   assert.match(html, /#desktop-signer-status\.signer-connected::before\s*\{[\s\S]*?content: '✓';[\s\S]*?color: #16803c/);
   assert.match(html, /desktopSignerStatus\.classList\.toggle\('signer-connected', connected\)/);
   assert.match(html, /desktopSignerPanel\.classList\.toggle\('signer-connected', connected\)/);
@@ -1027,6 +1068,24 @@ test('torrent download percentages cannot render below zero or above one hundred
   assert.match(html, /const bytes = Math\.max\(0, Number\(download\.bytes \|\| 0\)\);[\s\S]*?Math\.max\(0, Math\.min\(100, Math\.round\(bytes \/ total \* 100\)\)\)/);
   assert.match(desktopWebTorrent, /bytes: safeCounter\(file\.downloaded\)/);
   assert.match(desktopWebTorrent, /progress: Math\.min\(1, safeCounter\(torrent\.progress\)\)/);
+});
+
+test('the browser reader downloads a selected repository book with visible WebTorrent progress', () => {
+  assert.match(html, /const BROWSER_WEBTORRENT_MODULE = '\/__webdev__\/webtorrent\.min\.js'/);
+  assert.match(html, /async function fetchBrowserTorrentCopy\(book\)/);
+  assert.match(html, /fetch\(`\/api\/libgen-torrent\?libgen_id=/);
+  assert.match(html, /downloadPublicTorrentFile\(client, torrentId/);
+  assert.match(html, /function showBrowserWebTorrentStatus\(label\)/);
+  assert.match(html, /torrentStatus\.textContent = `WebTorrent: \$\{label\}`/);
+  assert.match(html, /Downloading · \$\{percent\}%/);
+  assert.match(html, /Seeding \$\{torrentBook\.title \|\| 'book'\} while this page stays open/);
+  assert.match(html, /isDesktopMode[\s\S]*?fetchDesktopTorrentCopy\(book\)[\s\S]*?fetchBrowserTorrentCopy\(book\)/);
+  assert.match(html, /let torrentAvailable = Boolean\([\s\S]*?BookMetadata\.torrentMetadataForBook\(book\)[\s\S]*?BookMetadata\.libgenTorrentMetadataForBook\(book\)/);
+  assert.match(html, /if \(!readPath && !cached && !torrentAvailable\) \{[\s\S]*?resolvePrivateTorrentBook/);
+  assert.match(webdev, /WEBTORRENT_BUNDLE = .*webtorrent\/dist\/webtorrent\.min\.js/);
+  assert.match(webdev, /parsed\.path == "\/api\/libgen-torrent"/);
+  assert.match(webdev, /r_\{batch\}\.torrent/);
+  assert.match(webdev, /subprocess\.run\([\s\S]*?"curl"[\s\S]*?check=False[\s\S]*?capture_output=True/);
 });
 
 test('downloaded book state keeps its SHA-256 bridge when the repository MD5 becomes available', () => {

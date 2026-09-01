@@ -105,7 +105,7 @@ test('Library reports useful local torrent states', async () => {
     await seedLibrary(page, books);
     await page.reload();
 
-    await expect(page.locator('.library-book-count')).toHaveText('7 books · 2 readable now · 1 seeding · ↓ 0 B/s · ↑ 0 B/s');
+    await expect(page.locator('.library-book-count')).toHaveText('7 books · 2 readable now · 2 downloading · 1 seeding · ↓ 0 B/s · ↑ 0 B/s');
     await expect(libraryRow(page, books[0].title).locator('.result-availability')).toHaveText('—');
     const compactAuthors = libraryRow(page, books[0].title).locator('.result-author');
     await expect(compactAuthors).toHaveAttribute('title', books[0].authors);
@@ -148,6 +148,34 @@ test('Library reports useful local torrent states', async () => {
       books[0].title,
       books[4].title,
     ]);
+  } finally {
+    await app.close();
+  }
+});
+
+test('an active zero-percent torrent is automatically kept in the library', async () => {
+  const launch = electronArgs('active-download-library');
+  const book = {
+    md5: '7'.repeat(32),
+    title: 'Zero Percent Book',
+    authors: 'Fixture Author',
+    extension: 'epub',
+    libgenId: 4321,
+    sourceNativeId: '4321',
+  };
+  seedDesktopStore(launch.userData, [book], [
+    { bookId: book.md5, status: 'downloading', bytes: 0, totalBytes: 100, source: 'torrent' },
+  ]);
+  const app = await electron.launch({ args: launch.args });
+  try {
+    const page = await app.firstWindow();
+    await expect.poll(() => page.evaluate(() => JSON.parse(
+      localStorage.getItem('bookstr_nostr_favorites_v1') || '[]',
+    ).map(item => item.title))).toContain(book.title);
+    const row = libraryRow(page, book.title);
+    await expect(row.locator('.result-availability')).toHaveText('Downloading 0%');
+    await expect(row.locator('.favorite-status')).toHaveCount(0);
+    await expect(row.locator('.library-delete')).toBeVisible();
   } finally {
     await app.close();
   }
@@ -323,13 +351,13 @@ test('a successful torrent download does not duplicate its legacy SHA-addressed 
     await page.reload();
     await page.locator('#home-query-input').fill('');
 
-    await expect(page.locator('.library-book-count')).toHaveText('1 book · 1 readable now · 0 seeding · ↓ 0 B/s · ↑ 0 B/s');
+    await expect(page.locator('.library-book-count')).toHaveText('1 book · 1 readable now · 0 downloading · 0 seeding · ↓ 0 B/s · ↑ 0 B/s');
     await expect(page.locator('.book-table-row')).toHaveCount(1);
     await expect(libraryRow(page, 'Scale').locator('.result-availability')).toHaveText('Ready');
 
     await page.reload();
     await page.locator('#home-query-input').fill('');
-    await expect(page.locator('.library-book-count')).toHaveText('1 book · 1 readable now · 0 seeding · ↓ 0 B/s · ↑ 0 B/s');
+    await expect(page.locator('.library-book-count')).toHaveText('1 book · 1 readable now · 0 downloading · 0 seeding · ↓ 0 B/s · ↑ 0 B/s');
     await expect(page.locator('.book-table-row')).toHaveCount(1);
     await expect(libraryRow(page, 'Scale').locator('.result-availability')).toHaveText('Ready');
   } finally {
@@ -369,7 +397,7 @@ test('SHA-addressed library rows inherit seeding status from their LibGen downlo
     await page.reload();
 
     const row = libraryRow(page, favorite.title);
-    await expect(page.locator('.library-book-count')).toHaveText('1 book · 1 readable now · 1 seeding · ↓ 0 B/s · ↑ 0 B/s');
+    await expect(page.locator('.library-book-count')).toHaveText('1 book · 1 readable now · 0 downloading · 1 seeding · ↓ 0 B/s · ↑ 0 B/s');
     await expect(row.locator('.result-availability')).toHaveText('Seeding');
     await expect(row.locator('.result-title')).toHaveClass(/readable/);
     await expect(row.locator('.result-title')).not.toHaveClass(/unavailable/);
