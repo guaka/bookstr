@@ -101,6 +101,13 @@ test('browser selective download rejects missing and oversized repository files'
   assert.throws(() => downloadPublicTorrentFile(clientFor(null), 'id', { fileName: '../bad' }), /safe torrent file name/);
 });
 
+test('browser selective download reports a synchronous client add failure', async () => {
+  await assert.rejects(
+    downloadPublicTorrentFile({ add() { throw new Error('client add failed'); } }, 'id', { fileName: 'book' }),
+    /client add failed/,
+  );
+});
+
 test('browser private adapter turns encrypted offer/answer signals into a WebTorrent peer', () => {
   const signals = [];
   const peer = createPrivatePeer(FakePeer, {

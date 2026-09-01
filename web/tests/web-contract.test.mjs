@@ -493,6 +493,7 @@ test('PDFs are fetched and displayed inside the Bookstr reader pane', () => {
   assert.match(html, /String\.fromCharCode\(\.\.\.bytes\) === '%PDF-'/);
   assert.match(html, /const cachedFormat = await bookFormatForBlob\(cached\)/);
   assert.match(html, /const torrentFormat = await bookFormatForBlob\(torrentBlob\)/);
+  assert.match(html, /\/\\\.epub\(\?:\\\?\|\$\)\/i\.test\(readPath\)/);
   assert.match(html, /api\\\/files\\\/\[a-f0-9\]\{32\}/);
   assert.match(html, /if \(format === 'pdf'\) await displayPdf\(blob, book, readPath, openGeneration\)/);
   assert.doesNotMatch(html, /openInDesktopReader/);

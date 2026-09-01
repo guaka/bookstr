@@ -7588,7 +7588,7 @@
             }
             const format = await bookFormatForBlob(blob) || String(book.extension || '').toLowerCase();
             await displayComic(blob, book, readPath, openGeneration, format);
-            } else if (String(book.extension || '').toLowerCase() === 'epub' || /\/download(?:\?|$)/i.test(readPath) || (!readPath && isMd5(book.md5))) {
+            } else if (String(book.extension || '').toLowerCase() === 'epub' || /\.epub(?:\?|$)/i.test(readPath) || /\/download(?:\?|$)/i.test(readPath) || (!readPath && isMd5(book.md5))) {
             let blob = await cachedBookBlob(book, readPath).catch(() => null);
             if (openGeneration !== readerOpenGeneration) return;
             if (blob) {

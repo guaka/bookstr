@@ -339,6 +339,11 @@
       const url = new URL(direct);
       if (/^\/api\/read\/[a-f0-9]{32}\/?$/i.test(url.pathname)) return '';
       if (url.hostname.toLowerCase() === 'blossom.bfr.ee') return '';
+      if (url.protocol === 'app:' && url.hostname.toLowerCase() === 'bookstr') {
+        const match = url.pathname.match(/^\/api(\/books\/\d+\/download\/?)$/);
+        if (!match) return '';
+        return `${String(apiBase).replace(/\/$/, '')}${match[1]}${url.search}`;
+      }
     } catch {}
     return direct;
   }

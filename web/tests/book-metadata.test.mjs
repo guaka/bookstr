@@ -318,6 +318,33 @@ test('derives Gutenberg downloads from source-native IDs', () => {
   );
 });
 
+test('rewrites Electron-only book URLs for the active browser API', () => {
+  assert.equal(
+    canonicalReadUrl(
+      { readUrl: 'app://bookstr/api/books/48320/download?download=1' },
+      'https://books-api.guaka.org/api',
+    ),
+    'https://books-api.guaka.org/api/books/48320/download?download=1',
+  );
+});
+
+test('keeps Electron-only URLs inside Electron and rejects unsupported app routes', () => {
+  assert.equal(
+    canonicalReadUrl(
+      { readUrl: 'app://bookstr/api/books/48320/download' },
+      'app://bookstr/api',
+    ),
+    'app://bookstr/api/books/48320/download',
+  );
+  assert.equal(
+    canonicalReadUrl(
+      { readUrl: 'app://bookstr/api/books/48320' },
+      'https://books-api.guaka.org/api',
+    ),
+    '',
+  );
+});
+
 test('does not promote a legacy Blossom field to a readable URL', () => {
   assert.equal(
     canonicalReadUrl({ blossomUrl: 'https://blossom.test/file.epub' }),

@@ -164,6 +164,14 @@ test('availabilitySourcesForBook recognizes gutenberg from source hint alone', (
   );
 });
 
+test('availability sorting keeps an unknown live label with metadata-only records', () => {
+  const books = [{ title: 'Unknown' }, { title: 'Ready' }];
+  const sorted = sortBooks(books, 'availability', 'asc', () => false, book => (
+    book.title === 'Ready' ? 'Ready' : 'Custom peer state'
+  ));
+  assert.deepEqual(sorted.map(book => book.title), ['Ready', 'Unknown']);
+});
+
 test('findBookByReadUrl prefers the url field only when readUrl is unavailable', () => {
   const hit = findBookByReadUrl(
     'https://example.test/shared.epub',

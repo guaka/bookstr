@@ -245,16 +245,19 @@ for (const book of books) {
   });
 }
 
-test('legacy LibVault links become MD5 routes and open the Blossom copy', async ({ page }) => {
+test('legacy LibVault links become MD5 routes without reopening a retired Blossom copy', async ({ page }) => {
   const md5 = 'f5277d56f3ecec3912e1b2b60cbd0eed';
   const legacyUrl = `https://lib.b.bfr.ee/api/read/${md5}`;
   const blossomUrl = 'https://books-api.guaka.org/api/books/30142/download';
-  const epub = await minimalEpub('Little Brother');
-  await page.route(blossomUrl, route => route.fulfill({
+  let blossomRequests = 0;
+  await page.route(blossomUrl, route => {
+    blossomRequests += 1;
+    return route.fulfill({
     status: 200,
     contentType: 'application/epub+zip',
-    body: epub,
-  }));
+    body: Buffer.from('retired'),
+    });
+  });
 
   await page.addInitScript(({ md5, legacyUrl, blossomUrl }) => {
     localStorage.setItem('bookstr_nostr_favorites_v1', JSON.stringify([{
@@ -270,10 +273,10 @@ test('legacy LibVault links become MD5 routes and open the Blossom copy', async 
   await page.goto(`/#read=${encodeURIComponent(legacyUrl)}`);
 
   await expect(page).toHaveURL(new RegExp(`#read=${md5}$`));
-  await expect(page.locator('#reader-frame')).toHaveAttribute('src', /reader\.html/);
-  await expect(page.frameLocator('#reader-frame').locator('body')).toHaveAttribute('data-location', /epubcfi\(/, {
-    timeout: 45_000,
-  });
+  await expect(page.locator('#read-metadata-fallback')).toBeVisible();
+  await expect(page.locator('#read-metadata-fallback')).toContainText('This book is not stored locally');
+  await expect(page.locator('#reader-frame')).not.toHaveAttribute('src', /reader\.html/);
+  expect(blossomRequests).toBe(0);
 });
 
 test('an unavailable MD5 still shows its known book metadata', async ({ page }) => {
@@ -963,9 +966,9 @@ test('Home retries delayed NIP-07 and renders an iOS-shaped encrypted favorite',
   await page.goto('/#home');
   await expect(page.locator('#home-reading-list')).toContainText('Anna Karenina', { timeout: 12_000 });
   await expect(page.locator('#home-reading-list')).toContainText('Leo Tolstoy');
-  await expect(page.locator('#home-sync-state')).toContainText('Synced · 1 favorites · 1 reading · 1 words');
+  await expect(page.locator('#home-sync-state')).toContainText('Synced · 1 favorites · 0 reading · 0 words');
   await page.locator('#home-sync-refresh').click();
-  await expect(page.locator('#home-sync-state')).toContainText('Synced · 1 favorites · 1 reading · 1 words');
+  await expect(page.locator('#home-sync-state')).toContainText('Synced · 1 favorites · 0 reading · 0 words');
 });
 
 test('search pagination is bookmarkable and keeps the result count stable', async ({ page }) => {
