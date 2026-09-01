@@ -71,6 +71,14 @@ test('Electron enables browser-compatible torrent peers with cross-platform WebR
   assert.deepEqual(log.clientOptions.tracker.rtcConfig.iceServers, PUBLIC_ICE_SERVERS);
 });
 
+test('the packaged WebRTC runtime can create torrent data channels', () => {
+  const wrtc = require('@roamhq/wrtc');
+  const peer = new wrtc.RTCPeerConnection({ iceServers: PUBLIC_ICE_SERVERS });
+  const channel = peer.createDataChannel('bookstr-torrent');
+  assert.equal(channel.label, 'bookstr-torrent');
+  peer.close();
+});
+
 test('Electron retains ordinary torrent support when WebRTC is unavailable', async () => {
   const log = { adds: [] };
   const bridge = new WebTorrentBridge({
