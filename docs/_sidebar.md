@@ -7,6 +7,7 @@
 - [Nostr](NOSTR.md)
 - [Device transfer](DEVICE_TRANSFER.md)
 - [Electron roadmap](ROADMAP.md)
+- [Electron and iPhone reading plan](READING_PLAN.md)
 - [Sources](SOURCES.md)
 - [Migration](MIGRATION.md)
 - [OPDS](OPDS.md)

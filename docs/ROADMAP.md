@@ -1,5 +1,9 @@
 # Bookstr Electron roadmap
 
+For the proposed user-facing delivery sequence across Electron and iPhone, see
+[Search, download, read](READING_PLAN.md). This document tracks the supporting
+Electron and transfer infrastructure.
+
 This roadmap is intentionally small. It describes the work needed to make the
 Electron shell a useful local library while keeping the web, iOS, and Android
 clients on the same contracts.
