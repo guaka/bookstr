@@ -21,7 +21,7 @@ test('catalog invitations validate identity, version, fields and relays',()=>{
 });
 
 function harness(){
- const app=new EventEmitter();const registrations=[];app.setAsDefaultProtocolClient=(...args)=>registrations.push(args);
+ const app=new EventEmitter();app.isPackaged=true;const registrations=[];app.setAsDefaultProtocolClient=(...args)=>registrations.push(args);
  let saved={},response=0,reloads=0;const questions=[];
  const controller=new CatalogInvitations({app,dialog:{showMessageBox:async(_win,options)=>{questions.push(options);return{response}}},
  loadState:async()=>saved,saveState:async state=>{saved={...saved,...state}},decodeNPub:nip19.decode,
@@ -39,11 +39,11 @@ test('cold launch cancellation confirmation persistence and duplicate invitation
 });
 
 test('OS events and startup argv queue valid invitations only',async()=>{
- const h=harness();let prevented=false;
+ const h=harness();h.app.isPackaged=false;let prevented=false;
  h.app.emit('open-url',{preventDefault(){prevented=true}},f.uri);
  h.app.emit('second-instance',null,['/app',f.uri]);
  await h.controller.start(['/app',f.uri],'/electron',true,'/app');
- assert.equal(prevented,true);assert.equal(h.questions.length,3);assert.deepEqual(h.registrations,[['bookstr','/electron',['/app']]]);
+ assert.equal(prevented,true);assert.equal(h.questions.length,3);assert.deepEqual(h.registrations,[]);
  const cold=harness();for(let i=0;i<4;i++)assert.equal(await cold.controller.receive(f.uri),true);
  assert.equal(await cold.controller.receive(f.uri),false);
 });

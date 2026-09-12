@@ -47,34 +47,54 @@
     "productName": "libstr",
     "icon": "assets/icon-macos.png",
     "files": [
-      "../web/**/*",
-      "../shared/catalog/acquisition.mjs",
-      "../shared/catalog/source-registry.mjs",
-      "../shared/rights/rights.mjs",
-      "../shared/contracts/device-pairing-client.mjs",
-      "../shared/contracts/device-pairing-v1.mjs",
-      "../shared/contracts/device-pairing-nip17.mjs",
-      "../shared/contracts/device-registry-nip78.mjs",
-      "../shared/contracts/device-transfer-v1.mjs",
-      "assets/icon-macos.png",
-      "catalog-proxy.js",
-      "dictionary-proxy.js",
-      "webtorrent-bridge.js",
-      "device-pairing.js",
-      "library-store.js",
-      "library-import.js",
-      "library-cover.js",
-      "acquisition-manager.js",
-      "main.js",
-      "preload.js",
-      "security-policy.js",
-      "speech-model-store.js",
       "package.json",
-      "encrypted-transfer.js",
-      "catalog-invitations.js"
+      {
+        "from": ".",
+        "to": "desktop",
+        "filter": [
+          "assets/icon-macos.png",
+          "catalog-proxy.js",
+          "dictionary-proxy.js",
+          "webtorrent-bridge.js",
+          "device-pairing.js",
+          "library-store.js",
+          "library-import.js",
+          "library-cover.js",
+          "acquisition-manager.js",
+          "main.js",
+          "preload.js",
+          "security-policy.js",
+          "speech-model-store.js",
+          "package.json",
+          "encrypted-transfer.js",
+          "catalog-invitations.js"
+        ]
+      },
+      {
+        "from": "../web",
+        "to": "web",
+        "filter": [
+          "**/*",
+          "!tests/**/*"
+        ]
+      },
+      {
+        "from": "../shared",
+        "to": "shared",
+        "filter": [
+          "catalog/acquisition.mjs",
+          "catalog/source-registry.mjs",
+          "rights/rights.mjs",
+          "contracts/device-pairing-client.mjs",
+          "contracts/device-pairing-v1.mjs",
+          "contracts/device-pairing-nip17.mjs",
+          "contracts/device-registry-nip78.mjs",
+          "contracts/device-transfer-v1.mjs"
+        ]
+      }
     ],
     "extraMetadata": {
-      "main": "main.js"
+      "main": "desktop/main.js"
     },
     "directories": {
       "output": "dist"

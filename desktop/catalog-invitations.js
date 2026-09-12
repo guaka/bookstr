@@ -30,8 +30,8 @@ class CatalogInvitations {
   }
 
   async start(argv, executable, defaultApp, appPath) {
-    if (defaultApp) this.app.setAsDefaultProtocolClient('bookstr', executable, [appPath]);
-    else this.app.setAsDefaultProtocolClient('bookstr');
+    // Development Electron and E2E runs must never take over the installed app's URL scheme.
+    if (this.app.isPackaged) this.app.setAsDefaultProtocolClient('bookstr');
     for (const arg of argv) if (arg.startsWith('bookstr://')) await this.receive(arg);
     this.started = true;
     await this.drain();
