@@ -3,11 +3,12 @@
 Libcat keeps large metadata catalogs on a storage host. Electron and iPhone use
 private NIP-17 requests; Libcat never transfers book contents. Electron handles
 torrents and local acquisition, then encrypts each file before sending ciphertext
-to an HTTPS relay. The relay streams from Electron's outbound WebSocket without
-persisting files. iPhone authenticates and decrypts the download into private
-staging before importing it into its offline library.
+to Blossom. Nostr carries private transfer references and decryption keys.
+iPhone downloads ciphertext over HTTPS, verifies and decrypts it into private
+staging, then imports the book into its offline library. This is the selected
+architecture; the complete upload/download integration is not yet implemented.
 
-## Implemented in this branch
+## Implemented components
 
 - Electron/web private searches and torrent metadata resolution target Libcat at
   public key `83503e3e82744479362b04881a8f240bd6d838b78430035868f1c0826ec3876f`
@@ -16,9 +17,9 @@ staging before importing it into its offline library.
 - The search helper accepts an explicit service configuration. Pages contain at
   most 50 records; the More control appends and deduplicates results. Failed pages
   remain retryable. Private results are not written into the public search cache.
-- Main-process file encryption/decryption, a streaming relay server module, and
-  an outbound relay client have integration tests using real signed WebSockets,
-  HTTP Range requests, disconnection/reconnection, expiry, and revocation.
+- Main-process file encryption/decryption is tested. The experimental custom
+  streaming relay and client have been removed in favor of the existing Blossom
+  proof of concept.
 - Swift decrypts the same format. A shared deterministic fixture checks Node to
   CryptoKit interoperability. Failed authentication and checksum verification
   remove the partial plaintext file rather than importing it.
@@ -33,28 +34,54 @@ records with 4 MiB plaintext chunks. Each offer uses a fresh 32-byte key, a fres
 plaintext size, and record index. Each ciphertext record includes its 16-byte
 tag. Final SHA-256 verifies the complete plaintext. The maximum file is 8 GiB.
 
-The relay sees a transfer ID, ciphertext size, expiry, and a hash of an opaque
-bearer capability. It never receives the decryption key or plaintext metadata.
-A signed challenge authenticates the Electron connection against an allowlist.
-GET/HEAD `/v1/files/<transfer-id>` requires the bearer capability. Explicit byte
-ranges support resuming; streams return unavailable when Electron is disconnected.
+## Encrypted Blossom retention: 30 days
+
+The user selected a fixed retention window of **30 days from successful upload**
+(2,592,000 seconds, measured in UTC), not 30 days from last access. Downloading,
+reading, or syncing progress does not extend the window.
+
+- Keep the encrypted server copy for the full window, even after iPhone downloads
+  it. Record its ciphertext hash, owner, upload completion time, and expiry.
+- At expiry, remove the encrypted transfer blob from the managed Blossom server.
+  Leave local Electron/iPhone books, saved metadata, and reading progress intact.
+- Cleanup must run on the server or an always-on service; an Electron timer cannot
+  enforce retention while the computer sleeps. Track failures and retry cleanup.
+- If a device needs the file after expiry, Electron must be available to create a
+  new encrypted upload with a fresh key and its own 30-day window.
+- Apply this policy only to newly created encrypted Bookstr transfer blobs.
+  Existing Blossom publications, catalogs, and unrelated files are outside it.
+- The short `expiration` in a Blossom authorization event expires the request's
+  authorization, not the stored file. It does not implement this retention policy.
+
+Server-side retention enforcement is still required. Do not present a local
+expiry field or an authorization expiration as proof of server deletion.
 
 ## Integration still required
 
 This is not yet an end-to-end phone download feature. Complete these before
 releasing or retiring LibVault:
 
-1. Wire the relay client into Electron acquisition, persistent transfer jobs, and
-   paired-device authorization. Send offers/keys only inside private device
-   messages; retain secrets through Electron safeStorage and iOS Keychain.
-2. Add native Libcat NIP-17 queries and pagination to iPhone Search.
-3. Add iOS background URLSession downloads, resumption and verified library
-   import, with phone UI and background lifecycle tests.
-4. Choose and deploy a configurable public HTTPS relay endpoint. The server module
-   currently has no production deployment or standalone service packaging.
-5. Exercise a real paired desktop/iPhone flow, restart recovery, revocation,
-   offline reading and reading-position synchronization. Complete remaining
-   branch coverage before moving the implementation out of draft.
+1. Add native Libcat NIP-17 queries and pagination to iPhone Search.
+2. Connect Electron acquisition and encryption to Blossom upload and persist
+   upload jobs. Send file references and keys only inside private device messages;
+   protect keys through Electron safeStorage and iOS Keychain.
+3. Implement and verify the 30-day server-side retention policy above, including
+   cleanup while Electron is offline. Verify deletion targets only owned transfer
+   ciphertext and does not remove local books or existing publications.
+4. Add iOS background URLSession downloads, resumption and verified library import,
+   with phone UI and background lifecycle tests. An uploaded file stays available
+   during its retention window even if Electron is asleep.
+5. Validate search, edition selection, interrupted downloads, reopening, offline
+   EPUB/PDF reading, and cross-device progress on real Electron and iPhone builds.
+   Check typography, chapters, bookmarks, keyboard/touch navigation, rotation and
+   accessibility; preserve location through layout changes and relaunch.
+6. Verify progress against the same edition: desktop to iPhone, offline changes,
+   then back to desktop, including duplicate and stale sync events. Do not map
+   EPUB locations between different files using title similarity alone.
+7. Retire LibVault only after those release gates pass and active downloads and
+   indexing have been audited. Preserve the catalog database, WALs and dumps.
 
+This document supersedes the proposed reading plan in Bookstr PR #87, preserving
+its offline-reading and progress acceptance criteria under the selected transport.
 Libcat is deployed separately on `b.bfr.ee`; its admin and migration instructions
 are in the LibVault repository's `LIBCAT.md`. Legacy services remain available.
