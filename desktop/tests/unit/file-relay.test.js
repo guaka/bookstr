@@ -74,3 +74,62 @@ test('relay rejects unsigned clients and never grants access from an invalid cap
  }
  const idle=new WebSocket(base+'/v1/connect');await once(idle,'close');
 });
+
+test('relay aborts stalled and disconnected ciphertext streams', async t => {
+ const secret = generateSecretKey();
+ const relay = createFileRelay({allowedPubkeys:[getPublicKey(secret)], requestTimeout:200});
+ relay.server.listen(0,'127.0.0.1'); await once(relay.server,'listening');
+ t.after(() => relay.close());
+ const base = `http://127.0.0.1:${relay.server.address().port}`;
+ const capability = 'cd'.repeat(32), transferId = 'ab'.repeat(16);
+ async function connect() {
+  const peer = new WebSocket(base.replace('http:', 'ws:') + '/v1/connect');
+  const [bytes] = await once(peer,'message');
+  const challenge = JSON.parse(bytes).challenge;
+  const ready = once(peer,'message');
+  peer.send(JSON.stringify({type:'auth',event:finalizeEvent({kind:27235,created_at:Math.floor(Date.now()/1000),tags:[],content:`bookstr-relay-v1:${challenge}`},secret)}));
+  await ready;
+  const registered = once(peer,'message');
+  peer.send(JSON.stringify({type:'register',transferId,tokenHash:createHash('sha256').update(capability).digest('hex'),size:100,expires:Math.floor(Date.now()/1000)+60}));
+  await registered;
+  return peer;
+ }
+ for (const disconnect of [false,true]) {
+  const peer = await connect();
+  const read = once(peer,'message');
+  // Consume the body too: the relay can send HTTP headers before it fails.
+  const failed = assert.rejects(async () => {
+   const response = await fetch(`${base}/v1/files/${transferId}`,{headers:{Authorization:`Bearer ${capability}`}});
+   await response.arrayBuffer();
+  });
+  assert.equal(JSON.parse((await read)[0]).type,'read');
+  if (disconnect) peer.terminate();
+  await failed;
+  peer.terminate();
+ }
+});
+
+test('relay and Electron close WebSockets that exceed their payload limits', async t => {
+ const secret = generateSecretKey();
+ const relay = createFileRelay({allowedPubkeys:[getPublicKey(secret)]});
+ relay.server.listen(0,'127.0.0.1'); await once(relay.server,'listening');
+ t.after(() => relay.close());
+ const peer = new WebSocket(`ws://127.0.0.1:${relay.server.address().port}/v1/connect`);
+ await once(peer,'message');
+ const closed = once(peer,'close');
+ peer.send(Buffer.alloc(65536 + 17));
+ await closed;
+
+ const { WebSocketServer } = require('ws');
+ const oversized = new WebSocketServer({port:0,host:'127.0.0.1'});
+ await once(oversized,'listening');
+ const client = new RelayClient({url:`ws://127.0.0.1:${oversized.address().port}/v1/connect`,allowLoopback:true,signEvent:e=>finalizeEvent(e,secret)});
+ t.after(async () => { await client.stop(); await new Promise(resolve => oversized.close(resolve)); });
+ const connected = once(oversized,'connection');
+ client.start();
+ const [sender] = await connected;
+ const clientClosed = new Promise(resolve => client.socket.once('close',resolve));
+ sender.send('x'.repeat(4097));
+ await clientClosed;
+ assert.equal(client.ready,false);
+});
