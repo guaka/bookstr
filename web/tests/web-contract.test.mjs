@@ -51,7 +51,7 @@ test('Search explains active sources and fans out without private-first fallback
   assert.match(html, /await Promise\.all\(sources\.map/);
   assert.match(html, /id="search-source-progress" class="search-source-progress hidden"/);
   assert.match(html, /Done · \$\{Number\(entry\.count \|\| 0\)\} result/);
-  assert.match(html, /onUpdate\([\s\S]*progress\.slice\(\),[\s\S]*dedupeBooks\(arrivedBooks\)/);
+  assert.match(html, /onUpdate\([\s\S]*progress\.slice\(\),[\s\S]*mergedBooks\(\)/);
   assert.match(html, /if \(!query\) \{\s*renderSearchSources\(\)/);
   assert.doesNotMatch(html, /Private search unavailable; trying the HTTP catalog/);
   assert.match(html, /@media \(max-width: 600px\)[\s\S]*\.search-sources-table td::before/);
@@ -158,7 +158,7 @@ test('Search no longer exposes LibVault inside-book search', () => {
   assert.doesNotMatch(html, /<option value="content">/);
   assert.doesNotMatch(html, /searchType\.value === 'content'/);
   assert.doesNotMatch(html, /Searching privately through LibVault/);
-  assert.match(html, /Searching public book catalogs/);
+  assert.match(html, /Searching book catalogs/);
 });
 
 test('authors stay green on Home and Search even when links are globally red', () => {
@@ -260,7 +260,7 @@ test('desktop availability only marks records with resolved torrent metadata as 
 
 test('Electron opens LibGen catalog records through their repository torrent batch', () => {
   assert.match(html, /const libgenId = isMd5\(rawId\)/);
-  assert.match(html, /resolveLibVaultBook\(torrentBook/);
+  assert.match(html, /resolveLibcatBook\(torrentBook/);
   assert.match(html, /Resolving torrent metadata for/);
   assert.match(html, /desktopBridge\.library\.acquireLibgen\(torrentBook, \{/);
   assert.match(html, /!readPath && !cached && !torrentAvailable/);
@@ -737,9 +737,9 @@ test('hovering a placeholder retries public covers and performs a debounced meta
 
 test('metadata-only books resolve repository torrent metadata through private NIP-17', () => {
   assert.match(html, /async function resolvePrivateTorrentBook\(book, \{ onAttempt \} = \{\}\)/);
-  assert.match(html, /if \(query\) \{[\s\S]*?module\.searchLibVault\(query, isbn \? 'isbn' : 'title'/);
-  assert.match(html, /module\.resolveLibVaultBook\(\{ \.\.\.book, md5 \}, options\)/);
-  assert.match(html, /module\.searchLibVault\(query, isbn \? 'isbn' : 'title'/);
+  assert.match(html, /if \(query\) \{[\s\S]*?module\.searchLibcat\(query, isbn \? 'isbn' : 'title'/);
+  assert.match(html, /module\.resolveLibcatBook\(\{ \.\.\.book, md5 \}, options\)/);
+  assert.match(html, /module\.searchLibcat\(query, isbn \? 'isbn' : 'title'/);
   assert.doesNotMatch(html, /LIBVAULT_API_BASE/);
   assert.doesNotMatch(html, /fetch\([^\n]*lib\.b\.bfr\.ee/);
   assert.match(html, /function matchingTorrentCatalogRecord\(book, candidates\)/);

@@ -3,6 +3,9 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 
 import {
+  LIBCAT_SERVICE,
+  searchLibcat,
+  resolveLibcatBook,
   LIBVAULT_FETCH_TYPE,
   LIBVAULT_FAVORITES_TYPE,
   LIBVAULT_NIP05,
@@ -3539,4 +3542,44 @@ test('libvaultBookRef ignores an invalid md5 and keeps normalized isbn', () => {
   assert.equal(ref.title, 'Invalid md5 example');
   assert.equal(ref.author, 'Ada');
   assert.equal(ref.source, 'openlibrary');
+});
+
+
+test('Libcat searches its configured identity with pages and filters without NIP-05 lookup', async () => {
+  let payload;
+  const secret = nostrTools.generateSecretKey();
+  const pubkey = nostrTools.getPublicKey(secret);
+  const signer = {
+    getPublicKey: async () => pubkey,
+    signEvent: async event => nostrTools.finalizeEvent(event, secret),
+    nip44: { encrypt: async (peer, text) => {
+      payload = JSON.parse(JSON.parse(text).content);
+      return nostrTools.nip44.v2.encrypt(text, nostrTools.nip44.v2.utils.getConversationKey(secret, peer));
+    }, decrypt: async () => '' },
+  };
+  const options = {
+    signer, loadTools: async () => nostrTools,
+    fetchImpl: async () => { throw new Error('Unexpected discovery'); },
+    publish: async relay => { assert.equal(relay, LIBCAT_SERVICE.relays[0]); return true; },
+    listen: ({ requestID, service }) => {
+      assert.equal(service.pubkey, LIBCAT_SERVICE.pubkey);
+      return { ready: Promise.resolve(), arm() {}, close() {}, result: Promise.resolve({
+        type: 'libvault.search.result', request_id: requestID, status: 'ready', books: [], next_offset: 100,
+      }) };
+    },
+  };
+  assert.equal((await searchLibcat('history', 'title', { ...options, offset: 50, formats: ['epub'], languages: ['en'] })).next_offset, 100);
+  assert.deepEqual({ ...payload, request_id: '' }, { type: 'libvault.search', request_id: '', query: 'history', search_type: 'title', limit: 50, offset: 50, formats: ['epub'], languages: ['en'] });
+  await searchLibcat('history', undefined, { ...options, offset: -1 });
+  assert.equal(payload.offset, 0);
+  assert.equal(payload.search_type, 'all');
+  const service = { ...LIBCAT_SERVICE, pubkey: LIBCAT_SERVICE.pubkey.toUpperCase(), relays: [...LIBCAT_SERVICE.relays, ...LIBCAT_SERVICE.relays] };
+  await searchLibcat('history', 'all', { ...options, service });
+  for (const invalid of [{}, { pubkey: 'bad', relays: ['wss://relay.test'] }, { ...service, relays: [] }, { ...service, relays: ['https://relay.test'] }]) {
+    await assert.rejects(searchLibcat('history', 'all', { ...options, service: invalid }), /Invalid Libcat/);
+  }
+  await resolveLibcatBook({ md5: '1'.repeat(32) }, { ...options, listen: ({ requestID }) => ({
+    ready: Promise.resolve(), arm() {}, close() {}, result: Promise.resolve({ type: 'libvault.resolve.result', request_id: requestID, status: 'ready', book: { md5: '1'.repeat(32), libgen_id: 123 } }),
+  }) });
+  assert.equal(payload.type, 'libvault.resolve');
 });

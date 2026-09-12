@@ -189,7 +189,7 @@ test('a metadata-only Electron search result opens its book page', async () => {
     await expect(page.locator('.read-file-attempts-title')).toHaveText('What Libstr tried');
     await expect(page.locator('.read-file-attempts')).toContainText('Local library: No downloaded copy was found.');
     await expect(page.locator('.read-file-attempts')).toContainText('Direct download: This record does not provide a direct file URL.');
-    await expect(page.locator('.read-file-attempts')).toContainText('Public torrent catalogue: No compatible EPUB, PDF, FB2, or comic edition matched this metadata.');
+    await expect(page.locator('.read-file-attempts')).not.toContainText('Public torrent catalogue:');
     await expect(page.locator('.read-file-attempts')).toContainText('Private Nostr lookup: Not tried because no Nostr signer is connected.');
   } finally {
     await app.close();

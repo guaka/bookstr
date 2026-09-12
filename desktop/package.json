@@ -69,7 +69,9 @@
       "preload.js",
       "security-policy.js",
       "speech-model-store.js",
-      "package.json"
+      "package.json",
+      "encrypted-transfer.js",
+      "relay-client.js"
     ],
     "extraMetadata": {
       "main": "main.js"
@@ -119,7 +121,8 @@
   "dependencies": {
     "nostr-tools": "^2.25.0",
     "qrcode": "^1.5.4",
-    "webtorrent": "^3.0.21"
+    "webtorrent": "^3.0.21",
+    "ws": "8.21.3"
   },
   "optionalDependencies": {
     "@roamhq/wrtc": "^0.10.0"

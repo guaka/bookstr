@@ -1,3 +1,24 @@
+export const LIBCAT_SERVICE = Object.freeze({
+  nip05: 'Libcat', pubkey: '83503e3e82744479362b04881a8f240bd6d838b78430035868f1c0826ec3876f',
+  relays: Object.freeze(['wss://relay.nomadwiki.org']),
+});
+
+function configuredCatalogService(service) {
+  if (!service || !validHex(service.pubkey, 64) || !Array.isArray(service.relays) || !service.relays.length ||
+      service.relays.some(relay => typeof relay !== 'string' || !/^wss:\/\/[^\s]+$/.test(relay))) {
+    throw new Error('Invalid Libcat service configuration');
+  }
+  return { nip05: 'Libcat', pubkey: service.pubkey.toLowerCase(), relays: [...new Set(service.relays)] };
+}
+
+export function searchLibcat(query, searchType = 'all', options = {}) {
+  return searchLibVault(query, searchType, { ...options, limit: options.limit ?? 50, service: options.service || LIBCAT_SERVICE });
+}
+
+export function resolveLibcatBook(book, options = {}) {
+  return resolveLibVaultBook(book, { ...options, service: options.service || LIBCAT_SERVICE });
+}
+
 const LIBVAULT_NIP05 = 'books@blossom.bfr.ee';
 const LIBVAULT_NIP05_URL = 'https://blossom.bfr.ee/.well-known/nostr.json?name=books';
 const LIBVAULT_FETCH_TYPE = 'libvault.fetch';
@@ -273,7 +294,7 @@ export async function resolveLibVaultBook(book, options = {}) {
   }
   const publish = options.publish;
   if (typeof publish !== 'function' && !options.listen) throw new Error('No Nostr relay publisher is available');
-  const service = await resolveLibVaultService(options.fetchImpl || fetch);
+  const service = options.service ? configuredCatalogService(options.service) : await resolveLibVaultService(options.fetchImpl || fetch);
   const senderPubkey = String(await signer.getPublicKey()).toLowerCase();
   if (!validHex(senderPubkey, 64)) throw new Error('The Nostr signer returned an invalid public key');
   const tools = await (options.loadTools || (() => import('./vendor/nostr-tools.js')))();
@@ -317,7 +338,7 @@ export async function searchLibVault(query, searchType = 'all', options = {}) {
   }
   const publish = options.publish;
   if (typeof publish !== 'function' && !options.listen) throw new Error('No Nostr relay publisher is available');
-  const service = await resolveLibVaultService(options.fetchImpl || fetch);
+  const service = options.service ? configuredCatalogService(options.service) : await resolveLibVaultService(options.fetchImpl || fetch);
   const senderPubkey = String(await signer.getPublicKey()).toLowerCase();
   if (!validHex(senderPubkey, 64)) throw new Error('The Nostr signer returned an invalid public key');
   const tools = await (options.loadTools || (() => import('./vendor/nostr-tools.js')))();
@@ -340,6 +361,9 @@ export async function searchLibVault(query, searchType = 'all', options = {}) {
       request_id: id,
       query: String(query || '').trim(),
       search_type: String(searchType || 'all').toLowerCase(),
+      ...(options.service || options.offset !== undefined ? { offset: Number.isSafeInteger(options.offset) && options.offset >= 0 ? options.offset : 0 } : {}),
+      ...(Array.isArray(options.formats) ? { formats: options.formats } : {}),
+      ...(Array.isArray(options.languages) ? { languages: options.languages } : {}),
       limit: Number.isFinite(Number(options.limit)) && options.limit !== '' && options.limit != null
         ? Math.min(200, Math.max(1, Number(options.limit)))
         : 200,

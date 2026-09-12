@@ -1,0 +1,13 @@
+{
+  "manifest": {
+    "version": 1,
+    "transferId": "01010101010101010101010101010101",
+    "noncePrefix": "0202020202020202",
+    "chunkSize": 4194304,
+    "size": 5,
+    "sha256": "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
+  },
+  "key": "AwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwM=",
+  "plaintext": "aGVsbG8=",
+  "ciphertext": "2OBAnEEk1oIVpX5XvonwY3NvYp7D"
+}
