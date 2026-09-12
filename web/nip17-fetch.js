@@ -11,12 +11,12 @@ function configuredCatalogService(service) {
   return { nip05: 'Libcat', pubkey: service.pubkey.toLowerCase(), relays: [...new Set(service.relays)] };
 }
 
-export function searchLibcat(query, searchType = 'all', options = {}) {
-  return searchLibVault(query, searchType, { ...options, limit: options.limit ?? 50, service: options.service || LIBCAT_SERVICE });
+export async function searchLibcat(query, searchType = 'all', options = {}) {
+  return searchLibVault(query, searchType, { ...options, limit: options.limit ?? 50, service: options.service || await globalThis.window?.bookstrDesktop?.catalog?.get() || LIBCAT_SERVICE });
 }
 
-export function resolveLibcatBook(book, options = {}) {
-  return resolveLibVaultBook(book, { ...options, service: options.service || LIBCAT_SERVICE });
+export async function resolveLibcatBook(book, options = {}) {
+  return resolveLibVaultBook(book, { ...options, service: options.service || await globalThis.window?.bookstrDesktop?.catalog?.get() || LIBCAT_SERVICE });
 }
 
 const LIBVAULT_NIP05 = 'books@blossom.bfr.ee';

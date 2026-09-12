@@ -36,6 +36,7 @@ struct RootView: View {
     @EnvironmentObject private var playback: ReaderPlaybackSession
     @State private var selectedTab = 2
     @State private var continueError: String?
+    @State private var pendingCatalog: CatalogConnection?
     @State private var attemptedInitialContinuation = false
     @StateObject private var favoriteNetwork = FavoriteNetworkRecoveryMonitor()
 
@@ -140,6 +141,33 @@ struct RootView: View {
             guard token > 0 else { return }
             selectedTab = 3
             playback.requestClose()
+        }
+        .onOpenURL { url in
+            guard let connection = CatalogConnection(url: url, decodeNPub: NostrIdentity.hexPublicKey(from:)) else { return }
+            guard settings.catalogConnection != connection else { return }
+            pendingCatalog = connection
+        }
+        .sheet(item: $pendingCatalog) { connection in
+            NavigationStack {
+                Form {
+                    Text(connection.name).accessibilityIdentifier("catalog-invitation-name")
+                    Text(connection.npub).textSelection(.enabled).accessibilityIdentifier("catalog-invitation-npub")
+                    ForEach(connection.relays, id: \.self) { Text($0) }
+                }
+                .navigationTitle("Connect catalog")
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Cancel") { pendingCatalog = nil }.accessibilityIdentifier("catalog-invitation-cancel")
+                    }
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("Add catalog") {
+                            settings.catalogConnection = connection
+                            pendingCatalog = nil
+                            selectedTab = 1
+                        }.accessibilityIdentifier("catalog-invitation-confirm")
+                    }
+                }
+            }
         }
         .alert("Continue reading", isPresented: Binding(
             get: { continueError != nil },

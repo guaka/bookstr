@@ -3583,3 +3583,33 @@ test('Libcat searches its configured identity with pages and filters without NIP
   }) });
   assert.equal(payload.type, 'libvault.resolve');
 });
+
+test('Electron catalog invitation supplies search and resolution routing', async t => {
+  const oldWindow = globalThis.window;
+  t.after(() => { if (oldWindow === undefined) delete globalThis.window; else globalThis.window = oldWindow; });
+  const secret = nostrTools.generateSecretKey();
+  const peer = nostrTools.getPublicKey(nostrTools.generateSecretKey());
+  const configured = { pubkey: peer, relays: ['wss://invited.example'] };
+  globalThis.window = { bookstrDesktop: { catalog: { get: async () => configured } } };
+  const options = {
+    signer: { getPublicKey: async () => nostrTools.getPublicKey(secret),
+      signEvent: async event => nostrTools.finalizeEvent(event, secret),
+      nip44: { encrypt: async (pubkey, text) => nostrTools.nip44.v2.encrypt(text, nostrTools.nip44.v2.utils.getConversationKey(secret, pubkey)), decrypt: async () => '' } },
+    loadTools: async () => nostrTools,
+    publish: async relay => { assert.equal(relay, configured.relays[0]); return true; },
+    listen: ({ requestID, service }) => {
+      assert.equal(service.pubkey, peer);
+      return { ready: Promise.resolve(), arm() {}, close() {}, result: Promise.resolve({ type:'libvault.search.result',request_id:requestID,status:'ready',books:[] }) };
+    },
+  };
+  await searchLibcat('invited', 'title', options);
+  await resolveLibcatBook({md5:'1'.repeat(32)}, {...options, listen:({requestID,service})=>{
+    assert.equal(service.pubkey,peer);
+    return { ready:Promise.resolve(),arm(){},close(){},result:Promise.resolve({type:'libvault.resolve.result',request_id:requestID,status:'ready',book:{md5:'1'.repeat(32),id:123}}) };
+  }});
+  globalThis.window.bookstrDesktop.catalog.get = async () => null;
+  await searchLibcat('fallback','all',{...options,publish:async relay=>{assert.equal(relay,LIBCAT_SERVICE.relays[0]);return true;},listen:({requestID,service})=>{
+    assert.equal(service.pubkey,LIBCAT_SERVICE.pubkey);
+    return {ready:Promise.resolve(),arm(){},close(){},result:Promise.resolve({type:'libvault.search.result',request_id:requestID,status:'ready',books:[]})};
+  }});
+});

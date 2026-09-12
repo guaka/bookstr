@@ -103,6 +103,8 @@
 		FBDEC08587AE518C8EBAFCED /* SettingsRepository.swift in Sources */ = {isa = PBXBuildFile; fileRef = 22DDF63A8FC739853B993022 /* SettingsRepository.swift */; };
 		FC133E8CF49FBFA03C75CDF3 /* ComicReaderView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9C26BF9A865ED02252061DB0 /* ComicReaderView.swift */; };
 		FE3AD27714601135F65B7AED /* SearchView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DB44907013C5BEF3B84AEF4E /* SearchView.swift */; };
+		B2FA494EDA91A35D00A325E1 /* CatalogConnection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8AC76EE109FE35C23A915CC4 /* CatalogConnection.swift */; };
+		81C875511B18D22C0808DC73 /* CatalogConnectionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 105625424FBB24EB9006815B /* CatalogConnectionTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -218,6 +220,8 @@
 		F98AFAF7A917C5DBDE7B2FD1 /* WordFilterMatching.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WordFilterMatching.swift; sourceTree = "<group>"; };
 		FCD9820EF78EE6965850690D /* FavoriteOutboxTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FavoriteOutboxTests.swift; sourceTree = "<group>"; };
 		FF91D0FCB6132E4378FA51A2 /* ComicReaderUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComicReaderUITests.swift; sourceTree = "<group>"; };
+		8AC76EE109FE35C23A915CC4 /* CatalogConnection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CatalogConnection.swift; sourceTree = "<group>"; };
+		105625424FBB24EB9006815B /* CatalogConnectionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CatalogConnectionTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -296,6 +300,7 @@
 				76B900ED1AA80BA1504AA64E /* ReaderSelectionActionsTests.swift */,
 				687592E73546BF82761EBBB8 /* ReadingProgressV2ContractTests.swift */,
 				E3F0A3ACD7868D79F4ED96FB /* SettingsRepositoryTests.swift */,
+				105625424FBB24EB9006815B /* CatalogConnectionTests.swift */,
 				1E3BF6BDB061364C1FA078DB /* SnippetRepositoryTests.swift */,
 				3BACA8524B2B608D6CF08F99 /* SpeechLanguageSettingsTests.swift */,
 				CC124E45A31157EA58D7C169 /* SpeechModelStoreTests.swift */,
@@ -400,6 +405,7 @@
 				F78EB46F2E580C92BBC65414 /* ProgressRepository.swift */,
 				BA80FDE5D75A6C3DDC18CC9A /* PublicationUtilities.swift */,
 				22DDF63A8FC739853B993022 /* SettingsRepository.swift */,
+				8AC76EE109FE35C23A915CC4 /* CatalogConnection.swift */,
 				A35EC71AEF35B1BF031F46AA /* SnippetRepository.swift */,
 				D170D35FD281CDB13CC91C86 /* SpeechModelStore.swift */,
 				452650E3247A1315589B1C5D /* VocabularyRepository.swift */,
@@ -707,6 +713,7 @@
 				DD53A9C623467FAC4AB1F891 /* SearchFavoriteMatcher.swift in Sources */,
 				FE3AD27714601135F65B7AED /* SearchView.swift in Sources */,
 				FBDEC08587AE518C8EBAFCED /* SettingsRepository.swift in Sources */,
+				B2FA494EDA91A35D00A325E1 /* CatalogConnection.swift in Sources */,
 				49F0454111B5B17BA59976E2 /* SettingsView.swift in Sources */,
 				0D8B7B9C1A72642BE78B35EA /* SnippetRepository.swift in Sources */,
 				6FF9E26E7CEBEAF6988E6434 /* SpeechDebugLogView.swift in Sources */,
@@ -745,6 +752,7 @@
 				235F6DBCB3F8A19B959B93DB /* ReaderSelectionActionsTests.swift in Sources */,
 				AE0BE859A2DE65D2BEE1F08B /* ReadingProgressV2ContractTests.swift in Sources */,
 				A36198BE8953B392A5E2BB9E /* SettingsRepositoryTests.swift in Sources */,
+				81C875511B18D22C0808DC73 /* CatalogConnectionTests.swift in Sources */,
 				18534E9370C52F531884284F /* SnippetRepositoryTests.swift in Sources */,
 				E79B008989C4A235038038D3 /* SpeechLanguageSettingsTests.swift in Sources */,
 				35A11E922F3885A5471208C3 /* SpeechModelStoreTests.swift in Sources */,

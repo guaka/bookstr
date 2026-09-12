@@ -33,6 +33,7 @@ let package = Package(
             ],
             sources: [
                 "Data/DictionaryRepository.swift",
+                "Data/CatalogConnection.swift",
                 "Data/EncryptedBookTransfer.swift",
                 "Data/JSONFileStore.swift",
                 "Data/KeychainStore.swift",
@@ -69,6 +70,7 @@ let package = Package(
             exclude: ["AppContainerTests.swift"],
             sources: [
                 "BookRightsV1ContractTests.swift",
+                "CatalogConnectionTests.swift",
                 "EncryptedBookTransferTests.swift",
                 "BookstrDebugLogTests.swift",
                 "DictionaryRepositoryTests.swift",

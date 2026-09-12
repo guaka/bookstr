@@ -161,6 +161,7 @@ const desktopSigner = {
 };
 
 const desktopBridge = {
+  catalog: { get: () => ipcRenderer.invoke('bookstr-desktop-catalog-current') },
   version: 1,
   signer: desktopSigner,
   openReader(payload) {

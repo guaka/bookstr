@@ -21,6 +21,30 @@ final class AppShellUITests: XCTestCase {
         add(attachment)
     }
 
+    func testCatalogInvitationConfirmationCancellationAndRelaunch() throws {
+        let npub = "npub1zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zygse4sl3h"
+        let name = "Catalog-\(UUID().uuidString.prefix(8))"
+        let uri = "bookstr://catalog?v=1&npub=\(npub)&name=\(name)&relay=wss%3A%2F%2Frelay.example"
+        app.open(URL(string: uri + "&nsec=secret")!)
+        XCTAssertFalse(app.buttons["catalog-invitation-confirm"].exists)
+        app.open(URL(string: uri)!)
+        XCTAssertTrue(app.staticTexts["catalog-invitation-name"].waitForExistence(timeout: 10))
+        XCTAssertEqual(app.staticTexts["catalog-invitation-npub"].label, npub)
+        app.buttons["catalog-invitation-cancel"].tap()
+        XCTAssertFalse(app.buttons["catalog-invitation-confirm"].exists)
+        app.open(URL(string: uri)!)
+        XCTAssertTrue(app.buttons["catalog-invitation-confirm"].waitForExistence(timeout: 10))
+        app.buttons["catalog-invitation-confirm"].tap()
+        selectTab("Settings")
+        XCTAssertEqual(app.staticTexts["settings-catalog-name"].label, name)
+        XCTAssertEqual(app.staticTexts["settings-catalog-npub"].label, npub)
+        app.terminate()
+        app.open(URL(string: uri)!)
+        selectTab("Settings")
+        XCTAssertFalse(app.buttons["catalog-invitation-confirm"].exists)
+        XCTAssertEqual(app.staticTexts["settings-catalog-name"].label, name)
+    }
+
     func testNavigationSettingsAndContinueReadingJourney() throws {
         selectTab("Search")
         selectTab("Words")

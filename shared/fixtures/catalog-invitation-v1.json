@@ -1,0 +1,9 @@
+{
+  "pubkey": "1111111111111111111111111111111111111111111111111111111111111111",
+  "npub": "npub1zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zygse4sl3h",
+  "name": "My Libcat",
+  "relays": [
+    "wss://relay.example"
+  ],
+  "uri": "bookstr://catalog?v=1&npub=npub1zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zygse4sl3h&name=My+Libcat&relay=wss%3A%2F%2Frelay.example"
+}

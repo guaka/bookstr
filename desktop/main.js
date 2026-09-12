@@ -26,6 +26,9 @@ const { LibraryImporter, hashFile, safeExtension } = require('./library-import')
 const { localBookCover, localBookMetadata, safeCoverID } = require('./library-cover');
 const { AcquisitionManager } = require('./acquisition-manager');
 const { ElectronDevicePairing } = require('./device-pairing');
+const { CatalogInvitations } = require('./catalog-invitations');
+const { nip19: catalogNip19 } = require('nostr-tools');
+const catalogInvitations = new CatalogInvitations({ app, dialog, loadState, saveState, decodeNPub: catalogNip19.decode, getWindow: () => mainWindow });
 
 const PRELOAD_PATH = path.join(__dirname, 'preload.js');
 const WEB_ROOT = path.join(__dirname, '..', 'web');
@@ -1146,6 +1149,7 @@ function setupApplicationMenu() {
 }
 
 function setupIpcHandlers() {
+  ipcMain.handle('bookstr-desktop-catalog-current', () => catalogInvitations.current());
   ipcMain.on('bookstr-desktop-pane-shortcut', (_event, pane) => {
     if (!LIBRARY_PANES.some(item => item.pane === pane)) return;
     openLibraryPane(pane);
@@ -1574,6 +1578,7 @@ async function bootstrap() {
     console.warn('Could not register the Settings keyboard shortcut.');
   }
   await createLibraryWindow();
+  await catalogInvitations.start(process.argv, process.execPath, process.defaultApp, app.getAppPath());
   const preferences = await torrentPreferences();
   await getTorrentBridge().setLimits(preferences);
   void getAcquisitionManager().resumeLibgenSeeds({ autoSeed: preferences.autoSeed }).catch(error => {
@@ -1597,4 +1602,5 @@ app.on('activate', async () => {
   }
 });
 
-void bootstrap();
+if (app.requestSingleInstanceLock()) void bootstrap();
+else app.quit();
