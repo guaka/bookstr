@@ -8,6 +8,13 @@ collection selects nonfiction, fiction, or comics torrents. For older records
 without a collection, these are tried in order until the exact MD5 is found.
 Nonfiction IDs below 1000 use the `r_000` batch.
 
+For original Zlib releases, Libcat supplies the torrent metadata URL and numeric
+book filename. The phone selects that exact file and still verifies its observed
+MD5 and size before importing it. Only `pilimi-zlib-<first>-<last>.torrent`
+locators within the declared ID range are accepted. Zlib2 TAR and newer AAC
+releases require archive-member indexes and are not exposed through this route;
+the phone does not download a bulk TAR as if it were an individual book.
+
 The native libtorrent session runs while the app is active. Inactive/background
 transitions pause the session; returning to the foreground resumes it. No audio
 or other background-execution workaround is used. Partial files remain in the

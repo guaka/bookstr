@@ -10,8 +10,11 @@ struct TorrentEdition {
     let catalogID: Int
     let expectedSize: Int64?
     let collection: String
+    let selectedFilename: String?
+    let zlibMetadataURL: URL?
     var metadataURL: URL { metadataURLs[0] }
     var metadataURLs: [URL] {
+        if let zlibMetadataURL { return [zlibMetadataURL] }
         let collections = collection.isEmpty ? ["nonfiction", "fiction", "comics"] : [collection]
         return collections.map { kind in
             let batch = catalogID / 1000 * 1000
@@ -23,15 +26,34 @@ struct TorrentEdition {
     }
     init(record: [String: Any], expectedMD5: String) throws {
         guard expectedMD5.count == 32, expectedMD5.utf8.allSatisfy({ (48...57).contains($0) || (97...102).contains($0) }),
-              (record["md5"] as? String)?.lowercased() == expectedMD5,
-              let value = record["libgen_id"] ?? record["id"],
-              let id = Int(String(describing: value)), id > 0, id < 9_007_199_254_740_991 else {
+              (record["md5"] as? String)?.lowercased() == expectedMD5 else {
             throw TorrentDownloadError.invalidEdition
         }
         let kind = (record["collection"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        guard ["", "nonfiction", "fiction", "comics"].contains(kind) else { throw TorrentDownloadError.invalidEdition }
+        guard ["", "nonfiction", "fiction", "comics", "zlib"].contains(kind) else { throw TorrentDownloadError.invalidEdition }
         collection = kind
-        md5 = expectedMD5; catalogID = id
+        md5 = expectedMD5
+        if kind == "zlib" {
+            guard let locator = record["torrent"] as? [String: Any],
+                  let filename = locator["filename"] as? String,
+                  let id = Int(filename), id > 0, id < 9_007_199_254_740_991, String(id) == filename,
+                  let raw = locator["metadata_url"] as? String, let url = URL(string: raw),
+                  raw == "https://annas-archive.gl/dyn/small_file/torrents/managed_by_aa/zlib/" + url.lastPathComponent,
+                  url.lastPathComponent.range(of: #"^pilimi-zlib-[0-9]+-[0-9]+\.torrent$"#, options: .regularExpression) != nil else {
+                throw TorrentDownloadError.invalidEdition
+            }
+            let bounds = url.lastPathComponent.replacingOccurrences(of: ".torrent", with: "").split(separator: "-")
+            guard let first = Int(bounds[2]), let last = Int(bounds[3]), (first...max(first, last)).contains(id), first <= last else {
+                throw TorrentDownloadError.invalidEdition
+            }
+            selectedFilename = filename; zlibMetadataURL = url; catalogID = id
+        } else {
+            guard let value = record["libgen_id"] ?? record["id"],
+                  let id = Int(String(describing: value)), id > 0, id < 9_007_199_254_740_991 else {
+                throw TorrentDownloadError.invalidEdition
+            }
+            catalogID = id; selectedFilename = nil; zlibMetadataURL = nil
+        }
         let rawSize = record["filesize_bytes"] ?? record["filesize"]
         if let rawSize, let size = Int64(String(describing: rawSize)), size != 0 {
             guard size > 0, size <= 8 * 1024 * 1024 * 1024 else { throw TorrentDownloadError.invalidEdition }
@@ -56,9 +78,17 @@ enum TorrentDownloadError: LocalizedError {
 
 protocol BookTorrentEngine: AnyObject {
     func start(metadata: Data, md5: String) throws
+    func start(metadata: Data, md5: String, filename: String?) throws
     func snapshot() -> [String: Any]
     func setActive(_ active: Bool)
     func stop()
+}
+
+extension BookTorrentEngine {
+    func start(metadata: Data, md5: String, filename: String?) throws {
+        guard filename == nil else { throw TorrentDownloadError.invalidEdition }
+        try start(metadata: metadata, md5: md5)
+    }
 }
 
 #if canImport(TorrentEngine)
@@ -67,6 +97,9 @@ final class NativeBookTorrentEngine: BookTorrentEngine {
     private let queue = DispatchQueue(label: "app.bookstr.torrent-engine")
     init(root: URL) { engine = BTTorrentSession(root: root.path) }
     func start(metadata: Data, md5: String) throws { try queue.sync { try engine.startTorrent(metadata, expectedMD5: md5) } }
+    func start(metadata: Data, md5: String, filename: String?) throws {
+        try queue.sync { try engine.startTorrent(metadata, expectedMD5: md5, selectedFilename: filename) }
+    }
     func snapshot() -> [String: Any] { queue.sync { engine.snapshot() } }
     func setActive(_ active: Bool) { queue.sync { engine.setActive(active) } }
     func stop() { queue.sync { engine.stop() } }
@@ -105,7 +138,7 @@ actor ForegroundTorrentDownloader {
         driver.setActive(active)
         var started = false
         if let cached = try? Data(contentsOf: metadataFile), !cached.isEmpty {
-            do { try driver.start(metadata: cached, md5: edition.md5); started = true }
+            do { try driver.start(metadata: cached, md5: edition.md5, filename: edition.selectedFilename); started = true }
             catch { try? FileManager.default.removeItem(at: metadataFile) }
         }
         if !started {
@@ -122,7 +155,7 @@ actor ForegroundTorrentDownloader {
                     lastError = error
                     continue
                 }
-                do { try driver.start(metadata: metadata, md5: edition.md5) }
+                do { try driver.start(metadata: metadata, md5: edition.md5, filename: edition.selectedFilename) }
                 catch {
                     let native = error as NSError
                     // Older catalogs omit collection. Only try another collection

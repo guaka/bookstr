@@ -51,6 +51,11 @@ final class AppShellUITests: XCTestCase {
         XCTAssertTrue(reader.waitForExistence(timeout: 15))
     }
 
+    func testZlibSearchDownloadsAndReopensOfflinePublication() throws {
+        app.launchArguments += ["--ui-testing-zlib-fixture"]
+        try testTorrentSearchOpensAndReopensOfflinePublication()
+    }
+
     func testCatalogInvitationConfirmationCancellationAndRelaunch() throws {
         let npub = "npub1zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zygse4sl3h"
         let name = "Catalog-\(UUID().uuidString.prefix(8))"

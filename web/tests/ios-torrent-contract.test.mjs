@@ -41,3 +41,15 @@ test('catalog collection and filename extensions are covered by real-engine test
   assert.match(read('ios/TorrentEngine/README.md'), /r_000/);
   assert.match(read('ios/BookstrIOS/Sources/App/LibraryUITestFixtures.swift'), /"authors": "Fixture Author", "collection": "fiction"/);
 });
+
+test('Zlib numeric-file acquisition retains verification and offline-reader coverage', () => {
+  const download = read('ios/BookstrIOS/Sources/Data/TorrentDownload.swift');
+  assert.match(download, /filename: edition.selectedFilename/);
+  assert.match(download, /try Self.verify\(file, edition: edition\)/);
+  assert.match(download, /managed_by_aa\/zlib\//);
+  const tests = read('ios/BookstrIOS/Tests/TorrentDownloadTests.swift');
+  assert.match(tests, /testNativeZlibDownloadVerifiesPayloadAndResumesCachedMetadata/);
+  assert.match(tests, /testNativeZlibSelectsExactIDAndRejectsUnsafeOrAmbiguousNames/);
+  assert.match(read('ios/BookstrIOS/UITests/AppShellUITests.swift'), /testZlibSearchDownloadsAndReopensOfflinePublication/);
+  assert.match(read('ios/TorrentEngine/README.md'), /Zlib2 TAR and newer AAC/);
+});
