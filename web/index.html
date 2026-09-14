@@ -4192,6 +4192,7 @@
       }
 
       function defaultSearchResultRank(book) {
+        if (book.searchSourceId === 'libcat') return -1;
         if (cachedBookKeys.has(bookCacheKey(book, book.readUrl || book.url))) return 0;
         if (BookMetadata.canonicalReadUrl(book, BOOKS_API_BASE)) return 1;
         return 2;
@@ -7719,7 +7720,7 @@
           libcatPage = Number.isSafeInteger(response.next_offset) && response.next_offset > 0
             ? { query, type, offset: response.next_offset, generation } : null;
         }
-        return normalizeSearchBooks(response, 'libvault');
+        return normalizeSearchBooks(response, 'libvault').map(book => ({ ...book, searchSourceId: 'libcat' }));
       }
 
       async function loadMoreLibcat() {
@@ -7732,7 +7733,7 @@
             signer: nostrSigner, publish: publishRelayEvent, limit: 50, offset: page.offset,
           });
           if (page.generation !== activeSearchGeneration) return;
-          const books = dedupeBooks([...searchResultBooks, ...normalizeSearchBooks(response, 'libvault')]);
+          const books = dedupeBooks([...searchResultBooks, ...normalizeSearchBooks(response, 'libvault').map(book => ({ ...book, searchSourceId: 'libcat' }))]);
           libcatPage = Number.isSafeInteger(response.next_offset) && response.next_offset > page.offset
             ? { ...page, offset: response.next_offset } : null;
           renderResults(books, { routeState: { ...searchResultFilter, page: searchResultPage } });
@@ -7850,25 +7851,36 @@
           return;
         }
         target.classList.remove('hidden');
-        target.innerHTML = entries.map(entry => {
+        target.innerHTML = searchSourceRegistry().map(source => {
+          const entry = entries.find(entry => entry.source.id === source.id) || { source, state: 'cached' };
+          const enabled = isSearchSourceEnabled(source.id);
           const state = entry.state || (entry.error ? 'failed' : 'done');
-          const stateText = state === 'pending'
+          const stateText = !enabled ? 'Off' : state === 'cached' ? '' : state === 'pending'
             ? 'Searching'
             : state === 'failed'
               ? 'Failed'
               : `Done · ${Number(entry.count || 0)} result${Number(entry.count || 0) === 1 ? '' : 's'}`;
           return `<li data-source="${escapeHtml(entry.source.id)}" data-state="${escapeHtml(state)}">
-            <span>${escapeHtml(entry.source.name)}</span><span class="search-source-state">${escapeHtml(stateText)}</span>
+            <label class="search-source-toggle"><input type="checkbox" data-action="toggle-search-source" data-source-id="${escapeHtml(source.id)}" ${enabled ? 'checked' : ''}><span>${escapeHtml(source.name)}</span></label><span class="search-source-state">${escapeHtml(stateText)}</span>
           </li>`;
         }).join('');
+        target.querySelectorAll('[data-action="toggle-search-source"]').forEach(input => {
+          input.addEventListener('change', event => {
+            setSearchSourceEnabled(event.currentTarget.dataset.sourceId, event.currentTarget.checked);
+            void startSearch({ updateHash: false, bypassCache: true });
+          });
+        });
       }
 
       async function searchAvailableBookSources(query, onUpdate = () => {}) {
         const sources = searchSourceRegistry().filter(source => isSearchSourceEnabled(source.id));
-        if (!sources.length) throw new Error('No search sources are enabled. Clear the search to turn one on.');
+        if (!sources.length) {
+          onUpdate(searchSourceRegistry().map(source => ({ source, state: 'cached' })), []);
+          return { books: [], outcomes: [] };
+        }
         const arrivedBooks = [];
         const catalogBooks = [];
-        const mergedBooks = () => dedupeBooks([...dedupeBooks(arrivedBooks).slice(0, SEARCH_RESULT_LIMIT), ...catalogBooks]);
+        const mergedBooks = () => dedupeBooks([...catalogBooks, ...dedupeBooks(arrivedBooks).slice(0, SEARCH_RESULT_LIMIT)]);
         const progress = sources.map(source => ({ source, state: 'pending', count: 0, error: null }));
         onUpdate(progress, []);
         const outcomes = await Promise.all(sources.map(async (source, index) => {
@@ -7935,7 +7947,7 @@
         }
       }
 
-      async function startSearch({ updateHash = true, routeState = null } = {}) {
+      async function startSearch({ updateHash = true, routeState = null, bypassCache = false } = {}) {
         const searchGeneration = ++activeSearchGeneration;
         libcatPage = null;
         searchLoadMore.classList.add('hidden');
@@ -7977,9 +7989,9 @@
         searchResultCount.textContent = '0 results';
         searchPagination.classList.add('hidden');
         resetNip17Exchange();
-        const cachedBooks = state.nip7?.pubkey && isSearchSourceEnabled('libcat') ? null : cachedSearchBooks(query);
+        const cachedBooks = bypassCache || state.nip7?.pubkey && isSearchSourceEnabled('libcat') ? null : cachedSearchBooks(query);
         if (cachedBooks) {
-          renderSearchSourceProgress([]);
+          renderSearchSourceProgress(searchSourceRegistry().map(source => ({ source, state: 'cached' })));
           const books = cachedBooks.filter(book => matchesExactSearchTokens(
             book,
             query,

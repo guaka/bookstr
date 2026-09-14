@@ -64,7 +64,7 @@ test('Search sources are default-on, locally toggleable, and excluded from fan-o
   assert.match(html, /setSearchSourceEnabled\(event\.currentTarget\.dataset\.sourceId, event\.currentTarget\.checked\)/);
   assert.match(html, /searchSourceRegistry\(\)\.filter\(source => isSearchSourceEnabled\(source\.id\)\)/);
   assert.match(html, /sources: searchSourceRegistry\(\)\.filter\(source => isSearchSourceEnabled\(source\.id\)\)\.map\(source => source\.id\)\.sort\(\)/);
-  assert.match(html, /No search sources are enabled\. Clear the search to turn one on\./);
+  assert.match(html, /if \(!sources.length\) \{[\s\S]*?return \{ books: \[\], outcomes: \[\] \}/);
 });
 
 test('search retains synced public OPDS sources without exposing feed editing in settings', () => {
