@@ -53,15 +53,17 @@ final class TorrentDownloadTests: XCTestCase {
         queue.enqueue(result("first"), prepare: prepare)
         queue.enqueue(result("first"), prepare: prepare)
         queue.enqueue(result("second"), prepare: prepare)
+        XCTAssertEqual(queue.jobs.map(\.id), ["second", "first"])
         XCTAssertEqual(queue.jobs.map(\.status), ["Starting…", "Starting…"])
-        for _ in 0..<100 where queue.jobs.last?.book == nil { try await Task.sleep(nanoseconds: 10_000_000) }
+        for _ in 0..<100 where queue.jobs.first(where: { $0.id == "second" })?.book == nil { try await Task.sleep(nanoseconds: 10_000_000) }
         XCTAssertEqual(Set(started), ["first", "second"])
-        XCTAssertTrue(queue.jobs[0].failed)
-        XCTAssertEqual(queue.jobs[1].status, "Downloaded")
+        XCTAssertTrue(queue.jobs.first(where: { $0.id == "first" })!.failed)
+        XCTAssertEqual(queue.jobs.first(where: { $0.id == "second" })!.status, "Downloaded")
         queue.enqueue(result("first")) { result, _ in result.asCatalogBook()! }
-        for _ in 0..<100 where queue.jobs[0].book == nil { try await Task.sleep(nanoseconds: 10_000_000) }
+        XCTAssertEqual(queue.jobs.map(\.id), ["first", "second"])
+        for _ in 0..<100 where queue.jobs.first(where: { $0.id == "first" })?.book == nil { try await Task.sleep(nanoseconds: 10_000_000) }
         XCTAssertEqual(queue.jobs.count, 2)
-        XCTAssertEqual(queue.jobs[0].status, "Downloaded")
+        XCTAssertEqual(queue.jobs.first?.status, "Downloaded")
     }
 
     @MainActor
@@ -82,6 +84,7 @@ final class TorrentDownloadTests: XCTestCase {
         }
         downloads.enqueue(result("first"), prepare: prepare)
         downloads.enqueue(result("second"), prepare: prepare)
+        XCTAssertEqual(downloads.jobs.map(\.id), ["second", "first"])
         downloads.resume(prepare: prepare)
         for _ in 0..<100 where pending.count < 2 { try await Task.sleep(nanoseconds: 10_000_000) }
         XCTAssertEqual(Set(pending.keys), ["first", "second"], "Both must start before either finishes")
@@ -90,14 +93,15 @@ final class TorrentDownloadTests: XCTestCase {
         XCTAssertTrue(saved.allSatisfy { $0.book == nil })
         pending["first"]!.resume(returning: result("first").asCatalogBook()!)
         pending["second"]!.resume(throwing: CancellationError())
-        for _ in 0..<100 where downloads.jobs[1].status != "Paused" { try await Task.sleep(nanoseconds: 10_000_000) }
+        for _ in 0..<100 where downloads.jobs.first(where: { $0.id == "second" })?.status != "Paused" { try await Task.sleep(nanoseconds: 10_000_000) }
         let restored = BookDownloadQueue(fileURL: manifest)
-        XCTAssertEqual(restored.jobs[0].status, "Downloaded")
-        XCTAssertEqual(restored.jobs[1].status, "Paused")
+        XCTAssertEqual(restored.jobs.map(\.id), ["second", "first"])
+        XCTAssertEqual(restored.jobs.first(where: { $0.id == "first" })?.status, "Downloaded")
+        XCTAssertEqual(restored.jobs.first(where: { $0.id == "second" })?.status, "Paused")
         var resumed: [String] = []
         restored.resume { result, _ in resumed.append(result.id); return result.asCatalogBook()! }
         restored.resume { _, _ in XCTFail("Duplicate resume"); throw CancellationError() }
-        for _ in 0..<100 where restored.jobs[1].book == nil { try await Task.sleep(nanoseconds: 10_000_000) }
+        for _ in 0..<100 where restored.jobs.first(where: { $0.id == "second" })?.book == nil { try await Task.sleep(nanoseconds: 10_000_000) }
         XCTAssertEqual(resumed, ["second"])
         restored.enqueue(result("first")) { _, _ in XCTFail("Completed book restarted"); throw CancellationError() }
         XCTAssertTrue(BookDownloadQueue(fileURL: manifest).jobs.allSatisfy { $0.book != nil })
@@ -216,14 +220,14 @@ final class TorrentDownloadTests: XCTestCase {
     func testForegroundPauseResumeAndCachedMetadata() async throws {
         let (root,data,edition)=try fixture();let file=root.appendingPathComponent(edition.md5).appendingPathComponent(edition.md5)
         try data.write(to:file)
-        let engine=Engine();engine.states=[["state":"finding-peers"],["state":"downloading","bytes":5,"size":data.count],["state":"ready","path":file.path]]
+        let engine=Engine();engine.states=[["state":"finding-peers"],["state":"downloading","bytes":5,"size":data.count,"peers":22,"seeds":3,"rate":2048],["state":"ready","path":file.path]]
         var fetches=0;var statuses:[String]=[]
         let downloader=ForegroundTorrentDownloader(root:root,makeEngine:{_ in engine},fetch:{_ in fetches += 1; return Data("d4:infodee".utf8)},sleep:{})
         await downloader.setActive(true)
         let received=try await downloader.download(edition,progress:{statuses.append($0)})
         XCTAssertEqual(received,file);XCTAssertEqual(fetches,1);XCTAssertEqual(engine.stops,1)
         XCTAssertTrue(statuses.contains("Finding peers…"));XCTAssertTrue(statuses.contains("Verifying…"))
-        XCTAssertTrue(statuses.contains(where:{$0.hasPrefix("Downloading ·")}))
+        XCTAssertTrue(statuses.contains(where:{$0.contains("22 peers (3 seeds)") && $0.contains("/s")}))
         await downloader.setActive(false)
         _=try await downloader.download(edition,progress:{_ in})
         XCTAssertEqual(fetches,1);XCTAssertEqual(engine.starts,2)

@@ -162,9 +162,10 @@
 
     let readerFontFamily = "arial";
     let readerAlignment = "justified";
+    let readerPadding = 0;
 
     function typographyCSS() {
-      return window.BookstrTypography.css(readerFontFamily, readerAlignment);
+      return window.BookstrTypography.css(readerFontFamily, readerAlignment, readerPadding);
     }
 
     function applyTypographyToDocument(contentDocument) {
@@ -1911,9 +1912,10 @@
       applyTheme(theme);
     };
 
-    window.setReaderTypography = function(font, alignment) {
+    window.setReaderTypography = function(font, alignment, padding) {
       readerFontFamily = window.BookstrTypography.normalizeFont(font);
       readerAlignment = window.BookstrTypography.normalizeAlignment(alignment);
+      readerPadding = window.BookstrTypography.normalizePadding(padding);
       applyTypography();
     };
 

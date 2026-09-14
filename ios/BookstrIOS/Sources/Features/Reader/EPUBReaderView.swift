@@ -232,7 +232,7 @@ final class EPUBReaderController: NSObject, ObservableObject, AVSpeechSynthesize
 
     func applyTypography(font: ReaderFont, alignment: ReaderAlignment) {
         evaluate(
-            "window.setReaderTypography && window.setReaderTypography(\(Self.js(font.rawValue)), \(Self.js(alignment.rawValue)))"
+            "window.setReaderTypography && window.setReaderTypography(\(Self.js(font.rawValue)), \(Self.js(alignment.rawValue)), 0)"
         )
     }
 
@@ -990,7 +990,7 @@ struct EPUBReaderView: UIViewRepresentable {
             let knownData = (try? JSONSerialization.data(withJSONObject: knownWords)) ?? Data("[]".utf8)
             let knownJSON = String(data: knownData, encoding: .utf8) ?? "[]"
             let knownArgument = EPUBReaderController.js(knownJSON)
-            let loadScript = "setReaderTheme(\(theme)); setReaderTypography(\(font), \(alignment)); setKnownWords(\(knownArgument)); " +
+            let loadScript = "setReaderTheme(\(theme)); setReaderTypography(\(font), \(alignment), 0); setKnownWords(\(knownArgument)); " +
                 "loadBook(\(publication), \(cfi), \(theme), \(highlight), \(bookID), \(highlightKind)); null;"
             webView.evaluateJavaScript(
                 "[typeof window.loadBook, typeof window.ePub, typeof window.JSZip, " +

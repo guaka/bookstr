@@ -710,7 +710,7 @@ final class ReaderAssetContractTests: XCTestCase {
         let source = try String(contentsOf: sourceURL, encoding: .utf8)
         XCTAssertTrue(source.contains("case \"/reader-typography.js\":"))
         XCTAssertTrue(source.contains("bundled(\"reader-typography\", extension: \"js\")"))
-        XCTAssertTrue(source.contains("setReaderTypography(\\(font), \\(alignment))"))
+        XCTAssertTrue(source.contains("setReaderTypography(\\(font), \\(alignment), 0)"))
         XCTAssertTrue(source.contains("window.setReaderTypography && window.setReaderTypography"))
         XCTAssertTrue(source.contains("window.requestSpeechText && window.requestSpeechText(true, \\(Self.js(requestID)), \\(Self.js(speechLocator)))"))
         XCTAssertTrue(source.contains("func speakFromLocator"))

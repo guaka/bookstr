@@ -161,7 +161,6 @@ final class NeuralSpeechSession {
     private var nextRender = 0
     private var nextSchedule = 0
     private var queuedOnPlayer = 0
-    private var spokenQueued = 0
     private var synthesizing = false
     private var sampleRate: Double = 24_000
     private var ready: [Int: (samples: [Float], sampleRate: Double)] = [:]
@@ -209,7 +208,6 @@ final class NeuralSpeechSession {
         nextRender = 0
         nextSchedule = 0
         queuedOnPlayer = 0
-        spokenQueued = 0
         synthesizing = false
         ready = [:]
         phraseDurations = [:]
@@ -257,7 +255,6 @@ final class NeuralSpeechSession {
         activePhrase = nil
         synthesizing = false
         queuedOnPlayer = 0
-        spokenQueued = 0
         ready.removeAll()
         phraseDurations.removeAll()
         chunks.removeAll()
@@ -274,7 +271,7 @@ final class NeuralSpeechSession {
 
     private func prefetch() {
         guard !synthesizing, nextRender < chunks.count else { return }
-        guard spokenQueued + ready.count < lookahead else { return }
+        guard queuedOnPlayer + ready.count < lookahead else { return }
         let index = nextRender
         let chunk = chunks[index]
         guard let text = NeuralSpeechInput.speakable(chunk.speak) else {
@@ -311,52 +308,50 @@ final class NeuralSpeechSession {
     }
 
     private func scheduleReady() {
-        while nextSchedule < chunks.count,
-              spokenQueued < lookahead,
-              let audio = ready[nextSchedule] {
-            let index = nextSchedule
-            nextSchedule += 1
-            ready[index] = nil
-            let startsNow = spokenQueued == 0
-            queuedOnPlayer += 1
-            spokenQueued += 1
-            let active = generation
-            do {
-                let voiced = NeuralSpeechAudio.trimTrailingSilence(
-                    audio.samples,
-                    sampleRate: audio.sampleRate
-                )
-                let samples = NeuralSpeechAudio.withLeadingPause(
-                    voiced,
-                    sampleRate: audio.sampleRate,
-                    pauseSeconds: chunks[index].pauseSeconds
-                )
-                let duration = Double(samples.count) / max(audio.sampleRate, 1)
-                phraseDurations[index] = duration
-                if startsNow {
-                    announcePhrase(index)
-                }
-                try player.schedule(samples: samples, sampleRate: audio.sampleRate) { [weak self] in
-                    DispatchQueue.main.async {
-                        guard let self, self.generation == active else { return }
-                        self.queuedOnPlayer -= 1
-                        self.spokenQueued -= 1
-                        if index + 1 < self.chunks.count, self.spokenQueued > 0 {
-                            self.announcePhrase(index + 1)
-                        }
-                        if index == self.chunks.count - 1 {
-                            self.finish()
-                            return
-                        }
-                        self.scheduleReady()
-                        self.prefetch()
+        // Keep rendered lookahead in memory, but give AVAudioPlayerNode only
+        // the phrase that is actually next. If iOS flushes a node containing
+        // several scheduled buffers, it invokes all their completion handlers
+        // and narration appears to skip several paragraphs at once.
+        guard queuedOnPlayer == 0,
+              nextSchedule < chunks.count,
+              let audio = ready[nextSchedule] else {
+            prefetch()
+            return
+        }
+        let index = nextSchedule
+        nextSchedule += 1
+        ready[index] = nil
+        queuedOnPlayer += 1
+        let active = generation
+        do {
+            let voiced = NeuralSpeechAudio.trimTrailingSilence(
+                audio.samples,
+                sampleRate: audio.sampleRate
+            )
+            let samples = NeuralSpeechAudio.withLeadingPause(
+                voiced,
+                sampleRate: audio.sampleRate,
+                pauseSeconds: chunks[index].pauseSeconds
+            )
+            let duration = Double(samples.count) / max(audio.sampleRate, 1)
+            phraseDurations[index] = duration
+            announcePhrase(index)
+            try player.schedule(samples: samples, sampleRate: audio.sampleRate) { [weak self] in
+                DispatchQueue.main.async {
+                    guard let self, self.generation == active else { return }
+                    self.queuedOnPlayer -= 1
+                    if index == self.chunks.count - 1 {
+                        self.finish()
+                        return
                     }
+                    self.scheduleReady()
+                    self.prefetch()
                 }
-            } catch {
-                BookstrDebugLog.shared.record("schedule fail #\(index) \(error.localizedDescription)")
-                fail(error)
-                return
             }
+        } catch {
+            BookstrDebugLog.shared.record("schedule fail #\(index) \(error.localizedDescription)")
+            fail(error)
+            return
         }
         prefetch()
     }

@@ -18,6 +18,7 @@ test('reader typography defaults unknown values to Arial and justified', () => {
   assert.equal(BookstrTypography.normalizeAlignment('left'), 'left');
   assert.equal(BookstrTypography.normalizeAlignment(' Left '), 'left');
   assert.equal(BookstrTypography.normalizePadding(undefined), 24);
+  assert.equal(BookstrTypography.normalizePadding(0), 0);
   assert.equal(BookstrTypography.normalizePadding(4), 8);
   assert.equal(BookstrTypography.normalizePadding('36'), 36);
   assert.equal(BookstrTypography.normalizePadding(100), 64);
@@ -36,6 +37,9 @@ test('reader typography CSS uses Arial and justify by default', () => {
   assert.match(leftGeorgia, /text-align:left !important/);
   assert.match(leftGeorgia, /hyphens:manual !important/);
   assert.match(leftGeorgia, /padding-left:40px !important;padding-right:40px !important/);
+
+  const fullWidth = BookstrTypography.css('arial', 'justified', 0);
+  assert.match(fullWidth, /padding-left:0px !important;padding-right:0px !important/);
 
   assert.equal(
     BookstrTypography.fontStack('palatino'),
