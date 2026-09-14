@@ -7,7 +7,6 @@ import XCTest
 
 final class CatalogSearchPageTests: XCTestCase {
     let md5 = String(repeating: "a", count: 32)
-    let sha = String(repeating: "b", count: 64)
 
     func testMetadataIdentityFormatsAndPagination() throws {
         let records: [[String: Any]] = [
@@ -68,28 +67,4 @@ final class CatalogSearchPageTests: XCTestCase {
         }
     }
 
-    func testResolveAcceptsOnlyMatchingReadyBlossomPublications() throws {
-        let book = try XCTUnwrap(CatalogSearchPage.libcat(["books": [["md5": md5, "extension": "epub"]]], offset: 0).books[0].asCatalogBook())
-        let url = "https://\(PublicationUtilities.blossomHost)/\(sha).pdf"
-        let blob: [String: Any] = ["status": "ready", "sha256": sha.uppercased(), "url": url, "format": "pdf"]
-        let resolved = try CatalogSearchPage.publication(["blossom": blob], for: book)
-        XCTAssertEqual(resolved.id, book.id)
-        XCTAssertEqual(resolved.libvaultMd5, md5)
-        XCTAssertEqual(resolved.blossomSha256, sha)
-        XCTAssertEqual(resolved.epubUrl, url)
-        XCTAssertEqual(resolved.format, .pdf)
-        for key in ["status", "sha256", "url"] {
-            var changed = blob; changed.removeValue(forKey: key)
-            XCTAssertThrowsError(try CatalogSearchPage.publication(["blossom": changed], for: book))
-        }
-        for (key, value) in [("status", "publishing"), ("sha256", "bad"), ("url", "http://\(PublicationUtilities.blossomHost)/\(sha)"),
-            ("url", "https://example.org/\(sha)"), ("url", "https://user:pass@\(PublicationUtilities.blossomHost)/\(sha)"),
-            ("url", "https://\(PublicationUtilities.blossomHost)/wrong.pdf"), ("url", "https://\(PublicationUtilities.blossomHost)/")] {
-            var changed = blob; changed[key] = value
-            XCTAssertThrowsError(try CatalogSearchPage.publication(["blossom": changed], for: book))
-        }
-        XCTAssertThrowsError(try CatalogSearchPage.publication([:], for: book))
-        var inferred = blob; inferred.removeValue(forKey: "format")
-        XCTAssertEqual(try CatalogSearchPage.publication(["blossom": inferred], for: book).format, .pdf)
-    }
 }

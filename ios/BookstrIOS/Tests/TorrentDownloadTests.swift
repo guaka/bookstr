@@ -231,7 +231,7 @@ final class TorrentDownloadTests: XCTestCase {
     }
     func testUnsafePathsCorruptFilesAndEngineFailure() async throws {
         let (root,data,edition)=try fixture();let file=root.appendingPathComponent(edition.md5).appendingPathComponent(edition.md5)
-        for status:[String:Any] in [["state":"ready"],["state":"ready","path":"/outside/book"],["state":"failed","error":"no peers"],["state":"ready","path":file.path]] {
+        for status:[String:Any] in [["state":"ready"],["state":"ready","path":"/outside/book"],["state":"failed"],["state":"failed","error":"no peers"],["state":"ready","path":file.path]] {
             try Data(repeating:1,count:data.count).write(to:file)
             let engine=Engine();engine.states=[status]
             let downloader=ForegroundTorrentDownloader(root:root,makeEngine:{_ in engine},fetch:{_ in Data("de".utf8)},sleep:{})
@@ -302,7 +302,7 @@ extension TorrentDownloadTests {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [MetadataProtocol.self]
         let session = URLSession(configuration: configuration)
-        defer { session.invalidateAndCancel(); MetadataProtocol.status = 200; MetadataProtocol.declaredSize = nil }
+        defer { session.invalidateAndCancel(); MetadataProtocol.status = 200; MetadataProtocol.body = Data("de".utf8); MetadataProtocol.declaredSize = nil }
         let url = URL(string: "https://fixture.test/book.torrent")!
         MetadataProtocol.status = 200
         let received = try await ForegroundTorrentDownloader.fetchMetadata(url, session: session)
@@ -311,6 +311,8 @@ extension TorrentDownloadTests {
         do { _ = try await ForegroundTorrentDownloader.fetchMetadata(url, session: session); XCTFail("Expected HTTP rejection") } catch {}
         MetadataProtocol.status = 200; MetadataProtocol.declaredSize = 17 * 1024 * 1024
         do { _ = try await ForegroundTorrentDownloader.fetchMetadata(url, session: session); XCTFail("Expected size rejection") } catch {}
+        MetadataProtocol.declaredSize = nil; MetadataProtocol.body = Data(repeating: 100, count: 16 * 1024 * 1024 + 1)
+        do { _ = try await ForegroundTorrentDownloader.fetchMetadata(url, session: session); XCTFail("Expected streamed size rejection") } catch {}
     }
 }
 

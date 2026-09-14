@@ -220,7 +220,7 @@ extension LibraryUITestFixtures {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [EmptyPublicSearch.self]
         return CatalogRepository(fileStore: fileStore, settings: settings, signerStore: signerStore, nip46Service: nip46,
-            searchSession: URLSession(configuration: configuration), signerProvider: { TorrentFixtureSigner() }, catalogRequest: { request, _ in
+            searchSession: URLSession(configuration: configuration), signerProvider: { TorrentFixtureSigner() }, catalogRequest: { request, _, _ in
                 if request["type"] as? String == "libcat.search" { return ["books": records] }
                 if arguments.contains("--ui-testing-torrent-offline") { throw URLError(.notConnectedToInternet) }
                 let md5 = (request["book"] as? [String: Any])?["md5"] as? String

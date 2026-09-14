@@ -141,6 +141,13 @@ final class FavoriteMetadataRepository {
 
 final class CatalogRepository {
     static let booksAPIBase = "https://books-api.guaka.org/api"
+    private static let downloadSession: URLSession = {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.waitsForConnectivity = false
+        configuration.timeoutIntervalForRequest = 30
+        configuration.timeoutIntervalForResource = 180
+        return URLSession(configuration: configuration)
+    }()
     private let fileStore: JSONFileStore
     private let settings: SettingsRepository
     private let downloadedBooksLock = NSLock()
@@ -153,8 +160,9 @@ final class CatalogRepository {
     init(fileStore: JSONFileStore, settings: SettingsRepository, signerStore: SignerStore, nip46Service: Nip46Service,
          searchSession: URLSession = .shared,
          signerProvider: (() -> NostrSigner?)? = nil,
-         catalogRequest: @escaping ([String: Any], NostrSigner) async throws -> [String: Any] = {
-             try await PrivateCatalogClient(crypto: .native).request($0, signer: $1)
+         catalogRequest: @escaping ([String: Any], NostrSigner, PrivateCatalogService) async throws -> [String: Any] = {
+             try await PrivateCatalogClient(crypto: .native, socketFactory: PrivateCatalogSocketConnection.live)
+                 .request($0, signer: $1, service: $2)
          }) {
         self.fileStore = fileStore
         self.settings = settings
@@ -225,7 +233,11 @@ final class CatalogRepository {
     }
 
     private let searchSession: URLSession
-    private let catalogRequest: ([String: Any], NostrSigner) async throws -> [String: Any]
+    private let catalogRequest: ([String: Any], NostrSigner, PrivateCatalogService) async throws -> [String: Any]
+
+    private var catalogService: PrivateCatalogService {
+        settings.catalogConnection.flatMap(PrivateCatalogService.init(connection:)) ?? .libcat
+    }
 
     func search(_ query: String, limit: Int = 20) async throws -> [BookSearchResult] {
         try await searchPage(query, limit: limit).books
@@ -242,7 +254,7 @@ final class CatalogRepository {
         async let publicBooks: [BookSearchResult] = offset == 0 ? ((try? await publicSearch(normalized, limit: limit)) ?? []) : []
         do {
             let response = try await catalogRequest(["type": "libcat.search", "query": normalized,
-                "search_type": "all", "offset": offset, "limit": min(max(limit, 1), 50)], signer)
+                "search_type": "all", "offset": offset, "limit": min(max(limit, 1), 50)], signer, catalogService)
             var page = CatalogSearchPage.libcat(response, offset: offset)
             page.books = CatalogSearchPage.merge(page.books, await publicBooks)
             return page
@@ -334,10 +346,7 @@ final class CatalogRepository {
                 guard let signer = signerProvider() else {
                     throw PrivateCatalogError.rejected("Connect your Nostr identity to download this edition")
                 }
-                let response = try await catalogRequest(["type": "libcat.resolve", "book": ["md5": md5]], signer)
-                if let published = try? CatalogSearchPage.publication(response, for: book) {
-                    return try await prepareForOpening(book: published)
-                }
+                let response = try await catalogRequest(["type": "libcat.resolve", "book": ["md5": md5]], signer, catalogService)
                 guard let record = response["book"] as? [String: Any] else { throw TorrentDownloadError.invalidEdition }
                 edition = try TorrentEdition(record: record, expectedMD5: md5)
                 fileStore.save(cacheName, value: edition)
@@ -393,11 +402,7 @@ final class CatalogRepository {
             request.setValue(try await BlossomAuthorization.get(signer: signer, hash: blossomHash, server: host),
                              forHTTPHeaderField: "Authorization")
         }
-        let (tempURL, response) = try await PublicationDownloadManager.shared.download(for: request)
-        defer {
-            try? FileManager.default.removeItem(at: tempURL)
-            PublicationDownloadManager.shared.discard(remoteURL)
-        }
+        let (tempURL, response) = try await Self.downloadSession.download(for: request)
         guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
             let status = (response as? HTTPURLResponse)?.statusCode ?? 0
             throw NSError(domain: "CatalogRepository", code: status,

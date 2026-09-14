@@ -896,9 +896,11 @@ test('desktop mode proxies dictionaries and anchors the footer without changing 
 test('desktop content security policy permits secure Nostr relay sockets', async () => {
   const desktopPolicy = await readFile(new URL('../../desktop/security-policy.js', import.meta.url), 'utf8');
   const desktopPackage = JSON.parse(await readFile(new URL('../../desktop/package.json', import.meta.url), 'utf8'));
+  const desktopFiles = desktopPackage.build.files.flatMap(entry =>
+    typeof entry === 'string' ? [entry] : entry.to === 'desktop' ? entry.filter || [] : []);
   assert.match(desktopPolicy, /connect-src 'self' https: wss:;/);
-  assert.ok(desktopPackage.build.files.includes('security-policy.js'));
-  assert.ok(desktopPackage.build.files.includes('device-pairing.js'));
+  assert.ok(desktopFiles.includes('security-policy.js'));
+  assert.ok(desktopFiles.includes('device-pairing.js'));
 });
 
 test('desktop pane shortcuts use the constrained preload callback', () => {

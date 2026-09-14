@@ -171,7 +171,7 @@ actor ForegroundTorrentDownloader {
             }
             if !started { throw lastError }
         }
-        while true {
+        while !Task.isCancelled {
             try Task.checkCancellation()
             let status = driver.snapshot()
             switch status["state"] as? String {
@@ -204,8 +204,10 @@ actor ForegroundTorrentDownloader {
                     else { progress("Finding peers…") }
                 }
             }
-            try await sleep()
+            do { try await sleep() }
+            catch is CancellationError { continue }
         }
+        throw CancellationError()
     }
     static func verify(_ file: URL, edition: TorrentEdition) throws {
         let attributes = try FileManager.default.attributesOfItem(atPath: file.path)

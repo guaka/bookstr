@@ -29,17 +29,4 @@ struct CatalogSearchPage {
         var seen = Set<String>()
         return (first + second).filter { seen.insert($0.id).inserted }
     }
-    static func publication(_ response: [String: Any], for book: CatalogBook) throws -> CatalogBook {
-        guard let blob = response["blossom"] as? [String: Any], blob["status"] as? String == "ready",
-              let hash = blob["sha256"] as? String, validHash(hash, length: 64),
-              let raw = blob["url"] as? String, let url = URL(string: raw), url.scheme == "https",
-              url.host == PublicationUtilities.blossomHost, url.user == nil, url.password == nil,
-              url.lastPathComponent.lowercased().split(separator: ".").first.map(String.init) == hash.lowercased()
-        else { throw PrivateCatalogError.rejected("This edition is not available on Blossom yet") }
-        let format = BookFormat.from(format: blob["format"] as? String, url: raw)
-        return CatalogBook(id: book.id, title: book.title, author: book.author, epubUrl: raw,
-            coverUrl: book.coverUrl, sourceUrl: book.sourceUrl, isbn: book.isbn, libvaultMd5: book.libvaultMd5,
-            format: format, blossomSha256: hash.lowercased(), year: book.year, language: book.language,
-            rightsStatus: book.rightsStatus, license: book.license, licenseUrl: book.licenseUrl, rightsSource: book.rightsSource)
-    }
 }

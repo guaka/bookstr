@@ -1,6 +1,6 @@
 # Bookstr Electron roadmap
 
-The current cross-device delivery plan is [Libcat and encrypted device reading](libcat-reading.md), including encrypted Blossom transfers with 30-day retention.
+The current mobile acquisition plan is [Libcat and direct torrent reading](libcat-reading.md).
 
 This roadmap is intentionally small. It describes the work needed to make the
 Electron shell a useful local library while keeping the web, iOS, and Android

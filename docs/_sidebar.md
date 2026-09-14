@@ -7,7 +7,7 @@
 - [Nostr](NOSTR.md)
 - [Device transfer](DEVICE_TRANSFER.md)
 - [Electron roadmap](ROADMAP.md)
-- [Libcat and encrypted device reading](libcat-reading.md)
+- [Libcat and direct torrent reading](libcat-reading.md)
 - [Sources](SOURCES.md)
 - [Migration](MIGRATION.md)
 - [OPDS](OPDS.md)

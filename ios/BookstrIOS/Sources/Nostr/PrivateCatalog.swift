@@ -19,9 +19,21 @@ struct PrivateCatalogService {
     static let libcat = PrivateCatalogService(
         pubkey: "83503e3e82744479362b04881a8f240bd6d838b78430035868f1c0826ec3876f",
         relay: URL(string: "wss://relay.nomadwiki.org")!)
+
+    init(pubkey: String, relay: URL) {
+        self.pubkey = pubkey
+        self.relay = relay
+    }
+
+    init?(connection: CatalogConnection) {
+        guard connection.pubkey.range(of: "^[a-f0-9]{64}$", options: .regularExpression) != nil,
+              let address = connection.relays.first, let relay = URL(string: address),
+              relay.scheme == "wss", relay.host?.isEmpty == false else { return nil }
+        self.init(pubkey: connection.pubkey, relay: relay)
+    }
 }
 
-enum PrivateCatalogError: LocalizedError {
+enum PrivateCatalogError: LocalizedError, Equatable {
     case invalidResponse, rejected(String), unavailable
     var errorDescription: String? {
         switch self {
@@ -76,7 +88,15 @@ struct PrivateCatalogWire {
 
 final class PrivateCatalogClient {
     private let crypto: PrivateCatalogCrypto
-    init(crypto: PrivateCatalogCrypto) { self.crypto = crypto }
+    private let socketFactory: (URL) -> PrivateCatalogSocketConnection
+    private let timeoutNanoseconds: UInt64
+    init(crypto: PrivateCatalogCrypto,
+         socketFactory: @escaping (URL) -> PrivateCatalogSocketConnection,
+         timeoutNanoseconds: UInt64 = 45_000_000_000) {
+        self.crypto = crypto
+        self.socketFactory = socketFactory
+        self.timeoutNanoseconds = timeoutNanoseconds
+    }
 
     func request(_ payload: [String: Any], signer: NostrSigner,
                  service: PrivateCatalogService = .libcat) async throws -> [String: Any] {
@@ -85,29 +105,25 @@ final class PrivateCatalogClient {
         var body = payload; body["request_id"] = requestID; body["version"] = 1
         let now = Int64(Date().timeIntervalSince1970)
         let wrap = try await PrivateCatalogWire.wrap(payload: body, service: service, signer: signer, crypto: crypto, now: now)
-        let configuration = URLSessionConfiguration.ephemeral
-        configuration.waitsForConnectivity = false
-        configuration.timeoutIntervalForRequest = 45
-        let session = URLSession(configuration: configuration)
-        let socket = session.webSocketTask(with: service.relay)
+        let connection = socketFactory(service.relay)
+        let socket = connection.socket
         socket.maximumMessageSize = 1024 * 1024
         socket.resume()
         let deadline = Task {
-            do { try await Task.sleep(nanoseconds: 45_000_000_000); socket.cancel(with: .goingAway, reason: nil) } catch {}
+            do { try await Task.sleep(nanoseconds: timeoutNanoseconds); socket.cancel(with: .goingAway, reason: nil) } catch {}
         }
-        defer { deadline.cancel(); socket.cancel(with: .normalClosure, reason: nil); session.invalidateAndCancel() }
+        defer { deadline.cancel(); socket.cancel(with: .normalClosure, reason: nil); connection.close() }
         return try await withTaskCancellationHandler {
             let filter: [String: Any] = ["kinds": [1059], "#p": [signer.publicKeyHex], "limit": 0]
             try await socket.send(.string(PrivateCatalogWire.json(["REQ", requestID, filter])))
             var published = false
-            while true {
+            while socket.state == .running {
                 try Task.checkCancellation()
                 let message = try await socket.receive()
                 let data: Data
                 switch message {
                 case .string(let text): data = Data(text.utf8)
                 case .data(let bytes): data = bytes
-                @unknown default: continue
                 }
                 guard let frame = try? JSONSerialization.jsonObject(with: data) as? [Any], let action = frame.first as? String else { continue }
                 if action == "EOSE", frame.count >= 2, frame[1] as? String == requestID, !published {
@@ -130,6 +146,31 @@ final class PrivateCatalogClient {
                     return response
                 }
             }
+            throw PrivateCatalogError.unavailable
         } onCancel: { socket.cancel(with: .goingAway, reason: nil) }
+    }
+}
+
+protocol PrivateCatalogSocket: AnyObject {
+    var maximumMessageSize: Int { get set }
+    var state: URLSessionTask.State { get }
+    func resume()
+    func cancel(with closeCode: URLSessionWebSocketTask.CloseCode, reason: Data?)
+    func send(_ message: URLSessionWebSocketTask.Message) async throws
+    func receive() async throws -> URLSessionWebSocketTask.Message
+}
+
+extension URLSessionWebSocketTask: PrivateCatalogSocket {}
+
+struct PrivateCatalogSocketConnection {
+    let socket: PrivateCatalogSocket
+    let close: () -> Void
+
+    static func live(relay: URL) -> PrivateCatalogSocketConnection {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.waitsForConnectivity = false
+        configuration.timeoutIntervalForRequest = 45
+        let session = URLSession(configuration: configuration)
+        return PrivateCatalogSocketConnection(socket: session.webSocketTask(with: relay), close: session.invalidateAndCancel)
     }
 }
