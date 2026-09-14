@@ -9,16 +9,28 @@ struct TorrentEdition {
     let md5: String
     let catalogID: Int
     let expectedSize: Int64?
-    var metadataURL: URL {
-        URL(string: "https://annas-archive.gl/dyn/small_file/torrents/external/libgen_rs_non_fic/r_\(catalogID / 1000 * 1000).torrent")!
+    let collection: String
+    var metadataURL: URL { metadataURLs[0] }
+    var metadataURLs: [URL] {
+        let collections = collection.isEmpty ? ["nonfiction", "fiction", "comics"] : [collection]
+        return collections.map { kind in
+            let batch = catalogID / 1000 * 1000
+            let folder = kind == "fiction" ? "libgen_rs_fic" : kind == "comics" ? "libgen_li_comics" : "libgen_rs_non_fic"
+            let prefix = kind == "fiction" ? "f_" : kind == "comics" ? "c_" : "r_"
+            let number = kind == "nonfiction" && batch == 0 ? "000" : String(batch)
+            return URL(string: "https://annas-archive.gl/dyn/small_file/torrents/external/\(folder)/\(prefix)\(number).torrent")!
+        }
     }
     init(record: [String: Any], expectedMD5: String) throws {
         guard expectedMD5.count == 32, expectedMD5.utf8.allSatisfy({ (48...57).contains($0) || (97...102).contains($0) }),
               (record["md5"] as? String)?.lowercased() == expectedMD5,
-              let value = record["id"] ?? record["libgen_id"],
+              let value = record["libgen_id"] ?? record["id"],
               let id = Int(String(describing: value)), id > 0, id < 9_007_199_254_740_991 else {
             throw TorrentDownloadError.invalidEdition
         }
+        let kind = (record["collection"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard ["", "nonfiction", "fiction", "comics"].contains(kind) else { throw TorrentDownloadError.invalidEdition }
+        collection = kind
         md5 = expectedMD5; catalogID = id
         let rawSize = record["filesize_bytes"] ?? record["filesize"]
         if let rawSize, let size = Int64(String(describing: rawSize)), size != 0 {
@@ -89,18 +101,42 @@ actor ForegroundTorrentDownloader {
         let directory = root.appendingPathComponent(edition.md5, isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let metadataFile = directory.appendingPathComponent("book.torrent")
-        let metadata: Data
-        if let cached = try? Data(contentsOf: metadataFile), !cached.isEmpty { metadata = cached }
-        else {
-            progress("Finding torrent…")
-            metadata = try await fetch(edition.metadataURL)
-            guard !metadata.isEmpty, metadata.count <= 16 * 1024 * 1024, metadata.first == 100 else { throw TorrentDownloadError.invalidMetadata }
-            try metadata.write(to: metadataFile, options: .atomic)
-        }
         let driver = makeEngine(directory); engine = driver
         driver.setActive(active)
-        do { try driver.start(metadata: metadata, md5: edition.md5) }
-        catch { try? FileManager.default.removeItem(at: metadataFile); throw error }
+        var started = false
+        if let cached = try? Data(contentsOf: metadataFile), !cached.isEmpty {
+            do { try driver.start(metadata: cached, md5: edition.md5); started = true }
+            catch { try? FileManager.default.removeItem(at: metadataFile) }
+        }
+        if !started {
+            var lastError: Error = TorrentDownloadError.invalidMetadata
+            for url in edition.metadataURLs {
+                try Task.checkCancellation()
+                progress("Finding torrent…")
+                let metadata: Data
+                do {
+                    metadata = try await fetch(url)
+                    guard !metadata.isEmpty, metadata.count <= 16 * 1024 * 1024, metadata.first == 100 else { throw TorrentDownloadError.invalidMetadata }
+                } catch {
+                    if error is CancellationError { throw error }
+                    lastError = error
+                    continue
+                }
+                do { try driver.start(metadata: metadata, md5: edition.md5) }
+                catch {
+                    let native = error as NSError
+                    // Older catalogs omit collection. Only try another collection
+                    // when the exact MD5 is absent, never after a validation error.
+                    guard native.domain == "BookstrTorrent", native.code == 2 else { throw error }
+                    lastError = error
+                    continue
+                }
+                try metadata.write(to: metadataFile, options: .atomic)
+                started = true
+                break
+            }
+            if !started { throw lastError }
+        }
         while true {
             try Task.checkCancellation()
             let status = driver.snapshot()

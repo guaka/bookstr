@@ -36,12 +36,16 @@ namespace lt = libtorrent;
         for (auto index : info->files().file_range()) {
             auto name = info->files().file_name(index);
             NSString *filename = [[NSString alloc] initWithBytes:name.data() length:name.size() encoding:NSUTF8StringEncoding];
-            if ([filename.lowercaseString isEqualToString:md5.lowercaseString]) {
+            NSString *hash = [filename.lowercaseString componentsSeparatedByString:@"."].firstObject;
+            if ([hash isEqualToString:md5.lowercaseString]) {
                 if (chosen != lt::file_index_t(-1)) throw std::runtime_error("Ambiguous edition in torrent");
                 chosen = index;
             }
         }
-        if (chosen == lt::file_index_t(-1)) throw std::runtime_error("This edition is absent from the torrent");
+        if (chosen == lt::file_index_t(-1)) {
+            if (error) *error = [NSError errorWithDomain:@"BookstrTorrent" code:2 userInfo:@{NSLocalizedDescriptionKey:@"This edition is absent from the torrent"}];
+            return NO;
+        }
         _size = info->files().file_size(chosen);
         if (_size < 1 || _size > int64_t(8) * 1024 * 1024 * 1024 || (info->files().file_flags(chosen) & lt::file_storage::flag_symlink))
             throw std::runtime_error("Unsupported torrent file");

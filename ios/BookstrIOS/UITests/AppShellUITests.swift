@@ -31,6 +31,7 @@ final class AppShellUITests: XCTestCase {
         query.tap(); query.typeText("Torrent Reading Fixture\n")
         let book = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "search.open.")).firstMatch
         XCTAssertTrue(book.waitForExistence(timeout: 10))
+        XCTAssertTrue(book.label.contains("Fixture Author"))
         book.tap()
         XCTAssertTrue(app.buttons["downloads.done"].waitForExistence(timeout: 10))
         XCTAssertTrue(app.staticTexts["Torrent Reading Fixture"].exists)

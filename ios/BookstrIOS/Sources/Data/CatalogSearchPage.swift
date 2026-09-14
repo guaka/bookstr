@@ -12,7 +12,7 @@ struct CatalogSearchPage {
             let raw = (record["extension"] as? String ?? "").lowercased()
             let format = ["epub", "pdf", "fb2", "cbr", "cbz"].contains(raw) ? BookFormat.from(format: raw, url: "") : nil
             return BookSearchResult(id: md5.lowercased(), source: "libcat", title: record["title"] as? String ?? "Untitled",
-                author: record["author"] as? String ?? "Unknown author", year: record["year"] as? String,
+                author: [record["authors"], record["author"]].compactMap { ($0 as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) }.first(where: { !$0.isEmpty }) ?? "Unknown author", year: record["year"] as? String,
                 publisher: record["publisher"] as? String, language: record["language"] as? String,
                 format: format, downloadUrl: nil, coverUrl: nil, rating: 0, editionCount: 0,
                 rightsStatus: record["rights_status"] as? String ?? "unknown", license: record["license"] as? String,

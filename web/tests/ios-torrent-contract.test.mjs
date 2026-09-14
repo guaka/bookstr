@@ -33,3 +33,11 @@ test('download pane keeps search available and exposes each queued edition', () 
   assert.match(view, /Text\(job.result.title\)/);
   assert.match(read('ios/TorrentEngine/README.md'), /additional books queue sequentially/);
 });
+
+test('catalog collection and filename extensions are covered by real-engine tests', () => {
+  const tests = read('ios/BookstrIOS/Tests/TorrentDownloadTests.swift');
+  assert.match(tests, /testNativeHashFilenamesWithExtensionsAndAmbiguity/);
+  assert.match(tests, /testMissingCollectionRetriesExactEditionAndReplacesWrongCache/);
+  assert.match(read('ios/TorrentEngine/README.md'), /r_000/);
+  assert.match(read('ios/BookstrIOS/Sources/App/LibraryUITestFixtures.swift'), /"authors": "Fixture Author", "collection": "fiction"/);
+});

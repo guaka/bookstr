@@ -189,19 +189,19 @@ extension LibraryUITestFixtures {
         let directory = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("bookstr-torrents").appendingPathComponent(md5)
         try! FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        try! data.write(to: directory.appendingPathComponent(md5))
+        try! data.write(to: directory.appendingPathComponent(md5 + ".pdf"))
         var pieces = Data()
         for offset in stride(from: 0, to: data.count, by: 16384) {
             pieces.append(contentsOf: Insecure.SHA1.hash(data: data[offset..<min(offset + 16384, data.count)]))
         }
-        let prefix = "d4:infod6:lengthi\(data.count)e4:name32:\(md5)12:piece lengthi16384e6:pieces\(pieces.count):"
+        let prefix = "d4:infod6:lengthi\(data.count)e4:name36:\(md5).pdf12:piece lengthi16384e6:pieces\(pieces.count):"
         try! (Data(prefix.utf8) + pieces + Data("ee".utf8)).write(to: directory.appendingPathComponent("book.torrent"))
         // The private catalog is injected below. No fixture key is used for
         // signing, and the test disables relay connections.
         settings.authMode = .none; settings.pubkeyHex = nil; settings.relays = []
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [EmptyPublicSearch.self]
-        let record: [String: Any] = ["md5": md5, "id": 1234, "title": "Torrent Reading Fixture", "author": "Fixture Author", "extension": "pdf", "filesize_bytes": data.count]
+        let record: [String: Any] = ["md5": md5, "id": 1234, "title": "Torrent Reading Fixture", "authors": "Fixture Author", "collection": "fiction", "extension": "pdf", "filesize_bytes": data.count]
         return CatalogRepository(fileStore: fileStore, settings: settings, signerStore: signerStore, nip46Service: nip46,
             searchSession: URLSession(configuration: configuration), signerProvider: { TorrentFixtureSigner() }, catalogRequest: { request, _ in
                 request["type"] as? String == "libcat.search" ? ["books": [record]] : ["book": record]

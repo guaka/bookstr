@@ -56,6 +56,47 @@ final class TorrentDownloadTests: XCTestCase {
         addTeardownBlock { try? FileManager.default.removeItem(at:root) }
         return (root,data,edition)
     }
+    func testCollectionTorrentURLsAndLegacyCandidateOrder() throws {
+        let (_, _, edition) = try fixture()
+        for (kind, suffix) in [("nonfiction", "libgen_rs_non_fic/r_1000.torrent"), ("fiction", "libgen_rs_fic/f_1000.torrent"), ("comics", "libgen_li_comics/c_1000.torrent")] {
+            let selected = try TorrentEdition(record: ["md5": edition.md5, "id": 1234, "collection": kind], expectedMD5: edition.md5)
+            XCTAssertEqual(selected.metadataURLs.count, 1)
+            XCTAssertTrue(selected.metadataURL.absoluteString.hasSuffix(suffix))
+        }
+        XCTAssertEqual(edition.metadataURLs.count, 3)
+        XCTAssertThrowsError(try TorrentEdition(record: ["md5": edition.md5, "id": 1234, "collection": "unknown"], expectedMD5: edition.md5))
+        let early = try TorrentEdition(record: ["md5": edition.md5, "id": 1234, "libgen_id": 1], expectedMD5: edition.md5)
+        XCTAssertTrue(early.metadataURL.absoluteString.hasSuffix("/r_000.torrent"))
+    }
+    func testMissingCollectionRetriesExactEditionAndReplacesWrongCache() async throws {
+        let (root, data, edition) = try fixture()
+        let directory = root.appendingPathComponent(edition.md5)
+        let file = directory.appendingPathComponent(edition.md5)
+        try data.write(to: file)
+        try Data("wrong cache".utf8).write(to: directory.appendingPathComponent("book.torrent"))
+        let engine = Engine()
+        engine.states = [["state": "ready", "path": file.path]]
+        engine.startError = NSError(domain: "BookstrTorrent", code: 2)
+        var requested: [URL] = []
+        let downloader = ForegroundTorrentDownloader(root: root, makeEngine: { _ in engine }, fetch: { url in
+            requested.append(url)
+            if url.absoluteString.contains("libgen_rs_fic/") { engine.startError = nil }
+            return Data("de".utf8)
+        })
+        _ = try await downloader.download(edition, progress: { _ in })
+        XCTAssertEqual(requested, Array(edition.metadataURLs.prefix(2)))
+        XCTAssertEqual(engine.starts, 3)
+        XCTAssertEqual(try Data(contentsOf: directory.appendingPathComponent("book.torrent")), Data("de".utf8))
+        let cancelled = ForegroundTorrentDownloader(root: root.appendingPathComponent("cancel"), makeEngine: { _ in Engine() }, fetch: { _ in throw CancellationError() })
+        do { _ = try await cancelled.download(edition, progress: { _ in }); XCTFail("Expected cancellation") }
+        catch { XCTAssertTrue(error is CancellationError) }
+        let absent = Engine(); absent.startError = NSError(domain: "BookstrTorrent", code: 2)
+        let missing = ForegroundTorrentDownloader(root: root.appendingPathComponent("absent"), makeEngine: { _ in absent }, fetch: { _ in Data("de".utf8) })
+        do { _ = try await missing.download(edition, progress: { _ in }); XCTFail("Expected absent edition") }
+        catch { XCTAssertEqual((error as NSError).code, 2) }
+        XCTAssertEqual(absent.starts, 3)
+    }
+
     func testEditionIdentityAndTorrentBatch() throws {
         let (_,data,edition) = try fixture()
         XCTAssertTrue(edition.metadataURL.absoluteString.hasSuffix("/r_1000.torrent"))
@@ -218,6 +259,27 @@ extension TorrentDownloadTests {
         let dictionary=value as! [String:Any]
         return Data("d".utf8)+dictionary.keys.sorted().reduce(Data()){$0+bencode($1)+bencode(dictionary[$1]!)}+Data("e".utf8)
     }
+    func testNativeHashFilenamesWithExtensionsAndAmbiguity() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let md5 = String(repeating: "a", count: 32)
+        let engine = NativeBookTorrentEngine(root: root)
+        engine.setActive(false)
+        for suffix in ["", ".pdf", ".epub", ".fb2.zip"] {
+            let metadata = bencode(["info": ["name": md5.uppercased() + suffix, "length": 1, "piece length": 16384, "pieces": Data(repeating: 0, count: 20)]])
+            try engine.start(metadata: metadata, md5: md5)
+            XCTAssertTrue((engine.snapshot()["path"] as? String)?.hasSuffix(md5.uppercased() + suffix) == true)
+            engine.stop()
+        }
+        let duplicate = bencode(["info": ["name": "batch", "piece length": 16384, "pieces": Data(repeating: 0, count: 20), "files": [["length": 1, "path": [md5]], ["length": 1, "path": [md5 + ".pdf"]]]]])
+        XCTAssertThrowsError(try engine.start(metadata: duplicate, md5: md5)) { error in
+            XCTAssertTrue(error.localizedDescription.contains("Ambiguous"))
+        }
+        let wrong = bencode(["info": ["name": md5 + "1.pdf", "length": 1, "piece length": 16384, "pieces": Data(repeating: 0, count: 20)]])
+        XCTAssertThrowsError(try engine.start(metadata: wrong, md5: md5)) { error in XCTAssertEqual((error as NSError).code, 2) }
+    }
+
     func testNativeSelectedFileDownloadPauseAndDiskResume() async throws {
         let bytes=Data(repeating:42,count:128*1024)
         let other=Data(repeating:17,count:32*1024)

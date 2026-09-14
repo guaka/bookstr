@@ -49,6 +49,18 @@ final class CatalogSearchPageTests: XCTestCase {
         }
     }
 
+    func testAuthorsFieldAndLegacyFallback() {
+        for (fields, expected): ([String: Any], String) in [
+            (["authors": "  Ursula Le Guin  ", "author": "legacy"], "Ursula Le Guin"),
+            (["authors": " ", "author": "Legacy Author"], "Legacy Author"),
+            (["authors": 123, "author": "Legacy Author"], "Legacy Author"),
+            (["authors": " ", "author": " "], "Unknown author")
+        ] {
+            var record = fields; record["md5"] = md5
+            XCTAssertEqual(CatalogSearchPage.libcat(["books": [record]], offset: 0).books[0].author, expected)
+        }
+    }
+
     func testHashValidation() {
         XCTAssertTrue(CatalogSearchPage.validHash("0123456789abcdefABCDEF", length: 22))
         for hash in ["", "zz", "éa", "a/", "a:", "a@", "aG", "ag"] {

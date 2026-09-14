@@ -2,7 +2,11 @@
 
 Libcat search results without an existing ready download can now be acquired
 on the phone. The app resolves the exact MD5, downloads the catalog's torrent
-metadata over HTTPS, and selects only that MD5-named file from the batch.
+metadata over HTTPS, and selects only that MD5-named file from the batch,
+including filenames with extensions such as `.epub` or `.fb2.zip`. The catalog
+collection selects nonfiction, fiction, or comics torrents. For older records
+without a collection, these are tried in order until the exact MD5 is found.
+Nonfiction IDs below 1000 use the `r_000` batch.
 
 The native libtorrent session runs while the app is active. Inactive/background
 transitions pause the session; returning to the foreground resumes it. No audio
