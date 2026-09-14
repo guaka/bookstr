@@ -11,14 +11,15 @@ Nonfiction IDs below 1000 use the `r_000` batch.
 The native libtorrent session runs while the app is active. Inactive/background
 transitions pause the session; returning to the foreground resumes it. No audio
 or other background-execution workaround is used. Partial files remain in the
-app's private `Application Support/bookstr-torrents/<md5>` directory. After a
-process restart, tap the book again to reuse those files; libtorrent restores
-resume data where available and otherwise checks existing pieces.
+app's private `Application Support/bookstr-torrents/<md5>` directory. The saved
+download list and resolved editions restore unfinished transfers automatically
+on app launch. Libtorrent restores resume data where available and otherwise
+checks existing pieces. Completed downloads also remain in the list.
 
 The completed file must match the catalog MD5 and declared size, then pass the
 existing publication validator before it is copied into the offline library.
 Downloads shows each book and its status, received bytes and peer count. Close
-the pane to keep searching or reading; additional books queue sequentially. Open
+the pane to keep searching or reading; additional books download concurrently. Open
 completed books or retry failures from the pane. The Search toolbar reopens it.
 Existing Blossom downloads are unchanged.
 

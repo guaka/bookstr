@@ -29,19 +29,9 @@ struct SearchView: View {
                   ForEach(results) { result in
                     HStack(alignment: .top, spacing: 10) {
                         Button { Task { await open(result) } } label: {
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text(result.title).font(.headline).foregroundStyle(.primary)
-                                Text(result.author).font(.subheadline).foregroundStyle(.secondary)
-                                HStack(spacing: 5) {
-                                    if let year = result.year { Text(year) }
-                                    RightsBadge(rights: result.rights)
-                                    let details = metadata(result)
-                                    if !details.isEmpty { Text("· \(details)") }
-                                }
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                            }
-                            .frame(maxWidth: .infinity, alignment: .leading)
+                            BookListDetails(title: result.title, author: result.author, year: result.year,
+                                            format: result.format?.rawValue, language: result.language,
+                                            publisher: result.publisher, rights: result.rights)
                         }
                         .buttonStyle(.plain)
                         .accessibilityIdentifier("search.open.\(result.id)")
@@ -63,9 +53,11 @@ struct SearchView: View {
                             }
                         }
                         .buttonStyle(.plain)
+                        .frame(width: 32, height: 44)
                         .disabled(favoriteBusyID != nil)
                         .accessibilityLabel(isFavorite(result) ? "Remove from favorites" : "Add to favorites")
                     }
+                    .bookstrListRow()
                   }
                   if nextOffset != nil {
                       Button { searchTask = Task { await runSearch(more: true) } } label: { Image(systemName: "arrow.down") }
@@ -75,6 +67,7 @@ struct SearchView: View {
                   }
                 }
                 .listStyle(.plain)
+                .contentMargins(.horizontal, 0, for: .scrollContent)
             }
         }
         .bookstrScreenTitle("Search")
@@ -211,9 +204,7 @@ struct SearchView: View {
         externalFavorites = shared.external
     }
 
-    private func metadata(_ result: BookSearchResult) -> String {
-        [result.publisher, result.format?.rawValue.uppercased()].compactMap { $0 }.joined(separator: " · ")
-    }
+
 }
 
 struct DownloadsPane: View {
@@ -224,17 +215,20 @@ struct DownloadsPane: View {
 
     var body: some View {
         NavigationStack {
-            List(queue.jobs) { job in
-                VStack(alignment: .leading, spacing: 6) {
-                    Text(job.result.title).font(.headline).accessibilityIdentifier("downloads.book.\(job.id)")
-                    Text(job.result.author).font(.subheadline).foregroundStyle(.secondary)
-                    Text(job.status).font(.caption).accessibilityIdentifier("downloads.status.\(job.id)")
-                    if let book = job.book {
-                        Button("Open") { dismiss(); playback.present(book: book) }
-                            .accessibilityIdentifier("downloads.open.\(job.id)")
-                    } else if job.failed {
-                        Button("Retry") { queue.enqueue(job.result, prepare: container.catalogRepository.prepareForOpening) }
-                            .accessibilityIdentifier("downloads.retry.\(job.id)")
+            List {
+                if let error = queue.persistenceError { Text(error).foregroundStyle(.red) }
+                ForEach(queue.jobs) { job in
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(job.result.title).font(.subheadline.weight(.semibold)).accessibilityIdentifier("downloads.book.\(job.id)")
+                        Text(job.result.author).font(.footnote).foregroundStyle(.secondary)
+                        Text(job.status).font(.caption).accessibilityIdentifier("downloads.status.\(job.id)")
+                        if let book = job.book {
+                            Button("Open") { dismiss(); playback.present(book: book) }
+                                .accessibilityIdentifier("downloads.open.\(job.id)")
+                        } else if job.failed {
+                            Button("Retry") { queue.enqueue(job.result, prepare: container.catalogRepository.prepareForOpening) }
+                                .accessibilityIdentifier("downloads.retry.\(job.id)")
+                        }
                     }
                 }
             }

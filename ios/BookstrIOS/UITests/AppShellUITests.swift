@@ -51,6 +51,97 @@ final class AppShellUITests: XCTestCase {
         XCTAssertTrue(reader.waitForExistence(timeout: 15))
     }
 
+    func testCompactBookRowsUseScreenWidth() throws {
+        let epub = app.buttons["library-book-ui-test-alice-epub"]
+        let pdf = app.buttons["library-book-ui-test-alice-pdf"]
+        XCTAssertTrue(epub.waitForExistence(timeout: 10))
+        XCTAssertGreaterThanOrEqual(epub.frame.width, app.frame.width - 32)
+        XCTAssertEqual(epub.staticTexts["EPUB"].frame.maxX, pdf.staticTexts["PDF"].frame.maxX, accuracy: 1)
+        XCTAssertLessThanOrEqual(epub.staticTexts["Alice EPUB Fixture"].frame.height, 19)
+        let libraryScreenshot = XCTAttachment(screenshot: app.screenshot())
+        libraryScreenshot.name = "Compact Library"
+        libraryScreenshot.lifetime = .keepAlways
+        add(libraryScreenshot)
+        app.terminate()
+        app.launchArguments += ["--ui-testing-torrent-fixture", "--ui-testing-torrent-multiple"]
+        app.launch()
+        selectTab("Search")
+        let query = app.searchFields["Title, author, ISBN, publisher"]
+        query.tap(); query.typeText("Torrent\n")
+        let book = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@ AND label BEGINSWITH %@", "search.open.", "Torrent Reading Fixture")).element
+        XCTAssertTrue(book.waitForExistence(timeout: 10))
+        XCTAssertTrue(book.label.contains("Fixture Press"))
+        XCTAssertLessThanOrEqual(book.frame.minX, 13)
+        XCTAssertGreaterThanOrEqual(book.frame.width, app.frame.width - 80)
+    }
+
+    func testBookRowsStackEditionDetailsForAccessibilityText() throws {
+        app.terminate()
+        app.launchArguments += ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"]
+        app.launch()
+        let book = app.buttons["library-book-ui-test-alice-epub"]
+        XCTAssertTrue(book.waitForExistence(timeout: 10))
+        let title = book.staticTexts["Alice EPUB Fixture"]
+        let format = book.staticTexts["EPUB"]
+        XCTAssertGreaterThan(title.frame.height, 25)
+        XCTAssertGreaterThanOrEqual(format.frame.minY, title.frame.maxY)
+        XCTAssertLessThanOrEqual(book.frame.maxX, app.frame.maxX)
+    }
+
+    func testSearchFieldsStayBelowCameraWhenFocused() throws {
+        let library = app.searchFields["Filter books"]
+        if !library.isHittable { app.swipeDown() }
+        XCTAssertTrue(library.waitForExistence(timeout: 5))
+        library.tap()
+        library.typeText("Alice")
+        XCTAssertGreaterThanOrEqual(library.frame.minY, 54)
+        app.buttons["Close"].tap()
+        selectTab("Search")
+        let search = app.searchFields["Title, author, ISBN, publisher"]
+        search.tap()
+        search.typeText("author")
+        XCTAssertGreaterThanOrEqual(search.frame.minY, 54)
+    }
+
+    func testConcurrentTorrentDownloadsRestoreAfterRelaunch() throws {
+        app.terminate()
+        app.launchArguments += ["--ui-testing-torrent-fixture", "--ui-testing-torrent-multiple", "--ui-testing-torrent-pending"]
+        app.launch()
+        selectTab("Search")
+        let query = app.searchFields["Title, author, ISBN, publisher"]
+        query.tap(); query.typeText("Torrent\n")
+        let first = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@ AND label BEGINSWITH %@", "search.open.", "Torrent Reading Fixture")).element
+        let second = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@ AND label BEGINSWITH %@", "search.open.", "Second Torrent Fixture")).element
+        XCTAssertTrue(first.waitForExistence(timeout: 10))
+        let firstID = String(first.identifier.dropFirst("search.open.".count))
+        let secondID = String(second.identifier.dropFirst("search.open.".count))
+        first.tap()
+        XCTAssertTrue(app.buttons["downloads.done"].waitForExistence(timeout: 5))
+        app.buttons["downloads.done"].tap()
+        second.tap()
+        for id in [firstID, secondID] {
+            let status = app.staticTexts["downloads.status.\(id)"]
+            expectation(for: NSPredicate(format: "label == %@", "Finding peers…"), evaluatedWith: status)
+        }
+        waitForExpectations(timeout: 15)
+        app.terminate()
+        app.launchArguments.removeAll { $0 == "--ui-testing-torrent-pending" }
+        app.launchArguments += ["--ui-testing-preserve-library-state", "--ui-testing-torrent-offline"]
+        app.launch()
+        selectTab("Search")
+        app.buttons["search.downloads"].tap()
+        for id in [firstID, secondID] {
+            XCTAssertTrue(app.buttons["downloads.open.\(id)"].waitForExistence(timeout: 20))
+        }
+        app.terminate()
+        app.launch()
+        selectTab("Search")
+        app.buttons["search.downloads"].tap()
+        for id in [firstID, secondID] {
+            XCTAssertTrue(app.buttons["downloads.open.\(id)"].waitForExistence(timeout: 10))
+        }
+    }
+
     func testCatalogInvitationConfirmationCancellationAndRelaunch() throws {
         let npub = "npub1zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zygse4sl3h"
         let name = "Catalog-\(UUID().uuidString.prefix(8))"
