@@ -14,9 +14,10 @@ test('iPhone torrent bridge is built reproducibly and packaged with notices',()=
   assert.match(read('ios/BookstrIOS/TorrentEngineNotices.txt'),/Boost Software License/);
   assert.match(read('.github/workflows/ios.yml'),/scripts\/build-ios-torrent.sh/);
 });
-test('phone opening preserves ready Blossom downloads and imports only verified torrent editions',()=>{
+test('phone opening resolves and imports only verified torrent editions',()=>{
   const code=read('ios/BookstrIOS/Sources/Data/CatalogRepository.swift');
-  assert.match(code,/if let published = try\? CatalogSearchPage.publication/);
+  assert.doesNotMatch(code,/CatalogSearchPage\.publication|response\["blossom"\]/);
+  assert.match(code,/guard let record = response\["book"\]/);
   assert.match(code,/TorrentEdition\(record: record, expectedMD5: md5\)/);
   assert.match(code,/ForegroundTorrentDownloader.shared.download/);
   assert.match(code,/isValidCachedFile\(book: corrected, fileURL: staging/);
