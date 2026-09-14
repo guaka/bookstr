@@ -141,13 +141,6 @@ final class FavoriteMetadataRepository {
 
 final class CatalogRepository {
     static let booksAPIBase = "https://books-api.guaka.org/api"
-    private static let downloadSession: URLSession = {
-        let configuration = URLSessionConfiguration.ephemeral
-        configuration.waitsForConnectivity = false
-        configuration.timeoutIntervalForRequest = 30
-        configuration.timeoutIntervalForResource = 180
-        return URLSession(configuration: configuration)
-    }()
     private let fileStore: JSONFileStore
     private let settings: SettingsRepository
     private let signerStore: SignerStore
@@ -222,7 +215,36 @@ final class CatalogRepository {
         value.count == 32 && value.allSatisfy(\.isHexDigit)
     }
 
+    private let privateCatalog = PrivateCatalogClient(crypto: .native)
+
     func search(_ query: String, limit: Int = 20) async throws -> [BookSearchResult] {
+        try await searchPage(query, limit: limit).books
+    }
+
+    func searchPage(_ query: String, offset: Int = 0, limit: Int = 50) async throws -> CatalogSearchPage {
+        let normalized = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard normalized.count >= 2, offset >= 0 else { throw PrivateCatalogError.rejected("Type at least 2 characters to search") }
+        if settings.authMode == .nip46 { await nip46Service.restore(from: settings) }
+        guard let signer = signerStore.signer(from: settings) else {
+            return CatalogSearchPage(books: try await publicSearch(normalized, limit: limit))
+        }
+        // Public results remain usable if the private relay is unavailable.
+        async let publicBooks: [BookSearchResult] = offset == 0 ? ((try? await publicSearch(normalized, limit: limit)) ?? []) : []
+        do {
+            let response = try await privateCatalog.request(["type": "libcat.search", "query": normalized,
+                "search_type": "all", "offset": offset, "limit": min(max(limit, 1), 50)], signer: signer)
+            var page = CatalogSearchPage.libcat(response, offset: offset)
+            page.books = CatalogSearchPage.merge(page.books, await publicBooks)
+            return page
+        } catch {
+            try Task.checkCancellation()
+            let fallback = await publicBooks
+            if fallback.isEmpty { throw error }
+            return CatalogSearchPage(books: fallback, warning: error.localizedDescription)
+        }
+    }
+
+    private func publicSearch(_ query: String, limit: Int = 20) async throws -> [BookSearchResult] {
         let normalized = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard normalized.count >= 2 else {
             throw NSError(domain: "CatalogRepository", code: 4,
@@ -289,6 +311,20 @@ final class CatalogRepository {
         return nil
     }
 
+    func prepareForOpening(result: BookSearchResult) async throws -> CatalogBook {
+        guard var book = result.asCatalogBook() else { throw PrivateCatalogError.rejected("This edition has no supported download") }
+        if localPublication(for: book) != nil { return try await prepareForOpening(book: book) }
+        if book.epubUrl.isEmpty, let md5 = result.libvaultMd5 {
+            if settings.authMode == .nip46 { await nip46Service.restore(from: settings) }
+            guard let signer = signerStore.signer(from: settings) else {
+                throw PrivateCatalogError.rejected("Connect your Nostr identity to download this edition")
+            }
+            let response = try await privateCatalog.request(["type": "libcat.resolve", "book": ["md5": md5]], signer: signer)
+            book = try CatalogSearchPage.publication(response, for: book)
+        }
+        return try await prepareForOpening(book: book)
+    }
+
     func ensureDownloaded(book: CatalogBook) async throws -> URL {
         if let local = localPublication(for: book) {
             rememberDownloaded(local.book)
@@ -326,7 +362,11 @@ final class CatalogRepository {
             request.setValue(try await BlossomAuthorization.get(signer: signer, hash: blossomHash, server: host),
                              forHTTPHeaderField: "Authorization")
         }
-        let (tempURL, response) = try await Self.downloadSession.download(for: request)
+        let (tempURL, response) = try await PublicationDownloadManager.shared.download(for: request)
+        defer {
+            try? FileManager.default.removeItem(at: tempURL)
+            PublicationDownloadManager.shared.discard(remoteURL)
+        }
         guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
             let status = (response as? HTTPURLResponse)?.statusCode ?? 0
             throw NSError(domain: "CatalogRepository", code: status,

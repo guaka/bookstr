@@ -2,13 +2,6 @@ import Foundation
 import CryptoKit
 import NostrCore
 
-protocol NostrSigner {
-    var publicKeyHex: String { get }
-    func sign(_ event: NostrEvent) async throws -> NostrEvent
-    func nip44Encrypt(_ plaintext: String, to recipientPubkey: String) async throws -> String
-    func nip44Decrypt(_ ciphertext: String, from senderPubkey: String) async throws -> String
-}
-
 struct LocalNsecSigner: NostrSigner {
     let nsec: String
     let publicKeyHex: String
@@ -92,4 +85,16 @@ enum BlossomAuthorization {
         let encoded = try JSONEncoder().encode(signed).base64EncodedString().replacingOccurrences(of: "=", with: "")
         return "Nostr \(encoded)"
     }
+}
+
+
+extension PrivateCatalogCrypto {
+    static let native = PrivateCatalogCrypto(ephemeralSigner: {
+        let key = try KeyPair()
+        return LocalNsecSigner(nsec: try key.nsec, publicKeyHex: key.publicKeyHex)
+    }, verify: { event in
+        guard let data = try? JSONEncoder().encode(event),
+              let signed = try? JSONDecoder().decode(Event.self, from: data) else { return false }
+        return (try? signed.verify()) == true
+    })
 }
