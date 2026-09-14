@@ -85,21 +85,23 @@ final class NeuralSpeechSessionTests: XCTestCase {
             }
         )
         XCTAssertEqual(synthesizer.texts, ["Hello."])
+        XCTAssertEqual(player.scheduledCount, 1)
+        XCTAssertEqual(player.scheduledSampleCounts, [NeuralSpeechInput.silenceSamples.count])
+        XCTAssertEqual(phrases, [blank])
+
+        synthesizer.complete()
+        await settle()
+        player.finishNext()
+        await settle()
         XCTAssertEqual(player.scheduledCount, 2)
         XCTAssertEqual(player.scheduledSampleCounts, [
             NeuralSpeechInput.silenceSamples.count,
             NeuralSpeechInput.silenceSamples.count,
         ])
-        XCTAssertEqual(phrases, [blank])
-
-        synthesizer.complete()
-        await settle()
-        XCTAssertEqual(player.scheduledCount, 3)
-        player.finishNext()
-        await settle()
         XCTAssertEqual(phrases, [blank, marks])
         player.finishNext()
         await settle()
+        XCTAssertEqual(player.scheduledCount, 3)
         player.finishNext()
         await settle()
         XCTAssertEqual(phrases, [blank, marks, spoken])
@@ -177,12 +179,13 @@ final class NeuralSpeechSessionTests: XCTestCase {
         XCTAssertEqual(synthesizer.texts, ["One.", "Two!"], "the next phrase must start synthesizing before the current audio finishes")
         synthesizer.complete()
         await settle()
-        XCTAssertEqual(player.scheduledCount, 2)
-        XCTAssertEqual(player.scheduledSampleCounts[1], 420)
+        XCTAssertEqual(player.scheduledCount, 1)
         XCTAssertEqual(phrases, [first], "the highlight stays on the playing phrase until its audio ends")
 
         player.finishNext()
         await settle()
+        XCTAssertEqual(player.scheduledCount, 2)
+        XCTAssertEqual(player.scheduledSampleCounts[1], 420)
         XCTAssertEqual(phrases, [first, second])
         XCTAssertEqual(phrases[1].offset, 5)
         XCTAssertEqual(phrases[1].spokenEnd, 9)
@@ -299,11 +302,49 @@ final class NeuralSpeechSessionTests: XCTestCase {
         synthesizer.complete()
         await settle()
         XCTAssertEqual(synthesizer.texts, ["One.", "Two.", "Three.", "Four."])
-        XCTAssertEqual(player.scheduledCount, 4)
+        XCTAssertEqual(player.scheduledCount, 1)
         player.finishNext()
         await settle()
         XCTAssertEqual(synthesizer.texts, ["One.", "Two.", "Three.", "Four.", "Five."])
         session.stop()
+    }
+
+    func testPlayerFlushCannotSkipPrefetchedParagraphs() async {
+        let synthesizer = MockNeuralSynthesizer()
+        let player = MockNeuralPlayer()
+        let session = NeuralSpeechSession(synthesizer: synthesizer, player: player)
+        let paragraphs = (0..<5).map {
+            SpeechQueueChunk(text: "Paragraph \($0).", offset: $0 * 20, pauseSeconds: $0 == 0 ? 0 : 0.75)
+        }
+        var spoken: [String] = []
+        var finished = false
+        session.start(
+            chunks: paragraphs,
+            engine: .kokoroEnglish,
+            speed: 1,
+            onPhrase: { spoken.append($0.text) },
+            onProgress: { _, _ in },
+            completion: { result in if case .success = result { finished = true } }
+        )
+        for _ in 0..<4 {
+            synthesizer.complete()
+            await settle()
+        }
+
+        XCTAssertEqual(synthesizer.texts.count, 4, "rendering should still stay ahead of playback")
+        XCTAssertEqual(player.completions.count, 1, "only the audible paragraph may be queued on the player")
+        player.finishAllCurrentlyScheduled()
+        await settle()
+        XCTAssertEqual(spoken, ["Paragraph 0.", "Paragraph 1."])
+        XCTAssertFalse(finished, "a player flush must not mark prefetched paragraphs as heard")
+
+        synthesizer.complete()
+        await settle()
+        while !finished {
+            player.finishNext()
+            await settle()
+        }
+        XCTAssertEqual(spoken, paragraphs.map(\.text))
     }
 
     func testHighlightRangeAdvancesThroughPhrase() {
@@ -540,5 +581,11 @@ private final class MockNeuralPlayer: NeuralSpeechScheduling {
 
     func finishNext() {
         completions.removeFirst()()
+    }
+
+    func finishAllCurrentlyScheduled() {
+        let scheduled = completions
+        completions.removeAll()
+        scheduled.forEach { $0() }
     }
 }
