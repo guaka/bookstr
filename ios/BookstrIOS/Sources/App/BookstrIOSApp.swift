@@ -19,7 +19,9 @@ struct BookstrIOSApp: App {
                 .environmentObject(container.readerPlayback)
                 .statusBarHidden(true)
                 .persistentSystemOverlays(.hidden)
-                .background(TopSafeAreaCollapser())
+                .task {
+                    container.downloads.resume(prepare: container.catalogRepository.prepareForOpening)
+                }
                 .onChange(of: scenePhase, initial: true) { _, phase in
                     Task { await ForegroundTorrentDownloader.shared.setActive(phase == .active) }
                 }

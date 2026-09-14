@@ -53,15 +53,91 @@ final class TorrentDownloadTests: XCTestCase {
         queue.enqueue(result("first"), prepare: prepare)
         queue.enqueue(result("first"), prepare: prepare)
         queue.enqueue(result("second"), prepare: prepare)
-        XCTAssertEqual(queue.jobs.map(\.status), ["Queued", "Queued"])
+        XCTAssertEqual(queue.jobs.map(\.status), ["Starting…", "Starting…"])
         for _ in 0..<100 where queue.jobs.last?.book == nil { try await Task.sleep(nanoseconds: 10_000_000) }
-        XCTAssertEqual(started, ["first", "second"])
+        XCTAssertEqual(Set(started), ["first", "second"])
         XCTAssertTrue(queue.jobs[0].failed)
         XCTAssertEqual(queue.jobs[1].status, "Downloaded")
         queue.enqueue(result("first")) { result, _ in result.asCatalogBook()! }
         for _ in 0..<100 where queue.jobs[0].book == nil { try await Task.sleep(nanoseconds: 10_000_000) }
         XCTAssertEqual(queue.jobs.count, 2)
         XCTAssertEqual(queue.jobs[0].status, "Downloaded")
+    }
+
+    @MainActor
+    func testConcurrentDownloadsPersistAndResumeOnlyUnfinishedBooks() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let manifest = root.appendingPathComponent("downloads.json")
+        let downloads = BookDownloadQueue(fileURL: manifest)
+        func result(_ id: String) -> BookSearchResult {
+            BookSearchResult(id: id, source: "test", title: id, author: "Author", year: nil,
+                publisher: nil, language: nil, format: .pdf, downloadUrl: "https://example.test/book.pdf",
+                coverUrl: nil, rating: 0, editionCount: 1)
+        }
+        var pending: [String: CheckedContinuation<CatalogBook, Error>] = [:]
+        let prepare: BookDownloadQueue.Prepare = { result, progress in
+            progress("Finding peers…")
+            return try await withCheckedThrowingContinuation { pending[result.id] = $0 }
+        }
+        downloads.enqueue(result("first"), prepare: prepare)
+        downloads.enqueue(result("second"), prepare: prepare)
+        downloads.resume(prepare: prepare)
+        for _ in 0..<100 where pending.count < 2 { try await Task.sleep(nanoseconds: 10_000_000) }
+        XCTAssertEqual(Set(pending.keys), ["first", "second"], "Both must start before either finishes")
+        let saved = try JSONDecoder().decode([BookDownloadQueue.Job].self, from: Data(contentsOf: manifest))
+        XCTAssertEqual(saved.map(\.result.author), ["Author", "Author"])
+        XCTAssertTrue(saved.allSatisfy { $0.book == nil })
+        pending["first"]!.resume(returning: result("first").asCatalogBook()!)
+        pending["second"]!.resume(throwing: CancellationError())
+        for _ in 0..<100 where downloads.jobs[1].status != "Paused" { try await Task.sleep(nanoseconds: 10_000_000) }
+        let restored = BookDownloadQueue(fileURL: manifest)
+        XCTAssertEqual(restored.jobs[0].status, "Downloaded")
+        XCTAssertEqual(restored.jobs[1].status, "Paused")
+        var resumed: [String] = []
+        restored.resume { result, _ in resumed.append(result.id); return result.asCatalogBook()! }
+        restored.resume { _, _ in XCTFail("Duplicate resume"); throw CancellationError() }
+        for _ in 0..<100 where restored.jobs[1].book == nil { try await Task.sleep(nanoseconds: 10_000_000) }
+        XCTAssertEqual(resumed, ["second"])
+        restored.enqueue(result("first")) { _, _ in XCTFail("Completed book restarted"); throw CancellationError() }
+        XCTAssertTrue(BookDownloadQueue(fileURL: manifest).jobs.allSatisfy { $0.book != nil })
+        XCTAssertNil(restored.persistenceError)
+
+        try Data("invalid json".utf8).write(to: manifest)
+        XCTAssertNotNil(BookDownloadQueue(fileURL: manifest).persistenceError)
+        let cannotSave = BookDownloadQueue(fileURL: manifest.appendingPathComponent("child.json"))
+        cannotSave.enqueue(result("failed")) { _, _ in throw TorrentDownloadError.invalidEdition }
+        for _ in 0..<100 where !cannotSave.jobs[0].failed { try await Task.sleep(nanoseconds: 10_000_000) }
+        XCTAssertNotNil(cannotSave.persistenceError)
+        cannotSave.resume { _, _ in XCTFail("Failed job must wait for retry"); throw CancellationError() }
+    }
+
+    func testTorrentSessionsRunIndependentlyAndPauseTogether() async throws {
+        let (root, _, first) = try fixture()
+        let second = try TorrentEdition(record: ["md5": String(repeating: "b", count: 32), "id": 2345], expectedMD5: String(repeating: "b", count: 32))
+        let one = Engine(), two = Engine()
+        let downloader = ForegroundTorrentDownloader(root: root, makeEngine: { $0.lastPathComponent == first.md5 ? one : two }, fetch: { _ in Data("de".utf8) }, sleep: { try await Task.sleep(nanoseconds: 1_000_000) })
+        await downloader.setActive(true)
+        let started = expectation(description: "both engines started"); started.expectedFulfillmentCount = 2
+        var sawFirst = false, sawSecond = false
+        let firstTask = Task { try await downloader.download(first) { text in
+            if text == "Finding peers…", !sawFirst { sawFirst = true; started.fulfill() }
+        } }
+        let secondTask = Task { try await downloader.download(second) { text in
+            if text == "Finding peers…", !sawSecond { sawSecond = true; started.fulfill() }
+        } }
+        await fulfillment(of: [started], timeout: 3)
+        XCTAssertEqual(one.starts, 1); XCTAssertEqual(two.starts, 1)
+        await downloader.setActive(false)
+        XCTAssertEqual(one.active.last, false); XCTAssertEqual(two.active.last, false)
+        firstTask.cancel()
+        _ = try? await firstTask.value
+        XCTAssertEqual(one.stops, 1); XCTAssertEqual(two.stops, 0)
+        await downloader.setActive(true)
+        XCTAssertEqual(two.active.last, true)
+        secondTask.cancel()
+        _ = try? await secondTask.value
+        XCTAssertEqual(two.stops, 1)
     }
 
     final class Engine: BookTorrentEngine {

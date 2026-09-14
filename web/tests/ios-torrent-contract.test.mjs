@@ -23,7 +23,7 @@ test('phone opening preserves ready Blossom downloads and imports only verified 
   assert.match(read('ios/BookstrIOS/Sources/App/BookstrIOSApp.swift'),/setActive\(phase == .active\)/);
   assert.match(read('ios/BookstrIOS/UITests/AppShellUITests.swift'),/testTorrentSearchOpensAndReopensOfflinePublication/);
 });
-test('download pane keeps search available and exposes each queued edition', () => {
+test('download pane keeps search available and exposes each selected edition', () => {
   const view = read('ios/BookstrIOS/Sources/Features/Search/SearchView.swift');
   assert.doesNotMatch(view, /openingBookID/);
   assert.match(view, /DownloadsPane\(queue: container.downloads\)/);
@@ -31,7 +31,7 @@ test('download pane keeps search available and exposes each queued edition', () 
     assert.ok(view.includes(id));
   }
   assert.match(view, /Text\(job.result.title\)/);
-  assert.match(read('ios/TorrentEngine/README.md'), /additional books queue sequentially/);
+  assert.match(read('ios/TorrentEngine/README.md'), /additional books download concurrently/);
 });
 
 test('catalog collection and filename extensions are covered by real-engine tests', () => {
@@ -52,4 +52,29 @@ test('Zlib numeric-file acquisition retains verification and offline-reader cove
   assert.match(tests, /testNativeZlibSelectsExactIDAndRejectsUnsafeOrAmbiguousNames/);
   assert.match(read('ios/BookstrIOS/UITests/AppShellUITests.swift'), /testZlibSearchDownloadsAndReopensOfflinePublication/);
   assert.match(read('ios/TorrentEngine/README.md'), /Zlib2 TAR and newer AAC/);
+});
+
+test('downloads persist independently and native search keeps its safe area', () => {
+  const app = read('ios/BookstrIOS/Sources/App/BookstrIOSApp.swift');
+  assert.match(app, /downloads.resume\(prepare:/);
+  assert.doesNotMatch(app, /TopSafeAreaCollapser/);
+  assert.doesNotMatch(read('ios/BookstrIOS/Sources/Shared/ScreenChrome.swift'), /additionalSafeAreaInsets.top/);
+  const code = read('ios/BookstrIOS/Sources/Data/TorrentDownload.swift');
+  assert.match(code, /engines\[edition.md5\]/);
+  assert.match(code, /options: .atomic/);
+  assert.doesNotMatch(code, /"Queued"/);
+  assert.match(read('ios/BookstrIOS/Sources/Data/CatalogRepository.swift'), /torrent-edition-/);
+});
+test('search and library share compact flexible book rows', () => {
+  const chrome = read('ios/BookstrIOS/Sources/Shared/ScreenChrome.swift');
+  assert.match(chrome, /Text\(title\).font\(.subheadline.weight\(.semibold\)\)/);
+  assert.match(chrome, /dynamicTypeSize.isAccessibilitySize/);
+  assert.match(chrome, /AnyLayout\(VStackLayout/);
+  assert.match(chrome, /leading: 12, bottom: 9, trailing: 12/);
+  for (const path of ['Search/SearchView.swift', 'Library/LibraryView.swift']) {
+    const view = read('ios/BookstrIOS/Sources/Features/' + path);
+    assert.match(view, /BookListDetails\(/);
+    assert.match(view, /\.listStyle\(.plain\)/);
+    assert.match(view, /\.bookstrListRow\(\)/);
+  }
 });

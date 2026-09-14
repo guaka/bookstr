@@ -9,7 +9,7 @@ final class AppContainer: ObservableObject {
     let readerPlayback: ReaderPlaybackSession
     let dictionaryRepository: DictionaryRepository
     let favoriteMetadataRepository: FavoriteMetadataRepository
-    let downloads = BookDownloadQueue()
+    let downloads = BookDownloadQueue(fileURL: FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("bookstr/downloads.json"))
     let catalogRepository: CatalogRepository
     let nostrClient: NostrClient
     let signerStore: SignerStore

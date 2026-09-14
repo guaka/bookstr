@@ -18,6 +18,7 @@ enum LibraryUITestFixtures {
            FileManager.default.fileExists(atPath: fileStore.bookFileURL(bookId: cbzID, format: .cbz).path) {
             return
         }
+        fileStore.save("downloads.json", value: [BookDownloadQueue.Job]())
         settings.theme = .night
         settings.authMode = .none
         settings.pubkeyHex = nil
@@ -184,33 +185,46 @@ extension LibraryUITestFixtures {
         override func stopLoading() {}
     }
     static func torrentCatalog(fileStore: JSONFileStore, settings: SettingsRepository, signerStore: SignerStore, nip46: Nip46Service) -> CatalogRepository {
-        let zlib = ProcessInfo.processInfo.arguments.contains("--ui-testing-zlib-fixture")
-        let data = try! Data(contentsOf: fileStore.bookFileURL(bookId: pdfID, format: .pdf))
-        let md5 = Insecure.MD5.hash(data: data).map { String(format: "%02x", $0) }.joined()
-        let directory = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("bookstr-torrents").appendingPathComponent(md5)
-        try! FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        let filename = zlib ? "1234" : md5 + ".pdf"
-        try! data.write(to: directory.appendingPathComponent(filename))
-        var pieces = Data()
-        for offset in stride(from: 0, to: data.count, by: 16384) {
-            pieces.append(contentsOf: Insecure.SHA1.hash(data: data[offset..<min(offset + 16384, data.count)]))
+        let arguments = ProcessInfo.processInfo.arguments
+        let zlib = arguments.contains("--ui-testing-zlib-fixture")
+        let original = try! Data(contentsOf: fileStore.bookFileURL(bookId: pdfID, format: .pdf))
+        func record(_ data: Data, title: String, id: Int) -> [String: Any] {
+            let md5 = Insecure.MD5.hash(data: data).map { String(format: "%02x", $0) }.joined()
+            let directory = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+                .appendingPathComponent("bookstr-torrents").appendingPathComponent(md5)
+            try! FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            let filename = zlib ? String(id) : md5 + ".pdf"
+            if !arguments.contains("--ui-testing-torrent-pending") {
+                try! data.write(to: directory.appendingPathComponent(filename))
+            }
+            var pieces = Data()
+            for offset in stride(from: 0, to: data.count, by: 16384) {
+                pieces.append(contentsOf: Insecure.SHA1.hash(data: data[offset..<min(offset + 16384, data.count)]))
+            }
+            let prefix = "d4:infod6:lengthi\(data.count)e4:name\(filename.utf8.count):\(filename)12:piece lengthi16384e6:pieces\(pieces.count):"
+            try! (Data(prefix.utf8) + pieces + Data("ee".utf8)).write(to: directory.appendingPathComponent("book.torrent"))
+            var record: [String: Any] = ["md5": md5, "id": id, "title": title, "authors": "Fixture Author", "collection": "fiction", "publisher": "Fixture Press", "year": "1865", "language": "en", "extension": "pdf", "filesize_bytes": data.count]
+            if zlib {
+                record["collection"] = "zlib"; record["id"] = 0
+                record["torrent"] = ["filename": filename, "metadata_url": "https://annas-archive.gl/dyn/small_file/torrents/managed_by_aa/zlib/pilimi-zlib-0-119999.torrent"]
+            }
+            return record
         }
-        let prefix = "d4:infod6:lengthi\(data.count)e4:name\(filename.utf8.count):\(filename)12:piece lengthi16384e6:pieces\(pieces.count):"
-        try! (Data(prefix.utf8) + pieces + Data("ee".utf8)).write(to: directory.appendingPathComponent("book.torrent"))
+        var records = [record(original, title: "Torrent Reading Fixture", id: 1234)]
+        if arguments.contains("--ui-testing-torrent-multiple") {
+            records.append(record(original + Data("\n% Second edition\n".utf8), title: "Second Torrent Fixture", id: 2345))
+        }
         // The private catalog is injected below. No fixture key is used for
         // signing, and the test disables relay connections.
         settings.authMode = .none; settings.pubkeyHex = nil; settings.relays = []
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [EmptyPublicSearch.self]
-        var record: [String: Any] = ["md5": md5, "id": 1234, "title": "Torrent Reading Fixture", "authors": "Fixture Author", "collection": "fiction", "extension": "pdf", "filesize_bytes": data.count]
-        if zlib {
-            record["collection"] = "zlib"; record["id"] = 0
-            record["torrent"] = ["filename": filename, "metadata_url": "https://annas-archive.gl/dyn/small_file/torrents/managed_by_aa/zlib/pilimi-zlib-0-119999.torrent"]
-        }
         return CatalogRepository(fileStore: fileStore, settings: settings, signerStore: signerStore, nip46Service: nip46,
             searchSession: URLSession(configuration: configuration), signerProvider: { TorrentFixtureSigner() }, catalogRequest: { request, _ in
-                request["type"] as? String == "libcat.search" ? ["books": [record]] : ["book": record]
+                if request["type"] as? String == "libcat.search" { return ["books": records] }
+                if arguments.contains("--ui-testing-torrent-offline") { throw URLError(.notConnectedToInternet) }
+                let md5 = (request["book"] as? [String: Any])?["md5"] as? String
+                return ["book": records.first { $0["md5"] as? String == md5 }!]
             })
     }
 }

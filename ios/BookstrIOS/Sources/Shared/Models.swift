@@ -167,7 +167,7 @@ struct CatalogBook: Codable, Identifiable, Hashable, Sendable {
     }
 }
 
-struct BookSearchResult: Identifiable, Hashable {
+struct BookSearchResult: Identifiable, Hashable, Codable {
     let id: String
     let source: String
     let title: String

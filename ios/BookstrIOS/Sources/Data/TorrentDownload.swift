@@ -5,7 +5,7 @@ import Combine
 import TorrentEngine
 #endif
 
-struct TorrentEdition {
+struct TorrentEdition: Codable {
     let md5: String
     let catalogID: Int
     let expectedSize: Int64?
@@ -68,7 +68,7 @@ enum TorrentDownloadError: LocalizedError {
         switch self {
         case .invalidEdition: return "This edition has no valid torrent metadata."
         case .invalidMetadata: return "Could not load this edition’s torrent. Tap the book to retry."
-        case .busy: return "Another book is downloading."
+        case .busy: return "This book is already downloading."
         case .unsafePath: return "The torrent returned an invalid file path."
         case .verification: return "The downloaded file does not match this edition. Tap the book to retry."
         case .engine(let message): return message
@@ -116,25 +116,26 @@ actor ForegroundTorrentDownloader {
     private let makeEngine: (URL) -> BookTorrentEngine
     private let fetch: (URL) async throws -> Data
     private let sleep: () async throws -> Void
-    private var engine: BookTorrentEngine?
+    private var engines: [String: BookTorrentEngine] = [:]
     private var active = false
-    private var downloading = false
 
     init(root: URL, makeEngine: @escaping (URL) -> BookTorrentEngine,
          fetch: @escaping (URL) async throws -> Data = { try await ForegroundTorrentDownloader.fetchMetadata($0) },
          sleep: @escaping () async throws -> Void = { try await Task.sleep(nanoseconds: 500_000_000) }) {
         self.root = root; self.makeEngine = makeEngine; self.fetch = fetch; self.sleep = sleep
     }
-    func setActive(_ value: Bool) { active = value; engine?.setActive(value) }
+    func setActive(_ value: Bool) {
+        active = value
+        for engine in engines.values { engine.setActive(value) }
+    }
 
     func download(_ edition: TorrentEdition, progress: (String) -> Void) async throws -> URL {
-        guard !downloading else { throw TorrentDownloadError.busy }
-        downloading = true
-        defer { engine?.stop(); engine = nil; downloading = false }
+        guard engines[edition.md5] == nil else { throw TorrentDownloadError.busy }
+        defer { engines.removeValue(forKey: edition.md5)?.stop() }
         let directory = root.appendingPathComponent(edition.md5, isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let metadataFile = directory.appendingPathComponent("book.torrent")
-        let driver = makeEngine(directory); engine = driver
+        let driver = makeEngine(directory); engines[edition.md5] = driver
         driver.setActive(active)
         var started = false
         if let cached = try? Data(contentsOf: metadataFile), !cached.isEmpty {
@@ -187,7 +188,7 @@ actor ForegroundTorrentDownloader {
                     // Invalid bytes cannot be reused on retry; valid partials
                     // are retained on cancellation and foreground transitions.
                     driver.stop()
-                    engine = nil
+                    engines.removeValue(forKey: edition.md5)
                     try? FileManager.default.removeItem(at: file)
                     try? FileManager.default.removeItem(at: directory.appendingPathComponent("resume.dat"))
                     throw error
@@ -231,47 +232,78 @@ actor ForegroundTorrentDownloader {
     }
 }
 
-/// Owns transfers independently of Search's view lifetime. Downloads run serially
-/// because the native engine selects one edition at a time.
+/// Keeps each transfer alive independently of Search, and restores unfinished
+/// downloads from an atomic manifest on the next app launch.
 final class BookDownloadQueue: ObservableObject {
-    struct Job: Identifiable {
+    struct Job: Identifiable, Codable {
         let result: BookSearchResult
         var id: String { result.id }
-        var status = "Queued"
+        var status = "Starting…"
         var book: CatalogBook?
         var failed = false
     }
+    typealias Prepare = (BookSearchResult, @escaping (String) -> Void) async throws -> CatalogBook
     @Published private(set) var jobs: [Job] = []
-    private var worker: Task<Void, Never>?
+    @Published private(set) var persistenceError: String?
+    private let fileURL: URL?
+    private var tasks: [String: Task<Void, Never>] = [:]
 
-    @MainActor func enqueue(_ result: BookSearchResult, prepare: @escaping (BookSearchResult, @escaping (String) -> Void) async throws -> CatalogBook) {
+    init(fileURL: URL? = nil) {
+        self.fileURL = fileURL
+        guard let fileURL, FileManager.default.fileExists(atPath: fileURL.path) else { return }
+        do { jobs = try JSONDecoder().decode([Job].self, from: Data(contentsOf: fileURL)) }
+        catch { persistenceError = "Could not restore downloads: \(error.localizedDescription)" }
+    }
+
+    @MainActor func resume(prepare: @escaping Prepare) {
+        for job in jobs where job.book == nil && !job.failed {
+            start(job.result, prepare: prepare)
+        }
+    }
+
+    @MainActor func enqueue(_ result: BookSearchResult, prepare: @escaping Prepare) {
         if let index = jobs.firstIndex(where: { $0.id == result.id }) {
-            guard jobs[index].failed else { return }
+            guard tasks[result.id] == nil, jobs[index].book == nil else { return }
             jobs[index] = Job(result: result)
         } else {
             jobs.append(Job(result: result))
         }
-        guard worker == nil else { return }
-        worker = Task { @MainActor in
-            while let index = jobs.firstIndex(where: { $0.book == nil && !$0.failed }) {
-                let id = jobs[index].id
-                jobs[index].status = "Starting…"
-                do {
-                    let book = try await prepare(jobs[index].result) { text in
-                        Task { @MainActor in
-                            if let current = self.jobs.firstIndex(where: { $0.id == id }), self.jobs[current].book == nil, !self.jobs[current].failed {
-                                self.jobs[current].status = text
-                            }
+        save()
+        start(result, prepare: prepare)
+    }
+
+    @MainActor private func start(_ result: BookSearchResult, prepare: @escaping Prepare) {
+        guard tasks[result.id] == nil else { return }
+        tasks[result.id] = Task { @MainActor in
+            let index = jobs.firstIndex(where: { $0.id == result.id })!
+            jobs[index].status = "Starting…"
+            do {
+                let book = try await prepare(result) { text in
+                    Task { @MainActor in
+                        if self.tasks[result.id] != nil {
+                            self.jobs[index].status = text
                         }
                     }
-                    jobs[index].book = book
-                    jobs[index].status = "Downloaded"
-                } catch {
-                    jobs[index].failed = true
-                    jobs[index].status = error.localizedDescription
                 }
+                jobs[index].book = book
+                jobs[index].status = "Downloaded"
+            } catch is CancellationError {
+                jobs[index].status = "Paused"
+            } catch {
+                jobs[index].failed = true
+                jobs[index].status = error.localizedDescription
             }
-            worker = nil
+            tasks[result.id] = nil
+            save()
         }
+    }
+
+    @MainActor private func save() {
+        guard let fileURL else { return }
+        do {
+            try FileManager.default.createDirectory(at: fileURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try JSONEncoder().encode(jobs).write(to: fileURL, options: .atomic)
+            persistenceError = nil
+        } catch { persistenceError = "Could not save downloads: \(error.localizedDescription)" }
     }
 }

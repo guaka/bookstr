@@ -143,6 +143,8 @@ final class CatalogRepository {
     static let booksAPIBase = "https://books-api.guaka.org/api"
     private let fileStore: JSONFileStore
     private let settings: SettingsRepository
+    private let downloadedBooksLock = NSLock()
+    private let comicMetadataLock = NSLock()
     private let signerProvider: () -> NostrSigner?
     private let nip46Service: Nip46Service
     private var inspectedComicMetadata = Set<URL>()
@@ -320,30 +322,36 @@ final class CatalogRepository {
     }
 
     func prepareForOpening(result: BookSearchResult, progress: @escaping (String) -> Void = { _ in }) async throws -> CatalogBook {
-        guard var book = result.asCatalogBook() else { throw PrivateCatalogError.rejected("This edition has no supported download") }
+        guard let book = result.asCatalogBook() else { throw PrivateCatalogError.rejected("This edition has no supported download") }
         if localPublication(for: book) != nil { return try await prepareForOpening(book: book) }
         if book.epubUrl.isEmpty, let md5 = result.libvaultMd5 {
-            if settings.authMode == .nip46 { await nip46Service.restore(from: settings) }
-            guard let signer = signerProvider() else {
-                throw PrivateCatalogError.rejected("Connect your Nostr identity to download this edition")
-            }
-            let response = try await catalogRequest(["type": "libcat.resolve", "book": ["md5": md5]], signer)
-            if let published = try? CatalogSearchPage.publication(response, for: book) {
-                book = published
-            } else {
+            guard CatalogSearchPage.validHash(md5, length: 32) else { throw TorrentDownloadError.invalidEdition }
+            let cacheName = "torrent-edition-\(md5).json"
+            var edition = fileStore.load(cacheName, as: TorrentEdition?.self, fallback: nil)
+            if edition?.md5 != md5 { edition = nil }
+            if edition == nil {
+                if settings.authMode == .nip46 { await nip46Service.restore(from: settings) }
+                guard let signer = signerProvider() else {
+                    throw PrivateCatalogError.rejected("Connect your Nostr identity to download this edition")
+                }
+                let response = try await catalogRequest(["type": "libcat.resolve", "book": ["md5": md5]], signer)
+                if let published = try? CatalogSearchPage.publication(response, for: book) {
+                    return try await prepareForOpening(book: published)
+                }
                 guard let record = response["book"] as? [String: Any] else { throw TorrentDownloadError.invalidEdition }
-                let edition = try TorrentEdition(record: record, expectedMD5: md5)
-                let staging = try await ForegroundTorrentDownloader.shared.download(edition, progress: progress)
-                guard let format = Self.detectedFormat(fileURL: staging) else { throw TorrentDownloadError.verification }
-                let corrected = replacingFormat(of: book, with: format)
-                guard isValidCachedFile(book: corrected, fileURL: staging, verifyBlossomHash: false) else { throw TorrentDownloadError.verification }
-                fileStore.ensureBooksDirectory()
-                let target = fileStore.bookFileURL(bookId: corrected.id, format: format)
-                if FileManager.default.fileExists(atPath: target.path) { try FileManager.default.removeItem(at: target) }
-                try FileManager.default.copyItem(at: staging, to: target)
-                rememberDownloaded(corrected)
-                return corrected
+                edition = try TorrentEdition(record: record, expectedMD5: md5)
+                fileStore.save(cacheName, value: edition)
             }
+            let staging = try await ForegroundTorrentDownloader.shared.download(edition!, progress: progress)
+            guard let format = Self.detectedFormat(fileURL: staging) else { throw TorrentDownloadError.verification }
+            let corrected = replacingFormat(of: book, with: format)
+            guard isValidCachedFile(book: corrected, fileURL: staging, verifyBlossomHash: false) else { throw TorrentDownloadError.verification }
+            fileStore.ensureBooksDirectory()
+            let target = fileStore.bookFileURL(bookId: corrected.id, format: format)
+            if FileManager.default.fileExists(atPath: target.path) { try FileManager.default.removeItem(at: target) }
+            try FileManager.default.copyItem(at: staging, to: target)
+            rememberDownloaded(corrected)
+            return corrected
         }
         return try await prepareForOpening(book: book)
     }
@@ -468,6 +476,8 @@ final class CatalogRepository {
     }
 
     private func rememberDownloaded(_ book: CatalogBook) {
+        downloadedBooksLock.lock()
+        defer { downloadedBooksLock.unlock() }
         var books = fileStore.load("downloaded-books.json", as: [CatalogBook].self, fallback: [])
         let rights = BookRights.preferred(
             current: books.first(where: { $0.id == book.id })?.rights ?? BookRights(),
@@ -509,6 +519,8 @@ final class CatalogRepository {
     }
 
     private func cachedComicLanguage(fileURL: URL, format: BookFormat) -> String? {
+        comicMetadataLock.lock()
+        defer { comicMetadataLock.unlock() }
         if inspectedComicMetadata.contains(fileURL) { return comicLanguageByURL[fileURL] }
         inspectedComicMetadata.insert(fileURL)
         let language = PublicationUtilities.comicMetadata(fileURL: fileURL, format: format)?.language
