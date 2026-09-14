@@ -3,6 +3,7 @@ import SwiftUI
 @main
 struct BookstrIOSApp: App {
     @UIApplicationDelegateAdaptor(BookstrBackgroundDownloads.self) private var backgroundDownloads
+    @Environment(\.scenePhase) private var scenePhase
     @StateObject private var container = AppContainer.bootstrap()
 
     init() {
@@ -19,6 +20,9 @@ struct BookstrIOSApp: App {
                 .statusBarHidden(true)
                 .persistentSystemOverlays(.hidden)
                 .background(TopSafeAreaCollapser())
+                .onChange(of: scenePhase, initial: true) { _, phase in
+                    Task { await ForegroundTorrentDownloader.shared.setActive(phase == .active) }
+                }
         }
     }
 }

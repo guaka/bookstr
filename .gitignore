@@ -38,3 +38,9 @@ ios/**/xcuserdata/
 .env
 .env.*
 *.nsec
+
+.torrent-build/
+.build-phone-ios/
+ios/TorrentEngine/TorrentEngine.xcframework/
+
+.build-phone-device/

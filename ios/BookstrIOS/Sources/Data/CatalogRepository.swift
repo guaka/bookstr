@@ -143,16 +143,23 @@ final class CatalogRepository {
     static let booksAPIBase = "https://books-api.guaka.org/api"
     private let fileStore: JSONFileStore
     private let settings: SettingsRepository
-    private let signerStore: SignerStore
+    private let signerProvider: () -> NostrSigner?
     private let nip46Service: Nip46Service
     private var inspectedComicMetadata = Set<URL>()
     private var comicLanguageByURL: [URL: String] = [:]
 
-    init(fileStore: JSONFileStore, settings: SettingsRepository, signerStore: SignerStore, nip46Service: Nip46Service) {
+    init(fileStore: JSONFileStore, settings: SettingsRepository, signerStore: SignerStore, nip46Service: Nip46Service,
+         searchSession: URLSession = .shared,
+         signerProvider: (() -> NostrSigner?)? = nil,
+         catalogRequest: @escaping ([String: Any], NostrSigner) async throws -> [String: Any] = {
+             try await PrivateCatalogClient(crypto: .native).request($0, signer: $1)
+         }) {
         self.fileStore = fileStore
         self.settings = settings
-        self.signerStore = signerStore
+        self.signerProvider = signerProvider ?? { signerStore.signer(from: settings) }
         self.nip46Service = nip46Service
+        self.searchSession = searchSession
+        self.catalogRequest = catalogRequest
         fileStore.ensureBooksDirectory()
     }
 
@@ -215,7 +222,8 @@ final class CatalogRepository {
         value.count == 32 && value.allSatisfy(\.isHexDigit)
     }
 
-    private let privateCatalog = PrivateCatalogClient(crypto: .native)
+    private let searchSession: URLSession
+    private let catalogRequest: ([String: Any], NostrSigner) async throws -> [String: Any]
 
     func search(_ query: String, limit: Int = 20) async throws -> [BookSearchResult] {
         try await searchPage(query, limit: limit).books
@@ -225,14 +233,14 @@ final class CatalogRepository {
         let normalized = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard normalized.count >= 2, offset >= 0 else { throw PrivateCatalogError.rejected("Type at least 2 characters to search") }
         if settings.authMode == .nip46 { await nip46Service.restore(from: settings) }
-        guard let signer = signerStore.signer(from: settings) else {
+        guard let signer = signerProvider() else {
             return CatalogSearchPage(books: try await publicSearch(normalized, limit: limit))
         }
         // Public results remain usable if the private relay is unavailable.
         async let publicBooks: [BookSearchResult] = offset == 0 ? ((try? await publicSearch(normalized, limit: limit)) ?? []) : []
         do {
-            let response = try await privateCatalog.request(["type": "libcat.search", "query": normalized,
-                "search_type": "all", "offset": offset, "limit": min(max(limit, 1), 50)], signer: signer)
+            let response = try await catalogRequest(["type": "libcat.search", "query": normalized,
+                "search_type": "all", "offset": offset, "limit": min(max(limit, 1), 50)], signer)
             var page = CatalogSearchPage.libcat(response, offset: offset)
             page.books = CatalogSearchPage.merge(page.books, await publicBooks)
             return page
@@ -256,7 +264,7 @@ final class CatalogRepository {
         components.queryItems = [URLQueryItem(name: "q", value: normalized),
                                  URLQueryItem(name: "limit", value: String(min(max(limit, 1), 50)))]
         guard let url = components.url else { throw URLError(.badURL) }
-        let (data, response) = try await URLSession.shared.data(from: url)
+        let (data, response) = try await searchSession.data(from: url)
         guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
             throw NSError(domain: "CatalogRepository", code: 5,
                           userInfo: [NSLocalizedDescriptionKey: "Search failed"])
@@ -311,16 +319,31 @@ final class CatalogRepository {
         return nil
     }
 
-    func prepareForOpening(result: BookSearchResult) async throws -> CatalogBook {
+    func prepareForOpening(result: BookSearchResult, progress: @escaping (String) -> Void = { _ in }) async throws -> CatalogBook {
         guard var book = result.asCatalogBook() else { throw PrivateCatalogError.rejected("This edition has no supported download") }
         if localPublication(for: book) != nil { return try await prepareForOpening(book: book) }
         if book.epubUrl.isEmpty, let md5 = result.libvaultMd5 {
             if settings.authMode == .nip46 { await nip46Service.restore(from: settings) }
-            guard let signer = signerStore.signer(from: settings) else {
+            guard let signer = signerProvider() else {
                 throw PrivateCatalogError.rejected("Connect your Nostr identity to download this edition")
             }
-            let response = try await privateCatalog.request(["type": "libcat.resolve", "book": ["md5": md5]], signer: signer)
-            book = try CatalogSearchPage.publication(response, for: book)
+            let response = try await catalogRequest(["type": "libcat.resolve", "book": ["md5": md5]], signer)
+            if let published = try? CatalogSearchPage.publication(response, for: book) {
+                book = published
+            } else {
+                guard let record = response["book"] as? [String: Any] else { throw TorrentDownloadError.invalidEdition }
+                let edition = try TorrentEdition(record: record, expectedMD5: md5)
+                let staging = try await ForegroundTorrentDownloader.shared.download(edition, progress: progress)
+                guard let format = Self.detectedFormat(fileURL: staging) else { throw TorrentDownloadError.verification }
+                let corrected = replacingFormat(of: book, with: format)
+                guard isValidCachedFile(book: corrected, fileURL: staging, verifyBlossomHash: false) else { throw TorrentDownloadError.verification }
+                fileStore.ensureBooksDirectory()
+                let target = fileStore.bookFileURL(bookId: corrected.id, format: format)
+                if FileManager.default.fileExists(atPath: target.path) { try FileManager.default.removeItem(at: target) }
+                try FileManager.default.copyItem(at: staging, to: target)
+                rememberDownloaded(corrected)
+                return corrected
+            }
         }
         return try await prepareForOpening(book: book)
     }
@@ -355,7 +378,7 @@ final class CatalogRepository {
             if settings.authMode == .nip46 {
                 await nip46Service.restore(from: settings)
             }
-            guard let signer = signerStore.signer(from: settings), let host = remoteURL.host else {
+            guard let signer = signerProvider(), let host = remoteURL.host else {
                 throw NSError(domain: "CatalogRepository", code: 3,
                               userInfo: [NSLocalizedDescriptionKey: "Connect the approved Nostr identity to download this book"])
             }

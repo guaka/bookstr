@@ -4,6 +4,7 @@ struct SearchView: View {
     @EnvironmentObject private var container: AppContainer
     @EnvironmentObject private var playback: ReaderPlaybackSession
     @State private var query = ""
+    @State private var searchPresented = false
     @State private var results: [BookSearchResult] = []
     @State private var searching = false
     @State private var nextOffset: Int?
@@ -13,7 +14,7 @@ struct SearchView: View {
     @State private var message: String?
     @State private var knownBooks: [CatalogBook] = []
     @State private var favoriteIDs = Set<String>()
-    @State private var openingBookID: String?
+    @State private var showingDownloads = false
     @State private var externalFavorites: [ExternalFavorite] = []
     @State private var favoriteBusyID: String?
     @State private var actionMessage: String?
@@ -44,7 +45,7 @@ struct SearchView: View {
                         }
                         .buttonStyle(.plain)
                         .accessibilityIdentifier("search.open.\(result.id)")
-                        .disabled(!result.isReadable || openingBookID != nil)
+                        .disabled(!result.isReadable)
                         .contextMenu {
                             Button("Rights details") {
                                 rightsDetails = RightsDetailsItem(
@@ -77,7 +78,7 @@ struct SearchView: View {
             }
         }
         .bookstrScreenTitle("Search")
-        .searchable(text: $query, prompt: "Title, author, ISBN, publisher")
+        .searchable(text: $query, isPresented: $searchPresented, prompt: "Title, author, ISBN, publisher")
         .onSubmit(of: .search) {
             searchTask?.cancel()
             searchTask = Task { await runSearch() }
@@ -89,10 +90,19 @@ struct SearchView: View {
             nextOffset = nil
         }
         .onDisappear { searchTask?.cancel() }
-        .overlay { if searching || openingBookID != nil { ProgressView() } }
+        .overlay { if searching { ProgressView().allowsHitTesting(false) } }
+        .toolbar {
+            Button { showingDownloads = true } label: { Image(systemName: "arrow.down.circle") }
+                .accessibilityLabel("Downloads")
+                .accessibilityIdentifier("search.downloads")
+        }
+        .sheet(isPresented: $showingDownloads) {
+            DownloadsPane(queue: container.downloads)
+        }
         .safeAreaInset(edge: .bottom) {
             if let actionMessage {
                 Text(actionMessage)
+                    .accessibilityIdentifier("search.download-status")
                     .font(.footnote)
                     .foregroundStyle(.primary)
                     .padding(.horizontal, 12)
@@ -138,18 +148,14 @@ struct SearchView: View {
     }
 
     private func open(_ result: BookSearchResult) async {
-        guard openingBookID == nil, result.isReadable else { return }
-        openingBookID = result.id
-        defer { openingBookID = nil }
-        do {
-            let openedBook = try await container.catalogRepository.prepareForOpening(result: result)
-            var transaction = Transaction(animation: nil)
-            transaction.disablesAnimations = true
-            withTransaction(transaction) {
-                playback.present(book: openedBook)
-            }
-        } catch {
-            message = "Could not open: \(error.localizedDescription)"
+        guard result.isReadable else { return }
+        if let book = result.asCatalogBook(), container.catalogRepository.localPublication(for: book) != nil {
+            do { playback.present(book: try await container.catalogRepository.prepareForOpening(result: result)) }
+            catch { actionMessage = error.localizedDescription }
+        } else {
+            container.downloads.enqueue(result, prepare: container.catalogRepository.prepareForOpening)
+            searchPresented = false
+            showingDownloads = true
         }
     }
 
@@ -207,5 +213,35 @@ struct SearchView: View {
 
     private func metadata(_ result: BookSearchResult) -> String {
         [result.publisher, result.format?.rawValue.uppercased()].compactMap { $0 }.joined(separator: " · ")
+    }
+}
+
+struct DownloadsPane: View {
+    @ObservedObject var queue: BookDownloadQueue
+    @EnvironmentObject private var container: AppContainer
+    @EnvironmentObject private var playback: ReaderPlaybackSession
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            List(queue.jobs) { job in
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(job.result.title).font(.headline).accessibilityIdentifier("downloads.book.\(job.id)")
+                    Text(job.result.author).font(.subheadline).foregroundStyle(.secondary)
+                    Text(job.status).font(.caption).accessibilityIdentifier("downloads.status.\(job.id)")
+                    if let book = job.book {
+                        Button("Open") { dismiss(); playback.present(book: book) }
+                            .accessibilityIdentifier("downloads.open.\(job.id)")
+                    } else if job.failed {
+                        Button("Retry") { queue.enqueue(job.result, prepare: container.catalogRepository.prepareForOpening) }
+                            .accessibilityIdentifier("downloads.retry.\(job.id)")
+                    }
+                }
+            }
+            .navigationTitle("Downloads")
+            .toolbar {
+                Button("Done") { dismiss() }.accessibilityIdentifier("downloads.done")
+            }
+        }
     }
 }

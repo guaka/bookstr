@@ -7,6 +7,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		3C8A6EFD5E4581C08FFD4B82 /* TorrentEngineNotices.txt in Resources */ = {isa = PBXBuildFile; fileRef = A6811884AD6C12037E12005B; };
+		F3DE4D36073F3C509DB2DC23 /* TorrentEngine in Frameworks */ = {isa = PBXBuildFile; productRef = 8435E51E6859C7C3C04D7904 /* TorrentEngine */; };
 		06A573B5278C4256361ADD02 /* Favorites.swift in Sources */ = {isa = PBXBuildFile; fileRef = C5D2047C5FEB6AC49E9AA4E3 /* Favorites.swift */; };
 		0C0E91F7C3119FAB5C128CB7 /* AppContainer.swift in Sources */ = {isa = PBXBuildFile; fileRef = D92A1F44EF6DBC86327645B5 /* AppContainer.swift */; };
 		0D8B7B9C1A72642BE78B35EA /* SnippetRepository.swift in Sources */ = {isa = PBXBuildFile; fileRef = A35EC71AEF35B1BF031F46AA /* SnippetRepository.swift */; };
@@ -65,6 +67,7 @@
 		9432960634D4D1BF2D33AF80 /* comic-reader.html in Resources */ = {isa = PBXBuildFile; fileRef = B13A987E3AC47FD0FE4BF250 /* comic-reader.html */; };
 		95EB0945F06E097E3D0F43AC /* WordSortOrderingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0D451C92F8AA2FB44F9D0E02 /* WordSortOrderingTests.swift */; };
 		9BEB1709CD1F21A59D428731 /* EncryptedBookTransferTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 86B13E3EFD858C1A074B96DC /* EncryptedBookTransferTests.swift */; };
+		263D31A3675D4CEEFA139982 /* TorrentDownloadTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 89F7F8413F9BC7F3728B3679 /* TorrentDownloadTests.swift */; };
 		9C5A4C1E6E82E5F321E2750D /* NeuralSpeechSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = 965DBA4E066B5F01074279A3 /* NeuralSpeechSession.swift */; };
 		9F071395C4FA0319FE7D14EC /* NostrConnect in Frameworks */ = {isa = PBXBuildFile; productRef = 852A2E2E0141791441DC562E /* NostrConnect */; };
 		9FC102ABCFABC92BF521BC65 /* NeuralSpeechPlayback.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2217BBAEFB346CDF76809013 /* NeuralSpeechPlayback.swift */; };
@@ -90,6 +93,7 @@
 		DA1F0FD7000D971FC7D5F6C7 /* CatalogProviderRecordV1ContractTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1CA7CD478C05965C8C68F0DB /* CatalogProviderRecordV1ContractTests.swift */; };
 		DA90AA2C2A9749241821174D /* VocabularyRepository.swift in Sources */ = {isa = PBXBuildFile; fileRef = 452650E3247A1315589B1C5D /* VocabularyRepository.swift */; };
 		DAC5858A0DACDAE0C32A0C9C /* EncryptedBookTransfer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2FE82509E3FFB57A754917BF /* EncryptedBookTransfer.swift */; };
+		A8CBFD27DFAE0D78D6A5AA57 /* TorrentDownload.swift in Sources */ = {isa = PBXBuildFile; fileRef = E8BF4C2504EC6ADA2A486D68 /* TorrentDownload.swift */; };
 		DBA33151D101481CA1C94328 /* SpeechModelStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = D170D35FD281CDB13CC91C86 /* SpeechModelStore.swift */; };
 		DC53D04C987E5F83871EC323 /* SpeechPlaybackQueue.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5646F721E09F5A419181D3F1 /* SpeechPlaybackQueue.swift */; };
 		DD53A9C623467FAC4AB1F891 /* SearchFavoriteMatcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = 314B0428834E8C5F54350105 /* SearchFavoriteMatcher.swift */; };
@@ -107,6 +111,8 @@
 		FBDEC08587AE518C8EBAFCED /* SettingsRepository.swift in Sources */ = {isa = PBXBuildFile; fileRef = 22DDF63A8FC739853B993022 /* SettingsRepository.swift */; };
 		FC133E8CF49FBFA03C75CDF3 /* ComicReaderView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9C26BF9A865ED02252061DB0 /* ComicReaderView.swift */; };
 		FE3AD27714601135F65B7AED /* SearchView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DB44907013C5BEF3B84AEF4E /* SearchView.swift */; };
+		B2FA494EDA91A35D00A325E1 /* CatalogConnection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8AC76EE109FE35C23A915CC4 /* CatalogConnection.swift */; };
+		81C875511B18D22C0808DC73 /* CatalogConnectionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 105625424FBB24EB9006815B /* CatalogConnectionTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -127,6 +133,7 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		A6811884AD6C12037E12005B /* TorrentEngineNotices.txt */ = {isa = PBXFileReference; lastKnownFileType = text; path = BookstrIOS/TorrentEngineNotices.txt; sourceTree = SOURCE_ROOT; };
 		020A583BD242E7950EE25CC1 /* BookstrIOSApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BookstrIOSApp.swift; sourceTree = "<group>"; };
 		051B88602D4D938D28CAF8AE /* LICENSE-LGPL-2.1.txt */ = {isa = PBXFileReference; lastKnownFileType = text; path = "LICENSE-LGPL-2.1.txt"; sourceTree = "<group>"; };
 		05418DD35E388592E61BA7F1 /* BookRightsV1ContractTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BookRightsV1ContractTests.swift; sourceTree = "<group>"; };
@@ -157,6 +164,7 @@
 		2E5BBC1560C066A2E245A7F7 /* ReaderPlaybackSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReaderPlaybackSession.swift; sourceTree = "<group>"; };
 		2F8B5A5F347899D54E8A47FB /* WordSortOrdering.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WordSortOrdering.swift; sourceTree = "<group>"; };
 		2FE82509E3FFB57A754917BF /* EncryptedBookTransfer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EncryptedBookTransfer.swift; sourceTree = "<group>"; };
+		E8BF4C2504EC6ADA2A486D68 /* TorrentDownload.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TorrentDownload.swift; sourceTree = "<group>"; };
 		311A9AD188A6B4658AB2C50D /* LibraryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryView.swift; sourceTree = "<group>"; };
 		314B0428834E8C5F54350105 /* SearchFavoriteMatcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SearchFavoriteMatcher.swift; sourceTree = "<group>"; };
 		3BACA8524B2B608D6CF08F99 /* SpeechLanguageSettingsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeechLanguageSettingsTests.swift; sourceTree = "<group>"; };
@@ -185,6 +193,7 @@
 		7BA154F3ED4ACB912D2B64FE /* NostrConstantsV1.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NostrConstantsV1.swift; sourceTree = "<group>"; };
 		7FD8062A587453BE442A09ED /* NeuralSpeechSessionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NeuralSpeechSessionTests.swift; sourceTree = "<group>"; };
 		86B13E3EFD858C1A074B96DC /* EncryptedBookTransferTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EncryptedBookTransferTests.swift; sourceTree = "<group>"; };
+		89F7F8413F9BC7F3728B3679 /* TorrentDownloadTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TorrentDownloadTests.swift; sourceTree = "<group>"; };
 		87B9B26B320EF361E399E7BD /* CatalogRepository.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CatalogRepository.swift; sourceTree = "<group>"; };
 		8DC1903A1A4F090EDAB6D322 /* NostrClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NostrClient.swift; sourceTree = "<group>"; };
 		8E8629ECA94AC88A9C66B1A3 /* CatalogProviderRecordV1.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CatalogProviderRecordV1.swift; sourceTree = "<group>"; };
@@ -226,6 +235,8 @@
 		F98AFAF7A917C5DBDE7B2FD1 /* WordFilterMatching.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WordFilterMatching.swift; sourceTree = "<group>"; };
 		FCD9820EF78EE6965850690D /* FavoriteOutboxTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FavoriteOutboxTests.swift; sourceTree = "<group>"; };
 		FF91D0FCB6132E4378FA51A2 /* ComicReaderUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComicReaderUITests.swift; sourceTree = "<group>"; };
+		8AC76EE109FE35C23A915CC4 /* CatalogConnection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CatalogConnection.swift; sourceTree = "<group>"; };
+		105625424FBB24EB9006815B /* CatalogConnectionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CatalogConnectionTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -235,6 +246,7 @@
 			files = (
 				9F071395C4FA0319FE7D14EC /* NostrConnect in Frameworks */,
 				4996C0C39A8E6AA94CD4A0D7 /* NostrCore in Frameworks */,
+				F3DE4D36073F3C509DB2DC23 /* TorrentEngine in Frameworks */,
 				5BCCE14D8755238CCB662E0D /* sherpa-onnx in Frameworks */,
 				628D753F89F64875FF534939 /* LibArchive in Frameworks */,
 			);
@@ -293,6 +305,7 @@
 				58398AA4BC9D5FE34253F224 /* DictionaryRepositoryCoverageTests.swift */,
 				4232605E9E8A0830608191B3 /* DictionaryRepositoryTests.swift */,
 				86B13E3EFD858C1A074B96DC /* EncryptedBookTransferTests.swift */,
+				89F7F8413F9BC7F3728B3679 /* TorrentDownloadTests.swift */,
 				FCD9820EF78EE6965850690D /* FavoriteOutboxTests.swift */,
 				A43E2AB56617F83E901C76A8 /* FavoritesParserTests.swift */,
 				7FD8062A587453BE442A09ED /* NeuralSpeechSessionTests.swift */,
@@ -305,6 +318,7 @@
 				76B900ED1AA80BA1504AA64E /* ReaderSelectionActionsTests.swift */,
 				687592E73546BF82761EBBB8 /* ReadingProgressV2ContractTests.swift */,
 				E3F0A3ACD7868D79F4ED96FB /* SettingsRepositoryTests.swift */,
+				105625424FBB24EB9006815B /* CatalogConnectionTests.swift */,
 				1E3BF6BDB061364C1FA078DB /* SnippetRepositoryTests.swift */,
 				3BACA8524B2B608D6CF08F99 /* SpeechLanguageSettingsTests.swift */,
 				CC124E45A31157EA58D7C169 /* SpeechModelStoreTests.swift */,
@@ -405,12 +419,14 @@
 				4DAA78A29237C20D1A10F4DE /* CatalogSearchPage.swift */,
 				1771139F922E3CBEECA1BD71 /* DictionaryRepository.swift */,
 				2FE82509E3FFB57A754917BF /* EncryptedBookTransfer.swift */,
+				E8BF4C2504EC6ADA2A486D68 /* TorrentDownload.swift */,
 				23275C7851892FD731C80E1F /* JSONFileStore.swift */,
 				6184947FF12712F08EA6E37D /* KeychainStore.swift */,
 				F78EB46F2E580C92BBC65414 /* ProgressRepository.swift */,
 				9DAAECCFD998EB7B24CC0648 /* PublicationDownloadManager.swift */,
 				BA80FDE5D75A6C3DDC18CC9A /* PublicationUtilities.swift */,
 				22DDF63A8FC739853B993022 /* SettingsRepository.swift */,
+				8AC76EE109FE35C23A915CC4 /* CatalogConnection.swift */,
 				A35EC71AEF35B1BF031F46AA /* SnippetRepository.swift */,
 				D170D35FD281CDB13CC91C86 /* SpeechModelStore.swift */,
 				452650E3247A1315589B1C5D /* VocabularyRepository.swift */,
@@ -557,6 +573,7 @@
 			);
 			name = BookstrIOS;
 			packageProductDependencies = (
+				8435E51E6859C7C3C04D7904 /* TorrentEngine */,
 				852A2E2E0141791441DC562E /* NostrConnect */,
 				FEE3AF5A18BD6006726181A5 /* NostrCore */,
 				A6F58F0C4DD69AA16B021DB4 /* sherpa-onnx */,
@@ -619,6 +636,7 @@
 			mainGroup = AA0BA622039A0D274FA42EBA;
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
+				81DADACD2D3C05984067F5CA /* XCLocalSwiftPackageReference "TorrentEngine" */,
 				7025FED45343CF1C78FF9E74 /* XCRemoteSwiftPackageReference "libarchive-swift" */,
 				ACEF3FCAEEDD319D65424C51 /* XCRemoteSwiftPackageReference "sherpa-onnx" */,
 				23E78AF47BCE51E7F46E4F46 /* XCRemoteSwiftPackageReference "swift-nostr" */,
@@ -651,6 +669,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				3C8A6EFD5E4581C08FFD4B82 /* TorrentEngineNotices.txt in Resources */,
 				456ADF4B906E1F7DEDD361C7 /* Assets.xcassets in Resources */,
 				F5F52E446B44FEFDED9867A3 /* Comics in Resources */,
 				9432960634D4D1BF2D33AF80 /* comic-reader.html in Resources */,
@@ -691,6 +710,7 @@
 				886215C0EB2EE4536C15FA17 /* DictionaryRepository.swift in Sources */,
 				810613D82AEEC202EA83E075 /* EPUBReaderView.swift in Sources */,
 				DAC5858A0DACDAE0C32A0C9C /* EncryptedBookTransfer.swift in Sources */,
+				A8CBFD27DFAE0D78D6A5AA57 /* TorrentDownload.swift in Sources */,
 				06A573B5278C4256361ADD02 /* Favorites.swift in Sources */,
 				6E913BF2A93ECDBAB524A6BF /* JSONFileStore.swift in Sources */,
 				A2B4B6FC429B2B515679864D /* KeychainStore.swift in Sources */,
@@ -722,6 +742,7 @@
 				DD53A9C623467FAC4AB1F891 /* SearchFavoriteMatcher.swift in Sources */,
 				FE3AD27714601135F65B7AED /* SearchView.swift in Sources */,
 				FBDEC08587AE518C8EBAFCED /* SettingsRepository.swift in Sources */,
+				B2FA494EDA91A35D00A325E1 /* CatalogConnection.swift in Sources */,
 				49F0454111B5B17BA59976E2 /* SettingsView.swift in Sources */,
 				0D8B7B9C1A72642BE78B35EA /* SnippetRepository.swift in Sources */,
 				6FF9E26E7CEBEAF6988E6434 /* SpeechDebugLogView.swift in Sources */,
@@ -749,6 +770,7 @@
 				34F8ECDA6D4A08CF16200BA5 /* DictionaryRepositoryCoverageTests.swift in Sources */,
 				3293AEF36AE06143583E5FD1 /* DictionaryRepositoryTests.swift in Sources */,
 				9BEB1709CD1F21A59D428731 /* EncryptedBookTransferTests.swift in Sources */,
+				263D31A3675D4CEEFA139982 /* TorrentDownloadTests.swift in Sources */,
 				B7907145EEC0B5D06140A3FB /* FavoriteOutboxTests.swift in Sources */,
 				3C3CCB5B6B17A6B78CC6B859 /* FavoritesParserTests.swift in Sources */,
 				8119808CC18BBAFA3603E9AB /* NeuralSpeechSessionTests.swift in Sources */,
@@ -761,6 +783,7 @@
 				235F6DBCB3F8A19B959B93DB /* ReaderSelectionActionsTests.swift in Sources */,
 				AE0BE859A2DE65D2BEE1F08B /* ReadingProgressV2ContractTests.swift in Sources */,
 				A36198BE8953B392A5E2BB9E /* SettingsRepositoryTests.swift in Sources */,
+				81C875511B18D22C0808DC73 /* CatalogConnectionTests.swift in Sources */,
 				18534E9370C52F531884284F /* SnippetRepositoryTests.swift in Sources */,
 				E79B008989C4A235038038D3 /* SpeechLanguageSettingsTests.swift in Sources */,
 				35A11E922F3885A5471208C3 /* SpeechModelStoreTests.swift in Sources */,
@@ -1074,6 +1097,10 @@
 		};
 /* End XCConfigurationList section */
 
+/* Begin XCLocalSwiftPackageReference section */
+		81DADACD2D3C05984067F5CA /* XCLocalSwiftPackageReference "TorrentEngine" */ = {isa = XCLocalSwiftPackageReference; relativePath = TorrentEngine; };
+/* End XCLocalSwiftPackageReference section */
+
 /* Begin XCRemoteSwiftPackageReference section */
 		23E78AF47BCE51E7F46E4F46 /* XCRemoteSwiftPackageReference "swift-nostr" */ = {
 			isa = XCRemoteSwiftPackageReference;
@@ -1102,6 +1129,7 @@
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
+		8435E51E6859C7C3C04D7904 /* TorrentEngine */ = {isa = XCSwiftPackageProductDependency; package = 81DADACD2D3C05984067F5CA; productName = TorrentEngine; };
 		852A2E2E0141791441DC562E /* NostrConnect */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = 23E78AF47BCE51E7F46E4F46 /* XCRemoteSwiftPackageReference "swift-nostr" */;

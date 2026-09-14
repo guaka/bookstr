@@ -1,0 +1,8 @@
+module TorrentEngine {
+  header "BTSession.h"
+  link "c++"
+  link framework "SystemConfiguration"
+  link framework "CoreFoundation"
+  link framework "Security"
+  export *
+}

@@ -34,12 +34,14 @@ let package = Package(
             sources: [
                 "Data/DictionaryRepository.swift",
                 "Data/CatalogSearchPage.swift",
+                "Data/CatalogConnection.swift",
                 "Data/EncryptedBookTransfer.swift",
                 "Data/JSONFileStore.swift",
                 "Data/KeychainStore.swift",
                 "Data/ProgressRepository.swift",
                 "Data/PublicationUtilities.swift",
                 "Data/PublicationDownloadManager.swift",
+                "Data/TorrentDownload.swift",
                 "Data/SettingsRepository.swift",
                 "Data/SnippetRepository.swift",
                 "Data/SpeechModelStore.swift",
@@ -73,6 +75,8 @@ let package = Package(
             sources: [
                 "BookRightsV1ContractTests.swift",
                 "CatalogSearchPageTests.swift",
+                "TorrentDownloadTests.swift",
+                "CatalogConnectionTests.swift",
                 "EncryptedBookTransferTests.swift",
                 "BookstrDebugLogTests.swift",
                 "DictionaryRepositoryTests.swift",

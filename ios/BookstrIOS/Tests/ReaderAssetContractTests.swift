@@ -818,7 +818,7 @@ final class ReaderAssetContractTests: XCTestCase {
             .deletingLastPathComponent()
             .appendingPathComponent("Sources/Features/Search/SearchView.swift")
         let search = try String(contentsOf: searchURL, encoding: .utf8)
-        XCTAssertTrue(search.contains("playback.present(book: openedBook)"))
+        XCTAssertTrue(search.contains("playback.present(book:"))
         XCTAssertFalse(search.contains("fullScreenCover(item: $openedBook)"))
         XCTAssertTrue(words.contains("highlightKind: highlightKind"))
         XCTAssertFalse(words.contains("navigationDestination(item: $destination)"))

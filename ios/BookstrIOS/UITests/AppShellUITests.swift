@@ -21,6 +21,35 @@ final class AppShellUITests: XCTestCase {
         add(attachment)
     }
 
+    func testTorrentSearchOpensAndReopensOfflinePublication() throws {
+        app.terminate()
+        app.launchArguments += ["--ui-testing-torrent-fixture"]
+        app.launch()
+        selectTab("Search")
+        let query = app.searchFields.firstMatch
+        XCTAssertTrue(query.waitForExistence(timeout: 10))
+        query.tap(); query.typeText("Torrent Reading Fixture\n")
+        let book = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "search.open.")).firstMatch
+        XCTAssertTrue(book.waitForExistence(timeout: 10))
+        book.tap()
+        XCTAssertTrue(app.buttons["downloads.done"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.staticTexts["Torrent Reading Fixture"].exists)
+        app.buttons["downloads.done"].tap()
+        XCTAssertTrue(query.waitForExistence(timeout: 5))
+        query.tap(); query.typeText(" more\n")
+        app.buttons["Close"].tap()
+        app.buttons["search.downloads"].tap()
+        let downloaded = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "downloads.open.")).firstMatch
+        XCTAssertTrue(downloaded.waitForExistence(timeout: 20))
+        downloaded.tap()
+        let reader = app.descendants(matching: .any)["pdf-reader"]
+        XCTAssertTrue(reader.waitForExistence(timeout: 20))
+        app.terminate()
+        app.launchArguments += ["--ui-testing-preserve-library-state", "--ui-testing-open-continuation"]
+        app.launch()
+        XCTAssertTrue(reader.waitForExistence(timeout: 15))
+    }
+
     func testCatalogInvitationConfirmationCancellationAndRelaunch() throws {
         let npub = "npub1zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zygse4sl3h"
         let name = "Catalog-\(UUID().uuidString.prefix(8))"
