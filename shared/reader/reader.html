@@ -1626,15 +1626,20 @@
       if (!language && book && book.packaging && book.packaging.metadata) {
         language = metadataText(book.packaging.metadata.language);
       }
+      const speechLanguage = language || "en";
       const speechPlan = window.BookstrSpeech
-        ? window.BookstrSpeech.buildPlan(parts)
+        ? window.BookstrSpeech.buildPlan(parts, {
+          language: speechLanguage,
+          normalizeEnglish: true,
+        })
         : { text: parts.join(" ").slice(0, 100000), chunks: [] };
+      if (speechPlan && typeof speechPlan === "object") speechPlan.language = speechLanguage;
       const text = speechPlan.text;
       const chunks = speechPlan.chunks;
       if (notifyNative !== false && window.AndroidBridge && AndroidBridge.onSpeechText) {
         AndroidBridge.onSpeechText(JSON.stringify({
           text: text,
-          language: language || "en",
+          language: speechLanguage,
           chunks: chunks,
           requestID: requestID || null,
         }));
