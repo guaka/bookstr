@@ -24,11 +24,17 @@ namespace lt = libtorrent;
     return self;
 }
 - (BOOL)startTorrent:(NSData *)metadata expectedMD5:(NSString *)md5 error:(NSError **)error {
+    return [self startTorrent:metadata expectedMD5:md5 selectedFilename:nil error:error];
+}
+- (BOOL)startTorrent:(NSData *)metadata expectedMD5:(NSString *)md5 selectedFilename:(NSString *)selectedFilename error:(NSError **)error {
     try {
         [self stop];
         _failure = nil;
         if (metadata.length == 0 || metadata.length > 16 * 1024 * 1024 || md5.length != 32)
             throw std::runtime_error("Invalid torrent metadata");
+        if (selectedFilename && (selectedFilename.length == 0 || selectedFilename.length > 16 ||
+            [selectedFilename rangeOfCharacterFromSet:[[NSCharacterSet characterSetWithCharactersInString:@"0123456789"] invertedSet]].location != NSNotFound))
+            throw std::runtime_error("Invalid selected filename");
         lt::error_code ec;
         auto info = std::make_shared<lt::torrent_info>((char const *)metadata.bytes, (int)metadata.length, ec);
         if (ec) throw std::runtime_error(ec.message());
@@ -37,7 +43,7 @@ namespace lt = libtorrent;
             auto name = info->files().file_name(index);
             NSString *filename = [[NSString alloc] initWithBytes:name.data() length:name.size() encoding:NSUTF8StringEncoding];
             NSString *hash = [filename.lowercaseString componentsSeparatedByString:@"."].firstObject;
-            if ([hash isEqualToString:md5.lowercaseString]) {
+            if (selectedFilename ? [filename isEqualToString:selectedFilename] : [hash isEqualToString:md5.lowercaseString]) {
                 if (chosen != lt::file_index_t(-1)) throw std::runtime_error("Ambiguous edition in torrent");
                 chosen = index;
             }

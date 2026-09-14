@@ -51,6 +51,11 @@ final class AppShellUITests: XCTestCase {
         XCTAssertTrue(reader.waitForExistence(timeout: 15))
     }
 
+    func testZlibSearchDownloadsAndReopensOfflinePublication() throws {
+        app.launchArguments += ["--ui-testing-zlib-fixture"]
+        try testTorrentSearchOpensAndReopensOfflinePublication()
+    }
+
     func testCompactBookRowsUseScreenWidth() throws {
         let epub = app.buttons["library-book-ui-test-alice-epub"]
         let pdf = app.buttons["library-book-ui-test-alice-pdf"]

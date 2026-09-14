@@ -6,6 +6,7 @@ NS_ASSUME_NONNULL_BEGIN
 @interface BTTorrentSession : NSObject
 - (instancetype)initWithRoot:(NSString *)root;
 - (BOOL)startTorrent:(NSData *)metadata expectedMD5:(NSString *)md5 error:(NSError **)error;
+- (BOOL)startTorrent:(NSData *)metadata expectedMD5:(NSString *)md5 selectedFilename:(nullable NSString *)selectedFilename error:(NSError **)error;
 - (NSDictionary<NSString *, id> *)snapshot;
 - (void)setActive:(BOOL)active;
 - (void)stop;

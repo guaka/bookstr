@@ -7,6 +7,33 @@ import CryptoKit
 #endif
 
 final class TorrentDownloadTests: XCTestCase {
+    func zlibRecord(filename: String = "123", torrent: String = "pilimi-zlib-0-119999.torrent") -> [String: Any] {
+        ["md5": String(repeating: "a", count: 32), "id": 0, "collection": "zlib", "torrent": [
+            "filename": filename,
+            "metadata_url": "https://annas-archive.gl/dyn/small_file/torrents/managed_by_aa/zlib/" + torrent]]
+    }
+
+    func testZlibEditionValidatesSeparateFileLocator() throws {
+        let hash = String(repeating: "a", count: 32)
+        let edition = try TorrentEdition(record: zlibRecord(), expectedMD5: hash)
+        XCTAssertEqual(edition.catalogID, 123)
+        XCTAssertEqual(edition.selectedFilename, "123")
+        XCTAssertEqual(edition.metadataURLs, [edition.zlibMetadataURL!])
+        XCTAssertEqual(edition.md5, hash)
+        for filename in ["0", "-1", "0123", "../123", "120000", "9007199254740991", "999999999999999999999999999"] {
+            XCTAssertThrowsError(try TorrentEdition(record: zlibRecord(filename: filename), expectedMD5: hash))
+        }
+        for name in ["pilimi-zlib2-0-119999.torrent", "../pilimi-zlib-0-119999.torrent", "pilimi-zlib-0-119999.torrent?x=1", "pilimi-zlib-200-300.torrent", "pilimi-zlib-200-100.torrent", "pilimi-zlib-0-999999999999999999999999.torrent", "pilimi-zlib-999999999999999999999999-999999999999999999999999.torrent"] {
+            XCTAssertThrowsError(try TorrentEdition(record: zlibRecord(torrent: name), expectedMD5: hash))
+        }
+        var missing = zlibRecord(); missing.removeValue(forKey: "torrent")
+        XCTAssertThrowsError(try TorrentEdition(record: missing, expectedMD5: hash))
+        for locator: [String: Any] in [[:], ["filename": "123"], ["filename": "123", "metadata_url": "https://evil.test/pilimi-zlib-0-119999.torrent"], ["filename": "123", "metadata_url": "http://["]] {
+            var invalid = zlibRecord(); invalid["torrent"] = locator
+            XCTAssertThrowsError(try TorrentEdition(record: invalid, expectedMD5: hash))
+        }
+        XCTAssertThrowsError(try Engine().start(metadata: Data("de".utf8), md5: hash, filename: "123"))
+    }
     @MainActor
     func testQueueContinuesAfterFailureAndRetriesWithoutDuplicating() async throws {
         let queue = BookDownloadQueue()
@@ -354,6 +381,51 @@ extension TorrentDownloadTests {
         }
         let wrong = bencode(["info": ["name": md5 + "1.pdf", "length": 1, "piece length": 16384, "pieces": Data(repeating: 0, count: 20)]])
         XCTAssertThrowsError(try engine.start(metadata: wrong, md5: md5)) { error in XCTAssertEqual((error as NSError).code, 2) }
+    }
+
+    func testNativeZlibSelectsExactIDAndRejectsUnsafeOrAmbiguousNames() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let engine = NativeBookTorrentEngine(root: root)
+        let md5 = String(repeating: "a", count: 32)
+        let metadata = bencode(["info": ["name": "123", "length": 1, "piece length": 16384, "pieces": Data(repeating: 0, count: 20)]])
+        engine.setActive(false)
+        try engine.start(metadata: metadata, md5: md5, filename: "123")
+        XCTAssertTrue((engine.snapshot()["path"] as? String)?.hasSuffix("/123") == true)
+        for filename in ["", "../123", "x", "12345678901234567"] {
+            XCTAssertThrowsError(try engine.start(metadata: metadata, md5: md5, filename: filename))
+        }
+        XCTAssertThrowsError(try engine.start(metadata: metadata, md5: md5, filename: "12"))
+        let duplicate = bencode(["info": ["name": "batch", "piece length": 16384, "pieces": Data(repeating: 0, count: 20), "files": [["length": 1, "path": ["one", "123"]], ["length": 1, "path": ["two", "123"]]]]])
+        XCTAssertThrowsError(try engine.start(metadata: duplicate, md5: md5, filename: "123"))
+    }
+
+    func testNativeZlibDownloadVerifiesPayloadAndResumesCachedMetadata() async throws {
+        let bytes = Data(repeating: 42, count: 32 * 1024)
+        let other = Data(repeating: 17, count: 16 * 1024)
+        let md5 = Insecure.MD5.hash(data: bytes).map { String(format: "%02x", $0) }.joined()
+        let seeder = try SeedServer(files: ["123": bytes, "other": other]); let port = try await seeder.start()
+        defer { seeder.listener.cancel() }
+        let contents = bytes + other
+        var pieces = Data()
+        for offset in stride(from: 0, to: contents.count, by: 16384) { pieces.append(contentsOf: Insecure.SHA1.hash(data: contents[offset..<min(offset + 16384, contents.count)])) }
+        let torrent = bencode(["url-list": "http://127.0.0.1:\(port)/", "info": ["name": "fixture", "piece length": 16384, "pieces": pieces, "files": [["length": bytes.count, "path": ["123"]], ["length": other.count, "path": ["other"]]]]])
+        var record = zlibRecord(); record["md5"] = md5; record["filesize_bytes"] = bytes.count
+        let edition = try TorrentEdition(record: record, expectedMD5: md5)
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let downloader = ForegroundTorrentDownloader(root: root, makeEngine: { NativeBookTorrentEngine(root: $0) }, fetch: { _ in torrent })
+        await downloader.setActive(true)
+        let transfer = Task {
+            let file = try await downloader.download(edition) { _ in }
+            XCTAssertEqual(try Data(contentsOf: file), bytes)
+            let again = try await downloader.download(edition) { _ in }
+            XCTAssertEqual(file, again)
+        }
+        let timeout = Task { try await Task.sleep(nanoseconds: 30_000_000_000); transfer.cancel() }
+        defer { timeout.cancel() }
+        try await transfer.value
     }
 
     func testNativeSelectedFileDownloadPauseAndDiskResume() async throws {
