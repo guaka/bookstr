@@ -2,6 +2,7 @@ import SwiftUI
 
 @main
 struct BookstrIOSApp: App {
+    @Environment(\.scenePhase) private var scenePhase
     @StateObject private var container = AppContainer.bootstrap()
 
     init() {
@@ -16,7 +17,12 @@ struct BookstrIOSApp: App {
                 .environmentObject(container.readerPlayback)
                 .statusBarHidden(true)
                 .persistentSystemOverlays(.hidden)
-                .background(TopSafeAreaCollapser())
+                .task {
+                    container.downloads.resume(prepare: container.catalogRepository.prepareForOpening)
+                }
+                .onChange(of: scenePhase, initial: true) { _, phase in
+                    Task { await ForegroundTorrentDownloader.shared.setActive(phase == .active) }
+                }
         }
     }
 }

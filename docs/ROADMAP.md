@@ -1,5 +1,7 @@
 # Bookstr Electron roadmap
 
+The current mobile acquisition plan is [Libcat and direct torrent reading](libcat-reading.md).
+
 This roadmap is intentionally small. It describes the work needed to make the
 Electron shell a useful local library while keeping the web, iOS, and Android
 clients on the same contracts.

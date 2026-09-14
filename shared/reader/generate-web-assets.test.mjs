@@ -109,6 +109,7 @@ test('repository packaging consumes checked web assets', async () => {
   for (const command of ['pack', 'dist', 'dist:linux', 'dist:win', 'dist:mac', 'dist:all']) {
     assert.equal(desktop.scripts[`pre${command}`], 'npm run check:reader-assets');
   }
-  assert.ok(desktop.build.files.includes('../web/**/*'));
+  assert.ok(desktop.build.files.some((entry) => entry === '../web/**/*'
+    || (entry?.from === '../web' && entry?.to === 'web' && entry.filter?.includes('**/*'))));
   assert.match(workflow, /node shared\/reader\/generate-web-assets\.mjs --check/);
 });

@@ -2058,6 +2058,7 @@
           <span id="search-page-label" aria-live="polite"></span>
           <button id="search-page-next" type="button" aria-label="Next page" title="Next page"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button>
         </nav>
+        <button id="search-load-more" type="button" class="hidden" aria-label="Load more Libcat results">More</button>
         <details id="nip17-exchange" class="nip17-exchange hidden">
           <summary>NIP-17 exchange</summary>
           <div class="nip17-exchange-grid">
@@ -2432,6 +2433,7 @@
       const searchFormatFilterWrap = document.getElementById('search-format-filter-wrap');
       const searchFormatFilter = document.getElementById('search-format-filter');
       const searchPagination = document.getElementById('search-pagination');
+      const searchLoadMore = document.getElementById('search-load-more');
       const searchPagePrev = document.getElementById('search-page-prev');
       const searchPageNext = document.getElementById('search-page-next');
       const searchPageLabel = document.getElementById('search-page-label');
@@ -2594,6 +2596,7 @@
       const searchResultFilter = { language: '', format: '' };
       let searchResultPage = 1;
       let activeSearchGeneration = 0;
+      let libcatPage = null;
 
       let dictionaryDbPromise;
       let sqlRuntimePromise;
@@ -4189,6 +4192,7 @@
       }
 
       function defaultSearchResultRank(book) {
+        if (book.searchSourceId === 'libcat') return -1;
         if (cachedBookKeys.has(bookCacheKey(book, book.readUrl || book.url))) return 0;
         if (BookMetadata.canonicalReadUrl(book, BOOKS_API_BASE)) return 1;
         return 2;
@@ -6684,6 +6688,7 @@
         headerBookMeta.textContent = bookMeta;
         headerBookMeta.title = bookMeta;
         if (activeTab === 'home') renderHome();
+        if (activeTab === 'search' && !queryInput.value.trim()) renderSearchSources();
         if (activeTab === 'words') requestAnimationFrame(() => wordsFilter.focus());
         if (activeTab === 'people') {
           renderPeople();
@@ -6777,7 +6782,7 @@
         const query = isbn || (!BookMetadata.isPlaceholderTitle(title) ? title : '');
         const md5 = String(book?.md5 || book?.libvaultMd5 || '').trim().toLowerCase();
         if (!isMd5(md5) && !query) return null;
-        onAttempt?.({ label: 'Private Nostr lookup', state: 'checking', detail: 'Asking LibVault over an encrypted NIP-17 request.' });
+        onAttempt?.({ label: 'Private Nostr lookup', state: 'checking', detail: 'Asking Libcat over an encrypted NIP-17 request.' });
         nip17FetchModule ||= import('./nip17-fetch.js');
         let matched;
         try {
@@ -6788,16 +6793,16 @@
               onTrace: showNip17Trace,
             };
             if (query) {
-              const response = await module.searchLibVault(query, isbn ? 'isbn' : 'title', { ...options, limit: 50 });
+              const response = await module.searchLibcat(query, isbn ? 'isbn' : 'title', { ...options, limit: 50 });
               return matchingTorrentCatalogRecord(book, normalizeSearchBooks(response, 'libvault'));
             }
-            const resolved = await module.resolveLibVaultBook({ ...book, md5 }, options);
+            const resolved = await module.resolveLibcatBook({ ...book, md5 }, options);
             return normalizeSearchBooks({ books: [resolved] }, 'libvault')[0] || null;
           });
         } catch (error) {
           if (/signer|public key|nip-44/i.test(String(error?.message || error))) {
             onAttempt?.({ label: 'Private Nostr lookup', state: 'failed', detail: 'The connected signer could not complete the encrypted request.' });
-            throw new Error('Connect your Nostr signer to search LibVault for this torrent.');
+            throw new Error('Connect your Nostr signer to search Libcat for this torrent.');
           }
           onAttempt?.({ label: 'Private Nostr lookup', state: 'failed', detail: 'The encrypted catalogue request failed.' });
           throw error;
@@ -6847,17 +6852,17 @@
         let libgenTorrent = BookMetadata.libgenTorrentMetadataForBook(torrentBook);
         if (!libgenTorrent && isMd5(torrentBook?.md5)) {
           if (!nostrSigner?.signEvent || !nostrSigner?.nip44?.encrypt || !nostrSigner?.nip44?.decrypt) {
-            throw new Error('Connect your Nostr signer to resolve this torrent from LibVault.');
+            throw new Error('Connect your Nostr signer to resolve this torrent from Libcat.');
           }
           status.textContent = `Resolving torrent metadata for ${torrentBook.title || 'book'}…`;
           nip17FetchModule ||= import('./nip17-fetch.js');
-          const resolved = await nip17FetchModule.then(module => module.resolveLibVaultBook(torrentBook, {
+          const resolved = await nip17FetchModule.then(module => module.resolveLibcatBook(torrentBook, {
             signer: nostrSigner,
             publish: publishRelayEvent,
             onTrace: showNip17Trace,
           }));
           const normalized = normalizeSearchBooks({ books: [resolved] }, 'libvault')[0];
-          if (!normalized) throw new Error('LibVault returned invalid torrent metadata.');
+          if (!normalized) throw new Error('Libcat returned invalid torrent metadata.');
           torrentBook = {
             ...BookMetadata.enrichBookMetadata(torrentBook, normalized, 'libvault'),
             libgenId: Number(normalized.libgenId || normalized.libgen_id || 0),
@@ -7703,6 +7708,44 @@
         return dedupeBooks(normalizeSearchBooks({ books }, adapter.providerForOPDSFeed(feed)));
       }
 
+      async function searchLibcatSource(query) {
+        const generation = activeSearchGeneration;
+        const type = searchType.value || 'all';
+        nip17FetchModule ||= import('./nip17-fetch.js');
+        const module = await nip17FetchModule;
+        const response = await module.searchLibcat(query, type, {
+          signer: nostrSigner, publish: publishRelayEvent, limit: 50,
+        });
+        if (generation === activeSearchGeneration) {
+          libcatPage = Number.isSafeInteger(response.next_offset) && response.next_offset > 0
+            ? { query, type, offset: response.next_offset, generation } : null;
+        }
+        return normalizeSearchBooks(response, 'libvault').map(book => ({ ...book, searchSourceId: 'libcat' }));
+      }
+
+      async function loadMoreLibcat() {
+        if (!libcatPage || searchLoadMore.disabled) return;
+        const page = libcatPage;
+        searchLoadMore.disabled = true;
+        try {
+          const module = await nip17FetchModule;
+          const response = await module.searchLibcat(page.query, page.type, {
+            signer: nostrSigner, publish: publishRelayEvent, limit: 50, offset: page.offset,
+          });
+          if (page.generation !== activeSearchGeneration) return;
+          const books = dedupeBooks([...searchResultBooks, ...normalizeSearchBooks(response, 'libvault').map(book => ({ ...book, searchSourceId: 'libcat' }))]);
+          libcatPage = Number.isSafeInteger(response.next_offset) && response.next_offset > page.offset
+            ? { ...page, offset: response.next_offset } : null;
+          renderResults(books, { routeState: { ...searchResultFilter, page: searchResultPage } });
+          searchLoadMore.classList.toggle('hidden', !libcatPage);
+          replaceSearchHash();
+        } catch (error) {
+          if (page.generation === activeSearchGeneration) status.textContent = error.message || 'Could not load more results';
+        } finally {
+          if (page.generation === activeSearchGeneration) searchLoadMore.disabled = false;
+        }
+      }
+
       function searchSourceRegistry() {
         const sources = [
           {
@@ -7739,6 +7782,10 @@
             deliveries: ['Metadata', 'EPUB', 'PDF'], access: 'Public', search: searchInternetArchive,
           },
         ];
+        if (state.nip7?.pubkey && nostrSigner?.nip44?.decrypt) sources.unshift({
+          id: 'libcat', name: 'Libcat', coverage: 'Your private book catalogs',
+          deliveries: ['Metadata', 'Torrent identifiers'], access: 'Private', search: searchLibcatSource,
+        });
         for (const feed of normalizePublicOPDSFeedSettings(state.settings.opdsFeeds)) {
           sources.push({
             id: `opds-${feed.url}`,
@@ -7804,23 +7851,36 @@
           return;
         }
         target.classList.remove('hidden');
-        target.innerHTML = entries.map(entry => {
+        target.innerHTML = searchSourceRegistry().map(source => {
+          const entry = entries.find(entry => entry.source.id === source.id) || { source, state: 'cached' };
+          const enabled = isSearchSourceEnabled(source.id);
           const state = entry.state || (entry.error ? 'failed' : 'done');
-          const stateText = state === 'pending'
+          const stateText = !enabled ? 'Off' : state === 'cached' ? '' : state === 'pending'
             ? 'Searching'
             : state === 'failed'
               ? 'Failed'
               : `Done · ${Number(entry.count || 0)} result${Number(entry.count || 0) === 1 ? '' : 's'}`;
           return `<li data-source="${escapeHtml(entry.source.id)}" data-state="${escapeHtml(state)}">
-            <span>${escapeHtml(entry.source.name)}</span><span class="search-source-state">${escapeHtml(stateText)}</span>
+            <label class="search-source-toggle"><input type="checkbox" data-action="toggle-search-source" data-source-id="${escapeHtml(source.id)}" ${enabled ? 'checked' : ''}><span>${escapeHtml(source.name)}</span></label><span class="search-source-state">${escapeHtml(stateText)}</span>
           </li>`;
         }).join('');
+        target.querySelectorAll('[data-action="toggle-search-source"]').forEach(input => {
+          input.addEventListener('change', event => {
+            setSearchSourceEnabled(event.currentTarget.dataset.sourceId, event.currentTarget.checked);
+            void startSearch({ updateHash: false, bypassCache: true });
+          });
+        });
       }
 
       async function searchAvailableBookSources(query, onUpdate = () => {}) {
         const sources = searchSourceRegistry().filter(source => isSearchSourceEnabled(source.id));
-        if (!sources.length) throw new Error('No search sources are enabled. Clear the search to turn one on.');
+        if (!sources.length) {
+          onUpdate(searchSourceRegistry().map(source => ({ source, state: 'cached' })), []);
+          return { books: [], outcomes: [] };
+        }
         const arrivedBooks = [];
+        const catalogBooks = [];
+        const mergedBooks = () => dedupeBooks([...catalogBooks, ...dedupeBooks(arrivedBooks).slice(0, SEARCH_RESULT_LIMIT)]);
         const progress = sources.map(source => ({ source, state: 'pending', count: 0, error: null }));
         onUpdate(progress, []);
         const outcomes = await Promise.all(sources.map(async (source, index) => {
@@ -7828,7 +7888,7 @@
           try {
             const books = await source.search(query);
             outcome = { source, books, error: null };
-            arrivedBooks.push(...books);
+            (source.id === 'libcat' ? catalogBooks : arrivedBooks).push(...books);
             progress[index] = { source, state: 'done', count: books.length, error: null };
           } catch (error) {
             outcome = { source, books: [], error };
@@ -7836,14 +7896,14 @@
           }
           onUpdate(
             progress.slice(),
-            dedupeBooks(arrivedBooks).slice(0, SEARCH_RESULT_LIMIT),
+            mergedBooks(),
           );
           return outcome;
         }));
         if (outcomes.every(outcome => outcome.error)) {
           throw new Error(outcomes.map(outcome => `${outcome.source.name}: ${outcome.error?.message || outcome.error}`).join('; '));
         }
-        return { books: dedupeBooks(arrivedBooks).slice(0, SEARCH_RESULT_LIMIT), outcomes };
+        return { books: mergedBooks(), outcomes };
       }
 
       function searchOutcomeSummary(outcomes) {
@@ -7887,8 +7947,11 @@
         }
       }
 
-      async function startSearch({ updateHash = true, routeState = null } = {}) {
+      async function startSearch({ updateHash = true, routeState = null, bypassCache = false } = {}) {
         const searchGeneration = ++activeSearchGeneration;
+        libcatPage = null;
+        searchLoadMore.classList.add('hidden');
+        searchLoadMore.disabled = false;
         // Source adapters may report partial results before their final result.
         // Once the user has seen a result set, retain any filter/page choice
         // while a later adapter update re-renders it.
@@ -7926,9 +7989,9 @@
         searchResultCount.textContent = '0 results';
         searchPagination.classList.add('hidden');
         resetNip17Exchange();
-        const cachedBooks = cachedSearchBooks(query);
+        const cachedBooks = bypassCache || state.nip7?.pubkey && isSearchSourceEnabled('libcat') ? null : cachedSearchBooks(query);
         if (cachedBooks) {
-          renderSearchSourceProgress([]);
+          renderSearchSourceProgress(searchSourceRegistry().map(source => ({ source, state: 'cached' })));
           const books = cachedBooks.filter(book => matchesExactSearchTokens(
             book,
             query,
@@ -7940,7 +8003,7 @@
           renderButtonsState();
           return;
         }
-        status.textContent = 'Searching public book catalogs…';
+        status.textContent = 'Searching book catalogs…';
         try {
           const searchResponse = await searchAvailableBookSources(query, (progress, arrivedBooks) => {
             if (searchGeneration !== activeSearchGeneration) return;
@@ -7957,7 +8020,8 @@
           if (searchGeneration !== activeSearchGeneration) return;
           let books = searchResponse.books;
           books = books.filter(book => matchesExactSearchTokens(book, query, searchType.value || 'all'));
-          cacheSearchBooks(query, books);
+          if (!state.nip7?.pubkey || !isSearchSourceEnabled('libcat')) cacheSearchBooks(query, books);
+          searchLoadMore.classList.toggle('hidden', !libcatPage);
           status.textContent = `${searchOutcomeSummary(searchResponse.outcomes)} · ${books.length} result(s).`;
           renderSearchResults(books);
           replaceSearchHash();
@@ -9019,6 +9083,7 @@
         resultsEl.scrollIntoView({ block: 'start', behavior: 'auto' });
       }
 
+      searchLoadMore.addEventListener('click', loadMoreLibcat);
       searchPagePrev.addEventListener('click', openSearchResultPage);
       searchPageNext.addEventListener('click', openSearchResultPage);
 
@@ -9056,12 +9121,14 @@
       if (isDesktopMode) {
         void purgeLegacyBookCache().then(() => {
           if (activeTab === 'home') renderHome();
+        if (activeTab === 'search' && !queryInput.value.trim()) renderSearchSources();
         }).catch(() => {});
       } else {
         void bookCacheRecords().then(records => {
           cachedBookKeys.clear();
           records.forEach(rememberCachedRecord);
           if (activeTab === 'home') renderHome();
+        if (activeTab === 'search' && !queryInput.value.trim()) renderSearchSources();
         }).catch(() => {});
       }
       void refreshDesktopDownloadStates();
@@ -9080,6 +9147,7 @@
         clearTimeout(desktopDownloadRenderTimer);
         desktopDownloadRenderTimer = setTimeout(() => {
           if (activeTab === 'home') renderHome();
+        if (activeTab === 'search' && !queryInput.value.trim()) renderSearchSources();
         }, 200);
       });
 

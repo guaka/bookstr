@@ -13,6 +13,7 @@ test('multi-source Electron search only adds results as sources finish', async (
   const app = await electron.launch({ args: electronArgs() });
   try {
     const page = await app.firstWindow();
+    await page.coverage.startJSCoverage({ resetOnNavigation: false });
     const laterBooks = Array.from({ length: 200 }, (_, index) => ({
       md5: (index + 1).toString(16).padStart(32, '0'),
       title: `Monotonic Catalog ${index + 1}`,
@@ -66,6 +67,27 @@ test('multi-source Electron search only adds results as sources finish', async (
     await expect(page.locator('#results')).toContainText('Monotonic Gutenberg Survivor');
     await expect(page.locator('#search-result-count')).toHaveText('200 results');
     await expect(page.locator('#results')).toContainText('Monotonic Gutenberg Survivor');
+    const progress = page.locator('#search-source-progress');
+    const publicToggle = progress.locator('[data-source-id="all-books-party"]');
+    await expect(publicToggle).toBeChecked();
+    await publicToggle.uncheck();
+    await expect(page.locator('#search-result-count')).toHaveText('1 result');
+    await expect(publicToggle).not.toBeChecked();
+    await publicToggle.check();
+    await expect(page.locator('#search-result-count')).toHaveText('200 results');
+    await publicToggle.uncheck();
+    await expect(page.locator('#status')).toContainText('result(s)');
+    await page.reload();
+    await expect(page.locator('#search-source-progress [data-source-id="all-books-party"]')).not.toBeChecked();
+    await expect(page.locator('#search-result-count')).toHaveText('1 result');
+    for (const id of await progress.locator('input:checked').evaluateAll(inputs => inputs.map(input => input.dataset.sourceId))) {
+      await progress.locator(`[data-source-id="${id}"]`).uncheck();
+    }
+    await expect(page.locator('#search-result-count')).toHaveText('0 results');
+    await publicToggle.check();
+    await expect(page.locator('#search-result-count')).toHaveText('200 results');
+    fs.writeFileSync(path.join(__dirname, '../../test-results/source-controls-coverage.json'), JSON.stringify(await page.coverage.stopJSCoverage()));
+
   } finally {
     await app.close();
   }
@@ -189,7 +211,7 @@ test('a metadata-only Electron search result opens its book page', async () => {
     await expect(page.locator('.read-file-attempts-title')).toHaveText('What Libstr tried');
     await expect(page.locator('.read-file-attempts')).toContainText('Local library: No downloaded copy was found.');
     await expect(page.locator('.read-file-attempts')).toContainText('Direct download: This record does not provide a direct file URL.');
-    await expect(page.locator('.read-file-attempts')).toContainText('Public torrent catalogue: No compatible EPUB, PDF, FB2, or comic edition matched this metadata.');
+    await expect(page.locator('.read-file-attempts')).not.toContainText('Public torrent catalogue:');
     await expect(page.locator('.read-file-attempts')).toContainText('Private Nostr lookup: Not tried because no Nostr signer is connected.');
   } finally {
     await app.close();

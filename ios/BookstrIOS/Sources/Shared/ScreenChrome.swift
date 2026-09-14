@@ -67,32 +67,44 @@ struct RightsDetailsView: View {
     }
 }
 
-/// Cancels the unused top safe-area gap left after hiding the status bar.
-struct TopSafeAreaCollapser: UIViewRepresentable {
-    func makeUIView(context: Context) -> UIView {
-        ProbeView()
-    }
+/// A flexible book row with a consistent trailing column for edition details.
+struct BookListDetails: View {
+    let title: String
+    let author: String
+    let year: String?
+    let format: String?
+    let language: String?
+    var publisher: String? = nil
+    let rights: BookRights
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
-    func updateUIView(_ uiView: UIView, context: Context) {}
-
-    private final class ProbeView: UIView {
-        override func didMoveToWindow() {
-            super.didMoveToWindow()
-            collapse()
-        }
-
-        override func layoutSubviews() {
-            super.layoutSubviews()
-            collapse()
-        }
-
-        private func collapse() {
-            guard let window, let root = window.rootViewController else { return }
-            let top = window.safeAreaInsets.top
-            if root.additionalSafeAreaInsets.top != -top {
-                root.additionalSafeAreaInsets.top = -top
+    var body: some View {
+        let layout = dynamicTypeSize.isAccessibilitySize
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 6))
+            : AnyLayout(HStackLayout(alignment: .top, spacing: 10))
+        layout {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title).font(.subheadline.weight(.semibold)).foregroundStyle(.primary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text(author).font(.footnote).foregroundStyle(.secondary)
+                HStack(alignment: .top, spacing: 5) {
+                    RightsBadge(rights: rights)
+                    if let publisher, !publisher.isEmpty {
+                        Text(publisher).font(.caption2).foregroundStyle(.secondary)
+                    }
+                }
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            VStack(alignment: .trailing, spacing: 3) {
+                if let format { Text(format.uppercased()).font(.caption.weight(.medium)) }
+                if let year { Text(year).font(.caption2) }
+                if let language { Text(language.uppercased()).font(.caption2) }
+            }
+            .foregroundStyle(.secondary)
+            .frame(width: dynamicTypeSize.isAccessibilitySize ? nil : 58, alignment: .trailing)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .contentShape(Rectangle())
     }
 }
 
@@ -117,6 +129,10 @@ private struct BackgroundSpeechToolbarModifier: ViewModifier {
 }
 
 extension View {
+    func bookstrListRow() -> some View {
+        listRowInsets(EdgeInsets(top: 9, leading: 12, bottom: 9, trailing: 12))
+    }
+
     func bookstrScreenTitle(_ title: String) -> some View {
         self
             .navigationTitle(title)

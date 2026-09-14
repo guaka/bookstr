@@ -9,6 +9,7 @@ final class AppContainer: ObservableObject {
     let readerPlayback: ReaderPlaybackSession
     let dictionaryRepository: DictionaryRepository
     let favoriteMetadataRepository: FavoriteMetadataRepository
+    let downloads = BookDownloadQueue(fileURL: FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("bookstr/downloads.json"))
     let catalogRepository: CatalogRepository
     let nostrClient: NostrClient
     let signerStore: SignerStore
@@ -61,7 +62,16 @@ final class AppContainer: ObservableObject {
         let nostr = NostrClient()
         let nip46 = Nip46Service()
         let signerStore = SignerStore(nip46Service: nip46)
-        let catalog = CatalogRepository(fileStore: fileStore, settings: settings, signerStore: signerStore, nip46Service: nip46)
+        let catalog: CatalogRepository
+#if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("--ui-testing-torrent-fixture") {
+            catalog = LibraryUITestFixtures.torrentCatalog(fileStore: fileStore, settings: settings, signerStore: signerStore, nip46: nip46)
+        } else {
+            catalog = CatalogRepository(fileStore: fileStore, settings: settings, signerStore: signerStore, nip46Service: nip46)
+        }
+#else
+        catalog = CatalogRepository(fileStore: fileStore, settings: settings, signerStore: signerStore, nip46Service: nip46)
+#endif
         let sync = NostrSyncService(
             settings: settings,
             progress: progress,

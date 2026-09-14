@@ -98,6 +98,17 @@ final class SettingsRepository: ObservableObject {
         self.speechRate = savedRate == 0 ? SpeechLanguageSettings.defaultRate : SpeechLanguageSettings.clampRate(savedRate)
     }
 
+    var catalogConnection: CatalogConnection? {
+        get {
+            guard let data = defaults.data(forKey: "catalog_connection_v1") else { return nil }
+            return try? JSONDecoder().decode(CatalogConnection.self, from: data)
+        }
+        set {
+            objectWillChange.send()
+            defaults.set(newValue.flatMap { try? JSONEncoder().encode($0) }, forKey: "catalog_connection_v1")
+        }
+    }
+
     var relays: [String] {
         get {
             let raw = defaults.string(forKey: Keys.relays) ?? "wss://relay.nomadwiki.org"

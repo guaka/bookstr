@@ -28,6 +28,13 @@ struct SettingsView: View {
 
     var body: some View {
         Form {
+            if let catalog = settings.catalogConnection {
+                Section("Catalog") {
+                    Text(catalog.name).accessibilityIdentifier("settings-catalog-name")
+                    Text(catalog.npub).textSelection(.enabled).accessibilityIdentifier("settings-catalog-npub")
+                    ForEach(catalog.relays, id: \.self) { Text($0) }
+                }
+            }
             Section("Reader") {
                 Picker("Theme", selection: $settings.theme) {
                     ForEach(ReaderTheme.allCases, id: \.self) { item in

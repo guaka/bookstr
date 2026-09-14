@@ -167,7 +167,7 @@ struct CatalogBook: Codable, Identifiable, Hashable, Sendable {
     }
 }
 
-struct BookSearchResult: Identifiable, Hashable {
+struct BookSearchResult: Identifiable, Hashable, Codable {
     let id: String
     let source: String
     let title: String
@@ -185,16 +185,19 @@ struct BookSearchResult: Identifiable, Hashable {
     var licenseUrl: String? = nil
     var rightsSource: String? = nil
 
+    var libvaultMd5: String? = nil
+
     var rights: BookRights {
         BookRights.normalize(status: rightsStatus, license: license, licenseURL: licenseUrl, source: rightsSource)
     }
 
-    var isReadable: Bool { downloadUrl?.isEmpty == false && format != nil }
+    var isReadable: Bool { (downloadUrl?.isEmpty == false || libvaultMd5 != nil) && format != nil }
 
     func asCatalogBook() -> CatalogBook? {
-        guard let downloadUrl, let format else { return nil }
+        guard isReadable, let format else { return nil }
+        let downloadUrl = downloadUrl ?? ""
         return CatalogBook(id: id, title: title, author: author, epubUrl: downloadUrl,
-                           coverUrl: coverUrl, sourceUrl: downloadUrl, isbn: nil, libvaultMd5: nil,
+                           coverUrl: coverUrl, sourceUrl: downloadUrl, isbn: nil, libvaultMd5: libvaultMd5,
                            format: format, blossomSha256: nil, year: year, language: language,
                            rightsStatus: rightsStatus, license: license, licenseUrl: licenseUrl,
                            rightsSource: rightsSource)
@@ -202,7 +205,7 @@ struct BookSearchResult: Identifiable, Hashable {
 
     func asFavoriteBook() -> CatalogBook {
         CatalogBook(id: id, title: title, author: author, epubUrl: downloadUrl ?? "",
-                    coverUrl: coverUrl, sourceUrl: downloadUrl, isbn: nil, libvaultMd5: nil,
+                    coverUrl: coverUrl, sourceUrl: downloadUrl, isbn: nil, libvaultMd5: libvaultMd5,
                     format: format ?? .epub, blossomSha256: nil, year: year, language: language,
                     rightsStatus: rightsStatus, license: license, licenseUrl: licenseUrl,
                     rightsSource: rightsSource)

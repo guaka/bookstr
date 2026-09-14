@@ -48,6 +48,7 @@ struct LibraryView: View {
                         .disabled(openingBookID != nil)
                         .buttonStyle(.plain)
                         .accessibilityIdentifier("library-book-\(book.id)")
+                        .bookstrListRow()
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .contextMenu {
                             Button("Rights details") { rightsDetails = details(for: book) }
@@ -70,6 +71,7 @@ struct LibraryView: View {
                         .disabled(openingBookID != nil)
                         .buttonStyle(.plain)
                         .accessibilityIdentifier("library-book-\(book.id)")
+                        .bookstrListRow()
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .contextMenu {
                             Button("Rights details") { rightsDetails = details(for: book) }
@@ -83,29 +85,16 @@ struct LibraryView: View {
                                 openError = "This favorite has not been published to Blossom yet."
                             }
                         } label: {
-                            HStack(spacing: 10) {
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text(displayTitle(favorite))
-                                        .font(.headline)
-                                        .textSelection(.enabled)
-                                    if let author = favorite.author, !author.isEmpty {
-                                        Text(author).font(.subheadline).foregroundStyle(.secondary)
-                                    }
-                                    HStack(spacing: 5) {
-                                        if let year = favorite.year { Text(year) }
-                                        RightsBadge(rights: favorite.rights)
-                                        Text("· \(publicationLabel(favorite))")
-                                    }
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                                }
-                                Spacer(minLength: 0)
-                            }
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .contentShape(Rectangle())
+                            BookListDetails(title: displayTitle(favorite), author: favorite.author ?? "Unknown author",
+                                            year: favorite.year, format: favorite.format, language: nil,
+                                            publisher: favorite.blossomSha256 != nil ? "On Blossom" : "Not on Blossom",
+                                            rights: favorite.rights)
+                                .textSelection(.enabled)
+
                         }
                         .buttonStyle(.plain)
                         .disabled(openingBookID != nil)
+                        .bookstrListRow()
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .contextMenu {
                             Button("Rights details") {
@@ -119,6 +108,7 @@ struct LibraryView: View {
                 }
             }
         }
+        .listStyle(.plain)
         .refreshable { await viewModel.load() }
         .contentMargins(.top, 8, for: .scrollContent)
         .contentMargins(.horizontal, 0, for: .scrollContent)
@@ -177,24 +167,15 @@ struct LibraryView: View {
     }
 
     private func bookRow(_ book: CatalogBook, showProgress: Bool) -> some View {
-        HStack(spacing: 10) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text(book.title).font(.headline)
-                Text(book.author).font(.subheadline).foregroundStyle(.secondary)
-                HStack(spacing: 5) {
-                    if let year = book.year { Text(year) }
-                    if let language = book.language { Text("· \(language.uppercased())") }
-                    RightsBadge(rights: book.rights)
-                    Text("· \(book.format.rawValue.uppercased())")
-                }
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                if showProgress, let item = viewModel.progress[book.id], item.progression > 0 {
-                    ProgressView(value: min(max(item.progression, 0), 1))
-                }
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .top, spacing: 8) {
+                BookListDetails(title: book.title, author: book.author, year: book.year,
+                                format: book.format.rawValue, language: book.language, rights: book.rights)
+                if openingBookID == book.id { ProgressView() }
             }
-            Spacer(minLength: 0)
-            if openingBookID == book.id { ProgressView() }
+            if showProgress, let item = viewModel.progress[book.id], item.progression > 0 {
+                ProgressView(value: min(max(item.progression, 0), 1))
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .contentShape(Rectangle())
@@ -204,12 +185,6 @@ struct LibraryView: View {
         guard openingBookID == nil else { return }
         let local = container.catalogRepository.localPublication(for: book)
         playback.present(book: local?.book ?? book, preparedURL: local?.url)
-    }
-
-    private func publicationLabel(_ favorite: ExternalFavorite) -> String {
-        let format = favorite.format?.uppercased() ?? "Metadata unavailable"
-        let available = favorite.blossomSha256 != nil
-        return "\(format) · \(available ? "On Blossom" : "Not on Blossom")"
     }
 
     private func displayTitle(_ favorite: ExternalFavorite) -> String {
