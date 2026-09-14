@@ -577,7 +577,7 @@ test('EPUB reader exposes read-aloud controls and speech helpers', () => {
   assert.match(readerHtml, /<script src="reader-typography\.js"><\/script>/);
   assert.match(readerHtml, /BookstrTypography\.css/);
   assert.match(readerHtml, /Arial, Helvetica, sans-serif/);
-  assert.match(readerHtml, /window\.BookstrSpeech\.buildPlan\(paragraphs\)/);
+  assert.match(readerHtml, /window\.BookstrSpeech\.buildPlan\(paragraphs,\s*\{/);
   assert.match(readerHtml, /desktopBridge &&/);
   assert.match(readerHtml, /function stopReaderSpeech\(\)/);
   assert.match(readerHtml, /function startReaderSpeech\(\)/);
@@ -603,7 +603,7 @@ test('PDF reader uses local PDF.js, lazy page rendering, and an explicit downloa
   assert.match(pdfReaderJs, /function startPdfSpeech\(\)/);
   assert.match(pdfReaderJs, /function setPdfSpeechState\(state\)/);
   assert.match(pdfReaderJs, /collectPdfSpeechPlan/);
-  assert.match(pdfReaderJs, /window\.BookstrSpeech\.buildPlan\(paragraphs\)/);
+  assert.match(pdfReaderJs, /window\.BookstrSpeech\.buildPlan\(paragraphs,\s*\{/);
   assert.match(pdfReaderJs, /desktopBridge &&/);
   assert.match(pdfReaderJs, /pausePdfSpeech/);
 });

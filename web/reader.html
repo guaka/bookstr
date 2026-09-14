@@ -849,8 +849,12 @@
       if (!language && book && book.packaging && book.packaging.metadata) {
         language = String(book.packaging.metadata.language || "");
       }
-      const plan = window.BookstrSpeech.buildPlan(paragraphs);
-      plan.language = window.BookstrSpeech.normalizeLocale(language);
+      const speechLanguage = window.BookstrSpeech.normalizeLocale(language);
+      const plan = window.BookstrSpeech.buildPlan(paragraphs, {
+        language: speechLanguage,
+        normalizeEnglish: true,
+      });
+      plan.language = speechLanguage;
       return plan;
     }
 

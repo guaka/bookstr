@@ -267,7 +267,7 @@ final class ReaderAssetContractTests: XCTestCase {
         XCTAssertTrue(html.contains("<script src=\"reader-speech.js\"></script>"))
         XCTAssertEqual(html.components(separatedBy: "<script src=\"reader-speech.js\"></script>").count - 1, 1)
         XCTAssertTrue(html.contains("<script src=\"reader-typography.js\"></script>"))
-        XCTAssertTrue(html.contains("window.BookstrSpeech.buildPlan(parts)"))
+        XCTAssertTrue(html.contains("window.BookstrSpeech.buildPlan(parts, {"))
 #if !SWIFT_PACKAGE
         let typographySource = try bundledAsset(named: "reader-typography", extension: "js")
         context.evaluateScript(typographySource)
