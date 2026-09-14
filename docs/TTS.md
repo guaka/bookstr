@@ -135,6 +135,107 @@ Notes:
 5. Store `locale: pt-PT` and pronunciation overrides in every shared speech
    plan so Brazilian Portuguese defaults cannot leak in.
 
+## Candidate OSS projects to evaluate
+
+### Nari Qwen3-TTS (experimental)
+
+- A Hacker News post by Nari Labs introduced this as an inference engine for
+  `Qwen3-TTS` with reported benchmark results: sub-50 ms p95 time-to-first-audio
+  at 10 RPS and top-2 latency/accuracy among a competitive set.
+- Their repository advertises an open-source, HTTP/WebSocket-compatible service
+  around Qwen3-TTS with very low latency modes (`sub-50ms` TTFA at 10 RPS,
+  `sub-80ms` at 20 RPS) and requires H100-class CUDA hardware.
+- Use this as a **potential trial** for latency experiments only, with two
+  blockers for production Bookstr `pt-PT` adoption:
+  1. Current docs indicate English is the tested primary language.
+  2. We need to verify `pt-PT` naturalness and quality end-to-end ourselves.
+
+Relevant links:
+
+- [Show HN: Nari Qwen3-TTS and Qwen3-ASR](https://news.ycombinator.com/item?id=49699267)
+- [Nari Qwen3-TTS GitHub repo](https://github.com/nari-labs/nari-qwen3-tts)
+
+### Open-source TTS candidates to audit next (size + latency profile)
+
+Priority remains `pt-PT`, but English-first engines are useful for parity testing.
+
+For phone sizing, call anything above roughly **1 GB** “likely too large” unless we can
+strongly quantize without quality regression.
+
+| OSS project | Approx artifact size (published) | Runtime memory posture | pt / pt-PT support | English support | Latency profile | Phone fit (≈1GB practical budget) |
+|---|---|---|---|---|---|---|
+| `tts_eu_pt` (pt-PT Kokoro fine-tune) | `~313 MB` voicepack (downloads once) | Small, on-device runtime | `pt-PT` text-normalization tuned for Lisbon Portuguese | Limited (no dedicated English voice in package) | Not documented in benchmark form; likely short due small Kokoro + ONNX runtime | ✅ likely fits |
+| eSpeak NG data (`espeak-ng-data`) | `~24 MB` installed package (`espeak-ng-data`) | Very small CPU footprint | Portuguese listed (`roa` family `pt`, Portugal variant indicated) | 100+ languages supported | Engine is rule-based/formant-based and typically low-latency | ✅ very likely fits |
+| Nari Qwen3-TTS (`Qwen3-TTS-12Hz-1.7B`) | `3.6 GB` GGUF checkpoint | Reported on H100-class GPU in docs; no phone/runtime target published | `pt-PT` not yet documented; English-first public reporting | Yes | Public benchmark: `sub-50 ms` p95 TTFA at 10 RPS; `sub-80 ms` near 20 RPS | ❌ no |
+| Coqui XTTS-v2 | `~2.09 GB` model artifact | Generally multi-GB model cache and inference memory | `Portuguese (pt)` listed, no explicit `pt-PT` split | Yes | `Streaming` examples are commonly used; published user tests reference `< 200 ms` chunks in practice | ⚠️ borderline only for phones |
+| Piper | `~60–76 MB` per voice `.onnx` | Very small voice pack per language pair | `pt_BR` and `pt_PT` voices listed in catalog | Yes, large English voice set | OSS benches report low per-chunk latency (TTFA in low hundreds ms, RTF around `0.03`) plus cold start load overhead | ✅ very likely fits |
+| Kokoro-ONNX (`kokoro-v1.0`) | `~349 MB` (`model.onnx`) + voice pack (`voices.bin`) | Small CPU/ONNX runtime; modest cache | `pt-BR` (`pf_*`, `pm_*`) public voices; pt-PT not confirmed | Yes, multi-language set | Inference work focuses on low RTF CPU paths; no full streaming-first latency suite published | ✅ likely fits as non-pt-PT option |
+
+OSS quick links:
+
+- [Nari Qwen3-TTS repository](https://github.com/nari-labs/nari-qwen3-tts)
+- [Coqui XTTS model docs](https://github.com/coqui-ai/TTS/blob/dev/docs/source/models/xtts.md)
+- [Piper voice catalog (`pt_BR`, `pt_PT`)](https://github.com/rhasspy/piper/blob/master/VOICES.md)
+- [Kokoro-ONNX README](https://github.com/thewh1teagle/kokoro-onnx/blob/main/README.md)
+- [Kokoro language/voice prefixes](https://github.com/pguso/kokoro/blob/main/README.md)
+- [ONNX benchmark set (Piper/Kokoro/Supertonic/Pocket)](https://github.com/omrylcn/voice-edge-benches)
+- [Piper benchmark discussion (`~4.5s` model-load overhead)](https://github.com/stradichenko/audiobook.koplugin/blob/master/dev/benchmark/RESULTS.md)
+- [Coqui XTTS-v2 model size (~2.09 GB)](https://huggingface.co/coqui/XTTS-v2/tree/v2.0.3)
+- [Nari Qwen3-TTS GGUF size (3.6 GB)](https://huggingface.co/vokra/qwen3-tts-12hz-1.7b-customvoice)
+- [Kokoro model + voices sizes (~300 MB / ~80 MB)](https://huggingface.co/spaces/kinabraytan/kokoro-tts-server/blob/main/DEPLOYMENT.md)
+- [tts-eu-pt (European Portuguese Kokoro package)](https://pypi.org/project/tts-eu-pt/)
+- [eSpeak NG languages support](https://github.com/espeak-ng/espeak-ng/blob/master/docs/languages.md)
+- [espeak-ng-data Debian package size](https://packages.debian.org/trixie/espeak-ng-data)
+- [Kokoro pt-BR release bundle (~329 MB)](https://huggingface.co/cristianoaredes/kokoro-pt-br)
+
+### `tts_eu_pt` in-app pilot plan (no sidecar service)
+
+Goal: evaluate `tts_eu_pt` as a `pt-PT` OSS fallback without introducing a separate API service.
+
+- Scope:
+  - Keep one shared speech plan (`SpeechPlan`) and convert it in each platform adapter.
+  - Use `tts_eu_pt` only as an internal in-process optional engine.
+  - Avoid any HTTP/WS service bridge or local background daemon.
+- Implementation path (docs-only planning first):
+  1. Add a dedicated `pt-PT` OSS engine adapter and treat it as a build/runtime feature flag, parallel to current cloud engines.
+  2. Package the model artifacts in the app-install bundle (or first-run cache inside app storage), with no external runtime endpoints.
+  3. Wire player loop to existing `BookstrSpeech.buildPlan` chunks so `tts_eu_pt` uses the same pause/emphasis/offset contract as Azure/ElevenLabs/OpenAI.
+  4. Add runtime selection fallback:
+     - `tts_eu_pt` when locale is `pt-PT` and user enables local OSS voice.
+     - current cloud/local system fallback when the OSS adapter is not enabled or fails.
+  5. Add startup and first-audio metrics in-app:
+     - first-run model load time
+     - first chunk latency
+     - steady-state chunk latency
+     - memory delta
+  6. Add guardrails:
+     - if startup or per-chunk latency regresses beyond threshold, auto-disable OSS adapter and keep UX continuity with existing primary engine.
+- Mobile staging:
+  - For `iOS`/`Android`, confirm whether embedding `tts_eu_pt` runtime is supported in-platform (without sidecar) before enabling by default; if not, keep it disabled while preserving all UX paths and the exact same shared `SpeechPlan`.
+
+### English preprocessing notes (Kokoro quality hardening)
+
+Current English quality issues with Kokoro should be treated as front-end/TTS preprocessing debt first.
+
+Immediate actions (from the earlier stack recommendation): implement items **1** and **2** now.
+
+| Step | Why it matters | Suggested implementation |
+|---|---|---|
+| 1) Shared sentence chunking + punctuation cleanup | Bad boundaries and weak punctuation shaping degrade rhythm and make Kokoro sound flat | In the shared speech preprocessor, use `spaCy` (or a lighter language splitter if needed) to standardize sentence boundaries, normalize ellipsis/dash/repeated punctuation, and preserve paragraph markers consistently for chunking. |
+| 2) Full English text normalization | Numbers, acronyms, dates, and symbols are often parsed inconsistently by TTS front-ends | Add a normalizer in the shared English path using `nemo_text_processing` first, with `gruut` as fallback if runtime size becomes a constraint. Expand at least: numbers/dates, percentages/money/ordinals, common acronyms (`API`, `HTTP`, `AI`, etc.), and timezone/unit abbreviations. |
+
+Notes for implementation:
+
+- Keep these transforms in the shared `SpeechPlan` path, then keep provider adapters untouched as much as possible.
+- Add telemetry for preprocessor latency per chunk, first chunk duration, and normalized-token count by category.
+- If a platform cannot include `nemo_text_processing`, use `gruut` while preserving the same chunk contract.
+
+Temporary test pass:
+
+- Pick one 2-minute chapter excerpt with numbers, abbreviations, and dialogue.
+- Compare old vs new output in the same Kokoro voice with only preprocessing differences.
+- Keep the new path if alignment and pronunciation complaints improve in at least 2 of 3 blind checks.
+
 ## Sources
 
 - [Azure `pt-PT` voice support](https://learn.microsoft.com/en-us/azure/ai-services/Speech-Service/language-support)

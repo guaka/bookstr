@@ -136,7 +136,7 @@ class ReaderAssetContractTest {
         assertTrue(html.contains(scriptTag))
         assertEquals(1, Regex(Regex.escape(scriptTag)).findAll(html).count())
         assertTrue(html.contains(typographyTag))
-        assertTrue(html.contains("window.BookstrSpeech.buildPlan(parts)"))
+        assertTrue(html.contains("window.BookstrSpeech.buildPlan(parts, {"))
         assertTrue(html.contains("window.setReaderTypography"))
         assertTrue(html.contains("BookstrTypography.css"))
         assertTrue(html.contains("Arial, Helvetica, sans-serif"))

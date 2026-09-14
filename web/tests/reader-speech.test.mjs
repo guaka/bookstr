@@ -158,6 +158,41 @@ test('speech planner speaks grouped thousands without comma pauses', () => {
   assertPlanIntegrity(closingParen);
 });
 
+test('English preprocessing preserves source text, offsets, and semantic hyphens', () => {
+  const paragraphs = [
+    'A well-known fact. Next word…',
+    'The range is 5-10 and the date is 2026-09-14.',
+  ];
+  const plan = BookstrSpeech.buildPlan(paragraphs, {
+    language: 'en-US',
+    normalizeEnglish: true,
+    segmenterFactory: null,
+  });
+
+  assert.equal(plan.text, paragraphs.join(' '));
+  assert.equal(plan.chunks.map(chunk => chunk.text).join(' '), paragraphs.join(' '));
+  assert.match(plan.chunks[0].spoken, /well-known/);
+  assert.match(plan.chunks.at(-1).spoken, /5-10/);
+  assert.match(plan.chunks.at(-1).spoken, /2026-09-14/);
+  assertPlanIntegrity(plan);
+});
+
+test('English preprocessing normalizes punctuation dashes only in spoken text', () => {
+  const source = 'Wait—the API costs $12 and is 50% ready.';
+  const plan = BookstrSpeech.buildPlan([source], {
+    language: 'en',
+    normalizeEnglish: true,
+    segmenterFactory: null,
+  });
+
+  assert.equal(plan.text, source);
+  assert.equal(plan.chunks[0].text, 'Wait—');
+  assert.equal(plan.chunks[0].spoken, 'Wait --');
+  assert.match(plan.chunks[1].spoken, /A P I costs 12 dollars and is 50 percent ready\./);
+  assert.doesNotMatch(plan.chunks.map(chunk => chunk.spoken).join(' '), /-- --/);
+  assertPlanIntegrity(plan);
+});
+
 test('speech planner omits footnote markers from spoken text', () => {
   assert.equal(BookstrSpeech.spokenText('He left[1] at dawn.'), 'He left at dawn.');
   assert.equal(BookstrSpeech.spokenText('He left\u00B9 at dawn.'), 'He left at dawn.');

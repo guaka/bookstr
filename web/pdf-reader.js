@@ -145,8 +145,12 @@ async function collectPdfSpeechPlan() {
     totalLength += text.length + 1;
     if (totalLength >= 100000) break;
   }
-  const plan = window.BookstrSpeech.buildPlan(paragraphs);
-  plan.language = window.BookstrSpeech.normalizeLocale(activePdfBook?.language || "en");
+  const speechLanguage = window.BookstrSpeech.normalizeLocale(activePdfBook?.language || "en");
+  const plan = window.BookstrSpeech.buildPlan(paragraphs, {
+    language: speechLanguage,
+    normalizeEnglish: true,
+  });
+  plan.language = speechLanguage;
   return plan;
 }
 

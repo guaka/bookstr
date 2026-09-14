@@ -17,6 +17,20 @@
   const ELLIPSIS_PAUSE_MS = 360;
   const EMPHATIC_PAUSE_MS = 380;
   const PARAGRAPH_PAUSE_MS = 750;
+  const ENGLISH_ACRONYM_MAP = {
+    AI: "A I",
+    API: "A P I",
+    CPU: "C P U",
+    GPU: "G P U",
+    HTML: "H T M L",
+    HTTPS: "H T T P S",
+    HTTP: "H T T P",
+    JSON: "J S O N",
+    NLP: "N L P",
+    URL: "U R L",
+    USA: "U S A",
+    UK: "U K",
+  };
 
   function normalizeText(value) {
     return String(value || "")
@@ -29,6 +43,44 @@
         return match.replace(/, /g, ",");
       })
       .trim();
+  }
+
+  function isEnglishLocale(language) {
+    const normalized = normalizeLocale(language).toLowerCase();
+    return /^en(?:-|$)/.test(normalized);
+  }
+
+  function normalizeEnglishPunctuation(value) {
+    return String(value || "")
+      .replace(/[\u2018\u2019]/g, "'")
+      .replace(/[\u201C\u201D\u201E\u00AB\u00BB]/g, "\"")
+      .replace(/…/g, "...")
+      .replace(/\.\.\.{4,}/g, "...")
+      .replace(/\s*(?:—|–|--+)\s*/g, " -- ")
+      .replace(/\s+-\s+/g, " -- ")
+      .replace(/\(\s*/g, "(")
+      .replace(/\s*\)/g, ")")
+      .replace(/\s+([,;:!?])\s*/g, "$1 ")
+      .replace(/([,;:!?])([^\s\]\)"'’])/g, "$1 $2")
+      .replace(/\s{2,}/g, " ")
+      .replace(/^\s+|\s+$/g, "");
+  }
+
+  function normalizeEnglishAcronyms(value) {
+    return String(value || "").replace(/\b(?:AI|API|CPU|GPU|HTML|HTTPS|HTTP|JSON|NLP|URL|USA|UK)\b/gi, function(match) {
+      return ENGLISH_ACRONYM_MAP[String(match || "").toUpperCase()] || match;
+    });
+  }
+
+  function normalizeEnglishSpokenText(value) {
+    let output = String(value || "");
+    output = normalizeEnglishAcronyms(output);
+    output = output
+      .replace(/(\d{1,2})\s*\/\s*(\d{1,2})\s*\/\s*(\d{2,4})\b/g, "$1 slash $2 slash $3")
+      .replace(/\b(\d{1,2}):(\d{2})\b/g, "$1 $2")
+      .replace(/\$ ?(\d+(?:\.\d{1,2})?)/g, "$1 dollars")
+      .replace(/\b(\d+)%/g, "$1 percent");
+    return output;
   }
 
   function normalizeLocale(language) {
@@ -96,17 +148,18 @@
     return paragraphs;
   }
 
-  function splitSentences(text, segmenterFactory) {
+  function splitSentences(text, segmenterFactory, language) {
     const Segmenter = segmenterFactory === undefined
       ? (typeof Intl !== "undefined" ? Intl.Segmenter : null)
       : segmenterFactory;
+    const normalized = String(text || "");
     if (Segmenter) {
       try {
         const segmenter = typeof Segmenter === "function"
-          ? new Segmenter(undefined, { granularity: "sentence" })
+          ? new Segmenter(isEnglishLocale(language) ? "en" : normalizeLocale(language), { granularity: "sentence" })
           : Segmenter;
         const sentences = [];
-        for (const entry of segmenter.segment(text)) {
+        for (const entry of segmenter.segment(normalized)) {
           const sentence = normalizeText(entry.segment);
           if (sentence) sentences.push(sentence);
         }
@@ -115,7 +168,7 @@
         // The deterministic fallback below is used when a platform segmenter fails.
       }
     }
-    const fallback = text.match(/[^.!?…]+(?:\.\.\.|[.!?…]+)["”’']*(?:\s+|$)|[^.!?…]+$/g) || [];
+    const fallback = normalized.match(/[^.!?…]+(?:\.\.\.|[.!?…]+)["”’']*(?:\s+|$)|[^.!?…]+$/g) || [];
     return fallback.map(normalizeText).filter(Boolean);
   }
 
@@ -135,6 +188,12 @@
       .replace(/[ ]{2,}/g, " ")
       .replace(/ ([,.;:!?])/g, "$1")
       .trim();
+  }
+
+  function spokenTextWithLocale(text, language, includeEnglishPreprocessing) {
+    const base = spokenText(text);
+    if (!includeEnglishPreprocessing || !isEnglishLocale(language)) return base;
+    return normalizeEnglishSpokenText(normalizeEnglishPunctuation(base));
   }
 
   function compareLocators(left, right, compare) {
@@ -406,8 +465,8 @@
     return rebalanceFinalRange(text, ranges, hardLimit);
   }
 
-  function chunkParagraph(paragraph, softLimit, hardLimit, segmenterFactory) {
-    const sentences = splitSentences(paragraph, segmenterFactory);
+  function chunkParagraph(paragraph, softLimit, hardLimit, segmenterFactory, language) {
+    const sentences = splitSentences(paragraph, segmenterFactory, language);
     const chunks = [];
     let searchFrom = 0;
     let active = null;
@@ -482,6 +541,8 @@
     const softLimit = Math.max(1, Number(settings.softLimit) || DEFAULT_SOFT_LIMIT);
     const hardLimit = Math.max(softLimit, Number(settings.hardLimit) || DEFAULT_HARD_LIMIT);
     const maximumCharacters = Math.max(1, Number(settings.maximumCharacters) || DEFAULT_MAX_CHARACTERS);
+    const language = normalizeLocale(settings.language);
+    const includeEnglishPreprocessing = Boolean(settings.normalizeEnglish) && isEnglishLocale(language);
     const paragraphs = normalizedParagraphs(values, maximumCharacters);
     const text = paragraphs.join(" ");
     const chunks = [];
@@ -489,10 +550,16 @@
     let previous = null;
 
     paragraphs.forEach(function(paragraph, paragraphIndex) {
-      const ranges = chunkParagraph(paragraph, softLimit, hardLimit, settings.segmenterFactory);
+      const ranges = chunkParagraph(
+        paragraph,
+        softLimit,
+        hardLimit,
+        settings.segmenterFactory,
+        language,
+      );
       ranges.forEach(function(range, rangeIndex) {
         const chunkText = paragraph.slice(range.start, range.end);
-        const spoken = spokenText(chunkText);
+        const spoken = spokenTextWithLocale(chunkText, language, includeEnglishPreprocessing);
         if (!/[\p{L}\p{N}]/u.test(spoken)) return;
         let pauseMs = 0;
         if (chunks.length) {
