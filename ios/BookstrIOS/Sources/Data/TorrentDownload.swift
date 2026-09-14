@@ -200,7 +200,13 @@ actor ForegroundTorrentDownloader {
                 else {
                     let done = (status["bytes"] as? NSNumber)?.doubleValue ?? 0
                     let total = (status["size"] as? NSNumber)?.doubleValue ?? 0
-                    if done > 0, total > 0 { progress("Downloading · \(min(100, Int(done / total * 100)))% · \(ByteCountFormatter.string(fromByteCount: Int64(done), countStyle: .file)) / \(ByteCountFormatter.string(fromByteCount: Int64(total), countStyle: .file)) · \((status["peers"] as? NSNumber)?.intValue ?? 0) peers") }
+                    if done > 0, total > 0 {
+                        let peers = (status["peers"] as? NSNumber)?.intValue ?? 0
+                        let seeds = (status["seeds"] as? NSNumber)?.intValue ?? 0
+                        let rate = (status["rate"] as? NSNumber)?.int64Value ?? 0
+                        let speed = rate > 0 ? " · \(ByteCountFormatter.string(fromByteCount: rate, countStyle: .file))/s" : ""
+                        progress("Downloading · \(min(100, Int(done / total * 100)))% · \(ByteCountFormatter.string(fromByteCount: Int64(done), countStyle: .file)) / \(ByteCountFormatter.string(fromByteCount: Int64(total), countStyle: .file)) · \(peers) peers (\(seeds) seeds)\(speed)")
+                    }
                     else { progress("Finding peers…") }
                 }
             }
@@ -266,9 +272,10 @@ final class BookDownloadQueue: ObservableObject {
     @MainActor func enqueue(_ result: BookSearchResult, prepare: @escaping Prepare) {
         if let index = jobs.firstIndex(where: { $0.id == result.id }) {
             guard tasks[result.id] == nil, jobs[index].book == nil else { return }
-            jobs[index] = Job(result: result)
+            jobs.remove(at: index)
+            jobs.insert(Job(result: result), at: 0)
         } else {
-            jobs.append(Job(result: result))
+            jobs.insert(Job(result: result), at: 0)
         }
         save()
         start(result, prepare: prepare)
@@ -277,23 +284,33 @@ final class BookDownloadQueue: ObservableObject {
     @MainActor private func start(_ result: BookSearchResult, prepare: @escaping Prepare) {
         guard tasks[result.id] == nil else { return }
         tasks[result.id] = Task { @MainActor in
-            let index = jobs.firstIndex(where: { $0.id == result.id })!
+            guard let index = jobs.firstIndex(where: { $0.id == result.id }) else {
+                tasks[result.id] = nil
+                return
+            }
             jobs[index].status = "Starting…"
             do {
                 let book = try await prepare(result) { text in
                     Task { @MainActor in
-                        if self.tasks[result.id] != nil {
+                        if self.tasks[result.id] != nil,
+                           let index = self.jobs.firstIndex(where: { $0.id == result.id }) {
                             self.jobs[index].status = text
                         }
                     }
                 }
-                jobs[index].book = book
-                jobs[index].status = "Downloaded"
+                if let index = jobs.firstIndex(where: { $0.id == result.id }) {
+                    jobs[index].book = book
+                    jobs[index].status = "Downloaded"
+                }
             } catch is CancellationError {
-                jobs[index].status = "Paused"
+                if let index = jobs.firstIndex(where: { $0.id == result.id }) {
+                    jobs[index].status = "Paused"
+                }
             } catch {
-                jobs[index].failed = true
-                jobs[index].status = error.localizedDescription
+                if let index = jobs.firstIndex(where: { $0.id == result.id }) {
+                    jobs[index].failed = true
+                    jobs[index].status = error.localizedDescription
+                }
             }
             tasks[result.id] = nil
             save()

@@ -109,7 +109,8 @@ namespace lt = libtorrent;
     BOOL complete = status.is_finished && status.state != lt::torrent_status::checking_files && status.state != lt::torrent_status::checking_resume_data;
     if (complete) _handle.save_resume_data(lt::torrent_handle::flush_disk_cache);
     return @{@"state":complete ? @"ready" : (!_active ? @"paused" : (status.num_peers ? @"downloading" : @"finding-peers")),
-        @"bytes":@(status.total_wanted_done), @"size":@(_size), @"peers":@(status.num_peers), @"path":_selectedPath};
+        @"bytes":@(status.total_wanted_done), @"size":@(_size), @"peers":@(status.num_peers),
+        @"seeds":@(status.num_seeds), @"rate":@(status.download_payload_rate), @"path":_selectedPath};
 }
 - (void)setActive:(BOOL)active {
     _active = active;

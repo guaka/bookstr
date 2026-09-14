@@ -23,7 +23,9 @@
 
   function normalizePadding(value) {
     const pixels = Number(value);
-    return Number.isFinite(pixels) ? Math.max(8, Math.min(64, Math.round(pixels))) : 24;
+    if (!Number.isFinite(pixels)) return 24;
+    if (pixels === 0) return 0;
+    return Math.max(8, Math.min(64, Math.round(pixels)));
   }
 
   function fontStack(name) {
