@@ -56,7 +56,8 @@
       .replace(/[\u201C\u201D\u201E\u00AB\u00BB]/g, "\"")
       .replace(/…/g, "...")
       .replace(/\.\.\.{4,}/g, "...")
-      .replace(/\s*-\s*/g, " -- ")
+      .replace(/\s*(?:—|–|--+)\s*/g, " -- ")
+      .replace(/\s+-\s+/g, " -- ")
       .replace(/\(\s*/g, "(")
       .replace(/\s*\)/g, ")")
       .replace(/\s+([,;:!?])\s*/g, "$1 ")
@@ -80,12 +81,6 @@
       .replace(/\$ ?(\d+(?:\.\d{1,2})?)/g, "$1 dollars")
       .replace(/\b(\d+)%/g, "$1 percent");
     return output;
-  }
-
-  function normalizeForLocaleText(value, language, includeEnglishPreprocessing) {
-    const normalized = normalizeText(value);
-    if (!includeEnglishPreprocessing || !isEnglishLocale(language)) return normalized;
-    return normalizeEnglishPunctuation(normalized);
   }
 
   function normalizeLocale(language) {
@@ -126,12 +121,12 @@
     }) || null;
   }
 
-  function normalizedParagraphs(values, maximumCharacters, language, includeEnglishPreprocessing) {
+  function normalizedParagraphs(values, maximumCharacters) {
     const source = Array.isArray(values) ? values : [values];
     const paragraphs = [];
     let used = 0;
     for (const value of source) {
-      let paragraph = normalizeForLocaleText(value, language, includeEnglishPreprocessing);
+      let paragraph = normalizeText(value);
       if (!paragraph) continue;
       const separatorLength = paragraphs.length ? 1 : 0;
       const available = maximumCharacters - used - separatorLength;
@@ -153,13 +148,11 @@
     return paragraphs;
   }
 
-  function splitSentences(text, segmenterFactory, language, includeEnglishPreprocessing) {
+  function splitSentences(text, segmenterFactory, language) {
     const Segmenter = segmenterFactory === undefined
       ? (typeof Intl !== "undefined" ? Intl.Segmenter : null)
       : segmenterFactory;
-    const normalized = includeEnglishPreprocessing
-      ? normalizeEnglishPunctuation(text)
-      : String(text || "");
+    const normalized = String(text || "");
     if (Segmenter) {
       try {
         const segmenter = typeof Segmenter === "function"
@@ -472,8 +465,8 @@
     return rebalanceFinalRange(text, ranges, hardLimit);
   }
 
-  function chunkParagraph(paragraph, softLimit, hardLimit, segmenterFactory, language, includeEnglishPreprocessing) {
-    const sentences = splitSentences(paragraph, segmenterFactory, language, includeEnglishPreprocessing);
+  function chunkParagraph(paragraph, softLimit, hardLimit, segmenterFactory, language) {
+    const sentences = splitSentences(paragraph, segmenterFactory, language);
     const chunks = [];
     let searchFrom = 0;
     let active = null;
@@ -550,7 +543,7 @@
     const maximumCharacters = Math.max(1, Number(settings.maximumCharacters) || DEFAULT_MAX_CHARACTERS);
     const language = normalizeLocale(settings.language);
     const includeEnglishPreprocessing = Boolean(settings.normalizeEnglish) && isEnglishLocale(language);
-    const paragraphs = normalizedParagraphs(values, maximumCharacters, language, includeEnglishPreprocessing);
+    const paragraphs = normalizedParagraphs(values, maximumCharacters);
     const text = paragraphs.join(" ");
     const chunks = [];
     let paragraphStart = 0;
@@ -563,7 +556,6 @@
         hardLimit,
         settings.segmenterFactory,
         language,
-        includeEnglishPreprocessing,
       );
       ranges.forEach(function(range, rangeIndex) {
         const chunkText = paragraph.slice(range.start, range.end);
