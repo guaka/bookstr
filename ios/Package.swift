@@ -57,6 +57,7 @@ let package = Package(
                 "Nostr/NostrClient.swift",
                 "Nostr/NostrModels.swift",
                 "Nostr/PrivateCatalog.swift",
+                "Shared/BookCoverView.swift",
                 "Shared/BookstrDebugLog.swift",
                 "Shared/Generated/CatalogProviderRecordV1.swift",
                 "Shared/Generated/NostrConstantsV1.swift",
@@ -71,6 +72,7 @@ let package = Package(
             path: "BookstrIOS/Tests",
             exclude: ["AppContainerTests.swift"],
             sources: [
+                "BookCoverTests.swift",
                 "BookRightsV1ContractTests.swift",
                 "CatalogSearchPageTests.swift",
                 "TorrentDownloadTests.swift",

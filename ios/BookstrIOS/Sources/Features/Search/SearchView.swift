@@ -31,7 +31,8 @@ struct SearchView: View {
                         Button { Task { await open(result) } } label: {
                             BookListDetails(title: result.title, author: result.author, year: result.year,
                                             format: result.format?.rawValue, language: result.language,
-                                            publisher: result.publisher, rights: result.rights)
+                                            publisher: result.publisher, coverURL: result.coverUrl,
+                                            rights: result.rights)
                         }
                         .buttonStyle(.plain)
                         .accessibilityIdentifier("search.open.\(result.id)")
@@ -189,7 +190,7 @@ struct SearchView: View {
     private func catalogBook(for favorite: ExternalFavorite) -> CatalogBook {
         CatalogBook(
             id: favorite.key, title: favorite.title, author: favorite.author ?? "Unknown author",
-            epubUrl: favorite.blossomUrl ?? favorite.url ?? "", coverUrl: nil,
+            epubUrl: favorite.blossomUrl ?? favorite.url ?? "", coverUrl: favorite.coverUrl,
             sourceUrl: favorite.url, isbn: favorite.isbn, libvaultMd5: favorite.libvaultMd5,
             format: BookFormat.from(format: favorite.format, url: favorite.blossomUrl ?? favorite.url ?? ""),
             blossomSha256: favorite.blossomSha256, year: favorite.year,

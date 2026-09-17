@@ -67,7 +67,8 @@ struct RightsDetailsView: View {
     }
 }
 
-/// A flexible book row with a consistent trailing column for edition details.
+/// A flexible book row with an optional cover and a consistent trailing
+/// column for edition details.
 struct BookListDetails: View {
     let title: String
     let author: String
@@ -75,6 +76,7 @@ struct BookListDetails: View {
     let format: String?
     let language: String?
     var publisher: String? = nil
+    var coverURL: String? = nil
     let rights: BookRights
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
@@ -83,6 +85,7 @@ struct BookListDetails: View {
             ? AnyLayout(VStackLayout(alignment: .leading, spacing: 6))
             : AnyLayout(HStackLayout(alignment: .top, spacing: 10))
         layout {
+            BookCoverView(urlString: coverURL)
             VStack(alignment: .leading, spacing: 3) {
                 Text(title).font(.subheadline.weight(.semibold)).foregroundStyle(.primary)
                     .fixedSize(horizontal: false, vertical: true)

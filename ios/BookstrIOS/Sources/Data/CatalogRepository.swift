@@ -16,6 +16,7 @@ final class FavoriteMetadataRepository {
         var license: String?
         var licenseUrl: String?
         var rightsSource: String?
+        var coverUrl: String?
         var updatedAt: Int64
     }
 
@@ -43,6 +44,7 @@ final class FavoriteMetadataRepository {
                     format: book.format.rawValue,
                     rightsStatus: book.rightsStatus, license: book.license,
                     licenseUrl: book.licenseUrl, rightsSource: book.rightsSource,
+                    coverUrl: FavoritesParser.remoteCoverURL(book.coverUrl),
                     updatedAt: Int64(pair.value.fetchedAt.timeIntervalSince1970 * 1000)
                 )
             }
@@ -56,7 +58,8 @@ final class FavoriteMetadataRepository {
             year: book.year, format: book.format.rawValue, blossomSha256: book.blossomSha256,
             blossomUrl: book.blossomSha256 == nil ? nil : book.epubUrl,
             rightsStatus: book.rightsStatus, license: book.license,
-            licenseUrl: book.licenseUrl, rightsSource: book.rightsSource
+            licenseUrl: book.licenseUrl, rightsSource: book.rightsSource,
+            coverUrl: FavoritesParser.remoteCoverURL(book.coverUrl)
         ), updatedAt: updatedAt)
     }
 
@@ -67,6 +70,7 @@ final class FavoriteMetadataRepository {
             title: title, author: useful(ref.author), year: useful(ref.year), format: useful(ref.format),
             rightsStatus: ref.rightsStatus, license: ref.license,
             licenseUrl: ref.licenseUrl, rightsSource: ref.rightsSource,
+            coverUrl: FavoritesParser.remoteCoverURL(ref.coverUrl),
             updatedAt: updatedAt
         )
         let keys = identityKeys(ref)
@@ -102,6 +106,7 @@ final class FavoriteMetadataRepository {
             if useful(result.format) == nil { result.format = cached.format }
             if result.isbn == nil { result.isbn = cached.isbn }
             if result.bookstrId == nil { result.bookstrId = cached.bookstrId }
+            if result.coverUrl == nil { result.coverUrl = cached.coverUrl }
             let rights = BookRights.preferred(
                 current: BookRights.normalize(status: result.rightsStatus, license: result.license,
                                               licenseURL: result.licenseUrl, source: result.rightsSource),
@@ -171,6 +176,7 @@ final class CatalogRepository {
         self.searchSession = searchSession
         self.catalogRequest = catalogRequest
         fileStore.ensureBooksDirectory()
+        fileStore.ensureCoversDirectory()
     }
 
     func downloadedBooks(externalFavorites: [ExternalFavorite] = []) -> [CatalogBook] {
@@ -216,12 +222,65 @@ final class CatalogRepository {
                 )
             }
         }
-        let downloaded = byID.values.filter {
-            guard let local = localPublication(for: $0) else { return false }
-            return Self.isStructurallyValidPublication(fileURL: local.url, format: local.book.format)
-        }
+        let coverCache = fileStore.cachedCoverURLs()
+        let downloaded = byID.values
+            .map { Self.stampCachedCover(into: $0, cache: coverCache) }
+            .filter {
+                guard let local = localPublication(for: $0) else { return false }
+                return Self.isStructurallyValidPublication(fileURL: local.url, format: local.book.format)
+            }
         downloaded.forEach(rememberDownloaded)
         return downloaded.sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
+    }
+
+    /// Remote cover URLs win; the embedded-cover cache only fills gaps. An
+    /// empty-string coverUrl is the stored negative result from a prior scan.
+    private static func stampCachedCover(into book: CatalogBook, cache: [String: URL]) -> CatalogBook {
+        guard book.coverUrl?.isEmpty != false, let cached = cache[book.id.lowercased()] else { return book }
+        var stamped = book
+        stamped.coverUrl = cached.absoluteString
+        return stamped
+    }
+
+    /// Extracts embedded covers for books without one, off the main thread.
+    /// Results are cached under covers/ and persisted on the book record, so
+    /// each publication is scanned at most once — including a negative result.
+    func ensureEmbeddedCovers(for books: [CatalogBook]) async -> [CatalogBook] {
+        var results: [CatalogBook] = []
+        for book in books {
+            if Task.isCancelled { break }
+            results.append(await ensureEmbeddedCover(for: book))
+        }
+        return results
+    }
+
+    func ensureEmbeddedCover(for book: CatalogBook) async -> CatalogBook {
+        guard book.coverUrl?.isEmpty != false else { return book }
+        if let cached = fileStore.cachedCoverURLs()[book.id.lowercased()] {
+            var stamped = book
+            stamped.coverUrl = cached.absoluteString
+            return stamped
+        }
+        guard let local = localPublication(for: book) else { return book }
+        let sourceURL = local.url
+        let isEPUB = local.book.format == .epub
+        let extracted: PublicationUtilities.EmbeddedCover? = await Task.detached(priority: .utility) {
+            guard isEPUB else { return nil }
+            return PublicationUtilities.epubCover(fileURL: sourceURL)
+        }.value
+        var updated = book
+        if let extracted {
+            fileStore.ensureCoversDirectory()
+            let target = fileStore.coverFileURL(bookId: local.book.id, ext: extracted.pathExtension)
+            if (try? extracted.data.write(to: target, options: .atomic)) != nil {
+                updated.coverUrl = target.absoluteString
+            }
+        }
+        if updated.coverUrl == nil {
+            updated.coverUrl = ""
+        }
+        rememberDownloaded(updated)
+        return updated
     }
 
     func rememberedBooks() -> [CatalogBook] {
@@ -427,7 +486,7 @@ final class CatalogRepository {
     func prepareForOpening(book: CatalogBook) async throws -> CatalogBook {
         if let local = localPublication(for: book) {
             rememberDownloaded(local.book)
-            return local.book
+            return await ensureEmbeddedCover(for: local.book)
         }
 
         let fileURL = try await ensureDownloaded(book: book)
@@ -441,7 +500,8 @@ final class CatalogRepository {
                           userInfo: [NSLocalizedDescriptionKey: "This \(actual.rawValue.uppercased()) is damaged or unsupported"])
         }
         rememberDownloaded(corrected)
-        return corrected
+        // The reader surfaces this as lock-screen artwork while TTS plays.
+        return await ensureEmbeddedCover(for: corrected)
     }
 
     func publicationFile(book: CatalogBook) -> URL {

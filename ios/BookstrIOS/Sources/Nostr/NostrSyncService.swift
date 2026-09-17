@@ -544,7 +544,8 @@ final class NostrSyncService {
             rightsStatus: book.rightsStatus,
             license: book.license,
             licenseUrl: book.licenseUrl,
-            rightsSource: book.rightsSource
+            rightsSource: book.rightsSource,
+            coverUrl: FavoritesParser.remoteCoverURL(book.coverUrl)
         )
     }
 
