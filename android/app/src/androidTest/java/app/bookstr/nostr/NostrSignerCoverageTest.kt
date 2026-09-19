@@ -195,7 +195,7 @@ class NostrSignerCoverageTest {
                 signer.signEvent(unsigned)
             }
         }
-        assertTrue(error.message?.contains("Amber needs approval") == true)
+        assertTrue(error.message?.contains("Open Bookstr") == true)
     }
 
     @Test

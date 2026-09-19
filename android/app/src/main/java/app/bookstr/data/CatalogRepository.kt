@@ -83,15 +83,16 @@ data class BookSearchResult(
     val coverUrl: String? = null,
     val rating: Double = 0.0,
     val editionCount: Int = 0,
+    val libvaultMd5: String? = null,
     val rightsStatus: String = RIGHTS_UNKNOWN,
     val license: String? = null,
     val licenseUrl: String? = null,
     val rightsSource: String? = null,
 ) {
-    val isReadable: Boolean get() = !downloadUrl.isNullOrBlank() && format != null
+    val isReadable: Boolean get() = (!downloadUrl.isNullOrBlank() || libvaultMd5 != null) && format != null
 
     fun asCatalogBook(): CatalogBook? {
-        val url = downloadUrl ?: return null
+        val url = downloadUrl ?: if (libvaultMd5 != null) "" else return null
         val bookFormat = format ?: return null
         return CatalogBook(
             id = id,
@@ -100,6 +101,7 @@ data class BookSearchResult(
             epubUrl = url,
             coverUrl = coverUrl,
             sourceUrl = url,
+            libvaultMd5 = libvaultMd5,
             format = bookFormat,
             year = year,
             rightsStatus = rightsStatus,
@@ -143,7 +145,7 @@ class CatalogRepository(
     }
 
     suspend fun downloadedBooks(externalFavorites: List<ExternalFavorite>): List<CatalogBook> =
-        withContext(Dispatchers.IO) {
+        withContext(Dispatchers.IO) { synchronized(this@CatalogRepository) {
             val cached = loadDownloadedBookMetadata().associateBy { it.id }.toMutableMap()
             val discovered = booksDir().listFiles().orEmpty()
                 .filter { it.isFile && it.extension.lowercase() in setOf("epub", "pdf", "fb2") }
@@ -155,7 +157,38 @@ class CatalogRepository(
             val merged = (cached.values + discovered).distinctBy { it.id }
             saveDownloadedBookMetadata(merged)
             merged
-        }
+        } }
+
+    private val privateCatalog = app.bookstr.nostr.PrivateCatalogClient()
+    private fun service() = settings.catalogConnection?.service ?: app.bookstr.nostr.CatalogService()
+
+    suspend fun searchPage(query: String, offset: Int = 0): CatalogSearchPage {
+        require(query.trim().length >= 2 && offset >= 0)
+        val signer = NostrSignerFactory.create(context, settings)
+        if (signer == null) return CatalogSearchPage(search(query), null)
+        val response = privateCatalog.request(JSONObject().put("type", "libcat.search")
+            .put("query", query.trim()).put("search_type", "all").put("limit", 50).put("offset", offset), signer, service())
+        return CatalogSearchPage.parse(response, offset)
+    }
+
+    suspend fun resolveEdition(book: CatalogBook): TorrentEdition {
+        val md5 = requireNotNull(book.libvaultMd5)
+        val signer = NostrSignerFactory.create(context, settings) ?: error("Connect your signer to download")
+        val response = privateCatalog.request(JSONObject().put("type", "libcat.resolve")
+            .put("book", JSONObject().put("md5", md5)), signer, service())
+        return TorrentEdition.parse(response.getJSONObject("book"), md5)
+    }
+
+    suspend fun importVerified(book: CatalogBook, source: File): File = withContext(Dispatchers.IO) {
+        require(Regex("[0-9a-f]{32}").matches(book.id))
+        require(isValidCachedFile(book, source)) { "Unsupported or invalid publication" }
+        val target = publicationFile(book.id, book.format)
+        val temporary = File(target.parentFile, target.name + ".importing")
+        source.copyTo(temporary, overwrite = true)
+        require(temporary.renameTo(target)) { "Could not import publication" }
+        rememberDownloadedBook(withEmbeddedRights(book, target))
+        target
+    }
 
     suspend fun search(query: String, limit: Int = 20): List<BookSearchResult> =
         withContext(Dispatchers.IO) {
@@ -392,7 +425,7 @@ class CatalogRepository(
         }
     }.getOrDefault(Triple(null, null, null))
 
-    private fun rememberDownloadedBook(book: CatalogBook) {
+    @Synchronized private fun rememberDownloadedBook(book: CatalogBook) {
         val existing = loadDownloadedBookMetadata()
         val previous = existing.firstOrNull { it.id == book.id }
         val rights = BookRightsMetadata.preferred(

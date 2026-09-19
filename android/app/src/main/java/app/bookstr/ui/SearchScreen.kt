@@ -33,6 +33,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
+import androidx.compose.material3.TextButton
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.LocalFocusManager
@@ -50,6 +52,9 @@ import kotlinx.coroutines.delay
 @Composable
 fun SearchScreen(
     query: String,
+    hasMore: Boolean = false,
+    onLoadMore: () -> Unit = {},
+    onDownloads: () -> Unit = {},
     results: List<BookSearchResult>,
     searching: Boolean,
     openingBookId: String?,
@@ -64,11 +69,6 @@ fun SearchScreen(
     val focusManager = LocalFocusManager.current
     val keyboardController = LocalSoftwareKeyboardController.current
     val searchFocusRequester = androidx.compose.runtime.remember { FocusRequester() }
-    LaunchedEffect(Unit) {
-        searchFocusRequester.requestFocus()
-        delay(100)
-        keyboardController?.show()
-    }
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(start = 6.dp, top = 2.dp, end = 6.dp, bottom = 8.dp),
@@ -83,6 +83,11 @@ fun SearchScreen(
             }
         }
         item {
+            LaunchedEffect(Unit) {
+                androidx.compose.runtime.withFrameNanos { }
+                searchFocusRequester.requestFocus()
+                keyboardController?.show()
+            }
             OutlinedTextField(
                 value = query,
                 onValueChange = onQueryChange,
@@ -95,9 +100,10 @@ fun SearchScreen(
                 }),
                 modifier = Modifier
                     .fillMaxWidth()
-                    .focusRequester(searchFocusRequester),
+                    .focusRequester(searchFocusRequester).testTag("search.query"),
                 trailingIcon = {
                     IconButton(
+                        modifier = Modifier.testTag("search.submit"),
                         enabled = query.trim().length >= 2 && !searching,
                         onClick = {
                             focusManager.clearFocus()
@@ -113,6 +119,7 @@ fun SearchScreen(
                 },
             )
         }
+        item { TextButton(onClick = onDownloads, modifier = Modifier.testTag("search.downloads")) { Text("Downloads") } }
         if (!message.isNullOrBlank()) {
             item {
                 Text(
@@ -136,6 +143,7 @@ fun SearchScreen(
             Card(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .testTag("search.open.${result.id}")
                     .combinedClickable(
                         enabled = book != null && openingBookId == null,
                         onClick = { onOpen(result) },
@@ -233,5 +241,6 @@ fun SearchScreen(
                 }
             }
         }
+        if (hasMore) item { TextButton(onClick = onLoadMore, enabled = !searching, modifier = Modifier.testTag("search.load-more")) { Text("Load more") } }
     }
 }

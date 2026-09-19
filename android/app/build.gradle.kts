@@ -60,10 +60,13 @@ val releaseKeyPassword = providers.environmentVariable("BOOKSTR_KEY_PASSWORD").o
 android {
     namespace = "app.bookstr"
     compileSdk = 35
+    ndkVersion = "27.2.12479018"
+    externalNativeBuild { cmake { path = file("src/main/cpp/CMakeLists.txt"); version = "3.22.1" } }
 
     defaultConfig {
         applicationId = "app.bookstr"
         minSdk = 27
+        ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64") }
         targetSdk = 35
         versionCode = timestampVersionCode
         versionName = "0.0.3-$versionTimestamp"
@@ -118,6 +121,7 @@ android {
 
     testOptions {
         unitTests.isReturnDefaultValues = true
+        unitTests.isIncludeAndroidResources = true
     }
 }
 
@@ -219,6 +223,11 @@ dependencies {
     ksp("androidx.room:room-compiler:2.6.1")
 
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
+    implementation("org.bouncycastle:bcprov-jdk18on:1.80")
+    testImplementation("org.robolectric:robolectric:4.14.1")
+    testImplementation("fr.acinq.secp256k1:secp256k1-kmp-jni-jvm:0.15.0")
+    testImplementation("com.squareup.okhttp3:mockwebserver:4.12.0")
+    testImplementation("com.squareup.okhttp3:okhttp-tls:4.12.0")
 
     implementation("androidx.security:security-crypto:1.1.0-alpha06")
 
@@ -237,4 +246,14 @@ dependencies {
     androidTestImplementation("androidx.test.uiautomator:uiautomator:2.3.0")
     androidTestImplementation("androidx.compose.ui:ui-test-junit4")
     debugImplementation("androidx.compose.ui:ui-test-manifest")
+}
+
+// Includes UI/service classes and combines JVM and device execution data.
+// Copy the emulator's run-as-accessible coverage file into app/build/coverage/full.ec.
+tasks.register<JacocoReport>("jacocoCombinedDebugReport") {
+    group = "verification"
+    reports { xml.required.set(true); html.required.set(true) }
+    classDirectories.setFrom(fileTree("$buildDir/tmp/kotlin-classes/debug"), fileTree("$buildDir/intermediates/javac/debug/classes"))
+    sourceDirectories.setFrom(files("src/main/java"))
+    executionData.setFrom(fileTree(buildDir) { include("**/*.exec", "**/*.ec") })
 }

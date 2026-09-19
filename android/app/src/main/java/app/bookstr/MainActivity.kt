@@ -29,6 +29,14 @@ import androidx.compose.material3.LocalMinimumInteractiveComponentSize
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.TextButton
+import androidx.compose.ui.platform.testTag
+import app.bookstr.data.CatalogConnection
+import app.bookstr.data.CatalogSearchPage
+import app.bookstr.download.DownloadService
+import app.bookstr.ui.DownloadsSheet
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
@@ -61,6 +69,9 @@ import app.bookstr.util.Bech32
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
+    private val notificationPermission = registerForActivityResult(androidx.activity.result.contract.ActivityResultContracts.RequestPermission()) { _ -> }
+    private var pendingInvitation by mutableStateOf<String?>(null)
+    private var showDownloads by mutableStateOf(false)
     private lateinit var amberSession: AmberIntentSession
     private var requestedWord by mutableStateOf<String?>(null)
     private var wordRequestKey by mutableStateOf(0)
@@ -71,6 +82,8 @@ class MainActivity : ComponentActivity() {
         hideSystemUi()
 
         amberSession = AmberIntentSession(this)
+        pendingInvitation = intent.dataString?.takeIf { it.startsWith("bookstr:") }
+        showDownloads = intent.getBooleanExtra("open_downloads", false)
         requestedWord = intent.getStringExtra(EXTRA_OPEN_WORD)
 
         if (intent.getBooleanExtra(EXTRA_PIN_SHORTCUT, false)) {
@@ -85,7 +98,7 @@ class MainActivity : ComponentActivity() {
         val vocabularyRepository = app.vocabularyRepository
         val dictionaryRepository = app.dictionaryRepository
 
-        if (savedInstanceState == null) {
+        if (savedInstanceState == null && pendingInvitation == null && !showDownloads) {
             settings.readerSession()?.let { session ->
                 val publication = catalog.publicationFile(session.bookId, session.format)
                 if (publication.isFile) {
@@ -154,6 +167,10 @@ class MainActivity : ComponentActivity() {
                 var loading by remember { mutableStateOf(false) }
                 var openingBookId by remember { mutableStateOf<String?>(null) }
                 var error by remember { mutableStateOf<String?>(null) }
+                var nextOffset by remember { mutableStateOf<Int?>(null) }
+                var searchedQuery by remember { mutableStateOf("") }
+                var selectedEdition by remember { mutableStateOf<CatalogBook?>(null) }
+                val downloadJobs by app.downloadStore.jobs.collectAsState()
                 var searchQuery by remember { mutableStateOf("") }
                 var searchResults by remember { mutableStateOf<List<BookSearchResult>>(emptyList()) }
                 var searching by remember { mutableStateOf(false) }
@@ -362,7 +379,7 @@ class MainActivity : ComponentActivity() {
                     }
                 }
 
-                fun runSearch() {
+                fun runSearch(loadMore: Boolean = false) {
                     val query = searchQuery.trim()
                     if (query.length < 2 || searching) {
                         searchMessage = if (query.isNotEmpty() && query.length < 2) {
@@ -374,14 +391,22 @@ class MainActivity : ComponentActivity() {
                         searching = true
                         searchMessage = "Searching…"
                         try {
-                            searchResults = catalog.search(query)
+                            val offset = if (loadMore) nextOffset ?: return@launch else 0
+                            val identity = settings.pubkeyHex
+                            val connection = settings.catalogConnection?.uri
+                            if (!loadMore) { searchResults = emptyList(); nextOffset = null }
+                            val page = catalog.searchPage(query, offset)
+                            if (query != searchQuery.trim() || identity != settings.pubkeyHex || connection != settings.catalogConnection?.uri) return@launch
+                            searchResults = if (loadMore) CatalogSearchPage.merge(searchResults, page.books) else page.books
+                            nextOffset = page.nextOffset
+                            searchedQuery = query
                             searchMessage = if (searchResults.isEmpty()) {
                                 "No matches. Try a shorter query."
                             } else {
                                 "${searchResults.size} result${if (searchResults.size == 1) "" else "s"}"
                             }
                         } catch (e: Exception) {
-                            searchResults = emptyList()
+                            if (!loadMore) searchResults = emptyList()
                             searchMessage = "Search failed: ${e.message ?: "check your connection"}"
                         } finally {
                             searching = false
@@ -419,6 +444,47 @@ class MainActivity : ComponentActivity() {
                     }
                 }
 
+                LaunchedEffect(downloadJobs.map { it.state }) {
+                    if (downloadJobs.any { it.state == "complete" }) {
+                        books = (books + catalog.downloadedBooks(externalFavorites)).distinctBy { it.id }
+                        progress = catalog.getProgressForBooks(books)
+                    }
+                }
+                LaunchedEffect(authMode, npubDisplay) { searchResults = emptyList(); nextOffset = null }
+                if (showDownloads) DownloadsSheet(downloadJobs, onDismiss = { showDownloads = false },
+                    onAction = { action, id -> DownloadService.dispatch(this@MainActivity, action, id) },
+                    onOpen = { showDownloads = false; openBook(it.book) })
+                pendingInvitation?.let { raw ->
+                    val connection = runCatching { CatalogConnection.parse(raw) }.getOrNull()
+                    AlertDialog(onDismissRequest = { pendingInvitation = null },
+                        title = { Text(connection?.name ?: "Invalid catalog invitation") },
+                        text = { Text(connection?.let { "${it.pubkey}\n${it.relays.joinToString("\n")}" } ?: "This invitation cannot be opened.") },
+                        confirmButton = { if (connection != null) TextButton(onClick = {
+                            settings.catalogConnection = connection; pendingInvitation = null; searchResults = emptyList(); nextOffset = null; selectedTab = 3
+                        }, modifier = Modifier.testTag("catalog.confirm")) { Text("Connect") } },
+                        dismissButton = { TextButton(onClick = { pendingInvitation = null }) { Text("Cancel") } })
+                }
+                selectedEdition?.let { book ->
+                    AlertDialog(onDismissRequest = { selectedEdition = null }, title = { Text(book.title) },
+                        text = { Text(listOfNotNull(book.author, book.year, book.format.extension.uppercase()).joinToString(" · ")) },
+                        confirmButton = { TextButton(modifier = Modifier.testTag("edition.download"), onClick = {
+                            selectedEdition = null
+                            scope.launch {
+                                openingBookId = book.id
+                                try {
+                                    val edition = catalog.resolveEdition(book)
+                                    if (android.os.Build.VERSION.SDK_INT >= 33 && checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                                        notificationPermission.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+                                    }
+                                    app.downloadStore.enqueue(book, edition)
+                                    DownloadService.dispatch(this@MainActivity)
+                                    showDownloads = true
+                                } catch (e: Exception) { searchMessage = e.message ?: "Could not start download" }
+                                finally { openingBookId = null }
+                            }
+                        }) { Text("Download") } },
+                        dismissButton = { TextButton(onClick = { selectedEdition = null }) { Text("Cancel") } })
+                }
                 Scaffold(
                     bottomBar = {
                         CompositionLocalProvider(LocalMinimumInteractiveComponentSize provides 40.dp) {
@@ -678,6 +744,7 @@ class MainActivity : ComponentActivity() {
 
                             2 -> SettingsScreen(
                                 authMode = authMode,
+                                signerLabel = Nip55.signerLabel(this@MainActivity, settings.signerPackage),
                                 npubDisplay = npubDisplay,
                                 amberAvailable = amberAvailable,
                                 nsec = nsec,
@@ -713,10 +780,10 @@ class MainActivity : ComponentActivity() {
                                             nsec = ""
                                             showNsec = false
                                             syncMessage =
-                                                "Connected via Amber. Allow remembered progress signing and favorite decryption."
+                                                "Connected via ${Nip55.signerLabel(this@MainActivity, settings.signerPackage)}."
                                             refreshLibrary()
                                         } catch (e: Exception) {
-                                            syncMessage = e.message ?: "Failed to connect Amber"
+                                            syncMessage = e.message ?: "Failed to connect signer"
                                         } finally {
                                             connectingAmber = false
                                         }
@@ -834,6 +901,9 @@ class MainActivity : ComponentActivity() {
 
                             3 -> SearchScreen(
                                 query = searchQuery,
+                                hasMore = nextOffset != null && searchedQuery == searchQuery.trim(),
+                                onLoadMore = { runSearch(true) },
+                                onDownloads = { showDownloads = true },
                                 results = searchResults,
                                 searching = searching,
                                 openingBookId = openingBookId,
@@ -844,13 +914,16 @@ class MainActivity : ComponentActivity() {
                                 },
                                 onQueryChange = {
                                     searchQuery = it
+                                    nextOffset = null
                                     if (it.isBlank()) {
                                         searchResults = emptyList()
                                         searchMessage = null
                                     }
                                 },
-                                onSearch = ::runSearch,
-                                onOpen = { result -> result.asCatalogBook()?.let(::openBook) },
+                                onSearch = { runSearch() },
+                                onOpen = { result -> result.asCatalogBook()?.let { book ->
+                                    if (book.libvaultMd5 != null && !catalog.publicationFile(book.id, book.format).isFile) selectedEdition = book else openBook(book)
+                                } },
                                 onToggleFavorite = { result ->
                                     scope.launch {
                                         try {
@@ -905,6 +978,7 @@ class MainActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         hideSystemUi()
+        if ((application as BookstrApp).downloadStore.jobs.value.any { it.active }) DownloadService.dispatch(this)
         if (::amberSession.isInitialized) {
             amberSession.attach()
         }
@@ -913,6 +987,8 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
+        pendingInvitation = intent.dataString?.takeIf { it.startsWith("bookstr:") }
+        showDownloads = intent.getBooleanExtra("open_downloads", false)
         requestedWord = intent.getStringExtra(EXTRA_OPEN_WORD)
         wordRequestKey += 1
     }

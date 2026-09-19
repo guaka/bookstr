@@ -10,6 +10,8 @@ import app.bookstr.data.VocabularyRepository
 import app.bookstr.data.DictionaryRepository
 
 class BookstrApp : Application() {
+    val downloadStore by lazy { app.bookstr.download.DownloadStore(java.io.File(filesDir, "torrent-downloads")) }
+
     lateinit var settingsRepository: SettingsRepository
         private set
     lateinit var catalogRepository: CatalogRepository

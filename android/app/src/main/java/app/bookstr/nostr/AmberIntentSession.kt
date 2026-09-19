@@ -6,7 +6,13 @@ import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
 import kotlinx.coroutines.suspendCancellableCoroutine
 import java.util.concurrent.atomic.AtomicReference
-import kotlin.coroutines.Continuation
+import kotlinx.coroutines.CancellableContinuation
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withTimeoutOrNull
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
@@ -15,16 +21,18 @@ import kotlin.coroutines.resumeWithException
  * Call [attach] from Activity.onResume and [detach] from onPause.
  */
 class AmberIntentSession(
-    activity: ComponentActivity,
+    private val activity: ComponentActivity,
 ) {
-    private val pendingGetKey = AtomicReference<Continuation<Pair<String, String>>?>(null)
-    private val pendingSign = AtomicReference<Continuation<org.json.JSONObject>?>(null)
-    private val pendingDecrypt = AtomicReference<Continuation<String>?>(null)
-    private val pendingEncrypt = AtomicReference<Continuation<String>?>(null)
+    private var unsignedEvent: String? = null
+    private val pendingGetKey = AtomicReference<CancellableContinuation<Pair<String, String>>?>(null)
+    private val pendingSign = AtomicReference<CancellableContinuation<org.json.JSONObject>?>(null)
+    private val pendingDecrypt = AtomicReference<CancellableContinuation<String>?>(null)
+    private val pendingEncrypt = AtomicReference<CancellableContinuation<String>?>(null)
 
     private val getPublicKeyLauncher: ActivityResultLauncher<Intent> =
         activity.registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
             val cont = pendingGetKey.getAndSet(null) ?: return@registerForActivityResult
+            if (!cont.isActive) return@registerForActivityResult
             try {
                 cont.resume(Nip55.parseGetPublicKeyResult(result.resultCode, result.data))
             } catch (e: Exception) {
@@ -35,8 +43,9 @@ class AmberIntentSession(
     private val signEventLauncher: ActivityResultLauncher<Intent> =
         activity.registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
             val cont = pendingSign.getAndSet(null) ?: return@registerForActivityResult
+            if (!cont.isActive) return@registerForActivityResult
             try {
-                cont.resume(Nip55.parseSignEventResult(result.resultCode, result.data))
+                cont.resume(Nip55.parseSignEventResult(result.resultCode, result.data, unsignedEvent))
             } catch (e: Exception) {
                 cont.resumeWithException(e)
             }
@@ -45,6 +54,7 @@ class AmberIntentSession(
     private val decryptLauncher: ActivityResultLauncher<Intent> =
         activity.registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
             val cont = pendingDecrypt.getAndSet(null) ?: return@registerForActivityResult
+            if (!cont.isActive) return@registerForActivityResult
             try {
                 cont.resume(Nip55.parseNip44DecryptResult(result.resultCode, result.data))
             } catch (e: Exception) {
@@ -55,12 +65,25 @@ class AmberIntentSession(
     private val encryptLauncher: ActivityResultLauncher<Intent> =
         activity.registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
             val cont = pendingEncrypt.getAndSet(null) ?: return@registerForActivityResult
+            if (!cont.isActive) return@registerForActivityResult
             try {
                 cont.resume(Nip55.parseNip44EncryptResult(result.resultCode, result.data))
             } catch (e: Exception) {
                 cont.resumeWithException(e)
             }
         }
+
+    init {
+        activity.lifecycle.addObserver(LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_DESTROY) {
+                pendingGetKey.getAndSet(null)?.cancel()
+                pendingSign.getAndSet(null)?.cancel()
+                pendingDecrypt.getAndSet(null)?.cancel()
+                pendingEncrypt.getAndSet(null)?.cancel()
+                detach()
+            }
+        })
+    }
 
     fun attach() {
         Host.session = this
@@ -78,9 +101,11 @@ class AmberIntentSession(
                 cont.resumeWithException(Nip55Exception("Another get_public_key request is in progress"))
                 return@suspendCancellableCoroutine
             }
-            cont.invokeOnCancellation { pendingGetKey.compareAndSet(cont, null) }
+
             try {
-                getPublicKeyLauncher.launch(Nip55.getPublicKeyIntent())
+                val request = Nip55.getPublicKeyIntent()
+                val providers = activity.packageManager.queryIntentActivities(Nip55.discoveryIntent(), 0)
+                getPublicKeyLauncher.launch(if (providers.size > 1) Intent.createChooser(request, "Connect signer") else request)
             } catch (e: Exception) {
                 pendingGetKey.compareAndSet(cont, null)
                 cont.resumeWithException(e)
@@ -93,8 +118,9 @@ class AmberIntentSession(
                 cont.resumeWithException(Nip55Exception("Another sign_event request is in progress"))
                 return@suspendCancellableCoroutine
             }
-            cont.invokeOnCancellation { pendingSign.compareAndSet(cont, null) }
+
             try {
+                unsignedEvent = eventJson
                 signEventLauncher.launch(
                     Nip55.signEventIntent(eventJson, currentUserHex, signerPackage),
                 )
@@ -115,7 +141,7 @@ class AmberIntentSession(
                 cont.resumeWithException(Nip55Exception("Another nip44_decrypt request is in progress"))
                 return@suspendCancellableCoroutine
             }
-            cont.invokeOnCancellation { pendingDecrypt.compareAndSet(cont, null) }
+
             try {
                 decryptLauncher.launch(
                     Nip55.nip44DecryptIntent(
@@ -143,7 +169,7 @@ class AmberIntentSession(
                 cont.resumeWithException(Nip55Exception("Another nip44_encrypt request is in progress"))
                 return@suspendCancellableCoroutine
             }
-            cont.invokeOnCancellation { pendingEncrypt.compareAndSet(cont, null) }
+
             try {
                 encryptLauncher.launch(
                     Nip55.nip44EncryptIntent(plaintext, otherPubkeyHex, currentUserHex, signerPackage),
@@ -155,7 +181,14 @@ class AmberIntentSession(
         }
 
     object Host {
-        @Volatile
-        var session: AmberIntentSession? = null
+        private val foreground = MutableStateFlow<AmberIntentSession?>(null)
+        var session: AmberIntentSession?
+            get() = foreground.value
+            set(value) { foreground.value = value }
+
+        // Results can arrive at STARTED, before onResume reattaches the host.
+        suspend fun awaitSession(): AmberIntentSession = withTimeoutOrNull(5_000) {
+            foreground.filterNotNull().first()
+        } ?: throw Nip55Exception("Open Bookstr to approve the signer request")
     }
 }

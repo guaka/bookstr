@@ -44,3 +44,6 @@ ios/**/xcuserdata/
 ios/TorrentEngine/TorrentEngine.xcframework/
 
 .build-phone-device/
+
+android/app/.cxx/
+android/.kotlin/

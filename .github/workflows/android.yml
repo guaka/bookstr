@@ -47,7 +47,9 @@ jobs:
           cache: gradle
       - uses: android-actions/setup-android@v3
       - name: Install SDK packages
-        run: sdkmanager "platforms;android-35" "build-tools;35.0.0" "system-images;android-30;google_apis;x86_64"
+        run: sdkmanager "platforms;android-35" "build-tools;35.0.0" "system-images;android-30;google_apis;x86_64" "ndk;27.2.12479018" "cmake;3.22.1"
+      - name: Install torrent build headers
+        run: sudo apt-get update && sudo apt-get install -y libboost-dev
       - name: Unit tests, coverage, and debug APK
         id: android_build
         continue-on-error: true
