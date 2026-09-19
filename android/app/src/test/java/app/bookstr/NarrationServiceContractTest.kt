@@ -31,6 +31,8 @@ class NarrationServiceContractTest {
         assertTrue(source.contains("resumeOffset = currentRangeStart"))
         assertTrue(source.contains("synthesizeToFile(chunk.speak, Bundle(), file, chunk.id)"))
         assertTrue(source.contains("SpeechSpokenText.normalize"))
+        assertTrue(source.contains("EXTRA_REQUEST_CONTINUE"))
+        assertTrue(source.contains("requestContinue = true"))
         assertTrue(source.contains("override fun onRangeStart"))
         assertTrue(source.contains("markerAt(currentPlaybackIndex"))
         assertTrue(source.contains("AUDIOFOCUS_LOSS_TRANSIENT"))

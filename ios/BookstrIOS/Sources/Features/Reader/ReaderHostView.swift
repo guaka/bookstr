@@ -103,6 +103,25 @@ struct ReaderHostView: View {
                 .padding()
             }
         }
+        .overlay(alignment: .bottom) {
+            if activeFormat == .epub, let speechStatus = epubController.speechStatusMessage {
+                HStack(alignment: .top, spacing: 12) {
+                    Text(speechStatus)
+                        .font(.subheadline)
+                        .multilineTextAlignment(.leading)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    Button("Dismiss") {
+                        epubController.dismissSpeechStatus()
+                    }
+                    .font(.subheadline.weight(.semibold))
+                }
+                .padding(14)
+                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+                .padding(.horizontal, 16)
+                .padding(.bottom, showsReaderChrome ? 72 : 24)
+                .accessibilityIdentifier("reader-speech-status")
+            }
+        }
         .overlay {
             if activeFormat == .epub, localURL != nil, !epubController.ready, epubController.errorMessage == nil {
                 ProgressView(epubController.loadingStage + "…")

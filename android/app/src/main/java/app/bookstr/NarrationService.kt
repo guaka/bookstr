@@ -609,14 +609,21 @@ class NarrationService : MediaBrowserServiceCompat(), TextToSpeech.OnInitListene
     }
 
     private fun finishNaturally() {
-        isPlaying = false
         pendingPlay = false
-        resumeOffset = speechText.length
+        speechText = ""
+        speechChunkInputs = emptyList()
+        speechQueue = emptyList()
+        resumeOffset = 0
+        currentRangeStart = 0
+        currentParagraph = ""
         resetAudioPipeline(cancelSynthesis = false)
-        audioManager.abandonAudioFocusRequest(audioFocusRequest)
-        updatePlaybackState(PlaybackStateCompat.STATE_STOPPED)
+        isPlaying = true
+        ensureForeground()
+        updatePlaybackState(PlaybackStateCompat.STATE_BUFFERING)
+        updateMetadata()
         updateNotification()
-        publishState(clearProgress = true)
+        // Ask the reader to advance into the next spine section instead of stopping.
+        publishState(clearProgress = true, requestContinue = true)
     }
 
     private fun onSpeechError(utteranceId: String?, errorCode: Int) {
@@ -843,6 +850,7 @@ class NarrationService : MediaBrowserServiceCompat(), TextToSpeech.OnInitListene
 
     private fun publishState(
         requestText: Boolean = false,
+        requestContinue: Boolean = false,
         pageDirection: Int = 0,
         offset: Int = -1,
         length: Int = 0,
@@ -855,6 +863,7 @@ class NarrationService : MediaBrowserServiceCompat(), TextToSpeech.OnInitListene
                 .putExtra(EXTRA_IS_PLAYING, isPlaying)
                 .putExtra(EXTRA_HAS_TEXT, speechText.isNotBlank())
                 .putExtra(EXTRA_REQUEST_TEXT, requestText)
+                .putExtra(EXTRA_REQUEST_CONTINUE, requestContinue)
                 .putExtra(EXTRA_PAGE_DIRECTION, pageDirection)
                 .putExtra(EXTRA_OFFSET, offset)
                 .putExtra(EXTRA_LENGTH, length)
@@ -879,6 +888,7 @@ class NarrationService : MediaBrowserServiceCompat(), TextToSpeech.OnInitListene
         const val EXTRA_IS_PLAYING = "is_playing"
         const val EXTRA_HAS_TEXT = "has_text"
         const val EXTRA_REQUEST_TEXT = "request_text"
+        const val EXTRA_REQUEST_CONTINUE = "request_continue"
         const val EXTRA_PAGE_DIRECTION = "page_direction"
         const val EXTRA_OFFSET = "offset"
         const val EXTRA_LENGTH = "length"

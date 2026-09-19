@@ -6,6 +6,7 @@ import LibArchive
 #if canImport(zlib)
 import zlib
 #endif
+import ImageIO
 import PDFKit
 
 enum PublicationUtilities {
@@ -14,9 +15,244 @@ enum PublicationUtilities {
     static let maxComicEntries = 2_000
     static let maxComicPageBytes: UInt32 = 30 * 1024 * 1024
     static let maxComicMetadataBytes = 1 * 1024 * 1024
+    static let maxEPUBEntries = 10_000
+    static let maxCoverBytes = 10 * 1024 * 1024
 
     struct ComicMetadata: Equatable {
         let language: String?
+    }
+
+    struct EmbeddedCover: Equatable {
+        let data: Data
+        let pathExtension: String
+    }
+
+    /// Extracts the cover image from a local EPUB: the EPUB3 `cover-image`
+    /// manifest property, the EPUB2 `<meta name="cover">` convention, or a
+    /// conventional `cover.<ext>` entry. Returns nil when the archive has no
+    /// decodable image in any of those slots.
+    static func epubCover(fileURL: URL) -> EmbeddedCover? {
+        guard let data = try? Data(contentsOf: fileURL, options: [.mappedIfSafe]), data.count >= 22 else {
+            return nil
+        }
+        let container = firstZIPEntry(
+            in: data, limit: maxEPUBEntries,
+            where: { $0.lowercased() == "meta-inf/container.xml" },
+            maxBytes: maxComicMetadataBytes
+        )
+        if let container, isPlainXML(container.data),
+           let opfPath = containerRootFilePath(container.data),
+           let opf = firstZIPEntry(
+               in: data, limit: maxEPUBEntries,
+               where: { $0 == opfPath || $0.lowercased() == opfPath.lowercased() },
+               maxBytes: maxComicMetadataBytes
+           ),
+           isPlainXML(opf.data), let href = packageCoverHref(opf.data) {
+            let resolved = resolveEPUBPath(href, relativeTo: opfPath)
+            let lowered = resolved.lowercased()
+            let entry = firstZIPEntry(
+                in: data, limit: maxEPUBEntries,
+                where: { $0 == resolved || $0.lowercased() == lowered },
+                maxBytes: maxCoverBytes
+            )
+            if let entry, let cover = validatedCover(entry.data) { return cover }
+        }
+        let entry = firstZIPEntry(
+            in: data, limit: maxEPUBEntries,
+            where: { name in
+                let base = name.split(separator: "/").last.map(String.init)?.lowercased() ?? ""
+                return ["cover.jpg", "cover.jpeg", "cover.png", "cover.gif"].contains(base)
+            },
+            maxBytes: maxCoverBytes
+        )
+        guard let entry else { return nil }
+        return validatedCover(entry.data)
+    }
+
+    /// One defensive pass over the ZIP central directory returning the first
+    /// stored or raw-deflate entry whose name satisfies `where`. Names, sizes,
+    /// and offsets are bounded before any payload is inflated.
+    private static func firstZIPEntry(
+        in data: Data,
+        limit entryLimit: Int,
+        where matches: (String) -> Bool,
+        maxBytes: Int
+    ) -> (name: String, data: Data)? {
+        let end = data.endIndex - 4
+        let searchStart = max(data.startIndex, end - 65_557)
+        var cursor = end
+        var endRecord: Data.Index?
+        while cursor >= searchStart {
+            if cursor + 3 < data.endIndex, readUInt32(data, cursor) == 0x06054b50 {
+                endRecord = cursor
+                break
+            }
+            if cursor == data.startIndex { break }
+            cursor -= 1
+        }
+        guard let endRecord,
+              readUInt16(data, endRecord + 4) == 0,
+              readUInt16(data, endRecord + 6) == 0 else { return nil }
+        let entryCount = Int(readUInt16(data, endRecord + 10))
+        let directorySize = Int(readUInt32(data, endRecord + 12))
+        let directoryOffset = Int(readUInt32(data, endRecord + 16))
+        guard entryCount > 0, entryCount <= entryLimit,
+              directorySize >= 46, directoryOffset >= 0,
+              directoryOffset + directorySize <= data.count else { return nil }
+
+        var entry = data.startIndex + directoryOffset
+        let directoryEnd = entry + directorySize
+        for _ in 0..<entryCount {
+            guard entry + 46 <= directoryEnd, readUInt32(data, entry) == 0x02014b50 else { return nil }
+            let flags = readUInt16(data, entry + 8)
+            let method = readUInt16(data, entry + 10)
+            let compressedSize = Int(readUInt32(data, entry + 20))
+            let uncompressedSize = Int(readUInt32(data, entry + 24))
+            let nameLength = Int(readUInt16(data, entry + 28))
+            let extraLength = Int(readUInt16(data, entry + 30))
+            let commentLength = Int(readUInt16(data, entry + 32))
+            let localOffset = Int(readUInt32(data, entry + 42))
+            let nameStart = entry + 46
+            let next = nameStart + nameLength + extraLength + commentLength
+            guard nameLength > 0, next <= directoryEnd,
+                  let name = String(data: data[nameStart..<(nameStart + nameLength)], encoding: .utf8)
+            else { return nil }
+            entry = next
+
+            let normalized = name.replacingOccurrences(of: "\\", with: "/")
+            guard !normalized.hasPrefix("/"),
+                  !normalized.split(separator: "/").contains("..") else { return nil }
+            guard matches(normalized) else { continue }
+            guard flags & 0x0001 == 0, method == 0 || method == 8,
+                  compressedSize > 0, compressedSize <= maxBytes,
+                  uncompressedSize > 0, uncompressedSize <= maxBytes,
+                  localOffset >= 0, localOffset + 30 <= data.count,
+                  readUInt32(data, data.startIndex + localOffset) == 0x04034b50 else { return nil }
+            let localNameLength = Int(readUInt16(data, data.startIndex + localOffset + 26))
+            let localExtraLength = Int(readUInt16(data, data.startIndex + localOffset + 28))
+            let payload = data.startIndex + localOffset + 30 + localNameLength + localExtraLength
+            guard payload + compressedSize <= data.endIndex else { return nil }
+            let compressed = Data(data[payload..<(payload + compressedSize)])
+            if method == 0 {
+                return compressedSize == uncompressedSize ? (normalized, compressed) : nil
+            }
+            guard let inflated = inflateRawDeflate(compressed, expectedSize: uncompressedSize) else {
+                return nil
+            }
+            return (normalized, inflated)
+        }
+        return nil
+    }
+
+    /// XML metadata is only parsed when it cannot smuggle external entities.
+    private static func isPlainXML(_ data: Data) -> Bool {
+        let source = String(decoding: data.prefix(4_096), as: UTF8.self)
+        return source.range(of: "<!DOCTYPE", options: .caseInsensitive) == nil
+            && source.range(of: "<!ENTITY", options: .caseInsensitive) == nil
+    }
+
+    private static func containerRootFilePath(_ data: Data) -> String? {
+        let delegate = EPUBContainerParser()
+        let parser = XMLParser(data: data)
+        parser.delegate = delegate
+        parser.shouldProcessNamespaces = true
+        parser.shouldResolveExternalEntities = false
+        guard parser.parse() else { return nil }
+        return delegate.rootFilePath
+    }
+
+    private static func packageCoverHref(_ data: Data) -> String? {
+        let delegate = EPUBPackageParser()
+        let parser = XMLParser(data: data)
+        parser.delegate = delegate
+        parser.shouldProcessNamespaces = true
+        parser.shouldResolveExternalEntities = false
+        guard parser.parse() else { return nil }
+        return delegate.coverHref
+    }
+
+    private static func resolveEPUBPath(_ href: String, relativeTo opfPath: String) -> String {
+        let decoded = href.removingPercentEncoding ?? href
+        var parts = decoded.hasPrefix("/")
+            ? []
+            : opfPath.split(separator: "/").dropLast().map(String.init)
+        for component in decoded.dropFirst(decoded.hasPrefix("/") ? 1 : 0).split(separator: "/") {
+            if component == ".." {
+                if !parts.isEmpty { parts.removeLast() }
+            } else if component != "." {
+                parts.append(String(component))
+            }
+        }
+        return parts.joined(separator: "/")
+    }
+
+    /// Confirms the bytes decode as a raster image before they are cached.
+    private static func validatedCover(_ data: Data) -> EmbeddedCover? {
+        guard data.count > 0, data.count <= maxCoverBytes,
+              let source = CGImageSourceCreateWithData(data as CFData, nil),
+              CGImageSourceGetCount(source) > 0 else { return nil }
+        let extensionName: String
+        switch CGImageSourceGetType(source) as String? {
+        case "public.png": extensionName = "png"
+        case "public.gif": extensionName = "gif"
+        default: extensionName = "jpg"
+        }
+        return EmbeddedCover(data: data, pathExtension: extensionName)
+    }
+
+    private final class EPUBContainerParser: NSObject, XMLParserDelegate {
+        var rootFilePath: String?
+
+        func parser(_ parser: XMLParser, didStartElement elementName: String,
+                    namespaceURI: String?, qualifiedName qName: String?, attributes attributeDict: [String: String] = [:]) {
+            let name = localName(elementName, qName)
+            if name == "rootfile", rootFilePath == nil,
+               let path = attributeDict["full-path"]?.trimmingCharacters(in: .whitespacesAndNewlines), !path.isEmpty {
+                rootFilePath = path
+            }
+        }
+    }
+
+    private final class EPUBPackageParser: NSObject, XMLParserDelegate {
+        private struct Item {
+            let href: String
+            let properties: String
+        }
+
+        private var items: [String: Item] = [:]
+        private var coverMetaID: String?
+
+        var coverHref: String? {
+            if let item = items.values.first(where: {
+                $0.properties.split(separator: " ").contains("cover-image")
+            }) { return item.href }
+            if let id = coverMetaID, let item = items[id] { return item.href }
+            return nil
+        }
+
+        func parser(_ parser: XMLParser, didStartElement elementName: String,
+                    namespaceURI: String?, qualifiedName qName: String?, attributes attributeDict: [String: String] = [:]) {
+            switch localName(elementName, qName) {
+            case "item":
+                guard let id = attributeDict["id"], !id.isEmpty else { return }
+                items[id] = Item(
+                    href: attributeDict["href"] ?? "",
+                    properties: attributeDict["properties"] ?? ""
+                )
+            case "meta":
+                guard coverMetaID == nil,
+                      attributeDict["name"]?.lowercased() == "cover",
+                      let content = attributeDict["content"], !content.isEmpty else { return }
+                coverMetaID = content
+            default:
+                break
+            }
+        }
+    }
+
+    private static func localName(_ elementName: String, _ qName: String?) -> String {
+        (qName ?? elementName).split(separator: ":").last.map(String.init)?.lowercased()
+            ?? elementName.lowercased()
     }
 
     static func publicationIdentityCandidates(for book: CatalogBook) -> [String] {
@@ -52,7 +288,7 @@ enum PublicationUtilities {
             title: favorite.title,
             author: favorite.author ?? "Unknown",
             epubUrl: parsed.absoluteString,
-            coverUrl: nil,
+            coverUrl: favorite.coverUrl,
             sourceUrl: validSha256 == nil ? favorite.url : urlString,
             isbn: favorite.isbn,
             libvaultMd5: favorite.libvaultMd5,

@@ -20,6 +20,7 @@ struct SharedFavoriteRef: Codable, Equatable {
     var license: String? = nil
     var licenseUrl: String? = nil
     var rightsSource: String? = nil
+    var coverUrl: String? = nil
 
     var rights: BookRights {
         BookRights.normalize(status: rightsStatus, license: license, licenseURL: licenseUrl, source: rightsSource)
@@ -42,6 +43,7 @@ struct ExternalFavorite: Identifiable, Equatable {
     var license: String? = nil
     var licenseUrl: String? = nil
     var rightsSource: String? = nil
+    var coverUrl: String? = nil
 
     var rights: BookRights {
         BookRights.normalize(status: rightsStatus, license: license, licenseURL: licenseUrl, source: rightsSource)
@@ -149,7 +151,7 @@ enum FavoritesParser {
                     tag,
                     [
                         "bookstr", bookstrId, ref.title ?? "", ref.author ?? "", ref.url ?? "",
-                        ref.format ?? "", ref.year ?? "", "", "", "", "",
+                        ref.format ?? "", ref.year ?? "", "", "", remoteCoverURL(ref.coverUrl) ?? "", "",
                         ref.rights.status.rawValue, ref.rights.license ?? "",
                         ref.rights.licenseURL ?? "", ref.rights.source ?? ""
                     ]
@@ -346,6 +348,7 @@ enum FavoritesParser {
                 old.format = old.format ?? ref.format
                 old.blossomSha256 = old.blossomSha256 ?? ref.blossomSha256
                 old.blossomUrl = old.blossomUrl ?? ref.blossomUrl
+                old.coverUrl = old.coverUrl ?? ref.coverUrl
                 old.addedAt = [old.addedAt, ref.addedAt].compactMap { $0 }.min()
                 let preferred = BookRights.preferred(current: old.rights, incoming: ref.rights)
                 old.rightsStatus = preferred.status.rawValue
@@ -426,7 +429,8 @@ enum FavoritesParser {
                     year: parts.count > 6 && !parts[6].isEmpty ? parts[6] : nil,
                     format: parts.count > 5 && isSupportedBookFormat(parts[5]) ? parts[5] : nil,
                     rightsStatus: bookRights.status.rawValue, license: bookRights.license,
-                    licenseUrl: bookRights.licenseURL, rightsSource: bookRights.source
+                    licenseUrl: bookRights.licenseURL, rightsSource: bookRights.source,
+                    coverUrl: validURL(parts.count > 9 ? parts[9] : nil)
                 ))
                 pendingURL = nil
             case "libvault-book" where isMD5(parts.dropFirst().first),
@@ -564,10 +568,21 @@ enum FavoritesParser {
                 blossomUrl: ref.blossomUrl,
                 addedAt: ref.addedAt,
                 rightsStatus: ref.rightsStatus, license: ref.license,
-                licenseUrl: ref.licenseUrl, rightsSource: ref.rightsSource
+                licenseUrl: ref.licenseUrl, rightsSource: ref.rightsSource,
+                coverUrl: remoteCoverURL(ref.coverUrl)
             )
         }
         return SharedFavorites(bookIds: matched, external: Array(external.values))
+    }
+
+    /// Covers sync with the web app's `bookstr` tag schema (index 9). Only
+    /// remote URLs cross that boundary; local embedded-cover file paths stay
+    /// on-device.
+    static func remoteCoverURL(_ value: String?) -> String? {
+        guard let value, let url = URL(string: value),
+              ["http", "https"].contains(url.scheme?.lowercased() ?? ""),
+              url.host != nil else { return nil }
+        return value
     }
 
     private static func fallbackTitle(for ref: SharedFavoriteRef, key: String) -> String {

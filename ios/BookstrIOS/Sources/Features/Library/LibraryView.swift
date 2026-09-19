@@ -88,6 +88,7 @@ struct LibraryView: View {
                             BookListDetails(title: displayTitle(favorite), author: favorite.author ?? "Unknown author",
                                             year: favorite.year, format: favorite.format, language: nil,
                                             publisher: favorite.blossomSha256 != nil ? "On Blossom" : "Not on Blossom",
+                                            coverURL: favorite.coverUrl,
                                             rights: favorite.rights)
                                 .textSelection(.enabled)
 
@@ -170,7 +171,8 @@ struct LibraryView: View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(alignment: .top, spacing: 8) {
                 BookListDetails(title: book.title, author: book.author, year: book.year,
-                                format: book.format.rawValue, language: book.language, rights: book.rights)
+                                format: book.format.rawValue, language: book.language,
+                                coverURL: book.coverUrl, rights: book.rights)
                 if openingBookID == book.id { ProgressView() }
             }
             if showProgress, let item = viewModel.progress[book.id], item.progression > 0 {

@@ -37,6 +37,7 @@ final class LibraryViewModel: ObservableObject {
     private var isLoading = false
     private var pendingReload = false
     private var networkRefreshTask: Task<Void, Never>?
+    private var coverRefreshTask: Task<Void, Never>?
 
     func attach(_ container: AppContainer) {
         self.container = container
@@ -46,6 +47,8 @@ final class LibraryViewModel: ObservableObject {
     func cancelPendingNetworkRefresh() {
         networkRefreshTask?.cancel()
         networkRefreshTask = nil
+        coverRefreshTask?.cancel()
+        coverRefreshTask = nil
     }
 
     func load() async {
@@ -91,6 +94,38 @@ final class LibraryViewModel: ObservableObject {
             debug.append("reading: \(reading.count)")
             debugText = debug.joined(separator: "\n")
         }
+        scheduleCoverExtraction(seed: localBooks, container: container)
+    }
+
+    /// Extracts embedded covers off the foreground load path. Books without a
+    /// cover URL row-update when the extraction finishes; every publication is
+    /// only scanned once thanks to the covers/ cache.
+    private func scheduleCoverExtraction(seed: [CatalogBook], container: AppContainer) {
+        coverRefreshTask?.cancel()
+        // `nil` = not scanned yet; `""` = scanned with no cover (skip).
+        let pending = seed.filter { CatalogRepository.shouldScanEmbeddedCover(for: $0) }
+        guard !pending.isEmpty else { return }
+        coverRefreshTask = Task { [weak self] in
+            let stamped = await container.catalogRepository.ensureEmbeddedCovers(for: pending)
+            guard let self, !Task.isCancelled else { return }
+            self.applyEmbeddedCovers(stamped)
+        }
+    }
+
+    private func applyEmbeddedCovers(_ stamped: [CatalogBook]) {
+        let covers = Dictionary(
+            stamped.map { ($0.id.lowercased(), $0.coverUrl) },
+            uniquingKeysWith: { _, latest in latest }
+        )
+        func restamp(_ book: CatalogBook) -> CatalogBook {
+            var updated = book
+            if let cover = covers[book.id.lowercased()], cover != book.coverUrl {
+                updated.coverUrl = cover
+            }
+            return updated
+        }
+        reading = reading.map(restamp)
+        favorites = favorites.map(restamp)
     }
 
     /// Relay pulls and Amber decrypt must not sit on the foreground load path.
@@ -117,6 +152,7 @@ final class LibraryViewModel: ObservableObject {
             debug.append("=== favorites pull ===")
             debug.append(pulled.debug)
             apply(shared: pulled.favorites, seed: localBooks, container: container)
+            scheduleCoverExtraction(seed: localBooks, container: container)
             if let pullError = pulled.error {
                 errorMessage = pullError
             } else if favorites.isEmpty && externalFavorites.isEmpty {

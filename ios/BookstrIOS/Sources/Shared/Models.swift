@@ -149,7 +149,7 @@ struct CatalogBook: Codable, Identifiable, Hashable, Sendable {
     let title: String
     let author: String
     let epubUrl: String
-    let coverUrl: String?
+    var coverUrl: String?
     let sourceUrl: String?
     let isbn: String?
     let libvaultMd5: String?
