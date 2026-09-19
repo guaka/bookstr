@@ -287,12 +287,21 @@ struct DownloadsPane: View {
                                 .accessibilityIdentifier("downloads.retry.\(job.id)")
                         }
                     }
+                    .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                        if job.isDismissible {
+                            Button("Remove", role: .destructive) {
+                                queue.dismiss(job.id)
+                            }
+                            .accessibilityIdentifier("downloads.dismiss.\(job.id)")
+                        }
+                    }
                 }
             }
             .navigationTitle("Downloads")
             .toolbar {
                 Button("Done") { dismiss() }.accessibilityIdentifier("downloads.done")
             }
+            .onAppear { queue.pruneCompleted() }
         }
     }
 }

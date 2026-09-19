@@ -56,6 +56,10 @@ class ReaderAssetContractTest {
         assertTrue(html.contains("window.setKnownWords"))
         assertTrue(html.contains("window.setReaderTypography"))
         assertTrue(html.contains("<script src=\"reader-typography.js\"></script>"))
+        assertTrue(html.contains("<script src=\"reader-chrome.js\"></script>"))
+        assertTrue(html.contains("BookstrReaderChrome.prepareContentDocument"))
+        assertTrue(html.contains("installContinuousShellWatch"))
+        assertTrue(html.contains("isolateAuthorBackgrounds"))
         assertTrue(html.contains("CSS.highlights.set(\"bookstr-known-word\""))
         assertTrue(html.contains("ranges.length < 5000"))
         assertTrue(html.contains("AndroidBridge.onKnownWordTapped"))
@@ -132,19 +136,25 @@ class ReaderAssetContractTest {
         val html = generatedAsset("reader.html").readText()
         val sharedSpeech = File("../../web/reader-speech.js")
         val sharedTypography = File("../../web/reader-typography.js")
+        val sharedChrome = File("../../web/reader-chrome.js")
         val scriptTag = "<script src=\"reader-speech.js\"></script>"
         val typographyTag = "<script src=\"reader-typography.js\"></script>"
+        val chromeTag = "<script src=\"reader-chrome.js\"></script>"
 
         assertTrue(sharedSpeech.isFile)
         assertTrue(sharedTypography.isFile)
+        assertTrue(sharedChrome.isFile)
         assertTrue(generatedAsset("reader-speech.js").readBytes().contentEquals(sharedSpeech.readBytes()))
         assertTrue(generatedAsset("reader-typography.js").readBytes().contentEquals(sharedTypography.readBytes()))
+        assertTrue(generatedAsset("reader-chrome.js").readBytes().contentEquals(sharedChrome.readBytes()))
         assertTrue(html.contains(scriptTag))
         assertEquals(1, Regex(Regex.escape(scriptTag)).findAll(html).count())
         assertTrue(html.contains(typographyTag))
+        assertTrue(html.contains(chromeTag))
         assertTrue(html.contains("window.BookstrSpeech.buildPlan(parts, {"))
         assertTrue(html.contains("window.setReaderTypography"))
         assertTrue(html.contains("BookstrTypography.css"))
+        assertTrue(html.contains("BookstrReaderChrome.paintShell"))
         assertTrue(html.contains("Arial, Helvetica, sans-serif"))
         assertTrue(sharedSpeech.readText().contains("paragraphPauseMs: PARAGRAPH_PAUSE_MS"))
     }

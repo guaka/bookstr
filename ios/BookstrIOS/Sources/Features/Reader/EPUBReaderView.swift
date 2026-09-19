@@ -1081,6 +1081,9 @@ struct EPUBReaderView: UIViewRepresentable {
                 case "/reader-typography.js":
                     data = try bundled("reader-typography", extension: "js")
                     mimeType = "text/javascript"
+                case "/reader-chrome.js":
+                    data = try bundled("reader-chrome", extension: "js")
+                    mimeType = "text/javascript"
                 case "/books/current.epub":
                     data = try Data(contentsOf: fileURL, options: .mappedIfSafe)
                     mimeType = "application/epub+zip"

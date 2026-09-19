@@ -28,11 +28,25 @@ test('download pane keeps search available and exposes each selected edition', (
   const view = read('ios/BookstrIOS/Sources/Features/Search/SearchView.swift');
   assert.doesNotMatch(view, /openingBookID/);
   assert.match(view, /DownloadsPane\(queue: container.downloads\)/);
-  for (const id of ['search.downloads', 'downloads.done', 'downloads.open.', 'downloads.retry.', 'downloads.status.']) {
+  for (const id of ['search.downloads', 'downloads.done', 'downloads.open.', 'downloads.retry.', 'downloads.status.', 'downloads.dismiss.']) {
     assert.ok(view.includes(id));
   }
   assert.match(view, /Text\(job.result.title\)/);
+  assert.match(view, /queue\.pruneCompleted\(\)/);
+  assert.match(view, /queue\.dismiss\(job\.id\)/);
   assert.match(read('ios/TorrentEngine/README.md'), /additional books download concurrently/);
+});
+
+test('completed downloads leave the queue after a day and can be dismissed sooner', () => {
+  const code = read('ios/BookstrIOS/Sources/Data/TorrentDownload.swift');
+  assert.match(code, /completedRetention/);
+  assert.match(code, /24 \* 60 \* 60/);
+  assert.match(code, /completedAt/);
+  assert.match(code, /func pruneCompleted/);
+  assert.match(code, /func dismiss\(_ id: String\)/);
+  assert.match(code, /isDismissible/);
+  const tests = read('ios/BookstrIOS/Tests/TorrentDownloadTests.swift');
+  assert.match(tests, /testCompletedDownloadsPruneAfterRetentionAndCanBeDismissed/);
 });
 
 test('catalog collection and filename extensions are covered by real-engine tests', () => {

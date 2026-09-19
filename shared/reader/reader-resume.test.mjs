@@ -101,3 +101,13 @@ test('loadBookUrl forwards highlight kind into openBook', () => {
   assert.match(reader, /window\.loadBookUrl = function\(url, cfi, theme, highlightCfi, bookId, highlightKind\)/);
   assert.match(reader, /return openBook\(buffer, cfi, theme, highlightCfi, bookId, highlightKind \|\| null\);/);
 });
+
+test('continuous scroll keeps theme-colored shells and isolates author backgrounds', () => {
+  assert.match(reader, /<script src="reader-chrome.js"><\/script>/);
+  assert.match(reader, /BookstrReaderChrome\.prepareContentDocument/);
+  assert.match(reader, /BookstrReaderChrome\.paintShell/);
+  assert.match(reader, /installContinuousShellWatch/);
+  assert.match(reader, /isolateAuthorBackgrounds/);
+  assert.match(reader, /background: inherit !important/);
+  assert.match(reader, /background-color": "transparent !important"/);
+});
