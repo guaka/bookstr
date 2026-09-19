@@ -972,6 +972,9 @@ final class ReaderAssetContractTests: XCTestCase {
         XCTAssertTrue(search.contains("search-language-filter"))
         XCTAssertTrue(search.contains("search-format-filter"))
         XCTAssertTrue(search.contains("BookListFacetFilters"))
+        XCTAssertTrue(search.contains("filter(\\.isReadable)"))
+        XCTAssertFalse(search.contains("\"heart\""))
+        XCTAssertFalse(search.contains("toggleFavorite"))
     }
 
     func testSettingsExposesSpeechLogsAndStableRelayIdentifiers() throws {
@@ -984,8 +987,26 @@ final class ReaderAssetContractTests: XCTestCase {
         XCTAssertTrue(settings.contains("accessibilityIdentifier(\"settings-relays-editor\")"))
         XCTAssertTrue(settings.contains("accessibilityIdentifier(\"settings-save-relays\")"))
         XCTAssertTrue(settings.contains("accessibilityIdentifier(\"speech-language\")"))
+        XCTAssertTrue(settings.contains("Section(\"Text-to-speech\")"))
+        XCTAssertFalse(settings.contains("Speech speed"))
+        XCTAssertTrue(settings.contains("SpeechVoiceCache.warm()"))
+        XCTAssertTrue(settings.contains("SpeechLanguageListCache"))
         XCTAssertTrue(settings.contains("SpeechLanguageSettings.languagesForBookCodes"))
         XCTAssertTrue(settings.contains("SpeechDebugLogView()"))
+        let hostURL = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent("Sources/Features/Reader/ReaderHostView.swift")
+        let host = try String(contentsOf: hostURL, encoding: .utf8)
+        XCTAssertTrue(host.contains("isSpeechPreparing"))
+        XCTAssertTrue(host.contains("Preparing reading aloud"))
+        let epubURL = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent("Sources/Features/Reader/EPUBReaderView.swift")
+        let epub = try String(contentsOf: epubURL, encoding: .utf8)
+        XCTAssertTrue(epub.contains("isSpeechPreparing"))
+        XCTAssertTrue(epub.contains("markSpeechStarted()"))
         let relaysIndex = try XCTUnwrap(settings.range(of: "settings-relays-editor")?.lowerBound)
         let logsIndex = try XCTUnwrap(settings.range(of: "speech-debug-logs")?.lowerBound)
         XCTAssertLessThan(relaysIndex, logsIndex, "speech logs must sit below the relays editor")
@@ -1004,6 +1025,54 @@ final class ReaderAssetContractTests: XCTestCase {
         XCTAssertTrue(uiTest.contains("speech-language"))
         XCTAssertTrue(uiTest.contains("systemDefaultChoice.tap()"))
         XCTAssertTrue(uiTest.contains("Settings did not return from the English voice picker"))
+        XCTAssertTrue(uiTest.contains("speech-model-piper_fr_fr"))
+        XCTAssertFalse(uiTest.contains("speech-speed"))
+    }
+
+    func testStatusBarStaysVisibleWithTimeAndBatteryOnAllPanes() throws {
+        let sources = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let app = try String(
+            contentsOf: sources.appendingPathComponent("Sources/App/BookstrIOSApp.swift"),
+            encoding: .utf8
+        )
+        XCTAssertFalse(app.contains(".statusBarHidden(true)"))
+        XCTAssertFalse(app.contains(".persistentSystemOverlays(.hidden)"))
+        let host = try String(
+            contentsOf: sources.appendingPathComponent("Sources/Features/Reader/ReaderHostView.swift"),
+            encoding: .utf8
+        )
+        XCTAssertTrue(host.contains(".statusBarHidden(false)"))
+        XCTAssertFalse(host.contains(".statusBarHidden(showsReaderChrome)"))
+        let info = try String(
+            contentsOf: sources.appendingPathComponent("Info.plist"),
+            encoding: .utf8
+        )
+        XCTAssertNotNil(info.range(of: #"<key>UIStatusBarHidden</key>\s*<false/>"#, options: .regularExpression))
+        XCTAssertNotNil(
+            info.range(of: #"<key>UIViewControllerBasedStatusBarAppearance</key>\s*<true/>"#, options: .regularExpression)
+        )
+    }
+
+    func testReaderOpeningOverlayUsesBookTitleNotTechnicalStages() throws {
+        let sources = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let host = try String(
+            contentsOf: sources.appendingPathComponent("Sources/Features/Reader/ReaderHostView.swift"),
+            encoding: .utf8
+        )
+        XCTAssertTrue(host.contains("static func openingMessage(for book: CatalogBook)"))
+        XCTAssertTrue(host.contains("ProgressView(Self.openingMessage(for: book))"))
+        XCTAssertFalse(host.contains("loadingStage + \"…\""))
+        XCTAssertFalse(host.contains("Opening \\(activeFormat.rawValue.uppercased())"))
+        let epub = try String(
+            contentsOf: sources.appendingPathComponent("Sources/Features/Reader/EPUBReaderView.swift"),
+            encoding: .utf8
+        )
+        XCTAssertTrue(epub.contains("loadingStage = \"Opening book\""))
+        XCTAssertFalse(epub.contains("Starting reader"))
     }
 
     func testBundledVendorAssetsMatchCanonicalSourcesAndLockedHashes() throws {

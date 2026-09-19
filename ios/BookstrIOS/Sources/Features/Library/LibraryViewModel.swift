@@ -51,6 +51,15 @@ final class LibraryViewModel: ObservableObject {
         coverRefreshTask = nil
     }
 
+    func deleteFromLibrary(_ book: CatalogBook) async {
+        guard let container else { return }
+        for id in CatalogRepository.publicationIdentityCandidates(for: book) {
+            container.progressRepository.remove(bookId: id)
+        }
+        container.catalogRepository.removeFromLibrary(book)
+        await load()
+    }
+
     func load() async {
         if isLoading {
             pendingReload = true
@@ -119,14 +128,20 @@ final class LibraryViewModel: ObservableObject {
     }
 
     private func applyEmbeddedCovers(_ stamped: [CatalogBook]) {
-        let covers = Dictionary(
-            stamped.map { ($0.id.lowercased(), $0.coverUrl) },
-            uniquingKeysWith: { _, latest in latest }
-        )
+        var covers: [String: String] = [:]
+        for book in stamped {
+            guard let cover = book.coverUrl else { continue }
+            for key in CatalogRepository.publicationIdentityCandidates(for: book) {
+                covers[key.lowercased()] = cover
+            }
+        }
         func restamp(_ book: CatalogBook) -> CatalogBook {
             var updated = book
-            if let cover = covers[book.id.lowercased()], cover != book.coverUrl {
-                updated.coverUrl = cover
+            for key in CatalogRepository.publicationIdentityCandidates(for: book) {
+                if let cover = covers[key.lowercased()], cover != book.coverUrl {
+                    updated.coverUrl = cover
+                    return updated
+                }
             }
             return updated
         }
@@ -179,7 +194,9 @@ final class LibraryViewModel: ObservableObject {
         container: AppContainer
     ) {
         let downloadableFavorites = shared.external.compactMap(CatalogRepository.fromExternalFavorite)
-        let books = uniqued(seed + downloadableFavorites, by: \.id)
+        // Prefer the record that already has a usable cover when the same
+        // publication appears both as a download and as a favorite.
+        let books = Self.uniquedPreferringCover(seed + downloadableFavorites)
         let favoriteIDs = shared.bookIds
             .union(Set(downloadableFavorites.map(\.id)))
         let representedMD5s = Set(downloadableFavorites.compactMap(\.libvaultMd5))
@@ -308,8 +325,21 @@ final class LibraryViewModel: ObservableObject {
         return candidate
     }
 
-    private func uniqued(_ books: [CatalogBook], by key: KeyPath<CatalogBook, String>) -> [CatalogBook] {
-        var seen = Set<String>()
-        return books.filter { seen.insert($0[keyPath: key]).inserted }
+    /// Dedupes by book id, keeping a copy with a usable cover when one exists.
+    static func uniquedPreferringCover(_ books: [CatalogBook]) -> [CatalogBook] {
+        var byID: [String: CatalogBook] = [:]
+        var order: [String] = []
+        for book in books {
+            let id = book.id.lowercased()
+            if let existing = byID[id] {
+                if !CatalogRepository.hasUsableCover(existing), CatalogRepository.hasUsableCover(book) {
+                    byID[id] = book
+                }
+            } else {
+                byID[id] = book
+                order.append(id)
+            }
+        }
+        return order.compactMap { byID[$0] }
     }
 }

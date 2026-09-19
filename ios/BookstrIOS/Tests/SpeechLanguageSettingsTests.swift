@@ -15,6 +15,17 @@ final class SpeechLanguageSettingsTests: XCTestCase {
         XCTAssertEqual(SpeechLanguageSettings.preferredLanguageTag("Português"), "pt-pt")
         XCTAssertEqual(SpeechLanguageSettings.preferredLanguageTag("en_US"), "en-us")
         XCTAssertEqual(SpeechLanguageSettings.preferredLanguageTag(" FR-fr "), "fr-fr")
+        XCTAssertEqual(SpeechLanguageSettings.preferredLanguageTag("English"), "en")
+        XCTAssertEqual(SpeechLanguageSettings.preferredLanguageTag("english"), "en")
+        XCTAssertEqual(SpeechLanguageSettings.preferredLanguageTag("eng"), "en")
+        XCTAssertEqual(SpeechLanguageSettings.preferredLanguageTag("French"), "fr")
+        XCTAssertEqual(SpeechLanguageSettings.preferredLanguageTag("fra"), "fr")
+        XCTAssertEqual(SpeechLanguageSettings.preferredLanguageTag("Deutsch"), "de")
+        XCTAssertEqual(SpeechLanguageSettings.preferredLanguageTag("ger"), "de")
+        XCTAssertEqual(SpeechLanguageSettings.preferredLanguageTag("Español"), "es")
+        XCTAssertEqual(SpeechLanguageSettings.preferredLanguageTag("castellano"), "es")
+        XCTAssertEqual(SpeechLanguageSettings.preferredLanguageTag("Català"), "ca")
+        XCTAssertEqual(SpeechLanguageSettings.preferredLanguageTag("cat"), "ca")
     }
 
     func testEnglishWithoutSettingsUsesSystemDefault() {
@@ -103,20 +114,41 @@ final class SpeechLanguageSettingsTests: XCTestCase {
 
     func testNeuralEnginesAndCatalog() {
         XCTAssertTrue(SpeechEngineID.kokoroEnglish.supports(language: "en-GB"))
+        XCTAssertTrue(SpeechEngineID.kokoroEnglish.supports(language: "English"))
         XCTAssertFalse(SpeechEngineID.kokoroEnglish.supports(language: "pt-PT"))
         XCTAssertTrue(SpeechEngineID.portuguesePortugal.supports(language: "pt_PT"))
-        XCTAssertTrue(SpeechEngineID.portuguesePortugal.supports(language: "pt"))
-        XCTAssertTrue(SpeechEngineID.portuguesePortugal.supports(language: "pt-BR"))
-        XCTAssertTrue(SpeechEngineID.portuguesePortugal.supports(language: "por"))
+        XCTAssertTrue(SpeechEngineID.portuguesePortugalMiro.supports(language: "pt"))
+        XCTAssertTrue(SpeechEngineID.portuguesePortugalDii.supports(language: "por"))
         XCTAssertFalse(SpeechEngineID.portuguesePortugal.supports(language: "en"))
-        XCTAssertEqual(SpeechVoiceID.speakers(for: "pt-br").map(\.id), [SpeechEngineID.portuguesePortugal.rawValue])
+        XCTAssertTrue(SpeechEngineID.frenchMiro.supports(language: "French"))
+        XCTAssertTrue(SpeechEngineID.frenchMiro.supports(language: "fra"))
+        XCTAssertTrue(SpeechEngineID.germanMiro.supports(language: "Deutsch"))
+        XCTAssertTrue(SpeechEngineID.spanishMiro.supports(language: "Español"))
+        XCTAssertTrue(SpeechEngineID.catalanOna.supports(language: "Català"))
+        XCTAssertEqual(
+            SpeechVoiceID.speakers(for: "pt-br").map(\.id),
+            [
+                SpeechEngineID.portuguesePortugal.rawValue,
+                SpeechEngineID.portuguesePortugalMiro.rawValue,
+                SpeechEngineID.portuguesePortugalDii.rawValue,
+            ]
+        )
         XCTAssertTrue(SpeechEngineID.system.supports(language: "fr"))
         XCTAssertEqual(SpeechEngineID.kokoroEnglish.label, "Kokoro · English")
         XCTAssertEqual(SpeechEngineID.portuguesePortugal.label, "Tugão · Português (Portugal)")
+        XCTAssertEqual(SpeechEngineID.portuguesePortugalMiro.label, "Miro · Português (Portugal)")
+        XCTAssertEqual(SpeechEngineID.portuguesePortugalDii.label, "Dii · Português (Portugal)")
+        XCTAssertEqual(SpeechEngineID.frenchMiro.label, "Miro · Français")
+        XCTAssertEqual(SpeechEngineID.germanMiro.label, "Miro · Deutsch")
+        XCTAssertEqual(SpeechEngineID.spanishMiro.label, "Miro · Español")
+        XCTAssertEqual(SpeechEngineID.catalanOna.label, "UPC Ona · Català")
         XCTAssertEqual(SpeechVoiceID.speakers(for: "en").map(\.id), [SpeechEngineID.kokoroEnglish.rawValue])
-        XCTAssertEqual(SpeechVoiceID.speakers(for: "pt-pt").map(\.id), [SpeechEngineID.portuguesePortugal.rawValue])
-        XCTAssertTrue(SpeechVoiceID.speakers(for: "fr").isEmpty)
+        XCTAssertEqual(SpeechVoiceID.speakers(for: "fr").map(\.id), [SpeechEngineID.frenchMiro.rawValue])
+        XCTAssertEqual(SpeechVoiceID.speakers(for: "de").map(\.id), [SpeechEngineID.germanMiro.rawValue])
+        XCTAssertEqual(SpeechVoiceID.speakers(for: "es").map(\.id), [SpeechEngineID.spanishMiro.rawValue])
+        XCTAssertEqual(SpeechVoiceID.speakers(for: "ca").map(\.id), [SpeechEngineID.catalanOna.rawValue])
         XCTAssertTrue(SpeechLanguageSettings.isEnglish("EN-gb"))
+        XCTAssertTrue(SpeechLanguageSettings.isEnglish("English"))
         XCTAssertFalse(SpeechLanguageSettings.isEnglish("pt-PT"))
         XCTAssertEqual(
             SpeechLanguageSettings.resolve(
@@ -124,6 +156,13 @@ final class SpeechLanguageSettingsTests: XCTestCase {
                 settingsByLanguage: ["en": SpeechLanguageSetting(voiceIdentifier: SpeechEngineID.kokoroEnglish.rawValue)]
             ).engine,
             .neural(.kokoroEnglish)
+        )
+        XCTAssertEqual(
+            SpeechLanguageSettings.resolve(
+                bookLanguage: "French",
+                settingsByLanguage: ["fr": SpeechLanguageSetting(voiceIdentifier: SpeechEngineID.frenchMiro.rawValue)]
+            ).engine,
+            .neural(.frenchMiro)
         )
         XCTAssertEqual(
             SpeechLanguageSettings.resolve(
@@ -169,15 +208,42 @@ final class SpeechLanguageSettingsTests: XCTestCase {
         XCTAssertEqual(SpeechLanguageSettings.decodeSettings(nil), [:])
         XCTAssertEqual(SpeechLanguageSettings.decodeSettings(Data()), [:])
         XCTAssertEqual(SpeechLanguageSettings.decodeSettings(Data("not-json".utf8)), [:])
+        let stale = try! JSONEncoder().encode([
+            "english": SpeechLanguageSetting(voiceIdentifier: "samantha"),
+            "fra": SpeechLanguageSetting(voiceIdentifier: SpeechEngineID.frenchMiro.rawValue),
+        ] as [String: SpeechLanguageSetting])
+        let migrated = SpeechLanguageSettings.decodeSettings(stale)
+        XCTAssertEqual(migrated["en"]?.voiceIdentifier, "samantha")
+        XCTAssertEqual(migrated["fr"]?.voiceIdentifier, SpeechEngineID.frenchMiro.rawValue)
+        XCTAssertNil(migrated["english"])
+        XCTAssertNil(migrated["fra"])
     }
 
     func testLanguagesForBookCodesUniquesLibraryLanguagesAndKeepsEnglishPortuguese() {
-        let languages = SpeechLanguageSettings.languagesForBookCodes(["fr", "en-US", "pt-BR", "fr-FR", ""])
-        XCTAssertEqual(Set(languages), Set(["en", "fr", "pt-pt"]))
+        let languages = SpeechLanguageSettings.languagesForBookCodes(["fr", "en-US", "pt-BR", "fr-FR", "English", ""])
+        XCTAssertEqual(
+            Set(languages),
+            Set(SpeechLanguageSettings.seededLanguageTags)
+        )
+        XCTAssertEqual(languages.filter { $0 == "en" }.count, 1)
         XCTAssertEqual(languages, languages.sorted {
             SpeechLanguageSettings.displayName(for: $0)
                 .localizedCaseInsensitiveCompare(SpeechLanguageSettings.displayName(for: $1)) == .orderedAscending
         })
         XCTAssertFalse(SpeechLanguageSettings.displayName(for: "fr").isEmpty)
+        XCTAssertEqual(
+            SpeechLanguageSettings.displayName(for: "English"),
+            SpeechLanguageSettings.displayName(for: "en")
+        )
+        XCTAssertNotEqual(SpeechLanguageSettings.displayName(for: "english"), "ENGLISH")
+    }
+
+    func testSpeechLanguageListCacheReplaceAndInvalidate() {
+        SpeechLanguageListCache.invalidate()
+        XCTAssertNil(SpeechLanguageListCache.peek())
+        SpeechLanguageListCache.replace(["en", "fr"])
+        XCTAssertEqual(SpeechLanguageListCache.peek(), ["en", "fr"])
+        SpeechLanguageListCache.invalidate()
+        XCTAssertNil(SpeechLanguageListCache.peek())
     }
 }

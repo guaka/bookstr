@@ -212,8 +212,39 @@ final class AppShellUITests: XCTestCase {
         }
         reveal(app.buttons["speech-model-kokoro_en"])
         XCTAssertTrue(app.buttons["speech-model-kokoro_en"].waitForExistence(timeout: 4), "Settings did not expose the Kokoro download control")
-        XCTAssertTrue(app.buttons["speech-model-piper_pt_pt"].waitForExistence(timeout: 4), "Settings did not expose the Tugão download control")
-
+        XCTAssertFalse(app.staticTexts["Speech speed"].exists)
+        reveal(speechLanguage)
+        if speechLanguage.isHittable {
+            speechLanguage.tap()
+            let portugueseChoice = pickerChoice("Portuguese")
+            if portugueseChoice.waitForExistence(timeout: 4) {
+                portugueseChoice.tap()
+                XCTAssertTrue(
+                    app.buttons["speech-model-piper_pt_pt"].waitForExistence(timeout: 4),
+                    "Settings did not expose the Tugão download control for Portuguese"
+                )
+                XCTAssertTrue(app.buttons["speech-model-piper_pt_pt_miro"].waitForExistence(timeout: 2))
+                XCTAssertTrue(app.buttons["speech-model-piper_pt_pt_dii"].waitForExistence(timeout: 2))
+            }
+            if speechLanguage.isHittable {
+                speechLanguage.tap()
+                let frenchChoice = pickerChoice("French")
+                if frenchChoice.waitForExistence(timeout: 4) {
+                    frenchChoice.tap()
+                    XCTAssertTrue(
+                        app.buttons["speech-model-piper_fr_fr"].waitForExistence(timeout: 4),
+                        "Settings did not expose the French Miro download control"
+                    )
+                }
+            }
+            if speechLanguage.isHittable {
+                speechLanguage.tap()
+                let englishChoice = pickerChoice("English")
+                if englishChoice.waitForExistence(timeout: 4) {
+                    englishChoice.tap()
+                }
+            }
+        }
         let relays = app.descendants(matching: .any)["settings-relays-editor"]
         reveal(relays)
         XCTAssertTrue(relays.waitForExistence(timeout: 5), "Settings did not expose the relay editor")

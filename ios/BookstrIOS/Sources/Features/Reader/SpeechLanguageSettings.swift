@@ -48,6 +48,8 @@ enum SpeechLanguageSettings {
     static let minimumRate = 0.35
     static let maximumRate = 0.60
     static let speechEngineKey = "speech_engine"
+    /// Always available in TTS settings, regardless of library contents.
+    static let seededLanguageTags = ["en", "pt-pt", "fr", "de", "es", "ca"]
 
     static func preferredLanguageTag(_ raw: String) -> String {
         let normalized = raw.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -69,8 +71,12 @@ enum SpeechLanguageSettings {
 
     static func iso639Base(_ code: String) -> String {
         switch code {
-        case "por": "pt"
-        case "eng": "en"
+        case "por", "portuguese": "pt"
+        case "eng", "english": "en"
+        case "fra", "fre", "french", "francais": "fr"
+        case "deu", "ger", "german", "deutsch": "de"
+        case "spa", "spanish", "espanol", "castellano": "es"
+        case "cat", "catalan", "catala": "ca"
         default: code
         }
     }
@@ -114,6 +120,29 @@ enum SpeechLanguageSettings {
         return next
     }
 
+    /// Fold stale keys like `english` into canonical tags such as `en`.
+    static func canonicalizeSettingsKeys(
+        _ settings: [String: SpeechLanguageSetting]
+    ) -> [String: SpeechLanguageSetting] {
+        var next: [String: SpeechLanguageSetting] = [:]
+        for (key, value) in settings {
+            let tag = preferredLanguageTag(key)
+            if let existing = next[tag] {
+                if existing.voiceIdentifier.isEmpty && !value.voiceIdentifier.isEmpty {
+                    next[tag] = value
+                } else if existing.rate == nil, value.rate != nil {
+                    next[tag] = SpeechLanguageSetting(
+                        voiceIdentifier: existing.voiceIdentifier.isEmpty ? value.voiceIdentifier : existing.voiceIdentifier,
+                        rate: value.rate
+                    )
+                }
+            } else {
+                next[tag] = value
+            }
+        }
+        return next
+    }
+
     static func clampRate(_ rate: Double) -> Double {
         min(max(rate, minimumRate), maximumRate)
     }
@@ -126,16 +155,31 @@ enum SpeechLanguageSettings {
         baseLanguage(languageTag) == "pt"
     }
 
+    static func isFrench(_ languageTag: String) -> Bool {
+        baseLanguage(languageTag) == "fr"
+    }
+
+    static func isGerman(_ languageTag: String) -> Bool {
+        baseLanguage(languageTag) == "de"
+    }
+
+    static func isSpanish(_ languageTag: String) -> Bool {
+        baseLanguage(languageTag) == "es"
+    }
+
+    static func isCatalan(_ languageTag: String) -> Bool {
+        baseLanguage(languageTag) == "ca"
+    }
+
     static func baseLanguage(_ languageTag: String) -> String {
         preferredLanguageTag(languageTag).split(separator: "-").first.map(String.init) ?? "en"
     }
 
-    /// Languages available for TTS settings: always include English and Portuguese,
-    /// plus every language present on the user's books/favorites.
+    /// Languages available for TTS settings: seeded EU set plus every language on the user's books.
     static func languagesForBookCodes(_ codes: [String]) -> [String] {
         var seen = Set<String>()
         var ordered: [String] = []
-        for raw in codes + ["en", "pt"] {
+        for raw in codes + seededLanguageTags {
             let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !trimmed.isEmpty else { continue }
             let tag = preferredLanguageTag(trimmed)
@@ -159,10 +203,35 @@ enum SpeechLanguageSettings {
 
     static func decodeSettings(_ data: Data?) -> [String: SpeechLanguageSetting] {
         guard let data, !data.isEmpty else { return [:] }
-        return (try? JSONDecoder().decode([String: SpeechLanguageSetting].self, from: data)) ?? [:]
+        let decoded = (try? JSONDecoder().decode([String: SpeechLanguageSetting].self, from: data)) ?? [:]
+        return canonicalizeSettingsKeys(decoded)
     }
 
     static func encodeSettings(_ settings: [String: SpeechLanguageSetting]) -> Data? {
-        try? JSONEncoder().encode(settings)
+        try? JSONEncoder().encode(canonicalizeSettingsKeys(settings))
+    }
+}
+
+/// Process-lifetime cache for the Settings TTS language list.
+enum SpeechLanguageListCache {
+    private static let lock = NSLock()
+    private static var cached: [String]?
+
+    static func peek() -> [String]? {
+        lock.lock()
+        defer { lock.unlock() }
+        return cached
+    }
+
+    static func replace(_ languages: [String]) {
+        lock.lock()
+        cached = languages
+        lock.unlock()
+    }
+
+    static func invalidate() {
+        lock.lock()
+        cached = nil
+        lock.unlock()
     }
 }

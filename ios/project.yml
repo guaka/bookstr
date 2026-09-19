@@ -2,6 +2,8 @@ name: BookstrIOS
 options:
   minimumXcodeGenVersion: 2.38.0
 packages:
+  TorrentEngine:
+    path: TorrentEngine
   swift-nostr:
     url: https://github.com/yysskk/swift-nostr
     from: 0.7.0
@@ -19,6 +21,8 @@ targets:
     sources:
       - path: BookstrIOS/Sources
       - path: BookstrIOS/Assets.xcassets
+      - path: BookstrIOS/TorrentEngineNotices.txt
+        buildPhase: resources
       - path: ../shared/reader/reader.html
         buildPhase: resources
       - path: ../web/reader-speech.js
@@ -41,6 +45,7 @@ targets:
         type: folder
         buildPhase: resources
     dependencies:
+      - package: TorrentEngine
       - package: swift-nostr
         product: NostrConnect
       - package: swift-nostr
@@ -75,10 +80,10 @@ targets:
         CFBundleShortVersionString: "1.0.1"
         CFBundleVersion: "24"
         UILaunchScreen: {}
-        UIStatusBarHidden: true
+        UIStatusBarHidden: false
         UIBackgroundModes:
           - audio
-        UIViewControllerBasedStatusBarAppearance: false
+        UIViewControllerBasedStatusBarAppearance: true
         UIApplicationSceneManifest:
           UIApplicationSupportsMultipleScenes: false
   BookstrIOSTests:

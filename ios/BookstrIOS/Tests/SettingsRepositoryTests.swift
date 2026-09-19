@@ -133,6 +133,29 @@ final class SettingsRepositoryTests: XCTestCase {
         defaults.removePersistentDomain(forName: suite)
     }
 
+    func testSpeechChoiceIgnoresSavedRateAndCanonicalizesEnglishKeys() {
+        let suite = "bookstr-speech-rate-\(UUID().uuidString)"
+        guard let defaults = UserDefaults(suiteName: suite) else {
+            XCTFail("Could not create isolated UserDefaults")
+            return
+        }
+        defaults.removePersistentDomain(forName: suite)
+        let encoded = SpeechLanguageSettings.encodeSettings([
+            "english": SpeechLanguageSetting(voiceIdentifier: SpeechEngineID.kokoroEnglish.rawValue, rate: 0.35),
+            "fra": SpeechLanguageSetting(voiceIdentifier: SpeechEngineID.frenchMiro.rawValue, rate: 0.60),
+        ])
+        defaults.set(encoded, forKey: "speech_language_settings")
+        let repo = SettingsRepository(defaults: defaults)
+        XCTAssertEqual(repo.speechChoice(for: "English").voiceIdentifier, SpeechEngineID.kokoroEnglish.rawValue)
+        XCTAssertEqual(repo.speechChoice(for: "English").rate, SpeechLanguageSettings.defaultRate)
+        XCTAssertEqual(repo.speechChoice(for: "fra").neuralEngine, .frenchMiro)
+        XCTAssertEqual(repo.speechChoice(for: "French").rate, SpeechLanguageSettings.defaultRate)
+        XCTAssertNil(repo.speechLanguageSettings["english"])
+        XCTAssertNotNil(repo.speechLanguageSettings["en"])
+        XCTAssertNotNil(repo.speechLanguageSettings["fr"])
+        defaults.removePersistentDomain(forName: suite)
+    }
+
     func testLegacySpeechEngineMigratesIntoLanguageSettings() {
         let suite = "bookstr-speech-legacy-\(UUID().uuidString)"
         guard let defaults = UserDefaults(suiteName: suite) else {

@@ -19,7 +19,13 @@ final class BookListFacetFiltersTests: XCTestCase {
         let languageOnly = BookListFacetFilters(language: "pt", format: "")
         XCTAssertTrue(languageOnly.matches(language: "PT", format: "pdf"))
         XCTAssertTrue(languageOnly.matches(language: "pt-BR", format: "epub"))
+        XCTAssertTrue(languageOnly.matches(language: "Português", format: "epub"))
         XCTAssertFalse(languageOnly.matches(language: "en", format: "pdf"))
+
+        let englishOnly = BookListFacetFilters(language: "en", format: "")
+        XCTAssertTrue(englishOnly.matches(language: "English", format: "epub"))
+        XCTAssertTrue(englishOnly.matches(language: "eng", format: "pdf"))
+        XCTAssertFalse(englishOnly.matches(language: "French", format: "epub"))
 
         let formatOnly = BookListFacetFilters(language: "", format: "epub")
         XCTAssertTrue(formatOnly.matches(language: "en", format: "EPUB"))
@@ -28,7 +34,7 @@ final class BookListFacetFiltersTests: XCTestCase {
 
     func testAvailableOptionsAreUniqueSortedAndSkipBlanks() {
         XCTAssertEqual(
-            BookListFacetFilters.languages(from: ["en", "PT", nil, "", "en", " pt ", "pt-BR"]),
+            BookListFacetFilters.languages(from: ["en", "PT", nil, "", "en", " pt ", "pt-BR", "English", "eng"]),
             ["en", "pt"]
         )
         XCTAssertEqual(
@@ -49,10 +55,16 @@ final class BookListFacetFiltersTests: XCTestCase {
         XCTAssertEqual(filters.format, "pdf")
     }
 
-    func testDisplayLabelUsesLocalizedLanguageNamesForCodes() {
+    func testDisplayLabelUsesUppercaseLanguageCodes() {
         XCTAssertEqual(BookListFacetFilters.displayLabel(for: "epub"), "EPUB")
-        let portuguese = BookListFacetFilters.displayLabel(for: "pt")
-        XCTAssertFalse(portuguese.isEmpty)
-        XCTAssertNotEqual(portuguese.lowercased(), "pt")
+        XCTAssertEqual(BookListFacetFilters.displayLabel(for: "en"), "EN")
+        XCTAssertEqual(BookListFacetFilters.displayLabel(for: "English"), "EN")
+        XCTAssertEqual(BookListFacetFilters.displayLabel(for: "French"), "FR")
+        XCTAssertEqual(BookListFacetFilters.displayLabel(for: "Español"), "ES")
+        XCTAssertEqual(BookListFacetFilters.displayLabel(for: "pt-BR"), "PT")
+        XCTAssertEqual(BookListFacetFilters.languageBadge("Deutsch"), "DE")
+        XCTAssertEqual(BookListFacetFilters.languageBadge("català"), "CA")
+        XCTAssertNil(BookListFacetFilters.languageBadge(nil))
+        XCTAssertNil(BookListFacetFilters.languageBadge("  "))
     }
 }

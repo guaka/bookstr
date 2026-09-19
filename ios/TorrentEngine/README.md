@@ -38,6 +38,12 @@ On macOS with Xcode, CMake, and Boost headers installed:
 BOOST_ROOT="$(brew --prefix boost)" scripts/build-ios-torrent.sh
 ```
 
+The Xcode app target links this package through `ios/project.yml`
+(`packages.TorrentEngine` + `dependencies: - package: TorrentEngine`). After
+editing that file, regenerate with `xcodegen generate` from `ios/`. Never strip
+the local package from `project.yml` — that is how device builds lose
+`canImport(TorrentEngine)` and break torrent downloads.
+
 The script verifies libtorrent commit
 `9d7443f467147d1784fb7516d2a882db1abb5a8b` (v2.0.11), initializes its pinned
 `try_signal` dependency, and builds a static XCFramework for arm64 iPhone and

@@ -203,6 +203,7 @@ final class CatalogRepository {
         downloadedBooksLock.lock()
         downloadedBooksCache = nil
         downloadedBooksLock.unlock()
+        SpeechLanguageListCache.invalidate()
     }
 
     func downloadedBooks(externalFavorites: [ExternalFavorite] = []) -> [CatalogBook] {
@@ -226,7 +227,8 @@ final class CatalogRepository {
             guard let storedFormat = BookFormat(rawValue: ext) else { continue }
             let embedded = ext == "fb2" ? PublicationUtilities.fb2Metadata(fileURL: file) : nil
             let id = file.deletingPathExtension().lastPathComponent.lowercased()
-            guard id.count == 64, id.allSatisfy(\.isHexDigit) else { continue }
+            // Blossom SHA-256 (64) or LibVault MD5 (32) publication filenames.
+            guard (id.count == 64 || id.count == 32), id.allSatisfy(\.isHexDigit) else { continue }
             let comicLanguage = byID[id]?.language ?? ((storedFormat == .cbr || storedFormat == .cbz)
                 ? cachedComicLanguage(fileURL: file, format: storedFormat) : nil)
             if let remembered = byID[id], remembered.format.rawValue != ext {
@@ -329,7 +331,10 @@ final class CatalogRepository {
             case .epub:
                 return PublicationUtilities.epubCover(fileURL: sourceURL)
             case .pdf:
-                return PublicationUtilities.pdfCover(fileURL: sourceURL)
+                // PDFKit page thumbnails are unreliable off the main thread.
+                return await MainActor.run {
+                    PublicationUtilities.pdfCover(fileURL: sourceURL)
+                }
             default:
                 return nil
             }
@@ -501,7 +506,9 @@ final class CatalogRepository {
             if FileManager.default.fileExists(atPath: target.path) { try FileManager.default.removeItem(at: target) }
             try FileManager.default.copyItem(at: staging, to: target)
             rememberDownloaded(corrected)
-            return corrected
+            // Torrents skip the blossom download path; still stamp a cover so
+            // the library row updates without waiting for the next cold start.
+            return await ensureEmbeddedCover(for: corrected)
         }
         return try await prepareForOpening(book: book)
     }
@@ -638,7 +645,34 @@ final class CatalogRepository {
         books.removeAll { $0.id == book.id }
         books.append(updated)
         fileStore.save("downloaded-books.json", value: books)
-        downloadedBooksCache = nil
+        invalidateDownloadedBooksCache()
+    }
+
+    /// Deletes the on-device publication, cover cache, and remembered metadata.
+    /// Favorites on relays are unchanged — only the local library copy is removed.
+    func removeFromLibrary(_ book: CatalogBook) {
+        let ids = Self.publicationIdentityCandidates(for: book)
+        for id in ids {
+            for format in BookFormat.allCases {
+                let url = fileStore.bookFileURL(bookId: id, format: format)
+                if FileManager.default.fileExists(atPath: url.path) {
+                    try? FileManager.default.removeItem(at: url)
+                }
+            }
+            for ext in ["jpg", "jpeg", "png", "gif", "webp"] {
+                let cover = fileStore.coverFileURL(bookId: id, ext: ext)
+                if FileManager.default.fileExists(atPath: cover.path) {
+                    try? FileManager.default.removeItem(at: cover)
+                }
+            }
+        }
+        downloadedBooksLock.lock()
+        defer { downloadedBooksLock.unlock() }
+        var books = fileStore.load("downloaded-books.json", as: [CatalogBook].self, fallback: [])
+        let removable = Set(ids.map { $0.lowercased() })
+        books.removeAll { removable.contains($0.id.lowercased()) }
+        fileStore.save("downloaded-books.json", value: books)
+        invalidateDownloadedBooksCache()
     }
 
     func rememberEmbeddedRights(book: CatalogBook, statement: String?) -> BookRights {

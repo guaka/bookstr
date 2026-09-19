@@ -10,10 +10,10 @@ struct BookListFacetFilters: Equatable, Sendable {
     var isActive: Bool { !language.isEmpty || !format.isEmpty }
 
     static func normalizedLanguage(_ value: String?) -> String {
-        let raw = value?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() ?? ""
+        let raw = value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         guard !raw.isEmpty else { return "" }
-        // Compare on the base tag so "pt", "pt-pt", and "pt-BR" share one facet.
-        return raw.split(separator: "-").first.map(String.init) ?? raw
+        // Fold catalog names ("English") and regional tags ("pt-BR") to a base ISO code.
+        return SpeechLanguageSettings.baseLanguage(raw)
     }
 
     static func normalizedFormat(_ value: String?) -> String {
@@ -44,15 +44,18 @@ struct BookListFacetFilters: Equatable, Sendable {
         if !format.isEmpty, !formats.contains(format) { format = "" }
     }
 
+    /// Compact label for list rows and filter menus: `EN`, `FR`, `EPUB`, …
     static func displayLabel(for value: String) -> String {
         let format = normalizedFormat(value)
         if ["epub", "pdf", "fb2", "cbr", "cbz"].contains(format) {
             return format.uppercased()
         }
         let base = normalizedLanguage(value)
-        if let name = Locale.current.localizedString(forLanguageCode: base), !name.isEmpty {
-            return name
-        }
-        return value.uppercased()
+        return base.isEmpty ? value.uppercased() : base.uppercased()
+    }
+
+    static func languageBadge(_ value: String?) -> String? {
+        let base = normalizedLanguage(value)
+        return base.isEmpty ? nil : base.uppercased()
     }
 }

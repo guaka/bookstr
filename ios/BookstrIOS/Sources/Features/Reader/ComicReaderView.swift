@@ -182,7 +182,7 @@ struct ComicReaderView: UIViewRepresentable {
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
             guard !hasStartedLoading else { return }
             hasStartedLoading = true
-            controller.loadingStage = "Extracting pages"
+            controller.loadingStage = "Opening comic"
             let initialPage = ComicReaderController.page(
                 from: initialLocator,
                 fallbackProgression: controller.furthestProgression

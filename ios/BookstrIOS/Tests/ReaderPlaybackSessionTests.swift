@@ -110,6 +110,10 @@ final class ReaderPlaybackSessionTests: XCTestCase {
             speaking: false, systemSpeaking: false, systemPaused: false,
             neuralPlaying: false, neuralPaused: false, pendingRequest: true
         ))
+        XCTAssertTrue(ReaderSpeechRetention.isRetained(
+            speaking: false, systemSpeaking: false, systemPaused: false,
+            neuralPlaying: false, neuralPaused: false, preparing: true
+        ))
     }
 
     func testPresentShowsReaderAndCloseKeepsWarmCache() {

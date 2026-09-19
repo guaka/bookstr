@@ -114,4 +114,19 @@ final class ProgressRepositoryTests: XCTestCase {
 
         XCTAssertEqual(repo.get(bookId: "remote").cfi, "corrected")
     }
+
+    func testRemoveClearsProgressForBook() {
+        let subdirectory = "bookstr-test-progress-remove-\(UUID().uuidString)"
+        let store = JSONFileStore(subdirectory: subdirectory)
+        let repo = ProgressRepository(fileStore: store)
+        repo.save(bookId: "keep", progression: 0.2, cfi: "a")
+        repo.save(bookId: "gone", progression: 0.9, cfi: "b")
+        repo.remove(bookId: "gone")
+        XCTAssertEqual(repo.get(bookId: "keep").progression, 0.2, accuracy: 0.0001)
+        XCTAssertEqual(repo.get(bookId: "gone").progression, 0, accuracy: 0.0001)
+        XCTAssertEqual(repo.get(bookId: "gone").cfi, "")
+        let reloaded = ProgressRepository(fileStore: JSONFileStore(subdirectory: subdirectory))
+        XCTAssertEqual(reloaded.get(bookId: "keep").cfi, "a")
+        XCTAssertEqual(reloaded.get(bookId: "gone").cfi, "")
+    }
 }

@@ -158,8 +158,9 @@ final class EPUBReaderController: NSObject, ObservableObject, AVSpeechSynthesize
     @Published var speechStatusMessage: String?
     @Published var ready = false
     @Published var isSpeaking = false
+    @Published var isSpeechPreparing = false
     @Published private(set) var isSpeechRetained = false
-    @Published var loadingStage = "Starting reader"
+    @Published var loadingStage = "Opening book"
     @Published var rights = BookRights()
     @Published var textSelection: ReaderTextSelection?
     @Published var searchResults: [EPUBSearchResult] = []
@@ -267,13 +268,22 @@ final class EPUBReaderController: NSObject, ObservableObject, AVSpeechSynthesize
             systemPaused: speech.isPaused,
             neuralPlaying: neuralSpeech.isPlaying,
             neuralPaused: neuralSpeech.isPaused,
-            pendingRequest: playbackQueue.hasPendingRequest
+            pendingRequest: playbackQueue.hasPendingRequest,
+            preparing: isSpeechPreparing
         )
     }
 
     private func setSpeaking(_ speaking: Bool) {
         isSpeaking = speaking
+        if !speaking { isSpeechPreparing = false }
         refreshSpeechRetention()
+    }
+
+    private func markSpeechStarted() {
+        if isSpeechPreparing {
+            isSpeechPreparing = false
+            refreshSpeechRetention()
+        }
     }
 
     private func refreshSpeechRetention() {
@@ -345,9 +355,11 @@ final class EPUBReaderController: NSObject, ObservableObject, AVSpeechSynthesize
                 engine: engine,
                 speed: Float(min(max(playback.rate / SpeechLanguageSettings.defaultRate, 0.73), 1.25)),
                 onPhrase: { [weak self] chunk in
+                    self?.markSpeechStarted()
                     self?.neuralChunkOffset = chunk.offset
                 },
                 onProgress: { [weak self] start, end in
+                    self?.markSpeechStarted()
                     self?.updateSpeechProgress(start: start, end: end)
                 },
                 completion: { [weak self] result in
@@ -390,9 +402,16 @@ final class EPUBReaderController: NSObject, ObservableObject, AVSpeechSynthesize
         speech.speak(utterance)
     }
 
+    nonisolated func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didStart utterance: AVSpeechUtterance) {
+        DispatchQueue.main.async { [weak self] in
+            self?.markSpeechStarted()
+        }
+    }
+
     nonisolated func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, willSpeakRangeOfSpeechString characterRange: NSRange, utterance: AVSpeechUtterance) {
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
+            self.markSpeechStarted()
             guard let offset = self.utteranceOffsets[ObjectIdentifier(utterance)] else { return }
             if self.utteranceMapsSpokenRanges[ObjectIdentifier(utterance)] == false,
                let length = self.utteranceHighlightLengths[ObjectIdentifier(utterance)] {
@@ -468,6 +487,7 @@ final class EPUBReaderController: NSObject, ObservableObject, AVSpeechSynthesize
         neuralChunkOffset = nil
         neuralSpeech.stop()
         speech.stopSpeaking(at: .immediate)
+        isSpeechPreparing = false
         setSpeaking(false)
         updateNowPlaying(isPlaying: false)
         deactivateAudioSession()
@@ -479,6 +499,7 @@ final class EPUBReaderController: NSObject, ObservableObject, AVSpeechSynthesize
         speechStatusMessage = nil
         let requestID = UUID().uuidString
         playbackQueue.beginRequest(id: requestID)
+        isSpeechPreparing = true
         setSpeaking(true)
         updateNowPlaying(isPlaying: true)
         let request = "window.requestSpeechText && window.requestSpeechText(true, \(Self.js(requestID)), \(Self.js(speechLocator)))"
@@ -1135,7 +1156,8 @@ struct EPUBReaderView: UIViewRepresentable {
                 controller.errorMessage = nil
                 applySavedHighlightsForBook()
             case "onReaderStage":
-                controller.loadingStage = value as? String ?? "Preparing EPUB"
+                // Keep a non-technical stage for diagnostics; the UI shows the book title.
+                controller.loadingStage = "Opening book"
             case "onReaderError":
                 let detail = (value as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
                 controller.errorMessage = detail?.isEmpty == false

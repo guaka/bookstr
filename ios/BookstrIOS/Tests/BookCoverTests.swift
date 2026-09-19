@@ -76,6 +76,14 @@ final class BookCoverTests: XCTestCase {
         XCTAssertNil(cover)
     }
 
+    func testReturnsNilForTruncatedEPUBArchive() {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("cover-trunc-\(UUID().uuidString).epub")
+        try? Data([0x50, 0x4B]).write(to: url)
+        defer { try? FileManager.default.removeItem(at: url) }
+        XCTAssertNil(PublicationUtilities.epubCover(fileURL: url))
+    }
+
     func testRejectsNonImagePayloadInCoverSlot() throws {
         let opf = #"<?xml version="1.0"?><package xmlns="http://www.idpf.org/2007/opf" version="3.0"><metadata/>"# +
             #"<manifest><item id="cover" href="cover.bin" media-type="image/png" properties="cover-image"/></manifest>"# +
@@ -111,6 +119,74 @@ final class BookCoverTests: XCTestCase {
             ("OEBPS/content.opf", Data(opf.utf8)),
             ("OEBPS/chapter.xhtml", Data("<html/>".utf8)),
             ("OEBPS/images/front.png", png),
+        ])
+        XCTAssertEqual(cover?.data, png)
+    }
+
+    func testFollowsCoverXHTMLToISBNNamedImage() throws {
+        let opf = #"<?xml version="1.0"?><package xmlns="http://www.idpf.org/2007/opf" version="2.0"><metadata>"# +
+            #"<meta name="cover" content="cover"/></metadata><manifest>"# +
+            #"<item id="cover" href="cover.xhtml" media-type="application/xhtml+xml"/>"# +
+            #"<item id="cimage" href="images/9780143127550.jpg" media-type="image/jpeg"/>"# +
+            #"<item id="chapter" href="chapter.xhtml" media-type="application/xhtml+xml"/>"# +
+            #"</manifest><spine/><guide><reference type="cover" href="cover.xhtml"/></guide></package>"#
+        let coverPage = Data(
+            #"<html xmlns="http://www.w3.org/1999/xhtml"><body><img src="images/9780143127550.jpg"/></body></html>"#
+                .utf8
+        )
+        let cover = try epubCover(entries: [
+            ("META-INF/container.xml", containerXML(rootPath: "OEBPS/content.opf")),
+            ("OEBPS/content.opf", Data(opf.utf8)),
+            ("OEBPS/cover.xhtml", coverPage),
+            ("OEBPS/chapter.xhtml", Data("<html/>".utf8)),
+            ("OEBPS/images/9780143127550.jpg", png),
+        ])
+        XCTAssertEqual(cover?.data, png)
+    }
+
+    func testFallsBackToManifestRasterWhenCoverMetadataMissing() throws {
+        let opf = #"<?xml version="1.0"?><package xmlns="http://www.idpf.org/2007/opf" version="2.0"><metadata/>"# +
+            #"<manifest><item id="jacket" href="images/9780143127550.jpg" media-type="image/jpeg"/>"# +
+            #"<item id="chapter" href="chapter.xhtml" media-type="application/xhtml+xml"/></manifest>"# +
+            #"<spine/></package>"#
+        let cover = try epubCover(entries: [
+            ("META-INF/container.xml", containerXML(rootPath: "OEBPS/content.opf")),
+            ("OEBPS/content.opf", Data(opf.utf8)),
+            ("OEBPS/chapter.xhtml", Data("<html/>".utf8)),
+            ("OEBPS/images/9780143127550.jpg", png),
+        ])
+        XCTAssertEqual(cover?.data, png)
+    }
+
+    func testFallsBackToZipRasterEntryAbsentFromManifest() throws {
+        let opf = #"<?xml version="1.0"?><package xmlns="http://www.idpf.org/2007/opf" version="2.0"><metadata/>"# +
+            #"<manifest><item id="chapter" href="chapter.xhtml" media-type="application/xhtml+xml"/></manifest>"# +
+            #"<spine/></package>"#
+        let cover = try epubCover(entries: [
+            ("META-INF/container.xml", containerXML(rootPath: "OEBPS/content.opf")),
+            ("OEBPS/content.opf", Data(opf.utf8)),
+            ("OEBPS/chapter.xhtml", Data("<html/>".utf8)),
+            ("OEBPS/images/jacket.png", png),
+        ])
+        XCTAssertEqual(cover?.data, png)
+    }
+
+    func testFollowsCoverXHTMLXlinkHref() throws {
+        let opf = #"<?xml version="1.0"?><package xmlns="http://www.idpf.org/2007/opf" version="2.0"><metadata>"# +
+            #"<meta name="cover" content="cover"/></metadata><manifest>"# +
+            #"<item id="cover" href="cover.xhtml" media-type="application/xhtml+xml"/>"# +
+            #"<item id="chapter" href="chapter.xhtml" media-type="application/xhtml+xml"/>"# +
+            #"</manifest><spine/></package>"#
+        let coverPage = Data((
+            #"<html xmlns="http://www.w3.org/1999/xhtml" xmlns:xlink="http://www.w3.org/1999/xlink"><body>"# +
+            #"<image xlink:href="images/front.webp#view"/></body></html>"#
+        ).utf8)
+        let cover = try epubCover(entries: [
+            ("META-INF/container.xml", containerXML(rootPath: "OEBPS/content.opf")),
+            ("OEBPS/content.opf", Data(opf.utf8)),
+            ("OEBPS/cover.xhtml", coverPage),
+            ("OEBPS/chapter.xhtml", Data("<html/>".utf8)),
+            ("OEBPS/images/front.webp", png),
         ])
         XCTAssertEqual(cover?.data, png)
     }

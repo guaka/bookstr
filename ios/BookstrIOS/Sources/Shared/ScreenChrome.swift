@@ -101,7 +101,9 @@ struct BookListDetails: View {
             VStack(alignment: .trailing, spacing: 3) {
                 if let format { Text(format.uppercased()).font(.caption.weight(.medium)) }
                 if let year { Text(year).font(.caption2) }
-                if let language { Text(language.uppercased()).font(.caption2) }
+                if let badge = BookListFacetFilters.languageBadge(language) {
+                    Text(badge).font(.caption2)
+                }
             }
             .foregroundStyle(.secondary)
             .frame(width: dynamicTypeSize.isAccessibilitySize ? nil : 58, alignment: .trailing)

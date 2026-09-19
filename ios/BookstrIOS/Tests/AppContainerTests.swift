@@ -41,6 +41,25 @@ final class AppContainerTests: XCTestCase {
         XCTAssertTrue(LibraryViewModel.filtered([external], by: "PDF").isEmpty)
     }
 
+    func testLibraryDedupesPreferringUsableCover() {
+        let withoutCover = CatalogBook(
+            id: "book", title: "T", author: "A", epubUrl: "https://example.org/a.epub",
+            coverUrl: nil, sourceUrl: nil, isbn: nil, libvaultMd5: nil, format: .epub,
+            blossomSha256: nil, year: nil
+        )
+        let withCover = CatalogBook(
+            id: "book", title: "T", author: "A", epubUrl: "https://example.org/a.epub",
+            coverUrl: "https://covers.example/a.jpg", sourceUrl: nil, isbn: nil, libvaultMd5: nil,
+            format: .epub, blossomSha256: nil, year: nil
+        )
+        let merged = LibraryViewModel.uniquedPreferringCover([withoutCover, withCover])
+        XCTAssertEqual(merged.count, 1)
+        XCTAssertEqual(merged.first?.coverUrl, "https://covers.example/a.jpg")
+
+        let keepFirst = LibraryViewModel.uniquedPreferringCover([withCover, withoutCover])
+        XCTAssertEqual(keepFirst.first?.coverUrl, "https://covers.example/a.jpg")
+    }
+
     func testBootstrapProvidesWordNavigationState() {
         let container = AppContainer.bootstrap()
 
@@ -234,5 +253,88 @@ final class AppContainerTests: XCTestCase {
             viewModel.debugText.contains("showing cache; nostr refresh scheduled"),
             viewModel.debugText
         )
+    }
+
+    func testReaderOpeningMessageUsesBookTitle() {
+        let titled = CatalogBook(
+            id: "a", title: "  Alice  ", author: "Carroll", epubUrl: "https://example.org/a.epub",
+            coverUrl: nil, sourceUrl: nil, isbn: nil, libvaultMd5: nil, format: .epub,
+            blossomSha256: nil, year: nil
+        )
+        let blank = CatalogBook(
+            id: "b", title: "   ", author: "Author", epubUrl: "https://example.org/b.epub",
+            coverUrl: nil, sourceUrl: nil, isbn: nil, libvaultMd5: nil, format: .pdf,
+            blossomSha256: nil, year: nil
+        )
+        XCTAssertEqual(ReaderHostView.openingMessage(for: titled), "Opening Alice…")
+        XCTAssertEqual(ReaderHostView.openingMessage(for: blank), "Opening book…")
+    }
+
+    @MainActor
+    func testLibraryDeleteRemovesLocalPublicationAndProgress() async throws {
+        let subdirectory = "bookstr-library-delete-\(UUID().uuidString)"
+        let fileStore = JSONFileStore(subdirectory: subdirectory)
+        fileStore.ensureBooksDirectory()
+        fileStore.ensureCoversDirectory()
+        let bookID = String(repeating: "a", count: 64)
+        let book = CatalogBook(
+            id: bookID, title: "Delete Me", author: "Author", epubUrl: "",
+            coverUrl: nil, sourceUrl: nil, isbn: nil, libvaultMd5: nil, format: .epub,
+            blossomSha256: bookID, year: nil
+        )
+        let publication = fileStore.bookFileURL(bookId: bookID, format: .epub)
+        // Minimal valid-enough bytes; deletion only checks path existence.
+        try Data("%PDF-delete-fixture".utf8).write(to: publication)
+        let cover = fileStore.coverFileURL(bookId: bookID, ext: "jpg")
+        try Data([0xFF, 0xD8, 0xFF, 0xD9]).write(to: cover)
+        fileStore.save("downloaded-books.json", value: [book])
+
+        let settings = SettingsRepository(fileStore: fileStore)
+        let progress = ProgressRepository(fileStore: fileStore)
+        progress.save(bookId: bookID, progression: 0.4, cfi: "here")
+        let words = VocabularyRepository(fileStore: fileStore)
+        let snippets = SnippetRepository(fileStore: fileStore)
+        let favoriteMetadata = FavoriteMetadataRepository(fileStore: fileStore)
+        let nip46 = Nip46Service()
+        let signerStore = SignerStore(nip46Service: nip46)
+        let sync = NostrSyncService(
+            settings: settings,
+            progress: progress,
+            vocabulary: words,
+            snippets: snippets,
+            favoriteMetadata: favoriteMetadata,
+            client: NostrClient(),
+            signerStore: signerStore,
+            nip46Service: nip46
+        )
+        let catalog = CatalogRepository(
+            fileStore: fileStore,
+            settings: settings,
+            signerStore: signerStore,
+            nip46Service: nip46
+        )
+        let container = AppContainer(
+            settingsRepository: settings,
+            progressRepository: progress,
+            vocabularyRepository: words,
+            snippetRepository: snippets,
+            dictionaryRepository: DictionaryRepository(),
+            favoriteMetadataRepository: favoriteMetadata,
+            catalogRepository: catalog,
+            nostrClient: NostrClient(),
+            signerStore: signerStore,
+            nostrSyncService: sync,
+            nip46Service: nip46
+        )
+
+        let viewModel = LibraryViewModel()
+        viewModel.attach(container)
+        await viewModel.deleteFromLibrary(book)
+
+        XCTAssertFalse(FileManager.default.fileExists(atPath: publication.path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: cover.path))
+        XCTAssertTrue(fileStore.load("downloaded-books.json", as: [CatalogBook].self, fallback: []).isEmpty)
+        XCTAssertEqual(progress.get(bookId: bookID).cfi, "")
+        viewModel.cancelPendingNetworkRefresh()
     }
 }

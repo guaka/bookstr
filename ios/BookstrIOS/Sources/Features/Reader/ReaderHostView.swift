@@ -37,7 +37,7 @@ struct ReaderHostView: View {
     var body: some View {
         Group {
             if loading {
-                ProgressView("Opening \(activeFormat.rawValue.uppercased())...")
+                ProgressView(Self.openingMessage(for: book))
             } else if let error {
                 VStack(spacing: 12) {
                     Text(error).foregroundStyle(.red)
@@ -90,8 +90,8 @@ struct ReaderHostView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .toolbar(showsReaderChrome ? .hidden : .automatic, for: .navigationBar)
         .toolbar(showsReaderChrome ? .hidden : .automatic, for: .tabBar)
-        .statusBarHidden(showsReaderChrome)
-        .persistentSystemOverlays(showsReaderChrome ? .hidden : .automatic)
+        .statusBarHidden(false)
+        .persistentSystemOverlays(.automatic)
         .overlay {
             if activeFormat == .epub, let readerError = epubController.errorMessage {
                 VStack(spacing: 12) {
@@ -124,7 +124,7 @@ struct ReaderHostView: View {
         }
         .overlay {
             if activeFormat == .epub, localURL != nil, !epubController.ready, epubController.errorMessage == nil {
-                ProgressView(epubController.loadingStage + "…")
+                ProgressView(Self.openingMessage(for: book))
                     .padding(16)
                     .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
             }
@@ -143,7 +143,7 @@ struct ReaderHostView: View {
         .overlay {
             if (activeFormat == .cbr || activeFormat == .cbz), localURL != nil,
                !comicController.ready, comicController.errorMessage == nil {
-                ProgressView(comicController.loadingStage + "…")
+                ProgressView(Self.openingMessage(for: book))
                     .padding(16)
                     .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
             }
@@ -309,12 +309,24 @@ struct ReaderHostView: View {
                     epubController.toggleSpeech()
                     syncPlaybackSpeech()
                 } label: {
-                    Image(systemName: epubController.isSpeaking ? "stop.fill" : "play.fill")
-                        .font(.system(size: 16))
-                        .frame(width: 24, height: 24)
+                    Group {
+                        if epubController.isSpeechPreparing {
+                            ProgressView()
+                                .controlSize(.small)
+                        } else {
+                            Image(systemName: epubController.isSpeaking ? "stop.fill" : "play.fill")
+                                .font(.system(size: 16))
+                        }
+                    }
+                    .frame(width: 24, height: 24)
                 }
-                .accessibilityLabel(epubController.isSpeaking ? "Stop reading aloud" : "Read aloud")
+                .accessibilityLabel(
+                    epubController.isSpeechPreparing
+                        ? "Preparing reading aloud"
+                        : (epubController.isSpeaking ? "Stop reading aloud" : "Read aloud")
+                )
                 .accessibilityIdentifier("reader-speech-toggle")
+                .accessibilityValue(epubController.isSpeechPreparing ? "preparing" : "")
             }
 
             if activeFormat == .fb2 {
@@ -322,12 +334,24 @@ struct ReaderHostView: View {
                     fb2Controller.toggleSpeech(playback: fb2SpeechChoice)
                     syncPlaybackSpeech()
                 } label: {
-                    Image(systemName: fb2Controller.isSpeaking ? "stop.fill" : "play.fill")
-                        .font(.system(size: 16))
-                        .frame(width: 24, height: 24)
+                    Group {
+                        if fb2Controller.isSpeechPreparing {
+                            ProgressView()
+                                .controlSize(.small)
+                        } else {
+                            Image(systemName: fb2Controller.isSpeaking ? "stop.fill" : "play.fill")
+                                .font(.system(size: 16))
+                        }
+                    }
+                    .frame(width: 24, height: 24)
                 }
-                .accessibilityLabel(fb2Controller.isSpeaking ? "Stop reading aloud" : "Read aloud")
+                .accessibilityLabel(
+                    fb2Controller.isSpeechPreparing
+                        ? "Preparing reading aloud"
+                        : (fb2Controller.isSpeaking ? "Stop reading aloud" : "Read aloud")
+                )
                 .accessibilityIdentifier("reader-speech-toggle")
+                .accessibilityValue(fb2Controller.isSpeechPreparing ? "preparing" : "")
             }
 
             if hasTableOfContents {
@@ -403,6 +427,13 @@ struct ReaderHostView: View {
         } else {
             dismiss()
         }
+    }
+
+    /// User-facing open copy: the book title, not archive/decode/layout stages.
+    static func openingMessage(for book: CatalogBook) -> String {
+        let title = book.title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !title.isEmpty else { return "Opening book…" }
+        return "Opening \(title)…"
     }
 
     private func updateIdleTimer() {
@@ -934,6 +965,7 @@ final class FB2ReaderController: NSObject, ObservableObject {
     @Published var searchResults: [FB2SearchResult] = []
     @Published var searching = false
     @Published var isSpeaking = false
+    @Published var isSpeechPreparing = false
     @Published private(set) var isSpeechRetained = false
     @Published var textSelection: ReaderTextSelection?
     private let speech = AVSpeechSynthesizer()
@@ -1009,6 +1041,7 @@ final class FB2ReaderController: NSObject, ObservableObject {
         if isSpeechSessionActive {
             neuralSpeech.stop()
             speech.stopSpeaking(at: .immediate)
+            isSpeechPreparing = false
             setSpeaking(false)
             return
         }
@@ -1019,6 +1052,7 @@ final class FB2ReaderController: NSObject, ObservableObject {
         if isSpeechSessionActive {
             neuralSpeech.stop()
             speech.stopSpeaking(at: .immediate)
+            isSpeechPreparing = false
             setSpeaking(false)
         }
         let all = sections.flatMap(\.paragraphs).map(\.text).joined(separator: "\n\n")
@@ -1040,13 +1074,22 @@ final class FB2ReaderController: NSObject, ObservableObject {
             systemSpeaking: speech.isSpeaking,
             systemPaused: speech.isPaused,
             neuralPlaying: neuralSpeech.isPlaying,
-            neuralPaused: neuralSpeech.isPaused
+            neuralPaused: neuralSpeech.isPaused,
+            preparing: isSpeechPreparing
         )
     }
 
     private func setSpeaking(_ speaking: Bool) {
         isSpeaking = speaking
+        if !speaking { isSpeechPreparing = false }
         refreshSpeechRetention()
+    }
+
+    private func markSpeechStarted() {
+        if isSpeechPreparing {
+            isSpeechPreparing = false
+            refreshSpeechRetention()
+        }
     }
 
     private func refreshSpeechRetention() {
@@ -1062,6 +1105,7 @@ final class FB2ReaderController: NSObject, ObservableObject {
         } catch {
             return
         }
+        isSpeechPreparing = true
         setSpeaking(true)
         switch playback.engine {
         case .neural(let engine):
@@ -1070,13 +1114,20 @@ final class FB2ReaderController: NSObject, ObservableObject {
                 return
             }
             neuralSpeech.play(
-                text: text,
+                chunks: [SpeechQueueChunk(text: text, offset: 0, pauseSeconds: 0)],
                 engine: engine,
-                speed: Float(min(max(playback.rate / SpeechLanguageSettings.defaultRate, 0.73), 1.25))
-            ) { [weak self] result in
-                self?.setSpeaking(false)
-                if case .failure = result { return }
-            }
+                speed: Float(min(max(playback.rate / SpeechLanguageSettings.defaultRate, 0.73), 1.25)),
+                onPhrase: { [weak self] _ in
+                    self?.markSpeechStarted()
+                },
+                onProgress: { [weak self] _, _ in
+                    self?.markSpeechStarted()
+                },
+                completion: { [weak self] result in
+                    self?.setSpeaking(false)
+                    if case .failure = result { return }
+                }
+            )
         case .apple:
             let utterance = AVSpeechUtterance(string: text)
             if !playback.voiceIdentifier.isEmpty {
@@ -1109,6 +1160,9 @@ final class FB2ReaderController: NSObject, ObservableObject {
 }
 
 extension FB2ReaderController: AVSpeechSynthesizerDelegate {
+    nonisolated func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didStart utterance: AVSpeechUtterance) {
+        Task { @MainActor in self.markSpeechStarted() }
+    }
     nonisolated func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {
         Task { @MainActor in self.setSpeaking(false) }
     }
@@ -1130,7 +1184,7 @@ struct FB2ReaderView: View {
             if let error = controller.errorMessage {
                 Text(error).foregroundStyle(.red).padding(24)
             } else if !controller.ready {
-                ProgressView("Preparing FB2…")
+                ProgressView(Self.openingMessage(for: book))
             } else {
                 ScrollViewReader { proxy in
                     ScrollView {

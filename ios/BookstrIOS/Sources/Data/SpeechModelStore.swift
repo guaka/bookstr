@@ -4,6 +4,12 @@ enum SpeechEngineID: String, CaseIterable, Identifiable {
     case system
     case kokoroEnglish = "kokoro_en"
     case portuguesePortugal = "piper_pt_pt"
+    case portuguesePortugalMiro = "piper_pt_pt_miro"
+    case portuguesePortugalDii = "piper_pt_pt_dii"
+    case frenchMiro = "piper_fr_fr"
+    case germanMiro = "piper_de_de"
+    case spanishMiro = "piper_es_es"
+    case catalanOna = "piper_ca_es"
 
     var id: String { rawValue }
 
@@ -12,6 +18,12 @@ enum SpeechEngineID: String, CaseIterable, Identifiable {
         case .system: "Apple voices"
         case .kokoroEnglish: "Kokoro · English"
         case .portuguesePortugal: "Tugão · Português (Portugal)"
+        case .portuguesePortugalMiro: "Miro · Português (Portugal)"
+        case .portuguesePortugalDii: "Dii · Português (Portugal)"
+        case .frenchMiro: "Miro · Français"
+        case .germanMiro: "Miro · Deutsch"
+        case .spanishMiro: "Miro · Español"
+        case .catalanOna: "UPC Ona · Català"
         }
     }
 
@@ -19,9 +31,12 @@ enum SpeechEngineID: String, CaseIterable, Identifiable {
 
     var preferredLanguageTag: String {
         switch self {
-        case .system: "en"
-        case .kokoroEnglish: "en"
-        case .portuguesePortugal: "pt-pt"
+        case .system, .kokoroEnglish: "en"
+        case .portuguesePortugal, .portuguesePortugalMiro, .portuguesePortugalDii: "pt-pt"
+        case .frenchMiro: "fr"
+        case .germanMiro: "de"
+        case .spanishMiro: "es"
+        case .catalanOna: "ca"
         }
     }
 
@@ -29,7 +44,12 @@ enum SpeechEngineID: String, CaseIterable, Identifiable {
         switch self {
         case .system: true
         case .kokoroEnglish: SpeechLanguageSettings.isEnglish(language)
-        case .portuguesePortugal: SpeechLanguageSettings.isPortuguese(language)
+        case .portuguesePortugal, .portuguesePortugalMiro, .portuguesePortugalDii:
+            SpeechLanguageSettings.isPortuguese(language)
+        case .frenchMiro: SpeechLanguageSettings.isFrench(language)
+        case .germanMiro: SpeechLanguageSettings.isGerman(language)
+        case .spanishMiro: SpeechLanguageSettings.isSpanish(language)
+        case .catalanOna: SpeechLanguageSettings.isCatalan(language)
         }
     }
 }
@@ -113,6 +133,78 @@ enum SpeechModelCatalog {
                 .init(path: "espeak-ng-data/lang/roa/pt", expectedBytes: 95)
             ] + commonEspeakFiles,
             kind: .vits(model: "pt_PT-tugao-medium.onnx")
+        ),
+        SpeechModelSpec(
+            id: .portuguesePortugalMiro,
+            repository: "csukuangfj/vits-piper-pt_PT-miro-high",
+            revision: "6a917dc1f1d2f6a4a0a12742478483ccce3f52b6",
+            files: [
+                .init(path: "pt_PT-miro-high.onnx", expectedBytes: 63_511_198),
+                .init(path: "tokens.txt", expectedBytes: 954),
+                .init(path: "espeak-ng-data/pt_dict", expectedBytes: 67_817),
+                .init(path: "espeak-ng-data/lang/roa/pt", expectedBytes: 95)
+            ] + commonEspeakFiles,
+            kind: .vits(model: "pt_PT-miro-high.onnx")
+        ),
+        SpeechModelSpec(
+            id: .portuguesePortugalDii,
+            repository: "csukuangfj/vits-piper-pt_PT-dii-high",
+            revision: "27cf37a700e91003217a567e12761e6497fe9b0b",
+            files: [
+                .init(path: "pt_PT-dii-high.onnx", expectedBytes: 63_511_198),
+                .init(path: "tokens.txt", expectedBytes: 954),
+                .init(path: "espeak-ng-data/pt_dict", expectedBytes: 67_817),
+                .init(path: "espeak-ng-data/lang/roa/pt", expectedBytes: 95)
+            ] + commonEspeakFiles,
+            kind: .vits(model: "pt_PT-dii-high.onnx")
+        ),
+        SpeechModelSpec(
+            id: .frenchMiro,
+            repository: "csukuangfj/vits-piper-fr_FR-miro-high",
+            revision: "695e063aefa9a7c61e4755a1924e137bc11d291d",
+            files: [
+                .init(path: "fr_FR-miro-high.onnx", expectedBytes: 63_153_773),
+                .init(path: "tokens.txt", expectedBytes: 954),
+                .init(path: "espeak-ng-data/fr_dict", expectedBytes: 63_727),
+                .init(path: "espeak-ng-data/lang/roa/fr", expectedBytes: 79)
+            ] + commonEspeakFiles,
+            kind: .vits(model: "fr_FR-miro-high.onnx")
+        ),
+        SpeechModelSpec(
+            id: .germanMiro,
+            repository: "csukuangfj/vits-piper-de_DE-miro-high",
+            revision: "e736ced18138f0608322c96fa6b0dc05b492107c",
+            files: [
+                .init(path: "de_DE-miro-high.onnx", expectedBytes: 63_153_773),
+                .init(path: "tokens.txt", expectedBytes: 954),
+                .init(path: "espeak-ng-data/de_dict", expectedBytes: 68_276),
+                .init(path: "espeak-ng-data/lang/gmw/de", expectedBytes: 42)
+            ] + commonEspeakFiles,
+            kind: .vits(model: "de_DE-miro-high.onnx")
+        ),
+        SpeechModelSpec(
+            id: .spanishMiro,
+            repository: "csukuangfj/vits-piper-es_ES-miro-high",
+            revision: "0e1f773561429a9e50fa23d868a40eb341ad83c4",
+            files: [
+                .init(path: "es_ES-miro-high.onnx", expectedBytes: 63_153_775),
+                .init(path: "tokens.txt", expectedBytes: 954),
+                .init(path: "espeak-ng-data/es_dict", expectedBytes: 49_252),
+                .init(path: "espeak-ng-data/lang/roa/es", expectedBytes: 63)
+            ] + commonEspeakFiles,
+            kind: .vits(model: "es_ES-miro-high.onnx")
+        ),
+        SpeechModelSpec(
+            id: .catalanOna,
+            repository: "csukuangfj/vits-piper-ca_ES-upc_ona-medium",
+            revision: "814326c793214a358024edcf2d17e6de1acf0280",
+            files: [
+                .init(path: "ca_ES-upc_ona-medium.onnx", expectedBytes: 63_201_422),
+                .init(path: "tokens.txt", expectedBytes: 921),
+                .init(path: "espeak-ng-data/ca_dict", expectedBytes: 45_566),
+                .init(path: "espeak-ng-data/lang/roa/ca", expectedBytes: 25)
+            ] + commonEspeakFiles,
+            kind: .vits(model: "ca_ES-upc_ona-medium.onnx")
         )
     ]
 
