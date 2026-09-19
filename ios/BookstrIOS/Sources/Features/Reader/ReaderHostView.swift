@@ -90,8 +90,8 @@ struct ReaderHostView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .toolbar(showsReaderChrome ? .hidden : .automatic, for: .navigationBar)
         .toolbar(showsReaderChrome ? .hidden : .automatic, for: .tabBar)
-        .statusBarHidden(false)
-        .persistentSystemOverlays(.automatic)
+        .statusBarHidden(true)
+        .persistentSystemOverlays(.hidden)
         .overlay {
             if activeFormat == .epub, let readerError = epubController.errorMessage {
                 VStack(spacing: 12) {
@@ -392,11 +392,6 @@ struct ReaderHostView: View {
         .padding(.leading, 6)
         .frame(height: 48)
         .background(container.settingsRepository.theme.primary.opacity(0.98))
-        .overlay(alignment: .top) {
-            ReaderClockLabel()
-                .padding(.top, 1)
-                .allowsHitTesting(false)
-        }
     }
 
     private var hasTableOfContents: Bool {
@@ -745,16 +740,39 @@ struct ReaderClockLabel: View {
 
     var body: some View {
         TimelineView(.periodic(from: .now, by: 30)) { context in
-            Text(Self.labelText(for: context.date))
-                .font(.system(size: 9, weight: .medium, design: .monospaced))
-                .opacity(0.78)
-                .padding(.horizontal, 2)
-                .accessibilityIdentifier("reader-clock")
+            let battery = Self.batterySnapshot()
+            HStack(spacing: 4) {
+                Text(Self.formattedTime(context.date))
+                if let percent = battery.percent {
+                    HStack(spacing: 2) {
+                        if battery.charging {
+                            Image(systemName: "bolt.fill")
+                                .font(.system(size: 7, weight: .semibold))
+                        }
+                        Text("\(percent)%")
+                    }
+                }
+            }
+            .font(.system(size: 9, weight: .medium, design: .monospaced))
+            .opacity(0.78)
+            .padding(.horizontal, 2)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(Self.labelText(
+                for: context.date,
+                batteryPercent: battery.percent,
+                charging: battery.charging
+            ))
+            .accessibilityIdentifier("reader-clock")
         }
     }
 
-    static func labelText(for date: Date) -> String {
-        formattedTime(date)
+    static func labelText(for date: Date, batteryPercent: Int?, charging: Bool) -> String {
+        let time = formattedTime(date)
+        guard let batteryPercent else { return time }
+        if charging {
+            return "\(time) \(batteryPercent)% charging"
+        }
+        return "\(time) \(batteryPercent)%"
     }
 
     static func formattedTime(_ date: Date) -> String {
@@ -762,6 +780,14 @@ struct ReaderClockLabel: View {
         formatter.locale = Locale(identifier: "en_GB_POSIX")
         formatter.dateFormat = "HH:mm"
         return formatter.string(from: date)
+    }
+
+    static func batterySnapshot() -> (percent: Int?, charging: Bool) {
+        let device = UIDevice.current
+        let level = device.batteryLevel
+        let percent = level >= 0 ? Int((level * 100).rounded()) : nil
+        let charging = device.batteryState == .charging || device.batteryState == .full
+        return (percent, charging)
     }
 }
 

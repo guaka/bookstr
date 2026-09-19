@@ -82,8 +82,6 @@ test('downloads persist independently and native search keeps its safe area', ()
   const app = read('ios/BookstrIOS/Sources/App/BookstrIOSApp.swift');
   assert.match(app, /downloads.resume\(prepare:/);
   assert.doesNotMatch(app, /TopSafeAreaCollapser/);
-  assert.doesNotMatch(app, /statusBarHidden\(true\)/);
-  assert.doesNotMatch(app, /persistentSystemOverlays\(\.hidden\)/);
   assert.doesNotMatch(read('ios/BookstrIOS/Sources/Shared/ScreenChrome.swift'), /additionalSafeAreaInsets.top/);
   const code = read('ios/BookstrIOS/Sources/Data/TorrentDownload.swift');
   assert.match(code, /engines\[edition.md5\]/);
@@ -92,14 +90,21 @@ test('downloads persist independently and native search keeps its safe area', ()
   assert.match(read('ios/BookstrIOS/Sources/Data/CatalogRepository.swift'), /torrent-edition-/);
 });
 
-test('system status bar keeps time and battery visible on every pane', () => {
+test('custom clock and battery replace the system status bar on every pane', () => {
   const info = read('ios/BookstrIOS/Info.plist');
-  assert.match(info, /<key>UIStatusBarHidden<\/key>\s*<false\/>/);
-  assert.match(info, /<key>UIViewControllerBasedStatusBarAppearance<\/key>\s*<true\/>/);
-  assert.match(read('ios/project.yml'), /UIStatusBarHidden:\s*false/);
-  const reader = read('ios/BookstrIOS/Sources/Features/Reader/ReaderHostView.swift');
-  assert.match(reader, /\.statusBarHidden\(false\)/);
-  assert.doesNotMatch(reader, /\.statusBarHidden\(showsReaderChrome\)/);
+  assert.match(info, /<key>UIStatusBarHidden<\/key>\s*<true\/>/);
+  assert.match(read('ios/project.yml'), /UIStatusBarHidden:\s*true/);
+  const app = read('ios/BookstrIOS/Sources/App/BookstrIOSApp.swift');
+  assert.match(app, /statusBarHidden\(true\)/);
+  assert.match(app, /persistentSystemOverlays\(\.hidden\)/);
+  const root = read('ios/BookstrIOS/Sources/App/RootView.swift');
+  assert.match(root, /ReaderClockLabel\(\)/);
+  const chrome = read('ios/BookstrIOS/Sources/Shared/ScreenChrome.swift');
+  assert.match(chrome, /isBatteryMonitoringEnabled = true/);
+  const clock = read('ios/BookstrIOS/Sources/Features/Reader/ReaderHostView.swift');
+  assert.match(clock, /batterySnapshot/);
+  assert.match(clock, /accessibilityIdentifier\("reader-clock"\)/);
+  assert.match(clock, /bolt\.fill/);
 });
 
 test('opening a book shows its title instead of technical reader stages', () => {

@@ -15,6 +15,8 @@ struct BookstrIOSApp: App {
                 .environmentObject(container)
                 .environmentObject(container.settingsRepository)
                 .environmentObject(container.readerPlayback)
+                .statusBarHidden(true)
+                .persistentSystemOverlays(.hidden)
                 .task {
                     container.downloads.resume(prepare: container.catalogRepository.prepareForOpening)
                 }

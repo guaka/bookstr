@@ -121,6 +121,17 @@ struct RootView: View {
                 .accessibilityHidden(!playback.isVisible)
             }
         }
+        .overlay(alignment: .top) {
+            // Custom island clock + battery; system status bar stays hidden.
+            ReaderClockLabel()
+                .foregroundStyle(
+                    playback.isVisible
+                        ? settings.theme.background
+                        : settings.theme.primary
+                )
+                .padding(.top, 1)
+                .allowsHitTesting(false)
+        }
         .task {
             _ = await container.nostrSyncService.retryPendingFavorites()
             guard !attemptedInitialContinuation else { return }
