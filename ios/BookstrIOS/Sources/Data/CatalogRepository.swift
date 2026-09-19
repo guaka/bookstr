@@ -157,10 +157,15 @@ final class CatalogRepository {
     private let settings: SettingsRepository
     private let downloadedBooksLock = NSLock()
     private let comicMetadataLock = NSLock()
+    private let searchCacheLock = NSLock()
     private let signerProvider: () -> NostrSigner?
     private let nip46Service: Nip46Service
     private var inspectedComicMetadata = Set<URL>()
     private var comicLanguageByURL: [URL: String] = [:]
+    private var downloadedBooksCache: (signature: String, books: [CatalogBook])?
+    private var validatedPublicationFingerprints: [String: String] = [:]
+    private var searchPageCache: [String: (expires: Date, page: CatalogSearchPage)] = [:]
+    private static let searchPageTTL: TimeInterval = 45
 
     init(fileStore: JSONFileStore, settings: SettingsRepository, signerStore: SignerStore, nip46Service: Nip46Service,
          searchSession: URLSession = .shared,
@@ -177,9 +182,39 @@ final class CatalogRepository {
         self.catalogRequest = catalogRequest
         fileStore.ensureBooksDirectory()
         fileStore.ensureCoversDirectory()
+        clearStaleNegativeCoverCache()
+    }
+
+    /// Earlier extraction misses left `coverUrl == ""` permanently. Clear those
+    /// so improved heuristics can rescan local publications once.
+    private func clearStaleNegativeCoverCache() {
+        var books = rememberedBooks()
+        var changed = false
+        for index in books.indices where books[index].coverUrl == "" {
+            books[index].coverUrl = nil
+            changed = true
+        }
+        guard changed else { return }
+        fileStore.save("downloaded-books.json", value: books)
+        invalidateDownloadedBooksCache()
+    }
+
+    func invalidateDownloadedBooksCache() {
+        downloadedBooksLock.lock()
+        downloadedBooksCache = nil
+        downloadedBooksLock.unlock()
     }
 
     func downloadedBooks(externalFavorites: [ExternalFavorite] = []) -> [CatalogBook] {
+        let signature = downloadedBooksSignature(externalFavorites: externalFavorites)
+        downloadedBooksLock.lock()
+        if let cached = downloadedBooksCache, cached.signature == signature {
+            let books = cached.books
+            downloadedBooksLock.unlock()
+            return books
+        }
+        downloadedBooksLock.unlock()
+
         var byID = Dictionary(uniqueKeysWithValues: rememberedBooks().map { ($0.id.lowercased(), $0) })
         let favoritesBySHA = Dictionary(externalFavorites.compactMap { favorite -> (String, ExternalFavorite)? in
             guard let sha = favorite.blossomSha256?.lowercased(), sha.count == 64,
@@ -227,10 +262,17 @@ final class CatalogRepository {
             .map { Self.stampCachedCover(into: $0, cache: coverCache) }
             .filter {
                 guard let local = localPublication(for: $0) else { return false }
-                return Self.isStructurallyValidPublication(fileURL: local.url, format: local.book.format)
+                return isValidatedPublication(fileURL: local.url, format: local.book.format)
             }
+            .sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
         downloaded.forEach(rememberDownloaded)
-        return downloaded.sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
+
+        // Signature after remember so cover stamps in downloaded-books.json match.
+        let finalSignature = downloadedBooksSignature(externalFavorites: externalFavorites)
+        downloadedBooksLock.lock()
+        downloadedBooksCache = (finalSignature, downloaded)
+        downloadedBooksLock.unlock()
+        return downloaded
     }
 
     /// Remote or already-stamped covers win. An empty-string `coverUrl` is the
@@ -281,14 +323,22 @@ final class CatalogRepository {
         guard Self.shouldScanEmbeddedCover(for: book) else { return book }
         guard let local = localPublication(for: book) else { return book }
         let sourceURL = local.url
-        let isEPUB = local.book.format == .epub
+        let format = local.book.format
         let extracted: PublicationUtilities.EmbeddedCover? = await Task.detached(priority: .utility) {
-            guard isEPUB else { return nil }
-            return PublicationUtilities.epubCover(fileURL: sourceURL)
+            switch format {
+            case .epub:
+                return PublicationUtilities.epubCover(fileURL: sourceURL)
+            case .pdf:
+                return PublicationUtilities.pdfCover(fileURL: sourceURL)
+            default:
+                return nil
+            }
         }.value
         var updated = book
         if let extracted {
             fileStore.ensureCoversDirectory()
+            // Prefer the on-disk publication identity so cover files stay stable
+            // across LibVault MD5 / Blossom SHA aliases.
             let target = fileStore.coverFileURL(bookId: local.book.id, ext: extracted.pathExtension)
             if (try? extracted.data.write(to: target, options: .atomic)) != nil {
                 updated.coverUrl = target.absoluteString
@@ -323,9 +373,20 @@ final class CatalogRepository {
     func searchPage(_ query: String, offset: Int = 0, limit: Int = 50) async throws -> CatalogSearchPage {
         let normalized = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard normalized.count >= 2, offset >= 0 else { throw PrivateCatalogError.rejected("Type at least 2 characters to search") }
+        let cacheKey = searchPageCacheKey(query: normalized, offset: offset, limit: limit)
+        searchCacheLock.lock()
+        if let cached = searchPageCache[cacheKey], cached.expires > Date() {
+            let page = cached.page
+            searchCacheLock.unlock()
+            return page
+        }
+        searchCacheLock.unlock()
+
         if settings.authMode == .nip46 { await nip46Service.restore(from: settings) }
         guard let signer = signerProvider() else {
-            return CatalogSearchPage(books: try await publicSearch(normalized, limit: limit))
+            let page = CatalogSearchPage(books: try await publicSearch(normalized, limit: limit))
+            storeSearchPage(page, for: cacheKey)
+            return page
         }
         // Public results remain usable if the private relay is unavailable.
         async let publicBooks: [BookSearchResult] = offset == 0 ? ((try? await publicSearch(normalized, limit: limit)) ?? []) : []
@@ -334,12 +395,15 @@ final class CatalogRepository {
                 "search_type": "all", "offset": offset, "limit": min(max(limit, 1), 50)], signer, catalogService)
             var page = CatalogSearchPage.libcat(response, offset: offset)
             page.books = CatalogSearchPage.merge(page.books, await publicBooks)
+            storeSearchPage(page, for: cacheKey)
             return page
         } catch {
             try Task.checkCancellation()
             let fallback = await publicBooks
             if fallback.isEmpty { throw error }
-            return CatalogSearchPage(books: fallback, warning: error.localizedDescription)
+            let page = CatalogSearchPage(books: fallback, warning: error.localizedDescription)
+            storeSearchPage(page, for: cacheKey)
+            return page
         }
     }
 
@@ -535,7 +599,7 @@ final class CatalogRepository {
                 let url = fileStore.bookFileURL(bookId: id, format: format)
                 guard FileManager.default.fileExists(atPath: url.path),
                       let actual = Self.detectedFormat(fileURL: url),
-                      Self.isStructurallyValidPublication(fileURL: url, format: actual)
+                      isValidatedPublication(fileURL: url, format: actual)
                 else { continue }
 
                 return (replacingIdentity(of: book, with: id, format: actual), url)
@@ -574,6 +638,7 @@ final class CatalogRepository {
         books.removeAll { $0.id == book.id }
         books.append(updated)
         fileStore.save("downloaded-books.json", value: books)
+        downloadedBooksCache = nil
     }
 
     func rememberEmbeddedRights(book: CatalogBook, statement: String?) -> BookRights {
@@ -612,12 +677,64 @@ final class CatalogRepository {
     }
 
     private func isValidCachedFile(book: CatalogBook, fileURL: URL, verifyBlossomHash: Bool) -> Bool {
-        guard Self.isStructurallyValidPublication(fileURL: fileURL, format: book.format) else { return false }
+        guard isValidatedPublication(fileURL: fileURL, format: book.format) else { return false }
         if verifyBlossomHash, let expected = book.blossomSha256?.lowercased() {
             guard let digest = Self.sha256(fileURL: fileURL) else { return false }
             return digest == expected
         }
         return true
+    }
+
+    private func isValidatedPublication(fileURL: URL, format: BookFormat) -> Bool {
+        let key = fileURL.path
+        let fingerprint = Self.fileFingerprint(fileURL)
+        downloadedBooksLock.lock()
+        if validatedPublicationFingerprints[key] == fingerprint {
+            downloadedBooksLock.unlock()
+            return true
+        }
+        downloadedBooksLock.unlock()
+        guard Self.isStructurallyValidPublication(fileURL: fileURL, format: format) else { return false }
+        downloadedBooksLock.lock()
+        validatedPublicationFingerprints[key] = fingerprint
+        downloadedBooksLock.unlock()
+        return true
+    }
+
+    private func downloadedBooksSignature(externalFavorites: [ExternalFavorite]) -> String {
+        let files = fileStore.publicationFiles()
+            .map { "\($0.lastPathComponent):\(Self.fileFingerprint($0))" }
+            .sorted()
+            .joined(separator: "|")
+        let covers = fileStore.cachedCoverURLs().keys.sorted().joined(separator: ",")
+        let favorites = externalFavorites
+            .compactMap { $0.blossomSha256?.lowercased() }
+            .sorted()
+            .joined(separator: ",")
+        let remembered = rememberedBooks()
+            .map { "\($0.id):\($0.coverUrl ?? "-")" }
+            .sorted()
+            .joined(separator: "|")
+        return [files, covers, favorites, remembered].joined(separator: "#")
+    }
+
+    private func searchPageCacheKey(query: String, offset: Int, limit: Int) -> String {
+        let catalog = settings.catalogConnection?.npub ?? "public"
+        let auth = settings.authMode.rawValue
+        return "\(catalog)|\(auth)|\(query.lowercased())|\(offset)|\(limit)"
+    }
+
+    private func storeSearchPage(_ page: CatalogSearchPage, for key: String) {
+        searchCacheLock.lock()
+        searchPageCache[key] = (Date().addingTimeInterval(Self.searchPageTTL), page)
+        searchCacheLock.unlock()
+    }
+
+    private static func fileFingerprint(_ fileURL: URL) -> String {
+        let values = try? fileURL.resourceValues(forKeys: [.fileSizeKey, .contentModificationDateKey])
+        let size = values?.fileSize ?? -1
+        let modified = values?.contentModificationDate.map { String($0.timeIntervalSince1970) } ?? "0"
+        return "\(size)@\(modified)"
     }
 
     /// Hash downloads incrementally. Large publications must never be loaded into

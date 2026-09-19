@@ -449,13 +449,15 @@
       if (window.AndroidBridge) AndroidBridge.onReaderError(message);
     }
 
-    window.loadBook = function(base64, cfi, theme, highlightCfi, bookId) {
+    window.loadBook = function(base64, cfi, theme, highlightCfi, bookId, highlightKind) {
       if (window.AndroidBridge && AndroidBridge.onReaderStage) AndroidBridge.onReaderStage("Decoding EPUB");
-      const loading = openBook(base64ToArrayBuffer(base64), cfi, theme, highlightCfi || null, bookId || "");
+      const loading = openBook(
+        base64ToArrayBuffer(base64), cfi, theme, highlightCfi || null, bookId || "", highlightKind || null
+      );
       return reportPromise(withTimeout(loading, 30000, "EPUB reader timed out"));
     };
 
-    window.loadBookUrl = function(url, cfi, theme, highlightCfi, bookId) {
+    window.loadBookUrl = function(url, cfi, theme, highlightCfi, bookId, highlightKind) {
       const loading = fetch(url, { cache: "no-store" }).then(function(response) {
         // WKURLSchemeHandler-backed resources can have an opaque status of 0 even
         // when WebKit successfully delivered the complete local response.
@@ -465,7 +467,7 @@
         return response.arrayBuffer();
       }).then(function(buffer) {
         if (!buffer.byteLength) throw new Error("Downloaded EPUB is empty");
-        return openBook(buffer, cfi, theme, highlightCfi, bookId);
+        return openBook(buffer, cfi, theme, highlightCfi, bookId, highlightKind || null);
       });
       return reportPromise(withTimeout(loading, 30000, "EPUB reader timed out"));
     };

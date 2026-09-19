@@ -62,6 +62,12 @@ final class AppContainerTests: XCTestCase {
         XCTAssertEqual(container.readerPlayback.item?.book.id, "alice")
         XCTAssertFalse(container.readerPlayback.isVisible)
         XCTAssertTrue(container.readerPlayback.showsBackgroundSpeechControl)
+
+        let nonce = container.readerPlayback.presentationNonce
+        container.readerPlayback.updateSpeechState(retained: false, playing: false)
+        container.readerPlayback.present(book: book)
+        XCTAssertTrue(container.readerPlayback.isVisible)
+        XCTAssertEqual(container.readerPlayback.presentationNonce, nonce)
     }
 
     func testWordNavigationStateCanBeUsedFromContainer() {

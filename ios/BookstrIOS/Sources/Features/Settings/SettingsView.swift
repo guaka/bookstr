@@ -25,6 +25,8 @@ struct SettingsView: View {
     @State private var dictionaryBusy = false
     @StateObject private var speechModels = SpeechModelStore()
     @FocusState private var focusedField: SettingsField?
+    @State private var speechLanguages: [String] = ["en", "pt-pt"]
+    @State private var selectedSpeechLanguage = "en"
 
     var body: some View {
         Form {
@@ -53,26 +55,22 @@ struct SettingsView: View {
                     }
                 }
                 .accessibilityIdentifier("reader-alignment")
-                Picker("English", selection: englishVoice) {
-                    Text("System default").tag(SpeechVoiceID.systemDefault)
-                    ForEach(SpeechVoiceID.speakers(for: "en"), id: \.id) { speaker in
-                        Text(speaker.name).tag(speaker.id)
-                    }
-                    ForEach(speechVoices(for: "en"), id: \.identifier) { voice in
-                        Text("\(voice.name) · \(voiceQuality(voice))").tag(voice.identifier)
+                Picker("Speech language", selection: $selectedSpeechLanguage) {
+                    ForEach(speechLanguages, id: \.self) { language in
+                        Text(SpeechLanguageSettings.displayName(for: language)).tag(language)
                     }
                 }
-                .accessibilityIdentifier("speech-voice-en")
-                Picker("Portuguese", selection: portugueseVoice) {
+                .accessibilityIdentifier("speech-language")
+                Picker("Voice", selection: languageVoiceBinding(selectedSpeechLanguage)) {
                     Text("System default").tag(SpeechVoiceID.systemDefault)
-                    ForEach(SpeechVoiceID.speakers(for: "pt"), id: \.id) { speaker in
+                    ForEach(SpeechVoiceID.speakers(for: selectedSpeechLanguage), id: \.id) { speaker in
                         Text(speaker.name).tag(speaker.id)
                     }
-                    ForEach(speechVoices(for: "pt"), id: \.identifier) { voice in
-                        Text("\(voice.name) · \(voice.language) · \(voiceQuality(voice))").tag(voice.identifier)
+                    ForEach(speechVoices(for: selectedSpeechLanguage), id: \.identifier) { voice in
+                        Text(voicePickerLabel(voice)).tag(voice.identifier)
                     }
                 }
-                .accessibilityIdentifier("speech-voice-pt")
+                .accessibilityIdentifier(speechVoiceAccessibilityID)
                 ForEach(SpeechEngineID.allCases.filter(\.isNeural)) { engine in
                     speechModelControl(engine)
                 }
@@ -224,9 +222,11 @@ struct SettingsView: View {
             activeMode = container.settingsRepository.authMode
             dictionaryPacks = container.dictionaryRepository.packs()
             dictionarySelection.normalize(using: dictionaryPacks)
+            refreshSpeechLanguages()
             await container.nip46Service.restore(from: container.settingsRepository)
             npub = NostrIdentity.npub(fromHex: container.settingsRepository.pubkeyHex ?? "") ?? ""
             activeMode = container.settingsRepository.authMode
+            refreshSpeechLanguages()
         }
     }
 
@@ -337,12 +337,20 @@ struct SettingsView: View {
         return code.uppercased()
     }
 
-    private var englishVoice: Binding<String> {
-        languageVoiceBinding("en")
+    private var speechVoiceAccessibilityID: String {
+        let base = SpeechLanguageSettings.baseLanguage(selectedSpeechLanguage)
+        return "speech-voice-\(base == "pt" ? "pt" : base)"
     }
 
-    private var portugueseVoice: Binding<String> {
-        languageVoiceBinding("pt-pt")
+    private func refreshSpeechLanguages() {
+        let shared = container.nostrSyncService.cachedFavorites(
+            seedBooks: container.catalogRepository.rememberedBooks()
+        )
+        let books = container.catalogRepository.downloadedBooks(externalFavorites: shared.external)
+        speechLanguages = SpeechLanguageSettings.languagesForBookCodes(books.compactMap(\.language))
+        if !speechLanguages.contains(selectedSpeechLanguage) {
+            selectedSpeechLanguage = speechLanguages.first ?? "en"
+        }
     }
 
     private func languageVoiceBinding(_ language: String) -> Binding<String> {
@@ -360,6 +368,14 @@ struct SettingsView: View {
                 if $0.quality != $1.quality { return $0.quality.rawValue > $1.quality.rawValue }
                 return $0.name < $1.name
             }
+    }
+
+    private func voicePickerLabel(_ voice: AVSpeechSynthesisVoice) -> String {
+        let base = SpeechLanguageSettings.baseLanguage(selectedSpeechLanguage)
+        if base == "pt" {
+            return "\(voice.name) · \(voice.language) · \(voiceQuality(voice))"
+        }
+        return "\(voice.name) · \(voiceQuality(voice))"
     }
 
     private func voiceQuality(_ voice: AVSpeechSynthesisVoice) -> String {

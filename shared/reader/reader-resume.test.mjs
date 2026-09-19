@@ -96,3 +96,8 @@ test('shared reader inline script parses as JavaScript', () => {
     assert.doesNotThrow(() => new Function(source));
   }
 });
+
+test('loadBookUrl forwards highlight kind into openBook', () => {
+  assert.match(reader, /window\.loadBookUrl = function\(url, cfi, theme, highlightCfi, bookId, highlightKind\)/);
+  assert.match(reader, /return openBook\(buffer, cfi, theme, highlightCfi, bookId, highlightKind \|\| null\);/);
+});

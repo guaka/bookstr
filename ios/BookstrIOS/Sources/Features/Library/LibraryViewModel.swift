@@ -71,15 +71,21 @@ final class LibraryViewModel: ObservableObject {
         let plan = LibraryForegroundLoadPlan.make(hasNostrIdentity: hasNostrIdentity)
         var debug: [String] = ["=== library load ==="]
 
-        var localBooks = container.catalogRepository.downloadedBooks()
-        localBooks.forEach { container.favoriteMetadataRepository.remember(book: $0) }
-        debug.append("downloaded books: \(localBooks.count)")
-        debug.append("words cached: \(container.vocabularyRepository.all().count)")
-
+        var localBooks: [CatalogBook]
         if plan.applyCachedFavorites {
-            let shared = container.nostrSyncService.cachedFavorites(seedBooks: localBooks)
+            let shared = container.nostrSyncService.cachedFavorites(
+                seedBooks: container.catalogRepository.rememberedBooks()
+            )
             localBooks = container.catalogRepository.downloadedBooks(externalFavorites: shared.external)
+            localBooks.forEach { container.favoriteMetadataRepository.remember(book: $0) }
+            debug.append("downloaded books: \(localBooks.count)")
+            debug.append("words cached: \(container.vocabularyRepository.all().count)")
             apply(shared: shared, seed: localBooks, container: container)
+        } else {
+            localBooks = container.catalogRepository.downloadedBooks()
+            localBooks.forEach { container.favoriteMetadataRepository.remember(book: $0) }
+            debug.append("downloaded books: \(localBooks.count)")
+            debug.append("words cached: \(container.vocabularyRepository.all().count)")
         }
 
         if plan.scheduleBackgroundNostrRefresh {
@@ -251,25 +257,33 @@ final class LibraryViewModel: ObservableObject {
         }
     }
 
-    static func filtered(_ books: [CatalogBook], by query: String) -> [CatalogBook] {
+    static func filtered(
+        _ books: [CatalogBook],
+        by query: String,
+        facets: BookListFacetFilters = BookListFacetFilters()
+    ) -> [CatalogBook] {
         let terms = filterTerms(query)
-        guard !terms.isEmpty else { return books }
         return books.filter { book in
-            matchesFilter(
-                terms,
-                values: [book.title, book.author, book.isbn, book.year, book.language, book.format.rawValue]
-            )
+            facets.matches(language: book.language, format: book.format.rawValue)
+                && (terms.isEmpty || matchesFilter(
+                    terms,
+                    values: [book.title, book.author, book.isbn, book.year, book.language, book.format.rawValue]
+                ))
         }
     }
 
-    static func filtered(_ favorites: [ExternalFavorite], by query: String) -> [ExternalFavorite] {
+    static func filtered(
+        _ favorites: [ExternalFavorite],
+        by query: String,
+        facets: BookListFacetFilters = BookListFacetFilters()
+    ) -> [ExternalFavorite] {
         let terms = filterTerms(query)
-        guard !terms.isEmpty else { return favorites }
         return favorites.filter { favorite in
-            matchesFilter(
-                terms,
-                values: [favorite.title, favorite.author, favorite.isbn, favorite.year, favorite.format]
-            )
+            facets.matches(language: nil, format: favorite.format)
+                && (terms.isEmpty || matchesFilter(
+                    terms,
+                    values: [favorite.title, favorite.author, favorite.isbn, favorite.year, favorite.format]
+                ))
         }
     }
 

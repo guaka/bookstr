@@ -112,7 +112,7 @@ final class ReaderPlaybackSessionTests: XCTestCase {
         ))
     }
 
-    func testPresentShowsReaderAndCloseWithoutSpeechTearsItDown() {
+    func testPresentShowsReaderAndCloseKeepsWarmCache() {
         let session = ReaderPlaybackSession()
         let book = Self.book("alice")
 
@@ -127,10 +127,11 @@ final class ReaderPlaybackSessionTests: XCTestCase {
 
         session.requestClose()
 
-        XCTAssertNil(session.item)
+        XCTAssertEqual(session.item?.book.id, "alice")
         XCTAssertFalse(session.isVisible)
         XCTAssertFalse(session.speechRetained)
         XCTAssertFalse(session.isSpeechPlaying)
+        XCTAssertFalse(session.showsBackgroundSpeechControl)
     }
 
     func testCloseWhileSpeechRetainedHidesReaderAndShowsHeaderControl() {
@@ -165,7 +166,7 @@ final class ReaderPlaybackSessionTests: XCTestCase {
         XCTAssertEqual(session.item?.book.id, "alice")
     }
 
-    func testSpeechEndingWhileHiddenClearsTheReader() {
+    func testSpeechEndingWhileHiddenKeepsWarmCache() {
         let session = ReaderPlaybackSession()
         session.present(book: Self.book("alice"))
         session.updateSpeechState(retained: true, playing: true)
@@ -173,7 +174,7 @@ final class ReaderPlaybackSessionTests: XCTestCase {
 
         session.updateSpeechState(retained: false, playing: false)
 
-        XCTAssertNil(session.item)
+        XCTAssertEqual(session.item?.book.id, "alice")
         XCTAssertFalse(session.isVisible)
         XCTAssertFalse(session.showsBackgroundSpeechControl)
         XCTAssertFalse(session.speechRetained)
@@ -207,6 +208,23 @@ final class ReaderPlaybackSessionTests: XCTestCase {
         XCTAssertEqual(session.presentationNonce, nonce)
         XCTAssertEqual(session.item?.initialLocator, "start")
         XCTAssertTrue(session.speechRetained)
+        XCTAssertFalse(session.showsBackgroundSpeechControl)
+    }
+
+    func testPresentingTheSameBookWhileWarmReopensWithoutRemounting() {
+        let session = ReaderPlaybackSession()
+        let book = Self.book("alice")
+        session.present(book: book, preparedURL: URL(string: "file:///tmp/alice.epub"), initialLocator: "start")
+        session.requestClose()
+        let nonce = session.presentationNonce
+
+        session.present(book: book, preparedURL: URL(string: "file:///tmp/alice-alt.epub"))
+
+        XCTAssertTrue(session.isVisible)
+        XCTAssertEqual(session.presentationNonce, nonce)
+        XCTAssertEqual(session.item?.initialLocator, "start")
+        XCTAssertEqual(session.item?.preparedURL, URL(string: "file:///tmp/alice-alt.epub"))
+        XCTAssertFalse(session.speechRetained)
         XCTAssertFalse(session.showsBackgroundSpeechControl)
     }
 

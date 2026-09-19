@@ -87,7 +87,13 @@ final class ReaderPlaybackSession: ObservableObject {
         highlightKind: ReaderHighlightKind? = nil,
         origin: ReaderPresentationOrigin = .user
     ) {
-        if item?.book.id == book.id, speechRetained {
+        // Keep the last opened book mounted so Continue / Back → reopen skips a
+        // cold WKWebView + EPUB decode. Remount when jumping to a highlight.
+        if var current = item, current.book.id == book.id, highlightLocator == nil, highlightKind == nil {
+            if let preparedURL {
+                current.preparedURL = preparedURL
+            }
+            item = current
             isVisible = true
             return
         }
@@ -109,30 +115,17 @@ final class ReaderPlaybackSession: ObservableObject {
     }
 
     func requestClose() {
-        if speechRetained {
-            isVisible = false
-            return
-        }
-        clear()
+        // Hide without tearing down so returning to the same book is instant.
+        isVisible = false
     }
 
     func updateSpeechState(retained: Bool, playing: Bool) {
         speechRetained = retained
         isSpeechPlaying = retained && playing
-        if !retained && !isVisible {
-            clear()
-        }
     }
 
     func toggleSpeech() {
         speechToggleToken += 1
         NotificationCenter.default.post(name: Self.toggleSpeechNotification, object: self)
-    }
-
-    private func clear() {
-        item = nil
-        isVisible = false
-        speechRetained = false
-        isSpeechPlaying = false
     }
 }
