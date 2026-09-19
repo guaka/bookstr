@@ -744,6 +744,9 @@ final class ReaderAssetContractTests: XCTestCase {
         XCTAssertTrue(source.contains("case \"/reader-typography.js\":"))
         XCTAssertTrue(source.contains("bundled(\"reader-typography\", extension: \"js\")"))
         XCTAssertTrue(source.contains("setReaderTypography(\\(font), \\(alignment), 0)"))
+        XCTAssertTrue(source.contains("loadBookUrl(\\(publicationURL)"))
+        XCTAssertTrue(source.contains("typeof window.loadBookUrl"))
+        XCTAssertFalse(source.contains("base64EncodedString()"))
         XCTAssertTrue(source.contains("window.setReaderTypography && window.setReaderTypography"))
         XCTAssertTrue(source.contains("window.requestSpeechText && window.requestSpeechText(true, \\(Self.js(requestID)), \\(Self.js(speechLocator)))"))
         XCTAssertTrue(source.contains("func speakFromLocator"))
@@ -829,6 +832,14 @@ final class ReaderAssetContractTests: XCTestCase {
         XCTAssertTrue(rootSource.contains("playback.item"))
         XCTAssertTrue(rootSource.contains("showsReaderChrome: playback.isVisible"))
         XCTAssertTrue(rootSource.contains("playback.requestClose()"))
+        let warmPlaybackURL = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent("Sources/Features/Reader/ReaderPlaybackSession.swift")
+        let warmPlayback = try String(contentsOf: warmPlaybackURL, encoding: .utf8)
+        XCTAssertTrue(warmPlayback.contains("Hide without tearing down"))
+        XCTAssertTrue(warmPlayback.contains("highlightLocator == nil, highlightKind == nil"))
+        XCTAssertFalse(warmPlayback.contains("private func clear()"))
         XCTAssertFalse(rootSource.contains("fullScreenCover(item: $continuation)"))
         XCTAssertTrue(source.contains("ReaderSpeechRetention.isRetained"))
         XCTAssertTrue(source.contains("refreshSpeechRetention()"))
@@ -908,6 +919,27 @@ final class ReaderAssetContractTests: XCTestCase {
         XCTAssertTrue(sessionSource.contains(".userInitiated"))
     }
 
+    
+    func testLibraryAndSearchExposeLanguageAndFormatFilters() throws {
+        let libraryURL = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent("Sources/Features/Library/LibraryView.swift")
+        let library = try String(contentsOf: libraryURL, encoding: .utf8)
+        XCTAssertTrue(library.contains("library-language-filter"))
+        XCTAssertTrue(library.contains("library-format-filter"))
+        XCTAssertTrue(library.contains("BookListFacetFilters"))
+
+        let searchURL = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent("Sources/Features/Search/SearchView.swift")
+        let search = try String(contentsOf: searchURL, encoding: .utf8)
+        XCTAssertTrue(search.contains("search-language-filter"))
+        XCTAssertTrue(search.contains("search-format-filter"))
+        XCTAssertTrue(search.contains("BookListFacetFilters"))
+    }
+
     func testSettingsExposesSpeechLogsAndStableRelayIdentifiers() throws {
         let settingsURL = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
@@ -917,6 +949,8 @@ final class ReaderAssetContractTests: XCTestCase {
         XCTAssertTrue(settings.contains("accessibilityIdentifier(\"speech-debug-logs\")"))
         XCTAssertTrue(settings.contains("accessibilityIdentifier(\"settings-relays-editor\")"))
         XCTAssertTrue(settings.contains("accessibilityIdentifier(\"settings-save-relays\")"))
+        XCTAssertTrue(settings.contains("accessibilityIdentifier(\"speech-language\")"))
+        XCTAssertTrue(settings.contains("SpeechLanguageSettings.languagesForBookCodes"))
         XCTAssertTrue(settings.contains("SpeechDebugLogView()"))
         let relaysIndex = try XCTUnwrap(settings.range(of: "settings-relays-editor")?.lowerBound)
         let logsIndex = try XCTUnwrap(settings.range(of: "speech-debug-logs")?.lowerBound)
@@ -933,6 +967,7 @@ final class ReaderAssetContractTests: XCTestCase {
             .deletingLastPathComponent()
             .appendingPathComponent("UITests/AppShellUITests.swift")
         let uiTest = try String(contentsOf: uiTestURL, encoding: .utf8)
+        XCTAssertTrue(uiTest.contains("speech-language"))
         XCTAssertTrue(uiTest.contains("systemDefaultChoice.tap()"))
         XCTAssertTrue(uiTest.contains("Settings did not return from the English voice picker"))
     }

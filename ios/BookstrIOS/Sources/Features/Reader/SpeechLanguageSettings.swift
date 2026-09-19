@@ -130,6 +130,33 @@ enum SpeechLanguageSettings {
         preferredLanguageTag(languageTag).split(separator: "-").first.map(String.init) ?? "en"
     }
 
+    /// Languages available for TTS settings: always include English and Portuguese,
+    /// plus every language present on the user's books/favorites.
+    static func languagesForBookCodes(_ codes: [String]) -> [String] {
+        var seen = Set<String>()
+        var ordered: [String] = []
+        for raw in codes + ["en", "pt"] {
+            let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else { continue }
+            let tag = preferredLanguageTag(trimmed)
+            let base = baseLanguage(tag)
+            guard seen.insert(base).inserted else { continue }
+            ordered.append(base == "pt" ? "pt-pt" : base)
+        }
+        return ordered.sorted {
+            displayName(for: $0).localizedCaseInsensitiveCompare(displayName(for: $1)) == .orderedAscending
+        }
+    }
+
+    static func displayName(for languageTag: String) -> String {
+        let tag = preferredLanguageTag(languageTag)
+        let base = baseLanguage(tag)
+        if let name = Locale.current.localizedString(forLanguageCode: base), !name.isEmpty {
+            return name
+        }
+        return base.uppercased()
+    }
+
     static func decodeSettings(_ data: Data?) -> [String: SpeechLanguageSetting] {
         guard let data, !data.isEmpty else { return [:] }
         return (try? JSONDecoder().decode([String: SpeechLanguageSetting].self, from: data)) ?? [:]

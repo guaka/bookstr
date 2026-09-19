@@ -170,4 +170,14 @@ final class SpeechLanguageSettingsTests: XCTestCase {
         XCTAssertEqual(SpeechLanguageSettings.decodeSettings(Data()), [:])
         XCTAssertEqual(SpeechLanguageSettings.decodeSettings(Data("not-json".utf8)), [:])
     }
+
+    func testLanguagesForBookCodesUniquesLibraryLanguagesAndKeepsEnglishPortuguese() {
+        let languages = SpeechLanguageSettings.languagesForBookCodes(["fr", "en-US", "pt-BR", "fr-FR", ""])
+        XCTAssertEqual(Set(languages), Set(["en", "fr", "pt-pt"]))
+        XCTAssertEqual(languages, languages.sorted {
+            SpeechLanguageSettings.displayName(for: $0)
+                .localizedCaseInsensitiveCompare(SpeechLanguageSettings.displayName(for: $1)) == .orderedAscending
+        })
+        XCTAssertFalse(SpeechLanguageSettings.displayName(for: "fr").isEmpty)
+    }
 }

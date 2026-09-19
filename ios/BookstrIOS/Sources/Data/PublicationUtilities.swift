@@ -8,6 +8,12 @@ import zlib
 #endif
 import ImageIO
 import PDFKit
+#if canImport(UIKit)
+import UIKit
+#endif
+#if canImport(AppKit)
+import AppKit
+#endif
 
 enum PublicationUtilities {
     static let blossomHost = "blossom.bfr.ee"
@@ -57,16 +63,43 @@ enum PublicationUtilities {
             )
             if let entry, let cover = validatedCover(entry.data) { return cover }
         }
+        // Broader basename heuristics used by many older EPUBs.
         let entry = firstZIPEntry(
             in: data, limit: maxEPUBEntries,
             where: { name in
                 let base = name.split(separator: "/").last.map(String.init)?.lowercased() ?? ""
-                return ["cover.jpg", "cover.jpeg", "cover.png", "cover.gif"].contains(base)
+                if ["cover.jpg", "cover.jpeg", "cover.png", "cover.gif", "cover.webp"].contains(base) {
+                    return true
+                }
+                let stem = base.split(separator: ".").first.map(String.init) ?? ""
+                return stem == "cover" || stem.hasPrefix("cover_") || stem.hasSuffix("_cover")
+                    || stem.hasPrefix("cover-") || stem.hasSuffix("-cover")
             },
             maxBytes: maxCoverBytes
         )
         guard let entry else { return nil }
         return validatedCover(entry.data)
+    }
+
+    /// Renders the first page of a local PDF as a JPEG thumbnail.
+    static func pdfCover(fileURL: URL) -> EmbeddedCover? {
+        guard let document = PDFDocument(url: fileURL),
+              let page = document.page(at: 0) else { return nil }
+        let bounds = page.bounds(for: .mediaBox)
+        guard bounds.width > 1, bounds.height > 1 else { return nil }
+        let maxEdge: CGFloat = 512
+        let scale = min(maxEdge / bounds.width, maxEdge / bounds.height, 1)
+        let size = CGSize(width: bounds.width * scale, height: bounds.height * scale)
+        let image = page.thumbnail(of: size, for: .mediaBox)
+#if canImport(UIKit)
+        guard let data = image.jpegData(compressionQuality: 0.82), !data.isEmpty else { return nil }
+#else
+        guard let tiff = image.tiffRepresentation,
+              let rep = NSBitmapImageRep(data: tiff),
+              let data = rep.representation(using: .jpeg, properties: [.compressionFactor: 0.82]),
+              !data.isEmpty else { return nil }
+#endif
+        return EmbeddedCover(data: data, pathExtension: "jpg")
     }
 
     /// One defensive pass over the ZIP central directory returning the first
@@ -114,30 +147,33 @@ enum PublicationUtilities {
             let localOffset = Int(readUInt32(data, entry + 42))
             let nameStart = entry + 46
             let next = nameStart + nameLength + extraLength + commentLength
-            guard nameLength > 0, next <= directoryEnd,
-                  let name = String(data: data[nameStart..<(nameStart + nameLength)], encoding: .utf8)
-            else { return nil }
+            guard nameLength > 0, next <= directoryEnd else { return nil }
+            let nameData = data[nameStart..<(nameStart + nameLength)]
+            let name = String(data: nameData, encoding: .utf8)
+                ?? String(data: nameData, encoding: .isoLatin1)
             entry = next
+            guard let name else { continue }
 
             let normalized = name.replacingOccurrences(of: "\\", with: "/")
             guard !normalized.hasPrefix("/"),
-                  !normalized.split(separator: "/").contains("..") else { return nil }
+                  !normalized.split(separator: "/").contains("..") else { continue }
             guard matches(normalized) else { continue }
             guard flags & 0x0001 == 0, method == 0 || method == 8,
                   compressedSize > 0, compressedSize <= maxBytes,
                   uncompressedSize > 0, uncompressedSize <= maxBytes,
                   localOffset >= 0, localOffset + 30 <= data.count,
-                  readUInt32(data, data.startIndex + localOffset) == 0x04034b50 else { return nil }
+                  readUInt32(data, data.startIndex + localOffset) == 0x04034b50 else { continue }
             let localNameLength = Int(readUInt16(data, data.startIndex + localOffset + 26))
             let localExtraLength = Int(readUInt16(data, data.startIndex + localOffset + 28))
             let payload = data.startIndex + localOffset + 30 + localNameLength + localExtraLength
-            guard payload + compressedSize <= data.endIndex else { return nil }
+            guard payload + compressedSize <= data.endIndex else { continue }
             let compressed = Data(data[payload..<(payload + compressedSize)])
             if method == 0 {
-                return compressedSize == uncompressedSize ? (normalized, compressed) : nil
+                if compressedSize == uncompressedSize { return (normalized, compressed) }
+                continue
             }
             guard let inflated = inflateRawDeflate(compressed, expectedSize: uncompressedSize) else {
-                return nil
+                continue
             }
             return (normalized, inflated)
         }
@@ -215,18 +251,29 @@ enum PublicationUtilities {
 
     private final class EPUBPackageParser: NSObject, XMLParserDelegate {
         private struct Item {
+            let id: String
             let href: String
             let properties: String
+            let mediaType: String
         }
 
         private var items: [String: Item] = [:]
         private var coverMetaID: String?
+        private var guideCoverHref: String?
 
         var coverHref: String? {
             if let item = items.values.first(where: {
                 $0.properties.split(separator: " ").contains("cover-image")
             }) { return item.href }
             if let id = coverMetaID, let item = items[id] { return item.href }
+            if let guideCoverHref, !guideCoverHref.isEmpty { return guideCoverHref }
+            if let item = items.values.first(where: { candidate in
+                let id = candidate.id.lowercased()
+                let href = candidate.href.lowercased()
+                let media = candidate.mediaType.lowercased()
+                guard media.hasPrefix("image/") else { return false }
+                return id.contains("cover") || href.contains("cover")
+            }) { return item.href }
             return nil
         }
 
@@ -236,14 +283,21 @@ enum PublicationUtilities {
             case "item":
                 guard let id = attributeDict["id"], !id.isEmpty else { return }
                 items[id] = Item(
+                    id: id,
                     href: attributeDict["href"] ?? "",
-                    properties: attributeDict["properties"] ?? ""
+                    properties: attributeDict["properties"] ?? "",
+                    mediaType: attributeDict["media-type"] ?? ""
                 )
             case "meta":
                 guard coverMetaID == nil,
                       attributeDict["name"]?.lowercased() == "cover",
                       let content = attributeDict["content"], !content.isEmpty else { return }
                 coverMetaID = content
+            case "reference":
+                guard guideCoverHref == nil,
+                      attributeDict["type"]?.lowercased() == "cover",
+                      let href = attributeDict["href"], !href.isEmpty else { return }
+                guideCoverHref = href
             default:
                 break
             }

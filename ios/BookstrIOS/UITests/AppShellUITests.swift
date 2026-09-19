@@ -177,11 +177,28 @@ final class AppShellUITests: XCTestCase {
         selectTab("Settings")
 
         let englishVoice = app.descendants(matching: .any)["speech-voice-en"]
-        let portugueseVoice = app.descendants(matching: .any)["speech-voice-pt"]
+        let speechLanguage = app.descendants(matching: .any)["speech-language"]
+        XCTAssertTrue(speechLanguage.waitForExistence(timeout: 5), "Settings did not expose the speech language picker")
         XCTAssertTrue(englishVoice.waitForExistence(timeout: 5), "Settings did not expose the English voice picker")
-        XCTAssertTrue(portugueseVoice.waitForExistence(timeout: 5), "Settings did not expose the Portuguese voice picker")
         XCTAssertTrue(app.descendants(matching: .any)["reader-font"].waitForExistence(timeout: 4))
         XCTAssertTrue(app.descendants(matching: .any)["reader-alignment"].waitForExistence(timeout: 4))
+        reveal(speechLanguage)
+        if speechLanguage.isHittable {
+            speechLanguage.tap()
+            let portugueseChoice = pickerChoice("Portuguese")
+            if portugueseChoice.waitForExistence(timeout: 4) {
+                portugueseChoice.tap()
+                let portugueseVoice = app.descendants(matching: .any)["speech-voice-pt"]
+                XCTAssertTrue(portugueseVoice.waitForExistence(timeout: 4), "Settings did not expose the Portuguese voice picker")
+            }
+            if speechLanguage.isHittable {
+                speechLanguage.tap()
+                let englishChoice = pickerChoice("English")
+                if englishChoice.waitForExistence(timeout: 4) {
+                    englishChoice.tap()
+                }
+            }
+        }
         reveal(englishVoice)
         if englishVoice.isHittable {
             englishVoice.tap()

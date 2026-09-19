@@ -1019,20 +1019,21 @@ struct EPUBReaderView: UIViewRepresentable {
             let font = EPUBReaderController.js(container.settingsRepository.readerFont.rawValue)
             let alignment = EPUBReaderController.js(container.settingsRepository.readerAlignment.rawValue)
             let bookID = EPUBReaderController.js(book.id)
-            guard let publicationData = try? Data(contentsOf: fileURL, options: .mappedIfSafe),
-                  !publicationData.isEmpty else {
+            // Prefer loadBookUrl over base64 so we skip encoding multi-MB EPUBs into
+            // a JavaScript string; the scheme handler already serves current.epub.
+            guard FileManager.default.fileExists(atPath: fileURL.path) else {
                 controller.errorMessage = "Could not read the downloaded EPUB."
                 return
             }
-            let publication = EPUBReaderController.js(publicationData.base64EncodedString())
+            let publicationURL = EPUBReaderController.js("bookstr-reader://app/books/current.epub")
             let knownWords = container.vocabularyRepository.all().map(\.word)
             let knownData = (try? JSONSerialization.data(withJSONObject: knownWords)) ?? Data("[]".utf8)
             let knownJSON = String(data: knownData, encoding: .utf8) ?? "[]"
             let knownArgument = EPUBReaderController.js(knownJSON)
             let loadScript = "setReaderTheme(\(theme)); setReaderTypography(\(font), \(alignment), 0); setKnownWords(\(knownArgument)); " +
-                "loadBook(\(publication), \(cfi), \(theme), \(highlight), \(bookID), \(highlightKind)); null;"
+                "loadBookUrl(\(publicationURL), \(cfi), \(theme), \(highlight), \(bookID), \(highlightKind)); null;"
             webView.evaluateJavaScript(
-                "[typeof window.loadBook, typeof window.ePub, typeof window.JSZip, " +
+                "[typeof window.loadBookUrl, typeof window.ePub, typeof window.JSZip, " +
                     "typeof window.BookstrSpeech?.buildPlan].join('|')"
             ) {
                 [weak controller, weak webView] value, error in

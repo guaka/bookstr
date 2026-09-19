@@ -9,11 +9,31 @@ struct LibraryView: View {
     @State private var rightsDetails: RightsDetailsItem?
     @State private var libraryFilter = ""
     @AppStorage("library_sort") private var selectedSort = LibrarySort.recent
+    @AppStorage("library_filter_language") private var selectedLanguage = ""
+    @AppStorage("library_filter_format") private var selectedFormat = ""
 
     var body: some View {
-        let filteredReading = LibraryViewModel.filtered(viewModel.reading, by: libraryFilter)
-        let filteredFavorites = LibraryViewModel.filtered(viewModel.favorites, by: libraryFilter)
-        let filteredExternalFavorites = LibraryViewModel.filtered(viewModel.externalFavorites, by: libraryFilter)
+        let languageOptions = BookListFacetFilters.languages(
+            from: viewModel.reading.map(\.language) + viewModel.favorites.map(\.language)
+        )
+        let formatOptions = BookListFacetFilters.formats(
+            from: viewModel.reading.map { $0.format.rawValue }
+                + viewModel.favorites.map { $0.format.rawValue }
+                + viewModel.externalFavorites.map(\.format)
+        )
+        var facets = BookListFacetFilters(language: selectedLanguage, format: selectedFormat)
+        facets.sanitize(languages: languageOptions, formats: formatOptions)
+        let activeFacets = facets
+
+        let filteredReading = LibraryViewModel.filtered(
+            viewModel.reading, by: libraryFilter, facets: activeFacets
+        )
+        let filteredFavorites = LibraryViewModel.filtered(
+            viewModel.favorites, by: libraryFilter, facets: activeFacets
+        )
+        let filteredExternalFavorites = LibraryViewModel.filtered(
+            viewModel.externalFavorites, by: libraryFilter, facets: activeFacets
+        )
         let sortedReading = LibraryViewModel.sorted(
             filteredReading, by: selectedSort, progress: viewModel.progress
         )
@@ -120,6 +140,38 @@ struct LibraryView: View {
             prompt: "Filter books"
         )
         .toolbar {
+            if languageOptions.count > 1 {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Menu {
+                        Picker("Language", selection: $selectedLanguage) {
+                            Text("All languages").tag("")
+                            ForEach(languageOptions, id: \.self) { language in
+                                Text(BookListFacetFilters.displayLabel(for: language)).tag(language)
+                            }
+                        }
+                    } label: {
+                        Image(systemName: selectedLanguage.isEmpty ? "globe" : "globe.badge.chevron.backward")
+                    }
+                    .accessibilityLabel("Filter by language")
+                    .accessibilityIdentifier("library-language-filter")
+                }
+            }
+            if formatOptions.count > 1 {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Menu {
+                        Picker("Format", selection: $selectedFormat) {
+                            Text("All formats").tag("")
+                            ForEach(formatOptions, id: \.self) { format in
+                                Text(BookListFacetFilters.displayLabel(for: format)).tag(format)
+                            }
+                        }
+                    } label: {
+                        Image(systemName: selectedFormat.isEmpty ? "doc" : "doc.badge.ellipsis")
+                    }
+                    .accessibilityLabel("Filter by format")
+                    .accessibilityIdentifier("library-format-filter")
+                }
+            }
             ToolbarItem(placement: .topBarTrailing) {
                 Menu {
                     Picker("Sort books", selection: $selectedSort) {
@@ -132,6 +184,16 @@ struct LibraryView: View {
                 }
                 .accessibilityLabel("Sort books")
                 .accessibilityIdentifier("library-sort")
+            }
+        }
+        .onChange(of: languageOptions) { _, options in
+            if !selectedLanguage.isEmpty, !options.contains(selectedLanguage) {
+                selectedLanguage = ""
+            }
+        }
+        .onChange(of: formatOptions) { _, options in
+            if !selectedFormat.isEmpty, !options.contains(selectedFormat) {
+                selectedFormat = ""
             }
         }
         .onChange(of: playback.isVisible) { _, visible in

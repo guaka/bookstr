@@ -19,14 +19,26 @@ struct SearchView: View {
     @State private var favoriteBusyID: String?
     @State private var actionMessage: String?
     @State private var rightsDetails: RightsDetailsItem?
+    @AppStorage("search_filter_language") private var selectedLanguage = ""
+    @AppStorage("search_filter_format") private var selectedFormat = ""
 
     var body: some View {
-        Group {
+        let languageOptions = BookListFacetFilters.languages(from: results.map(\.language))
+        let formatOptions = BookListFacetFilters.formats(from: results.map { $0.format?.rawValue })
+        var facets = BookListFacetFilters(language: selectedLanguage, format: selectedFormat)
+        facets.sanitize(languages: languageOptions, formats: formatOptions)
+        let visibleResults = results.filter {
+            facets.matches(language: $0.language, format: $0.format?.rawValue)
+        }
+
+        return Group {
             if results.isEmpty {
                 ContentUnavailableView("Search books", systemImage: "magnifyingglass", description: Text(message ?? "Title, author, ISBN, publisher"))
+            } else if visibleResults.isEmpty {
+                ContentUnavailableView("No matches", systemImage: "line.3.horizontal.decrease.circle", description: Text("No results match the selected filters."))
             } else {
                 List {
-                  ForEach(results) { result in
+                  ForEach(visibleResults) { result in
                     HStack(alignment: .top, spacing: 10) {
                         Button { Task { await open(result) } } label: {
                             BookListDetails(title: result.title, author: result.author, year: result.year,
@@ -86,9 +98,53 @@ struct SearchView: View {
         .onDisappear { searchTask?.cancel() }
         .overlay { if searching { ProgressView().allowsHitTesting(false) } }
         .toolbar {
-            Button { showingDownloads = true } label: { Image(systemName: "arrow.down.circle") }
-                .accessibilityLabel("Downloads")
-                .accessibilityIdentifier("search.downloads")
+            if languageOptions.count > 1 {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Menu {
+                        Picker("Language", selection: $selectedLanguage) {
+                            Text("All languages").tag("")
+                            ForEach(languageOptions, id: \.self) { language in
+                                Text(BookListFacetFilters.displayLabel(for: language)).tag(language)
+                            }
+                        }
+                    } label: {
+                        Image(systemName: selectedLanguage.isEmpty ? "globe" : "globe.badge.chevron.backward")
+                    }
+                    .accessibilityLabel("Filter by language")
+                    .accessibilityIdentifier("search-language-filter")
+                }
+            }
+            if formatOptions.count > 1 {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Menu {
+                        Picker("Format", selection: $selectedFormat) {
+                            Text("All formats").tag("")
+                            ForEach(formatOptions, id: \.self) { format in
+                                Text(BookListFacetFilters.displayLabel(for: format)).tag(format)
+                            }
+                        }
+                    } label: {
+                        Image(systemName: selectedFormat.isEmpty ? "doc" : "doc.badge.ellipsis")
+                    }
+                    .accessibilityLabel("Filter by format")
+                    .accessibilityIdentifier("search-format-filter")
+                }
+            }
+            ToolbarItem(placement: .topBarTrailing) {
+                Button { showingDownloads = true } label: { Image(systemName: "arrow.down.circle") }
+                    .accessibilityLabel("Downloads")
+                    .accessibilityIdentifier("search.downloads")
+            }
+        }
+        .onChange(of: languageOptions) { _, options in
+            if !selectedLanguage.isEmpty, !options.contains(selectedLanguage) {
+                selectedLanguage = ""
+            }
+        }
+        .onChange(of: formatOptions) { _, options in
+            if !selectedFormat.isEmpty, !options.contains(selectedFormat) {
+                selectedFormat = ""
+            }
         }
         .sheet(isPresented: $showingDownloads) {
             DownloadsPane(queue: container.downloads)

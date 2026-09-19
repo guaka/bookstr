@@ -1,4 +1,5 @@
 import XCTest
+import PDFKit
 @testable import BookstrLogic
 
 final class BookCoverTests: XCTestCase {
@@ -87,6 +88,59 @@ final class BookCoverTests: XCTestCase {
         XCTAssertNil(cover)
     }
 
+    func testFallsBackToCoverPrefixedBasename() throws {
+        let opf = #"<?xml version="1.0"?><package xmlns="http://www.idpf.org/2007/opf" version="3.0"><metadata/>"# +
+            #"<manifest><item id="chapter" href="chapter.xhtml" media-type="application/xhtml+xml"/></manifest>"# +
+            #"<spine/></package>"#
+        let cover = try epubCover(entries: [
+            ("META-INF/container.xml", containerXML(rootPath: "OEBPS/content.opf")),
+            ("OEBPS/content.opf", Data(opf.utf8)),
+            ("OEBPS/chapter.xhtml", Data("<html/>".utf8)),
+            ("OEBPS/images/cover_front.jpg", png),
+        ])
+        XCTAssertEqual(cover?.data, png)
+    }
+
+    func testExtractsGuideCoverReference() throws {
+        let opf = #"<?xml version="1.0"?><package xmlns="http://www.idpf.org/2007/opf" version="2.0"><metadata/>"# +
+            #"<manifest><item id="cover" href="images/front.png" media-type="image/png"/>"# +
+            #"<item id="chapter" href="chapter.xhtml" media-type="application/xhtml+xml"/></manifest>"# +
+            #"<spine/><guide><reference type="cover" title="Cover" href="images/front.png"/></guide></package>"#
+        let cover = try epubCover(entries: [
+            ("META-INF/container.xml", containerXML(rootPath: "OEBPS/content.opf")),
+            ("OEBPS/content.opf", Data(opf.utf8)),
+            ("OEBPS/chapter.xhtml", Data("<html/>".utf8)),
+            ("OEBPS/images/front.png", png),
+        ])
+        XCTAssertEqual(cover?.data, png)
+    }
+
+    func testExtractsManifestItemNamedCoverWithoutProperties() throws {
+        let opf = #"<?xml version="1.0"?><package xmlns="http://www.idpf.org/2007/opf" version="2.0"><metadata/>"# +
+            #"<manifest><item id="cover-image" href="art/jacket.jpg" media-type="image/jpeg"/>"# +
+            #"<item id="chapter" href="chapter.xhtml" media-type="application/xhtml+xml"/></manifest>"# +
+            #"<spine/></package>"#
+        let cover = try epubCover(entries: [
+            ("META-INF/container.xml", containerXML(rootPath: "OEBPS/content.opf")),
+            ("OEBPS/content.opf", Data(opf.utf8)),
+            ("OEBPS/chapter.xhtml", Data("<html/>".utf8)),
+            ("OEBPS/art/jacket.jpg", png),
+        ])
+        XCTAssertEqual(cover?.data, png)
+    }
+
+    func testPDFCoverRendersFirstPage() throws {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("cover-test-\(UUID().uuidString).pdf")
+        let document = PDFDocument()
+        let page = PDFPage()
+        document.insert(page, at: 0)
+        XCTAssertTrue(document.write(to: url))
+        defer { try? FileManager.default.removeItem(at: url) }
+        XCTAssertNotNil(PublicationUtilities.pdfCover(fileURL: url))
+    }
+
+#if !SWIFT_PACKAGE
     func testCatalogBookCoverUrlCanBeStampedIncludingNegativeCache() {
         var book = CatalogBook(
             id: "abc", title: "T", author: "A", epubUrl: "https://example.com/a.epub",
@@ -123,6 +177,7 @@ final class BookCoverTests: XCTestCase {
         XCTAssertFalse(CatalogRepository.hasUsableCover(negative))
         XCTAssertFalse(CatalogRepository.hasUsableCover(unscanned))
     }
+#endif
 
     func testBookstrTagCoverSlotRoundTrip() {
         let cover = "https://lib.b.bfr.ee/api/covers/abc123"
