@@ -61,10 +61,15 @@ final class SettingsRepository: ObservableObject {
     }
 
     func speechChoice(for bookLanguage: String) -> SpeechPlaybackChoice {
-        SpeechLanguageSettings.resolve(
+        let resolved = SpeechLanguageSettings.resolve(
             bookLanguage: bookLanguage,
             settingsByLanguage: speechLanguageSettings,
-            defaultRate: speechRate
+            defaultRate: SpeechLanguageSettings.defaultRate
+        )
+        return SpeechPlaybackChoice(
+            languageTag: resolved.languageTag,
+            voiceIdentifier: resolved.voiceIdentifier,
+            rate: SpeechLanguageSettings.defaultRate
         )
     }
 
@@ -88,10 +93,12 @@ final class SettingsRepository: ObservableObject {
         self.readerFont = ReaderFont(rawValue: defaults.string(forKey: Keys.readerFont) ?? "") ?? .arial
         self.readerAlignment = ReaderAlignment(rawValue: defaults.string(forKey: Keys.readerAlignment) ?? "") ?? .justified
         self.speechVoiceIdentifier = defaults.string(forKey: Keys.speechVoice) ?? ""
-        self.speechLanguageSettings = SpeechLanguageSettings.migrateLegacyEngine(
-            defaults.string(forKey: Keys.speechEngine),
-            into: SpeechLanguageSettings.decodeSettings(
-                defaults.data(forKey: Keys.speechLanguageSettings)
+        self.speechLanguageSettings = SpeechLanguageSettings.canonicalizeSettingsKeys(
+            SpeechLanguageSettings.migrateLegacyEngine(
+                defaults.string(forKey: Keys.speechEngine),
+                into: SpeechLanguageSettings.decodeSettings(
+                    defaults.data(forKey: Keys.speechLanguageSettings)
+                )
             )
         )
         let savedRate = defaults.double(forKey: Keys.speechRate)

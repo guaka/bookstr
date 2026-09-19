@@ -34,9 +34,10 @@ enum PublicationUtilities {
     }
 
     /// Extracts the cover image from a local EPUB: the EPUB3 `cover-image`
-    /// manifest property, the EPUB2 `<meta name="cover">` convention, or a
-    /// conventional `cover.<ext>` entry. Returns nil when the archive has no
-    /// decodable image in any of those slots.
+    /// manifest property, the EPUB2 `<meta name="cover">` convention, a
+    /// cover XHTML that references an image, conventional `cover.<ext>`
+    /// basenames, or finally the first decodable raster image in the archive.
+    /// Returns nil when the archive has no usable raster cover.
     static func epubCover(fileURL: URL) -> EmbeddedCover? {
         guard let data = try? Data(contentsOf: fileURL, options: [.mappedIfSafe]), data.count >= 22 else {
             return nil
@@ -46,25 +47,26 @@ enum PublicationUtilities {
             where: { $0.lowercased() == "meta-inf/container.xml" },
             maxBytes: maxComicMetadataBytes
         )
+        var opfPath: String?
+        var package: EPUBPackageParser?
         if let container, isPlainXML(container.data),
-           let opfPath = containerRootFilePath(container.data),
+           let root = containerRootFilePath(container.data),
            let opf = firstZIPEntry(
                in: data, limit: maxEPUBEntries,
-               where: { $0 == opfPath || $0.lowercased() == opfPath.lowercased() },
+               where: { $0 == root || $0.lowercased() == root.lowercased() },
                maxBytes: maxComicMetadataBytes
            ),
-           isPlainXML(opf.data), let href = packageCoverHref(opf.data) {
-            let resolved = resolveEPUBPath(href, relativeTo: opfPath)
-            let lowered = resolved.lowercased()
-            let entry = firstZIPEntry(
-                in: data, limit: maxEPUBEntries,
-                where: { $0 == resolved || $0.lowercased() == lowered },
-                maxBytes: maxCoverBytes
-            )
-            if let entry, let cover = validatedCover(entry.data) { return cover }
+           isPlainXML(opf.data) {
+            opfPath = root
+            package = parseEPUBPackage(opf.data)
+            for href in package?.coverCandidateHrefs ?? [] {
+                if let cover = coverFromPackageHref(href, opfPath: root, archive: data) {
+                    return cover
+                }
+            }
         }
         // Broader basename heuristics used by many older EPUBs.
-        let entry = firstZIPEntry(
+        let named = firstZIPEntry(
             in: data, limit: maxEPUBEntries,
             where: { name in
                 let base = name.split(separator: "/").last.map(String.init)?.lowercased() ?? ""
@@ -77,8 +79,82 @@ enum PublicationUtilities {
             },
             maxBytes: maxCoverBytes
         )
-        guard let entry else { return nil }
-        return validatedCover(entry.data)
+        if let named, let cover = validatedCover(named.data) { return cover }
+
+        // Calibre / libgen often ship ISBN-named jackets referenced only from
+        // cover.xhtml. Prefer manifest image items, then any raster ZIP entry.
+        if let opfPath, let package {
+            for href in package.imageHrefs {
+                if let cover = coverFromPackageHref(href, opfPath: opfPath, archive: data) {
+                    return cover
+                }
+            }
+        }
+        let raster = firstZIPEntry(
+            in: data, limit: maxEPUBEntries,
+            where: { name in
+                let base = name.split(separator: "/").last.map(String.init)?.lowercased() ?? ""
+                return base.hasSuffix(".jpg") || base.hasSuffix(".jpeg") || base.hasSuffix(".png")
+                    || base.hasSuffix(".gif") || base.hasSuffix(".webp")
+            },
+            maxBytes: maxCoverBytes
+        )
+        guard let raster else { return nil }
+        return validatedCover(raster.data)
+    }
+
+    private static func coverFromPackageHref(_ href: String, opfPath: String, archive: Data) -> EmbeddedCover? {
+        let resolved = resolveEPUBPath(href, relativeTo: opfPath)
+        let lowered = resolved.lowercased()
+        guard let entry = firstZIPEntry(
+            in: archive, limit: maxEPUBEntries,
+            where: { $0 == resolved || $0.lowercased() == lowered },
+            maxBytes: maxCoverBytes
+        ) else { return nil }
+        if let cover = validatedCover(entry.data) { return cover }
+        // Cover slot often points at an XHTML wrapper; follow its first image.
+        guard isPlainXML(entry.data), let nested = coverImageHref(inXHTML: entry.data) else { return nil }
+        let nestedPath = resolveEPUBPath(nested, relativeTo: resolved)
+        let nestedLower = nestedPath.lowercased()
+        guard let image = firstZIPEntry(
+            in: archive, limit: maxEPUBEntries,
+            where: { $0 == nestedPath || $0.lowercased() == nestedLower },
+            maxBytes: maxCoverBytes
+        ) else { return nil }
+        return validatedCover(image.data)
+    }
+
+    /// Pulls the first `src` / `xlink:href` pointing at a raster image from a
+    /// cover HTML/SVG document.
+    private static func coverImageHref(inXHTML data: Data) -> String? {
+        let source = String(decoding: data, as: UTF8.self)
+        let pattern = #"(?:src|xlink:href)\s*=\s*["']([^"']+)["']"#
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else {
+            return nil
+        }
+        let range = NSRange(source.startIndex..<source.endIndex, in: source)
+        for match in regex.matches(in: source, options: [], range: range) {
+            guard match.numberOfRanges > 1,
+                  let hrefRange = Range(match.range(at: 1), in: source) else { continue }
+            let href = String(source[hrefRange]).trimmingCharacters(in: .whitespacesAndNewlines)
+            let path = href.split(separator: "#", maxSplits: 1).first.map(String.init) ?? href
+            let lower = path.lowercased()
+            if lower.hasSuffix(".jpg") || lower.hasSuffix(".jpeg") || lower.hasSuffix(".png")
+                || lower.hasSuffix(".gif") || lower.hasSuffix(".webp") {
+                return path
+            }
+        }
+        return nil
+    }
+
+    private static func parseEPUBPackage(_ data: Data) -> EPUBPackageParser? {
+        let delegate = EPUBPackageParser()
+        let parser = XMLParser(data: data)
+        parser.delegate = delegate
+        parser.shouldProcessNamespaces = true
+        parser.shouldResolveExternalEntities = false
+        guard parser.parse() else { return nil }
+        return delegate
     }
 
     /// Renders the first page of a local PDF as a JPEG thumbnail.
@@ -197,16 +273,6 @@ enum PublicationUtilities {
         return delegate.rootFilePath
     }
 
-    private static func packageCoverHref(_ data: Data) -> String? {
-        let delegate = EPUBPackageParser()
-        let parser = XMLParser(data: data)
-        parser.delegate = delegate
-        parser.shouldProcessNamespaces = true
-        parser.shouldResolveExternalEntities = false
-        guard parser.parse() else { return nil }
-        return delegate.coverHref
-    }
-
     private static func resolveEPUBPath(_ href: String, relativeTo opfPath: String) -> String {
         let decoded = href.removingPercentEncoding ?? href
         var parts = decoded.hasPrefix("/")
@@ -261,20 +327,36 @@ enum PublicationUtilities {
         private var coverMetaID: String?
         private var guideCoverHref: String?
 
-        var coverHref: String? {
+        /// Ordered cover candidates: EPUB3 property, meta/guide targets (which
+        /// may be XHTML wrappers), then image items whose id/href mention cover.
+        var coverCandidateHrefs: [String] {
+            var seen = Set<String>()
+            var ordered: [String] = []
+            func append(_ href: String?) {
+                guard let href, !href.isEmpty, seen.insert(href).inserted else { return }
+                ordered.append(href)
+            }
             if let item = items.values.first(where: {
                 $0.properties.split(separator: " ").contains("cover-image")
-            }) { return item.href }
-            if let id = coverMetaID, let item = items[id] { return item.href }
-            if let guideCoverHref, !guideCoverHref.isEmpty { return guideCoverHref }
-            if let item = items.values.first(where: { candidate in
+            }) { append(item.href) }
+            if let id = coverMetaID, let item = items[id] { append(item.href) }
+            append(guideCoverHref)
+            for candidate in items.values where candidate.mediaType.lowercased().hasPrefix("image/") {
                 let id = candidate.id.lowercased()
                 let href = candidate.href.lowercased()
-                let media = candidate.mediaType.lowercased()
-                guard media.hasPrefix("image/") else { return false }
-                return id.contains("cover") || href.contains("cover")
-            }) { return item.href }
-            return nil
+                if id.contains("cover") || href.contains("cover") {
+                    append(candidate.href)
+                }
+            }
+            return ordered
+        }
+
+        /// Manifest image items in document order — used when cover metadata
+        /// only points at wrappers and basenames lack "cover".
+        var imageHrefs: [String] {
+            items.values
+                .filter { $0.mediaType.lowercased().hasPrefix("image/") && !$0.href.isEmpty }
+                .map(\.href)
         }
 
         func parser(_ parser: XMLParser, didStartElement elementName: String,

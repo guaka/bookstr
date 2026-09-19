@@ -8,6 +8,7 @@ struct LibraryView: View {
     @State private var openingBookID: String?
     @State private var rightsDetails: RightsDetailsItem?
     @State private var libraryFilter = ""
+    @State private var pendingDeletion: CatalogBook?
     @AppStorage("library_sort") private var selectedSort = LibrarySort.recent
     @AppStorage("library_filter_language") private var selectedLanguage = ""
     @AppStorage("library_filter_format") private var selectedFormat = ""
@@ -70,8 +71,15 @@ struct LibraryView: View {
                         .accessibilityIdentifier("library-book-\(book.id)")
                         .bookstrListRow()
                         .frame(maxWidth: .infinity, alignment: .leading)
+                        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                            Button("Delete", role: .destructive) {
+                                pendingDeletion = book
+                            }
+                            .accessibilityIdentifier("library-delete-\(book.id)")
+                        }
                         .contextMenu {
                             Button("Rights details") { rightsDetails = details(for: book) }
+                            Button("Delete", role: .destructive) { pendingDeletion = book }
                         }
                     }
                 }
@@ -93,8 +101,15 @@ struct LibraryView: View {
                         .accessibilityIdentifier("library-book-\(book.id)")
                         .bookstrListRow()
                         .frame(maxWidth: .infinity, alignment: .leading)
+                        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                            Button("Delete", role: .destructive) {
+                                pendingDeletion = book
+                            }
+                            .accessibilityIdentifier("library-delete-\(book.id)")
+                        }
                         .contextMenu {
                             Button("Rights details") { rightsDetails = details(for: book) }
+                            Button("Delete", role: .destructive) { pendingDeletion = book }
                         }
                     }
                     ForEach(sortedExternalFavorites) { favorite in
@@ -207,6 +222,25 @@ struct LibraryView: View {
         } message: {
             Text(openError ?? "")
         }
+        .confirmationDialog(
+            "Remove from this device?",
+            isPresented: Binding(
+                get: { pendingDeletion != nil },
+                set: { if !$0 { pendingDeletion = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button("Delete", role: .destructive) {
+                if let book = pendingDeletion {
+                    pendingDeletion = nil
+                    Task { await viewModel.deleteFromLibrary(book) }
+                }
+            }
+            .accessibilityIdentifier("library-delete-confirm")
+            Button("Cancel", role: .cancel) { pendingDeletion = nil }
+        } message: {
+            Text(deletionMessage)
+        }
         .sheet(item: $rightsDetails) { RightsDetailsView(item: $0) }
         .task {
             viewModel.attach(container)
@@ -227,6 +261,12 @@ struct LibraryView: View {
         viewModel.hasNostrIdentity
             ? "Heart a book to keep it here."
             : "Connect Nostr in Settings to sync favorites."
+    }
+
+    private var deletionMessage: String {
+        let title = pendingDeletion?.title.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if title.isEmpty { return "Removes the download from this device." }
+        return "Removes \"\(title)\" from this device."
     }
 
     private func bookRow(_ book: CatalogBook, showProgress: Bool) -> some View {

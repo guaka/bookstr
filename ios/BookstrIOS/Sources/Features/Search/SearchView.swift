@@ -12,11 +12,7 @@ struct SearchView: View {
     @State private var searchGeneration = UUID()
     @State private var searchTask: Task<Void, Never>?
     @State private var message: String?
-    @State private var knownBooks: [CatalogBook] = []
-    @State private var favoriteIDs = Set<String>()
     @State private var showingDownloads = false
-    @State private var externalFavorites: [ExternalFavorite] = []
-    @State private var favoriteBusyID: String?
     @State private var actionMessage: String?
     @State private var rightsDetails: RightsDetailsItem?
     @AppStorage("search_filter_language") private var selectedLanguage = ""
@@ -39,36 +35,21 @@ struct SearchView: View {
             } else {
                 List {
                   ForEach(visibleResults) { result in
-                    HStack(alignment: .top, spacing: 10) {
-                        Button { Task { await open(result) } } label: {
-                            BookListDetails(title: result.title, author: result.author, year: result.year,
-                                            format: result.format?.rawValue, language: result.language,
-                                            publisher: result.publisher, coverURL: result.coverUrl,
-                                            rights: result.rights)
+                    Button { Task { await open(result) } } label: {
+                        BookListDetails(title: result.title, author: result.author, year: result.year,
+                                        format: result.format?.rawValue, language: result.language,
+                                        publisher: result.publisher, coverURL: result.coverUrl,
+                                        rights: result.rights)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("search.open.\(result.id)")
+                    .contextMenu {
+                        Button("Rights details") {
+                            rightsDetails = RightsDetailsItem(
+                                title: result.title, author: result.author, year: result.year,
+                                format: result.format?.rawValue, rights: result.rights
+                            )
                         }
-                        .buttonStyle(.plain)
-                        .accessibilityIdentifier("search.open.\(result.id)")
-                        .disabled(!result.isReadable)
-                        .contextMenu {
-                            Button("Rights details") {
-                                rightsDetails = RightsDetailsItem(
-                                    title: result.title, author: result.author, year: result.year,
-                                    format: result.format?.rawValue, rights: result.rights
-                                )
-                            }
-                        }
-
-                        Button { Task { await toggleFavorite(result) } } label: {
-                            if favoriteBusyID == result.id {
-                                ProgressView().controlSize(.small)
-                            } else {
-                                Image(systemName: isFavorite(result) ? "heart.fill" : "heart")
-                            }
-                        }
-                        .buttonStyle(.plain)
-                        .frame(width: 32, height: 44)
-                        .disabled(favoriteBusyID != nil)
-                        .accessibilityLabel(isFavorite(result) ? "Remove from favorites" : "Add to favorites")
                     }
                     .bookstrListRow()
                   }
@@ -163,10 +144,6 @@ struct SearchView: View {
             }
         }
         .sheet(item: $rightsDetails) { RightsDetailsView(item: $0) }
-        .task {
-            knownBooks = container.catalogRepository.downloadedBooks()
-            refreshFavoriteIDs()
-        }
     }
 
     private func runSearch(more: Bool = false) async {
@@ -184,7 +161,8 @@ struct SearchView: View {
         do {
             let page = try await container.catalogRepository.searchPage(term, offset: offset)
             guard searchGeneration == generation, !Task.isCancelled else { return }
-            results = more ? CatalogSearchPage.merge(results, page.books) : page.books
+            let readable = page.books.filter(\.isReadable)
+            results = more ? CatalogSearchPage.merge(results, readable) : readable
             nextOffset = page.nextOffset
             searchedQuery = term
             message = results.isEmpty ? "No matches. Try a shorter query." : "\(results.count) results"
@@ -208,60 +186,6 @@ struct SearchView: View {
             showingDownloads = true
         }
     }
-
-    private func isFavorite(_ result: BookSearchResult) -> Bool {
-        favoriteIDs.contains(result.id)
-            || externalFavorites.contains { SearchFavoriteMatcher.matches(result, favorite: $0) }
-            || knownBooks.contains { book in
-            favoriteIDs.contains(book.id) && book.title.caseInsensitiveCompare(result.title) == .orderedSame
-                && book.author.caseInsensitiveCompare(result.author) == .orderedSame
-        }
-    }
-
-    private func toggleFavorite(_ result: BookSearchResult) async {
-        guard favoriteBusyID == nil else { return }
-        let wasFavorite = isFavorite(result)
-        favoriteBusyID = result.id
-        actionMessage = wasFavorite ? "Removing favorite…" : "Saving favorite…"
-        defer { favoriteBusyID = nil }
-        let existing = externalFavorites.first { SearchFavoriteMatcher.matches(result, favorite: $0) }
-        let book = existing.map(catalogBook(for:)) ?? result.asFavoriteBook()
-        container.favoriteMetadataRepository.remember(book: book)
-        do {
-            let allBooks = Array(Dictionary((knownBooks + [book]).map { ($0.id, $0) },
-                                            uniquingKeysWith: { _, latest in latest }).values)
-            let updated = try await container.nostrSyncService.setFavorite(
-                book: book, favorite: !wasFavorite, books: allBooks
-            )
-            knownBooks = allBooks
-            favoriteIDs = updated.bookIds
-            externalFavorites = updated.external
-            actionMessage = wasFavorite ? "Removed from Nostr favorites" : "Added to Nostr favorites"
-            NotificationCenter.default.post(name: .bookstrIdentityDidChange, object: nil)
-        } catch {
-            actionMessage = "Could not update favorite: \(error.localizedDescription)"
-        }
-    }
-
-    private func catalogBook(for favorite: ExternalFavorite) -> CatalogBook {
-        CatalogBook(
-            id: favorite.key, title: favorite.title, author: favorite.author ?? "Unknown author",
-            epubUrl: favorite.blossomUrl ?? favorite.url ?? "", coverUrl: favorite.coverUrl,
-            sourceUrl: favorite.url, isbn: favorite.isbn, libvaultMd5: favorite.libvaultMd5,
-            format: BookFormat.from(format: favorite.format, url: favorite.blossomUrl ?? favorite.url ?? ""),
-            blossomSha256: favorite.blossomSha256, year: favorite.year,
-            rightsStatus: favorite.rightsStatus, license: favorite.license,
-            licenseUrl: favorite.licenseUrl, rightsSource: favorite.rightsSource
-        )
-    }
-
-    private func refreshFavoriteIDs() {
-        let shared = container.nostrSyncService.cachedFavorites(seedBooks: knownBooks)
-        favoriteIDs = shared.bookIds
-        externalFavorites = shared.external
-    }
-
-
 }
 
 struct DownloadsPane: View {

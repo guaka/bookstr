@@ -17,6 +17,14 @@ test('iOS keeps the system text selection menu instead of a custom reader toolba
   assert.doesNotMatch(reader, /id="selection-actions"/);
 });
 
+test('reader stage updates stay non-technical', () => {
+  assert.match(reader, /onReaderStage\("Opening book"\)/);
+  assert.doesNotMatch(reader, /Opening archive/);
+  assert.doesNotMatch(reader, /Laying out pages/);
+  assert.doesNotMatch(reader, /Decoding EPUB/);
+  assert.doesNotMatch(reader, /Reading book metadata/);
+});
+
 test('word and mark highlights stay distinct and readable in every reader theme', () => {
   assert.match(reader, /word: \{ background: "#e7c766", foreground: "#1c1916"/);
   assert.match(reader, /mark: \{ background: "#efaa96", foreground: "#1c1916"/);

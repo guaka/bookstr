@@ -277,22 +277,20 @@
     }
 
     function openBook(source, cfi, theme, highlightCfi, bookId, highlightKind) {
-      if (window.AndroidBridge && AndroidBridge.onReaderStage) AndroidBridge.onReaderStage("Opening archive");
+      if (window.AndroidBridge && AndroidBridge.onReaderStage) AndroidBridge.onReaderStage("Opening book");
       currentBookId = String(bookId || "");
       lastSpeechCfi = String(cfi || "").trim();
       speechActive = false;
       applyTheme(theme || "paper");
       try {
         book = ePub(source);
-        if (window.AndroidBridge && AndroidBridge.onReaderStage) AndroidBridge.onReaderStage("Reading book metadata");
+        if (window.AndroidBridge && AndroidBridge.onReaderStage) AndroidBridge.onReaderStage("Opening book");
       } catch (error) {
         return Promise.reject(error);
       }
       return waitForReaderViewport().then(function() { return book.ready; }).then(function() {
         if (window.AndroidBridge && AndroidBridge.onReaderStage) {
-          const viewer = document.getElementById("viewer");
-          AndroidBridge.onReaderStage("Laying out pages " + window.innerWidth + "×" + window.innerHeight +
-            " (viewer " + viewer.clientWidth + "×" + viewer.clientHeight + ")");
+          AndroidBridge.onReaderStage("Opening book");
         }
         reportBookMetadata();
         reportBookSections();
@@ -502,7 +500,7 @@
     }
 
     window.loadBook = function(base64, cfi, theme, highlightCfi, bookId, highlightKind) {
-      if (window.AndroidBridge && AndroidBridge.onReaderStage) AndroidBridge.onReaderStage("Decoding EPUB");
+      if (window.AndroidBridge && AndroidBridge.onReaderStage) AndroidBridge.onReaderStage("Opening book");
       const loading = openBook(
         base64ToArrayBuffer(base64), cfi, theme, highlightCfi || null, bookId || "", highlightKind || null
       );

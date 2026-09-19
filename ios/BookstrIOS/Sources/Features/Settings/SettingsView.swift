@@ -25,8 +25,10 @@ struct SettingsView: View {
     @State private var dictionaryBusy = false
     @StateObject private var speechModels = SpeechModelStore()
     @FocusState private var focusedField: SettingsField?
-    @State private var speechLanguages: [String] = ["en", "pt-pt"]
+    @State private var speechLanguages: [String] = SpeechLanguageListCache.peek()
+        ?? SpeechLanguageSettings.seededLanguageTags
     @State private var selectedSpeechLanguage = "en"
+    @State private var appleVoicesForLanguage: [AVSpeechSynthesisVoice] = []
 
     var body: some View {
         Form {
@@ -55,42 +57,38 @@ struct SettingsView: View {
                     }
                 }
                 .accessibilityIdentifier("reader-alignment")
-                Picker("Speech language", selection: $selectedSpeechLanguage) {
+            }
+
+            Section("Text-to-speech") {
+                Picker("Language", selection: $selectedSpeechLanguage) {
                     ForEach(speechLanguages, id: \.self) { language in
                         Text(SpeechLanguageSettings.displayName(for: language)).tag(language)
                     }
                 }
                 .accessibilityIdentifier("speech-language")
+                .onChange(of: selectedSpeechLanguage) { _, _ in
+                    refreshAppleVoices()
+                }
+            }
+
+            Section {
+                ForEach(neuralEnginesForSelectedLanguage, id: \.rawValue) { engine in
+                    speechModelControl(engine)
+                }
                 Picker("Voice", selection: languageVoiceBinding(selectedSpeechLanguage)) {
-                    Text("System default").tag(SpeechVoiceID.systemDefault)
-                    ForEach(SpeechVoiceID.speakers(for: selectedSpeechLanguage), id: \.id) { speaker in
+                    ForEach(installedNeuralSpeakers, id: \.id) { speaker in
                         Text(speaker.name).tag(speaker.id)
                     }
-                    ForEach(speechVoices(for: selectedSpeechLanguage), id: \.identifier) { voice in
+                    Text("System default").tag(SpeechVoiceID.systemDefault)
+                    ForEach(appleVoicesForLanguage, id: \.identifier) { voice in
                         Text(voicePickerLabel(voice)).tag(voice.identifier)
                     }
                 }
                 .accessibilityIdentifier(speechVoiceAccessibilityID)
-                ForEach(SpeechEngineID.allCases.filter(\.isNeural)) { engine in
-                    speechModelControl(engine)
-                }
-                VStack(alignment: .leading) {
-                    HStack {
-                        Text("Speech speed")
-                        Spacer()
-                        Text(settings.speechRate / 0.48, format: .number.precision(.fractionLength(2))) + Text("×")
-                    }
-                    Slider(value: $settings.speechRate, in: 0.35...0.60, step: 0.01)
-                    HStack {
-                        Text("0.73×")
-                        Spacer()
-                        Text("1.00×").foregroundStyle(.secondary)
-                        Spacer()
-                        Text("1.25×")
-                    }
-                    .font(.caption.monospacedDigit())
-                    .foregroundStyle(.secondary)
-                }
+            } header: {
+                Text(SpeechLanguageSettings.displayName(for: selectedSpeechLanguage))
+            } footer: {
+                Text("Voice choice applies when reading books in this language.")
             }
 
             nostrSection
@@ -222,11 +220,16 @@ struct SettingsView: View {
             activeMode = container.settingsRepository.authMode
             dictionaryPacks = container.dictionaryRepository.packs()
             dictionarySelection.normalize(using: dictionaryPacks)
-            refreshSpeechLanguages()
-            await container.nip46Service.restore(from: container.settingsRepository)
-            npub = NostrIdentity.npub(fromHex: container.settingsRepository.pubkeyHex ?? "") ?? ""
-            activeMode = container.settingsRepository.authMode
-            refreshSpeechLanguages()
+            SpeechVoiceCache.warm()
+            refreshAppleVoices()
+            Task {
+                refreshSpeechLanguages()
+            }
+            Task {
+                await container.nip46Service.restore(from: container.settingsRepository)
+                npub = NostrIdentity.npub(fromHex: container.settingsRepository.pubkeyHex ?? "") ?? ""
+                activeMode = container.settingsRepository.authMode
+            }
         }
     }
 
@@ -342,15 +345,33 @@ struct SettingsView: View {
         return "speech-voice-\(base == "pt" ? "pt" : base)"
     }
 
+    private var neuralEnginesForSelectedLanguage: [SpeechEngineID] {
+        SpeechEngineID.allCases.filter { $0.isNeural && $0.supports(language: selectedSpeechLanguage) }
+    }
+
+    private var installedNeuralSpeakers: [(id: String, name: String)] {
+        SpeechVoiceID.speakers(for: selectedSpeechLanguage).filter { speaker in
+            guard let engine = SpeechEngineID(rawValue: speaker.id) else { return false }
+            return speechModels.isInstalled(engine)
+        }
+    }
+
     private func refreshSpeechLanguages() {
         let shared = container.nostrSyncService.cachedFavorites(
             seedBooks: container.catalogRepository.rememberedBooks()
         )
         let books = container.catalogRepository.downloadedBooks(externalFavorites: shared.external)
-        speechLanguages = SpeechLanguageSettings.languagesForBookCodes(books.compactMap(\.language))
+        let next = SpeechLanguageSettings.languagesForBookCodes(books.compactMap(\.language))
+        SpeechLanguageListCache.replace(next)
+        speechLanguages = next
         if !speechLanguages.contains(selectedSpeechLanguage) {
             selectedSpeechLanguage = speechLanguages.first ?? "en"
         }
+        refreshAppleVoices()
+    }
+
+    private func refreshAppleVoices() {
+        appleVoicesForLanguage = SpeechVoiceCache.voices(for: selectedSpeechLanguage)
     }
 
     private func languageVoiceBinding(_ language: String) -> Binding<String> {
@@ -360,22 +381,8 @@ struct SettingsView: View {
         )
     }
 
-    private func speechVoices(for language: String) -> [AVSpeechSynthesisVoice] {
-        let base = SpeechLanguageSettings.baseLanguage(language)
-        return AVSpeechSynthesisVoice.speechVoices()
-            .filter { SpeechLanguageSettings.baseLanguage($0.language) == base }
-            .sorted {
-                if $0.quality != $1.quality { return $0.quality.rawValue > $1.quality.rawValue }
-                return $0.name < $1.name
-            }
-    }
-
     private func voicePickerLabel(_ voice: AVSpeechSynthesisVoice) -> String {
-        let base = SpeechLanguageSettings.baseLanguage(selectedSpeechLanguage)
-        if base == "pt" {
-            return "\(voice.name) · \(voice.language) · \(voiceQuality(voice))"
-        }
-        return "\(voice.name) · \(voiceQuality(voice))"
+        "\(voice.name) · \(voice.language) · \(voiceQuality(voice))"
     }
 
     private func voiceQuality(_ voice: AVSpeechSynthesisVoice) -> String {

@@ -45,11 +45,23 @@ final class SpeechModelStoreTests: XCTestCase {
 
     func testCatalogBundledModelsAndSourceURLs() throws {
         SpeechModelCatalog.modelsOverride = nil
-        XCTAssertEqual(SpeechModelCatalog.bundledModels.count, 2)
+        XCTAssertEqual(SpeechModelCatalog.bundledModels.count, 8)
         let kokoro = try XCTUnwrap(SpeechModelCatalog.model(.kokoroEnglish))
         let tugao = try XCTUnwrap(SpeechModelCatalog.model(.portuguesePortugal))
+        let miro = try XCTUnwrap(SpeechModelCatalog.model(.portuguesePortugalMiro))
+        let dii = try XCTUnwrap(SpeechModelCatalog.model(.portuguesePortugalDii))
+        let french = try XCTUnwrap(SpeechModelCatalog.model(.frenchMiro))
+        let german = try XCTUnwrap(SpeechModelCatalog.model(.germanMiro))
+        let spanish = try XCTUnwrap(SpeechModelCatalog.model(.spanishMiro))
+        let catalan = try XCTUnwrap(SpeechModelCatalog.model(.catalanOna))
         XCTAssertEqual(kokoro.files.count, 11)
         XCTAssertEqual(tugao.files.count, 9)
+        XCTAssertEqual(miro.files.count, 9)
+        XCTAssertEqual(dii.files.count, 9)
+        XCTAssertEqual(french.files.count, 9)
+        XCTAssertEqual(german.files.count, 9)
+        XCTAssertEqual(spanish.files.count, 9)
+        XCTAssertEqual(catalan.files.count, 9)
         XCTAssertEqual(kokoro.approximateBytes, 352_148_969)
         XCTAssertEqual(tugao.approximateBytes, 63_939_446)
         XCTAssertNil(SpeechModelCatalog.model(.system))
@@ -62,7 +74,20 @@ final class SpeechModelStoreTests: XCTestCase {
             url?.absoluteString,
             "https://huggingface.co/csukuangfj/vits-piper-pt_PT-tugao-medium/resolve/rev/espeak-ng-data/lang/roa/pt"
         )
-        XCTAssertEqual(SpeechEngineID.allCases.map(\.id), ["system", "kokoro_en", "piper_pt_pt"])
+        XCTAssertEqual(
+            SpeechEngineID.allCases.map(\.id),
+            [
+                "system",
+                "kokoro_en",
+                "piper_pt_pt",
+                "piper_pt_pt_miro",
+                "piper_pt_pt_dii",
+                "piper_fr_fr",
+                "piper_de_de",
+                "piper_es_es",
+                "piper_ca_es",
+            ]
+        )
         XCTAssertTrue(kokoro.dataDirectory.path.hasSuffix("espeak-ng-data"))
         XCTAssertTrue(kokoro.tokensURL.path.hasSuffix("tokens.txt"))
         let savedRoot = SpeechModelCatalog.rootDirectoryOverride

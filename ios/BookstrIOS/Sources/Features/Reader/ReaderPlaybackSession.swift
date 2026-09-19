@@ -8,9 +8,10 @@ enum ReaderSpeechRetention {
         systemPaused: Bool,
         neuralPlaying: Bool,
         neuralPaused: Bool,
-        pendingRequest: Bool = false
+        pendingRequest: Bool = false,
+        preparing: Bool = false
     ) -> Bool {
-        speaking || systemSpeaking || systemPaused || neuralPlaying || neuralPaused || pendingRequest
+        speaking || systemSpeaking || systemPaused || neuralPlaying || neuralPaused || pendingRequest || preparing
     }
 }
 

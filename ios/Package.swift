@@ -20,6 +20,7 @@ let package = Package(
                 "Features/Reader/PDFReaderView.swift",
                 "Features/Reader/ReaderEditMenu.swift",
                 "Features/Reader/ReaderHostView.swift",
+                "Features/Reader/SpeechVoiceCache.swift",
                 "Features/Search/SearchView.swift",
                 "Features/Settings",
                 "Features/Words/WordsView.swift",

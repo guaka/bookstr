@@ -65,4 +65,9 @@ final class ProgressRepository {
         fileStore.save("book_progress.json", value: Array(cache.values))
         return true
     }
+
+    func remove(bookId: String) {
+        guard cache.removeValue(forKey: bookId) != nil else { return }
+        fileStore.save("book_progress.json", value: Array(cache.values))
+    }
 }

@@ -8,9 +8,18 @@ test('iPhone torrent bridge is built reproducibly and packaged with notices',()=
   assert.match(build,/git.*rev-parse HEAD/);
   assert.match(build,/arm64;x86_64/);
   assert.match(build,/create-xcframework/);
+  // XcodeGen must keep the local binary package; regenerating project.yml
+  // without this path is how TorrentEngine silently drops from device builds.
+  const projectYml=read('ios/project.yml');
+  assert.match(projectYml,/path:\s*TorrentEngine/);
+  assert.match(projectYml,/- package:\s*TorrentEngine/);
+  assert.match(projectYml,/TorrentEngineNotices\.txt/);
   const project=read('ios/BookstrIOS.xcodeproj/project.pbxproj');
   assert.match(project,/TorrentEngineNotices.txt in Resources/);
   assert.match(project,/productName = TorrentEngine/);
+  assert.match(project,/XCLocalSwiftPackageReference "TorrentEngine"/);
+  assert.match(project,/TorrentEngine in Frameworks/);
+  assert.match(read('ios/TorrentEngine/README.md'), /packages\.TorrentEngine/);
   assert.match(read('ios/BookstrIOS/TorrentEngineNotices.txt'),/Boost Software License/);
   assert.match(read('.github/workflows/ios.yml'),/scripts\/build-ios-torrent.sh/);
 });
@@ -73,12 +82,51 @@ test('downloads persist independently and native search keeps its safe area', ()
   const app = read('ios/BookstrIOS/Sources/App/BookstrIOSApp.swift');
   assert.match(app, /downloads.resume\(prepare:/);
   assert.doesNotMatch(app, /TopSafeAreaCollapser/);
+  assert.doesNotMatch(app, /statusBarHidden\(true\)/);
+  assert.doesNotMatch(app, /persistentSystemOverlays\(\.hidden\)/);
   assert.doesNotMatch(read('ios/BookstrIOS/Sources/Shared/ScreenChrome.swift'), /additionalSafeAreaInsets.top/);
   const code = read('ios/BookstrIOS/Sources/Data/TorrentDownload.swift');
   assert.match(code, /engines\[edition.md5\]/);
   assert.match(code, /options: .atomic/);
   assert.doesNotMatch(code, /"Queued"/);
   assert.match(read('ios/BookstrIOS/Sources/Data/CatalogRepository.swift'), /torrent-edition-/);
+});
+
+test('system status bar keeps time and battery visible on every pane', () => {
+  const info = read('ios/BookstrIOS/Info.plist');
+  assert.match(info, /<key>UIStatusBarHidden<\/key>\s*<false\/>/);
+  assert.match(info, /<key>UIViewControllerBasedStatusBarAppearance<\/key>\s*<true\/>/);
+  assert.match(read('ios/project.yml'), /UIStatusBarHidden:\s*false/);
+  const reader = read('ios/BookstrIOS/Sources/Features/Reader/ReaderHostView.swift');
+  assert.match(reader, /\.statusBarHidden\(false\)/);
+  assert.doesNotMatch(reader, /\.statusBarHidden\(showsReaderChrome\)/);
+});
+
+test('opening a book shows its title instead of technical reader stages', () => {
+  const host = read('ios/BookstrIOS/Sources/Features/Reader/ReaderHostView.swift');
+  assert.match(host, /static func openingMessage\(for book: CatalogBook\)/);
+  assert.match(host, /ProgressView\(Self\.openingMessage\(for: book\)\)/);
+  assert.doesNotMatch(host, /Opening \\\(activeFormat\.rawValue\.uppercased\(\)\)/);
+  assert.doesNotMatch(host, /loadingStage \+ "…"/);
+  const shared = read('shared/reader/reader.html');
+  assert.match(shared, /onReaderStage\("Opening book"\)/);
+  assert.doesNotMatch(shared, /Opening archive/);
+  assert.doesNotMatch(shared, /Laying out pages/);
+  assert.doesNotMatch(shared, /Decoding EPUB/);
+  assert.doesNotMatch(shared, /Reading book metadata/);
+});
+
+test('library can delete local books after swipe confirmation', () => {
+  const view = read('ios/BookstrIOS/Sources/Features/Library/LibraryView.swift');
+  assert.match(view, /\.swipeActions\(edge: \.trailing/);
+  assert.match(view, /pendingDeletion/);
+  assert.match(view, /library-delete-confirm/);
+  assert.match(view, /Remove from this device\?/);
+  assert.match(view, /deleteFromLibrary\(book\)/);
+  const model = read('ios/BookstrIOS/Sources/Features/Library/LibraryViewModel.swift');
+  assert.match(model, /func deleteFromLibrary\(_ book: CatalogBook\)/);
+  const catalog = read('ios/BookstrIOS/Sources/Data/CatalogRepository.swift');
+  assert.match(catalog, /func removeFromLibrary\(_ book: CatalogBook\)/);
 });
 test('search and library share compact flexible book rows', () => {
   const chrome = read('ios/BookstrIOS/Sources/Shared/ScreenChrome.swift');
