@@ -9,7 +9,7 @@
   const DEFAULT_HARD_LIMIT = 240;
   const DEFAULT_MAX_CHARACTERS = 100000;
   const CONTINUATION_PAUSE_MS = 40;
-  const SENTENCE_PAUSE_MS = 220;
+  const SENTENCE_PAUSE_MS = 480;
   const COMMA_PAUSE_MS = 340;
   const CLAUSE_PAUSE_MS = 300;
   const PAREN_PAUSE_MS = 380;
@@ -39,7 +39,8 @@
       .replace(/\r/g, " ")
       .replace(/\s+/g, " ")
       .replace(/(\.\.\.|[.,;:!?…])(?!["”’'])\s*/g, "$1 ")
-      .replace(/(\d{1,3}(?:, \d{3})+)/g, function(match) {
+      // Collapse spaced thousands only when each group is complete (not dates like "9, 1983").
+      .replace(/(\d{1,3}(?:, \d{3})+)(?!\d)/g, function(match) {
         return match.replace(/, /g, ",");
       })
       .trim();
@@ -72,6 +73,43 @@
     });
   }
 
+  const ENGLISH_ONES = [
+    "", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine",
+  ];
+  const ENGLISH_TEENS = [
+    "ten", "eleven", "twelve", "thirteen", "fourteen",
+    "fifteen", "sixteen", "seventeen", "eighteen", "nineteen",
+  ];
+  const ENGLISH_TENS = [
+    "", "", "twenty", "thirty", "forty", "fifty", "sixty", "seventy", "eighty", "ninety",
+  ];
+
+  function englishTwoDigitWords(value) {
+    const number = Number(value);
+    if (!Number.isFinite(number) || number < 0 || number > 99) return String(value || "");
+    if (number < 10) return ENGLISH_ONES[number];
+    if (number < 20) return ENGLISH_TEENS[number - 10];
+    const tens = Math.floor(number / 10);
+    const ones = number % 10;
+    return ones ? ENGLISH_TENS[tens] + "-" + ENGLISH_ONES[ones] : ENGLISH_TENS[tens];
+  }
+
+  function englishYearToWords(value) {
+    const year = Number(value);
+    if (!Number.isFinite(year) || year < 1000 || year > 2099) return String(value || "");
+    if (year === 2000) return "two thousand";
+    if (year > 2000 && year < 2010) return "two thousand " + ENGLISH_ONES[year - 2000];
+    if (year >= 2010) return "twenty " + englishTwoDigitWords(year - 2000);
+    if (year < 1100) {
+      return year === 1000 ? "one thousand" : "one thousand " + englishTwoDigitWords(year - 1000);
+    }
+    const century = Math.floor(year / 100);
+    const rest = year % 100;
+    const centuryWords = englishTwoDigitWords(century);
+    if (rest === 0) return centuryWords + " hundred";
+    return centuryWords + " " + englishTwoDigitWords(rest);
+  }
+
   function normalizeEnglishSpokenText(value) {
     let output = String(value || "");
     output = normalizeEnglishAcronyms(output);
@@ -79,7 +117,11 @@
       .replace(/(\d{1,2})\s*\/\s*(\d{1,2})\s*\/\s*(\d{2,4})\b/g, "$1 slash $2 slash $3")
       .replace(/\b(\d{1,2}):(\d{2})\b/g, "$1 $2")
       .replace(/\$ ?(\d+(?:\.\d{1,2})?)/g, "$1 dollars")
-      .replace(/\b(\d+)%/g, "$1 percent");
+      .replace(/\b(\d+)%/g, "$1 percent")
+      // Keep ISO / compound numerics intact; expand standalone years for Kokoro EN.
+      .replace(/(?<![\d\-])\b(1[0-9]{3}|20[0-9]{2})\b(?![\d\-])/g, function(match) {
+        return englishYearToWords(match);
+      });
     return output;
   }
 
@@ -378,6 +420,18 @@
   function shouldSplitComma(text, start, commaIndex) {
     const left = text.slice(start, commaIndex);
     const right = text.slice(commaIndex + 1);
+    const leftTrim = left.trim();
+    const rightTrim = right.trim();
+    // Dates ("October 9, 1983") and number lists ("1983, 1990") need an audible comma pause.
+    if (
+      /(?:(?:January|February|March|April|May|June|July|August|September|October|November|December)\s+)?\b\d{1,2}\s*$/i.test(leftTrim)
+      && /^(?:1[0-9]{3}|20[0-9]{2})\b/.test(rightTrim)
+    ) {
+      return true;
+    }
+    if (/\d\s*$/.test(leftTrim) && /^\d/.test(rightTrim) && !isGroupedThousandsComma(text, commaIndex)) {
+      return true;
+    }
     const leftWords = wordCount(left);
     const rightWords = wordCount(right);
     if (leftWords >= 4 && rightWords >= 2) return true;
@@ -440,10 +494,6 @@
     return ranges;
   }
 
-  function isSentenceFinal(text) {
-    return /(?:\.\.\.|[.!?…])["'”’)\]]*$/.test(String(text || "").trim());
-  }
-
   function findBoundary(text, cursor, softLimit, hardLimit) {
     const hardEnd = Math.min(cursor + hardLimit, text.length);
     if (hardEnd >= text.length) return text.length;
@@ -481,6 +531,8 @@
     if (wordCount(text.slice(last.start, last.end)) !== 1) return ranges;
     const previous = ranges[ranges.length - 2];
     const previousText = text.slice(previous.start, previous.end);
+    // Do not undo phrase/sentence splits that exist to create audible pauses.
+    if (/(?:,|;|:|\.\.\.|--|—|–|[.!?…])["'”’)\]]*$/.test(previousText.trim())) return ranges;
     const moveBoundary = previousText.lastIndexOf(" ");
     if (moveBoundary <= 0) return ranges;
     const nextPrevious = trimRange(text, previous.start, previous.start + moveBoundary);
@@ -548,18 +600,9 @@
           active = { start: range.start, end: range.end };
           continue;
         }
-        const activeText = paragraph.slice(active.start, active.end);
-        const nextText = paragraph.slice(range.start, range.end);
-        const joinedLength = range.end - active.start;
-        const canJoinSentences = isSentenceFinal(activeText)
-          && isSentenceFinal(nextText)
-          && (joinedLength <= softLimit || (wordCount(nextText) === 1 && joinedLength <= hardLimit));
-        if (canJoinSentences) {
-          active.end = range.end;
-        } else {
-          flushActive();
-          active = { start: range.start, end: range.end };
-        }
+        // Keep sentence boundaries as chunk edges so sentence pauses are audible.
+        flushActive();
+        active = { start: range.start, end: range.end };
       }
     }
     flushActive();
