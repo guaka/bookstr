@@ -1210,7 +1210,7 @@ struct FB2ReaderView: View {
             if let error = controller.errorMessage {
                 Text(error).foregroundStyle(.red).padding(24)
             } else if !controller.ready {
-                ProgressView(Self.openingMessage(for: book))
+                ProgressView(ReaderHostView.openingMessage(for: book))
             } else {
                 ScrollViewReader { proxy in
                     ScrollView {
