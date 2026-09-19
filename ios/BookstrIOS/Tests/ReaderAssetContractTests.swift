@@ -681,6 +681,12 @@ final class ReaderAssetContractTests: XCTestCase {
         XCTAssertTrue(html.contains("locatorSkipDecision"))
         XCTAssertTrue(html.contains("payload.source = \"speech\""))
         XCTAssertTrue(html.contains("window.requestSpeechText = function(notifyNative, requestID, fromCfi)"))
+        XCTAssertTrue(html.contains("window.BookstrSpeech.speakableBlocks"))
+        XCTAssertTrue(html.contains("function collectSpeechParts(activeResumeCfi)"))
+        XCTAssertTrue(html.contains("if (!collected.parts.length && resumeCfi)"))
+        XCTAssertTrue(html.contains("collected = collectSpeechParts(\"\")"))
+        XCTAssertTrue(html.contains("window.continueSpeechAfterSection = function(notifyNative, requestID, attempts)"))
+        XCTAssertTrue(html.contains("exhausted: true"))
         XCTAssertTrue(html.contains("if (speechActive) return"))
         XCTAssertTrue(html.contains("function reportRestoredLocation()"))
         XCTAssertTrue(html.contains("if (speechActive) {"))
@@ -693,6 +699,33 @@ final class ReaderAssetContractTests: XCTestCase {
         XCTAssertTrue(html.contains("box-shadow:inset 3px 0 0 #7fb8a7"))
         XCTAssertTrue(html.contains("::highlight(bookstr-speaking-word){background:rgba(47,93,80,.32)"))
         XCTAssertFalse(html.contains("::highlight(bookstr-speaking-word){background:#e7c766"))
+    }
+
+    func testEmptySpeechTextUsesSoftStatusInsteadOfFatalReaderError() throws {
+        let sourceURL = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent("Sources/Features/Reader/EPUBReaderView.swift")
+        let source = try String(contentsOf: sourceURL, encoding: .utf8)
+        XCTAssertTrue(source.contains("@Published var speechStatusMessage: String?"))
+        XCTAssertTrue(source.contains("speechStatusMessage = \"No readable text is visible here.\""))
+        XCTAssertFalse(source.contains("errorMessage = \"No readable text is visible here.\""))
+        XCTAssertTrue(source.contains("func dismissSpeechStatus()"))
+        XCTAssertTrue(source.contains("continueSpeechAcrossSections()"))
+        XCTAssertTrue(source.contains("window.continueSpeechAfterSection && window.continueSpeechAfterSection"))
+        XCTAssertTrue(source.contains("exhausted: Bool = false"))
+        XCTAssertTrue(source.contains("if !exhausted"))
+        XCTAssertTrue(source.contains("speechStopRequested"))
+
+        let hostURL = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent("Sources/Features/Reader/ReaderHostView.swift")
+        let host = try String(contentsOf: hostURL, encoding: .utf8)
+        XCTAssertTrue(host.contains("epubController.speechStatusMessage"))
+        XCTAssertTrue(host.contains("accessibilityIdentifier(\"reader-speech-status\")"))
+        XCTAssertTrue(host.contains("epubController.dismissSpeechStatus()"))
+        XCTAssertTrue(host.contains("Button(\"Back to Library\", action: closeReader)"))
     }
 
     func testReaderReportsWhetherARealTableOfContentsExists() throws {

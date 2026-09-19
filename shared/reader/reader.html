@@ -1572,58 +1572,75 @@
 
     window.requestSpeechText = function(notifyNative, requestID, fromCfi) {
       if (!rendition) return;
-      const resumeCfi = String(fromCfi || lastSpeechCfi || "").trim();
+      let resumeCfi = String(fromCfi || lastSpeechCfi || "").trim();
       if (resumeCfi) lastSpeechCfi = resumeCfi;
-      const contentsList = rendition.getContents ? rendition.getContents() : [];
-      const parts = [];
-      let language = "";
-      let foundVisibleText = false;
-      let totalLength = 0;
       speechActive = true;
       clearSpeechProgress(false);
-      contentsList.forEach(function(contents) {
-        if (totalLength >= 100000 || !contents || !contents.document) return;
-        const contentDocument = contents.document;
-        if (!language) language = String(contentDocument.documentElement.lang || "").trim();
-        const frame = contentDocument.defaultView && contentDocument.defaultView.frameElement;
-        const frameTop = frame && frame.getBoundingClientRect ? frame.getBoundingClientRect().top : 0;
-        let blocks = Array.from(contentDocument.querySelectorAll(
-          "h1, h2, h3, h4, h5, h6, p, blockquote, pre, figcaption, dt, dd, li"
-        ));
-        if (!blocks.length && contentDocument.body) blocks = [contentDocument.body];
-        blocks.forEach(function(block) {
-          if (totalLength >= 100000) return;
-          let text = window.BookstrSpeech && window.BookstrSpeech.visibleText
-            ? window.BookstrSpeech.visibleText(block)
-            : String(block.innerText || block.textContent || "");
-          text = window.BookstrSpeech
-            ? window.BookstrSpeech.normalizeText(text)
-            : text.replace(/\s+/g, " ").trim();
-          if (!text) return;
-          if (resumeCfi && window.BookstrSpeech && window.BookstrSpeech.locatorSkipDecision) {
-            const decision = window.BookstrSpeech.locatorSkipDecision(
-              elementBoundaryCfi(block, false),
-              elementBoundaryCfi(block, true),
-              resumeCfi,
-              epubCompare
-            );
-            if (decision === "skip") return;
-            if (decision === "resume") {
-              text = textAfterResumeCfi(block, resumeCfi);
-              if (!text) return;
+
+      function collectSpeechParts(activeResumeCfi) {
+        const contentsList = rendition.getContents ? rendition.getContents() : [];
+        const parts = [];
+        const collectedBlocks = [];
+        let language = "";
+        let foundVisibleText = false;
+        let totalLength = 0;
+        contentsList.forEach(function(contents) {
+          if (totalLength >= 100000 || !contents || !contents.document) return;
+          const contentDocument = contents.document;
+          if (!language) language = String(contentDocument.documentElement.lang || "").trim();
+          const frame = contentDocument.defaultView && contentDocument.defaultView.frameElement;
+          const frameTop = frame && frame.getBoundingClientRect ? frame.getBoundingClientRect().top : 0;
+          let blocks = window.BookstrSpeech && window.BookstrSpeech.speakableBlocks
+            ? window.BookstrSpeech.speakableBlocks(contentDocument)
+            : Array.from(contentDocument.querySelectorAll(
+              "h1, h2, h3, h4, h5, h6, p, blockquote, pre, figcaption, dt, dd, li"
+            ));
+          if (!blocks.length && contentDocument.body) blocks = [contentDocument.body];
+          blocks.forEach(function(block) {
+            if (totalLength >= 100000) return;
+            let text = window.BookstrSpeech && window.BookstrSpeech.visibleText
+              ? window.BookstrSpeech.visibleText(block)
+              : String(block.innerText || block.textContent || "");
+            text = window.BookstrSpeech
+              ? window.BookstrSpeech.normalizeText(text)
+              : text.replace(/\s+/g, " ").trim();
+            if (!text) return;
+            if (activeResumeCfi && window.BookstrSpeech && window.BookstrSpeech.locatorSkipDecision) {
+              const decision = window.BookstrSpeech.locatorSkipDecision(
+                elementBoundaryCfi(block, false),
+                elementBoundaryCfi(block, true),
+                activeResumeCfi,
+                epubCompare
+              );
+              if (decision === "skip") return;
+              if (decision === "resume") {
+                text = textAfterResumeCfi(block, activeResumeCfi);
+                if (!text) return;
+              }
+            } else {
+              const rect = block.getBoundingClientRect ? block.getBoundingClientRect() : { top: 0, bottom: 1 };
+              const bottom = frameTop + rect.bottom;
+              if (!foundVisibleText && bottom <= 0) return;
             }
-          } else {
-            const rect = block.getBoundingClientRect ? block.getBoundingClientRect() : { top: 0, bottom: 1 };
-            const bottom = frameTop + rect.bottom;
-            if (!foundVisibleText && bottom <= 0) return;
-          }
-          foundVisibleText = true;
-          const start = totalLength + (parts.length ? 1 : 0);
-          parts.push(text);
-          totalLength = start + text.length;
-          speechBlocks.push({ element: block, start: start, end: totalLength });
+            foundVisibleText = true;
+            const start = totalLength + (parts.length ? 1 : 0);
+            parts.push(text);
+            totalLength = start + text.length;
+            collectedBlocks.push({ element: block, start: start, end: totalLength });
+          });
         });
-      });
+        return { parts: parts, language: language, blocks: collectedBlocks };
+      }
+
+      let collected = collectSpeechParts(resumeCfi);
+      if (!collected.parts.length && resumeCfi) {
+        lastSpeechCfi = "";
+        clearSpeechProgress(false);
+        collected = collectSpeechParts("");
+      }
+      speechBlocks = collected.blocks;
+      let language = collected.language;
+      const parts = collected.parts;
       if (!language && book && book.packaging && book.packaging.metadata) {
         language = metadataText(book.packaging.metadata.language);
       }
@@ -1637,13 +1654,88 @@
       if (speechPlan && typeof speechPlan === "object") speechPlan.language = speechLanguage;
       const text = speechPlan.text;
       const chunks = speechPlan.chunks;
+      if (speechPlan && typeof speechPlan === "object") speechPlan.language = speechLanguage;
+      const text = speechPlan.text;
+      const chunks = speechPlan.chunks;
+      const payload = {
+        text: text,
+        language: speechLanguage,
+        chunks: chunks,
+        requestID: requestID || null,
+        exhausted: false,
+      };
       if (notifyNative !== false && window.AndroidBridge && AndroidBridge.onSpeechText) {
-        AndroidBridge.onSpeechText(JSON.stringify({
-          text: text,
-          language: speechLanguage,
-          chunks: chunks,
-          requestID: requestID || null,
-        }));
+        AndroidBridge.onSpeechText(JSON.stringify(payload));
+      }
+      return payload;
+    };
+
+    function emitSpeechPayload(payload) {
+      if (window.AndroidBridge && AndroidBridge.onSpeechText) {
+        AndroidBridge.onSpeechText(JSON.stringify(payload));
+      }
+    }
+
+    function currentSpeechSpineIndex() {
+      const location = rendition && typeof rendition.currentLocation === "function"
+        ? rendition.currentLocation()
+        : null;
+      if (location && location.start && Number.isFinite(location.start.index)) {
+        return location.start.index;
+      }
+      return spinePositionForCfi(lastSpeechCfi).sectionIndex;
+    }
+
+    /// Advances to the next spine item and requests fresh speech text. Skips
+    /// empty spine entries (covers, images) up to a small attempt budget.
+    window.continueSpeechAfterSection = function(notifyNative, requestID, attempts) {
+      const attempt = Number(attempts) || 0;
+      const emptyPayload = {
+        text: "",
+        language: "en",
+        chunks: [],
+        requestID: requestID || null,
+        exhausted: true,
+      };
+      if (!rendition || !book || !book.spine) {
+        if (notifyNative !== false) emitSpeechPayload(emptyPayload);
+        return;
+      }
+      const items = book.spine.spineItems || [];
+      const index = currentSpeechSpineIndex();
+      const next = Number.isFinite(index) ? items[index + 1] : null;
+      if (!next || attempt > 24) {
+        if (notifyNative !== false) emitSpeechPayload(emptyPayload);
+        return;
+      }
+      lastSpeechCfi = "";
+      speechActive = true;
+      clearSpeechProgress(false);
+      const href = String(next.href || "");
+      const display = rendition.display(href);
+      const afterDisplay = function() {
+        const plan = window.requestSpeechText(false, requestID, "") || {};
+        const text = String(plan.text || "").trim();
+        if (text) {
+          if (notifyNative !== false) {
+            emitSpeechPayload({
+              text: plan.text,
+              language: plan.language || "en",
+              chunks: plan.chunks || [],
+              requestID: requestID || null,
+              exhausted: false,
+            });
+          }
+          return;
+        }
+        window.continueSpeechAfterSection(notifyNative, requestID, attempt + 1);
+      };
+      if (display && typeof display.then === "function") {
+        display.then(afterDisplay).catch(function() {
+          if (notifyNative !== false) emitSpeechPayload(emptyPayload);
+        });
+      } else {
+        afterDisplay();
       }
     };
 

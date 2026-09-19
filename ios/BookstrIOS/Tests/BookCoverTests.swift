@@ -87,6 +87,43 @@ final class BookCoverTests: XCTestCase {
         XCTAssertNil(cover)
     }
 
+    func testCatalogBookCoverUrlCanBeStampedIncludingNegativeCache() {
+        var book = CatalogBook(
+            id: "abc", title: "T", author: "A", epubUrl: "https://example.com/a.epub",
+            coverUrl: nil, sourceUrl: nil, isbn: nil, libvaultMd5: nil,
+            format: .epub, blossomSha256: nil, year: nil
+        )
+        XCTAssertNil(book.coverUrl)
+        book.coverUrl = ""
+        XCTAssertEqual(book.coverUrl, "")
+        book.coverUrl = "file:///tmp/covers/abc.jpg"
+        XCTAssertEqual(book.coverUrl, "file:///tmp/covers/abc.jpg")
+    }
+
+    func testEmbeddedCoverScanSkipsNegativeCacheAndKeepsRemoteCovers() {
+        let unscanned = CatalogBook(
+            id: "a", title: "T", author: "A", epubUrl: "https://example.com/a.epub",
+            coverUrl: nil, sourceUrl: nil, isbn: nil, libvaultMd5: nil,
+            format: .epub, blossomSha256: nil, year: nil
+        )
+        let negative = CatalogBook(
+            id: "b", title: "T", author: "A", epubUrl: "https://example.com/b.epub",
+            coverUrl: "", sourceUrl: nil, isbn: nil, libvaultMd5: nil,
+            format: .epub, blossomSha256: nil, year: nil
+        )
+        let remote = CatalogBook(
+            id: "c", title: "T", author: "A", epubUrl: "https://example.com/c.epub",
+            coverUrl: "https://covers.example/c.jpg", sourceUrl: nil, isbn: nil, libvaultMd5: nil,
+            format: .epub, blossomSha256: nil, year: nil
+        )
+        XCTAssertTrue(CatalogRepository.shouldScanEmbeddedCover(for: unscanned))
+        XCTAssertFalse(CatalogRepository.shouldScanEmbeddedCover(for: negative))
+        XCTAssertFalse(CatalogRepository.shouldScanEmbeddedCover(for: remote))
+        XCTAssertTrue(CatalogRepository.hasUsableCover(remote))
+        XCTAssertFalse(CatalogRepository.hasUsableCover(negative))
+        XCTAssertFalse(CatalogRepository.hasUsableCover(unscanned))
+    }
+
     func testBookstrTagCoverSlotRoundTrip() {
         let cover = "https://lib.b.bfr.ee/api/covers/abc123"
         let serialized = FavoritesParser.compactItemTags(refs: [

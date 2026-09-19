@@ -70,3 +70,19 @@ test('speech progress and reading progress share the spoken CFI after locations 
   assert.match(reader, /BookstrSpeech\.relocationProgression/);
   assert.match(reader, /rangeToCfi\(spokenRange\) \|\| elementBoundaryCfi\(block\.element, false\)/);
 });
+
+test('speech extraction uses speakableBlocks and recovers from an empty resume CFI', () => {
+  assert.match(reader, /window\.BookstrSpeech\.speakableBlocks/);
+  assert.match(reader, /function collectSpeechParts\(activeResumeCfi\)/);
+  assert.match(reader, /let collected = collectSpeechParts\(resumeCfi\);/);
+  assert.match(reader, /if \(!collected\.parts\.length && resumeCfi\)/);
+  assert.match(reader, /lastSpeechCfi = "";/);
+  assert.match(reader, /collected = collectSpeechParts\(""\);/);
+});
+
+test('speech continues into the next spine section after the current plan ends', () => {
+  assert.match(reader, /window\.continueSpeechAfterSection = function\(notifyNative, requestID, attempts\)/);
+  assert.match(reader, /exhausted: true/);
+  assert.match(reader, /window\.requestSpeechText\(false, requestID, ""\)/);
+  assert.match(reader, /window\.continueSpeechAfterSection\(notifyNative, requestID, attempt \+ 1\)/);
+});

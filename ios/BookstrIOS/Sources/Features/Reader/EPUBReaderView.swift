@@ -155,6 +155,7 @@ final class EPUBReaderController: NSObject, ObservableObject, AVSpeechSynthesize
     @Published var sections: [EPUBSection] = []
     @Published var hasTableOfContents = false
     @Published var errorMessage: String?
+    @Published var speechStatusMessage: String?
     @Published var ready = false
     @Published var isSpeaking = false
     @Published private(set) var isSpeechRetained = false
@@ -183,6 +184,7 @@ final class EPUBReaderController: NSObject, ObservableObject, AVSpeechSynthesize
     private var nowPlayingIsPlaying = false
     private var remoteCommandsConfigured = false
     private var audioSessionObservers: [NSObjectProtocol] = []
+    private var speechStopRequested = false
 
     override init() {
         super.init()
@@ -282,7 +284,8 @@ final class EPUBReaderController: NSObject, ObservableObject, AVSpeechSynthesize
         text: String,
         playback: SpeechPlaybackChoice,
         chunks: [(text: String, offset: Int, pauseSeconds: Double, speak: String)]? = nil,
-        requestID: String? = nil
+        requestID: String? = nil,
+        exhausted: Bool = false
     ) {
         let preparedChunks = (chunks?.isEmpty == false ? chunks! : speechChunks(text).map {
             (text: $0.text, offset: $0.offset, pauseSeconds: 0.035, speak: SpeechSpokenText.normalize($0.text))
@@ -292,9 +295,14 @@ final class EPUBReaderController: NSObject, ObservableObject, AVSpeechSynthesize
         guard playbackQueue.accept(requestID: requestID, chunks: preparedChunks) else { return }
         guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             stopSpeech()
-            errorMessage = "No readable text is visible here."
+            // End-of-book continuation replies with exhausted; do not treat that
+            // as a mid-chapter "no readable text" failure.
+            if !exhausted {
+                speechStatusMessage = "No readable text is visible here."
+            }
             return
         }
+        speechStopRequested = false
         do {
             let audioSession = AVAudioSession.sharedInstance()
             try audioSession.setCategory(
@@ -347,7 +355,7 @@ final class EPUBReaderController: NSObject, ObservableObject, AVSpeechSynthesize
                     self.neuralChunkOffset = nil
                     switch result {
                     case .success:
-                        self.finishSpeech()
+                        self.continueSpeechAcrossSections()
                     case .failure(let error):
                         self.stopSpeech()
                         self.errorMessage = error.localizedDescription
@@ -359,12 +367,13 @@ final class EPUBReaderController: NSObject, ObservableObject, AVSpeechSynthesize
             let selectedVoice = bestVoice(language: playback.languageTag, identifier: playback.voiceIdentifier)
             speakNextUtterance(voice: selectedVoice, rate: playback.rate, isFirst: true)
         }
+        speechStatusMessage = nil
         errorMessage = nil
     }
 
     private func speakNextUtterance(voice: AVSpeechSynthesisVoice?, rate: Double, isFirst: Bool = false) {
         guard activeUtterance == nil, !playbackQueue.isEmpty else {
-            if activeUtterance == nil { finishSpeech() }
+            if activeUtterance == nil { continueSpeechAcrossSections() }
             return
         }
         guard let chunk = playbackQueue.next() else { return }
@@ -417,7 +426,11 @@ final class EPUBReaderController: NSObject, ObservableObject, AVSpeechSynthesize
             speakNextUtterance(voice: utterance.voice, rate: Double(utterance.rate))
             return
         }
-        finishSpeech()
+        if speechStopRequested {
+            finishSpeech()
+            return
+        }
+        continueSpeechAcrossSections()
     }
 
     private func finishSpeech() {
@@ -427,7 +440,26 @@ final class EPUBReaderController: NSObject, ObservableObject, AVSpeechSynthesize
         evaluate("window.clearSpeechProgress && window.clearSpeechProgress()")
     }
 
+    /// After the current section's speech plan drains, advance to the next spine
+    /// item instead of stopping. Empty/`exhausted` replies finish cleanly.
+    private func continueSpeechAcrossSections() {
+        guard !speechStopRequested else {
+            finishSpeech()
+            return
+        }
+        speechLocator = ""
+        speechStatusMessage = nil
+        let requestID = UUID().uuidString
+        playbackQueue.beginRequest(id: requestID)
+        setSpeaking(true)
+        updateNowPlaying(isPlaying: true)
+        evaluate(
+            "window.continueSpeechAfterSection && window.continueSpeechAfterSection(true, \(Self.js(requestID)))"
+        )
+    }
+
     private func stopSpeech() {
+        speechStopRequested = true
         playbackQueue.cancel()
         activeUtterance = nil
         utteranceOffsets.removeAll()
@@ -443,6 +475,8 @@ final class EPUBReaderController: NSObject, ObservableObject, AVSpeechSynthesize
     }
 
     private func requestSpeechText(after delayMilliseconds: Int = 0) {
+        speechStopRequested = false
+        speechStatusMessage = nil
         let requestID = UUID().uuidString
         playbackQueue.beginRequest(id: requestID)
         setSpeaking(true)
@@ -453,6 +487,10 @@ final class EPUBReaderController: NSObject, ObservableObject, AVSpeechSynthesize
         } else {
             evaluate(request)
         }
+    }
+
+    func dismissSpeechStatus() {
+        speechStatusMessage = nil
     }
 
     private func bestVoice(language: String, identifier: String) -> AVSpeechSynthesisVoice? {
@@ -647,6 +685,7 @@ final class EPUBReaderController: NSObject, ObservableObject, AVSpeechSynthesize
     }
 
     private func skipSpokenPage(direction: Int) {
+        speechStopRequested = true
         playbackQueue.cancel()
         activeUtterance = nil
         utteranceOffsets.removeAll()
@@ -1462,7 +1501,8 @@ struct EPUBReaderView: UIViewRepresentable {
                 text: text,
                 playback: container.settingsRepository.speechChoice(for: item["language"] as? String ?? "en"),
                 chunks: chunks.isEmpty ? nil : chunks,
-                requestID: item["requestID"] as? String
+                requestID: item["requestID"] as? String,
+                exhausted: item["exhausted"] as? Bool ?? false
             )
         }
     }

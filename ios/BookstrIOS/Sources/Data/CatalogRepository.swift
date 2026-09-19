@@ -233,10 +233,25 @@ final class CatalogRepository {
         return downloaded.sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
     }
 
-    /// Remote cover URLs win; the embedded-cover cache only fills gaps. An
-    /// empty-string coverUrl is the stored negative result from a prior scan.
+    /// Remote or already-stamped covers win. An empty-string `coverUrl` is the
+    /// stored negative result from a prior scan (`nil` means "not scanned yet").
+    static func hasUsableCover(_ book: CatalogBook) -> Bool {
+        !(book.coverUrl ?? "").isEmpty
+    }
+
+    static func shouldScanEmbeddedCover(for book: CatalogBook) -> Bool {
+        book.coverUrl == nil
+    }
+
+    private static func cachedCoverURL(for book: CatalogBook, cache: [String: URL]) -> URL? {
+        for key in publicationIdentityCandidates(for: book).map({ $0.lowercased() }) {
+            if let cached = cache[key] { return cached }
+        }
+        return nil
+    }
+
     private static func stampCachedCover(into book: CatalogBook, cache: [String: URL]) -> CatalogBook {
-        guard book.coverUrl?.isEmpty != false, let cached = cache[book.id.lowercased()] else { return book }
+        guard !hasUsableCover(book), let cached = cachedCoverURL(for: book, cache: cache) else { return book }
         var stamped = book
         stamped.coverUrl = cached.absoluteString
         return stamped
@@ -255,12 +270,15 @@ final class CatalogRepository {
     }
 
     func ensureEmbeddedCover(for book: CatalogBook) async -> CatalogBook {
-        guard book.coverUrl?.isEmpty != false else { return book }
-        if let cached = fileStore.cachedCoverURLs()[book.id.lowercased()] {
+        if Self.hasUsableCover(book) { return book }
+        let cache = fileStore.cachedCoverURLs()
+        if let cached = Self.cachedCoverURL(for: book, cache: cache) {
             var stamped = book
             stamped.coverUrl = cached.absoluteString
             return stamped
         }
+        // Empty string means a previous scan found nothing; do not rescan.
+        guard Self.shouldScanEmbeddedCover(for: book) else { return book }
         guard let local = localPublication(for: book) else { return book }
         let sourceURL = local.url
         let isEPUB = local.book.format == .epub

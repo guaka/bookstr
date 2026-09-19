@@ -48,6 +48,9 @@ class ReaderTextToSpeechTest {
 
         assertTrue(readerSource.contains("if (isSpeaking && (keyCode == KeyEvent.KEYCODE_VOLUME_UP"))
         assertTrue(readerSource.contains("showSpeechProgress("))
+        assertTrue(readerSource.contains("EXTRA_REQUEST_CONTINUE"))
+        assertTrue(readerSource.contains("continueSpeechAfterSection"))
+        assertTrue(readerSource.contains("optBoolean(\"exhausted\""))
         assertTrue(serviceSource.contains("engine.setSpeechRate(1.0f)"))
         assertTrue(serviceSource.contains("engine.voices"))
         assertTrue(serviceSource.contains("SpeechVoiceSelection.resolve("))

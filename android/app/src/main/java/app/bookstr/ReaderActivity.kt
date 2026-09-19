@@ -317,7 +317,9 @@ class ReaderActivity : ComponentActivity() {
                                 readerInteracted = true
                             }
                         },
-                        onSpeechText = { text, language, chunks -> speakText(text, language, chunks) },
+                        onSpeechText = { text, language, chunks, exhausted ->
+                            speakText(text, language, chunks, exhausted)
+                        },
                         onProgress = { progression, cfi, sectionIndex, sectionCount, fromSpeech ->
                             readerProgress = progression.coerceIn(0.0, 1.0).toFloat()
                             readerSectionIndex = sectionIndex.coerceAtLeast(0)
@@ -651,6 +653,15 @@ class ReaderActivity : ComponentActivity() {
             return
         }
 
+        if (intent.getBooleanExtra(NarrationService.EXTRA_REQUEST_CONTINUE, false)) {
+            speechMessage = null
+            webView?.evaluateJavascript(
+                "window.continueSpeechAfterSection && window.continueSpeechAfterSection(true, null);",
+                null,
+            )
+            return
+        }
+
         if (intent.getBooleanExtra(NarrationService.EXTRA_REQUEST_TEXT, false)) {
             speechMessage = "Preparing text…"
             webView?.evaluateJavascript(speechRequestScript(), null)
@@ -687,11 +698,16 @@ class ReaderActivity : ComponentActivity() {
         )
     }
 
-    private fun speakText(text: String, languageTag: String, chunks: String) {
+    private fun speakText(text: String, languageTag: String, chunks: String, exhausted: Boolean = false) {
         val cleanText = text.trim()
         if (cleanText.isBlank()) {
             isSpeaking = false
-            speechMessage = "No readable text is visible here."
+            if (!exhausted) {
+                speechMessage = "No readable text is visible here."
+            } else {
+                speechMessage = null
+                NarrationService.stop(this)
+            }
             return
         }
         speechMessage = null
@@ -1024,7 +1040,7 @@ private fun ReaderWebView(
     onDictionaryLookup: (String, String) -> Unit,
     onKnownWordTapped: (String) -> Unit,
     onReaderInteracted: () -> Unit,
-    onSpeechText: (String, String, String) -> Unit,
+    onSpeechText: (String, String, String, Boolean) -> Unit,
     onProgress: (Double, String, Int, Int, Boolean) -> Unit,
 ) {
     val context = LocalContext.current
@@ -1293,6 +1309,7 @@ private fun ReaderWebView(
                                         obj.optString("text"),
                                         obj.optString("language", "en"),
                                         chunks,
+                                        obj.optBoolean("exhausted", false),
                                     )
                                 }
                             }

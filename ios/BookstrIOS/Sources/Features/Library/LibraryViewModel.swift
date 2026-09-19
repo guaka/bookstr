@@ -102,7 +102,8 @@ final class LibraryViewModel: ObservableObject {
     /// only scanned once thanks to the covers/ cache.
     private func scheduleCoverExtraction(seed: [CatalogBook], container: AppContainer) {
         coverRefreshTask?.cancel()
-        let pending = seed.filter { $0.coverUrl?.isEmpty != false }
+        // `nil` = not scanned yet; `""` = scanned with no cover (skip).
+        let pending = seed.filter { CatalogRepository.shouldScanEmbeddedCover(for: $0) }
         guard !pending.isEmpty else { return }
         coverRefreshTask = Task { [weak self] in
             let stamped = await container.catalogRepository.ensureEmbeddedCovers(for: pending)

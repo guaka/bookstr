@@ -778,74 +778,90 @@
       if (!rendition || typeof rendition.getContents !== "function" || !window.BookstrSpeech) {
         return { text: "", chunks: [], language: "en" };
       }
-      const selector = "h1, h2, h3, h4, h5, h6, p, li, blockquote, pre, figcaption, dt, dd";
       const paragraphs = [];
       let language = "";
-      let foundVisibleText = false;
-      const resumeCfi = String(lastSpeechCfi || "").trim();
+      let resumeCfi = String(lastSpeechCfi || "").trim();
       const contentViews = rendition.getContents();
-      for (const view of contentViews) {
-        const contentDocument = view && view.document;
-        if (!contentDocument) continue;
-        if (!language) language = String(contentDocument.documentElement.lang || "").trim();
-        const frame = contentDocument.defaultView && contentDocument.defaultView.frameElement;
-        const frameTop = frame && frame.getBoundingClientRect ? frame.getBoundingClientRect().top : 0;
-        let elements = Array.from(contentDocument.querySelectorAll(selector));
-        if (!elements.length && contentDocument.body) {
-          elements = [contentDocument.body];
-        }
-        for (const element of elements) {
-          let text = String(
-            window.BookstrSpeech && window.BookstrSpeech.visibleText
-              ? window.BookstrSpeech.visibleText(element)
-              : (element.innerText || element.textContent || "")
-          )
-            .replace(/\s+/g, " ")
-            .trim();
-          if (!text) continue;
-          if (resumeCfi && typeof view.cfiFromRange === "function" && window.BookstrSpeech.locatorSkipDecision) {
-            const startRange = contentDocument.createRange();
-            const endRange = contentDocument.createRange();
-            startRange.selectNodeContents(element);
-            startRange.collapse(true);
-            endRange.selectNodeContents(element);
-            endRange.collapse(false);
-            let startCfi = "";
-            let endCfi = "";
-            try { startCfi = String(view.cfiFromRange(startRange) || ""); } catch (_) {}
-            try { endCfi = String(view.cfiFromRange(endRange) || ""); } catch (_) {}
-            const decision = window.BookstrSpeech.locatorSkipDecision(startCfi, endCfi, resumeCfi);
-            if (decision === "skip") continue;
-            if (decision === "resume" && typeof view.range === "function") {
-              try {
-                const point = view.range(resumeCfi);
-                if (point && element.contains(point.startContainer)) {
-                  const walker = contentDocument.createTreeWalker(element, NodeFilter.SHOW_TEXT);
-                  let remaining = "";
-                  let seen = false;
-                  let node;
-                  while ((node = walker.nextNode())) {
-                    if (!seen) {
-                      if (node !== point.startContainer) continue;
-                      seen = true;
-                      remaining += String(node.nodeValue || "").slice(point.startOffset);
-                      continue;
-                    }
-                    remaining += String(node.nodeValue || "");
-                  }
-                  text = remaining.replace(/\s+/g, " ").trim();
-                  if (!text) continue;
-                }
-              } catch (_) {}
-            }
-          } else {
-            const rect = element.getBoundingClientRect ? element.getBoundingClientRect() : { bottom: 1 };
-            if (!foundVisibleText && frameTop + rect.bottom <= 0) continue;
+
+      function collectFromViews(activeResumeCfi) {
+        const collected = [];
+        let found = false;
+        for (const view of contentViews) {
+          const contentDocument = view && view.document;
+          if (!contentDocument) continue;
+          if (!language) language = String(contentDocument.documentElement.lang || "").trim();
+          const frame = contentDocument.defaultView && contentDocument.defaultView.frameElement;
+          const frameTop = frame && frame.getBoundingClientRect ? frame.getBoundingClientRect().top : 0;
+          let elements = window.BookstrSpeech.speakableBlocks
+            ? window.BookstrSpeech.speakableBlocks(contentDocument)
+            : Array.from(contentDocument.querySelectorAll(
+              "h1, h2, h3, h4, h5, h6, p, li, blockquote, pre, figcaption, dt, dd"
+            ));
+          if (!elements.length && contentDocument.body) {
+            elements = [contentDocument.body];
           }
-          foundVisibleText = true;
-          paragraphs.push(text);
+          for (const element of elements) {
+            let text = String(
+              window.BookstrSpeech.visibleText
+                ? window.BookstrSpeech.visibleText(element)
+                : (element.innerText || element.textContent || "")
+            )
+              .replace(/\s+/g, " ")
+              .trim();
+            if (!text) continue;
+            if (activeResumeCfi && typeof view.cfiFromRange === "function" && window.BookstrSpeech.locatorSkipDecision) {
+              const startRange = contentDocument.createRange();
+              const endRange = contentDocument.createRange();
+              startRange.selectNodeContents(element);
+              startRange.collapse(true);
+              endRange.selectNodeContents(element);
+              endRange.collapse(false);
+              let startCfi = "";
+              let endCfi = "";
+              try { startCfi = String(view.cfiFromRange(startRange) || ""); } catch (_) {}
+              try { endCfi = String(view.cfiFromRange(endRange) || ""); } catch (_) {}
+              const decision = window.BookstrSpeech.locatorSkipDecision(startCfi, endCfi, activeResumeCfi);
+              if (decision === "skip") continue;
+              if (decision === "resume" && typeof view.range === "function") {
+                try {
+                  const point = view.range(activeResumeCfi);
+                  if (point && element.contains(point.startContainer)) {
+                    const walker = contentDocument.createTreeWalker(element, NodeFilter.SHOW_TEXT);
+                    let remaining = "";
+                    let seen = false;
+                    let node;
+                    while ((node = walker.nextNode())) {
+                      if (!seen) {
+                        if (node !== point.startContainer) continue;
+                        seen = true;
+                        remaining += String(node.nodeValue || "").slice(point.startOffset);
+                        continue;
+                      }
+                      remaining += String(node.nodeValue || "");
+                    }
+                    text = remaining.replace(/\s+/g, " ").trim();
+                    if (!text) continue;
+                  }
+                } catch (_) {}
+              }
+            } else {
+              const rect = element.getBoundingClientRect ? element.getBoundingClientRect() : { bottom: 1 };
+              if (!found && frameTop + rect.bottom <= 0) continue;
+            }
+            found = true;
+            collected.push(text);
+          }
         }
+        return collected;
       }
+
+      let collectedParagraphs = collectFromViews(resumeCfi);
+      if (!collectedParagraphs.length && resumeCfi) {
+        lastSpeechCfi = "";
+        resumeCfi = "";
+        collectedParagraphs = collectFromViews("");
+      }
+      paragraphs.push(...collectedParagraphs);
       if (!language && book && book.packaging && book.packaging.metadata) {
         language = String(book.packaging.metadata.language || "");
       }

@@ -275,6 +275,50 @@
     return parts.join("");
   }
 
+  const SPEAKABLE_PRIMARY_SELECTOR =
+    "h1, h2, h3, h4, h5, h6, p, blockquote, pre, figcaption, dt, dd, li";
+  const SPEAKABLE_CONTAINER_SELECTOR = "div, section, article";
+
+  function speakableBlocks(document) {
+    if (!document || typeof document.querySelectorAll !== "function") return [];
+    const primaryNodes = Array.from(document.querySelectorAll(SPEAKABLE_PRIMARY_SELECTOR));
+    const primarySet = new Set(primaryNodes);
+    const candidates = Array.from(document.querySelectorAll(
+      SPEAKABLE_PRIMARY_SELECTOR + ", " + SPEAKABLE_CONTAINER_SELECTOR
+    ));
+    const blocks = [];
+    candidates.forEach(function(element) {
+      if (primarySet.has(element)) {
+        // Nested primaries (e.g. li inside a heading) are spoken via the ancestor.
+        const parent = element.parentElement;
+        if (parent && typeof parent.closest === "function" && parent.closest(SPEAKABLE_PRIMARY_SELECTOR)) {
+          return;
+        }
+        if (normalizeText(visibleText(element))) blocks.push(element);
+        return;
+      }
+      // Nested wrappers inside headings/paragraphs must not re-speak the same text.
+      if (typeof element.closest === "function" && element.closest(SPEAKABLE_PRIMARY_SELECTOR)) {
+        return;
+      }
+      if (typeof element.querySelector === "function" && element.querySelector(SPEAKABLE_PRIMARY_SELECTOR)) {
+        return;
+      }
+      const nested = typeof element.querySelectorAll === "function"
+        ? Array.from(element.querySelectorAll(SPEAKABLE_CONTAINER_SELECTOR))
+        : [];
+      for (let index = 0; index < nested.length; index += 1) {
+        if (normalizeText(visibleText(nested[index]))) return;
+      }
+      if (!normalizeText(visibleText(element))) return;
+      blocks.push(element);
+    });
+    if (!blocks.length && document.body && normalizeText(visibleText(document.body))) {
+      return [document.body];
+    }
+    return blocks;
+  }
+
   function isGroupedThousandsComma(text, commaIndex) {
     if (commaIndex < 1 || !/\d/.test(text.charAt(commaIndex - 1))) return false;
     return /^\d{3}(?:,\d{3})*(?:\.\d+)?(?:\D|$)/.test(text.slice(commaIndex + 1));
@@ -744,6 +788,9 @@
     mappedIndexAtPoint,
     isSilentSpeechParent,
     visibleText,
+    speakableBlocks,
+    speakablePrimarySelector: SPEAKABLE_PRIMARY_SELECTOR,
+    speakableContainerSelector: SPEAKABLE_CONTAINER_SELECTOR,
     normalizeLocale,
     selectVoice,
     normalizeText,

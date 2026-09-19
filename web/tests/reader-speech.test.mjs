@@ -683,3 +683,190 @@ test('speech planner handles punctuation after parenthetical phrases and empty D
     assertPlanIntegrity(BookstrSpeech.buildPlan([text], { softLimit: 10, hardLimit: 20, segmenterFactory: null }));
   }
 });
+
+function speechDocument(buildChildren) {
+  function matches(element, selector) {
+    if (!element || element.nodeType === 3) return false;
+    return String(selector)
+      .split(',')
+      .map((part) => part.trim().toLowerCase())
+      .filter(Boolean)
+      .some((part) => element.localName === part);
+  }
+
+  function collect(root, selector, includeRoot) {
+    const found = [];
+    function walk(node, isRoot) {
+      if (!node || node.nodeType === 3) return;
+      if ((!isRoot || includeRoot) && matches(node, selector)) found.push(node);
+      for (const child of node.childNodes || []) walk(child, false);
+    }
+    walk(root, true);
+    return found;
+  }
+
+  function createElement(tag, kids = []) {
+    const element = {
+      tagName: String(tag).toUpperCase(),
+      localName: String(tag).toLowerCase(),
+      nodeType: 1,
+      childNodes: [],
+      parentElement: null,
+      ownerDocument: null,
+      className: '',
+      getAttribute() { return null; },
+      closest(selector) {
+        let current = this;
+        while (current) {
+          if (matches(current, selector)) return current;
+          current = current.parentElement;
+        }
+        return null;
+      },
+      querySelector(selector) {
+        return collect(this, selector, false)[0] || null;
+      },
+      querySelectorAll(selector) {
+        return collect(this, selector, false);
+      },
+    };
+    for (const kid of kids) {
+      if (typeof kid === 'string') {
+        element.childNodes.push({ nodeType: 3, nodeValue: kid, parentElement: element });
+      } else {
+        kid.parentElement = element;
+        element.childNodes.push(kid);
+      }
+    }
+    return element;
+  }
+
+  const children = typeof buildChildren === 'function' ? buildChildren(createElement) : [];
+  const body = createElement('body', children);
+  const documentElement = createElement('html', [body]);
+  const document = {
+    body,
+    documentElement,
+    querySelector(selector) {
+      return collect(documentElement, selector, true)[0] || null;
+    },
+    querySelectorAll(selector) {
+      return collect(documentElement, selector, true);
+    },
+    createTreeWalker(root) {
+      const nodes = [];
+      function walk(node) {
+        for (const child of node.childNodes || []) {
+          if (child.nodeType === 3) nodes.push(child);
+          else walk(child);
+        }
+      }
+      walk(root);
+      let index = 0;
+      return {
+        nextNode() {
+          return index < nodes.length ? nodes[index++] : null;
+        },
+      };
+    },
+  };
+
+  function attach(node) {
+    if (!node || node.nodeType === 3) return;
+    node.ownerDocument = document;
+    for (const child of node.childNodes || []) {
+      if (child.nodeType === 3) child.parentElement = node;
+      else attach(child);
+    }
+  }
+  attach(documentElement);
+  body.parentElement = documentElement;
+  return document;
+}
+
+test('speakableBlocks does not re-speak nested wrappers inside headings', () => {
+  const document = speechDocument((el) => [
+    el('h2', [
+      el('div', ['Chapter Title']),
+      el('div', ['Chapter Title']),
+      el('div', ['Chapter Title']),
+    ]),
+  ]);
+  const blocks = BookstrSpeech.speakableBlocks(document);
+  assert.equal(blocks.length, 1);
+  assert.equal(blocks[0].localName, 'h2');
+  assert.equal(
+    BookstrSpeech.normalizeText(BookstrSpeech.visibleText(blocks[0])),
+    'Chapter TitleChapter TitleChapter Title',
+  );
+});
+
+test('speakableBlocks skips nested primary tags inside a heading', () => {
+  const document = speechDocument((el) => [
+    el('h1', [
+      el('li', ['Repeated']),
+      el('li', ['Repeated']),
+    ]),
+  ]);
+  const blocks = BookstrSpeech.speakableBlocks(document);
+  assert.deepEqual(blocks.map((block) => block.localName), ['h1']);
+});
+
+test('speakableBlocks includes leaf div text when primary tags are empty', () => {
+  const document = speechDocument((el) => [
+    el('p', ['   ']),
+    el('div', ['Mid-chapter narration continues here.']),
+  ]);
+  const blocks = BookstrSpeech.speakableBlocks(document);
+  assert.equal(blocks.length, 1);
+  assert.equal(blocks[0].localName, 'div');
+  assert.equal(BookstrSpeech.normalizeText(BookstrSpeech.visibleText(blocks[0])), 'Mid-chapter narration continues here.');
+});
+
+test('speakableBlocks prefers primary paragraphs over wrapping containers', () => {
+  const document = speechDocument((el) => [
+    el('section', [
+      el('p', ['First paragraph.']),
+      el('p', ['Second paragraph.']),
+    ]),
+  ]);
+  const blocks = BookstrSpeech.speakableBlocks(document);
+  assert.deepEqual(blocks.map((block) => block.localName), ['p', 'p']);
+  assert.deepEqual(
+    blocks.map((block) => BookstrSpeech.normalizeText(BookstrSpeech.visibleText(block))),
+    ['First paragraph.', 'Second paragraph.'],
+  );
+});
+
+test('speakableBlocks prefers nested leaf containers over empty ancestors', () => {
+  const document = speechDocument((el) => [
+    el('section', [
+      el('div', ['Only the leaf should speak.']),
+    ]),
+  ]);
+  const blocks = BookstrSpeech.speakableBlocks(document);
+  assert.equal(blocks.length, 1);
+  assert.equal(blocks[0].localName, 'div');
+  assert.equal(
+    BookstrSpeech.normalizeText(BookstrSpeech.visibleText(blocks[0])),
+    'Only the leaf should speak.',
+  );
+});
+
+test('speakableBlocks falls back to body when no block tags carry text', () => {
+  const document = speechDocument((el) => [
+    el('span', ['Body-level prose without paragraphs.']),
+  ]);
+  const blocks = BookstrSpeech.speakableBlocks(document);
+  assert.equal(blocks.length, 1);
+  assert.equal(blocks[0].localName, 'body');
+  assert.equal(
+    BookstrSpeech.normalizeText(BookstrSpeech.visibleText(blocks[0])),
+    'Body-level prose without paragraphs.',
+  );
+});
+
+test('speakableBlocks returns an empty list for missing documents', () => {
+  assert.deepEqual(BookstrSpeech.speakableBlocks(null), []);
+  assert.deepEqual(BookstrSpeech.speakableBlocks({}), []);
+});
