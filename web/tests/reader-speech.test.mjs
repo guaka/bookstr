@@ -129,6 +129,10 @@ test('speech planner speaks grouped thousands without comma pauses', () => {
   assert.equal(BookstrSpeech.spokenText('100\u202F000'), '100000');
   assert.equal(BookstrSpeech.normalizeText('There were 1,000,000 people.'), 'There were 1,000,000 people.');
   assert.equal(BookstrSpeech.normalizeText('Wait, then go.'), 'Wait, then go.');
+  assert.equal(BookstrSpeech.normalizeText('October 9, 1983'), 'October 9, 1983');
+  assert.equal(BookstrSpeech.normalizeText('1983, 1990'), '1983, 1990');
+  assert.equal(BookstrSpeech.spokenText('October 9, 1983'), 'October 9, 1983');
+  assert.equal(BookstrSpeech.spokenText('1983, 1990'), '1983, 1990');
 
   const plan = BookstrSpeech.buildPlan(['There were 100,000 people.']);
   assert.equal(plan.chunks.length, 1);
@@ -156,6 +160,70 @@ test('speech planner speaks grouped thousands without comma pauses', () => {
   ], { softLimit: 80, hardLimit: 120, segmenterFactory: null });
   assert.ok(closingParen.chunks.some(chunk => chunk.text.includes(')')));
   assertPlanIntegrity(closingParen);
+});
+
+test('speech planner keeps date and number-list commas distinct for English TTS', () => {
+  const pauses = BookstrSpeech.defaults;
+  const date = BookstrSpeech.buildPlan(['October 9, 1983'], {
+    language: 'en-US',
+    normalizeEnglish: true,
+    segmenterFactory: null,
+  });
+  assert.deepEqual(date.chunks.map(chunk => chunk.text), ['October 9,', '1983']);
+  assert.deepEqual(date.chunks.map(chunk => chunk.spoken), ['October 9,', 'nineteen eighty-three']);
+  assert.equal(date.chunks[1].pauseMs, pauses.commaPauseMs);
+  assertPlanIntegrity(date);
+
+  const years = BookstrSpeech.buildPlan(['1983, 1990'], {
+    language: 'en-US',
+    normalizeEnglish: true,
+    segmenterFactory: null,
+  });
+  assert.deepEqual(years.chunks.map(chunk => chunk.text), ['1983,', '1990']);
+  assert.deepEqual(years.chunks.map(chunk => chunk.spoken), [
+    'nineteen eighty-three,',
+    'nineteen ninety',
+  ]);
+  assert.equal(years.chunks[1].pauseMs, pauses.commaPauseMs);
+  assertPlanIntegrity(years);
+
+  const century = BookstrSpeech.buildPlan(['In 1900 the city grew.'], {
+    language: 'en-US',
+    normalizeEnglish: true,
+    segmenterFactory: null,
+  });
+  assert.match(century.chunks[0].spoken, /nineteen hundred/);
+  assert.doesNotMatch(century.chunks[0].spoken, /thousand/);
+
+  const yearWords = [
+    ['In 2000 it began.', /two thousand/],
+    ['In 2005 it began.', /two thousand five/],
+    ['In 2015 it began.', /twenty fifteen/],
+    ['In 1000 it began.', /one thousand/],
+    ['In 1100 it began.', /eleven hundred/],
+  ];
+  for (const [source, pattern] of yearWords) {
+    const plan = BookstrSpeech.buildPlan([source], {
+      language: 'en-US',
+      normalizeEnglish: true,
+      segmenterFactory: null,
+    });
+    assert.match(plan.chunks.map(chunk => chunk.spoken).join(' '), pattern);
+    assert.match(plan.chunks.map(chunk => chunk.text).join(' '), /\d{4}/);
+  }
+});
+
+test('speech planner keeps sentence pauses between short sentences', () => {
+  const plan = BookstrSpeech.buildPlan(['End of sentence. Next one starts.'], {
+    segmenterFactory: null,
+  });
+  assert.deepEqual(plan.chunks.map(chunk => chunk.text), [
+    'End of sentence.',
+    'Next one starts.',
+  ]);
+  assert.equal(plan.chunks[1].pauseMs, BookstrSpeech.defaults.sentencePauseMs);
+  assert.ok(BookstrSpeech.defaults.sentencePauseMs > BookstrSpeech.defaults.commaPauseMs);
+  assertPlanIntegrity(plan);
 });
 
 test('English preprocessing preserves source text, offsets, and semantic hyphens', () => {
@@ -305,10 +373,14 @@ test('speech planner recovers from a failing platform segmenter', () => {
   assertPlanIntegrity(plan);
 });
 
-test('speech planner joins short sentences and rebalances a one-word tail', () => {
+test('speech planner keeps short sentences separate and rebalances a one-word tail', () => {
   assert.deepEqual(
     BookstrSpeech.buildPlan(['One. Two.']).chunks.map(chunk => chunk.text),
-    ['One. Two.'],
+    ['One.', 'Two.'],
+  );
+  assert.equal(
+    BookstrSpeech.buildPlan(['One. Two.']).chunks[1].pauseMs,
+    BookstrSpeech.defaults.sentencePauseMs,
   );
 
   const rebalanced = BookstrSpeech.buildPlan(['aaaaa bbbbb ccccc ddddd'], {
@@ -324,8 +396,8 @@ test('speech planner joins short sentences and rebalances a one-word tail', () =
 
   const sentenceTail = `word `.repeat(47) + 'end. Tail.';
   const sentencePlan = BookstrSpeech.buildPlan([sentenceTail]);
-  assert.equal(sentencePlan.chunks.at(-1).text, 'end. Tail.');
-  assert.notEqual(sentencePlan.chunks.at(-1).text.split(/\s+/).length, 1);
+  assert.equal(sentencePlan.chunks.at(-1).text, 'Tail.');
+  assert.equal(sentencePlan.chunks.at(-2).text.endsWith('end.'), true);
   assertPlanIntegrity(sentencePlan);
 });
 

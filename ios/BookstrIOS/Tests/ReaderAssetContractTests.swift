@@ -179,6 +179,8 @@ final class ReaderAssetContractTests: XCTestCase {
         XCTAssertEqual(SpeechSpokenText.normalize("100,000"), "100000")
         XCTAssertEqual(SpeechSpokenText.normalize("There were 1,000,000.5 people."), "There were 1000000.5 people.")
         XCTAssertEqual(SpeechSpokenText.normalize("Wait, then go."), "Wait, then go.")
+        XCTAssertEqual(SpeechSpokenText.normalize("October 9, 1983"), "October 9, 1983")
+        XCTAssertEqual(SpeechSpokenText.normalize("1983, 1990"), "1983, 1990")
         XCTAssertEqual(SpeechSpokenText.normalize("100\u{00A0}000"), "100000")
         XCTAssertEqual(SpeechSpokenText.normalize("He left[1] at dawn."), "He left at dawn.")
         XCTAssertEqual(SpeechSpokenText.normalize("He left\u{00B9} at dawn."), "He left at dawn.")
@@ -275,6 +277,26 @@ final class ReaderAssetContractTests: XCTestCase {
         XCTAssertEqual(context.evaluateScript("BookstrTypography.normalizeAlignment(null)").toString(), "justified")
         XCTAssertTrue(context.evaluateScript("BookstrTypography.css()").toString()?.contains("text-align:justify") == true)
 #endif
+    }
+
+    func testEPUBSpeechPlannerKeepsDateCommasAndEnglishYears() throws {
+        let speechSource = try bundledAsset(named: "reader-speech", extension: "js")
+        let context = try XCTUnwrap(JSContext())
+        context.evaluateScript(speechSource)
+        let script = """
+        JSON.stringify(BookstrSpeech.buildPlan(['October 9, 1983'], {
+          language: 'en-US',
+          normalizeEnglish: true,
+          segmenterFactory: null
+        }))
+        """
+        let result = try XCTUnwrap(context.evaluateScript(script).toString())
+        let data = try XCTUnwrap(result.data(using: .utf8))
+        let plan = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        let chunks = try XCTUnwrap(plan["chunks"] as? [[String: Any]])
+        XCTAssertEqual(chunks.map { $0["text"] as? String }, ["October 9,", "1983"])
+        XCTAssertEqual(chunks.map { $0["spoken"] as? String }, ["October 9,", "nineteen eighty-three"])
+        XCTAssertEqual((chunks[1]["pauseMs"] as? NSNumber)?.intValue, 340)
     }
 
     func testNativeSpeechFallbackPreservesTextOffsetsAndAvoidsFinalWordOrphans() {
