@@ -3,6 +3,7 @@ import UIKit
 
 enum ScreenChrome {
     static func configure() {
+        UIDevice.current.isBatteryMonitoringEnabled = true
         let appearance = UINavigationBarAppearance()
         appearance.configureWithOpaqueBackground()
         UINavigationBar.appearance().standardAppearance = appearance

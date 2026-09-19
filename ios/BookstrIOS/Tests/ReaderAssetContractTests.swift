@@ -689,7 +689,9 @@ final class ReaderAssetContractTests: XCTestCase {
             year: 2026, month: 1, day: 15, hour: 13, minute: 7
         )))
         XCTAssertEqual(ReaderClockLabel.formattedTime(date), "13:07")
-        XCTAssertEqual(ReaderClockLabel.labelText(for: date), "13:07")
+        XCTAssertEqual(ReaderClockLabel.labelText(for: date, batteryPercent: nil, charging: false), "13:07")
+        XCTAssertEqual(ReaderClockLabel.labelText(for: date, batteryPercent: 84, charging: false), "13:07 84%")
+        XCTAssertEqual(ReaderClockLabel.labelText(for: date, batteryPercent: 84, charging: true), "13:07 84% charging")
     }
 
     func testReaderHeaderKeepsMetadataLeftOfTheCameraIsland() {
@@ -1037,22 +1039,32 @@ final class ReaderAssetContractTests: XCTestCase {
             contentsOf: sources.appendingPathComponent("Sources/App/BookstrIOSApp.swift"),
             encoding: .utf8
         )
-        XCTAssertFalse(app.contains(".statusBarHidden(true)"))
-        XCTAssertFalse(app.contains(".persistentSystemOverlays(.hidden)"))
+        XCTAssertTrue(app.contains(".statusBarHidden(true)"))
+        XCTAssertTrue(app.contains(".persistentSystemOverlays(.hidden)"))
+        let root = try String(
+            contentsOf: sources.appendingPathComponent("Sources/App/RootView.swift"),
+            encoding: .utf8
+        )
+        XCTAssertTrue(root.contains("ReaderClockLabel()"))
         let host = try String(
             contentsOf: sources.appendingPathComponent("Sources/Features/Reader/ReaderHostView.swift"),
             encoding: .utf8
         )
-        XCTAssertTrue(host.contains(".statusBarHidden(false)"))
-        XCTAssertFalse(host.contains(".statusBarHidden(showsReaderChrome)"))
+        XCTAssertTrue(host.contains("batterySnapshot"))
+        XCTAssertTrue(host.contains("bolt.fill"))
+        XCTAssertTrue(host.contains("accessibilityIdentifier(\"reader-clock\")"))
+        XCTAssertTrue(host.contains("\\(time) \\(batteryPercent)% charging"))
+        XCTAssertTrue(host.contains("\\(time) \\(batteryPercent)%"))
+        let chrome = try String(
+            contentsOf: sources.appendingPathComponent("Sources/Shared/ScreenChrome.swift"),
+            encoding: .utf8
+        )
+        XCTAssertTrue(chrome.contains("isBatteryMonitoringEnabled = true"))
         let info = try String(
             contentsOf: sources.appendingPathComponent("Info.plist"),
             encoding: .utf8
         )
-        XCTAssertNotNil(info.range(of: #"<key>UIStatusBarHidden</key>\s*<false/>"#, options: .regularExpression))
-        XCTAssertNotNil(
-            info.range(of: #"<key>UIViewControllerBasedStatusBarAppearance</key>\s*<true/>"#, options: .regularExpression)
-        )
+        XCTAssertNotNil(info.range(of: #"<key>UIStatusBarHidden</key>\s*<true/>"#, options: .regularExpression))
     }
 
     func testReaderOpeningOverlayUsesBookTitleNotTechnicalStages() throws {
