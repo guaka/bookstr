@@ -107,6 +107,7 @@
 		F446FCE99A3743EA9AF006E9 /* ReaderRelocation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 143998C6E16766DF9B9163DC /* ReaderRelocation.swift */; };
 		F5F52E446B44FEFDED9867A3 /* Comics in Resources */ = {isa = PBXBuildFile; fileRef = 419AAE77CAA8F1142870DBA2 /* Comics */; };
 		FBC9C4C06B284E0B6EA35CE0 /* reader-typography.js in Resources */ = {isa = PBXBuildFile; fileRef = 7A6FD2C6392542614B1B003E /* reader-typography.js */; };
+		9FFF99BC856692AD62AC1BE0 /* reader-chrome.js in Resources */ = {isa = PBXBuildFile; fileRef = 9CB583181908131F7A9D630D /* reader-chrome.js */; };
 		FBDEC08587AE518C8EBAFCED /* SettingsRepository.swift in Sources */ = {isa = PBXBuildFile; fileRef = 22DDF63A8FC739853B993022 /* SettingsRepository.swift */; };
 		FC133E8CF49FBFA03C75CDF3 /* ComicReaderView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9C26BF9A865ED02252061DB0 /* ComicReaderView.swift */; };
 		FE3AD27714601135F65B7AED /* SearchView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DB44907013C5BEF3B84AEF4E /* SearchView.swift */; };
@@ -190,6 +191,7 @@
 		4F9A2B3C5D6E7F8091A2B3C4 /* BookCoverView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BookCoverView.swift; sourceTree = "<group>"; };
 		5A1B2C3D4E5F60718293A4B5 /* BookListFacetFilters.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BookListFacetFilters.swift; sourceTree = "<group>"; };
 		7A6FD2C6392542614B1B003E /* reader-typography.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; path = "reader-typography.js"; sourceTree = "<group>"; };
+		9CB583181908131F7A9D630D /* reader-chrome.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; path = "reader-chrome.js"; sourceTree = "<group>"; };
 		7BA154F3ED4ACB912D2B64FE /* NostrConstantsV1.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NostrConstantsV1.swift; sourceTree = "<group>"; };
 		7FD8062A587453BE442A09ED /* NeuralSpeechSessionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NeuralSpeechSessionTests.swift; sourceTree = "<group>"; };
 		89F7F8413F9BC7F3728B3679 /* TorrentDownloadTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TorrentDownloadTests.swift; sourceTree = "<group>"; };
@@ -278,6 +280,7 @@
 				B13A987E3AC47FD0FE4BF250 /* comic-reader.html */,
 				2D679E1606D450E44108F4C5 /* reader-speech.js */,
 				7A6FD2C6392542614B1B003E /* reader-typography.js */,
+				9CB583181908131F7A9D630D /* reader-chrome.js */,
 			);
 			name = web;
 			path = ../web;
@@ -676,6 +679,7 @@
 				77319C1C204E66A0926BE980 /* libarchive.wasm in Resources */,
 				B95DDC79D1CA0647762EAF04 /* reader-speech.js in Resources */,
 				FBC9C4C06B284E0B6EA35CE0 /* reader-typography.js in Resources */,
+				9FFF99BC856692AD62AC1BE0 /* reader-chrome.js in Resources */,
 				25166CA459FFEDAC297B9C2D /* reader.html in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

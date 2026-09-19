@@ -243,33 +243,60 @@ actor ForegroundTorrentDownloader {
 /// Keeps each transfer alive independently of Search, and restores unfinished
 /// downloads from an atomic manifest on the next app launch.
 final class BookDownloadQueue: ObservableObject {
+    /// Finished jobs drop off the list after this window; the book stays in the library.
+    static let completedRetention: TimeInterval = 24 * 60 * 60
+
     struct Job: Identifiable, Codable {
         let result: BookSearchResult
         var id: String { result.id }
         var status = "Starting…"
         var book: CatalogBook?
         var failed = false
+        /// Set when the transfer finishes successfully. Missing on legacy rows.
+        var completedAt: Date?
+        var isDismissible: Bool { book != nil || failed }
     }
     typealias Prepare = (BookSearchResult, @escaping (String) -> Void) async throws -> CatalogBook
     @Published private(set) var jobs: [Job] = []
     @Published private(set) var persistenceError: String?
     private let fileURL: URL?
     private var tasks: [String: Task<Void, Never>] = [:]
+    private let now: () -> Date
 
-    init(fileURL: URL? = nil) {
+    init(fileURL: URL? = nil, now: @escaping () -> Date = Date.init) {
         self.fileURL = fileURL
+        self.now = now
         guard let fileURL, FileManager.default.fileExists(atPath: fileURL.path) else { return }
-        do { jobs = try JSONDecoder().decode([Job].self, from: Data(contentsOf: fileURL)) }
-        catch { persistenceError = "Could not restore downloads: \(error.localizedDescription)" }
+        do {
+            jobs = try JSONDecoder().decode([Job].self, from: Data(contentsOf: fileURL))
+            if removeStaleCompleted(now: now()) > 0 { persist() }
+        } catch { persistenceError = "Could not restore downloads: \(error.localizedDescription)" }
     }
 
     @MainActor func resume(prepare: @escaping Prepare) {
+        pruneCompleted()
         for job in jobs where job.book == nil && !job.failed {
             start(job.result, prepare: prepare)
         }
     }
 
+    /// Removes finished jobs older than ``completedRetention``. Active and failed jobs stay.
+    @discardableResult
+    @MainActor func pruneCompleted(now: Date? = nil) -> Int {
+        let removed = removeStaleCompleted(now: now ?? self.now())
+        if removed > 0 { save() }
+        return removed
+    }
+
+    /// Drops a finished or failed row from the queue without deleting the library book.
+    @MainActor func dismiss(_ id: String) {
+        guard let index = jobs.firstIndex(where: { $0.id == id }), jobs[index].isDismissible else { return }
+        jobs.remove(at: index)
+        save()
+    }
+
     @MainActor func enqueue(_ result: BookSearchResult, prepare: @escaping Prepare) {
+        pruneCompleted()
         if let index = jobs.firstIndex(where: { $0.id == result.id }) {
             guard tasks[result.id] == nil, jobs[index].book == nil else { return }
             jobs.remove(at: index)
@@ -301,6 +328,8 @@ final class BookDownloadQueue: ObservableObject {
                 if let index = jobs.firstIndex(where: { $0.id == result.id }) {
                     jobs[index].book = book
                     jobs[index].status = "Downloaded"
+                    jobs[index].completedAt = self.now()
+                    jobs[index].failed = false
                 }
             } catch is CancellationError {
                 if let index = jobs.firstIndex(where: { $0.id == result.id }) {
@@ -317,7 +346,23 @@ final class BookDownloadQueue: ObservableObject {
         }
     }
 
-    @MainActor private func save() {
+    /// Returns how many completed rows were removed.
+    @discardableResult
+    private func removeStaleCompleted(now: Date) -> Int {
+        let cutoff = now.addingTimeInterval(-Self.completedRetention)
+        let before = jobs.count
+        jobs.removeAll { job in
+            guard job.book != nil else { return false }
+            // Legacy rows without a stamp are treated as already past retention.
+            guard let completedAt = job.completedAt else { return true }
+            return completedAt <= cutoff
+        }
+        return before - jobs.count
+    }
+
+    @MainActor private func save() { persist() }
+
+    private func persist() {
         guard let fileURL else { return }
         do {
             try FileManager.default.createDirectory(at: fileURL.deletingLastPathComponent(), withIntermediateDirectories: true)

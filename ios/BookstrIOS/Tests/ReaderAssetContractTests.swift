@@ -269,6 +269,7 @@ final class ReaderAssetContractTests: XCTestCase {
         XCTAssertTrue(html.contains("<script src=\"reader-speech.js\"></script>"))
         XCTAssertEqual(html.components(separatedBy: "<script src=\"reader-speech.js\"></script>").count - 1, 1)
         XCTAssertTrue(html.contains("<script src=\"reader-typography.js\"></script>"))
+        XCTAssertTrue(html.contains("<script src=\"reader-chrome.js\"></script>"))
         XCTAssertTrue(html.contains("window.BookstrSpeech.buildPlan(parts, {"))
 #if !SWIFT_PACKAGE
         let typographySource = try bundledAsset(named: "reader-typography", extension: "js")
@@ -276,6 +277,9 @@ final class ReaderAssetContractTests: XCTestCase {
         XCTAssertEqual(context.evaluateScript("BookstrTypography.normalizeFont('nope')").toString(), "arial")
         XCTAssertEqual(context.evaluateScript("BookstrTypography.normalizeAlignment(null)").toString(), "justified")
         XCTAssertTrue(context.evaluateScript("BookstrTypography.css()").toString()?.contains("text-align:justify") == true)
+        let chromeSource = try bundledAsset(named: "reader-chrome", extension: "js")
+        context.evaluateScript(chromeSource)
+        XCTAssertEqual(context.evaluateScript("BookstrReaderChrome.themeBackgroundColor('night')").toString(), "#121212")
 #endif
     }
 
@@ -400,7 +404,11 @@ final class ReaderAssetContractTests: XCTestCase {
         XCTAssertTrue(html.contains("window.BookstrSpeech.visibleText(block)"))
         XCTAssertTrue(html.contains("window.setReaderTypography"))
         XCTAssertTrue(html.contains("<script src=\"reader-typography.js\"></script>"))
+        XCTAssertTrue(html.contains("<script src=\"reader-chrome.js\"></script>"))
         XCTAssertTrue(html.contains("BookstrTypography.css"))
+        XCTAssertTrue(html.contains("BookstrReaderChrome.prepareContentDocument"))
+        XCTAssertTrue(html.contains("installContinuousShellWatch"))
+        XCTAssertTrue(html.contains("isolateAuthorBackgrounds"))
         XCTAssertTrue(html.contains("Arial, Helvetica, sans-serif"))
         XCTAssertTrue(html.contains("isSilentSpeechParent"))
         XCTAssertTrue(html.contains("requestID: requestID || null"))
@@ -421,6 +429,8 @@ final class ReaderAssetContractTests: XCTestCase {
 
         XCTAssertTrue(html.contains("manager: \"continuous\""))
         XCTAssertTrue(html.contains("flow: \"scrolled-doc\""))
+        XCTAssertTrue(html.contains("applyContinuousShellBackground"))
+        XCTAssertTrue(html.contains("background: inherit !important"))
         XCTAssertFalse(html.contains("manager: nativePaginated"))
         XCTAssertFalse(html.contains("flow: nativePaginated"))
     }
@@ -765,6 +775,8 @@ final class ReaderAssetContractTests: XCTestCase {
         let source = try String(contentsOf: sourceURL, encoding: .utf8)
         XCTAssertTrue(source.contains("case \"/reader-typography.js\":"))
         XCTAssertTrue(source.contains("bundled(\"reader-typography\", extension: \"js\")"))
+        XCTAssertTrue(source.contains("case \"/reader-chrome.js\":"))
+        XCTAssertTrue(source.contains("bundled(\"reader-chrome\", extension: \"js\")"))
         XCTAssertTrue(source.contains("setReaderTypography(\\(font), \\(alignment), 0)"))
         XCTAssertTrue(source.contains("loadBookUrl(\\(publicationURL)"))
         XCTAssertTrue(source.contains("typeof window.loadBookUrl"))
@@ -1035,7 +1047,7 @@ final class ReaderAssetContractTests: XCTestCase {
             .deletingLastPathComponent()
             .deletingLastPathComponent()
             .deletingLastPathComponent()
-        if fileExtension == "js" && (name == "reader-speech" || name == "reader-typography") {
+        if fileExtension == "js" && (name == "reader-speech" || name == "reader-typography" || name == "reader-chrome") {
             return root.appendingPathComponent("web").appendingPathComponent("\(name).\(fileExtension)")
         }
         return root

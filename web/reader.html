@@ -30,6 +30,7 @@
     #viewer {
       width: 100vw;
       height: 100vh;
+      background: inherit;
     }
     .reader-header { display: none; }
     body.desktop-reader .reader-header {
@@ -93,11 +94,15 @@
     #reader-prev { left: 0; }
     #reader-next { right: 0; }
     .epub-container {
-      background: transparent !important;
+      background: inherit !important;
       overflow-x: hidden !important;
       overflow-y: auto !important;
       -webkit-overflow-scrolling: touch;
       scrollbar-width: none;
+    }
+    .epub-view,
+    .epub-view iframe {
+      background: inherit !important;
     }
     .epub-container::-webkit-scrollbar { display: none; }
     #reader-footer {
@@ -204,6 +209,7 @@
   <script src="epub.min.js"></script>
   <script src="reader-speech.js"></script>
   <script src="reader-typography.js"></script>
+  <script src="reader-chrome.js"></script>
 </head>
 <body>
   <header class="reader-header" aria-label="Reader controls">
@@ -252,6 +258,7 @@
     let book = null;
     let rendition = null;
     let currentBookId = "";
+    let currentReaderTheme = "paper";
     let lastSpeechCfi = "";
     let activeDictionary = null;
     let bookLoadGeneration = 0;
@@ -498,11 +505,44 @@
     }
 
     function applyTheme(theme) {
+      currentReaderTheme = theme === "night" ? "night" : (theme === "white" ? "white" : "paper");
+      const desktop = document.body.classList.contains("desktop-reader");
       document.body.className = theme === "night" ? "night" : (theme === "white" ? "white" : "");
+      if (desktop) document.body.classList.add("desktop-reader");
       if (rendition) {
         rendition.themes.select(theme === "night" ? "night" : (theme === "white" ? "white" : "paper"));
+        rendition.getContents().forEach(function(contents) {
+          isolateAuthorBackgrounds(contents && contents.document);
+        });
       }
       applyTypography();
+      applyContinuousShellBackground();
+    }
+
+    function themeBackgroundColor(theme) {
+      return window.BookstrReaderChrome.themeBackgroundColor(theme);
+    }
+
+    function applyContinuousShellBackground() {
+      const nodes = [document.documentElement, document.body, document.getElementById("viewer")]
+        .concat(Array.from(document.querySelectorAll(".epub-container, .epub-view, .epub-view iframe")));
+      window.BookstrReaderChrome.paintShell(nodes.filter(Boolean), currentReaderTheme);
+    }
+
+    function installContinuousShellWatch() {
+      const viewer = document.getElementById("viewer");
+      if (!viewer || viewer.__bookstrShellWatch) return;
+      viewer.__bookstrShellWatch = true;
+      const observer = new MutationObserver(function() {
+        applyContinuousShellBackground();
+      });
+      observer.observe(viewer, { childList: true, subtree: true });
+      applyContinuousShellBackground();
+    }
+
+    // Author figure wrappers often paint white across the rest of a section.
+    function isolateAuthorBackgrounds(contentDocument) {
+      window.BookstrReaderChrome.prepareContentDocument(contentDocument, currentReaderTheme);
     }
 
     function typographyCSS() {
@@ -573,9 +613,16 @@
         "html.bookstr-cover body > *": coverPage,
         "html.bookstr-cover img, html.bookstr-cover svg": coverMedia
       };
+      const contentReset = {
+        "background-color": "transparent !important",
+        "background-image": "none !important"
+      };
+      const contentBlocks =
+        "p, div, span, li, blockquote, td, th, h1, h2, h3, h4, h5, h6, section, article, aside, header, footer, main, nav, figure, figcaption, table, tr, thead, tbody, tfoot";
       rendition.themes.register("white", {
         "html, body": { background: "#ffffff !important", color: "#1c1916 !important" },
         body: Object.assign({}, shared, { background: "#ffffff !important", color: "#1c1916 !important" }),
+        [contentBlocks]: contentReset,
         a: { color: "#2f5d50 !important", "text-decoration-color": "#7fb8a7 !important" },
         "a:visited": { color: "#634779 !important" },
         "img, svg, video": media,
@@ -584,6 +631,7 @@
       rendition.themes.register("paper", {
         "html, body": { background: "#f7f3ea !important", color: "#1c1916 !important" },
         body: Object.assign({}, shared, { background: "#f7f3ea !important", color: "#1c1916 !important" }),
+        [contentBlocks]: contentReset,
         a: { color: "#2f5d50 !important", "text-decoration-color": "#7fb8a7 !important" },
         "a:visited": { color: "#6c4c70 !important" },
         "img, svg, video": media,
@@ -592,9 +640,7 @@
       rendition.themes.register("night", {
         "html, body": { background: "#121212 !important", color: "#e8e4dc !important" },
         body: Object.assign({}, shared, { background: "#121212 !important", color: "#e8e4dc !important" }),
-        "p, div, span, li, blockquote, td, th, h1, h2, h3, h4, h5, h6": {
-          color: "#e8e4dc !important"
-        },
+        [contentBlocks]: Object.assign({}, contentReset, { color: "#e8e4dc !important" }),
         a: { color: "#7fb8a7 !important", "text-decoration-color": "#4f786c !important" },
         "a:visited": { color: "#d0a8e8 !important" },
         "img, svg, video": media,
@@ -674,6 +720,14 @@
           manager: "continuous",
           flow: "scrolled-doc"
         });
+        installContinuousShellWatch();
+        if (rendition.hooks && rendition.hooks.content && typeof rendition.hooks.content.register === "function") {
+          rendition.hooks.content.register(function(contents) {
+            isolateAuthorBackgrounds(contents && contents.document);
+            applyTypographyToDocument(contents && contents.document);
+            applyContinuousShellBackground();
+          });
+        }
         rendition.hooks.content.register(identifyCoverPage);
         rendition.on("rendered", function(_, view) {
           const contentDocument = view && view.contents && view.contents.document;
@@ -682,10 +736,12 @@
               const links = Array.from(contentDocument.querySelectorAll("a[href]"), link => link.getAttribute("href") || "").join(" ");
               reportDiscoveredRights(creativeCommonsNotice(`${links} ${contentDocument.documentElement?.textContent || ""}`), generation);
             }
+            isolateAuthorBackgrounds(contentDocument);
             installSwipeNavigation(contentDocument);
             installWheelNavigation(contentDocument);
             applyTypographyToDocument(contentDocument);
           }
+          applyContinuousShellBackground();
         });
         rendition.on("selected", function(cfi, contents) {
           const selectedRange = contents && contents.window && contents.window.getSelection();

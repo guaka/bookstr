@@ -37,6 +37,10 @@ test('EPUB reader uses continuous vertical scrolling', () => {
   assert.match(reader, /manager:\s*"continuous"/);
   assert.match(reader, /flow:\s*"scrolled-doc"/);
   assert.doesNotMatch(reader, /flow:\s*"paginated"/);
+  assert.match(reader, /installContinuousShellWatch/);
+  assert.match(reader, /isolateAuthorBackgrounds/);
+  assert.match(reader, /BookstrReaderChrome\.paintShell/);
+  assert.match(reader, /background: inherit !important/);
 });
 
 test('EPUB reader provides mouse, keyboard, and swipe navigation', () => {
@@ -102,6 +106,7 @@ test('reader keyboard handlers and zoom UI are present', () => {
   assert.match(reader, /let readerFontPercent = Number\(currentReaderSettings\.readerFontPercent\)[\s\S]*?localStorage\.getItem\("bookstr-reader-font-percent"\)[\s\S]*?100;/);
   assert.match(reader, /rendition\.themes\.fontSize\(readerFontPercent \+ "%"\);/);
   assert.match(reader, /<script src="reader-typography.js"><\/script>/);
+  assert.match(reader, /<script src="reader-chrome.js"><\/script>/);
   assert.match(reader, /BookstrTypography.css/);
   assert.match(reader, /BookstrTypography\.css\(readerFontFamily, readerAlignment, readerPadding\)/);
   assert.match(reader, /window\.setReaderTypography = function\(font, alignment, padding\)/);

@@ -64,6 +64,59 @@ final class TorrentDownloadTests: XCTestCase {
         for _ in 0..<100 where queue.jobs.first(where: { $0.id == "first" })?.book == nil { try await Task.sleep(nanoseconds: 10_000_000) }
         XCTAssertEqual(queue.jobs.count, 2)
         XCTAssertEqual(queue.jobs.first?.status, "Downloaded")
+        XCTAssertNotNil(queue.jobs.first?.completedAt)
+    }
+
+    @MainActor
+    func testCompletedDownloadsPruneAfterRetentionAndCanBeDismissed() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let manifest = root.appendingPathComponent("downloads.json")
+        let clock = Date(timeIntervalSince1970: 1_700_000_000)
+        func result(_ id: String) -> BookSearchResult {
+            BookSearchResult(id: id, source: "test", title: id, author: "Author", year: nil,
+                publisher: nil, language: nil, format: .pdf, downloadUrl: "https://example.test/book.pdf",
+                coverUrl: nil, rating: 0, editionCount: 1)
+        }
+        func job(_ id: String, book: Bool = false, failed: Bool = false, completedAt: Date? = nil) -> BookDownloadQueue.Job {
+            var item = BookDownloadQueue.Job(result: result(id))
+            if book {
+                item.book = result(id).asCatalogBook()
+                item.status = "Downloaded"
+                item.completedAt = completedAt
+            }
+            if failed {
+                item.failed = true
+                item.status = "boom"
+            }
+            return item
+        }
+        let seed = [
+            job("fresh", book: true, completedAt: clock),
+            job("stale", book: true, completedAt: clock.addingTimeInterval(-(BookDownloadQueue.completedRetention + 1))),
+            job("failed", failed: true),
+            job("active"),
+        ]
+        try JSONEncoder().encode(seed).write(to: manifest, options: .atomic)
+
+        let queue = BookDownloadQueue(fileURL: manifest, now: { clock })
+        XCTAssertEqual(Set(queue.jobs.map(\.id)), ["fresh", "failed", "active"], "Stale completed rows prune on restore")
+
+        XCTAssertEqual(queue.pruneCompleted(now: clock.addingTimeInterval(BookDownloadQueue.completedRetention + 1)), 1)
+        XCTAssertEqual(Set(queue.jobs.map(\.id)), ["failed", "active"])
+
+        queue.dismiss("failed")
+        XCTAssertEqual(queue.jobs.map(\.id), ["active"])
+        queue.dismiss("active")
+        XCTAssertEqual(queue.jobs.map(\.id), ["active"], "In-progress jobs cannot be dismissed")
+
+        // Legacy completed rows without completedAt drop on restore.
+        try JSONEncoder().encode([job("legacy", book: true)]).write(to: manifest, options: .atomic)
+        let restored = BookDownloadQueue(fileURL: manifest, now: { clock })
+        XCTAssertTrue(restored.jobs.isEmpty)
+        let saved = try JSONDecoder().decode([BookDownloadQueue.Job].self, from: Data(contentsOf: manifest))
+        XCTAssertTrue(saved.isEmpty)
     }
 
     @MainActor
