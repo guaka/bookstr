@@ -1652,15 +1652,10 @@
         })
         : { text: parts.join(" ").slice(0, 100000), chunks: [] };
       if (speechPlan && typeof speechPlan === "object") speechPlan.language = speechLanguage;
-      const text = speechPlan.text;
-      const chunks = speechPlan.chunks;
-      if (speechPlan && typeof speechPlan === "object") speechPlan.language = speechLanguage;
-      const text = speechPlan.text;
-      const chunks = speechPlan.chunks;
       const payload = {
-        text: text,
+        text: speechPlan.text,
         language: speechLanguage,
-        chunks: chunks,
+        chunks: speechPlan.chunks,
         requestID: requestID || null,
         exhausted: false,
       };
@@ -1686,8 +1681,8 @@
       return spinePositionForCfi(lastSpeechCfi).sectionIndex;
     }
 
-    /// Advances to the next spine item and requests fresh speech text. Skips
-    /// empty spine entries (covers, images) up to a small attempt budget.
+    // Advances to the next spine item and requests fresh speech text. Skips
+    // empty spine entries (covers, images) up to a small attempt budget.
     window.continueSpeechAfterSection = function(notifyNative, requestID, attempts) {
       const attempt = Number(attempts) || 0;
       const emptyPayload = {

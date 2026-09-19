@@ -86,3 +86,13 @@ test('speech continues into the next spine section after the current plan ends',
   assert.match(reader, /window\.requestSpeechText\(false, requestID, ""\)/);
   assert.match(reader, /window\.continueSpeechAfterSection\(notifyNative, requestID, attempt \+ 1\)/);
 });
+
+test('shared reader inline script parses as JavaScript', () => {
+  const scripts = [...reader.matchAll(/<script(?:\s[^>]*)?>([\s\S]*?)<\/script>/gi)]
+    .map((match) => match[1])
+    .filter((source) => source.trim());
+  assert.ok(scripts.length > 0);
+  for (const source of scripts) {
+    assert.doesNotThrow(() => new Function(source));
+  }
+});
