@@ -49,7 +49,7 @@ enum SpeechLanguageSettings {
     static let maximumRate = 0.60
     static let speechEngineKey = "speech_engine"
     /// Always available in TTS settings, regardless of library contents.
-    static let seededLanguageTags = ["en", "pt-pt", "fr", "de", "es", "ca"]
+    static let seededLanguageTags = ["en", "pt-pt", "fr", "de", "es", "ca", "nl"]
 
     static func preferredLanguageTag(_ raw: String) -> String {
         let normalized = raw.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -77,6 +77,7 @@ enum SpeechLanguageSettings {
         case "deu", "ger", "german", "deutsch": "de"
         case "spa", "spanish", "espanol", "castellano": "es"
         case "cat", "catalan", "catala": "ca"
+        case "nld", "dut", "dutch", "nederlands": "nl"
         default: code
         }
     }

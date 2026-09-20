@@ -6,6 +6,20 @@ import XCTest
 #endif
 
 final class SpeechLanguageSettingsTests: XCTestCase {
+    func testDutchVoiceIsAvailableAndResolvesForBookLanguages() throws {
+        XCTAssertTrue(SpeechLanguageSettings.languagesForBookCodes([]).contains("nl"))
+        XCTAssertEqual(SpeechEngineID.dutchDii.label, "Dii · Nederlands")
+        XCTAssertEqual(SpeechEngineID.dutchDii.preferredLanguageTag, "nl")
+        XCTAssertFalse(SpeechEngineID.dutchDii.supports(language: "de"))
+        let saved = ["nl": SpeechLanguageSetting(voiceIdentifier: SpeechEngineID.dutchDii.rawValue)]
+        let restored = SpeechLanguageSettings.decodeSettings(SpeechLanguageSettings.encodeSettings(saved))
+        for language in ["nl", "nld", "dut", "Dutch", "Nederlands", "nl_NL", "nl-BE"] {
+            XCTAssertTrue(SpeechEngineID.dutchDii.supports(language: language))
+            XCTAssertEqual(SpeechVoiceID.speakers(for: language).map(\.id), ["piper_nl_nl_dii"])
+            XCTAssertEqual(SpeechLanguageSettings.resolve(bookLanguage: language, settingsByLanguage: restored).engine, .neural(.dutchDii))
+        }
+    }
+
     func testPreferredLanguageTagNormalizesPortugueseAndBlanks() {
         XCTAssertEqual(SpeechLanguageSettings.preferredLanguageTag("  "), "en")
         XCTAssertEqual(SpeechLanguageSettings.preferredLanguageTag("pt"), "pt-pt")

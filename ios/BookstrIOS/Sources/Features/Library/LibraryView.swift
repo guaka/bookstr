@@ -55,11 +55,11 @@ struct LibraryView: View {
                 }
             }
 
-            Section("Reading") {
+            Section("Books") {
                 if sortedReading.isEmpty {
                     Text(viewModel.reading.isEmpty
-                         ? "Books you open will appear here with their progress."
-                         : "No books being read match your filter.")
+                         ? "Downloaded books will appear here."
+                         : "No books match your filter.")
                         .foregroundStyle(.secondary)
                 } else {
                     ForEach(sortedReading) { book in
@@ -245,6 +245,14 @@ struct LibraryView: View {
         .task {
             viewModel.attach(container)
             await viewModel.load()
+        }
+        .onReceive(container.downloads.$jobs
+            .map { Set($0.compactMap { $0.book?.id }) }
+            .removeDuplicates()) { _ in
+            Task {
+                viewModel.attach(container)
+                await viewModel.load()
+            }
         }
         .onReceive(NotificationCenter.default.publisher(for: .bookstrIdentityDidChange)) { _ in
             Task {

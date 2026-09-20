@@ -1,5 +1,22 @@
 # Text-to-Speech Direction
 
+## iOS Dutch voice
+
+In Settings → Text-to-speech, choose Dutch and download **Dii · Nederlands**.
+The Piper high-quality model runs offline after download (about 64 MB).
+Dutch metadata aliases (`nl`, `nld`, `dut`, `Dutch`, and `Nederlands`) all use
+this language preference, including Netherlands and Belgian region tags.
+
+Model: [csukuangfj/vits-piper-nl_NL-dii-high](https://huggingface.co/csukuangfj/vits-piper-nl_NL-dii-high),
+pinned at `12169a38e0f40f3ffc429273346f6d0700387cdf`.
+The model author licenses it under
+[CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/).
+Models download directly from the upstream repository.
+
+Pronunciation files share a stable directory across neural voices because
+eSpeak retains its first directory for the process lifetime. Older model
+installations may need to be downloaded again to include the full language set.
+
 ## Goal
 
 Make Bookstr's reading voice sound genuinely natural in European Portuguese,

@@ -209,8 +209,9 @@ final class LibraryViewModel: ObservableObject {
             progressMap[book.id] = container.progressRepository.get(bookId: book.id)
         }
 
+        let downloadedIDs = Set(seed.map(\.id))
         reading = books
-            .filter { book in hasStartedReading(progressMap[book.id]) }
+            .filter { book in downloadedIDs.contains(book.id) || hasStartedReading(progressMap[book.id]) }
             .sorted { (progressMap[$0.id]?.updatedAt ?? 0) > (progressMap[$1.id]?.updatedAt ?? 0) }
         favorites = books.filter { favoriteIDs.contains($0.id) }
         externalFavorites = shared.external.filter { favorite in
