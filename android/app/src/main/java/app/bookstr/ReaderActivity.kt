@@ -856,12 +856,8 @@ class ReaderActivity : ComponentActivity() {
         }
 
         internal fun preferredSpeechLocale(languageTag: String): Locale {
-            val normalized = languageTag.trim().lowercase(Locale.ROOT)
-            return if (normalized == "pt") {
-                Locale.forLanguageTag("pt-PT")
-            } else {
-                Locale.forLanguageTag(normalized.ifBlank { "en" })
-            }
+            val normalized = languageTag.trim().replace('_', '-')
+            return Locale.forLanguageTag(if (normalized.contains('-')) normalized else app.bookstr.speech.SpeechLanguages.tag(normalized))
         }
 
         fun intent(

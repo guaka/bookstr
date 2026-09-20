@@ -27,6 +27,9 @@ class ReaderTextToSpeechTest {
         assertEquals("pt-PT", ReaderActivity.preferredSpeechLocale("pt").toLanguageTag())
         assertEquals("pt-BR", ReaderActivity.preferredSpeechLocale("pt-BR").toLanguageTag())
         assertEquals("pt-PT", ReaderActivity.preferredSpeechLocale("pt-PT").toLanguageTag())
+        assertEquals("nl", ReaderActivity.preferredSpeechLocale("Dutch").toLanguageTag())
+        assertEquals("nl", ReaderActivity.preferredSpeechLocale("nld").toLanguageTag())
+        assertEquals("nl-NL", ReaderActivity.preferredSpeechLocale("nl_NL").toLanguageTag())
     }
 
     @Test
@@ -51,7 +54,7 @@ class ReaderTextToSpeechTest {
         assertTrue(readerSource.contains("EXTRA_REQUEST_CONTINUE"))
         assertTrue(readerSource.contains("continueSpeechAfterSection"))
         assertTrue(readerSource.contains("optBoolean(\"exhausted\""))
-        assertTrue(serviceSource.contains("engine.setSpeechRate(1.0f)"))
+        assertTrue(serviceSource.contains("engine?.setSpeechRate(1.0f)"))
         assertTrue(serviceSource.contains("engine.voices"))
         assertTrue(serviceSource.contains("SpeechVoiceSelection.resolve("))
         assertTrue(serviceSource.contains("synthesizeToFile"))

@@ -1,0 +1,897 @@
+[
+  {
+    "id": "kokoro_en",
+    "language": "en",
+    "label": "Kokoro · English",
+    "repository": "csukuangfj/kokoro-en-v0_19",
+    "revision": "92805c485745946a0d945562d3aba19e7cbb2104",
+    "kind": "kokoro",
+    "model": "model.onnx",
+    "files": [
+      {
+        "path": "model.onnx",
+        "bytes": 345555491
+      },
+      {
+        "path": "voices.bin",
+        "bytes": 5755904
+      },
+      {
+        "path": "tokens.txt",
+        "bytes": 1078
+      },
+      {
+        "path": "espeak-ng-data/ca_dict",
+        "bytes": 45566
+      },
+      {
+        "path": "espeak-ng-data/de_dict",
+        "bytes": 68276
+      },
+      {
+        "path": "espeak-ng-data/en_dict",
+        "bytes": 166944
+      },
+      {
+        "path": "espeak-ng-data/es_dict",
+        "bytes": 49252
+      },
+      {
+        "path": "espeak-ng-data/fr_dict",
+        "bytes": 63727
+      },
+      {
+        "path": "espeak-ng-data/intonations",
+        "bytes": 2040
+      },
+      {
+        "path": "espeak-ng-data/lang/gmw/de",
+        "bytes": 42
+      },
+      {
+        "path": "espeak-ng-data/lang/gmw/en",
+        "bytes": 140
+      },
+      {
+        "path": "espeak-ng-data/lang/gmw/en-US",
+        "bytes": 257
+      },
+      {
+        "path": "espeak-ng-data/lang/gmw/nl",
+        "bytes": 23
+      },
+      {
+        "path": "espeak-ng-data/lang/roa/ca",
+        "bytes": 25
+      },
+      {
+        "path": "espeak-ng-data/lang/roa/es",
+        "bytes": 63
+      },
+      {
+        "path": "espeak-ng-data/lang/roa/fr",
+        "bytes": 79
+      },
+      {
+        "path": "espeak-ng-data/lang/roa/pt",
+        "bytes": 95
+      },
+      {
+        "path": "espeak-ng-data/nl_dict",
+        "bytes": 65979
+      },
+      {
+        "path": "espeak-ng-data/phondata",
+        "bytes": 550424
+      },
+      {
+        "path": "espeak-ng-data/phondata-manifest",
+        "bytes": 21821
+      },
+      {
+        "path": "espeak-ng-data/phonindex",
+        "bytes": 39074
+      },
+      {
+        "path": "espeak-ng-data/phontab",
+        "bytes": 55796
+      },
+      {
+        "path": "espeak-ng-data/pt_dict",
+        "bytes": 67817
+      }
+    ]
+  },
+  {
+    "id": "piper_pt_pt",
+    "language": "pt-pt",
+    "label": "Tugão · Português (Portugal)",
+    "repository": "csukuangfj/vits-piper-pt_PT-tugao-medium",
+    "revision": "612042d3d5a504d6c65080b1b2b2f7981b831954",
+    "kind": "vits",
+    "model": "pt_PT-tugao-medium.onnx",
+    "files": [
+      {
+        "path": "pt_PT-tugao-medium.onnx",
+        "bytes": 63201425
+      },
+      {
+        "path": "tokens.txt",
+        "bytes": 954
+      },
+      {
+        "path": "espeak-ng-data/ca_dict",
+        "bytes": 45566
+      },
+      {
+        "path": "espeak-ng-data/de_dict",
+        "bytes": 68276
+      },
+      {
+        "path": "espeak-ng-data/en_dict",
+        "bytes": 166944
+      },
+      {
+        "path": "espeak-ng-data/es_dict",
+        "bytes": 49252
+      },
+      {
+        "path": "espeak-ng-data/fr_dict",
+        "bytes": 63727
+      },
+      {
+        "path": "espeak-ng-data/intonations",
+        "bytes": 2040
+      },
+      {
+        "path": "espeak-ng-data/lang/gmw/de",
+        "bytes": 42
+      },
+      {
+        "path": "espeak-ng-data/lang/gmw/en",
+        "bytes": 140
+      },
+      {
+        "path": "espeak-ng-data/lang/gmw/en-US",
+        "bytes": 257
+      },
+      {
+        "path": "espeak-ng-data/lang/gmw/nl",
+        "bytes": 23
+      },
+      {
+        "path": "espeak-ng-data/lang/roa/ca",
+        "bytes": 25
+      },
+      {
+        "path": "espeak-ng-data/lang/roa/es",
+        "bytes": 63
+      },
+      {
+        "path": "espeak-ng-data/lang/roa/fr",
+        "bytes": 79
+      },
+      {
+        "path": "espeak-ng-data/lang/roa/pt",
+        "bytes": 95
+      },
+      {
+        "path": "espeak-ng-data/nl_dict",
+        "bytes": 65979
+      },
+      {
+        "path": "espeak-ng-data/phondata",
+        "bytes": 550424
+      },
+      {
+        "path": "espeak-ng-data/phondata-manifest",
+        "bytes": 21821
+      },
+      {
+        "path": "espeak-ng-data/phonindex",
+        "bytes": 39074
+      },
+      {
+        "path": "espeak-ng-data/phontab",
+        "bytes": 55796
+      },
+      {
+        "path": "espeak-ng-data/pt_dict",
+        "bytes": 67817
+      }
+    ]
+  },
+  {
+    "id": "piper_pt_pt_miro",
+    "language": "pt-pt",
+    "label": "Miro · Português (Portugal)",
+    "repository": "csukuangfj/vits-piper-pt_PT-miro-high",
+    "revision": "6a917dc1f1d2f6a4a0a12742478483ccce3f52b6",
+    "kind": "vits",
+    "model": "pt_PT-miro-high.onnx",
+    "files": [
+      {
+        "path": "pt_PT-miro-high.onnx",
+        "bytes": 63511198
+      },
+      {
+        "path": "tokens.txt",
+        "bytes": 954
+      },
+      {
+        "path": "espeak-ng-data/ca_dict",
+        "bytes": 45566
+      },
+      {
+        "path": "espeak-ng-data/de_dict",
+        "bytes": 68276
+      },
+      {
+        "path": "espeak-ng-data/en_dict",
+        "bytes": 166944
+      },
+      {
+        "path": "espeak-ng-data/es_dict",
+        "bytes": 49252
+      },
+      {
+        "path": "espeak-ng-data/fr_dict",
+        "bytes": 63727
+      },
+      {
+        "path": "espeak-ng-data/intonations",
+        "bytes": 2040
+      },
+      {
+        "path": "espeak-ng-data/lang/gmw/de",
+        "bytes": 42
+      },
+      {
+        "path": "espeak-ng-data/lang/gmw/en",
+        "bytes": 140
+      },
+      {
+        "path": "espeak-ng-data/lang/gmw/en-US",
+        "bytes": 257
+      },
+      {
+        "path": "espeak-ng-data/lang/gmw/nl",
+        "bytes": 23
+      },
+      {
+        "path": "espeak-ng-data/lang/roa/ca",
+        "bytes": 25
+      },
+      {
+        "path": "espeak-ng-data/lang/roa/es",
+        "bytes": 63
+      },
+      {
+        "path": "espeak-ng-data/lang/roa/fr",
+        "bytes": 79
+      },
+      {
+        "path": "espeak-ng-data/lang/roa/pt",
+        "bytes": 95
+      },
+      {
+        "path": "espeak-ng-data/nl_dict",
+        "bytes": 65979
+      },
+      {
+        "path": "espeak-ng-data/phondata",
+        "bytes": 550424
+      },
+      {
+        "path": "espeak-ng-data/phondata-manifest",
+        "bytes": 21821
+      },
+      {
+        "path": "espeak-ng-data/phonindex",
+        "bytes": 39074
+      },
+      {
+        "path": "espeak-ng-data/phontab",
+        "bytes": 55796
+      },
+      {
+        "path": "espeak-ng-data/pt_dict",
+        "bytes": 67817
+      }
+    ]
+  },
+  {
+    "id": "piper_pt_pt_dii",
+    "language": "pt-pt",
+    "label": "Dii · Português (Portugal)",
+    "repository": "csukuangfj/vits-piper-pt_PT-dii-high",
+    "revision": "27cf37a700e91003217a567e12761e6497fe9b0b",
+    "kind": "vits",
+    "model": "pt_PT-dii-high.onnx",
+    "files": [
+      {
+        "path": "pt_PT-dii-high.onnx",
+        "bytes": 63511198
+      },
+      {
+        "path": "tokens.txt",
+        "bytes": 954
+      },
+      {
+        "path": "espeak-ng-data/ca_dict",
+        "bytes": 45566
+      },
+      {
+        "path": "espeak-ng-data/de_dict",
+        "bytes": 68276
+      },
+      {
+        "path": "espeak-ng-data/en_dict",
+        "bytes": 166944
+      },
+      {
+        "path": "espeak-ng-data/es_dict",
+        "bytes": 49252
+      },
+      {
+        "path": "espeak-ng-data/fr_dict",
+        "bytes": 63727
+      },
+      {
+        "path": "espeak-ng-data/intonations",
+        "bytes": 2040
+      },
+      {
+        "path": "espeak-ng-data/lang/gmw/de",
+        "bytes": 42
+      },
+      {
+        "path": "espeak-ng-data/lang/gmw/en",
+        "bytes": 140
+      },
+      {
+        "path": "espeak-ng-data/lang/gmw/en-US",
+        "bytes": 257
+      },
+      {
+        "path": "espeak-ng-data/lang/gmw/nl",
+        "bytes": 23
+      },
+      {
+        "path": "espeak-ng-data/lang/roa/ca",
+        "bytes": 25
+      },
+      {
+        "path": "espeak-ng-data/lang/roa/es",
+        "bytes": 63
+      },
+      {
+        "path": "espeak-ng-data/lang/roa/fr",
+        "bytes": 79
+      },
+      {
+        "path": "espeak-ng-data/lang/roa/pt",
+        "bytes": 95
+      },
+      {
+        "path": "espeak-ng-data/nl_dict",
+        "bytes": 65979
+      },
+      {
+        "path": "espeak-ng-data/phondata",
+        "bytes": 550424
+      },
+      {
+        "path": "espeak-ng-data/phondata-manifest",
+        "bytes": 21821
+      },
+      {
+        "path": "espeak-ng-data/phonindex",
+        "bytes": 39074
+      },
+      {
+        "path": "espeak-ng-data/phontab",
+        "bytes": 55796
+      },
+      {
+        "path": "espeak-ng-data/pt_dict",
+        "bytes": 67817
+      }
+    ]
+  },
+  {
+    "id": "piper_fr_fr",
+    "language": "fr",
+    "label": "Miro · Français",
+    "repository": "csukuangfj/vits-piper-fr_FR-miro-high",
+    "revision": "695e063aefa9a7c61e4755a1924e137bc11d291d",
+    "kind": "vits",
+    "model": "fr_FR-miro-high.onnx",
+    "files": [
+      {
+        "path": "fr_FR-miro-high.onnx",
+        "bytes": 63153773
+      },
+      {
+        "path": "tokens.txt",
+        "bytes": 954
+      },
+      {
+        "path": "espeak-ng-data/ca_dict",
+        "bytes": 45566
+      },
+      {
+        "path": "espeak-ng-data/de_dict",
+        "bytes": 68276
+      },
+      {
+        "path": "espeak-ng-data/en_dict",
+        "bytes": 166944
+      },
+      {
+        "path": "espeak-ng-data/es_dict",
+        "bytes": 49252
+      },
+      {
+        "path": "espeak-ng-data/fr_dict",
+        "bytes": 63727
+      },
+      {
+        "path": "espeak-ng-data/intonations",
+        "bytes": 2040
+      },
+      {
+        "path": "espeak-ng-data/lang/gmw/de",
+        "bytes": 42
+      },
+      {
+        "path": "espeak-ng-data/lang/gmw/en",
+        "bytes": 140
+      },
+      {
+        "path": "espeak-ng-data/lang/gmw/en-US",
+        "bytes": 257
+      },
+      {
+        "path": "espeak-ng-data/lang/gmw/nl",
+        "bytes": 23
+      },
+      {
+        "path": "espeak-ng-data/lang/roa/ca",
+        "bytes": 25
+      },
+      {
+        "path": "espeak-ng-data/lang/roa/es",
+        "bytes": 63
+      },
+      {
+        "path": "espeak-ng-data/lang/roa/fr",
+        "bytes": 79
+      },
+      {
+        "path": "espeak-ng-data/lang/roa/pt",
+        "bytes": 95
+      },
+      {
+        "path": "espeak-ng-data/nl_dict",
+        "bytes": 65979
+      },
+      {
+        "path": "espeak-ng-data/phondata",
+        "bytes": 550424
+      },
+      {
+        "path": "espeak-ng-data/phondata-manifest",
+        "bytes": 21821
+      },
+      {
+        "path": "espeak-ng-data/phonindex",
+        "bytes": 39074
+      },
+      {
+        "path": "espeak-ng-data/phontab",
+        "bytes": 55796
+      },
+      {
+        "path": "espeak-ng-data/pt_dict",
+        "bytes": 67817
+      }
+    ]
+  },
+  {
+    "id": "piper_de_de",
+    "language": "de",
+    "label": "Miro · Deutsch",
+    "repository": "csukuangfj/vits-piper-de_DE-miro-high",
+    "revision": "e736ced18138f0608322c96fa6b0dc05b492107c",
+    "kind": "vits",
+    "model": "de_DE-miro-high.onnx",
+    "files": [
+      {
+        "path": "de_DE-miro-high.onnx",
+        "bytes": 63153773
+      },
+      {
+        "path": "tokens.txt",
+        "bytes": 954
+      },
+      {
+        "path": "espeak-ng-data/ca_dict",
+        "bytes": 45566
+      },
+      {
+        "path": "espeak-ng-data/de_dict",
+        "bytes": 68276
+      },
+      {
+        "path": "espeak-ng-data/en_dict",
+        "bytes": 166944
+      },
+      {
+        "path": "espeak-ng-data/es_dict",
+        "bytes": 49252
+      },
+      {
+        "path": "espeak-ng-data/fr_dict",
+        "bytes": 63727
+      },
+      {
+        "path": "espeak-ng-data/intonations",
+        "bytes": 2040
+      },
+      {
+        "path": "espeak-ng-data/lang/gmw/de",
+        "bytes": 42
+      },
+      {
+        "path": "espeak-ng-data/lang/gmw/en",
+        "bytes": 140
+      },
+      {
+        "path": "espeak-ng-data/lang/gmw/en-US",
+        "bytes": 257
+      },
+      {
+        "path": "espeak-ng-data/lang/gmw/nl",
+        "bytes": 23
+      },
+      {
+        "path": "espeak-ng-data/lang/roa/ca",
+        "bytes": 25
+      },
+      {
+        "path": "espeak-ng-data/lang/roa/es",
+        "bytes": 63
+      },
+      {
+        "path": "espeak-ng-data/lang/roa/fr",
+        "bytes": 79
+      },
+      {
+        "path": "espeak-ng-data/lang/roa/pt",
+        "bytes": 95
+      },
+      {
+        "path": "espeak-ng-data/nl_dict",
+        "bytes": 65979
+      },
+      {
+        "path": "espeak-ng-data/phondata",
+        "bytes": 550424
+      },
+      {
+        "path": "espeak-ng-data/phondata-manifest",
+        "bytes": 21821
+      },
+      {
+        "path": "espeak-ng-data/phonindex",
+        "bytes": 39074
+      },
+      {
+        "path": "espeak-ng-data/phontab",
+        "bytes": 55796
+      },
+      {
+        "path": "espeak-ng-data/pt_dict",
+        "bytes": 67817
+      }
+    ]
+  },
+  {
+    "id": "piper_es_es",
+    "language": "es",
+    "label": "Miro · Español",
+    "repository": "csukuangfj/vits-piper-es_ES-miro-high",
+    "revision": "0e1f773561429a9e50fa23d868a40eb341ad83c4",
+    "kind": "vits",
+    "model": "es_ES-miro-high.onnx",
+    "files": [
+      {
+        "path": "es_ES-miro-high.onnx",
+        "bytes": 63153775
+      },
+      {
+        "path": "tokens.txt",
+        "bytes": 954
+      },
+      {
+        "path": "espeak-ng-data/ca_dict",
+        "bytes": 45566
+      },
+      {
+        "path": "espeak-ng-data/de_dict",
+        "bytes": 68276
+      },
+      {
+        "path": "espeak-ng-data/en_dict",
+        "bytes": 166944
+      },
+      {
+        "path": "espeak-ng-data/es_dict",
+        "bytes": 49252
+      },
+      {
+        "path": "espeak-ng-data/fr_dict",
+        "bytes": 63727
+      },
+      {
+        "path": "espeak-ng-data/intonations",
+        "bytes": 2040
+      },
+      {
+        "path": "espeak-ng-data/lang/gmw/de",
+        "bytes": 42
+      },
+      {
+        "path": "espeak-ng-data/lang/gmw/en",
+        "bytes": 140
+      },
+      {
+        "path": "espeak-ng-data/lang/gmw/en-US",
+        "bytes": 257
+      },
+      {
+        "path": "espeak-ng-data/lang/gmw/nl",
+        "bytes": 23
+      },
+      {
+        "path": "espeak-ng-data/lang/roa/ca",
+        "bytes": 25
+      },
+      {
+        "path": "espeak-ng-data/lang/roa/es",
+        "bytes": 63
+      },
+      {
+        "path": "espeak-ng-data/lang/roa/fr",
+        "bytes": 79
+      },
+      {
+        "path": "espeak-ng-data/lang/roa/pt",
+        "bytes": 95
+      },
+      {
+        "path": "espeak-ng-data/nl_dict",
+        "bytes": 65979
+      },
+      {
+        "path": "espeak-ng-data/phondata",
+        "bytes": 550424
+      },
+      {
+        "path": "espeak-ng-data/phondata-manifest",
+        "bytes": 21821
+      },
+      {
+        "path": "espeak-ng-data/phonindex",
+        "bytes": 39074
+      },
+      {
+        "path": "espeak-ng-data/phontab",
+        "bytes": 55796
+      },
+      {
+        "path": "espeak-ng-data/pt_dict",
+        "bytes": 67817
+      }
+    ]
+  },
+  {
+    "id": "piper_ca_es",
+    "language": "ca",
+    "label": "UPC Ona · Català",
+    "repository": "csukuangfj/vits-piper-ca_ES-upc_ona-medium",
+    "revision": "814326c793214a358024edcf2d17e6de1acf0280",
+    "kind": "vits",
+    "model": "ca_ES-upc_ona-medium.onnx",
+    "files": [
+      {
+        "path": "ca_ES-upc_ona-medium.onnx",
+        "bytes": 63201422
+      },
+      {
+        "path": "tokens.txt",
+        "bytes": 921
+      },
+      {
+        "path": "espeak-ng-data/ca_dict",
+        "bytes": 45566
+      },
+      {
+        "path": "espeak-ng-data/de_dict",
+        "bytes": 68276
+      },
+      {
+        "path": "espeak-ng-data/en_dict",
+        "bytes": 166944
+      },
+      {
+        "path": "espeak-ng-data/es_dict",
+        "bytes": 49252
+      },
+      {
+        "path": "espeak-ng-data/fr_dict",
+        "bytes": 63727
+      },
+      {
+        "path": "espeak-ng-data/intonations",
+        "bytes": 2040
+      },
+      {
+        "path": "espeak-ng-data/lang/gmw/de",
+        "bytes": 42
+      },
+      {
+        "path": "espeak-ng-data/lang/gmw/en",
+        "bytes": 140
+      },
+      {
+        "path": "espeak-ng-data/lang/gmw/en-US",
+        "bytes": 257
+      },
+      {
+        "path": "espeak-ng-data/lang/gmw/nl",
+        "bytes": 23
+      },
+      {
+        "path": "espeak-ng-data/lang/roa/ca",
+        "bytes": 25
+      },
+      {
+        "path": "espeak-ng-data/lang/roa/es",
+        "bytes": 63
+      },
+      {
+        "path": "espeak-ng-data/lang/roa/fr",
+        "bytes": 79
+      },
+      {
+        "path": "espeak-ng-data/lang/roa/pt",
+        "bytes": 95
+      },
+      {
+        "path": "espeak-ng-data/nl_dict",
+        "bytes": 65979
+      },
+      {
+        "path": "espeak-ng-data/phondata",
+        "bytes": 550424
+      },
+      {
+        "path": "espeak-ng-data/phondata-manifest",
+        "bytes": 21821
+      },
+      {
+        "path": "espeak-ng-data/phonindex",
+        "bytes": 39074
+      },
+      {
+        "path": "espeak-ng-data/phontab",
+        "bytes": 55796
+      },
+      {
+        "path": "espeak-ng-data/pt_dict",
+        "bytes": 67817
+      }
+    ]
+  },
+  {
+    "id": "piper_nl_nl_dii",
+    "language": "nl",
+    "label": "Dii · Nederlands",
+    "repository": "csukuangfj/vits-piper-nl_NL-dii-high",
+    "revision": "12169a38e0f40f3ffc429273346f6d0700387cdf",
+    "kind": "vits",
+    "model": "nl_NL-dii-high.onnx",
+    "files": [
+      {
+        "path": "nl_NL-dii-high.onnx",
+        "bytes": 63153771
+      },
+      {
+        "path": "tokens.txt",
+        "bytes": 954
+      },
+      {
+        "path": "espeak-ng-data/ca_dict",
+        "bytes": 45566
+      },
+      {
+        "path": "espeak-ng-data/de_dict",
+        "bytes": 68276
+      },
+      {
+        "path": "espeak-ng-data/en_dict",
+        "bytes": 166944
+      },
+      {
+        "path": "espeak-ng-data/es_dict",
+        "bytes": 49252
+      },
+      {
+        "path": "espeak-ng-data/fr_dict",
+        "bytes": 63727
+      },
+      {
+        "path": "espeak-ng-data/intonations",
+        "bytes": 2040
+      },
+      {
+        "path": "espeak-ng-data/lang/gmw/de",
+        "bytes": 42
+      },
+      {
+        "path": "espeak-ng-data/lang/gmw/en",
+        "bytes": 140
+      },
+      {
+        "path": "espeak-ng-data/lang/gmw/en-US",
+        "bytes": 257
+      },
+      {
+        "path": "espeak-ng-data/lang/gmw/nl",
+        "bytes": 23
+      },
+      {
+        "path": "espeak-ng-data/lang/roa/ca",
+        "bytes": 25
+      },
+      {
+        "path": "espeak-ng-data/lang/roa/es",
+        "bytes": 63
+      },
+      {
+        "path": "espeak-ng-data/lang/roa/fr",
+        "bytes": 79
+      },
+      {
+        "path": "espeak-ng-data/lang/roa/pt",
+        "bytes": 95
+      },
+      {
+        "path": "espeak-ng-data/nl_dict",
+        "bytes": 65979
+      },
+      {
+        "path": "espeak-ng-data/phondata",
+        "bytes": 550424
+      },
+      {
+        "path": "espeak-ng-data/phondata-manifest",
+        "bytes": 21821
+      },
+      {
+        "path": "espeak-ng-data/phonindex",
+        "bytes": 39074
+      },
+      {
+        "path": "espeak-ng-data/phontab",
+        "bytes": 55796
+      },
+      {
+        "path": "espeak-ng-data/pt_dict",
+        "bytes": 67817
+      }
+    ]
+  }
+]
