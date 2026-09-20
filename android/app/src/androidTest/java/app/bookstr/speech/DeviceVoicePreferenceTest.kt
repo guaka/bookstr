@@ -25,6 +25,49 @@ class DeviceVoicePreferenceTest {
             this.text = text.toString(); return SUCCESS
         }
     }
+    @Test fun supersededNeuralFailuresAreDiscardedAndCurrentFailuresStopPlayback() {
+        val app = ApplicationProvider.getApplicationContext<Context>()
+        val settings = SpeechSettings(app.getSharedPreferences("bookstr_settings", Context.MODE_PRIVATE))
+        val before = settings.voice("nl")
+        val root = File(app.cacheDir, "missing-neural-fixture").apply { deleteRecursively(); mkdirs() }
+        val gate = java.util.concurrent.CountDownLatch(1)
+        lateinit var service: NarrationService
+        lateinit var engine: Engine
+        lateinit var executor: java.util.concurrent.ExecutorService
+        lateinit var session: android.support.v4.media.session.MediaSessionCompat
+        val instrumentation = androidx.test.platform.app.InstrumentationRegistry.getInstrumentation()
+        fun field(name: String) = NarrationService::class.java.getDeclaredField(name).apply { isAccessible = true }
+        try {
+            instrumentation.runOnMainSync {
+                service = NarrationService()
+                ContextWrapper::class.java.getDeclaredMethod("attachBaseContext", Context::class.java).apply { isAccessible = true }.invoke(service, app)
+                field("speechModels\$delegate").set(service, lazy { SpeechModels(root, SpeechModels(app).models) })
+                engine = Engine(app); field("textToSpeech").set(service, engine)
+                session = android.support.v4.media.session.MediaSessionCompat(app, "speech-failure-test")
+                field("mediaSession").set(service, session)
+                field("speechLanguage").set(service, "nl")
+                field("speechText").set(service, "Hallo wereld.")
+                settings.setVoice("nl", "piper_nl_nl_dii")
+                executor = field("neuralExecutor").get(service) as java.util.concurrent.ExecutorService
+                executor.execute { gate.await(10, java.util.concurrent.TimeUnit.SECONDS) }
+                val start = NarrationService::class.java.getDeclaredMethod("startSpeakingAt", Int::class.javaPrimitiveType).apply { isAccessible = true }
+                start.invoke(service, 0)
+                field("speechText").set(service, "Volgende tekst.")
+                start.invoke(service, 0)
+            }
+            gate.countDown()
+            executor.submit {}.get(10, java.util.concurrent.TimeUnit.SECONDS)
+            instrumentation.runOnMainSync {
+                assertEquals(3, field("generation").getInt(service))
+                assertEquals(android.support.v4.media.session.PlaybackStateCompat.STATE_ERROR, session.controller.playbackState?.state)
+                assertTrue((field("audioFiles").get(service) as Map<*, *>).isEmpty())
+            }
+        } finally {
+            gate.countDown()
+            instrumentation.runOnMainSync { engine.shutdown(); session.release(); settings.setVoice("nl", before) }
+            executor.shutdown(); root.deleteRecursively()
+        }
+    }
     @Test fun appliesDevicePreferenceToSynthesisAndKeepsNeuralIndependentOfSystemInitialization() {
         androidx.test.platform.app.InstrumentationRegistry.getInstrumentation().runOnMainSync {
         val app = ApplicationProvider.getApplicationContext<Context>()
