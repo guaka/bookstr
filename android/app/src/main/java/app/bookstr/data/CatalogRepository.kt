@@ -166,8 +166,9 @@ open class CatalogRepository(
 
     open suspend fun searchPage(query: String, offset: Int = 0): CatalogSearchPage {
         require(query.trim().length >= 2 && offset >= 0)
-        val signer = NostrSignerFactory.create(context, settings)
-        if (signer == null) return CatalogSearchPage(search(query), null)
+        val signer = requireNotNull(NostrSignerFactory.create(context, settings)) {
+            "Connect a Nostr signer to search LibCat"
+        }
         val response = privateCatalog.request(JSONObject().put("type", "libcat.search")
             .put("query", query.trim()).put("search_type", "all").put("limit", 50).put("offset", offset), signer, service())
         return CatalogSearchPage.parse(response, offset)
