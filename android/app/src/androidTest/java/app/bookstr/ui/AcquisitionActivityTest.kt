@@ -34,6 +34,16 @@ class AcquisitionActivityTest {
         compose.onNodeWithTag("search.downloads").performClick()
         compose.onNodeWithTag("downloads.sheet").assertExists()
     }
+    @Test fun searchWithoutSignerShowsLibCatConnectionPrompt() {
+        compose.onNodeWithContentDescription("Search").performClick()
+        compose.onNodeWithTag("search.query").performTextInput("Alice")
+        compose.onNodeWithTag("search.submit").performClick()
+        compose.waitUntil(timeoutMillis = 5_000) {
+            compose.onAllNodesWithText("Search failed: Connect a Nostr signer to search LibCat")
+                .fetchSemanticsNodes().isNotEmpty()
+        }
+        compose.onNodeWithText("Search failed: Connect a Nostr signer to search LibCat").assertExists()
+    }
     @Test fun catalogInvitationsRequireConfirmationAndPersistAcrossRecreation() {
         val uri = "bookstr://catalog?v=1&npub=npub1zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zygse4sl3h&name=Fixture&relay=wss%3A%2F%2Frelay.example"
         compose.runOnUiThread { compose.activity.startActivity(Intent(compose.activity, MainActivity::class.java).setData(Uri.parse(uri)).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP)) }
