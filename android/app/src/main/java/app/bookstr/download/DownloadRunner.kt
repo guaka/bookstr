@@ -17,10 +17,11 @@ class DownloadRunner(
     private val engineFactory: () -> TorrentEngine = { NativeTorrentEngine() },
     private val fetch: (String) -> ByteArray = ::fetchMetadata,
     private val pollDelayMs: Long = 1000,
-    private val peerTimeoutMs: Long = 180_000,
+    private val peerTimeoutMs: Long? = null,
 ) {
     suspend fun run(job: DownloadJob, root: File, update: (DownloadJob) -> Unit,
                     import: suspend (CatalogBook, File) -> Unit) = withContext(Dispatchers.IO) {
+        update(job.copy(state = "connecting", error = null))
         val edition = job.edition
         val metadataFile = File(root, "book.torrent")
         val candidates = if (metadataFile.exists()) listOf<String?>(null) + edition.metadataUrls else edition.metadataUrls
@@ -51,7 +52,7 @@ class DownloadRunner(
                 val snapshot = running.poll()
                 if (snapshot.state == "failed") error(snapshot.error)
                 if (snapshot.bytes != lastBytes) { lastBytes = snapshot.bytes; lastProgress = System.nanoTime() }
-                if ((System.nanoTime() - lastProgress) / 1_000_000 > peerTimeoutMs) error("No download progress; retry when peers are available")
+                if (peerTimeoutMs != null && (System.nanoTime() - lastProgress) / 1_000_000 > peerTimeoutMs) error("No download progress; retry when peers are available")
                 if (snapshot.state != "ready") update(job.copy(state = snapshot.state, bytes = snapshot.bytes, size = snapshot.size))
                 if (snapshot.state == "ready") {
                     // Stop/flush the engine before hashing or copying its output.

@@ -9,12 +9,12 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 
-private val activeStates = setOf("queued", "downloading", "finding-peers", "verifying", "waiting-network")
+private val activeStates = setOf("queued", "connecting", "downloading", "finding-peers", "verifying", "waiting-network")
 data class DownloadJob(val book: CatalogBook, val edition: TorrentEdition, val state: String = "queued", val bytes: Long = 0,
                        val size: Long = 0, val error: String? = null) {
     val active get() = state in activeStates
     fun json(): JSONObject = JSONObject().put("book", JSONObject().put("id", book.id).put("title", book.title)
-        .put("author", book.author).put("format", book.format.extension).put("year", book.year)
+        .put("author", book.author).put("format", book.format.extension).put("year", book.year).put("language", book.language)
         .put("rights_status", book.rightsStatus).put("license", book.license).put("license_url", book.licenseUrl).put("rights_source", book.rightsSource))
         .put("edition", edition.json()).put("state", state).put("bytes", bytes).put("size", size).put("error", error)
     companion object {
@@ -25,7 +25,7 @@ data class DownloadJob(val book: CatalogBook, val edition: TorrentEdition, val s
             fun text(key: String) = b.optString(key).takeUnless { it.isBlank() || it == "null" }
             val book = CatalogBook(id, b.getString("title"), b.getString("author"), "", null,
                 libvaultMd5 = id, format = BookFormat.entries.first { it.extension == b.getString("format") },
-                year = text("year"), rightsStatus = text("rights_status") ?: "unknown", license = text("license"),
+                year = text("year"), language = text("language"), rightsStatus = text("rights_status") ?: "unknown", license = text("license"),
                 licenseUrl = text("license_url"), rightsSource = text("rights_source"))
             return DownloadJob(book, edition, value.getString("state"), value.optLong("bytes"), value.optLong("size"),
                 value.optString("error").takeUnless { it.isBlank() || it == "null" })
@@ -49,7 +49,12 @@ class DownloadStore(private val directory: File) {
         } }
     }
     @Synchronized fun update(job: DownloadJob) {
-        val next = (mutable.value.filterNot { it.book.id == job.book.id } + job)
+        val current = mutable.value
+        val index = current.indexOfFirst { it.book.id == job.book.id }
+        if (index >= 0 && current[index] == job) return
+        val next = current.toMutableList().apply {
+            if (index < 0) add(job) else set(index, job)
+        }
         val temporary = File(directory, "jobs.tmp")
         temporary.outputStream().use { out -> out.write(JSONArray(next.map { it.json() }).toString().toByteArray()); out.fd.sync() }
         val backup = File(directory, "jobs.bak")
@@ -63,6 +68,10 @@ class DownloadStore(private val directory: File) {
         val old = mutable.value.find { it.book.id == book.id }
         if (old?.active == true || old?.state == "complete") return
         update(old?.copy(state = "queued", error = null) ?: DownloadJob(book, edition))
+    }
+    @Synchronized fun markPublicationDeleted(id: String) {
+        val job = find(id) ?: return
+        if (job.state == "complete") update(job.copy(state = "cancelled", bytes = 0, error = null))
     }
     fun find(id: String) = jobs.value.find { it.book.id == id }
     fun root(id: String): File {

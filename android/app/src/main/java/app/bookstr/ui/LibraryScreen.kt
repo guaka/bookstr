@@ -1,5 +1,13 @@
 package app.bookstr.ui
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.material3.*
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.ui.platform.testTag
+import androidx.compose.runtime.LaunchedEffect
+import app.bookstr.data.displayBookAuthor
+import app.bookstr.data.BookListFilters
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
@@ -30,7 +38,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
@@ -42,6 +49,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.window.Dialog
@@ -71,30 +79,20 @@ fun LibraryScreen(
     onUnfavoriteExternal: (ExternalFavorite) -> Unit = {},
     onDeleteBook: (CatalogBook) -> Unit = {},
 ) {
-    var favoriteQuery by rememberSaveable { mutableStateOf("") }
+    var language by rememberSaveable { mutableStateOf("") }
+    var format by rememberSaveable { mutableStateOf("") }
     var selectedBook by remember { mutableStateOf<CatalogBook?>(null) }
-    var selectedExternal by remember { mutableStateOf<ExternalFavorite?>(null) }
-    val favorites = books.filter { it.id in favoriteIds }
-    val normalizedQuery = favoriteQuery.trim()
-    val visibleFavorites = favorites.filter { book ->
-        normalizedQuery.isEmpty() || listOf(book.title, book.author, book.year.orEmpty(), book.format.extension)
-            .any { it.contains(normalizedQuery, ignoreCase = true) }
-    }
-    val visibleExternalFavorites = externalFavorites.filter { favorite ->
-        normalizedQuery.isEmpty() || listOf(
-            favorite.title,
-            favorite.author.orEmpty(),
-            favorite.year.orEmpty(),
-            favorite.format.orEmpty(),
-        )
-            .any { it.contains(normalizedQuery, ignoreCase = true) }
-    }
-    val reading = books
-        .filter { book -> progress[book.id]?.let(::hasStartedReading) == true }
+    var pendingDelete by remember { mutableStateOf<CatalogBook?>(null) }
+    val library = books.filter { publicationSize(it) != null || progress[it.id]?.let(::hasStartedReading) == true }
+    val languages = BookListFilters.languages(library.map { it.language })
+    val formats = BookListFilters.formats(library.map { it.format.extension })
+    val filters = BookListFilters(language, format).sanitize(languages, formats)
+    LaunchedEffect(filters) { language = filters.language; format = filters.format }
+    val visibleBooks = library.filter { filters.matches(it.language, it.format.extension) }
         .sortedByDescending { progress[it.id]?.updatedAt ?: 0L }
 
     Scaffold { padding ->
-        if (loading && books.isEmpty() && externalFavorites.isEmpty()) {
+        if (loading && books.isEmpty()) {
             CircularProgressIndicator(
                 modifier = Modifier
                     .fillMaxSize()
@@ -132,81 +130,33 @@ fun LibraryScreen(
                 }
             }
 
-            shelfHeading("Reading")
-            if (reading.isEmpty()) emptyShelf("Books you open will appear here with their progress.")
+            item { BookFilterBar("library", languages, formats, filters.language, filters.format,
+                { language = it }, { format = it }) }
+            if (visibleBooks.isEmpty()) emptyShelf("No books to show.")
             else bookRows(
-                reading,
+                visibleBooks,
                 progress,
                 openingBookId,
-                keyPrefix = "reading",
-                showPublicationStatus = false,
+                keyPrefix = "library",
                 onOpenBook = onOpenBook,
                 onLongPress = { selectedBook = it },
+                onDelete = { pendingDelete = it },
             )
 
-            shelfHeading("Favorites")
-            if (favorites.isEmpty() && externalFavorites.isEmpty()) {
-                emptyShelf("Heart a book in LibVault to keep it here.")
-            } else {
-                item(key = "favorite-search") {
-                    OutlinedTextField(
-                        value = favoriteQuery,
-                        onValueChange = { favoriteQuery = it },
-                        placeholder = { Text("Search favorites") },
-                        singleLine = true,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 8.dp),
-                    )
-                }
-                if (visibleFavorites.isEmpty() && visibleExternalFavorites.isEmpty()) {
-                    emptyShelf("No favorites match “$normalizedQuery”.")
-                }
-                bookRows(
-                    visibleFavorites,
-                    progress,
-                    openingBookId,
-                    keyPrefix = "favorite",
-                    showPublicationStatus = true,
-                    onOpenBook = onOpenBook,
-                    onLongPress = { selectedBook = it },
-                )
-                items(visibleExternalFavorites, key = { "external-${it.key}" }) { favorite ->
-                    Card(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .combinedClickable(
-                                onClick = { onOpenExternal(favorite) },
-                                onLongClick = { selectedExternal = favorite },
-                            ),
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                    ) {
-                        Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
-                            Text(
-                                text = favorite.title,
-                                style = MaterialTheme.typography.titleMedium,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                            )
-                            favoriteMetadata(
-                                author = favorite.author,
-                                year = favorite.year,
-                                rightsStatus = favorite.rightsStatus,
-                                license = favorite.license,
-                                licenseUrl = favorite.licenseUrl,
-                                rightsSource = favorite.rightsSource,
-                                showMissingValues = true,
-                            )
-                            favoritePublicationStatus(
-                                format = favorite.format,
-                                availableOnBlossom = !favorite.blossomSha256.isNullOrBlank() &&
-                                    !favorite.blossomUrl.isNullOrBlank(),
-                            )
-                        }
-                    }
-                }
-            }
         }
+    }
+    pendingDelete?.let { book ->
+        AlertDialog(
+            onDismissRequest = { pendingDelete = null },
+            title = { Text("Delete “${book.title}”?") },
+            text = { Text("Remove the local file and reading progress?") },
+            confirmButton = { TextButton(modifier = Modifier.testTag("library.delete.confirm"), onClick = {
+                pendingDelete = null
+                onDeleteBook(book)
+            }) { Text("Delete") } },
+            dismissButton = { TextButton(modifier = Modifier.testTag("library.delete.cancel"),
+                onClick = { pendingDelete = null }) { Text("Cancel") } },
+        )
     }
 
     selectedBook?.let { book ->
@@ -226,35 +176,11 @@ fun LibraryScreen(
             },
             onDelete = {
                 selectedBook = null
-                onDeleteBook(book)
+                pendingDelete = book
             },
         )
     }
 
-    selectedExternal?.let { favorite ->
-        ExternalBookDetailsDialog(
-            favorite = favorite,
-            onDismiss = { selectedExternal = null },
-            onOpen = {
-                selectedExternal = null
-                onOpenExternal(favorite)
-            },
-            onUnfavorite = {
-                selectedExternal = null
-                onUnfavoriteExternal(favorite)
-            },
-        )
-    }
-}
-
-private fun LazyListScope.shelfHeading(title: String) {
-    item(key = "heading-$title") {
-        Text(
-            text = title,
-            style = MaterialTheme.typography.headlineSmall,
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-        )
-    }
 }
 
 private fun LazyListScope.emptyShelf(message: String) {
@@ -267,70 +193,80 @@ private fun LazyListScope.emptyShelf(message: String) {
     }
 }
 
-@OptIn(ExperimentalFoundationApi::class)
+@OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
 private fun LazyListScope.bookRows(
     books: List<CatalogBook>,
     progress: Map<String, BookProgress>,
     openingBookId: String?,
     keyPrefix: String,
-    showPublicationStatus: Boolean,
     onOpenBook: (CatalogBook) -> Unit,
     onLongPress: (CatalogBook) -> Unit,
+    onDelete: (CatalogBook) -> Unit,
 ) {
     items(books, key = { "$keyPrefix-${it.id}" }) { book ->
         val bookProgress = progress[book.id]
-        Card(
-            modifier = Modifier
-                .fillMaxWidth()
-                .combinedClickable(
-                    enabled = openingBookId == null,
-                    onClick = { onOpenBook(book) },
-                    onLongClick = { onLongPress(book) },
-                ),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        val dismissState = rememberSwipeToDismissBoxState(confirmValueChange = { value ->
+            if (value == SwipeToDismissBoxValue.EndToStart) onDelete(book)
+            false
+        })
+        SwipeToDismissBox(
+            state = dismissState,
+            enableDismissFromStartToEnd = false,
+            modifier = Modifier.clip(CardDefaults.shape).testTag("library.swipe.${book.id}"),
+            backgroundContent = {
+                Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.errorContainer).padding(24.dp),
+                    contentAlignment = Alignment.CenterEnd) {
+                    Icon(Icons.Default.Delete, contentDescription = "Delete book")
+                }
+            },
         ) {
-            Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
-                Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-                    Text(
-                        text = book.title,
-                        style = MaterialTheme.typography.titleMedium,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f),
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .combinedClickable(
+                        enabled = openingBookId == null,
+                        onClick = { onOpenBook(book) },
+                        onLongClick = { onLongPress(book) },
+                    ),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            ) {
+                Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
+                    Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                        Text(
+                            text = book.title,
+                            style = MaterialTheme.typography.titleMedium,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f),
+                        )
+                        if (openingBookId == book.id) {
+                            Spacer(modifier = Modifier.size(10.dp))
+                            CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                        }
+                    }
+                    favoriteMetadata(
+                        book.author, book.year, book.rightsStatus, book.license, book.licenseUrl, book.rightsSource,
                     )
                     if (openingBookId == book.id) {
-                        Spacer(modifier = Modifier.size(10.dp))
-                        CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                        Text(
+                            text = "Downloading and opening…",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.secondary,
+                        )
                     }
-                }
-                favoriteMetadata(
-                    book.author, book.year, book.rightsStatus, book.license, book.licenseUrl, book.rightsSource,
-                )
-                if (showPublicationStatus) {
-                    favoritePublicationStatus(
-                        format = book.format.extension,
-                        availableOnBlossom = !book.blossomSha256.isNullOrBlank(),
-                    )
-                }
-                if (openingBookId == book.id) {
-                    Text(
-                        text = "Downloading and opening…",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.secondary,
-                    )
-                }
-                if (bookProgress != null && hasStartedReading(bookProgress)) {
-                    LinearProgressIndicator(
-                        progress = { bookProgress.progression.toFloat() },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(top = 8.dp),
-                    )
-                    Text(
-                        text = "${(bookProgress.progression * 100).toInt()}% read",
-                        style = MaterialTheme.typography.labelLarge,
-                        modifier = Modifier.padding(top = 4.dp),
-                    )
+                    if (bookProgress != null && hasStartedReading(bookProgress)) {
+                        LinearProgressIndicator(
+                            progress = { bookProgress.progression.toFloat() },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(top = 8.dp),
+                        )
+                        Text(
+                            text = "${(bookProgress.progression * 100).toInt()}% read",
+                            style = MaterialTheme.typography.labelLarge,
+                            modifier = Modifier.padding(top = 4.dp),
+                        )
+                    }
                 }
             }
         }
@@ -385,37 +321,6 @@ private fun BookDetailsDialog(
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.secondary,
             )
-        }
-    }
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun ExternalBookDetailsDialog(
-    favorite: ExternalFavorite,
-    onDismiss: () -> Unit,
-    onOpen: () -> Unit,
-    onUnfavorite: () -> Unit,
-) {
-    FullScreenDetails(title = "Book details", onDismiss = onDismiss) {
-        Text(favorite.title, style = MaterialTheme.typography.headlineMedium)
-        favoriteMetadata(
-            favorite.author, favorite.year, favorite.rightsStatus, favorite.license,
-            favorite.licenseUrl, favorite.rightsSource, showMissingValues = true,
-        )
-        HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
-        DetailRow("Format", favorite.format?.uppercase() ?: "Unknown")
-        val onBlossom = !favorite.blossomSha256.isNullOrBlank() && !favorite.blossomUrl.isNullOrBlank()
-        DetailRow("Blossom", if (onBlossom) "Available" else "Not available")
-        favorite.isbn?.takeIf(String::isNotBlank)?.let { DetailRow("ISBN", it) }
-        favorite.url?.takeIf(String::isNotBlank)?.let { DetailRow("Source", sourceLabel(it)) }
-        RightsDetails(favorite.rightsStatus, favorite.license, favorite.licenseUrl, favorite.rightsSource)
-        Spacer(modifier = Modifier.height(12.dp))
-        if (onBlossom) {
-            Button(onClick = onOpen, modifier = Modifier.fillMaxWidth()) { Text("Open book") }
-        }
-        OutlinedButton(onClick = onUnfavorite, modifier = Modifier.fillMaxWidth()) {
-            Text("Unfavorite")
         }
     }
 }
@@ -497,18 +402,6 @@ private fun hasStartedReading(progress: BookProgress): Boolean =
     progress.cfi.isNotBlank() || progress.progression > 0.0
 
 @Composable
-private fun favoritePublicationStatus(format: String?, availableOnBlossom: Boolean) {
-    val formatLabel = format?.trim()?.takeIf(String::isNotEmpty)?.uppercase() ?: "FORMAT UNKNOWN"
-    Text(
-        text = "$formatLabel · ${if (availableOnBlossom) "On Blossom" else "Not on Blossom"}",
-        style = MaterialTheme.typography.labelMedium,
-        color = if (availableOnBlossom) MaterialTheme.colorScheme.primary
-        else MaterialTheme.colorScheme.secondary,
-        maxLines = 1,
-    )
-}
-
-@Composable
 private fun favoriteMetadata(
     author: String?,
     year: String?,
@@ -518,12 +411,10 @@ private fun favoriteMetadata(
     rightsSource: String?,
     showMissingValues: Boolean = false,
 ) {
-    val normalizedAuthor = author
-        ?.trim()
-        ?.takeIf { it.isNotEmpty() && !it.equals("Unknown", ignoreCase = true) }
+    val normalizedAuthor = displayBookAuthor(author)
     val normalizedYear = year?.trim()?.takeIf(String::isNotEmpty)
     val text = listOfNotNull(
-        normalizedAuthor ?: "Author unknown".takeIf { showMissingValues },
+        normalizedAuthor,
         normalizedYear ?: "Year unknown".takeIf { showMissingValues },
     ).joinToString(" · ")
     Row(verticalAlignment = Alignment.CenterVertically) {

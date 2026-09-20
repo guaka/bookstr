@@ -18,8 +18,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Favorite
-import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -29,7 +27,9 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
+import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
+import app.bookstr.data.BookListFilters
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -44,6 +44,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import app.bookstr.data.displayBookAuthor
 import app.bookstr.data.BookSearchResult
 import app.bookstr.data.BookProgress
 import kotlinx.coroutines.delay
@@ -66,6 +67,13 @@ fun SearchScreen(
     onOpen: (BookSearchResult) -> Unit,
     onToggleFavorite: (BookSearchResult) -> Unit,
 ) {
+    var language by rememberSaveable { mutableStateOf("") }
+    var format by rememberSaveable { mutableStateOf("") }
+    val languages = BookListFilters.languages(results.map { it.language })
+    val formats = BookListFilters.formats(results.map { it.format?.extension })
+    val filters = BookListFilters(language, format).sanitize(languages, formats)
+    LaunchedEffect(filters) { language = filters.language; format = filters.format }
+    val visible = results.filter { filters.matches(it.language, it.format?.extension) }
     val focusManager = LocalFocusManager.current
     val keyboardController = LocalSoftwareKeyboardController.current
     val searchFocusRequester = androidx.compose.runtime.remember { FocusRequester() }
@@ -120,6 +128,8 @@ fun SearchScreen(
             )
         }
         item { TextButton(onClick = onDownloads, modifier = Modifier.testTag("search.downloads")) { Text("Downloads") } }
+            item { BookFilterBar("search", languages, formats, filters.language, filters.format,
+                { language = it }, { format = it }) }
         if (!message.isNullOrBlank()) {
             item {
                 Text(
@@ -134,9 +144,8 @@ fun SearchScreen(
                 )
             }
         }
-        items(results, key = BookSearchResult::id) { result ->
+        items(visible, key = BookSearchResult::id) { result ->
             val book = result.asCatalogBook()
-            val favorite = isFavorite(result)
             val bookProgress = readingProgress(result)?.takeIf {
                 it.progression > 0.0 || it.furthestProgression > 0.0 || it.cfi.isNotBlank()
             }
@@ -171,7 +180,7 @@ fun SearchScreen(
                         }
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(
-                                text = listOfNotNull(result.author, result.year).joinToString(" · "),
+                                text = listOfNotNull(displayBookAuthor(result.author), result.year).joinToString(" · "),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.secondary,
                                 maxLines = 1,
@@ -208,10 +217,9 @@ fun SearchScreen(
                             maxLines = 2,
                             overflow = TextOverflow.Ellipsis,
                         )
-                        if (favorite || bookProgress != null) {
+                        if (bookProgress != null) {
                             Text(
                                 text = buildList {
-                                    if (favorite) add("♥ Favorite")
                                     bookProgress?.let {
                                         add("Reading · ${(it.progression.coerceIn(0.0, 1.0) * 100).toInt()}%")
                                     }
@@ -229,15 +237,7 @@ fun SearchScreen(
                             )
                         }
                     }
-                    IconButton(
-                        onClick = { onToggleFavorite(result) },
-                    ) {
-                        Icon(
-                            imageVector = if (favorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
-                            contentDescription = if (favorite) "Remove from favorites" else "Add to favorites",
-                            tint = if (favorite) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.secondary,
-                        )
-                    }
+
                 }
             }
         }

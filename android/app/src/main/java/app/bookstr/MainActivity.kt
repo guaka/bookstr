@@ -69,7 +69,6 @@ import app.bookstr.util.Bech32
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
-    private val notificationPermission = registerForActivityResult(androidx.activity.result.contract.ActivityResultContracts.RequestPermission()) { _ -> }
     private var pendingInvitation by mutableStateOf<String?>(null)
     private var showDownloads by mutableStateOf(false)
     private lateinit var amberSession: AmberIntentSession
@@ -169,7 +168,6 @@ class MainActivity : ComponentActivity() {
                 var error by remember { mutableStateOf<String?>(null) }
                 var nextOffset by remember { mutableStateOf<Int?>(null) }
                 var searchedQuery by remember { mutableStateOf("") }
-                var selectedEdition by remember { mutableStateOf<CatalogBook?>(null) }
                 val downloadJobs by app.downloadStore.jobs.collectAsState()
                 var searchQuery by remember { mutableStateOf("") }
                 var searchResults by remember { mutableStateOf<List<BookSearchResult>>(emptyList()) }
@@ -464,27 +462,6 @@ class MainActivity : ComponentActivity() {
                         }, modifier = Modifier.testTag("catalog.confirm")) { Text("Connect") } },
                         dismissButton = { TextButton(onClick = { pendingInvitation = null }) { Text("Cancel") } })
                 }
-                selectedEdition?.let { book ->
-                    AlertDialog(onDismissRequest = { selectedEdition = null }, title = { Text(book.title) },
-                        text = { Text(listOfNotNull(book.author, book.year, book.format.extension.uppercase()).joinToString(" · ")) },
-                        confirmButton = { TextButton(modifier = Modifier.testTag("edition.download"), onClick = {
-                            selectedEdition = null
-                            scope.launch {
-                                openingBookId = book.id
-                                try {
-                                    val edition = catalog.resolveEdition(book)
-                                    if (android.os.Build.VERSION.SDK_INT >= 33 && checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
-                                        notificationPermission.launch(android.Manifest.permission.POST_NOTIFICATIONS)
-                                    }
-                                    app.downloadStore.enqueue(book, edition)
-                                    DownloadService.dispatch(this@MainActivity)
-                                    showDownloads = true
-                                } catch (e: Exception) { searchMessage = e.message ?: "Could not start download" }
-                                finally { openingBookId = null }
-                            }
-                        }) { Text("Download") } },
-                        dismissButton = { TextButton(onClick = { selectedEdition = null }) { Text("Cancel") } })
-                }
                 Scaffold(
                     bottomBar = {
                         CompositionLocalProvider(LocalMinimumInteractiveComponentSize provides 40.dp) {
@@ -651,6 +628,8 @@ class MainActivity : ComponentActivity() {
                                             error = "Could not delete the downloaded file"
                                         } else {
                                             catalog.clearProgress(book.id)
+                                            app.downloadStore.markPublicationDeleted(book.id)
+                                            books = books.filterNot { it.id == book.id }
                                             nostr.publishProgress(
                                                 bookId = book.id,
                                                 progression = 0.0,
@@ -922,7 +901,21 @@ class MainActivity : ComponentActivity() {
                                 },
                                 onSearch = { runSearch() },
                                 onOpen = { result -> result.asCatalogBook()?.let { book ->
-                                    if (book.libvaultMd5 != null && !catalog.publicationFile(book.id, book.format).isFile) selectedEdition = book else openBook(book)
+                                    if (book.libvaultMd5 != null && !catalog.publicationFile(book.id, book.format).isFile) {
+                                        openingBookId = book.id
+                                        scope.launch {
+                                            try {
+                                                val edition = catalog.resolveEdition(book)
+                                                app.downloadStore.enqueue(book, edition)
+                                                DownloadService.dispatch(this@MainActivity)
+                                                showDownloads = true
+                                            } catch (e: Exception) {
+                                                searchMessage = e.message ?: "Could not start download"
+                                            } finally {
+                                                openingBookId = null
+                                            }
+                                        }
+                                    } else openBook(book)
                                 } },
                                 onToggleFavorite = { result ->
                                     scope.launch {

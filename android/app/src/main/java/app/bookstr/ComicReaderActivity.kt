@@ -2,7 +2,6 @@ package app.bookstr
 
 import android.annotation.SuppressLint
 import android.os.Bundle
-import android.util.Base64
 import android.webkit.JavascriptInterface
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
@@ -12,9 +11,7 @@ import androidx.activity.ComponentActivity
 import androidx.lifecycle.lifecycleScope
 import androidx.webkit.WebViewAssetLoader
 import app.bookstr.data.BookFormat
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import java.io.File
 
 class ComicReaderActivity : ComponentActivity() {
@@ -52,9 +49,9 @@ class ComicReaderActivity : ComponentActivity() {
                 if (!url.endsWith("/assets/comic-reader.html") || !archive.isFile) return
                 lifecycleScope.launch {
                     val saved = app.catalogRepository.getProgress(bookId)
-                    val encoded = withContext(Dispatchers.IO) { Base64.encodeToString(archive.readBytes(), Base64.NO_WRAP) }
+                    val archiveUrl = "https://appassets.androidplatform.net/books/${android.net.Uri.encode(archive.name)}"
                     val initial = saved?.cfi?.substringAfter("comic:")?.substringBefore(':')?.toIntOrNull() ?: saved?.progression?.toInt() ?: 0
-                    view.evaluateJavascript("loadComic({format:${quote(format.extension)},bookTitle:${quote(intent.getStringExtra(EXTRA_TITLE) ?: "Comic")},base64:${quote(encoded)},initialPage:$initial})", null)
+                    view.evaluateJavascript("loadComic({format:${quote(format.extension)},bookTitle:${quote(intent.getStringExtra(EXTRA_TITLE) ?: "Comic")},archiveURL:${quote(archiveUrl)},initialPage:$initial})", null)
                 }
             }
         }

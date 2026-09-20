@@ -92,7 +92,11 @@ extern "C" JNIEXPORT jlong JNICALL Java_app_bookstr_download_NativeTorrentEngine
         for (auto index : info->files().file_range()) info->rename_file(index, index == chosen ? "payload" : "unselected/" + std::to_string(static_cast<int>(index)));
         engine->path = engine->root + "/payload";
         lt::settings_pack settings;
-        settings.set_int(lt::settings_pack::connections_limit, 60);
+        // Find useful peers sooner in sparse book swarms without imposing a rate cap.
+        settings.set_int(lt::settings_pack::connections_limit, 120);
+        settings.set_int(lt::settings_pack::connection_speed, 60);
+        settings.set_bool(lt::settings_pack::announce_to_all_trackers, true);
+        settings.set_bool(lt::settings_pack::announce_to_all_tiers, true);
         settings.set_int(lt::settings_pack::aio_threads, 2);
         settings.set_int(lt::settings_pack::alert_mask, lt::alert_category::error | lt::alert_category::storage | lt::alert_category::status);
         settings.set_bool(lt::settings_pack::enable_lsd, false);
@@ -122,7 +126,9 @@ extern "C" JNIEXPORT jobjectArray JNICALL Java_app_bookstr_download_NativeTorren
         engine->collect(); auto status = engine->handle.status();
         bool ready = status.is_finished && status.state != lt::torrent_status::checking_files && status.state != lt::torrent_status::checking_resume_data;
         if (std::chrono::steady_clock::now() - engine->last_save > std::chrono::seconds(10)) {
-            engine->handle.save_resume_data(lt::torrent_handle::flush_disk_cache); engine->last_save = std::chrono::steady_clock::now();
+            // Checkpoint changed resume state without forcing an active transfer to flush.
+            // The destructor still flushes before verification, pause, and shutdown.
+            engine->handle.save_resume_data(lt::torrent_handle::only_if_modified); engine->last_save = std::chrono::steady_clock::now();
         }
         const std::string error = engine->failure.empty() ? (status.errc ? status.errc.message() : "") : engine->failure;
         const std::string values[] = { !error.empty() ? "failed" : ready ? "ready" : status.num_peers ? "downloading" : "finding-peers",
