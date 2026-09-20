@@ -235,7 +235,7 @@
       };
       const media = {
         "max-width": "100% !important",
-        "max-height": "88vh !important",
+        "max-height": Math.round(window.innerHeight * 0.88) + "px !important",
         "width": "auto !important",
         "height": "auto !important",
         "object-fit": "contain !important",
@@ -292,6 +292,7 @@
         if (window.AndroidBridge && AndroidBridge.onReaderStage) {
           AndroidBridge.onReaderStage("Opening book");
         }
+        includeOpeningSpineItems(book.spine.spineItems);
         reportBookMetadata();
         reportBookSections();
         // Keep the same continuous document model on Android, iOS, and web.
@@ -315,7 +316,6 @@
         rendition.on("rendered", function(section, view) {
           const contentDocument = view && view.contents && view.contents.document;
           if (contentDocument) {
-            stabilizeCoverPage(section, contentDocument);
             isolateAuthorBackgrounds(contentDocument);
             installSwipeNavigation(contentDocument);
             installImageZoom(contentDocument);
@@ -1105,38 +1105,15 @@
       contentWindow.CSS.highlights.set("bookstr-known-word", new contentWindow.Highlight(...ranges));
     }
 
-    function stabilizeCoverPage(section, contentDocument) {
-      if (!section || !contentDocument) return;
-      const href = String(section.href || section.url || "").toLocaleLowerCase();
-      const properties = Array.isArray(section.properties)
-        ? section.properties.join(" ").toLocaleLowerCase()
-        : String(section.properties || "").toLocaleLowerCase();
-      const body = contentDocument.body;
-      const textLength = body ? String(body.innerText || "").trim().length : 0;
-      const hasLargeMedia = Boolean(body && body.querySelector("svg, img, image"));
-      // The first spine item is often Chapter 1, not a cover. Treating every
-      // index-zero section as a cover forces normal paragraphs into one fixed
-      // height flex row and removes the document's vertical scroll range.
-      const looksLikeCover = href.includes("cover") || properties.includes("cover") ||
-        (hasLargeMedia && textLength < 80);
-      if (!looksLikeCover) return;
-      const container = document.querySelector(".epub-container");
-      const viewportHeight = Math.max(320, container ? container.clientHeight : window.innerHeight);
-      let style = contentDocument.getElementById("bookstr-cover-layout");
-      if (!style) {
-        style = contentDocument.createElement("style");
-        style.id = "bookstr-cover-layout";
-        (contentDocument.head || contentDocument.documentElement).appendChild(style);
+    function includeOpeningSpineItems(items) {
+      // Publishers sometimes mark covers/front matter as non-linear. Keep them
+      // reachable at the start without changing spine indexes or saved CFIs.
+      for (let index = 0; index < items.length && !items[index].linear; index += 1) {
+        const item = items[index];
+        item.linear = true;
+        item.prev = function() { return items[index - 1]; };
+        item.next = function() { return items.slice(index + 1).find(function(section) { return section.linear; }); };
       }
-      style.textContent =
-        "html,body{min-height:" + viewportHeight + "px!important;height:" + viewportHeight +
-        "px!important;margin:0!important;padding:0!important;overflow:hidden!important}" +
-        "body{display:flex!important;align-items:flex-start!important;justify-content:center!important}" +
-        "body>div,body>section,body>figure{width:100%!important;height:100%!important;margin:0!important;" +
-        "padding:0!important;display:flex!important;align-items:center!important;justify-content:center!important}" +
-        "body>*{max-width:100%!important;max-height:100%!important}" +
-        "img,svg,video{display:block!important;width:auto!important;height:auto!important;" +
-        "max-width:100%!important;max-height:100%!important;object-fit:contain!important}";
     }
 
     function installKnownWordNavigation(contentDocument) {

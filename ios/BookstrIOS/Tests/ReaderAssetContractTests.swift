@@ -438,9 +438,11 @@ final class ReaderAssetContractTests: XCTestCase {
     func testFirstSpineItemIsNotAutomaticallyForcedIntoCoverLayout() throws {
         let html = try bundledReaderHTML()
 
-        XCTAssertTrue(html.contains("href.includes(\"cover\")"))
-        XCTAssertTrue(html.contains("properties.includes(\"cover\")"))
-        XCTAssertFalse(html.contains("section.index === 0 || href.includes(\"cover\")"))
+        XCTAssertFalse(html.contains("bookstr-cover-layout"))
+        XCTAssertFalse(html.contains("textLength < 80"))
+        XCTAssertFalse(html.contains("88vh"))
+        XCTAssertTrue(html.contains("Math.round(window.innerHeight * 0.88)"))
+        XCTAssertTrue(html.contains("includeOpeningSpineItems(book.spine.spineItems)"))
     }
 
     func testPageCommandsMoveTheViewportInOppositeDirections() throws {
