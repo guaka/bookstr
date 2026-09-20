@@ -78,6 +78,10 @@ class SettingsRepository(context: Context) {
         EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM,
     )
 
+    var catalogConnection: CatalogConnection?
+        get() = plainPrefs.getString("catalog_invitation", null)?.let { runCatching { CatalogConnection.parse(it) }.getOrNull() }
+        set(value) { plainPrefs.edit().putString("catalog_invitation", value?.uri).apply() }
+
     var relays: List<String>
         get() = (plainPrefs.getString(KEY_RELAYS, DEFAULT_RELAYS) ?: DEFAULT_RELAYS)
             .split('\n', ',')

@@ -19,6 +19,12 @@ class LocalNsecSigner(
         return pubkey
     }
 
+    override suspend fun nip44Encrypt(plaintext: String, pubkey: String): String =
+        Nip44.encrypt(NostrCrypto.parsePrivateKey(requireNotNull(settings.nsec)), pubkey, plaintext)
+
+    override suspend fun nip44Decrypt(ciphertext: String, pubkey: String): String =
+        Nip44.decrypt(NostrCrypto.parsePrivateKey(requireNotNull(settings.nsec)), pubkey, ciphertext)
+
     override suspend fun signEvent(unsigned: JSONObject): JSONObject {
         val nsec = settings.nsec ?: throw IllegalStateException("No nsec configured")
         val privateKey = NostrCrypto.parsePrivateKey(nsec)

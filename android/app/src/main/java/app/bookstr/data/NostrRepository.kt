@@ -149,17 +149,17 @@ class NostrRepository(
     }
 
     private suspend fun encryptToSelf(pubkey: String, plaintext: String): String {
-        val pkg = settings.signerPackage ?: throw Nip55Exception("Amber is not connected")
+        val pkg = settings.signerPackage ?: throw Nip55Exception("External signer is not connected")
         return Nip55.encryptNip44ViaContentResolver(context, pkg, plaintext, pubkey, pubkey)
             ?: AmberIntentSession.Host.session?.encryptNip44(plaintext, pubkey, pubkey, pkg)
-            ?: throw Nip55Exception("Reconnect Amber and remember private vocabulary encryption")
+            ?: throw Nip55Exception("Reconnect your signer and remember private vocabulary encryption")
     }
 
     private suspend fun decryptFromSelf(pubkey: String, ciphertext: String): String {
-        val pkg = settings.signerPackage ?: throw Nip55Exception("Amber is not connected")
+        val pkg = settings.signerPackage ?: throw Nip55Exception("External signer is not connected")
         return Nip55.decryptNip44ViaContentResolver(context, pkg, ciphertext, pubkey, pubkey)
             ?: AmberIntentSession.Host.session?.decryptNip44(ciphertext, pubkey, pubkey, pkg)
-            ?: throw Nip55Exception("Reconnect Amber and remember private vocabulary decryption")
+            ?: throw Nip55Exception("Reconnect your signer and remember private vocabulary decryption")
     }
 
     companion object {

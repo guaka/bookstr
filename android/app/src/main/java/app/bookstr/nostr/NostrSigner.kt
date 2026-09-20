@@ -11,6 +11,11 @@ interface NostrSigner {
     /** Hex pubkey for the active identity. */
     suspend fun getPublicKey(): String
 
+    suspend fun nip44Encrypt(plaintext: String, pubkey: String): String =
+        throw UnsupportedOperationException("Signer does not support NIP-44")
+    suspend fun nip44Decrypt(ciphertext: String, pubkey: String): String =
+        throw UnsupportedOperationException("Signer does not support NIP-44")
+
     /** Signs an unsigned event template; returns a complete event with id/pubkey/sig. */
     suspend fun signEvent(unsigned: JSONObject): JSONObject
 }

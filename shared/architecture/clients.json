@@ -27,7 +27,7 @@
       "shell": "Jetpack Compose",
       "reader": "WebView EPUB and native PDF adapters",
       "speech": "TextToSpeech and NarrationService adapters",
-      "catalog": "Native HTTP adapter",
+      "catalog": "Private Libcat NIP-17, public HTTP, and native torrent adapters",
       "persistence": "Room and Android preferences",
       "sharedCore": "Generated DTOs, fixtures, speech planning, reader runtime, and tokens"
     },

@@ -36,6 +36,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
@@ -59,6 +60,7 @@ import app.bookstr.data.DictionaryPack
 @Composable
 fun SettingsScreen(
     authMode: NostrAuthMode,
+    signerLabel: String = "External signer",
     npubDisplay: String,
     amberAvailable: Boolean,
     nsec: String,
@@ -175,7 +177,7 @@ fun SettingsScreen(
 
             when (authMode) {
                 NostrAuthMode.Amber -> {
-                    Text("Connected via Amber (NIP-55)")
+                    Text("Connected via $signerLabel (NIP-55)")
                     if (npubDisplay.isNotEmpty()) {
                         Text(npubDisplay)
                     }
@@ -203,13 +205,13 @@ fun SettingsScreen(
                         Button(
                             onClick = onConnectAmber,
                             enabled = !connectingAmber,
-                            modifier = Modifier.fillMaxWidth(),
+                            modifier = Modifier.fillMaxWidth().testTag("signer.connect"),
                         ) {
-                            Text(if (connectingAmber) "Connecting…" else "Connect Amber")
+                            Text(if (connectingAmber) "Connecting…" else "Connect signer")
                         }
-                        Text("Keeps your key in Amber. Prefer this over pasting nsec.")
+                        Text("Keeps your key in your signer.")
                     } else {
-                        Text("Install Amber (or another NIP-55 signer) to connect without pasting a key.")
+                        Text("Install Huddle or another NIP-55 signer to connect.")
                     }
                 }
             }

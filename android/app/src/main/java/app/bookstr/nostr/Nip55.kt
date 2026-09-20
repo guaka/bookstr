@@ -39,9 +39,14 @@ object Nip55 {
             .put(JSONObject().put("type", TYPE_SIGN_EVENT).put("kind", NostrClient.KIND_PROGRESS))
             .put(JSONObject().put("type", TYPE_SIGN_EVENT).put("kind", NostrClient.KIND_FAVORITES))
             .put(JSONObject().put("type", TYPE_SIGN_EVENT).put("kind", BlossomAuth.KIND))
+            .put(JSONObject().put("type", TYPE_SIGN_EVENT).put("kind", 13))
             .put(JSONObject().put("type", TYPE_NIP44_DECRYPT))
             .put(JSONObject().put("type", TYPE_NIP44_ENCRYPT))
             .toString()
+
+    fun signerLabel(context: Context, packageName: String?): String = packageName?.let {
+        runCatching { context.packageManager.getApplicationLabel(context.packageManager.getApplicationInfo(it, 0)).toString() }.getOrDefault(it)
+    } ?: "External signer"
 
     fun isSignerAvailable(context: Context): Boolean =
         context.packageManager
@@ -129,7 +134,7 @@ object Nip55 {
         return normalizePubkey(raw) to pkg
     }
 
-    fun parseSignEventResult(resultCode: Int, data: Intent?): JSONObject {
+    fun parseSignEventResult(resultCode: Int, data: Intent?, unsigned: String? = null): JSONObject {
         if (resultCode != Activity.RESULT_OK) {
             throw Nip55Exception("Signer failed to sign event")
         }
@@ -140,24 +145,28 @@ object Nip55 {
         if (!eventJson.isNullOrBlank()) {
             return JSONObject(eventJson)
         }
+        val signature = data?.getStringExtra(RESULT) ?: data?.getStringExtra(RESULT_SIGNATURE)
+        if (unsigned != null && signature != null && Regex("[0-9a-fA-F]{128}").matches(signature)) {
+            return JSONObject(unsigned).put("sig", signature)
+        }
         throw Nip55Exception("No signed event in signer response")
     }
 
     fun parseNip44DecryptResult(resultCode: Int, data: Intent?): String {
         if (resultCode != Activity.RESULT_OK) {
-            throw Nip55Exception("Signer failed to decrypt favorites")
+            throw Nip55Exception("Signer failed to decrypt")
         }
         if (data?.getBooleanExtra(RESULT_REJECTED, false) == true) {
-            throw Nip55Exception("Favorite decryption was rejected")
+            throw Nip55Exception("Decryption was rejected")
         }
         return data?.getStringExtra(RESULT)?.takeIf { it.isNotBlank() }
             ?: throw Nip55Exception("No plaintext in signer response")
     }
 
     fun parseNip44EncryptResult(resultCode: Int, data: Intent?): String {
-        if (resultCode != Activity.RESULT_OK) throw Nip55Exception("Signer failed to encrypt favorites")
+        if (resultCode != Activity.RESULT_OK) throw Nip55Exception("Signer failed to encrypt")
         if (data?.getBooleanExtra(RESULT_REJECTED, false) == true) {
-            throw Nip55Exception("Favorite encryption was rejected")
+            throw Nip55Exception("Encryption was rejected")
         }
         return data?.getStringExtra(RESULT)?.takeIf { it.isNotBlank() }
             ?: throw Nip55Exception("No ciphertext in signer response")
@@ -223,7 +232,7 @@ object Nip55 {
 
         cursor.use {
             if (it.getColumnIndex(RESULT_REJECTED) > -1) {
-                throw Nip55Exception("Favorite decryption was rejected")
+                throw Nip55Exception("Decryption was rejected")
             }
             if (!it.moveToFirst()) return null
             val resultCol = it.getColumnIndex(RESULT)
@@ -247,7 +256,7 @@ object Nip55 {
         ) ?: return null
         cursor.use {
             if (it.getColumnIndex(RESULT_REJECTED) > -1) {
-                throw Nip55Exception("Favorite encryption was rejected")
+                throw Nip55Exception("Encryption was rejected")
             }
             if (!it.moveToFirst()) return null
             val resultCol = it.getColumnIndex(RESULT)
@@ -261,7 +270,11 @@ object Nip55 {
             // NIP-55's Android example passes payload parameters as projection values.
             context.contentResolver.query(uri, args, null, null, null)
         } catch (_: IllegalArgumentException) {
-            context.contentResolver.query(uri, null, null, args, null)
+            try { context.contentResolver.query(uri, null, null, args, null) }
+            catch (_: IllegalArgumentException) { null }
+            catch (_: SecurityException) { null }
+        } catch (_: SecurityException) {
+            null
         }
     }
 }

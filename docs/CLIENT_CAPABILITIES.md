@@ -10,7 +10,7 @@ Client | Shell | Reader | Speech playback | Catalog adapter | Persistence | Shar
 --- | --- | --- | --- | --- | --- | ---
 Web | Static HTML, CSS, and JavaScript | Browser EPUB and PDF readers | Hidden in ordinary browsers | LibVault HTTP adapter | Browser storage | Contracts, fixtures, speech planning, reader libraries, and tokens
 Electron | Electron main/preload around the static web client | Chromium EPUB and PDF readers | Chromium speechSynthesis adapter | Desktop protocol and proxy adapters | Chromium storage and desktop session | Web behavior modules, contracts, fixtures, reader runtime, and tokens
-Android | Jetpack Compose | WebView EPUB and native PDF adapters | TextToSpeech and NarrationService adapters | Native HTTP adapter | Room and Android preferences | Generated DTOs, fixtures, speech planning, reader runtime, and tokens
+Android | Jetpack Compose | WebView EPUB and native PDF adapters | TextToSpeech and NarrationService adapters | Private Libcat NIP-17, public HTTP, and native torrent adapters | Room and Android preferences | Generated DTOs, fixtures, speech planning, reader runtime, and tokens
 iOS | SwiftUI | WKWebView EPUB and PDFKit adapters | Apple speech and sherpa-onnx adapters | URLSession adapter | JSON stores, UserDefaults, and Keychain | Generated DTOs, fixtures, speech planning, reader runtime, and tokens
 
 The source of truth is `shared/architecture/clients.json`. Run

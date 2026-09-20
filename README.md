@@ -64,7 +64,7 @@ node --test web/tests/*.test.mjs scripts/*.test.mjs shared/catalog/*.test.mjs sh
 
 ### Android
 
-The Android project supports API 27 and newer. It requires a JDK and Android SDK.
+The Android project supports API 27 and newer. See the [Android build guide](./android/README.md) for the JDK, SDK, NDK and Boost prerequisites.
 
 ```bash
 cd android

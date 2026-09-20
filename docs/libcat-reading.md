@@ -1,7 +1,7 @@
 # Libcat and direct torrent reading
 
 Libcat keeps large metadata catalogs on a storage host. Electron, the web app,
-and iPhone use private NIP-17 requests for search and torrent metadata. Libcat
+iPhone, and Android use private NIP-17 requests for search and torrent metadata. Libcat
 does not transfer book contents.
 
 ## Implemented flow
@@ -15,6 +15,10 @@ does not transfer book contents.
   written to the public search cache.
 - Electron resolves catalog editions and downloads them through its existing
   torrent support.
+- Android resolves selected editions through Libcat and downloads them using a
+  native foreground service. Jobs and partial files survive relaunch; pause,
+  resume, cancel and verified offline reading are available from Downloads.
+  See the [Android parity audit](ANDROID_PARITY.md) for remaining validation.
 - iPhone resolves an edition's torrent metadata and downloads the selected file
   directly while Bookstr is in the foreground. Independent jobs are journaled,
   partial data is preserved, and unfinished downloads resume after relaunch.
