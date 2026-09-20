@@ -4,6 +4,11 @@
 
 - Make repository changes on a dedicated branch and deliver them through a pull
   request. Do not push commits directly to the default branch.
+- GitHub Actions CI is currently unavailable due to an account billing /
+  spending-limit issue: jobs fail before running tests. Until Actions is
+  restored, use local tests, coverage reports, and relevant device checks for
+  validation, and report what was actually verified. These infrastructure
+  failures are not evidence of test failures or passing checks.
 
 ## Web UI restraint
 
