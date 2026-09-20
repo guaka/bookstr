@@ -45,7 +45,7 @@ final class SpeechModelStoreTests: XCTestCase {
 
     func testCatalogBundledModelsAndSourceURLs() throws {
         SpeechModelCatalog.modelsOverride = nil
-        XCTAssertEqual(SpeechModelCatalog.bundledModels.count, 8)
+        XCTAssertEqual(SpeechModelCatalog.bundledModels.count, 9)
         let kokoro = try XCTUnwrap(SpeechModelCatalog.model(.kokoroEnglish))
         let tugao = try XCTUnwrap(SpeechModelCatalog.model(.portuguesePortugal))
         let miro = try XCTUnwrap(SpeechModelCatalog.model(.portuguesePortugalMiro))
@@ -54,16 +54,23 @@ final class SpeechModelStoreTests: XCTestCase {
         let german = try XCTUnwrap(SpeechModelCatalog.model(.germanMiro))
         let spanish = try XCTUnwrap(SpeechModelCatalog.model(.spanishMiro))
         let catalan = try XCTUnwrap(SpeechModelCatalog.model(.catalanOna))
-        XCTAssertEqual(kokoro.files.count, 11)
-        XCTAssertEqual(tugao.files.count, 9)
-        XCTAssertEqual(miro.files.count, 9)
-        XCTAssertEqual(dii.files.count, 9)
-        XCTAssertEqual(french.files.count, 9)
-        XCTAssertEqual(german.files.count, 9)
-        XCTAssertEqual(spanish.files.count, 9)
-        XCTAssertEqual(catalan.files.count, 9)
-        XCTAssertEqual(kokoro.approximateBytes, 352_148_969)
-        XCTAssertEqual(tugao.approximateBytes, 63_939_446)
+        let dutch = try XCTUnwrap(SpeechModelCatalog.model(.dutchDii))
+        XCTAssertEqual(dutch.repository, "csukuangfj/vits-piper-nl_NL-dii-high")
+        XCTAssertEqual(dutch.revision, "12169a38e0f40f3ffc429273346f6d0700387cdf")
+        XCTAssertEqual(dutch.kind, .vits(model: "nl_NL-dii-high.onnx"))
+        XCTAssertEqual(dutch.files.count, 22)
+        XCTAssertTrue(dutch.files.contains(.init(path: "espeak-ng-data/nl_dict", expectedBytes: 65_979)))
+        XCTAssertTrue(dutch.files.contains(.init(path: "espeak-ng-data/lang/gmw/nl", expectedBytes: 23)))
+        XCTAssertEqual(kokoro.files.count, 23)
+        XCTAssertEqual(tugao.files.count, 22)
+        XCTAssertEqual(miro.files.count, 22)
+        XCTAssertEqual(dii.files.count, 22)
+        XCTAssertEqual(french.files.count, 22)
+        XCTAssertEqual(german.files.count, 22)
+        XCTAssertEqual(spanish.files.count, 22)
+        XCTAssertEqual(catalan.files.count, 22)
+        XCTAssertGreaterThan(kokoro.approximateBytes, 352_148_969)
+        XCTAssertGreaterThan(tugao.approximateBytes, 63_939_446)
         XCTAssertNil(SpeechModelCatalog.model(.system))
         let url = SpeechModelCatalog.sourceURL(
             repository: "csukuangfj/vits-piper-pt_PT-tugao-medium",
@@ -86,6 +93,7 @@ final class SpeechModelStoreTests: XCTestCase {
                 "piper_de_de",
                 "piper_es_es",
                 "piper_ca_es",
+                "piper_nl_nl_dii",
             ]
         )
         XCTAssertTrue(kokoro.dataDirectory.path.hasSuffix("espeak-ng-data"))
@@ -94,6 +102,26 @@ final class SpeechModelStoreTests: XCTestCase {
         SpeechModelCatalog.rootDirectoryOverride = nil
         XCTAssertTrue(SpeechModelCatalog.rootDirectory.path.contains("bookstr/speech-models"))
         SpeechModelCatalog.rootDirectoryOverride = savedRoot
+    }
+
+    @MainActor
+    func testDutchInstallSharesPronunciationDataAcrossVoicesAndRemoval() async throws {
+        SpeechModelCatalog.modelsOverride = [SpeechModelSpec(
+            id: .dutchDii, repository: "example/dutch", revision: "pinned",
+            files: [.init(path: "espeak-ng-data/nl_dict", expectedBytes: 4)],
+            kind: .vits(model: "model.onnx")
+        )]
+        let model = try XCTUnwrap(SpeechModelCatalog.model(.dutchDii))
+        let store = SpeechModelStore(downloader: FixtureSpeechDownloader(payload: Data("data".utf8)))
+        await store.install(.dutchDii)
+        XCTAssertNil(store.errorMessage)
+        XCTAssertTrue(store.isInstalled(.dutchDii))
+        let shared = model.dataDirectory.appendingPathComponent("nl_dict")
+        XCTAssertEqual(try Data(contentsOf: shared), Data("data".utf8))
+        store.remove(.dutchDii)
+        XCTAssertFalse(store.isInstalled(.dutchDii))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: shared.path))
+        XCTAssertEqual(model.dataDirectory, SpeechModelCatalog.bundledModels[0].dataDirectory)
     }
 
     @MainActor

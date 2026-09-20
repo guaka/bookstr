@@ -645,7 +645,8 @@ final class CatalogRepository {
         books.removeAll { $0.id == book.id }
         books.append(updated)
         fileStore.save("downloaded-books.json", value: books)
-        invalidateDownloadedBooksCache()
+        downloadedBooksCache = nil
+        SpeechLanguageListCache.invalidate()
     }
 
     /// Deletes the on-device publication, cover cache, and remembered metadata.
@@ -672,7 +673,8 @@ final class CatalogRepository {
         let removable = Set(ids.map { $0.lowercased() })
         books.removeAll { removable.contains($0.id.lowercased()) }
         fileStore.save("downloaded-books.json", value: books)
-        invalidateDownloadedBooksCache()
+        downloadedBooksCache = nil
+        SpeechLanguageListCache.invalidate()
     }
 
     func rememberEmbeddedRights(book: CatalogBook, statement: String?) -> BookRights {

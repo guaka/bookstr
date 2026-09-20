@@ -51,6 +51,39 @@ final class AppShellUITests: XCTestCase {
         XCTAssertTrue(reader.waitForExistence(timeout: 15))
     }
 
+    func testDutchNeuralVoiceIsOfferedInSettings() throws {
+        selectTab("Settings")
+        let language = app.descendants(matching: .any)["speech-language"]
+        reveal(language)
+        XCTAssertTrue(language.waitForExistence(timeout: 5))
+        language.tap()
+        app.buttons["Dutch"].tap()
+        let download = app.buttons["speech-model-piper_nl_nl_dii"]
+        reveal(download)
+        XCTAssertTrue(download.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.descendants(matching: .any)["speech-voice-nl"].exists)
+    }
+
+    func testDownloadedBookAppearsInLibraryBeforeOpening() throws {
+        app.terminate()
+        app.launchArguments += ["--ui-testing-torrent-fixture"]
+        app.launch()
+        selectTab("Search")
+        let query = app.searchFields.firstMatch
+        XCTAssertTrue(query.waitForExistence(timeout: 10))
+        query.tap()
+        query.typeText("Torrent Reading Fixture\n")
+        let result = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "search.open.")).firstMatch
+        XCTAssertTrue(result.waitForExistence(timeout: 10))
+        let id = String(result.identifier.dropFirst("search.open.".count))
+        result.tap()
+        XCTAssertTrue(app.buttons["downloads.done"].waitForExistence(timeout: 10))
+        app.buttons["downloads.done"].tap()
+        selectTab("Library")
+        XCTAssertTrue(app.buttons["library-book-\(id)"].waitForExistence(timeout: 20))
+        XCTAssertFalse(app.descendants(matching: .any)["pdf-reader"].exists)
+    }
+
     func testZlibSearchDownloadsAndReopensOfflinePublication() throws {
         app.launchArguments += ["--ui-testing-zlib-fixture"]
         try testTorrentSearchOpensAndReopensOfflinePublication()

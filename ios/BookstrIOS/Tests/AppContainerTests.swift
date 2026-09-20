@@ -1,8 +1,45 @@
 import XCTest
+import SherpaOnnx
+import UIKit
 
 @testable import BookstrIOS
 
+@MainActor
 final class AppContainerTests: XCTestCase {
+    func testDownloadedDutchAndPortugueseModelsGenerateAudioWhenSwitching() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        SpeechModelCatalog.rootDirectoryOverride = root
+        defer {
+            SpeechModelCatalog.rootDirectoryOverride = nil
+            try? FileManager.default.removeItem(at: root)
+        }
+        let store = SpeechModelStore()
+        for engine in [SpeechEngineID.dutchDii, .portuguesePortugal] {
+            await store.install(engine)
+            XCTAssertNil(store.errorMessage)
+            XCTAssertTrue(store.isInstalled(engine))
+        }
+        for (engine, text) in [(SpeechEngineID.dutchDii, "Hallo, dit is een Nederlands boek."),
+                               (.portuguesePortugal, "Olá, este é um livro em português."),
+                               (.dutchDii, "We lezen verder in het Nederlands.")] {
+            try autoreleasepool {
+                let spec = try XCTUnwrap(SpeechModelCatalog.model(engine))
+                guard case .vits(let model) = spec.kind else { return XCTFail("Expected Piper") }
+                let vits = sherpaOnnxOfflineTtsVitsModelConfig(
+                    model: spec.fileURL(model).path, tokens: spec.tokensURL.path,
+                    dataDir: spec.dataDirectory.path
+                )
+                let modelConfig = sherpaOnnxOfflineTtsModelConfig(vits: vits, numThreads: 2)
+                var config = sherpaOnnxOfflineTtsConfig(model: modelConfig, maxNumSentences: 1)
+                let synthesizer = SherpaOnnxOfflineTtsWrapper(config: &config)
+                let audio = synthesizer.generate(text: text, sid: 0, speed: 1)
+                XCTAssertGreaterThan(audio.sampleRate, 0)
+                XCTAssertGreaterThan(audio.samples.count, Int(audio.sampleRate))
+                XCTAssertTrue(audio.samples.contains { abs($0) > 0.001 })
+            }
+        }
+    }
+
     @MainActor
     func testComicZoomStartsFittedAndClampsToSupportedRange() {
         let controller = ComicReaderController()
@@ -279,17 +316,22 @@ final class AppContainerTests: XCTestCase {
         let bookID = String(repeating: "a", count: 64)
         let book = CatalogBook(
             id: bookID, title: "Delete Me", author: "Author", epubUrl: "",
-            coverUrl: nil, sourceUrl: nil, isbn: nil, libvaultMd5: nil, format: .epub,
+            coverUrl: nil, sourceUrl: nil, isbn: nil, libvaultMd5: nil, format: .pdf,
             blossomSha256: bookID, year: nil
         )
-        let publication = fileStore.bookFileURL(bookId: bookID, format: .epub)
-        // Minimal valid-enough bytes; deletion only checks path existence.
-        try Data("%PDF-delete-fixture".utf8).write(to: publication)
+        let publication = fileStore.bookFileURL(bookId: bookID, format: .pdf)
+        let pdf = UIGraphicsPDFRenderer(bounds: CGRect(x: 0, y: 0, width: 300, height: 400)).pdfData { context in
+            context.beginPage()
+            "Downloaded but unread".draw(at: CGPoint(x: 20, y: 20), withAttributes: nil)
+        }
+        try pdf.write(to: publication)
         let cover = fileStore.coverFileURL(bookId: bookID, ext: "jpg")
         try Data([0xFF, 0xD8, 0xFF, 0xD9]).write(to: cover)
         fileStore.save("downloaded-books.json", value: [book])
 
-        let settings = SettingsRepository(fileStore: fileStore)
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: subdirectory))
+        defer { defaults.removePersistentDomain(forName: subdirectory) }
+        let settings = SettingsRepository(defaults: defaults)
         let progress = ProgressRepository(fileStore: fileStore)
         progress.save(bookId: bookID, progression: 0.4, cfi: "here")
         let words = VocabularyRepository(fileStore: fileStore)
@@ -329,7 +371,13 @@ final class AppContainerTests: XCTestCase {
 
         let viewModel = LibraryViewModel()
         viewModel.attach(container)
+        // A completed download is visible even before it has any reading progress.
+        progress.remove(bookId: bookID)
+        await viewModel.load()
+        XCTAssertTrue(viewModel.reading.contains { $0.id == bookID })
+        XCTAssertTrue(viewModel.favorites.isEmpty)
         await viewModel.deleteFromLibrary(book)
+        XCTAssertFalse(viewModel.reading.contains { $0.id == bookID })
 
         XCTAssertFalse(FileManager.default.fileExists(atPath: publication.path))
         XCTAssertFalse(FileManager.default.fileExists(atPath: cover.path))

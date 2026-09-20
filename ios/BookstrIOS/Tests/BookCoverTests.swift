@@ -1,6 +1,10 @@
 import XCTest
 import PDFKit
+#if SWIFT_PACKAGE
 @testable import BookstrLogic
+#else
+@testable import BookstrIOS
+#endif
 
 final class BookCoverTests: XCTestCase {
     private let png = Data([

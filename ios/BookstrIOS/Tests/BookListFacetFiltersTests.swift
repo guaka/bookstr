@@ -1,5 +1,9 @@
 import XCTest
+#if SWIFT_PACKAGE
 @testable import BookstrLogic
+#else
+@testable import BookstrIOS
+#endif
 
 final class BookListFacetFiltersTests: XCTestCase {
     func testNormalizationTrimsAndLowercasesLanguageAndFormat() {

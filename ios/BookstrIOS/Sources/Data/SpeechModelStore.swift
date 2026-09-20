@@ -10,6 +10,7 @@ enum SpeechEngineID: String, CaseIterable, Identifiable {
     case germanMiro = "piper_de_de"
     case spanishMiro = "piper_es_es"
     case catalanOna = "piper_ca_es"
+    case dutchDii = "piper_nl_nl_dii"
 
     var id: String { rawValue }
 
@@ -24,6 +25,7 @@ enum SpeechEngineID: String, CaseIterable, Identifiable {
         case .germanMiro: "Miro · Deutsch"
         case .spanishMiro: "Miro · Español"
         case .catalanOna: "UPC Ona · Català"
+        case .dutchDii: "Dii · Nederlands"
         }
     }
 
@@ -37,6 +39,7 @@ enum SpeechEngineID: String, CaseIterable, Identifiable {
         case .germanMiro: "de"
         case .spanishMiro: "es"
         case .catalanOna: "ca"
+        case .dutchDii: "nl"
         }
     }
 
@@ -50,6 +53,7 @@ enum SpeechEngineID: String, CaseIterable, Identifiable {
         case .germanMiro: SpeechLanguageSettings.isGerman(language)
         case .spanishMiro: SpeechLanguageSettings.isSpanish(language)
         case .catalanOna: SpeechLanguageSettings.isCatalan(language)
+        case .dutchDii: SpeechLanguageSettings.baseLanguage(language) == "nl"
         }
     }
 }
@@ -76,7 +80,7 @@ struct SpeechModelSpec: Identifiable, Equatable {
     }
 
     var directory: URL { SpeechModelCatalog.rootDirectory.appendingPathComponent(id.rawValue, isDirectory: true) }
-    var dataDirectory: URL { directory.appendingPathComponent("espeak-ng-data", isDirectory: true) }
+    var dataDirectory: URL { SpeechModelCatalog.rootDirectory.appendingPathComponent("espeak-ng-data", isDirectory: true) }
     var tokensURL: URL { directory.appendingPathComponent("tokens.txt") }
 
     func fileURL(_ path: String) -> URL { directory.appendingPathComponent(path) }
@@ -95,12 +99,29 @@ enum SpeechModelCatalog {
 
     static var modelsOverride: [SpeechModelSpec]?
 
+    // eSpeak keeps its first data directory for the process lifetime. Every voice
+    // installs the same language data so switching voices also switches languages.
     static let commonEspeakFiles = [
-        SpeechModelSpec.File(path: "espeak-ng-data/intonations", expectedBytes: 2_040),
-        SpeechModelSpec.File(path: "espeak-ng-data/phondata", expectedBytes: 550_424),
-        SpeechModelSpec.File(path: "espeak-ng-data/phondata-manifest", expectedBytes: 21_821),
-        SpeechModelSpec.File(path: "espeak-ng-data/phonindex", expectedBytes: 39_074),
-        SpeechModelSpec.File(path: "espeak-ng-data/phontab", expectedBytes: 55_796)
+        SpeechModelSpec.File(path: "espeak-ng-data/ca_dict", expectedBytes: 45566),
+        SpeechModelSpec.File(path: "espeak-ng-data/de_dict", expectedBytes: 68276),
+        SpeechModelSpec.File(path: "espeak-ng-data/en_dict", expectedBytes: 166944),
+        SpeechModelSpec.File(path: "espeak-ng-data/es_dict", expectedBytes: 49252),
+        SpeechModelSpec.File(path: "espeak-ng-data/fr_dict", expectedBytes: 63727),
+        SpeechModelSpec.File(path: "espeak-ng-data/intonations", expectedBytes: 2040),
+        SpeechModelSpec.File(path: "espeak-ng-data/lang/gmw/de", expectedBytes: 42),
+        SpeechModelSpec.File(path: "espeak-ng-data/lang/gmw/en", expectedBytes: 140),
+        SpeechModelSpec.File(path: "espeak-ng-data/lang/gmw/en-US", expectedBytes: 257),
+        SpeechModelSpec.File(path: "espeak-ng-data/lang/gmw/nl", expectedBytes: 23),
+        SpeechModelSpec.File(path: "espeak-ng-data/lang/roa/ca", expectedBytes: 25),
+        SpeechModelSpec.File(path: "espeak-ng-data/lang/roa/es", expectedBytes: 63),
+        SpeechModelSpec.File(path: "espeak-ng-data/lang/roa/fr", expectedBytes: 79),
+        SpeechModelSpec.File(path: "espeak-ng-data/lang/roa/pt", expectedBytes: 95),
+        SpeechModelSpec.File(path: "espeak-ng-data/nl_dict", expectedBytes: 65979),
+        SpeechModelSpec.File(path: "espeak-ng-data/phondata", expectedBytes: 550424),
+        SpeechModelSpec.File(path: "espeak-ng-data/phondata-manifest", expectedBytes: 21821),
+        SpeechModelSpec.File(path: "espeak-ng-data/phonindex", expectedBytes: 39074),
+        SpeechModelSpec.File(path: "espeak-ng-data/phontab", expectedBytes: 55796),
+        SpeechModelSpec.File(path: "espeak-ng-data/pt_dict", expectedBytes: 67817)
     ]
 
     static var models: [SpeechModelSpec] {
@@ -115,10 +136,7 @@ enum SpeechModelCatalog {
             files: [
                 .init(path: "model.onnx", expectedBytes: 345_555_491),
                 .init(path: "voices.bin", expectedBytes: 5_755_904),
-                .init(path: "tokens.txt", expectedBytes: 1_078),
-                .init(path: "espeak-ng-data/en_dict", expectedBytes: 166_944),
-                .init(path: "espeak-ng-data/lang/gmw/en", expectedBytes: 140),
-                .init(path: "espeak-ng-data/lang/gmw/en-US", expectedBytes: 257)
+                .init(path: "tokens.txt", expectedBytes: 1_078)
             ] + commonEspeakFiles,
             kind: .kokoro(model: "model.onnx", voices: "voices.bin", speaker: 0)
         ),
@@ -128,9 +146,7 @@ enum SpeechModelCatalog {
             revision: "612042d3d5a504d6c65080b1b2b2f7981b831954",
             files: [
                 .init(path: "pt_PT-tugao-medium.onnx", expectedBytes: 63_201_425),
-                .init(path: "tokens.txt", expectedBytes: 954),
-                .init(path: "espeak-ng-data/pt_dict", expectedBytes: 67_817),
-                .init(path: "espeak-ng-data/lang/roa/pt", expectedBytes: 95)
+                .init(path: "tokens.txt", expectedBytes: 954)
             ] + commonEspeakFiles,
             kind: .vits(model: "pt_PT-tugao-medium.onnx")
         ),
@@ -140,9 +156,7 @@ enum SpeechModelCatalog {
             revision: "6a917dc1f1d2f6a4a0a12742478483ccce3f52b6",
             files: [
                 .init(path: "pt_PT-miro-high.onnx", expectedBytes: 63_511_198),
-                .init(path: "tokens.txt", expectedBytes: 954),
-                .init(path: "espeak-ng-data/pt_dict", expectedBytes: 67_817),
-                .init(path: "espeak-ng-data/lang/roa/pt", expectedBytes: 95)
+                .init(path: "tokens.txt", expectedBytes: 954)
             ] + commonEspeakFiles,
             kind: .vits(model: "pt_PT-miro-high.onnx")
         ),
@@ -152,9 +166,7 @@ enum SpeechModelCatalog {
             revision: "27cf37a700e91003217a567e12761e6497fe9b0b",
             files: [
                 .init(path: "pt_PT-dii-high.onnx", expectedBytes: 63_511_198),
-                .init(path: "tokens.txt", expectedBytes: 954),
-                .init(path: "espeak-ng-data/pt_dict", expectedBytes: 67_817),
-                .init(path: "espeak-ng-data/lang/roa/pt", expectedBytes: 95)
+                .init(path: "tokens.txt", expectedBytes: 954)
             ] + commonEspeakFiles,
             kind: .vits(model: "pt_PT-dii-high.onnx")
         ),
@@ -164,9 +176,7 @@ enum SpeechModelCatalog {
             revision: "695e063aefa9a7c61e4755a1924e137bc11d291d",
             files: [
                 .init(path: "fr_FR-miro-high.onnx", expectedBytes: 63_153_773),
-                .init(path: "tokens.txt", expectedBytes: 954),
-                .init(path: "espeak-ng-data/fr_dict", expectedBytes: 63_727),
-                .init(path: "espeak-ng-data/lang/roa/fr", expectedBytes: 79)
+                .init(path: "tokens.txt", expectedBytes: 954)
             ] + commonEspeakFiles,
             kind: .vits(model: "fr_FR-miro-high.onnx")
         ),
@@ -176,9 +186,7 @@ enum SpeechModelCatalog {
             revision: "e736ced18138f0608322c96fa6b0dc05b492107c",
             files: [
                 .init(path: "de_DE-miro-high.onnx", expectedBytes: 63_153_773),
-                .init(path: "tokens.txt", expectedBytes: 954),
-                .init(path: "espeak-ng-data/de_dict", expectedBytes: 68_276),
-                .init(path: "espeak-ng-data/lang/gmw/de", expectedBytes: 42)
+                .init(path: "tokens.txt", expectedBytes: 954)
             ] + commonEspeakFiles,
             kind: .vits(model: "de_DE-miro-high.onnx")
         ),
@@ -188,9 +196,7 @@ enum SpeechModelCatalog {
             revision: "0e1f773561429a9e50fa23d868a40eb341ad83c4",
             files: [
                 .init(path: "es_ES-miro-high.onnx", expectedBytes: 63_153_775),
-                .init(path: "tokens.txt", expectedBytes: 954),
-                .init(path: "espeak-ng-data/es_dict", expectedBytes: 49_252),
-                .init(path: "espeak-ng-data/lang/roa/es", expectedBytes: 63)
+                .init(path: "tokens.txt", expectedBytes: 954)
             ] + commonEspeakFiles,
             kind: .vits(model: "es_ES-miro-high.onnx")
         ),
@@ -200,11 +206,19 @@ enum SpeechModelCatalog {
             revision: "814326c793214a358024edcf2d17e6de1acf0280",
             files: [
                 .init(path: "ca_ES-upc_ona-medium.onnx", expectedBytes: 63_201_422),
-                .init(path: "tokens.txt", expectedBytes: 921),
-                .init(path: "espeak-ng-data/ca_dict", expectedBytes: 45_566),
-                .init(path: "espeak-ng-data/lang/roa/ca", expectedBytes: 25)
+                .init(path: "tokens.txt", expectedBytes: 921)
             ] + commonEspeakFiles,
             kind: .vits(model: "ca_ES-upc_ona-medium.onnx")
+        ),
+        SpeechModelSpec(
+            id: .dutchDii,
+            repository: "csukuangfj/vits-piper-nl_NL-dii-high",
+            revision: "12169a38e0f40f3ffc429273346f6d0700387cdf",
+            files: [
+                .init(path: "nl_NL-dii-high.onnx", expectedBytes: 63_153_771),
+                .init(path: "tokens.txt", expectedBytes: 954)
+            ] + commonEspeakFiles,
+            kind: .vits(model: "nl_NL-dii-high.onnx")
         )
     ]
 
@@ -296,6 +310,13 @@ final class SpeechModelStore: ObservableObject {
                     }
                 }
                 completedFiles += 1
+            }
+            // Keep shared pronunciation data after removing an individual voice.
+            for file in model.files where file.path.hasPrefix("espeak-ng-data/") {
+                let destination = SpeechModelCatalog.rootDirectory.appendingPathComponent(file.path)
+                try fileManager.createDirectory(at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)
+                let data = try Data(contentsOf: staging.appendingPathComponent(file.path))
+                try data.write(to: destination, options: .atomic)
             }
             try fileManager.createDirectory(at: SpeechModelCatalog.rootDirectory, withIntermediateDirectories: true)
             if fileManager.fileExists(atPath: model.directory.path) {
