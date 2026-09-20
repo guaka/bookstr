@@ -173,6 +173,8 @@ fun SettingsScreen(
                 )
             }
 
+            SpeechSettingsSection()
+
             SettingsSectionTitle("Nostr sync")
 
             when (authMode) {

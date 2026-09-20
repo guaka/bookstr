@@ -56,7 +56,14 @@ class NarrationService : MediaBrowserServiceCompat(), TextToSpeech.OnInitListene
     private var isPlaying = false
     private var resumeAfterAudioFocus = false
     private var pendingPlay = false
-    private var generation = 0
+    @Volatile private var generation = 0
+    private val neuralExecutor = Executors.newSingleThreadExecutor()
+    private val speechModels by lazy { app.bookstr.speech.SpeechModels(this) }
+    private val speechSettings by lazy { app.bookstr.speech.SpeechSettings(getSharedPreferences("bookstr_settings", Context.MODE_PRIVATE)) }
+    private val neuralSpeech by lazy { app.bookstr.speech.NeuralSpeech(speechModels) }
+    private var neuralModel: app.bookstr.speech.SpeechModel? = null
+
+    private fun selectedNeuralModel() = speechModels.models.firstOrNull { it.id == speechSettings.voice(speechLanguage) && it.language == app.bookstr.speech.SpeechLanguages.tag(speechLanguage) }
     private var speechText = ""
     private var speechLanguage = "en"
     private var speechChunkInputs: List<IncomingNarrationChunk> = emptyList()
@@ -172,6 +179,7 @@ class NarrationService : MediaBrowserServiceCompat(), TextToSpeech.OnInitListene
         textToSpeechReady = status == TextToSpeech.SUCCESS
         val engine = textToSpeech
         if (!textToSpeechReady || engine == null) {
+            if (selectedNeuralModel() != null) return
             pendingPlay = false
             publishState(message = "Text-to-speech is not available on this device.")
             return
@@ -300,7 +308,7 @@ class NarrationService : MediaBrowserServiceCompat(), TextToSpeech.OnInitListene
             }
             return
         }
-        if (!textToSpeechReady) {
+        if (!textToSpeechReady && selectedNeuralModel() == null) {
             pendingPlay = true
             return
         }
@@ -308,7 +316,7 @@ class NarrationService : MediaBrowserServiceCompat(), TextToSpeech.OnInitListene
     }
 
     private fun startSpeakingAt(offset: Int) {
-        val engine = textToSpeech ?: return
+        val engine = textToSpeech
         if (speechText.isBlank()) return
         generation += 1
         val activeGeneration = generation
@@ -393,23 +401,41 @@ class NarrationService : MediaBrowserServiceCompat(), TextToSpeech.OnInitListene
             finishNaturally()
             return
         }
-        selectVoice(engine, speechLanguage)
+        neuralModel = selectedNeuralModel()
+        if (neuralModel == null && engine != null) selectVoice(engine, speechLanguage)
         // Neural voices are trained at their natural cadence. Slowing them down exaggerates
         // vocoder grain and room noise, so keep synthesis at the model's native rate.
-        engine.setSpeechRate(1.0f)
-        engine.setPitch(1.0f)
+        engine?.setSpeechRate(1.0f)
+        engine?.setPitch(1.0f)
         synthesizeChunk(0)
     }
 
     private fun synthesizeChunk(index: Int) {
         if (index !in speechQueue.indices || audioFiles.containsKey(index) || synthesizingIndex >= 0) return
         val chunk = speechQueue[index]
-        val engine = textToSpeech ?: return
+        val engine = textToSpeech
         val directory = File(cacheDir, "narration-audio").apply { mkdirs() }
         val file = File(directory, "${chunk.id}.wav")
         audioFiles[index] = file
         synthesizingIndex = index
-        val result = engine.synthesizeToFile(chunk.speak, Bundle(), file, chunk.id)
+        val model = neuralModel
+        if (model != null) {
+            val activeGeneration = generation
+            neuralExecutor.execute {
+                val result = runCatching { neuralSpeech.synthesize(model, chunk.speak, file) { generation != activeGeneration } }
+                mainHandler.post {
+                    if (generation != activeGeneration) {
+                        file.delete()
+                    } else if (result.isSuccess) {
+                        onChunkSynthesized(activeGeneration, index)
+                    } else {
+                        onSpeechError(chunk.id, TextToSpeech.ERROR)
+                    }
+                }
+            }
+            return
+        }
+        val result = engine?.synthesizeToFile(chunk.speak, Bundle(), file, chunk.id) ?: TextToSpeech.ERROR
         if (result == TextToSpeech.ERROR) {
             synthesizingIndex = -1
             audioFiles.remove(index)
@@ -539,6 +565,12 @@ class NarrationService : MediaBrowserServiceCompat(), TextToSpeech.OnInitListene
     }
 
     private fun selectVoice(engine: TextToSpeech, languageTag: String) {
+        val preferred = speechSettings.voice(languageTag)
+        val selected = engine.voices.orEmpty().firstOrNull { it.name == preferred }
+        if (selected != null) {
+            engine.voice = selected
+            return
+        }
         val requestedLocale = ReaderActivity.preferredSpeechLocale(languageTag)
         val languageAvailable = engine.isLanguageAvailable(requestedLocale) >= TextToSpeech.LANG_AVAILABLE
         val decision = SpeechVoiceSelection.resolve(
@@ -874,6 +906,9 @@ class NarrationService : MediaBrowserServiceCompat(), TextToSpeech.OnInitListene
 
     override fun onDestroy() {
         running = false
+        generation += 1
+        neuralExecutor.execute { neuralSpeech.close() }
+        neuralExecutor.shutdown()
         resetAudioPipeline(cancelSynthesis = true)
         textToSpeech?.shutdown()
         textToSpeech = null
