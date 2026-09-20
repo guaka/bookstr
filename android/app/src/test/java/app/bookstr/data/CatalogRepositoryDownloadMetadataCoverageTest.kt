@@ -20,6 +20,28 @@ class CatalogRepositoryDownloadMetadataCoverageTest {
     }
 
     @Test
+    fun restoresTorrentLanguageWithoutAnHttpDownloadUrl() {
+        val id = "a".repeat(32)
+        val books = parseDownloadedBookMetadata("""{"books":[
+            {"id":"$id","epubUrl":"","libvaultMd5":"$id","language":"en","format":"pdf"},
+            {"id":"bad","epubUrl":"","libvaultMd5":"bad"}
+        ]}""")
+        assertEquals(1, books.size)
+        assertEquals("en", books.single().language)
+        assertEquals("", books.single().epubUrl)
+    }
+
+    @Test
+    fun restoresLanguageAndAcceptsLegacyMissingLanguage() {
+        val books = parseDownloadedBookMetadata("""{"books":[
+            {"id":"one","epubUrl":"https://example.org/1.pdf","language":" pt-BR "},
+            {"id":"two","epubUrl":"https://example.org/2.pdf"}
+        ]}""")
+        assertEquals("pt-BR", books[0].language)
+        assertNull(books[1].language)
+    }
+
+    @Test
     fun parseDownloadedBookMetadataFallsBackToObjectPayloadWhenNoBooksOrItemsFieldPresent() {
         val id = "a".repeat(64)
         val results = parseDownloadedBookMetadata(

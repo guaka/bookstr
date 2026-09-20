@@ -36,7 +36,7 @@ class DownloadService : Service() {
                     if (!connected) {
                         running[job.book.id]?.cancelAndJoin(); running.remove(job.book.id)
                         if (store.find(job.book.id)?.active == true) store.update(job.copy(state = "waiting-network"))
-                    } else if (running[job.book.id]?.isActive != true && running.values.count { it.isActive } < 2) start(job)
+                    } else if (running[job.book.id]?.isActive != true) start(job)
                 }
                 getSystemService(NotificationManager::class.java).notify(1002, notification())
                 if (store.jobs.value.none { it.active } && running.values.none { it.isActive }) { stopForeground(STOP_FOREGROUND_DETACH); stopSelf(); break }

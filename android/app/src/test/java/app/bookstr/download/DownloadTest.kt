@@ -24,6 +24,57 @@ class DownloadTest {
         override fun poll() = TorrentSnapshot(states[(polls++).coerceAtMost(states.lastIndex)], content.size.toLong(), content.size.toLong(), File(root, "payload").path, "disk failure")
         override fun close() { closed = true }
     }
+    @Test fun defaultRunnerKeepsTryingPeerlessTorrentsUntilUserCancels() = runBlocking<Unit> {
+        val root = folder.newFolder()
+        val engine = Engine(root, content, listOf("finding-peers"))
+        val task = launch {
+            DownloadRunner({ engine }, { byteArrayOf(1) }, pollDelayMs = 1).run(DownloadJob(book, edition), root, {}) { _, _ -> fail("not complete") }
+        }
+        withTimeout(5000) { while (engine.polls < 10) delay(5) }
+        assertTrue(task.isActive)
+        task.cancelAndJoin()
+        assertTrue(engine.closed)
+    }
+    @Test fun connectingJobsRemainActiveAndRestartAsQueued() {
+        val root = folder.newFolder()
+        val store = DownloadStore(root)
+        store.update(DownloadJob(book, edition, state = "connecting"))
+        assertTrue(store.find(hash)!!.active)
+        assertEquals("queued", DownloadStore(root).find(hash)!!.state)
+    }
+    @Test fun progressUpdatesKeepQueueOrderAcrossUpdatesRetriesAndRestart() {
+        val root = folder.newFolder()
+        val store = DownloadStore(root)
+        val second = book.copy(id = "b".repeat(32))
+        store.enqueue(book, edition)
+        store.enqueue(second, edition.copy(md5 = second.id))
+        val order = listOf(book.id, second.id)
+        for (state in listOf("finding-peers", "downloading", "paused", "complete")) {
+            store.update(store.find(book.id)!!.copy(state = state, bytes = 10))
+            assertEquals(order, store.jobs.value.map { it.book.id })
+            assertEquals(order, DownloadStore(root).jobs.value.map { it.book.id })
+        }
+        store.markPublicationDeleted(book.id)
+        store.enqueue(book, edition)
+        assertEquals(order, store.jobs.value.map { it.book.id })
+        val journal = File(root, "jobs.json")
+        assertTrue(journal.setLastModified(100000L))
+        store.update(store.find(book.id)!!)
+        assertEquals(100000L, journal.lastModified())
+    }
+    @Test fun deletingPublicationAllowsRedownloadWithoutChangingActiveJobs() {
+        val store = DownloadStore(folder.newFolder())
+        store.markPublicationDeleted(hash)
+        store.enqueue(book, edition)
+        store.markPublicationDeleted(hash)
+        assertEquals("queued", store.find(hash)?.state)
+        store.update(store.find(hash)!!.copy(state = "complete", bytes = 100))
+        store.markPublicationDeleted(hash)
+        assertEquals("cancelled", store.find(hash)?.state)
+        assertEquals(0L, store.find(hash)?.bytes)
+        store.enqueue(book, edition)
+        assertEquals("queued", store.find(hash)?.state)
+    }
     @Test fun journalPreservesJobsAndPartialFilesAcrossRelaunchAndDeduplicates() {
         val root = folder.newFolder()
         val store = DownloadStore(root)
@@ -64,7 +115,7 @@ class DownloadTest {
         runner.run(DownloadJob(book, edition), root, { states += it.state }) { b, file ->
             assertEquals(book, b); assertTrue(engine.closed); assertArrayEquals(content, file.readBytes()); imported = true
         }
-        assertTrue(imported); assertEquals(listOf("verifying", "complete"), states)
+        assertTrue(imported); assertEquals(listOf("connecting", "verifying", "complete"), states)
         assertTrue(File(root, "book.torrent").exists())
     }
     @Test fun usesSavedMetadataWithoutNetworkAndRetainsItOnCancel() = runBlocking<Unit> {

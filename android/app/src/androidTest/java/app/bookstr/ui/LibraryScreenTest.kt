@@ -1,5 +1,6 @@
 package app.bookstr.ui
 
+import androidx.compose.ui.test.*
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.semantics.SemanticsProperties
@@ -55,13 +56,13 @@ class LibraryScreenTest {
                 onRefresh = {},
                 onOpenBook = { opened = it },
                 onOpenExternal = {},
+                publicationSize = { 1024L },
             )
         }
 
         composeRule.onNodeWithText("Library").assertIsDisplayed()
         composeRule.onNodeWithText("Little Brother").assertIsDisplayed()
         composeRule.onNodeWithText("Cory Doctorow").assertIsDisplayed()
-        composeRule.onNodeWithText("EPUB · On Blossom").assertIsDisplayed()
         composeRule.onNodeWithText("Little Brother").performClick()
         assertEquals(book, opened)
     }
@@ -80,41 +81,11 @@ class LibraryScreenTest {
                 onRefresh = { refreshed++ },
                 onOpenBook = {},
                 onOpenExternal = {},
+                publicationSize = { 1024L },
             )
         }
         composeRule.onNodeWithText("offline").assertIsDisplayed().performClick()
         assertEquals(1, refreshed)
-    }
-
-    @Test
-    fun showsCompactMetadataFallbackForLegacyFavorites() {
-        composeRule.setContent {
-            LibraryScreen(
-                books = emptyList(),
-                externalFavorites = listOf(
-                    ExternalFavorite(
-                        key = "legacy",
-                        title = "Legacy favorite",
-                        author = null,
-                        year = null,
-                        url = null,
-                        isbn = null,
-                        libvaultMd5 = null,
-                        format = "pdf",
-                    ),
-                ),
-                favoriteIds = emptySet(),
-                progress = emptyMap(),
-                loading = false,
-                error = null,
-                onRefresh = {},
-                onOpenBook = {},
-                onOpenExternal = {},
-            )
-        }
-
-        composeRule.onNodeWithText("Author unknown · Year unknown").assertIsDisplayed()
-        composeRule.onNodeWithText("PDF · Not on Blossom").assertIsDisplayed()
     }
 
     @Test
@@ -141,6 +112,7 @@ class LibraryScreenTest {
                 onRefresh = {},
                 onOpenBook = { opened = it },
                 onOpenExternal = {},
+                publicationSize = { 1024L },
             )
         }
 
@@ -150,7 +122,7 @@ class LibraryScreenTest {
     }
 
     @Test
-    fun favoriteWithProgressAppearsInReadingAndFavorites() {
+    fun favoriteWithProgressAppearsOnlyOnceWithoutFavoritesShelf() {
         val book = CatalogBook(
             id = "both",
             title = "Reading favorite",
@@ -169,10 +141,12 @@ class LibraryScreenTest {
                 onRefresh = {},
                 onOpenBook = {},
                 onOpenExternal = {},
+                publicationSize = { 1024L },
             )
         }
 
-        composeRule.onAllNodesWithText("Reading favorite").assertCountEquals(2)
+        composeRule.onAllNodesWithText("Reading favorite").assertCountEquals(1)
+        composeRule.onNodeWithText("Favorites").assertDoesNotExist()
     }
 
     @Test
@@ -195,6 +169,7 @@ class LibraryScreenTest {
                 onRefresh = {},
                 onOpenBook = {},
                 onOpenExternal = {},
+                publicationSize = { 1024L },
             )
         }
 
@@ -278,110 +253,6 @@ class LibraryScreenTest {
     }
 
     @Test
-    fun searchesFavoritesByTitleAndFormat() {
-        val epub = CatalogBook(
-            id = "epub",
-            title = "The Green Book",
-            author = "Author",
-            epubUrl = "https://example.org/green.epub",
-            coverUrl = null,
-            format = BookFormat.Epub,
-        )
-        val pdf = CatalogBook(
-            id = "pdf",
-            title = "The Blue Book",
-            author = "Author",
-            epubUrl = "https://example.org/blue.pdf",
-            coverUrl = null,
-            format = BookFormat.Pdf,
-        )
-        composeRule.setContent {
-            LibraryScreen(
-                books = listOf(epub, pdf),
-                favoriteIds = setOf(epub.id, pdf.id),
-                externalFavorites = emptyList(),
-                progress = emptyMap(),
-                loading = false,
-                error = null,
-                onRefresh = {},
-                onOpenBook = {},
-                onOpenExternal = {},
-            )
-        }
-
-        composeRule.onNodeWithText("Search favorites").performTextInput("pdf")
-        composeRule.onNodeWithText("The Blue Book").assertIsDisplayed()
-        composeRule.onAllNodesWithText("The Green Book").assertCountEquals(0)
-    }
-
-    @Test
-    fun filteringTheLibraryKeepsTheMatchingReadingProgressVisible() {
-        val reading = CatalogBook(
-            id = "reading",
-            title = "A Visible Reading Journey",
-            author = "Reader",
-            epubUrl = "https://example.org/reading.epub",
-            coverUrl = null,
-        )
-        val other = reading.copy(id = "other", title = "Another Book")
-        composeRule.setContent {
-            LibraryScreen(
-                books = listOf(reading, other),
-                favoriteIds = setOf(reading.id, other.id),
-                externalFavorites = emptyList(),
-                progress = mapOf(reading.id to BookProgress(reading.id, 0.6, "cfi", 1L)),
-                loading = false,
-                error = null,
-                onRefresh = {},
-                onOpenBook = {},
-                onOpenExternal = {},
-            )
-        }
-
-        composeRule.onNodeWithText("Search favorites").performTextInput("journey")
-        composeRule.onAllNodesWithText("A Visible Reading Journey").assertCountEquals(2)
-        composeRule.onAllNodesWithText("60% read").assertCountEquals(2)
-        composeRule.onAllNodesWithText("Another Book").assertCountEquals(0)
-    }
-
-    @Test
-    fun externalFavoriteDetailsCanOpenItsBlossomCopy() {
-        val favorite = ExternalFavorite(
-            key = "external-book",
-            title = "Remote Book",
-            author = "Remote Author",
-            year = "2024",
-            url = "https://publisher.example/remote-book",
-            isbn = "9780000000000",
-            libvaultMd5 = "d".repeat(32),
-            format = "epub",
-            blossomSha256 = "e".repeat(64),
-            blossomUrl = "https://blossom.example/remote-book.epub",
-        )
-        var opened: ExternalFavorite? = null
-        composeRule.setContent {
-            LibraryScreen(
-                books = emptyList(),
-                favoriteIds = emptySet(),
-                externalFavorites = listOf(favorite),
-                progress = emptyMap(),
-                loading = false,
-                error = null,
-                onRefresh = {},
-                onOpenBook = {},
-                onOpenExternal = { opened = it },
-            )
-        }
-
-        composeRule.onNodeWithText("Remote Book").performTouchInput { longClick() }
-        composeRule.onNodeWithText("Book details").assertIsDisplayed()
-        composeRule.onNodeWithText("9780000000000").assertIsDisplayed()
-        composeRule.onNodeWithText("Available").assertIsDisplayed()
-        composeRule.onNodeWithText("Open book").performClick()
-        assertEquals(favorite, opened)
-    }
-
-    @Test
     fun bookDetailsDeleteActionReportsTheSelectedBook() {
         val book = CatalogBook(
             id = "delete-me",
@@ -409,6 +280,8 @@ class LibraryScreenTest {
 
         composeRule.onNodeWithText("Downloaded Book").performTouchInput { longClick() }
         composeRule.onNodeWithText("Delete download").performClick()
+        assertEquals(null, deleted)
+        composeRule.onNodeWithTag("library.delete.confirm").performClick()
         assertEquals(book, deleted)
     }
 
@@ -425,10 +298,64 @@ class LibraryScreenTest {
                 onRefresh = {},
                 onOpenBook = {},
                 onOpenExternal = {},
+                publicationSize = { 1024L },
             )
         }
 
         composeRule.onNode(SemanticsMatcher.keyIsDefined(SemanticsProperties.ProgressBarRangeInfo)).assertIsDisplayed()
         composeRule.onAllNodesWithText("Heart a book in LibVault to keep it here.").assertCountEquals(0)
+    }
+
+    @Test fun filtersLibraryByLanguageAndFormatAndResetsMissingFacets() {
+        val en = CatalogBook("en", "English EPUB", "Unknown author", "", null, language = "English")
+        val pt = en.copy(id = "pt", title = "Portuguese PDF", language = "pt-BR", format = BookFormat.Pdf)
+        val ptEpub = en.copy(id = "pt-epub", title = "Portuguese EPUB", language = "pt")
+        val books = androidx.compose.runtime.mutableStateOf(listOf(en, pt, ptEpub))
+        composeRule.setContent {
+            LibraryScreen(books.value, emptySet(), emptyList(), emptyMap(), false,
+                error = null, onRefresh = {}, onOpenBook = {}, onOpenExternal = {}, publicationSize = { 100L })
+        }
+        composeRule.onNodeWithText("Unknown author").assertDoesNotExist()
+        composeRule.onNodeWithTag("library.language").performClick()
+        composeRule.onNodeWithTag("library.language.pt").performClick()
+        composeRule.onNodeWithText("English EPUB").assertDoesNotExist()
+        composeRule.onNodeWithText("Portuguese EPUB").assertIsDisplayed()
+        composeRule.onNodeWithTag("library.format").performClick()
+        composeRule.onNodeWithTag("library.format.pdf").performClick()
+        composeRule.onNodeWithText("Portuguese EPUB").assertDoesNotExist()
+        composeRule.onNodeWithText("Portuguese PDF").assertIsDisplayed()
+        composeRule.runOnIdle { books.value = listOf(en) }
+        composeRule.onNodeWithText("English EPUB").assertIsDisplayed()
+    }
+
+    @Test fun swipeLeftRequiresConfirmationAndCancelPreservesBook() {
+        val book = CatalogBook("swipe", "Swipe book", "Author", "", null)
+        var deleted = 0
+        composeRule.setContent {
+            LibraryScreen(listOf(book), emptySet(), emptyList(), emptyMap(), false,
+                error = null, onRefresh = {}, onOpenBook = {}, onOpenExternal = {},
+                publicationSize = { 100L }, onDeleteBook = { deleted++ })
+        }
+        composeRule.onNodeWithTag("library.swipe.swipe").performTouchInput { swipeRight() }
+        composeRule.onNodeWithTag("library.delete.confirm").assertDoesNotExist()
+        composeRule.onNodeWithTag("library.swipe.swipe").performTouchInput { swipeLeft() }
+        composeRule.onNodeWithTag("library.delete.confirm").assertIsDisplayed()
+        assertEquals(0, deleted)
+        composeRule.onNodeWithTag("library.delete.cancel").performClick()
+        composeRule.onNodeWithText("Swipe book").assertIsDisplayed()
+        assertEquals(0, deleted)
+        composeRule.onNodeWithTag("library.swipe.swipe").performTouchInput { swipeLeft() }
+        composeRule.onNodeWithTag("library.delete.confirm").performClick()
+        assertEquals(1, deleted)
+    }
+
+    @Test fun favoritesWithoutLocalFilesOrProgressAreNotInLibrary() {
+        val book = CatalogBook("remote", "Remote favorite", "Author", "", null)
+        composeRule.setContent {
+            LibraryScreen(listOf(book), setOf(book.id), emptyList(), emptyMap(), false,
+                error = null, onRefresh = {}, onOpenBook = {}, onOpenExternal = {})
+        }
+        composeRule.onNodeWithText("Remote favorite").assertDoesNotExist()
+        composeRule.onNodeWithText("Favorites").assertDoesNotExist()
     }
 }

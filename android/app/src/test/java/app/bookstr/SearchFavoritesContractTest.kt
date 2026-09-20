@@ -7,11 +7,11 @@ import java.io.File
 
 class SearchFavoritesContractTest {
     @Test
-    fun everySearchResultOffersFavoriteControl() {
+    fun searchResultsDoNotOfferFavoriteControlsOrBadges() {
         val screen = File("src/main/java/app/bookstr/ui/SearchScreen.kt").readText()
-
-        assertTrue(screen.contains("onClick = { onToggleFavorite(result) }"))
-        assertFalse(screen.contains("enabled = book != null,\n                        onClick = { onToggleFavorite(result) }"))
+        assertFalse(screen.contains("onClick = { onToggleFavorite(result) }"))
+        assertFalse(screen.contains("♥ Favorite"))
+        assertFalse(screen.contains("Icons.Default.Favorite"))
     }
 
     @Test

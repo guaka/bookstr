@@ -68,6 +68,7 @@ data class CatalogBook(
     val license: String? = null,
     val licenseUrl: String? = null,
     val rightsSource: String? = null,
+    val language: String? = null,
 )
 
 data class BookSearchResult(
@@ -104,6 +105,7 @@ data class BookSearchResult(
             libvaultMd5 = libvaultMd5,
             format = bookFormat,
             year = year,
+            language = language,
             rightsStatus = rightsStatus,
             license = license,
             licenseUrl = licenseUrl,
@@ -112,7 +114,7 @@ data class BookSearchResult(
     }
 }
 
-class CatalogRepository(
+open class CatalogRepository(
     private val context: Context,
     private val progressDao: BookProgressDao,
     private val settings: SettingsRepository,
@@ -162,7 +164,7 @@ class CatalogRepository(
     private val privateCatalog = app.bookstr.nostr.PrivateCatalogClient()
     private fun service() = settings.catalogConnection?.service ?: app.bookstr.nostr.CatalogService()
 
-    suspend fun searchPage(query: String, offset: Int = 0): CatalogSearchPage {
+    open suspend fun searchPage(query: String, offset: Int = 0): CatalogSearchPage {
         require(query.trim().length >= 2 && offset >= 0)
         val signer = NostrSignerFactory.create(context, settings)
         if (signer == null) return CatalogSearchPage(search(query), null)
@@ -171,7 +173,7 @@ class CatalogRepository(
         return CatalogSearchPage.parse(response, offset)
     }
 
-    suspend fun resolveEdition(book: CatalogBook): TorrentEdition {
+    open suspend fun resolveEdition(book: CatalogBook): TorrentEdition {
         val md5 = requireNotNull(book.libvaultMd5)
         val signer = NostrSignerFactory.create(context, settings) ?: error("Connect your signer to download")
         val response = privateCatalog.request(JSONObject().put("type", "libcat.resolve")
@@ -463,6 +465,7 @@ class CatalogRepository(
                     .put("format", book.format.extension)
                     .put("blossomSha256", book.blossomSha256)
                     .put("year", book.year)
+                    .put("language", book.language)
                     .put("sourceUrl", book.sourceUrl)
                     .put("isbn", book.isbn)
                     .put("libvaultMd5", book.libvaultMd5)
@@ -680,7 +683,9 @@ class CatalogRepository(
                         ?.takeIf(String::isNotEmpty)
 
                     val id = scalar("id") ?: scalar("sha256")
-                    val epubUrl = text("epubUrl")
+                    val epubUrl = text("epubUrl") ?: "".takeIf {
+                        text("libvaultMd5")?.matches(Regex("[a-fA-F0-9]{32}")) == true
+                    }
                     if (id == null || epubUrl == null) continue
                     val rights = rightsFromJson(item)
                     add(
@@ -701,6 +706,7 @@ class CatalogRepository(
                                 ?.takeIf { it.matches(Regex("^[a-fA-F0-9]{64}$")) }
                                 ?.lowercase(),
                             year = text("year"),
+                            language = text("language"),
                             rightsStatus = rights.status,
                             license = rights.license,
                             licenseUrl = rights.licenseUrl,
