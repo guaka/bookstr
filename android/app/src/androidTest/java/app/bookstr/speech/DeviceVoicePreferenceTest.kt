@@ -26,6 +26,7 @@ class DeviceVoicePreferenceTest {
         }
     }
     @Test fun appliesDevicePreferenceToSynthesisAndKeepsNeuralIndependentOfSystemInitialization() {
+        androidx.test.platform.app.InstrumentationRegistry.getInstrumentation().runOnMainSync {
         val app = ApplicationProvider.getApplicationContext<Context>()
         val service = NarrationService()
         ContextWrapper::class.java.getDeclaredMethod("attachBaseContext", Context::class.java).apply { isAccessible = true }.invoke(service, app)
@@ -44,5 +45,6 @@ class DeviceVoicePreferenceTest {
             settings.setVoice("nl", "piper_nl_nl_dii")
             service.onInit(TextToSpeech.ERROR)
         } finally { engine.shutdown(); settings.setVoice("nl", before) }
+        }
     }
 }
