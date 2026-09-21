@@ -3,15 +3,20 @@ import SwiftUI
 struct LibraryView: View {
     @EnvironmentObject private var container: AppContainer
     @EnvironmentObject private var playback: ReaderPlaybackSession
-    @StateObject private var viewModel = LibraryViewModel()
+    @StateObject private var viewModel: LibraryViewModel
     @State private var openError: String?
     @State private var openingBookID: String?
     @State private var rightsDetails: RightsDetailsItem?
     @State private var libraryFilter = ""
     @State private var pendingDeletion: CatalogBook?
+    @State private var observedDownloadBookIDs: Set<String>?
     @AppStorage("library_sort") private var selectedSort = LibrarySort.recent
     @AppStorage("library_filter_language") private var selectedLanguage = ""
     @AppStorage("library_filter_format") private var selectedFormat = ""
+
+    init(viewModel: LibraryViewModel? = nil) {
+        _viewModel = StateObject(wrappedValue: viewModel ?? LibraryViewModel())
+    }
 
     var body: some View {
         let languageOptions = BookListFacetFilters.languages(
@@ -248,7 +253,11 @@ struct LibraryView: View {
         }
         .onReceive(container.downloads.$jobs
             .map { Set($0.compactMap { $0.book?.id }) }
-            .removeDuplicates()) { _ in
+            .removeDuplicates()) { bookIDs in
+            // SwiftUI can recreate the publisher when this view redraws. Keep
+            // the last value in view state so its initial emission cannot loop.
+            guard observedDownloadBookIDs != bookIDs else { return }
+            observedDownloadBookIDs = bookIDs
             Task {
                 viewModel.attach(container)
                 await viewModel.load()

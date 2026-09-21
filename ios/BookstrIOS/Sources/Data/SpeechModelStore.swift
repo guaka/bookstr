@@ -279,6 +279,12 @@ final class SpeechModelStore: ObservableObject {
         id == .system || SpeechModelCatalog.model(id)?.isInstalled == true
     }
 
+    func installAndSelect(_ id: SpeechEngineID, settings: SettingsRepository) async {
+        await install(id)
+        guard errorMessage == nil, isInstalled(id) else { return }
+        settings.selectDownloadedSpeechEngine(id)
+    }
+
     func install(_ id: SpeechEngineID) async {
         guard installing == nil, let model = SpeechModelCatalog.model(id) else { return }
         installing = id

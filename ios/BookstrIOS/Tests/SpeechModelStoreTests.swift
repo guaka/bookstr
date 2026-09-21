@@ -105,6 +105,26 @@ final class SpeechModelStoreTests: XCTestCase {
     }
 
     @MainActor
+    func testSuccessfulDownloadSelectsItsLanguageAndFailureKeepsPreviousVoice() async throws {
+        let suite = "speech-auto-select-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let settings = SettingsRepository(defaults: defaults)
+        settings.setSpeechVoice("previous-english", for: "en")
+        settings.setSpeechVoice("previous-dutch", for: "nl")
+        let failed = SpeechModelStore(downloader: FixtureSpeechDownloader(payload: Data(), status: 404))
+        await failed.installAndSelect(.kokoroEnglish, settings: settings)
+        XCTAssertEqual(settings.speechChoice(for: "en").voiceIdentifier, "previous-english")
+        let success = SpeechModelStore(downloader: FixtureSpeechDownloader(payload: Data("data".utf8)))
+        await success.installAndSelect(.dutchDii, settings: settings)
+        XCTAssertEqual(settings.speechChoice(for: "nl").voiceIdentifier, "previous-dutch", "An unavailable model must not be selected")
+        await success.installAndSelect(.kokoroEnglish, settings: settings)
+        XCTAssertEqual(settings.speechChoice(for: "en").neuralEngine, .kokoroEnglish)
+        XCTAssertEqual(settings.speechChoice(for: "nl").voiceIdentifier, "previous-dutch")
+        XCTAssertEqual(SettingsRepository(defaults: defaults).speechChoice(for: "en").neuralEngine, .kokoroEnglish)
+    }
+
+    @MainActor
     func testDutchInstallSharesPronunciationDataAcrossVoicesAndRemoval() async throws {
         SpeechModelCatalog.modelsOverride = [SpeechModelSpec(
             id: .dutchDii, repository: "example/dutch", revision: "pinned",

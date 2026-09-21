@@ -1,11 +1,39 @@
 import XCTest
 import SherpaOnnx
 import UIKit
+import SwiftUI
 
 @testable import BookstrIOS
 
 @MainActor
 final class AppContainerTests: XCTestCase {
+    func testLibraryRedrawDoesNotReloadUnchangedDownloads() async throws {
+        let container = AppContainer.bootstrap()
+        let model = LibraryViewModel()
+        var refreshes = 0
+        let observation = model.$reading.dropFirst().sink { _ in refreshes += 1 }
+        let host = UIHostingController(rootView: NavigationStack {
+            LibraryView(viewModel: model)
+        }.environmentObject(container).environmentObject(container.readerPlayback))
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let window = UIWindow(windowScene: scene)
+        window.rootViewController = host
+        window.makeKeyAndVisible()
+        defer {
+            window.isHidden = true
+            observation.cancel()
+            model.cancelPendingNetworkRefresh()
+        }
+        try await Task.sleep(nanoseconds: 500_000_000)
+        XCTAssertGreaterThan(refreshes, 0, "The hosted Library must perform its initial load")
+        let initialRefreshes = refreshes
+        for index in 0..<10 {
+            model.debugText = "Redraw \(index)"
+            try await Task.sleep(nanoseconds: 50_000_000)
+        }
+        XCTAssertEqual(refreshes, initialRefreshes, "Redraws must not restart Library loading")
+    }
+
     func testFavoriteMetadataConcurrentRefreshPreservesNewestEntryAndPersistence() throws {
         let directory = "bookstr-metadata-race-\(UUID().uuidString)"
         let fileStore = JSONFileStore(subdirectory: directory)

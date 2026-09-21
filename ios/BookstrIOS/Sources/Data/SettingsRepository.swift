@@ -83,6 +83,11 @@ final class SettingsRepository: ObservableObject {
         speechLanguageSettings = next
     }
 
+    func selectDownloadedSpeechEngine(_ engine: SpeechEngineID) {
+        guard engine.isNeural else { return }
+        setSpeechVoice(engine.rawValue, for: engine.preferredLanguageTag)
+    }
+
     init(
         defaults: UserDefaults = .standard,
         keychain: any SecureStringStore = KeychainStore(service: "app.bookstr.ios")
