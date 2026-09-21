@@ -64,6 +64,24 @@ final class AppShellUITests: XCTestCase {
         XCTAssertTrue(app.descendants(matching: .any)["speech-voice-nl"].exists)
     }
 
+    func testDownloadedDutchVoiceIsAutomaticallySelected() throws {
+        selectTab("Settings")
+        let language = app.descendants(matching: .any)["speech-language"]
+        reveal(language)
+        language.tap()
+        app.buttons["Dutch"].tap()
+        let remove = app.buttons["speech-model-remove-piper_nl_nl_dii"]
+        if remove.exists { remove.tap() }
+        let download = app.buttons["speech-model-piper_nl_nl_dii"]
+        reveal(download)
+        XCTAssertTrue(download.waitForExistence(timeout: 5))
+        download.tap()
+        XCTAssertTrue(remove.waitForExistence(timeout: 180), "The Dutch model must finish downloading")
+        let voice = app.descendants(matching: .any)["speech-voice-nl"]
+        XCTAssertTrue(voice.waitForExistence(timeout: 5))
+        XCTAssertTrue(voice.staticTexts["Dii · Nederlands"].exists, voice.debugDescription)
+    }
+
     func testDownloadedBookAppearsInLibraryBeforeOpening() throws {
         app.terminate()
         app.launchArguments += ["--ui-testing-torrent-fixture"]

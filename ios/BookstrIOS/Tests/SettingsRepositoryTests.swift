@@ -125,6 +125,10 @@ final class SettingsRepositoryTests: XCTestCase {
         XCTAssertEqual(second.speechChoice(for: "pt").neuralEngine, .portuguesePortugal)
         XCTAssertEqual(second.speechChoice(for: "en").voiceIdentifier, SpeechEngineID.kokoroEnglish.rawValue)
         XCTAssertEqual(second.speechChoice(for: "en").engine, .neural(.kokoroEnglish))
+        second.selectDownloadedSpeechEngine(.dutchDii)
+        XCTAssertEqual(second.speechChoice(for: "nl").neuralEngine, .dutchDii)
+        second.selectDownloadedSpeechEngine(.system)
+        XCTAssertEqual(second.speechChoice(for: "nl").neuralEngine, .dutchDii)
         second.setSpeechVoice("", for: "en")
         XCTAssertEqual(
             SettingsRepository(defaults: defaults).speechChoice(for: "en").voiceIdentifier,

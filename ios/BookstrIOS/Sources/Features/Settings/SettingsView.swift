@@ -424,7 +424,9 @@ struct SettingsView: View {
                 .accessibilityIdentifier("speech-model-progress-\(engine.rawValue)")
             } else {
                 Button("Download \(engine.label) · \(ByteCountFormatter.string(fromByteCount: model.approximateBytes, countStyle: .file))") {
-                    Task { await speechModels.install(engine) }
+                    Task {
+                        await speechModels.installAndSelect(engine, settings: settings)
+                    }
                 }
                 .accessibilityIdentifier("speech-model-\(engine.rawValue)")
             }

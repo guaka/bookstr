@@ -1,11 +1,73 @@
 import XCTest
 import SherpaOnnx
 import UIKit
+import SwiftUI
 
 @testable import BookstrIOS
 
 @MainActor
 final class AppContainerTests: XCTestCase {
+    func testLibraryRedrawDoesNotReloadUnchangedDownloads() async throws {
+        let container = AppContainer.bootstrap()
+        let model = LibraryViewModel()
+        var refreshes = 0
+        let observation = model.$reading.dropFirst().sink { _ in refreshes += 1 }
+        let host = UIHostingController(rootView: NavigationStack {
+            LibraryView(viewModel: model)
+        }.environmentObject(container).environmentObject(container.readerPlayback))
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let window = UIWindow(windowScene: scene)
+        window.rootViewController = host
+        window.makeKeyAndVisible()
+        defer {
+            window.isHidden = true
+            observation.cancel()
+            model.cancelPendingNetworkRefresh()
+        }
+        try await Task.sleep(nanoseconds: 500_000_000)
+        XCTAssertGreaterThan(refreshes, 0, "The hosted Library must perform its initial load")
+        let initialRefreshes = refreshes
+        for index in 0..<10 {
+            model.debugText = "Redraw \(index)"
+            try await Task.sleep(nanoseconds: 50_000_000)
+        }
+        XCTAssertEqual(refreshes, initialRefreshes, "Redraws must not restart Library loading")
+    }
+
+    func testFavoriteMetadataConcurrentRefreshPreservesNewestEntryAndPersistence() throws {
+        let directory = "bookstr-metadata-race-\(UUID().uuidString)"
+        let fileStore = JSONFileStore(subdirectory: directory)
+        let root = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent(directory)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let repository = FavoriteMetadataRepository(fileStore: fileStore)
+        let md5 = String(repeating: "a", count: 32)
+        let lookup = SharedFavoriteRef(libvaultMd5: md5)
+        repository.remember(SharedFavoriteRef(bookstrId: "book", libvaultMd5: md5,
+                                              title: "Title 0", author: "Author 0"), updatedAt: 0)
+
+        // Distinct keys force dictionary growth while readers and overlapping
+        // updates exercise the same cache used by the background favorites pull.
+        DispatchQueue.concurrentPerform(iterations: 200) { index in
+            repository.remember(SharedFavoriteRef(bookstrId: "book-\(index)",
+                                                  title: "Other \(index)"), updatedAt: Int64(index))
+            repository.remember(SharedFavoriteRef(bookstrId: "book", libvaultMd5: md5,
+                                                  title: "Title \(index)", author: "Author \(index)"),
+                                updatedAt: Int64(index))
+            let cached = repository.enrich([lookup])[0]
+            XCTAssertEqual(cached.title?.replacingOccurrences(of: "Title", with: "Author"), cached.author)
+        }
+
+        for cache in [repository, FavoriteMetadataRepository(fileStore: fileStore)] {
+            let cached = try XCTUnwrap(cache.enrich([lookup]).first)
+            XCTAssertEqual(cached.title, "Title 199")
+            XCTAssertEqual(cached.author, "Author 199")
+            XCTAssertEqual(cached.bookstrId, "book")
+            let others = cache.enrich((0..<200).map { SharedFavoriteRef(bookstrId: "book-\($0)") })
+            XCTAssertEqual(others.map(\.title), (0..<200).map { "Other \($0)" })
+        }
+    }
+
     func testDownloadedDutchAndPortugueseModelsGenerateAudioWhenSwitching() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         SpeechModelCatalog.rootDirectoryOverride = root
