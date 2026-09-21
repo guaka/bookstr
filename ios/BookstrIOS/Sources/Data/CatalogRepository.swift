@@ -27,6 +27,8 @@ final class FavoriteMetadataRepository {
     }
 
     private let fileStore: JSONFileStore
+    // Relay sync and foreground library updates share this cache.
+    private let entriesLock = NSLock()
     private var entries: [String: Entry]
 
     init(fileStore: JSONFileStore) {
@@ -75,6 +77,8 @@ final class FavoriteMetadataRepository {
         )
         let keys = identityKeys(ref)
         guard !keys.isEmpty else { return }
+        entriesLock.lock()
+        defer { entriesLock.unlock() }
         for key in keys where entries[key]?.updatedAt ?? 0 <= updatedAt {
             entries[key] = entry
         }
@@ -95,7 +99,9 @@ final class FavoriteMetadataRepository {
     }
 
     func enrich(_ refs: [SharedFavoriteRef]) -> [SharedFavoriteRef] {
-        refs.map { ref in
+        entriesLock.lock()
+        defer { entriesLock.unlock() }
+        return refs.map { ref in
             guard let cached = identityKeys(ref).compactMap({ entries[$0] }).max(by: { $0.updatedAt < $1.updatedAt }) else {
                 return ref
             }
