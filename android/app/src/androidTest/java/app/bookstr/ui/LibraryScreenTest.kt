@@ -41,7 +41,6 @@ class LibraryScreenTest {
             epubUrl = "https://example.org/book.epub",
             coverUrl = null,
             format = BookFormat.Epub,
-            blossomSha256 = "b".repeat(64),
         )
         var opened: CatalogBook? = null
 
@@ -183,12 +182,11 @@ class LibraryScreenTest {
             id = "details",
             title = "Detailed Book",
             author = "Useful Author",
-            epubUrl = "https://blossom.example/details.epub",
+            epubUrl = "https://files.example/details.epub",
             coverUrl = null,
             sourceUrl = "https://publisher.example/books/details",
             isbn = "9780123456789",
             year = "2025",
-            blossomSha256 = "c".repeat(64),
         )
         var unfavorited: CatalogBook? = null
         composeRule.setContent {
@@ -223,12 +221,11 @@ class LibraryScreenTest {
             id = "screenshot-details",
             title = "The Screenshot Review",
             author = "Visible Author",
-            epubUrl = "https://blossom.example/review.epub",
+            epubUrl = "https://files.example/review.epub",
             coverUrl = null,
             sourceUrl = "https://publisher.example/review",
             isbn = "9781234567890",
             year = "2026",
-            blossomSha256 = "f".repeat(64),
         )
         composeRule.setContent {
             LibraryScreen(

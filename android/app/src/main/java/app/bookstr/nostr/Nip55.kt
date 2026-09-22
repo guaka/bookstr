@@ -38,7 +38,6 @@ object Nip55 {
         JSONArray()
             .put(JSONObject().put("type", TYPE_SIGN_EVENT).put("kind", NostrClient.KIND_PROGRESS))
             .put(JSONObject().put("type", TYPE_SIGN_EVENT).put("kind", NostrClient.KIND_FAVORITES))
-            .put(JSONObject().put("type", TYPE_SIGN_EVENT).put("kind", BlossomAuth.KIND))
             .put(JSONObject().put("type", TYPE_SIGN_EVENT).put("kind", 13))
             .put(JSONObject().put("type", TYPE_NIP44_DECRYPT))
             .put(JSONObject().put("type", TYPE_NIP44_ENCRYPT))

@@ -27,23 +27,6 @@ class CatalogRepositoryDownloadMetadataCoverageHardeningTest {
         parseDownloadedBookMetadata("""{"items":{"id":"not-an-array","epubUrl":"https://example.org/broken.epub"}}""")
     }
 
-    @Test
-    fun parseDownloadedBookMetadataPreservesMalformedShaAsIdButFiltersInvalidBlossomShaOnly() {
-        val malformed = "z".repeat(64)
-        val valid = "a".repeat(64)
-        val results = parseDownloadedBookMetadata(
-            """{"books":[
-              {"id":"$malformed","blossomSha256":"not-a-valid-sha","epubUrl":"https://example.org/malformed.epub","title":"Malformed id"},
-              {"id":"$valid","blossomSha256":"$valid","epubUrl":"https://example.org/valid.epub","title":"Valid id"}
-            ]}"""
-        )
-
-        assertEquals(2, results.size)
-        assertEquals(malformed, results[0].id)
-        assertEquals(null, results[0].blossomSha256)
-        assertEquals(valid, results[1].blossomSha256)
-    }
-
     @Test(expected = org.json.JSONException::class)
     fun parseDownloadedBookMetadataThrowsWhenPayloadIsTopLevelJSONArray() {
         parseDownloadedBookMetadata("""[{"id":"x","epubUrl":"https://example.org/top-level-array.epub"}]""")
@@ -79,16 +62,14 @@ class CatalogRepositoryDownloadMetadataCoverageHardeningTest {
     @Test
     fun parseDownloadedBookMetadataNormalizesUppercaseIdentifierAndShaToLowercase() {
         val uppercaseId = "A".repeat(64)
-        val uppercaseBlossom = "B".repeat(64)
         val results = parseDownloadedBookMetadata(
             """{"books":[
-              {"id":"$uppercaseId","sha256":"$uppercaseId","blossomSha256":"$uppercaseBlossom","epubUrl":"https://example.org/book.epub","title":"Cased identifiers"}
+              {"id":"$uppercaseId","sha256":"$uppercaseId","epubUrl":"https://example.org/book.epub","title":"Cased identifiers"}
             ]}"""
         )
 
         assertEquals(1, results.size)
         assertEquals(uppercaseId.lowercase(), results[0].id)
-        assertEquals(uppercaseBlossom.lowercase(), results[0].blossomSha256)
         assertEquals(BookFormat.Epub, results[0].format)
     }
 
@@ -128,7 +109,7 @@ class CatalogRepositoryDownloadMetadataCoverageHardeningTest {
     }
 
     @Test
-    fun parseDownloadedBookMetadataSkipsRowsWithMissingDownloadUrl() {
+    fun parseDownloadedBookMetadataKeepsHashNamedLocalBooksWithoutDownloadUrl() {
         val results = parseDownloadedBookMetadata(
             """{"books":[
               {"id":"${"e".repeat(64)}","title":"Missing","author":"Author"},
@@ -136,8 +117,9 @@ class CatalogRepositoryDownloadMetadataCoverageHardeningTest {
             ]}"""
         )
 
-        assertEquals(1, results.size)
-        assertEquals("Has URL", results[0].title)
+        assertEquals(2, results.size)
+        assertEquals("", results[0].epubUrl)
+        assertEquals("Has URL", results[1].title)
     }
 
     @Test

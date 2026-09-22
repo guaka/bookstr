@@ -72,32 +72,47 @@ class PrivateCatalogClient(private val http: OkHttpClient = OkHttpClient(), priv
             override fun onClosed(webSocket: WebSocket, code: Int, reason: String) { channel.close(IllegalStateException("Catalog connection closed")) }
         })
         try {
-            withTimeout(timeoutMs) {
-                check(channel.receive() == "OPEN")
-                val filter = JSONObject().put("kinds", JSONArray().put(1059)).put("#p", JSONArray().put(signer.getPublicKey()))
-                    .put("since", System.currentTimeMillis() / 1000 - 172800).put("limit", 0)
-                check(socket.send(JSONArray().put("REQ").put(id).put(filter).toString()))
-                var sent = false
-                var result: JSONObject? = null
-                while (result == null) {
-                    val text = channel.receive()
-                    val frame = runCatching { JSONArray(text) }.getOrNull() ?: continue
-                    when (frame.optString(0)) {
-                        "EOSE" -> if (frame.optString(1) == id && !sent) {
-                            check(socket.send(JSONArray().put("EVENT").put(wrapped).toString())); sent = true
-                        }
-                        "OK" -> if (frame.optString(1) == wrapped.getString("id") && !frame.optBoolean(2)) error("Relay rejected catalog request")
-                        "CLOSED" -> if (frame.optString(1) == id) error("Relay closed catalog subscription")
-                        "EVENT" -> if (sent && frame.optString(1) == id) {
-                            val event = frame.optJSONObject(2) ?: continue
-                            // Invalid envelopes are ignored; signer rejection remains actionable.
-                            result = try { PrivateCatalogWire.unwrap(event, service, signer, id, body.getString("type")) }
-                                catch (_: org.json.JSONException) { null }
-                            if (result?.optBoolean("ok", true) == false || result?.has("error") == true) error(result?.optString("error") ?: "Catalog request failed")
+            try {
+                withTimeout(timeoutMs) {
+                    check(channel.receive() == "OPEN")
+                    // Match iOS: kinds + #p + limit 0 only. A `since` clause has left some
+                    // relays without EOSE, so the request EVENT was never published.
+                    val filter = JSONObject()
+                        .put("kinds", JSONArray().put(1059))
+                        .put("#p", JSONArray().put(signer.getPublicKey()))
+                        .put("limit", 0)
+                    check(socket.send(JSONArray().put("REQ").put(id).put(filter).toString()))
+                    var sent = false
+                    var result: JSONObject? = null
+                    while (result == null) {
+                        val text = channel.receive()
+                        val frame = runCatching { JSONArray(text) }.getOrNull() ?: continue
+                        when (frame.optString(0)) {
+                            "EOSE" -> if (frame.optString(1) == id && !sent) {
+                                check(socket.send(JSONArray().put("EVENT").put(wrapped).toString())); sent = true
+                            }
+                            "OK" -> if (frame.optString(1) == wrapped.getString("id") && !frame.optBoolean(2)) {
+                                error("Relay rejected catalog request")
+                            }
+                            "CLOSED" -> if (frame.optString(1) == id) error("Relay closed catalog subscription")
+                            "EVENT" -> if (sent && frame.optString(1) == id) {
+                                val event = frame.optJSONObject(2) ?: continue
+                                // Invalid envelopes are ignored; signer rejection remains actionable.
+                                result = try {
+                                    PrivateCatalogWire.unwrap(event, service, signer, id, body.getString("type"))
+                                } catch (_: org.json.JSONException) {
+                                    null
+                                }
+                                if (result != null && result.optString("status") != "ready") {
+                                    error(result.optString("error").ifBlank { "Catalog request failed" })
+                                }
+                            }
                         }
                     }
+                    result!!
                 }
-                result
+            } catch (e: kotlinx.coroutines.TimeoutCancellationException) {
+                throw IllegalStateException("Private catalog timed out waiting for a reply", e)
             }
         } finally {
             socket.send(JSONArray().put("CLOSE").put(id).toString()); socket.close(1000, "Done"); socket.cancel(); channel.cancel()

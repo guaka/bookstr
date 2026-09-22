@@ -2,7 +2,6 @@ package app.bookstr.data
 
 import android.content.Context
 import android.util.Xml
-import app.bookstr.nostr.BlossomAuth
 import app.bookstr.nostr.NostrSignerFactory
 import app.bookstr.util.Sha256
 import kotlinx.coroutines.Dispatchers
@@ -62,7 +61,6 @@ data class CatalogBook(
     val isbn: String? = null,
     val libvaultMd5: String? = null,
     val format: BookFormat = BookFormat.Epub,
-    val blossomSha256: String? = null,
     val year: String? = null,
     val rightsStatus: String = RIGHTS_UNKNOWN,
     val license: String? = null,
@@ -228,19 +226,6 @@ open class CatalogRepository(
         }
         val partialLength = partial.takeIf(File::isFile)?.length() ?: 0L
         val requestBuilder = Request.Builder().url(book.epubUrl).get()
-        val blossomHash = book.blossomSha256
-            ?: book.id.takeIf {
-                it.matches(Regex("^[a-fA-F0-9]{64}$")) &&
-                    book.epubUrl.toHttpUrl().host.equals(BLOSSOM_HOST, ignoreCase = true)
-            }
-        if (blossomHash != null) {
-            val signer = NostrSignerFactory.create(context, settings)
-                ?: throw IllegalStateException("Connect the approved Nostr identity to download this LibVault book")
-            requestBuilder.header(
-                "Authorization",
-                BlossomAuth.authorization(signer, blossomHash, book.epubUrl.toHttpUrl().host),
-            )
-        }
         if (partialLength > 0) requestBuilder.header("Range", "bytes=$partialLength-")
 
         client.newCall(requestBuilder.build()).execute().use { response ->
@@ -301,13 +286,12 @@ open class CatalogRepository(
             id = id,
             title = matched?.title ?: embedded.first ?: "Downloaded ${format.extension.uppercase()}",
             author = matched?.author ?: embedded.second ?: "Unknown",
-            epubUrl = "https://$BLOSSOM_HOST/$id",
+            epubUrl = matched?.url.orEmpty(),
             coverUrl = null,
             sourceUrl = matched?.url,
             isbn = matched?.isbn,
             libvaultMd5 = matched?.libvaultMd5,
             format = format,
-            blossomSha256 = id,
             year = matched?.year ?: embedded.third,
             rightsStatus = rights.status,
             license = rights.license,
@@ -464,7 +448,6 @@ open class CatalogRepository(
                     .put("epubUrl", book.epubUrl)
                     .put("coverUrl", book.coverUrl)
                     .put("format", book.format.extension)
-                    .put("blossomSha256", book.blossomSha256)
                     .put("year", book.year)
                     .put("language", book.language)
                     .put("sourceUrl", book.sourceUrl)
@@ -537,7 +520,6 @@ open class CatalogRepository(
     }
 
     companion object {
-        const val BLOSSOM_HOST = "blossom.bfr.ee"
         const val BOOKS_API_BASE = "https://books-api.guaka.org/api"
         private const val DOWNLOADED_BOOKS_CACHE_FILE = "downloaded-books.json"
         const val MAX_FB2_BYTES = 50L * 1024L * 1024L
@@ -684,8 +666,9 @@ open class CatalogRepository(
                         ?.takeIf(String::isNotEmpty)
 
                     val id = scalar("id") ?: scalar("sha256")
+                    // Hash-named local publications do not require a remote locator.
                     val epubUrl = text("epubUrl") ?: "".takeIf {
-                        text("libvaultMd5")?.matches(Regex("[a-fA-F0-9]{32}")) == true
+                        id?.matches(Regex("(?:[a-fA-F0-9]{32}|[a-fA-F0-9]{64})")) == true
                     }
                     if (id == null || epubUrl == null) continue
                     val rights = rightsFromJson(item)
@@ -703,9 +686,6 @@ open class CatalogRepository(
                                 text("format") ?: text("extension") ?: "epub",
                                 epubUrl,
                             ),
-                            blossomSha256 = text("blossomSha256")
-                                ?.takeIf { it.matches(Regex("^[a-fA-F0-9]{64}$")) }
-                                ?.lowercase(),
                             year = text("year"),
                             language = text("language"),
                             rightsStatus = rights.status,
@@ -808,30 +788,5 @@ open class CatalogRepository(
             )
         }
 
-        fun fromBlossomFavorite(favorite: ExternalFavorite): CatalogBook? {
-            val sha256 = favorite.blossomSha256
-                ?.lowercase()
-                ?.takeIf { it.matches(Regex("^[a-f0-9]{64}$")) }
-                ?: return null
-            val blossomUrl = favorite.blossomUrl ?: return null
-            val parsedUrl = runCatching { blossomUrl.toHttpUrl() }.getOrNull() ?: return null
-            if (!parsedUrl.isHttps || !parsedUrl.host.equals(BLOSSOM_HOST, ignoreCase = true)) return null
-            return CatalogBook(
-                id = sha256,
-                title = favorite.title,
-                author = favorite.author ?: "Unknown",
-                epubUrl = blossomUrl,
-                coverUrl = null,
-                isbn = favorite.isbn,
-                libvaultMd5 = favorite.libvaultMd5,
-                format = BookFormat.from(favorite.format, blossomUrl),
-                blossomSha256 = sha256,
-                year = favorite.year,
-                rightsStatus = favorite.rightsStatus,
-                license = favorite.license,
-                licenseUrl = favorite.licenseUrl,
-                rightsSource = favorite.rightsSource,
-            )
-        }
     }
 }

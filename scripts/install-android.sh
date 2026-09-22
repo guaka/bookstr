@@ -59,7 +59,36 @@ elif ! printf '%s\n' "${devices}" | grep -qx "${serial}"; then
   exit 1
 fi
 
-echo "==> Building assembleDebug"
+if [[ -z "${BOOST_ROOT:-}" ]]; then
+  if [[ -d /opt/homebrew/opt/boost/include ]]; then
+    BOOST_ROOT=/opt/homebrew/opt/boost
+  elif [[ -d /usr/local/opt/boost/include ]]; then
+    BOOST_ROOT=/usr/local/opt/boost
+  fi
+fi
+if [[ -n "${BOOST_ROOT:-}" ]]; then
+  export BOOST_ROOT
+  echo "==> Using BOOST_ROOT=${BOOST_ROOT}"
+fi
+
+# Prefer the real SDK path when ANDROID_HOME points at ~/Library/Android.
+if [[ -d "${HOME}/Library/Android/sdk" ]]; then
+  case "${ANDROID_HOME:-}${ANDROID_SDK_ROOT:-}" in
+    */Library/Android|*/Library/Android/)
+      export ANDROID_HOME="${HOME}/Library/Android/sdk"
+      export ANDROID_SDK_ROOT="${HOME}/Library/Android/sdk"
+      ;;
+  esac
+fi
+if [[ -n "${ANDROID_SDK_DIR}" && -d "${ANDROID_SDK_DIR}/ndk" ]]; then
+  export ANDROID_HOME="${ANDROID_SDK_DIR}"
+  export ANDROID_SDK_ROOT="${ANDROID_SDK_DIR}"
+fi
+
+# Physical phones are arm64; override with BOOKSTR_ANDROID_ABIS for emulators.
+export BOOKSTR_ANDROID_ABIS="${BOOKSTR_ANDROID_ABIS:-arm64-v8a}"
+
+echo "==> Building assembleDebug (abis=${BOOKSTR_ANDROID_ABIS})"
 (
   cd "$android"
   JAVA_HOME="${GRADLE_JAVA_HOME}" PATH="${GRADLE_JAVA_HOME}/bin:${PATH}" \

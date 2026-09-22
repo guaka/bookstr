@@ -19,16 +19,21 @@ class FavoriteReferenceV1ContractTest {
             val entry = cases.getJSONObject(caseIndex)
             val refs = NostrFavoritesRepository.parseSharedFavoriteTags(entry.getJSONArray("tags").toString())
             val actual = JSONArray(refs.map(::canonical))
-            assertEquals(entry.getString("name"), entry.getJSONArray("expected").toString(), actual.toString())
+            assertEquals(entry.getString("name"), supportedReferences(entry.getJSONArray("expected")).toString(), actual.toString())
         }
     }
+
+    private fun supportedReferences(values: JSONArray): JSONArray = JSONArray(
+        List(values.length()) { values.getJSONObject(it) }.filter {
+            it.getString("type") in setOf("libvault", "bookstr", "isbn", "url")
+        },
+    )
 
     private fun canonical(ref: SharedFavoriteRef): JSONObject {
         val (type, identifier, locator) = when {
             ref.libvaultMd5 != null -> Triple("libvault", ref.libvaultMd5, ref.url)
             ref.bookstrId != null -> Triple("bookstr", ref.bookstrId, ref.url)
             ref.isbn != null -> Triple("isbn", ref.isbn, ref.url)
-            ref.blossomSha256 != null -> Triple("blossom", ref.blossomSha256, ref.blossomUrl)
             else -> Triple("url", ref.url.orEmpty(), ref.url)
         }
         return JSONObject()

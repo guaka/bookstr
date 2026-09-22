@@ -293,7 +293,6 @@ private fun BookDetailsDialog(
         )
         HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
         DetailRow("Format", book.format.extension.uppercase())
-        DetailRow("Blossom", if (book.blossomSha256.isNullOrBlank()) "Not available" else "Available")
         DetailRow("Downloaded", publicationBytes?.let(::formatBytes) ?: "No")
         progress?.takeIf(::hasStartedReading)?.let {
             DetailRow("Reading progress", "${(it.progression.coerceIn(0.0, 1.0) * 100).toInt()}%")
