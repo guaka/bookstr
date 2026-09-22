@@ -46,3 +46,31 @@ enum ReaderRelocation {
         return CFGetTypeID(number) == CFBooleanGetTypeID()
     }
 }
+
+@MainActor
+final class ReaderProgressSyncDebouncer {
+    private var task: Task<Void, Never>?
+    private let delayNanoseconds: UInt64
+
+    init(delayNanoseconds: UInt64 = 1_000_000_000) {
+        self.delayNanoseconds = delayNanoseconds
+    }
+
+    func schedule(_ operation: @escaping () async -> Void) {
+        task?.cancel()
+        task = Task { [delayNanoseconds] in
+            try? await Task.sleep(nanoseconds: delayNanoseconds)
+            guard !Task.isCancelled else { return }
+            await operation()
+        }
+    }
+
+    func cancel() {
+        task?.cancel()
+        task = nil
+    }
+
+    deinit {
+        task?.cancel()
+    }
+}

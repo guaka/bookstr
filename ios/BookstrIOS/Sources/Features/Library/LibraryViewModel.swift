@@ -85,14 +85,23 @@ final class LibraryViewModel: ObservableObject {
             let shared = container.nostrSyncService.cachedFavorites(
                 seedBooks: container.catalogRepository.rememberedBooks()
             )
-            localBooks = container.catalogRepository.downloadedBooks(externalFavorites: shared.external)
-            localBooks.forEach { container.favoriteMetadataRepository.remember(book: $0) }
+            // Publication scan/validation is disk-heavy; keep it off the main actor
+            // so the library shell can paint instead of sitting on a black frame.
+            let catalog = container.catalogRepository
+            let external = shared.external
+            localBooks = await Task.detached(priority: .userInitiated) {
+                catalog.downloadedBooks(externalFavorites: external)
+            }.value
+            container.favoriteMetadataRepository.remember(books: localBooks)
             debug.append("downloaded books: \(localBooks.count)")
             debug.append("words cached: \(container.vocabularyRepository.all().count)")
             apply(shared: shared, seed: localBooks, container: container)
         } else {
-            localBooks = container.catalogRepository.downloadedBooks()
-            localBooks.forEach { container.favoriteMetadataRepository.remember(book: $0) }
+            let catalog = container.catalogRepository
+            localBooks = await Task.detached(priority: .userInitiated) {
+                catalog.downloadedBooks()
+            }.value
+            container.favoriteMetadataRepository.remember(books: localBooks)
             debug.append("downloaded books: \(localBooks.count)")
             debug.append("words cached: \(container.vocabularyRepository.all().count)")
         }
@@ -209,9 +218,8 @@ final class LibraryViewModel: ObservableObject {
             progressMap[book.id] = container.progressRepository.get(bookId: book.id)
         }
 
-        let downloadedIDs = Set(seed.map(\.id))
         reading = books
-            .filter { book in downloadedIDs.contains(book.id) || hasStartedReading(progressMap[book.id]) }
+            .filter { book in hasStartedReading(progressMap[book.id]) }
             .sorted { (progressMap[$0.id]?.updatedAt ?? 0) > (progressMap[$1.id]?.updatedAt ?? 0) }
         favorites = books.filter { favoriteIDs.contains($0.id) }
         externalFavorites = shared.external.filter { favorite in

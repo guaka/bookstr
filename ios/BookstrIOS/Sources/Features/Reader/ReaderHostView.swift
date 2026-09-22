@@ -84,6 +84,8 @@ struct ReaderHostView: View {
                         .padding(.top, 48)
                         .padding(.bottom, 5)
                 }
+            } else {
+                ProgressView(Self.openingMessage(for: book))
             }
         }
         .background(container.settingsRepository.theme.background)

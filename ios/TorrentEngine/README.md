@@ -35,22 +35,29 @@ Existing Blossom downloads are unchanged.
 On macOS with Xcode, CMake, and Boost headers installed:
 
 ```sh
-BOOST_ROOT="$(brew --prefix boost)" scripts/build-ios-torrent.sh
+BOOST_ROOT="$(brew --prefix boost)" scripts/ensure-ios-torrent.sh
 ```
 
-The Xcode app target links this package through `ios/project.yml`
-(`packages.TorrentEngine` + `dependencies: - package: TorrentEngine`). After
-editing that file, regenerate with `xcodegen generate` from `ios/`. Never strip
-the local package from `project.yml` — that is how device builds lose
-`canImport(TorrentEngine)` and break torrent downloads.
+`ensure-ios-torrent.sh` builds only when `TorrentEngine.xcframework` is missing
+or incomplete (the binary is gitignored). Prefer that over calling
+`build-ios-torrent.sh` directly from install/CI scripts.
 
-The script verifies libtorrent commit
+The Xcode app target links the XCFramework **directly** through `ios/project.yml`
+(`dependencies: - framework: TorrentEngine/TorrentEngine.xcframework`). After
+editing that file, regenerate with `xcodegen generate` from `ios/`. Do **not**
+re-add TorrentEngine as a local SwiftPM package — a missing gitignored
+`binaryTarget` breaks package resolution for the whole app (including unrelated
+dependencies such as libarchive / sherpa-onnx).
+
+The build script verifies libtorrent commit
 `9d7443f467147d1784fb7516d2a882db1abb5a8b` (v2.0.11), initializes its pinned
 `try_signal` dependency, and builds a static XCFramework for arm64 iPhone and
 arm64/x86_64 simulators. `CMAKE_BIN` can select a local CMake executable.
-Generated source/build directories and binaries are ignored by Git. CI builds
-the native package before running Xcode tests. Re-run the script after changing
-the Objective-C++ bridge.
+Generated source/build directories and binaries are ignored by Git. CI ensures
+the framework before running Xcode tests. Re-run the build after changing
+the Objective-C++ bridge. Device install scripts also call
+`scripts/repair-ios-spm.sh` when remote package checkouts under DerivedData
+are corrupted.
 
 The build uses Apple's CommonCrypto, DHT, peer exchange, HTTP/UDP trackers and
 BitTorrent peers. Torrent metadata itself uses URLSession HTTPS. HTTPS trackers

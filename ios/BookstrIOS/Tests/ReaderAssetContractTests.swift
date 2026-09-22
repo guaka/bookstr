@@ -1048,6 +1048,9 @@ final class ReaderAssetContractTests: XCTestCase {
             encoding: .utf8
         )
         XCTAssertTrue(root.contains("ReaderClockLabel()"))
+        XCTAssertTrue(root.contains("presentLocalIfAvailable"))
+        XCTAssertTrue(root.contains("Task { _ = await container.nostrSyncService.retryPendingFavorites() }"))
+        XCTAssertFalse(root.contains("_ = await container.nostrSyncService.retryPendingFavorites()\n            guard !attemptedInitialContinuation"))
         let host = try String(
             contentsOf: sources.appendingPathComponent("Sources/Features/Reader/ReaderHostView.swift"),
             encoding: .utf8
@@ -1067,6 +1070,50 @@ final class ReaderAssetContractTests: XCTestCase {
             encoding: .utf8
         )
         XCTAssertNotNil(info.range(of: #"<key>UIStatusBarHidden</key>\s*<true/>"#, options: .regularExpression))
+    }
+
+    /// `downloadedBooksLock` is a plain NSLock. Calling the public cache
+    /// invalidation while it is held deadlocks the launch path and paints a
+    /// blank first frame, so lock holders must use the locked variant.
+    func testDownloadedBooksCacheInvalidationNeverReentersItsLock() throws {
+        let source = try String(
+            contentsOf: URL(fileURLWithPath: #filePath)
+                .deletingLastPathComponent()
+                .deletingLastPathComponent()
+                .appendingPathComponent("Sources/Data/CatalogRepository.swift"),
+            encoding: .utf8
+        )
+        XCTAssertTrue(source.contains("private func invalidateDownloadedBooksCacheWhileLocked()"))
+        for holder in ["private func rememberDownloaded(", "func removeFromLibrary("] {
+            let body = try XCTUnwrap(source.range(of: holder)).upperBound
+            let scope = source[body...].prefix(1_600)
+            XCTAssertTrue(
+                scope.contains("invalidateDownloadedBooksCacheWhileLocked()"),
+                "\(holder) must invalidate the cache without re-locking"
+            )
+            XCTAssertFalse(
+                scope.contains("\n        invalidateDownloadedBooksCache()"),
+                "\(holder) re-enters downloadedBooksLock"
+            )
+        }
+    }
+
+    func testLaunchPathsKeepMainThreadFreeOfDictionaryAndPublicationScans() throws {
+        let sources = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let words = try String(
+            contentsOf: sources.appendingPathComponent("Sources/Features/Words/WordsView.swift"),
+            encoding: .utf8
+        )
+        XCTAssertTrue(words.contains("Task.detached(priority: .utility)"))
+        XCTAssertTrue(words.contains("lookupAllInstalled(word:"))
+        let library = try String(
+            contentsOf: sources.appendingPathComponent("Sources/Features/Library/LibraryViewModel.swift"),
+            encoding: .utf8
+        )
+        XCTAssertTrue(library.contains("Task.detached(priority: .userInitiated)"))
+        XCTAssertTrue(library.contains("downloadedBooks(externalFavorites:"))
     }
 
     func testReaderOpeningOverlayUsesBookTitleNotTechnicalStages() throws {

@@ -4,7 +4,7 @@ import Foundation
 /// locator. Do the same on iOS: Blossom decides whether a publication can be
 /// opened, while this cache lets compact MD5 favorites retain their labels.
 final class FavoriteMetadataRepository {
-    private struct Entry: Codable {
+    private struct Entry: Codable, Equatable {
         var bookstrId: String?
         var libvaultMd5: String?
         var isbn: String?
@@ -54,7 +54,23 @@ final class FavoriteMetadataRepository {
     }
 
     func remember(book: CatalogBook, updatedAt: Int64 = Int64(Date().timeIntervalSince1970 * 1000)) {
-        remember(SharedFavoriteRef(
+        rememberEntries(
+            [favoriteRef(for: book)],
+            updatedAt: updatedAt,
+            refreshUnchangedTimestamp: false
+        )
+    }
+
+    func remember(books: [CatalogBook], updatedAt: Int64 = Int64(Date().timeIntervalSince1970 * 1000)) {
+        rememberEntries(
+            books.map { favoriteRef(for: $0) },
+            updatedAt: updatedAt,
+            refreshUnchangedTimestamp: false
+        )
+    }
+
+    private func favoriteRef(for book: CatalogBook) -> SharedFavoriteRef {
+        SharedFavoriteRef(
             bookstrId: book.id, libvaultMd5: book.libvaultMd5, isbn: book.isbn,
             url: book.sourceUrl ?? book.epubUrl, title: book.title, author: book.author,
             year: book.year, format: book.format.rawValue, blossomSha256: book.blossomSha256,
@@ -62,27 +78,52 @@ final class FavoriteMetadataRepository {
             rightsStatus: book.rightsStatus, license: book.license,
             licenseUrl: book.licenseUrl, rightsSource: book.rightsSource,
             coverUrl: FavoritesParser.remoteCoverURL(book.coverUrl)
-        ), updatedAt: updatedAt)
+        )
     }
 
     func remember(_ ref: SharedFavoriteRef, updatedAt: Int64 = Int64(Date().timeIntervalSince1970 * 1000)) {
-        guard let title = useful(ref.title) else { return }
-        let entry = Entry(
-            bookstrId: ref.bookstrId, libvaultMd5: ref.libvaultMd5?.lowercased(), isbn: ref.isbn,
-            title: title, author: useful(ref.author), year: useful(ref.year), format: useful(ref.format),
-            rightsStatus: ref.rightsStatus, license: ref.license,
-            licenseUrl: ref.licenseUrl, rightsSource: ref.rightsSource,
-            coverUrl: FavoritesParser.remoteCoverURL(ref.coverUrl),
-            updatedAt: updatedAt
-        )
-        let keys = identityKeys(ref)
-        guard !keys.isEmpty else { return }
+        remember([ref], updatedAt: updatedAt)
+    }
+
+    func remember(_ refs: [SharedFavoriteRef], updatedAt: Int64 = Int64(Date().timeIntervalSince1970 * 1000)) {
+        rememberEntries(refs, updatedAt: updatedAt, refreshUnchangedTimestamp: true)
+    }
+
+    private func rememberEntries(
+        _ refs: [SharedFavoriteRef],
+        updatedAt: Int64,
+        refreshUnchangedTimestamp: Bool
+    ) {
         entriesLock.lock()
         defer { entriesLock.unlock() }
-        for key in keys where entries[key]?.updatedAt ?? 0 <= updatedAt {
-            entries[key] = entry
+        var changed = false
+        for ref in refs {
+            guard let title = useful(ref.title) else { continue }
+            let entry = Entry(
+                bookstrId: ref.bookstrId, libvaultMd5: ref.libvaultMd5?.lowercased(), isbn: ref.isbn,
+                title: title, author: useful(ref.author), year: useful(ref.year), format: useful(ref.format),
+                rightsStatus: ref.rightsStatus, license: ref.license,
+                licenseUrl: ref.licenseUrl, rightsSource: ref.rightsSource,
+                coverUrl: FavoritesParser.remoteCoverURL(ref.coverUrl),
+                updatedAt: updatedAt
+            )
+            for key in identityKeys(ref) where entries[key]?.updatedAt ?? 0 <= updatedAt {
+                if let existing = entries[key] {
+                    var entryAtExistingTime = entry
+                    entryAtExistingTime.updatedAt = existing.updatedAt
+                    if entryAtExistingTime == existing {
+                        if refreshUnchangedTimestamp, existing.updatedAt != updatedAt {
+                            entries[key] = entry
+                            changed = true
+                        }
+                        continue
+                    }
+                }
+                entries[key] = entry
+                changed = true
+            }
         }
-        persist()
+        if changed { persist() }
     }
 
     func rememberProgress(bookId: String, title: String?, author: String?, updatedAt: Int64,
@@ -209,6 +250,13 @@ final class CatalogRepository {
         downloadedBooksLock.lock()
         downloadedBooksCache = nil
         downloadedBooksLock.unlock()
+        SpeechLanguageListCache.invalidate()
+    }
+
+    /// `downloadedBooksLock` is not recursive, so callers that already hold it
+    /// must clear the cache through this variant instead of the public one.
+    private func invalidateDownloadedBooksCacheWhileLocked() {
+        downloadedBooksCache = nil
         SpeechLanguageListCache.invalidate()
     }
 
@@ -651,8 +699,7 @@ final class CatalogRepository {
         books.removeAll { $0.id == book.id }
         books.append(updated)
         fileStore.save("downloaded-books.json", value: books)
-        downloadedBooksCache = nil
-        SpeechLanguageListCache.invalidate()
+        invalidateDownloadedBooksCacheWhileLocked()
     }
 
     /// Deletes the on-device publication, cover cache, and remembered metadata.
@@ -679,8 +726,7 @@ final class CatalogRepository {
         let removable = Set(ids.map { $0.lowercased() })
         books.removeAll { removable.contains($0.id.lowercased()) }
         fileStore.save("downloaded-books.json", value: books)
-        downloadedBooksCache = nil
-        SpeechLanguageListCache.invalidate()
+        invalidateDownloadedBooksCacheWhileLocked()
     }
 
     func rememberEmbeddedRights(book: CatalogBook, statement: String?) -> BookRights {

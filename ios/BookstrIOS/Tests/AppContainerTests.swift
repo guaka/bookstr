@@ -68,6 +68,34 @@ final class AppContainerTests: XCTestCase {
         }
     }
 
+    func testFavoriteMetadataBatchesBooksAndIgnoresUnchangedRefreshes() throws {
+        let directory = "bookstr-metadata-batch-\(UUID().uuidString)"
+        let fileStore = JSONFileStore(subdirectory: directory)
+        let root = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent(directory)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let repository = FavoriteMetadataRepository(fileStore: fileStore)
+        let books = (0..<70).map { index in
+            CatalogBook(
+                id: "book-\(index)", title: "Title \(index)", author: "Author \(index)",
+                epubUrl: "https://example.test/\(index).epub", coverUrl: nil, sourceUrl: nil,
+                isbn: nil, libvaultMd5: nil, format: .epub, blossomSha256: nil, year: "2026"
+            )
+        }
+
+        repository.remember(books: books, updatedAt: 100)
+        let metadataURL = root.appendingPathComponent("favorite-metadata.json")
+        let originalIdentifier = try metadataURL.resourceValues(forKeys: [.fileResourceIdentifierKey]).fileResourceIdentifier
+        repository.remember(books: books, updatedAt: 200)
+        let unchangedIdentifier = try metadataURL.resourceValues(forKeys: [.fileResourceIdentifierKey]).fileResourceIdentifier
+        XCTAssertEqual(String(describing: unchangedIdentifier), String(describing: originalIdentifier))
+
+        let reloaded = FavoriteMetadataRepository(fileStore: fileStore)
+        let refs = books.map { SharedFavoriteRef(bookstrId: $0.id) }
+        XCTAssertEqual(reloaded.enrich(refs).map(\.title), books.map(\.title))
+        XCTAssertEqual(reloaded.enrich(refs).map(\.author), books.map(\.author))
+    }
+
     func testDownloadedDutchAndPortugueseModelsGenerateAudioWhenSwitching() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         SpeechModelCatalog.rootDirectoryOverride = root
@@ -367,6 +395,42 @@ final class AppContainerTests: XCTestCase {
         )
         XCTAssertEqual(ReaderHostView.openingMessage(for: titled), "Opening Alice…")
         XCTAssertEqual(ReaderHostView.openingMessage(for: blank), "Opening book…")
+    }
+
+    /// `downloadedBooksLock` is not recursive. Remembering or removing a book
+    /// while it is held used to re-enter it and hang the launch path forever,
+    /// which showed up as a blank first frame. Time-box it so a regression
+    /// fails instead of blocking the suite.
+    func testRememberAndRemoveDoNotReenterTheDownloadedBooksLock() throws {
+        let subdirectory = "bookstr-lock-reentry-\(UUID().uuidString)"
+        let fileStore = JSONFileStore(subdirectory: subdirectory)
+        fileStore.ensureBooksDirectory()
+        fileStore.ensureCoversDirectory()
+        let settings = SettingsRepository(fileStore: fileStore)
+        let nip46 = Nip46Service()
+        let catalog = CatalogRepository(
+            fileStore: fileStore,
+            settings: settings,
+            signerStore: SignerStore(nip46Service: nip46),
+            nip46Service: nip46
+        )
+        let bookID = String(repeating: "b", count: 64)
+        let book = CatalogBook(
+            id: bookID, title: "Locked", author: "Author", epubUrl: "",
+            coverUrl: nil, sourceUrl: nil, isbn: nil, libvaultMd5: nil, format: .epub,
+            blossomSha256: bookID, year: nil
+        )
+        fileStore.save("downloaded-books.json", value: [book])
+
+        let finished = expectation(description: "remember and remove complete")
+        DispatchQueue.global().async {
+            catalog.removeFromLibrary(book)
+            _ = catalog.downloadedBooks()
+            finished.fulfill()
+        }
+        wait(for: [finished], timeout: 5)
+
+        XCTAssertTrue(fileStore.load("downloaded-books.json", as: [CatalogBook].self, fallback: []).isEmpty)
     }
 
     @MainActor

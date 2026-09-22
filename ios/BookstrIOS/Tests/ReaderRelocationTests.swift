@@ -57,4 +57,19 @@ final class ReaderRelocationTests: XCTestCase {
         XCTAssertNil(ReaderRelocation.jsonDouble(Date()))
         XCTAssertNil(ReaderRelocation.jsonInt(Date()))
     }
+
+    @MainActor
+    func testProgressSyncDebouncerPublishesOnlyLatestRelocation() async throws {
+        let debouncer = ReaderProgressSyncDebouncer(delayNanoseconds: 20_000_000)
+        var published: [Int] = []
+        debouncer.schedule { published.append(1) }
+        debouncer.schedule { published.append(2) }
+        try await Task.sleep(nanoseconds: 80_000_000)
+        XCTAssertEqual(published, [2])
+
+        debouncer.schedule { published.append(3) }
+        debouncer.cancel()
+        try await Task.sleep(nanoseconds: 40_000_000)
+        XCTAssertEqual(published, [2])
+    }
 }

@@ -702,7 +702,7 @@ final class NostrSyncService {
             let plaintext = try await decryptFavoritesContent(event: event, pubkey: pubkey, line: line)
             settings.cacheNostrFavorites(pubkey: pubkey, plaintext: plaintext, eventId: event.id)
             let rawRefs = FavoritesParser.parseSharedFavoriteTags(plaintext)
-            rawRefs.forEach { favoriteMetadata.remember($0, updatedAt: event.createdAt * 1000) }
+            favoriteMetadata.remember(rawRefs, updatedAt: event.createdAt * 1000)
             let refs = favoriteMetadata.enrich(rawRefs)
             line("decrypt: \(lastDecryptNote)")
             line("decrypt: ok, \(plaintext.count) chars, \(refs.count) refs")

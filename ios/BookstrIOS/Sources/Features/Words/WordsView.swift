@@ -440,10 +440,17 @@ struct WordsView: View {
     }
 
     private func refreshInstalledMatches() {
-        installedMatches = Dictionary(uniqueKeysWithValues: words.compactMap { entry in
-            let matches = container.dictionaryRepository.lookupAllInstalled(word: entry.word)
-            return matches.isEmpty ? nil : (entry.key, matches)
-        })
+        let snapshot = words.map { (key: $0.key, word: $0.word) }
+        let repository = container.dictionaryRepository
+        Task {
+            let matches = await Task.detached(priority: .utility) {
+                Dictionary(uniqueKeysWithValues: snapshot.compactMap { entry -> (String, [DictionaryLookup])? in
+                    let found = repository.lookupAllInstalled(word: entry.word)
+                    return found.isEmpty ? nil : (entry.key, found)
+                })
+            }.value
+            installedMatches = matches
+        }
     }
 
     private func deleteWords(at offsets: IndexSet) {

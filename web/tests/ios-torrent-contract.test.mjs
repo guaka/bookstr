@@ -8,20 +8,29 @@ test('iPhone torrent bridge is built reproducibly and packaged with notices',()=
   assert.match(build,/git.*rev-parse HEAD/);
   assert.match(build,/arm64;x86_64/);
   assert.match(build,/create-xcframework/);
-  // XcodeGen must keep the local binary package; regenerating project.yml
-  // without this path is how TorrentEngine silently drops from device builds.
+  const ensure=read('scripts/ensure-ios-torrent.sh');
+  assert.match(ensure,/TorrentEngine\.xcframework/);
+  assert.match(ensure,/build-ios-torrent\.sh/);
+  assert.match(ensure,/ios-arm64\/TorrentEngine\.framework\/TorrentEngine/);
+  assert.match(read('scripts/repair-ios-spm.sh'), /SourcePackages/);
+  assert.match(read('scripts/install-ios-ip2.sh'), /ensure-ios-torrent\.sh/);
+  assert.match(read('scripts/install-ios-ip2.sh'), /repair-ios-spm\.sh/);
+  // Link the XCFramework directly — a local SPM binaryTarget breaks resolution
+  // whenever the gitignored framework is missing.
   const projectYml=read('ios/project.yml');
-  assert.match(projectYml,/path:\s*TorrentEngine/);
-  assert.match(projectYml,/- package:\s*TorrentEngine/);
+  assert.match(projectYml,/framework:\s*TorrentEngine\/TorrentEngine\.xcframework/);
+  assert.doesNotMatch(projectYml,/path:\s*TorrentEngine/);
+  assert.doesNotMatch(projectYml,/- package:\s*TorrentEngine/);
   assert.match(projectYml,/TorrentEngineNotices\.txt/);
   const project=read('ios/BookstrIOS.xcodeproj/project.pbxproj');
   assert.match(project,/TorrentEngineNotices.txt in Resources/);
-  assert.match(project,/productName = TorrentEngine/);
-  assert.match(project,/XCLocalSwiftPackageReference "TorrentEngine"/);
-  assert.match(project,/TorrentEngine in Frameworks/);
-  assert.match(read('ios/TorrentEngine/README.md'), /packages\.TorrentEngine/);
+  assert.match(project,/TorrentEngine\.xcframework in Frameworks/);
+  assert.doesNotMatch(project,/XCLocalSwiftPackageReference "TorrentEngine"/);
+  assert.doesNotMatch(project,/productName = TorrentEngine/);
+  assert.match(read('ios/TorrentEngine/README.md'), /framework: TorrentEngine\/TorrentEngine\.xcframework/);
+  assert.match(read('ios/TorrentEngine/Package.swift'), /Do not re-add this as an SPM local package/);
   assert.match(read('ios/BookstrIOS/TorrentEngineNotices.txt'),/Boost Software License/);
-  assert.match(read('.github/workflows/ios.yml'),/scripts\/build-ios-torrent.sh/);
+  assert.match(read('.github/workflows/ios.yml'),/scripts\/ensure-ios-torrent\.sh/);
 });
 test('phone opening resolves and imports only verified torrent editions',()=>{
   const code=read('ios/BookstrIOS/Sources/Data/CatalogRepository.swift');
@@ -99,6 +108,12 @@ test('custom clock and battery replace the system status bar on every pane', () 
   assert.match(app, /persistentSystemOverlays\(\.hidden\)/);
   const root = read('ios/BookstrIOS/Sources/App/RootView.swift');
   assert.match(root, /ReaderClockLabel\(\)/);
+  assert.match(root, /presentLocalIfAvailable/);
+  assert.match(root, /Task \{ _ = await container\.nostrSyncService\.retryPendingFavorites\(\) \}/);
+  assert.doesNotMatch(
+    root,
+    /_ = await container\.nostrSyncService\.retryPendingFavorites\(\)\s*guard !attemptedInitialContinuation/
+  );
   const chrome = read('ios/BookstrIOS/Sources/Shared/ScreenChrome.swift');
   assert.match(chrome, /isBatteryMonitoringEnabled = true/);
   const clock = read('ios/BookstrIOS/Sources/Features/Reader/ReaderHostView.swift');
