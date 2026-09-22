@@ -36,6 +36,9 @@ enum SpeechSpokenText {
         replace(pattern: #"[\u00B9\u00B2\u00B3\u2070\u2074-\u2079]+"#, in: output) { _ in "" }
         replace(pattern: #"(?<=\S)\(\d{1,3}\)"#, in: output) { _ in "" }
         replace(pattern: #"["“”«»„]"#, in: output) { _ in "" }
+        // Straight and curly apostrophes are quotes at word boundaries, but
+        // must remain inside contractions and names (don't, O’Connor).
+        replace(pattern: #"(?<![\p{L}\p{N}])['‘’]|['‘’](?![\p{L}\p{N}])"#, in: output) { _ in "" }
         var spoken = output as String
         while spoken.contains("  ") {
             spoken = spoken.replacingOccurrences(of: "  ", with: " ")

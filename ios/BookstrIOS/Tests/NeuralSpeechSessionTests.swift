@@ -35,6 +35,9 @@ final class NeuralSpeechSessionTests: XCTestCase {
             [0, 0, 0, 0.2]
         )
         XCTAssertEqual(NeuralSpeechInput.speakable("  Hello.  "), "Hello.")
+        XCTAssertEqual(NeuralSpeechInput.speakable("He left.'"), "He left.")
+        XCTAssertEqual(NeuralSpeechInput.synthesisPhrases("He left.'", engine: .kokoroEnglish), ["He left."])
+        XCTAssertEqual(NeuralSpeechInput.synthesisPhrases(".'", engine: .kokoroEnglish), [])
         XCTAssertNil(NeuralSpeechInput.speakable("   "))
         XCTAssertNil(NeuralSpeechInput.speakable("\n\t"))
         XCTAssertNil(NeuralSpeechInput.speakable("..."))
