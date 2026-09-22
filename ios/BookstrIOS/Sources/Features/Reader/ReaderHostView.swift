@@ -15,7 +15,8 @@ struct ReaderHostView: View {
     var presentationOrigin: ReaderPresentationOrigin = .user
     var showsReaderChrome: Bool = true
     var onClose: (() -> Void)? = nil
-    var onSelectPane: ((Int) -> Void)? = nil
+    var onOpenSpeechSettings: (() -> Void)? = nil
+    var onSelectPane: ((AppPane) -> Void)? = nil
     @State private var localURL: URL?
     @State private var resolvedFormat: BookFormat?
     // The host must render a concrete view on its first frame. Starting with
@@ -29,8 +30,6 @@ struct ReaderHostView: View {
     @State private var showSearch = false
     @State private var searchQuery = ""
     @State private var speechControlsExpanded = false
-    @State private var buttonIslandVisible = false
-    @State private var buttonIslandDismissTask: Task<Void, Never>?
     @State private var layoutOrientation: ReaderLayoutOrientation = .portrait
     @State private var chromeMetrics = ReaderChromeMetrics(
         width: 393, height: 852,
@@ -41,6 +40,7 @@ struct ReaderHostView: View {
     @StateObject private var pdfController = PDFReaderController()
     @StateObject private var fb2Controller = FB2ReaderController()
     @StateObject private var comicController = ComicReaderController()
+    @StateObject private var chromeVisibility = ReaderChromeVisibilityController()
 
     private var activeFormat: BookFormat { resolvedFormat ?? book.format }
 
@@ -181,10 +181,10 @@ struct ReaderHostView: View {
             }
         }
         .overlay {
-            if buttonIslandVisible {
+            if chromeVisibility.isButtonIslandVisible {
                 Color.clear
                     .contentShape(Rectangle())
-                    .onTapGesture(perform: hideButtonIsland)
+                    .onTapGesture(perform: chromeVisibility.hide)
                     .accessibilityHidden(true)
             }
         }
@@ -283,7 +283,7 @@ struct ReaderHostView: View {
             chromeMetrics = ReaderDeviceGeometry.metrics(fallback: layoutOrientation)
         }
         .onDisappear {
-            buttonIslandDismissTask?.cancel()
+            chromeVisibility.cancel()
             UIApplication.shared.isIdleTimerDisabled = false
             if epubController.isSpeechRetained { epubController.stopSpeechCompletely() }
             if fb2Controller.isSpeechRetained { fb2Controller.stopSpeechCompletely() }
@@ -298,12 +298,7 @@ struct ReaderHostView: View {
             guard let locator else { return }
             persistProgress(fb2Controller.progression, locator: locator, format: .fb2)
         }
-        .onReceive(
-            NotificationCenter.default.publisher(
-                for: ReaderPlaybackSession.toggleSpeechNotification,
-                object: playback
-            )
-        ) { _ in
+        .onChange(of: playback.speechToggleToken) { _, _ in
             toggleActiveSpeech()
         }
         .onChange(of: container.settingsRepository.theme) { _, theme in
@@ -433,83 +428,43 @@ struct ReaderHostView: View {
     }
 
     private var activeSpeechState: ReaderSpeechState {
-        activeFormat == .epub ? epubController.speechState : fb2Controller.speechState
+        activeSpeech?.state ?? .idle
     }
 
     private var activeSpeechChoice: SpeechPlaybackChoice {
         container.settingsRepository.speechChoice(for: book.language ?? fb2Controller.document?.language ?? "en")
     }
 
-    private var speechControlIsland: some View {
-        HStack(spacing: 10) {
-            if speechControlsExpanded {
-                Button(action: toggleActiveSpeech) {
-                    if activeSpeechState == .preparing {
-                        ProgressView().controlSize(.small)
-                    } else {
-                        Image(systemName: activeSpeechState == .playing ? "pause.fill" : "play.fill")
-                    }
-                }
-                .accessibilityLabel(activeSpeechState == .playing ? "Pause reading aloud" : "Read aloud")
-                .accessibilityIdentifier("reader-speech-playback")
-
-                Menu {
-                    Button("Auto") { changeSpeechLanguage("auto") }
-                    ForEach(SpeechLanguageSettings.seededLanguageTags, id: \.self) { language in
-                        Button(SpeechLanguageSettings.displayName(for: language)) {
-                            changeSpeechLanguage(language)
-                        }
-                    }
-                } label: {
-                    Text(container.settingsRepository.speechLanguageOverride == "auto"
-                         ? "Auto"
-                         : container.settingsRepository.speechLanguageOverride.uppercased())
-                        .font(.caption.weight(.semibold))
-                }
-                .accessibilityLabel("Reading language")
-                .accessibilityIdentifier("reader-speech-language")
-
-                Menu {
-                    Button("Apple voices") { changeSpeechEngine(.system) }
-                    ForEach(SpeechEngineID.allCases.filter {
-                        $0.isNeural && $0.supports(language: activeSpeechChoice.languageTag)
-                    }, id: \.rawValue) { engine in
-                        if SpeechModelCatalog.model(engine)?.isInstalled == true {
-                            Button(engine.label) { changeSpeechEngine(engine) }
-                        } else {
-                            Button("\(engine.label) — Settings") { openSpeechSettings() }
-                        }
-                    }
-                } label: {
-                    Image(systemName: "waveform")
-                }
-                .accessibilityLabel("Reading voice")
-                .accessibilityIdentifier("reader-speech-engine")
-
-                Slider(
-                    value: Binding(
-                        get: { container.settingsRepository.speechRate },
-                        set: { container.settingsRepository.speechRate = $0 }
-                    ),
-                    in: SpeechLanguageSettings.minimumRate...SpeechLanguageSettings.maximumRate,
-                    onEditingChanged: { editing in if !editing { restartActiveSpeech() } }
-                )
-                .frame(width: 82)
-                .accessibilityLabel("Reading speed")
-                .accessibilityIdentifier("reader-speech-speed")
-
-                if activeSpeechState != .idle {
-                    Button(action: stopActiveSpeech) { Image(systemName: "stop.fill") }
-                        .accessibilityLabel("Stop reading aloud")
-                        .accessibilityIdentifier("reader-speech-stop")
-                }
-            }
+    private var activeSpeech: ReaderSpeechAdapter? {
+        switch activeFormat {
+        case .epub:
+            return ReaderSpeechAdapter(epub: epubController)
+        case .fb2:
+            return ReaderSpeechAdapter(fb2: fb2Controller, playback: fb2SpeechChoice)
+        case .pdf, .cbr, .cbz:
+            return nil
         }
-        .foregroundStyle(container.settingsRepository.theme.background)
-        .padding(.horizontal, speechControlsExpanded ? 14 : 0)
-        .frame(height: speechControlsExpanded ? 48 : 0)
-        .background(.ultraThinMaterial, in: Capsule())
-        .tint(container.settingsRepository.theme.primary)
+    }
+
+    private var speechControlIsland: some View {
+        ReaderSpeechControls(
+            expanded: $speechControlsExpanded,
+            rate: Binding(
+                get: { container.settingsRepository.speechRate },
+                set: { container.settingsRepository.speechRate = $0 }
+            ),
+            state: activeSpeechState,
+            choice: activeSpeechChoice,
+            languageOverride: container.settingsRepository.speechLanguageOverride,
+            foregroundColor: container.settingsRepository.theme.background,
+            tint: container.settingsRepository.theme.primary,
+            onToggle: toggleActiveSpeech,
+            onLanguageChange: changeSpeechLanguage,
+            onEngineChange: changeSpeechEngine,
+            onRateCommit: restartActiveSpeech,
+            onStop: stopActiveSpeech,
+            onOpenSettings: openSpeechSettings
+        )
     }
 
     private func changeSpeechLanguage(_ language: String) {
@@ -527,18 +482,16 @@ struct ReaderHostView: View {
     }
 
     private func restartActiveSpeech() {
-        if activeFormat == .epub { epubController.restartSpeechWithCurrentSettings() }
-        else if activeFormat == .fb2 { fb2Controller.restartSpeech(playback: fb2SpeechChoice) }
+        activeSpeech?.restart()
     }
 
     private func stopActiveSpeech() {
-        if activeFormat == .epub { epubController.stopSpeechCompletely() }
-        else if activeFormat == .fb2 { fb2Controller.stopSpeechCompletely() }
+        activeSpeech?.stop()
         syncPlaybackSpeech()
     }
 
     private func openSpeechSettings() {
-        NotificationCenter.default.post(name: ReaderPlaybackSession.openSpeechSettingsNotification, object: nil)
+        onOpenSpeechSettings?()
     }
 
     private var searchButton: some View {
@@ -572,35 +525,14 @@ struct ReaderHostView: View {
     }
 
     private func syncPlaybackSpeech() {
-        switch activeFormat {
-        case .epub:
-            playback.updateSpeechState(
-                retained: epubController.isSpeechRetained,
-                playing: epubController.isSpeaking
-            )
-        case .fb2:
-            playback.updateSpeechState(
-                retained: fb2Controller.isSpeechRetained,
-                playing: fb2Controller.isSpeaking
-            )
-        case .pdf:
-            playback.updateSpeechState(retained: false, playing: false)
-        case .cbr, .cbz:
-            playback.updateSpeechState(retained: false, playing: false)
-        }
+        playback.updateSpeechState(
+            retained: activeSpeech?.isRetained ?? false,
+            playing: activeSpeech?.isPlaying ?? false
+        )
     }
 
     private func toggleActiveSpeech() {
-        switch activeFormat {
-        case .epub:
-            epubController.toggleSpeech()
-        case .fb2:
-            fb2Controller.toggleSpeech(playback: fb2SpeechChoice)
-        case .pdf:
-            break
-        case .cbr, .cbz:
-            break
-        }
+        activeSpeech?.toggle()
         syncPlaybackSpeech()
     }
 
@@ -754,26 +686,26 @@ struct ReaderHostView: View {
                 .frame(maxWidth: .infinity)
                 .frame(height: metrics.activationZoneHeight)
                 .contentShape(Rectangle())
-                .onTapGesture(perform: revealButtonIsland)
+                .onTapGesture(perform: chromeVisibility.reveal)
                 .accessibilityHidden(true)
 
-            if buttonIslandVisible {
+            if chromeVisibility.isButtonIslandVisible {
                 readerButtonIsland
                     .padding(.horizontal, max(12, max(metrics.safeLeading, metrics.safeTrailing)))
                     .padding(.bottom, max(8, metrics.safeBottom))
                     .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
-        .animation(.snappy(duration: 0.22), value: buttonIslandVisible)
+        .animation(.snappy(duration: 0.22), value: chromeVisibility.isButtonIslandVisible)
     }
 
     private var readerButtonIsland: some View {
         HStack(spacing: 2) {
-            readerPaneButton(index: 0, label: "Continue reading", identifier: "continue", systemImage: "book.pages.fill")
-            readerPaneButton(index: 1, label: "Search", identifier: "search", systemImage: "magnifyingglass")
-            readerPaneButton(index: 2, label: "Library", identifier: "library", systemImage: "book.fill")
+            readerPaneButton(pane: .continueReading, label: "Continue reading", identifier: "continue", systemImage: "book.pages.fill")
+            readerPaneButton(pane: .search, label: "Search", identifier: "search", systemImage: "magnifyingglass")
+            readerPaneButton(pane: .library, label: "Library", identifier: "library", systemImage: "book.fill")
             Button {
-                selectPane(3)
+                selectPane(.words)
             } label: {
                 Image("SpellcheckTab")
                     .resizable()
@@ -783,7 +715,7 @@ struct ReaderHostView: View {
             }
             .accessibilityLabel("Words")
             .accessibilityIdentifier("reader-pane-words")
-            readerPaneButton(index: 4, label: "Settings", identifier: "settings", systemImage: "gearshape.fill")
+            readerPaneButton(pane: .settings, label: "Settings", identifier: "settings", systemImage: "gearshape.fill")
         }
         .foregroundStyle(container.settingsRepository.theme.primary)
         .padding(.horizontal, 8)
@@ -796,9 +728,9 @@ struct ReaderHostView: View {
         .accessibilityIdentifier("reader-button-island")
     }
 
-    private func readerPaneButton(index: Int, label: String, identifier: String, systemImage: String) -> some View {
+    private func readerPaneButton(pane: AppPane, label: String, identifier: String, systemImage: String) -> some View {
         Button {
-            selectPane(index)
+            selectPane(pane)
         } label: {
             Image(systemName: systemImage)
                 .font(.system(size: 18, weight: .semibold))
@@ -808,32 +740,12 @@ struct ReaderHostView: View {
         .accessibilityIdentifier("reader-pane-\(identifier)")
     }
 
-    private func selectPane(_ index: Int) {
-        scheduleButtonIslandDismissal()
+    private func selectPane(_ pane: AppPane) {
+        chromeVisibility.scheduleDismissal()
         if let onSelectPane {
-            onSelectPane(index)
+            onSelectPane(pane)
         } else {
             closeReader()
-        }
-    }
-
-    private func revealButtonIsland() {
-        buttonIslandVisible = true
-        scheduleButtonIslandDismissal()
-    }
-
-    private func hideButtonIsland() {
-        buttonIslandDismissTask?.cancel()
-        buttonIslandDismissTask = nil
-        buttonIslandVisible = false
-    }
-
-    private func scheduleButtonIslandDismissal() {
-        buttonIslandDismissTask?.cancel()
-        buttonIslandDismissTask = Task {
-            try? await Task.sleep(for: .seconds(4))
-            guard !Task.isCancelled else { return }
-            await MainActor.run { buttonIslandVisible = false }
         }
     }
 
@@ -888,34 +800,20 @@ struct ReaderHostView: View {
     }
 
     private func persistProgress(_ progression: Double, locator: String, format: BookFormat) {
-        container.progressRepository.save(bookId: book.id, progression: progression, cfi: locator)
-        saveReaderSession(format: format, locator: locator)
+        ReaderProgressRecorder.record(
+            book: book,
+            format: format,
+            progression: progression,
+            locator: locator,
+            progressRepository: container.progressRepository,
+            settingsRepository: container.settingsRepository
+        )
     }
 
     private func saveReaderSession(format: BookFormat, locator: String?) {
-        let pageIndex: Int
-        if format == .cbr || format == .cbz {
-            pageIndex = ComicReaderController.page(from: locator)
-        } else if format == .pdf,
-                  let value = locator?.split(separator: ":").dropFirst().first.flatMap({ Int($0) }) {
-            pageIndex = value
-        } else {
-            pageIndex = 0
-        }
-        container.settingsRepository.saveReaderSession(ReaderSession(
-            bookId: book.id,
-            bookTitle: book.title,
-            format: format,
-            author: book.author,
-            year: book.year,
-            locator: locator,
-            pageIndex: pageIndex,
-            pageOffset: 0,
-            rightsStatus: book.rightsStatus,
-            license: book.license,
-            licenseUrl: book.licenseUrl,
-            rightsSource: book.rightsSource
-        ))
+        container.settingsRepository.saveReaderSession(
+            ReaderProgressRecorder.session(book: book, format: format, locator: locator)
+        )
     }
 
     private func dismissKeyboard() {

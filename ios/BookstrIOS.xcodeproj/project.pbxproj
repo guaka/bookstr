@@ -7,6 +7,11 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		A11CE0010000000000000001 /* AppPane.swift in Sources */ = {isa = PBXBuildFile; fileRef = A11CE0010000000000000011 /* AppPane.swift */; };
+		A11CE0010000000000000002 /* ReaderChrome.swift in Sources */ = {isa = PBXBuildFile; fileRef = A11CE0010000000000000012 /* ReaderChrome.swift */; };
+		A11CE0010000000000000003 /* ReaderProgressRecorder.swift in Sources */ = {isa = PBXBuildFile; fileRef = A11CE0010000000000000013 /* ReaderProgressRecorder.swift */; };
+		A11CE0010000000000000004 /* ReaderSpeechControls.swift in Sources */ = {isa = PBXBuildFile; fileRef = A11CE0010000000000000014 /* ReaderSpeechControls.swift */; };
+		A11CE0010000000000000005 /* ReaderSpeechAdapter.swift in Sources */ = {isa = PBXBuildFile; fileRef = A11CE0010000000000000015 /* ReaderSpeechAdapter.swift */; };
 		06A573B5278C4256361ADD02 /* Favorites.swift in Sources */ = {isa = PBXBuildFile; fileRef = C5D2047C5FEB6AC49E9AA4E3 /* Favorites.swift */; };
 		0C0E91F7C3119FAB5C128CB7 /* AppContainer.swift in Sources */ = {isa = PBXBuildFile; fileRef = D92A1F44EF6DBC86327645B5 /* AppContainer.swift */; };
 		0C920034F3CD450FC5F2C4F6 /* CatalogConnection.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9847A6895EB85899989819A /* CatalogConnection.swift */; };
@@ -136,6 +141,11 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		A11CE0010000000000000011 /* AppPane.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppPane.swift; sourceTree = "<group>"; };
+		A11CE0010000000000000012 /* ReaderChrome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReaderChrome.swift; sourceTree = "<group>"; };
+		A11CE0010000000000000013 /* ReaderProgressRecorder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReaderProgressRecorder.swift; sourceTree = "<group>"; };
+		A11CE0010000000000000014 /* ReaderSpeechControls.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReaderSpeechControls.swift; sourceTree = "<group>"; };
+		A11CE0010000000000000015 /* ReaderSpeechAdapter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReaderSpeechAdapter.swift; sourceTree = "<group>"; };
 		020A583BD242E7950EE25CC1 /* BookstrIOSApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BookstrIOSApp.swift; sourceTree = "<group>"; };
 		051B88602D4D938D28CAF8AE /* LICENSE-LGPL-2.1.txt */ = {isa = PBXFileReference; lastKnownFileType = text; path = "LICENSE-LGPL-2.1.txt"; sourceTree = "<group>"; };
 		05418DD35E388592E61BA7F1 /* BookRightsV1ContractTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BookRightsV1ContractTests.swift; sourceTree = "<group>"; };
@@ -420,8 +430,12 @@
 				965DBA4E066B5F01074279A3 /* NeuralSpeechSession.swift */,
 				BB24551E4D26AE5A5A5FE4E2 /* PDFReaderView.swift */,
 				4F47F40A84E93CF7EB2E410D /* ReaderEditMenu.swift */,
+				A11CE0010000000000000012 /* ReaderChrome.swift */,
 				BF7571C63411B7A9A8988ABD /* ReaderHostView.swift */,
 				2E5BBC1560C066A2E245A7F7 /* ReaderPlaybackSession.swift */,
+				A11CE0010000000000000013 /* ReaderProgressRecorder.swift */,
+				A11CE0010000000000000014 /* ReaderSpeechControls.swift */,
+				A11CE0010000000000000015 /* ReaderSpeechAdapter.swift */,
 				143998C6E16766DF9B9163DC /* ReaderRelocation.swift */,
 				1CE063AF84C3FCB46A275BBC /* ReaderSelectionActions.swift */,
 				917592588198C9D5EF12C6D7 /* SpeechLanguageSettings.swift */,
@@ -480,6 +494,7 @@
 			isa = PBXGroup;
 			children = (
 				D92A1F44EF6DBC86327645B5 /* AppContainer.swift */,
+				A11CE0010000000000000011 /* AppPane.swift */,
 				020A583BD242E7950EE25CC1 /* BookstrIOSApp.swift */,
 				CB16A31ED46BFAD72E7F9860 /* LibraryUITestFixtures.swift */,
 				23A93D9A5855B73ACF116D90 /* RootView.swift */,
@@ -720,6 +735,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				0C0E91F7C3119FAB5C128CB7 /* AppContainer.swift in Sources */,
+				A11CE0010000000000000001 /* AppPane.swift in Sources */,
 				4FDD58CB140494132D4C1AD7 /* BookCoverView.swift in Sources */,
 				7E9A3D2F1C3FA3632F284D7B /* BookListFacetFilters.swift in Sources */,
 				4D6794E9027FB5383D5911C1 /* BookstrDebugLog.swift in Sources */,
@@ -752,8 +768,12 @@
 				D45FF64C7A261B906AE9EC58 /* ProgressRepository.swift in Sources */,
 				25C6520FE66B72DCA526FD73 /* PublicationUtilities.swift in Sources */,
 				E9189CE13B04BC4BB10DCC7E /* ReaderEditMenu.swift in Sources */,
+				A11CE0010000000000000002 /* ReaderChrome.swift in Sources */,
 				8C540124E53224438F23B858 /* ReaderHostView.swift in Sources */,
 				ECED948769215AC00C1EF8FC /* ReaderPlaybackSession.swift in Sources */,
+				A11CE0010000000000000003 /* ReaderProgressRecorder.swift in Sources */,
+				A11CE0010000000000000004 /* ReaderSpeechControls.swift in Sources */,
+				A11CE0010000000000000005 /* ReaderSpeechAdapter.swift in Sources */,
 				F446FCE99A3743EA9AF006E9 /* ReaderRelocation.swift in Sources */,
 				8A3EEE98659BE9C01ED06A55 /* ReaderSelectionActions.swift in Sources */,
 				601AF8A79D4831DDC09A645C /* RootView.swift in Sources */,

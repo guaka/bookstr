@@ -1389,26 +1389,14 @@ struct EPUBReaderView: UIViewRepresentable {
         private func persistCurrentLocator() {
             let cfi = controller.speechLocator.trimmingCharacters(in: .whitespacesAndNewlines)
             guard cfi.isEmpty == false else { return }
-            container.progressRepository.save(
-                bookId: book.id,
+            ReaderProgressRecorder.record(
+                book: book,
+                format: .epub,
                 progression: controller.progression,
-                cfi: cfi
-            )
-            container.settingsRepository.saveReaderSession(
-                ReaderSession(
-                    bookId: book.id,
-                    bookTitle: book.title,
-                    format: .epub,
-                    author: book.author,
-                    year: book.year,
-                    locator: cfi,
-                    pageIndex: 0,
-                    pageOffset: 0,
-                    rightsStatus: controller.rights.status.rawValue,
-                    license: controller.rights.license,
-                    licenseUrl: controller.rights.licenseURL,
-                    rightsSource: controller.rights.source
-                )
+                locator: cfi,
+                rights: controller.rights,
+                progressRepository: container.progressRepository,
+                settingsRepository: container.settingsRepository
             )
             controller.evaluate("window.persistSpeechLocation && window.persistSpeechLocation()")
         }
@@ -1425,13 +1413,14 @@ struct EPUBReaderView: UIViewRepresentable {
                 guard now.timeIntervalSince(lastSpeechPersistAt) >= 2 else { return }
                 lastSpeechPersistAt = now
             }
-            container.progressRepository.save(bookId: book.id, progression: item.progression, cfi: item.cfi)
-            container.settingsRepository.saveReaderSession(
-                ReaderSession(bookId: book.id, bookTitle: book.title, format: .epub, author: book.author,
-                              year: book.year, locator: item.cfi, pageIndex: 0, pageOffset: 0,
-                              rightsStatus: controller.rights.status.rawValue,
-                              license: controller.rights.license, licenseUrl: controller.rights.licenseURL,
-                              rightsSource: controller.rights.source)
+            ReaderProgressRecorder.record(
+                book: book,
+                format: .epub,
+                progression: item.progression,
+                locator: item.cfi,
+                rights: controller.rights,
+                progressRepository: container.progressRepository,
+                settingsRepository: container.settingsRepository
             )
             if item.source == "speech" { return }
             var progressBook = book

@@ -34,7 +34,7 @@ struct RootView: View {
     @EnvironmentObject private var container: AppContainer
     @EnvironmentObject private var settings: SettingsRepository
     @EnvironmentObject private var playback: ReaderPlaybackSession
-    @State private var selectedTab = 2
+    @State private var selectedTab = AppPane.library
     @State private var continueError: String?
     @State private var pendingCatalog: CatalogConnection?
     @State private var attemptedInitialContinuation = false
@@ -45,7 +45,7 @@ struct RootView: View {
             TabView(selection: Binding(
                 get: { selectedTab },
                 set: { tab in
-                    if tab == 0 {
+                    if tab == .continueReading {
                         openContinuation(reportMissing: true)
                     } else {
                         selectedTab = tab
@@ -57,7 +57,7 @@ struct RootView: View {
                         Image(systemName: "book.pages.fill")
                             .accessibilityLabel("Continue reading")
                     }
-                    .tag(0)
+                    .tag(AppPane.continueReading)
 
                 NavigationStack {
                     SearchView()
@@ -67,7 +67,7 @@ struct RootView: View {
                     Image(systemName: "magnifyingglass")
                         .accessibilityLabel("Search")
                 }
-                .tag(1)
+                .tag(AppPane.search)
 
                 NavigationStack {
                     LibraryView()
@@ -77,7 +77,7 @@ struct RootView: View {
                     Image(systemName: "book.fill")
                         .accessibilityLabel("Library")
                 }
-                .tag(2)
+                .tag(AppPane.library)
 
                 NavigationStack {
                     WordsView()
@@ -87,7 +87,7 @@ struct RootView: View {
                     Image("SpellcheckTab")
                         .accessibilityLabel("Words")
                 }
-                .tag(3)
+                .tag(AppPane.words)
 
                 NavigationStack {
                     SettingsView()
@@ -97,7 +97,7 @@ struct RootView: View {
                     Image(systemName: "gearshape.fill")
                         .accessibilityLabel("Settings")
                 }
-                .tag(4)
+                .tag(AppPane.settings)
             }
             .tint(settings.theme.primary)
             .background(settings.theme.background.ignoresSafeArea())
@@ -112,9 +112,13 @@ struct RootView: View {
                     presentationOrigin: item.origin,
                     showsReaderChrome: playback.isVisible,
                     onClose: { playback.requestClose() },
+                    onOpenSpeechSettings: {
+                        playback.requestClose()
+                        selectedTab = .settings
+                    },
                     onSelectPane: { pane in
                         playback.requestClose()
-                        if pane == 0 {
+                        if pane == .continueReading {
                             openContinuation(reportMissing: true)
                         } else {
                             selectedTab = pane
@@ -178,12 +182,8 @@ struct RootView: View {
         }
         .onReceive(container.wordNavigation.$requestToken) { token in
             guard token > 0 else { return }
-            selectedTab = 3
+            selectedTab = .words
             playback.requestClose()
-        }
-        .onReceive(NotificationCenter.default.publisher(for: ReaderPlaybackSession.openSpeechSettingsNotification)) { _ in
-            playback.requestClose()
-            selectedTab = 4
         }
         .onOpenURL { url in
             guard let connection = CatalogConnection(url: url, decodeNPub: NostrIdentity.hexPublicKey(from:)) else { return }
@@ -206,7 +206,7 @@ struct RootView: View {
                         Button("Add catalog") {
                             settings.catalogConnection = connection
                             pendingCatalog = nil
-                            selectedTab = 1
+                            selectedTab = .search
                         }.accessibilityIdentifier("catalog-invitation-confirm")
                     }
                 }

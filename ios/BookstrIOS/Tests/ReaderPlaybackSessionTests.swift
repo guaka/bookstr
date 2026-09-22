@@ -71,6 +71,24 @@ final class ReaderPlaybackSessionTests: XCTestCase {
         XCTAssertEqual(ReaderSpeechPausePolicy.expiration, 300)
     }
 
+    @MainActor
+    func testButtonIslandVisibilityResetsAndExpiresIndependentlyOfReaderLayout() async throws {
+        let visibility = ReaderChromeVisibilityController(dismissalDelay: .milliseconds(20))
+
+        visibility.reveal()
+        XCTAssertTrue(visibility.isButtonIslandVisible)
+        try await Task.sleep(for: .milliseconds(10))
+        visibility.scheduleDismissal()
+        try await Task.sleep(for: .milliseconds(15))
+        XCTAssertTrue(visibility.isButtonIslandVisible, "interaction should reset the dismissal timer")
+        try await Task.sleep(for: .milliseconds(15))
+        XCTAssertFalse(visibility.isButtonIslandVisible)
+
+        visibility.reveal()
+        visibility.hide()
+        XCTAssertFalse(visibility.isButtonIslandVisible)
+    }
+
     func testLegacyReaderSessionUsesNewestAvailableComicProgress() throws {
         let legacyJSON = """
         {"bookId":"old-epub","bookTitle":"Old","format":"epub","pageIndex":0,"pageOffset":0}
@@ -347,24 +365,59 @@ final class ReaderPlaybackSessionTests: XCTestCase {
         XCTAssertTrue(session.isVisible)
     }
 
-    func testToggleSpeechIncrementsTokenAndPostsNotification() {
+    func testToggleSpeechIncrementsTypedRequestToken() {
         let session = ReaderPlaybackSession()
-        let observed = expectation(description: "speech toggle notification")
-        observed.expectedFulfillmentCount = 2
-        let observer = NotificationCenter.default.addObserver(
-            forName: ReaderPlaybackSession.toggleSpeechNotification,
-            object: session,
-            queue: nil
-        ) { _ in
-            observed.fulfill()
-        }
-        defer { NotificationCenter.default.removeObserver(observer) }
 
         session.toggleSpeech()
         session.toggleSpeech()
 
         XCTAssertEqual(session.speechToggleToken, 2)
-        wait(for: [observed], timeout: 1)
+    }
+
+    func testProgressRecorderBuildsFormatSpecificSessions() {
+        let book = Self.book("reader-progress")
+
+        let comic = ReaderProgressRecorder.session(
+            book: book,
+            format: .cbz,
+            locator: "comic:12:30"
+        )
+        let pdf = ReaderProgressRecorder.session(
+            book: book,
+            format: .pdf,
+            locator: "page:7"
+        )
+        let invalid = ReaderProgressRecorder.session(
+            book: book,
+            format: .cbz,
+            locator: "epubcfi(/6/2)"
+        )
+
+        XCTAssertEqual(comic.pageIndex, 12)
+        XCTAssertEqual(pdf.pageIndex, 7)
+        XCTAssertEqual(invalid.pageIndex, 0)
+    }
+
+    func testProgressRecorderUsesPublicationRightsOverride() {
+        var book = Self.book("reader-rights")
+        book.rightsStatus = RightsStatus.unknown.rawValue
+        let rights = BookRights(
+            status: .openLicense,
+            license: "CC BY 4.0",
+            licenseURL: "https://creativecommons.org/licenses/by/4.0/",
+            source: "EPUB package"
+        )
+
+        let session = ReaderProgressRecorder.session(
+            book: book,
+            format: .epub,
+            locator: "epubcfi(/6/2)",
+            rights: rights
+        )
+
+        XCTAssertEqual(session.rightsStatus, RightsStatus.openLicense.rawValue)
+        XCTAssertEqual(session.license, "CC BY 4.0")
+        XCTAssertEqual(session.rightsSource, "EPUB package")
     }
 
     private static func book(_ id: String) -> CatalogBook {
