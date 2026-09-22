@@ -22,23 +22,32 @@ if [ ! -d "$DEVELOPER_DIR" ]; then
   exit 1
 fi
 
-if [ ! -d "$ios/TorrentEngine/TorrentEngine.xcframework" ]; then
-  echo "Missing ios/TorrentEngine/TorrentEngine.xcframework — run scripts/build-ios-torrent.sh first." >&2
-  exit 1
-fi
+"$repo/scripts/ensure-ios-torrent.sh"
+"$repo/scripts/repair-ios-spm.sh" "$derived"
 
 cd "$ios"
 
+build_bookstr() {
+  xcodebuild -skipPackagePluginValidation \
+    -project BookstrIOS.xcodeproj \
+    -scheme BookstrIOS \
+    -destination "platform=iOS,name=$device_name" \
+    -configuration Debug \
+    -derivedDataPath "$derived" \
+    DEVELOPMENT_TEAM="$team" \
+    CODE_SIGN_STYLE=Automatic \
+    build
+}
+
 echo "==> Building BookstrIOS for $device_name"
-xcodebuild -skipPackagePluginValidation \
-  -project BookstrIOS.xcodeproj \
-  -scheme BookstrIOS \
-  -destination "platform=iOS,name=$device_name" \
-  -configuration Debug \
-  -derivedDataPath "$derived" \
-  DEVELOPMENT_TEAM="$team" \
-  CODE_SIGN_STYLE=Automatic \
-  build
+if ! build_bookstr; then
+  echo "==> Build failed — repairing SourcePackages and retrying once"
+  "$repo/scripts/repair-ios-spm.sh" "$derived"
+  # Drop only corrupted repository checkouts; keep compiled artifacts when possible.
+  rm -rf "$derived/SourcePackages/repositories"
+  rm -f "$derived/SourcePackages/workspace-state.json"
+  build_bookstr
+fi
 
 if [ ! -d "$app" ]; then
   echo "Build finished but app not found at $app" >&2

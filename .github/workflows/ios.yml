@@ -81,7 +81,7 @@ jobs:
         run: |
           brew list cmake >/dev/null 2>&1 || brew install cmake
           brew list boost >/dev/null 2>&1 || brew install boost
-          BOOST_ROOT="$(brew --prefix boost)" scripts/build-ios-torrent.sh
+          BOOST_ROOT="$(brew --prefix boost)" scripts/ensure-ios-torrent.sh
       - name: Build and run e2e tests
         id: ios_e2e_tests
         continue-on-error: true

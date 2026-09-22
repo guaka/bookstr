@@ -219,6 +219,7 @@ struct PDFReaderView: UIViewRepresentable {
         private let container: AppContainer
         private let book: CatalogBook
         private let controller: PDFReaderController?
+        private let progressSync = ReaderProgressSyncDebouncer()
         fileprivate var textSelection: Binding<PDFTextSelection?>
 
         init(
@@ -251,7 +252,7 @@ struct PDFReaderView: UIViewRepresentable {
                 licenseUrl: book.licenseUrl, rightsSource: book.rightsSource
             )
             container.settingsRepository.saveReaderSession(session)
-            Task {
+            progressSync.schedule { [container, book] in
                 await container.nostrSyncService.pushProgress(book: book, progression: progression, cfi: "page:\(index)")
             }
         }

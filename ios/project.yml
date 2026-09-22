@@ -2,8 +2,9 @@ name: BookstrIOS
 options:
   minimumXcodeGenVersion: 2.38.0
 packages:
-  TorrentEngine:
-    path: TorrentEngine
+  # TorrentEngine is linked as a local XCFramework below — not via SwiftPM.
+  # A local SPM binaryTarget fails hard whenever the gitignored framework is
+  # missing or SourcePackages is corrupted, which blocks the whole app build.
   swift-nostr:
     url: https://github.com/yysskk/swift-nostr
     from: 0.7.0
@@ -45,7 +46,8 @@ targets:
         type: folder
         buildPhase: resources
     dependencies:
-      - package: TorrentEngine
+      - framework: TorrentEngine/TorrentEngine.xcframework
+        embed: false
       - package: swift-nostr
         product: NostrConnect
       - package: swift-nostr

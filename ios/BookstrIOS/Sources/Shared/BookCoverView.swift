@@ -1,9 +1,12 @@
 import SwiftUI
+import ImageIO
 #if canImport(UIKit)
 import UIKit
+typealias BookCoverPlatformImage = UIImage
 #endif
 #if canImport(AppKit)
 import AppKit
+typealias BookCoverPlatformImage = NSImage
 #endif
 
 /// Fixed-size cover thumbnail used across library rows and search results.
@@ -11,6 +14,13 @@ import AppKit
 /// the embedded-cover cache.
 struct BookCoverView: View {
     let urlString: String?
+    @State private var localImage: BookCoverPlatformImage?
+
+    private static let localImageCache: NSCache<NSURL, BookCoverPlatformImage> = {
+        let cache = NSCache<NSURL, BookCoverPlatformImage>()
+        cache.totalCostLimit = 12 * 1_024 * 1_024
+        return cache
+    }()
 
     var body: some View {
         Group {
@@ -44,23 +54,46 @@ struct BookCoverView: View {
 
     @ViewBuilder
     private func localCover(_ url: URL) -> some View {
+        Group {
+            if let localImage {
 #if canImport(UIKit)
-        if let image = UIImage(contentsOfFile: url.path) {
-            Image(uiImage: image)
+                Image(uiImage: localImage)
                 .resizable()
                 .aspectRatio(contentMode: .fill)
-        } else {
-            placeholder
-        }
 #else
-        if let image = NSImage(contentsOf: url) {
-            Image(nsImage: image)
+                Image(nsImage: localImage)
                 .resizable()
                 .aspectRatio(contentMode: .fill)
-        } else {
-            placeholder
-        }
 #endif
+            } else {
+                placeholder
+            }
+        }
+        .task(id: url) {
+            localImage = nil
+            localImage = await Task.detached(priority: .utility) {
+                Self.thumbnailImage(at: url)
+            }.value
+        }
+    }
+
+    static func thumbnailImage(at url: URL) -> BookCoverPlatformImage? {
+        if let cached = localImageCache.object(forKey: url as NSURL) { return cached }
+        guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
+              let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, [
+                  kCGImageSourceCreateThumbnailFromImageAlways: true,
+                  kCGImageSourceCreateThumbnailWithTransform: true,
+                  kCGImageSourceShouldCacheImmediately: true,
+                  kCGImageSourceThumbnailMaxPixelSize: 256,
+              ] as CFDictionary)
+        else { return nil }
+#if canImport(UIKit)
+        let image = UIImage(cgImage: cgImage)
+#else
+        let image = NSImage(cgImage: cgImage, size: .zero)
+#endif
+        localImageCache.setObject(image, forKey: url as NSURL, cost: cgImage.bytesPerRow * cgImage.height)
+        return image
     }
 
     private var placeholder: some View {

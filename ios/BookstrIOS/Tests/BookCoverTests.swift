@@ -1,5 +1,8 @@
 import XCTest
 import PDFKit
+#if canImport(UIKit)
+import UIKit
+#endif
 #if SWIFT_PACKAGE
 @testable import BookstrLogic
 #else
@@ -23,6 +26,25 @@ final class BookCoverTests: XCTestCase {
         XCTAssertNil(BookCoverView.coverURL(""))
         XCTAssertNil(BookCoverView.coverURL(nil))
     }
+
+#if canImport(UIKit) && !SWIFT_PACKAGE
+    func testLocalCoverThumbnailIsDownsampledAndCached() throws {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("cover-thumbnail-\(UUID().uuidString).jpg")
+        defer { try? FileManager.default.removeItem(at: url) }
+        let renderer = UIGraphicsImageRenderer(size: CGSize(width: 1_200, height: 1_800))
+        let data = renderer.jpegData(withCompressionQuality: 0.9) { context in
+            UIColor.systemBlue.setFill()
+            context.fill(CGRect(x: 0, y: 0, width: 1_200, height: 1_800))
+        }
+        try data.write(to: url)
+
+        let first = try XCTUnwrap(BookCoverView.thumbnailImage(at: url))
+        let second = try XCTUnwrap(BookCoverView.thumbnailImage(at: url))
+        XCTAssertLessThanOrEqual(max(first.size.width, first.size.height), 256)
+        XCTAssertTrue(first === second)
+    }
+#endif
 
     func testExtractsEPUB3CoverImageProperty() throws {
         let opf = #"<?xml version="1.0"?><package xmlns="http://www.idpf.org/2007/opf" version="3.0"><metadata/><manifest>"# +

@@ -945,6 +945,7 @@ struct EPUBReaderView: UIViewRepresentable {
         private let initialCFI: String?
         private let highlightCFI: String?
         private let highlightKind: ReaderHighlightKind?
+        private let progressSync = ReaderProgressSyncDebouncer()
 
         private var resignObserver: NSObjectProtocol?
 
@@ -1359,7 +1360,13 @@ struct EPUBReaderView: UIViewRepresentable {
             progressBook.license = controller.rights.license
             progressBook.licenseUrl = controller.rights.licenseURL
             progressBook.rightsSource = controller.rights.source
-            Task { await container.nostrSyncService.pushProgress(book: progressBook, progression: item.progression, cfi: item.cfi) }
+            progressSync.schedule { [container] in
+                await container.nostrSyncService.pushProgress(
+                    book: progressBook,
+                    progression: item.progression,
+                    cfi: item.cfi
+                )
+            }
         }
 
         private func handleMetadata(_ json: String?) {

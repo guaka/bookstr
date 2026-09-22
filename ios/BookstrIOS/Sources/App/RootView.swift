@@ -133,7 +133,8 @@ struct RootView: View {
                 .allowsHitTesting(false)
         }
         .task {
-            _ = await container.nostrSyncService.retryPendingFavorites()
+            // Favorites retry can wait on relays/Amber — never block first paint or continuation.
+            Task { _ = await container.nostrSyncService.retryPendingFavorites() }
             guard !attemptedInitialContinuation else { return }
             attemptedInitialContinuation = true
             let arguments = ProcessInfo.processInfo.arguments
@@ -192,12 +193,13 @@ struct RootView: View {
 
     private func openContinuation(reportMissing: Bool) {
         if let current = playback.item {
-            presentWithoutAnimation(
+            presentLocalIfAvailable(
                 current.book,
                 preparedURL: current.preparedURL,
                 initialLocator: current.initialLocator,
                 highlightLocator: current.highlightLocator,
-                origin: current.origin
+                origin: current.origin,
+                reportMissing: reportMissing
             )
             return
         }
@@ -207,7 +209,11 @@ struct RootView: View {
                $0.id.caseInsensitiveCompare(selection.bookId) == .orderedSame
                    && $0.format == selection.format
            }) {
-            presentWithoutAnimation(book, initialLocator: continuationLocator(for: book))
+            presentLocalIfAvailable(
+                book,
+                initialLocator: continuationLocator(for: book),
+                reportMissing: reportMissing
+            )
             return
         }
         let session = settings.readerSession()
@@ -217,7 +223,11 @@ struct RootView: View {
             availableBookIDs: Set(downloaded.map(\.id))
         ), let book = downloaded.first(where: { $0.id.caseInsensitiveCompare(recent.bookId) == .orderedSame }) {
             settings.saveReaderSelection(ReaderSelection(bookId: book.id, format: book.format))
-            presentWithoutAnimation(book, initialLocator: recent.cfi.isEmpty ? nil : recent.cfi)
+            presentLocalIfAvailable(
+                book,
+                initialLocator: recent.cfi.isEmpty ? nil : recent.cfi,
+                reportMissing: reportMissing
+            )
             return
         }
         guard let session else {
@@ -225,7 +235,11 @@ struct RootView: View {
             return
         }
         if let book = downloaded.first(where: { $0.id == session.bookId }) {
-            presentWithoutAnimation(book, initialLocator: continuationLocator(for: book))
+            presentLocalIfAvailable(
+                book,
+                initialLocator: continuationLocator(for: book),
+                reportMissing: reportMissing
+            )
             return
         }
         let fallback = CatalogBook(
@@ -241,12 +255,46 @@ struct RootView: View {
             blossomSha256: nil,
             year: session.year
         )
-        let file = container.catalogRepository.publicationFile(book: fallback)
-        guard FileManager.default.fileExists(atPath: file.path) else {
-            if reportMissing { continueError = "The recent book is no longer downloaded." }
+        presentLocalIfAvailable(
+            fallback,
+            initialLocator: continuationLocator(for: fallback),
+            reportMissing: reportMissing,
+            missingMessage: "The recent book is no longer downloaded."
+        )
+    }
+
+    /// Cold-start continuation must never cover the shell with a reader that still
+    /// needs network/signer work — that path looks like a stuck black screen.
+    private func presentLocalIfAvailable(
+        _ book: CatalogBook,
+        preparedURL: URL? = nil,
+        initialLocator: String? = nil,
+        highlightLocator: String? = nil,
+        origin: ReaderPresentationOrigin = .continuation,
+        reportMissing: Bool,
+        missingMessage: String = "The recent book is no longer downloaded."
+    ) {
+        if let preparedURL {
+            presentWithoutAnimation(
+                book,
+                preparedURL: preparedURL,
+                initialLocator: initialLocator,
+                highlightLocator: highlightLocator,
+                origin: origin
+            )
             return
         }
-        presentWithoutAnimation(fallback, initialLocator: continuationLocator(for: fallback))
+        guard let local = container.catalogRepository.localPublication(for: book) else {
+            if reportMissing { continueError = missingMessage }
+            return
+        }
+        presentWithoutAnimation(
+            local.book,
+            preparedURL: local.url,
+            initialLocator: initialLocator,
+            highlightLocator: highlightLocator,
+            origin: origin
+        )
     }
 
     private func continuationLocator(for book: CatalogBook) -> String? {
