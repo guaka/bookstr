@@ -51,6 +51,7 @@ class CollectionSemanticsV1ContractTest {
                 return@repeat
             }
             val expected = entry.getJSONObject("expected")
+            expected.put("items", supportedReferences(expected.getJSONArray("items")))
             val canonical = JSONObject()
                 .put("id", actual!!.id)
                 .put("title", actual.title)
@@ -60,6 +61,12 @@ class CollectionSemanticsV1ContractTest {
             assertEquals(entry.getString("name"), expected.toString(), canonical.toString())
         }
     }
+
+    private fun supportedReferences(values: JSONArray): JSONArray = JSONArray(
+        List(values.length()) { values.getJSONObject(it) }.filter {
+            it.getString("type") in setOf("libvault", "bookstr", "isbn", "url")
+        },
+    )
 
     private fun indexEntries(values: JSONArray): List<CollectionIndexEntry> =
         List(values.length()) { index ->
@@ -78,7 +85,6 @@ class CollectionSemanticsV1ContractTest {
             ref.libvaultMd5 != null -> Triple("libvault", ref.libvaultMd5, ref.url)
             ref.bookstrId != null -> Triple("bookstr", ref.bookstrId, ref.url)
             ref.isbn != null -> Triple("isbn", ref.isbn, ref.url)
-            ref.blossomSha256 != null -> Triple("blossom", ref.blossomSha256, ref.blossomUrl)
             else -> Triple("url", ref.url.orEmpty(), ref.url)
         }
         return JSONObject()

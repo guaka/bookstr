@@ -45,7 +45,10 @@ test('validates the complete versioned constant source', () => {
 test('renders deterministic declarations for all three client languages', () => {
   const value = constants();
   assert.match(renderJavaScript(value), /BookstrNostrConstants/);
-  assert.match(renderKotlin(value), /const val BLOSSOM_AUTHORIZATION_KIND = 24242/);
+  assert.doesNotMatch(renderKotlin(value), /BLOSSOM/);
+  assert.match(renderKotlin(value), /const val PROGRESS_KIND = 30078/);
+  assert.match(renderKotlin(value), /const val FAVORITES_KIND = 30003/);
+  assert.match(renderSwift(value), /blossomAuthorizationKind = 24242/);
   assert.match(renderSwift(value), /static let collectionIndexDTag = "bookstr-collections"/);
   assert.equal(renderJavaScript(value), renderJavaScript(value));
 });

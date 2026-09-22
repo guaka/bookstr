@@ -555,7 +555,6 @@ private fun PdfDocument(
             title = title,
             author = author,
             year = year,
-            onBack = onBack,
             modifier = Modifier.align(Alignment.TopCenter),
         )
         dictionary?.let { state ->
@@ -592,11 +591,10 @@ private fun PdfDocument(
 }
 
 @Composable
-private fun PdfReaderChrome(
+internal fun PdfReaderChrome(
     title: String,
     author: String?,
     year: String?,
-    onBack: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var clock by remember { mutableStateOf(LocalTime.now().format(PDF_TIME_FORMAT)) }
@@ -615,17 +613,6 @@ private fun PdfReaderChrome(
             .background(androidx.compose.material3.MaterialTheme.colorScheme.primary.copy(alpha = 0.98f)),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Box(
-            modifier = Modifier.size(24.dp).clickable(onClick = onBack),
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(
-                Icons.AutoMirrored.Filled.ArrowBack,
-                contentDescription = "Back",
-                tint = androidx.compose.material3.MaterialTheme.colorScheme.onPrimary,
-                modifier = Modifier.size(18.dp),
-            )
-        }
         Text(
             if (detail.isBlank()) title else "$title — $detail",
             fontSize = 11.sp,

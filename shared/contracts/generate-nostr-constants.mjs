@@ -45,7 +45,7 @@ export function renderJavaScript(value) {
 
 export function renderKotlin(value) {
   validateConstants(value);
-  const declarations = Object.entries(value.kinds).map(([name, item]) => `    const val ${upperSnake(name)}_KIND = ${item}`)
+  const declarations = Object.entries(value.kinds).filter(([name]) => name === 'progress' || name === 'favorites').map(([name, item]) => `    const val ${upperSnake(name)}_KIND = ${item}`)
     .concat(Object.entries(value.dTags).map(([name, item]) => `    const val ${upperSnake(name)}_D_TAG = ${JSON.stringify(item)}`))
     .concat(Object.entries(value.prefixes).map(([name, item]) => `    const val ${upperSnake(name)}_PREFIX = ${JSON.stringify(item)}`));
   return `${header('//')}package app.bookstr.shared.generated

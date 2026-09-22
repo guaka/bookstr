@@ -80,7 +80,6 @@ class CatalogRepositoryDownloadMetadataCoverageAdditionalTest {
                 "id":"$uppercaseId",
                 "sha256":"$uppercaseSha",
                 "epubUrl":"https://example.org/book.epub",
-                "blossomSha256":"$uppercaseSha",
                 "format":"epub"
               }
             ]}"""
@@ -88,7 +87,6 @@ class CatalogRepositoryDownloadMetadataCoverageAdditionalTest {
 
         assertEquals(1, results.size)
         assertEquals(uppercaseId.lowercase(), results[0].id)
-        assertEquals(uppercaseSha.lowercase(), results[0].blossomSha256)
     }
 
     @Test
@@ -231,19 +229,6 @@ class CatalogRepositoryDownloadMetadataCoverageAdditionalTest {
         assertEquals(1, results.size)
         assertEquals(expectedId, results[0].id)
         assertEquals("From books", results[0].title)
-    }
-
-    @Test
-    fun parseDownloadedBookMetadataRejectsInvalidBlossomSha256Value() {
-        val id = "t".repeat(64)
-        val results = parseDownloadedBookMetadata(
-            """{"books":[
-              {"id":"$id","epubUrl":"https://example.org/book.epub","blossomSha256":"not-a-valid-hash"}
-            ]}"""
-        )
-
-        assertEquals(1, results.size)
-        assertNull(results[0].blossomSha256)
     }
 
     @Test

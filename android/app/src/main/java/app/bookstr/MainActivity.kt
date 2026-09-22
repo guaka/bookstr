@@ -18,7 +18,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Book
-import androidx.compose.material.icons.automirrored.filled.MenuBook
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Spellcheck
@@ -212,9 +211,6 @@ class MainActivity : ComponentActivity() {
                     shared: app.bookstr.data.SharedFavorites,
                     knownBooks: List<CatalogBook> = emptyList(),
                 ) {
-                    val blossomBooks = shared.external
-                        .mapNotNull(CatalogRepository::fromBlossomFavorite)
-                        .associateBy { it.libvaultMd5 }
                     val downloadedBooks = catalog.downloadedBooks(shared.external)
                     val downloadedFavoriteIds = downloadedBooks.filter { downloaded ->
                         shared.external.any { favorite ->
@@ -224,10 +220,10 @@ class MainActivity : ComponentActivity() {
                                     downloaded.format.extension.equals(favorite.format, ignoreCase = true))
                         }
                     }.map { it.id }.toSet()
-                    books = (knownBooks + blossomBooks.values + downloadedBooks).distinctBy { it.id }
-                    favoriteIds = shared.bookIds + blossomBooks.values.map { it.id } + downloadedFavoriteIds
+                    books = (knownBooks + downloadedBooks).distinctBy { it.id }
+                    favoriteIds = shared.bookIds + downloadedFavoriteIds
                     externalFavorites = shared.external.filter { favorite ->
-                        favorite.libvaultMd5 !in blossomBooks && downloadedBooks.none { downloaded ->
+                        downloadedBooks.none { downloaded ->
                             (!downloaded.libvaultMd5.isNullOrBlank() &&
                                 downloaded.libvaultMd5.equals(favorite.libvaultMd5, ignoreCase = true)) ||
                                 (downloaded.title.equals(favorite.title, ignoreCase = true) &&
@@ -470,70 +466,6 @@ class MainActivity : ComponentActivity() {
                                 windowInsets = WindowInsets(0, 0, 0, 0),
                             ) {
                                 NavigationBarItem(
-                                    selected = false,
-                                    onClick = {
-                                        val session = settings.readerSession()
-                                        if (session == null) {
-                                            error = "No recent book to continue"
-                                        } else {
-                                            val publication = catalog.publicationFile(session.bookId, session.format)
-                                            if (!publication.isFile) {
-                                                error = "The recent book is no longer downloaded"
-                                            } else {
-                                                startActivity(
-                                                    if (session.format == BookFormat.Cbr || session.format == BookFormat.Cbz) {
-                                                        ComicReaderActivity.intent(this@MainActivity, session.bookId, session.format, session.bookTitle)
-                                                    } else if (session.format == BookFormat.Pdf) {
-                                                        PdfReaderActivity.intent(
-                                                            context = this@MainActivity,
-                                                            bookId = session.bookId,
-                                                            bookTitle = session.bookTitle,
-                                                            author = session.author,
-                                                            year = session.year,
-                                                            pageIndex = session.pageIndex,
-                                                            pageOffset = session.pageOffset,
-                                                        )
-                                                    } else if (session.format == BookFormat.Fb2) {
-                                                        Fb2ReaderActivity.intent(
-                                                            context = this@MainActivity,
-                                                            bookId = session.bookId,
-                                                            bookTitle = session.bookTitle,
-                                                            author = session.author,
-                                                            year = session.year,
-                                                            locator = session.locator,
-                                                            rightsStatus = session.rightsStatus,
-                                                            license = session.license,
-                                                            licenseUrl = session.licenseUrl,
-                                                            rightsSource = session.rightsSource,
-                                                        )
-                                                    } else {
-                                                        ReaderActivity.intent(
-                                                            context = this@MainActivity,
-                                                            bookId = session.bookId,
-                                                            bookTitle = session.bookTitle,
-                                                            author = session.author,
-                                                            year = session.year,
-                                                            initialCfi = session.locator,
-                                                            theme = settings.theme,
-                                                            rightsStatus = session.rightsStatus,
-                                                            license = session.license,
-                                                            licenseUrl = session.licenseUrl,
-                                                            rightsSource = session.rightsSource,
-                                                        )
-                                                    },
-                                                )
-                                            }
-                                        }
-                                    },
-                                    icon = {
-                                        Icon(
-                                            Icons.AutoMirrored.Filled.MenuBook,
-                                            contentDescription = "Continue reading",
-                                            modifier = Modifier.size(18.dp),
-                                        )
-                                    },
-                                )
-                                NavigationBarItem(
                                     selected = selectedTab == 3,
                                     onClick = { selectedTab = 3 },
                                     icon = {
@@ -597,7 +529,7 @@ class MainActivity : ComponentActivity() {
                                 onRefresh = { refreshLibrary() },
                                 onOpenBook = ::openBook,
                                 onOpenExternal = { favorite ->
-                                    error = "This favorite has not been published to Blossom yet."
+                                    error = "This favorite has no local download."
                                 },
                                 publicationSize = { book -> catalog.publicationSize(book) },
                                 onUnfavoriteBook = { book ->

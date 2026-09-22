@@ -18,7 +18,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.List
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Stop
@@ -282,7 +281,7 @@ class Fb2ReaderActivity : ComponentActivity() {
                                 rights = rights,
                             )
                         }
-                    }, onBack = { closeReader() },
+                    },
                 )
             }
         }
@@ -326,7 +325,7 @@ class Fb2ReaderActivity : ComponentActivity() {
 
 @Composable
 private fun Fb2ReaderScreen(title: String, author: String?, year: String?, rights: BookRights, file: File,
-                            initialLocator: String?, onProgress: (Double, String) -> Unit, onBack: () -> Unit) {
+                            initialLocator: String?, onProgress: (Double, String) -> Unit) {
     var document by remember { mutableStateOf<Fb2Document?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
     var showContents by remember { mutableStateOf(false) }
@@ -364,7 +363,6 @@ private fun Fb2ReaderScreen(title: String, author: String?, year: String?, right
     }
     Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
         Row(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.primary), verticalAlignment = Alignment.CenterVertically) {
-            Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", Modifier.padding(8.dp).clickable(onClick = onBack), tint = MaterialTheme.colorScheme.onPrimary)
             Text(listOfNotNull(title, author, year).joinToString(" — "), Modifier.weight(1f).padding(4.dp), maxLines = 1, color = MaterialTheme.colorScheme.onPrimary, fontSize = 11.sp)
             RightsMarker(rights.status, rights.license, rights.licenseUrl, rights.source, Modifier.padding(horizontal = 4.dp))
             Icon(if (speaking) Icons.Filled.Stop else Icons.Filled.PlayArrow, if (speaking) "Stop reading aloud" else "Read aloud",

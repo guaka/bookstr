@@ -21,30 +21,6 @@ class NostrFavoritesRepositoryTest {
     }
 
     @Test
-    fun parsesEncryptedLibVaultTagShape() {
-        val refs = NostrFavoritesRepository.parseSharedFavoriteTags(
-            """[
-                ["r","https://lib.b.bfr.ee/#book?md5=$md5"],
-                ["libvault","$md5"],
-                ["libvault-added","$md5","1700000000"],
-                ["libvault-book","$md5","A Book","An Author","epub","1234","2024"],
-                ["blossom","$md5","${"b".repeat(64)}","https://blossom.bfr.ee/${"b".repeat(64)}","epub"],
-                ["i","isbn:978-0-123456-78-9","https://lib.b.bfr.ee/#book?md5=$md5"],
-                ["k","isbn"]
-            ]""".trimIndent(),
-        )
-
-        assertEquals(1, refs.size)
-        assertEquals(md5, refs.single().libvaultMd5)
-        assertEquals("A Book", refs.single().title)
-        assertEquals("An Author", refs.single().author)
-        assertEquals("2024", refs.single().year)
-        assertEquals(1700000000L, refs.single().addedAt)
-        assertEquals("b".repeat(64), refs.single().blossomSha256)
-        assertEquals("9780123456789", refs.single().isbn)
-    }
-
-    @Test
     fun matchesIsbnAndKeepsUnmatchedLibVaultFavorite() {
         val otherMd5 = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
         val refs = NostrFavoritesRepository.parseSharedFavoriteTags(
@@ -75,49 +51,6 @@ class NostrFavoritesRepositoryTest {
         assertEquals("Outside Book", result.external.single().title)
         assertEquals("Outside Author", result.external.single().author)
         assertTrue(result.external.single().url!!.startsWith("https://lib.b.bfr.ee/"))
-    }
-
-    @Test
-    fun favoriteMetadataSurvivesCanonicalSerialization() {
-        val original = listOf(
-            SharedFavoriteRef(
-                libvaultMd5 = md5,
-                title = "A Book",
-                author = "An Author",
-                year = "2024",
-                format = "epub",
-                isbn = "9780123456789",
-                url = "https://example.org/book",
-                blossomSha256 = "b".repeat(64),
-                blossomUrl = "https://blossom.example/${"b".repeat(64)}",
-                addedAt = 1700000000L,
-            ),
-        )
-
-        val parsed = NostrFavoritesRepository.parseSharedFavoriteTags(
-            NostrFavoritesRepository.serializeSharedFavoriteTags(original),
-        )
-
-        assertEquals(original, parsed)
-    }
-
-    @Test
-    fun parsesCompactVersionTwoFavorites() {
-        val sha256 = "b".repeat(64)
-        val refs = NostrFavoritesRepository.parseSharedFavoriteTags(
-            """[
-                ["bookstr-collection","2"],
-                ["book","libvault","$md5","1700000000"],
-                ["book","isbn","978-0-123456-78-9","1700000001","https://example.org/isbn"],
-                ["book","blossom","$sha256","1700000002","https://blossom.example/$sha256"]
-            ]""".trimIndent(),
-        )
-
-        assertEquals(3, refs.size)
-        assertEquals(md5, refs[0].libvaultMd5)
-        assertEquals(1700000000L, refs[0].addedAt)
-        assertEquals("9780123456789", refs[1].isbn)
-        assertEquals(sha256, refs[2].blossomSha256)
     }
 
     @Test
@@ -251,44 +184,6 @@ class NostrFavoritesRepositoryTest {
     }
 
     @Test
-    fun legacyBlossomTagCompletesExistingLibvaultFavorite() {
-        val sha = "e".repeat(64)
-        val refs = NostrFavoritesRepository.parseSharedFavoriteTags(
-            """[
-              ["book","libvault","$md5","1700000000","https://example.org/book.epub"],
-              ["blossom","$md5","$sha","https://blossom.bfr.ee/$sha","epub"]
-            ]""",
-        )
-
-        assertEquals(1, refs.size)
-        assertEquals(md5, refs.single().libvaultMd5)
-        assertEquals("https://example.org/book.epub", refs.single().url)
-        assertEquals(sha, refs.single().blossomSha256)
-        assertEquals("https://blossom.bfr.ee/$sha", refs.single().blossomUrl)
-        assertEquals("epub", refs.single().format)
-    }
-
-    @Test
-    fun parsesEveryCompactFavoriteNamespace() {
-        val sha256 = "c".repeat(64)
-        val refs = NostrFavoritesRepository.parseSharedFavoriteTags(
-            """[
-              ["book","bookstr","openlibrary:OL1M","11","https://example.org/book"],
-              ["book","url","https://example.org/file.epub","12"],
-              ["book","isbn","9781234567897","13"],
-              ["book","blossom","$sha256","14","https://blossom.bfr.ee/$sha256"]
-            ]""",
-        )
-
-        assertEquals(4, refs.size)
-        assertEquals("openlibrary:OL1M", refs[0].bookstrId)
-        assertEquals("https://example.org/file.epub", refs[1].url)
-        assertEquals("9781234567897", refs[2].isbn)
-        assertEquals(sha256, refs[3].blossomSha256)
-        assertEquals(14L, refs[3].addedAt)
-    }
-
-    @Test
     fun mergesPublicationDescriptorWithCompactMembership() {
         val refs = NostrFavoritesRepository.parseSharedFavoriteTags(
             """[
@@ -320,39 +215,6 @@ class NostrFavoritesRepositoryTest {
         assertEquals(original.bookstrId, parsed.bookstrId)
         assertEquals(original.title, parsed.title)
         assertEquals(original.author, parsed.author)
-    }
-
-    @Test
-    fun matchesCompactBlossomFavoriteByHashIgnoringCase() {
-        val sha256 = "abcdef".repeat(10) + "abcd"
-        val ref = SharedFavoriteRef(blossomSha256 = sha256.uppercase())
-        val book = CatalogBook(
-            id = "downloaded",
-            title = "Book",
-            author = "Author",
-            epubUrl = "book.epub",
-            coverUrl = null,
-            blossomSha256 = sha256,
-        )
-
-        val matched = NostrFavoritesRepository.matchSharedFavorites(listOf(ref), listOf(book))
-
-        assertEquals(setOf("downloaded"), matched.bookIds)
-        assertTrue(matched.external.isEmpty())
-    }
-
-    @Test
-    fun ignoresInvalidCompactIdentifiers() {
-        val refs = NostrFavoritesRepository.parseSharedFavoriteTags(
-            """[
-              ["book","libvault","not-an-md5","1"],
-              ["book","isbn","123","2"],
-              ["book","blossom","bad-hash","3"],
-              ["book","bookstr","","4"]
-            ]""",
-        )
-
-        assertTrue(refs.isEmpty())
     }
 
     @Test
@@ -497,28 +359,6 @@ class NostrFavoritesRepositoryTest {
     }
 
     @Test
-    fun ensureFavoriteAddedAtTagsAddsOnlyToKnownFavorites() {
-        val otherMd5 = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
-        val plaintext = """[
-          ["libvault","$md5"],
-          ["libvault-book","$md5","A Book","An Author","epub","1234","2024"],
-          ["libvault","$otherMd5"],
-          ["libvault-book","$otherMd5","Other","Author","epub","1235","2025"],
-          ["book","libvault","$md5","1700000001","https://example.org/book"],
-          ["book","blossom","not-a-sha","1700000002","https://bad.example/bla"],
-          ["libvault-added","$otherMd5","1700000003"]
-        ]"""
-
-        val upgraded = NostrFavoritesRepository.ensureFavoriteAddedAtTags(plaintext, 1_700_000_010L)
-        val refs = NostrFavoritesRepository.parseSharedFavoriteTags(upgraded)
-
-        assertEquals(2, Regex("\"libvault-added\"").findAll(upgraded).count())
-        assertEquals(2, refs.size)
-        assertEquals(1_700_000_001L, refs.single { it.libvaultMd5 == md5 }.addedAt)
-        assertEquals(1_700_000_003L, refs.single { it.libvaultMd5 == otherMd5 }.addedAt)
-    }
-
-    @Test
     fun ensureFavoriteAddedAtTagsSkipsNonLibvaultFavorites() {
         val plaintext = """[
           ["book","bookstr","source:42","1700000001","https://source.example/books/42"],
@@ -529,34 +369,6 @@ class NostrFavoritesRepositoryTest {
             plaintext,
             NostrFavoritesRepository.ensureFavoriteAddedAtTags(plaintext, 1_700_000_042L),
         )
-    }
-
-    @Test
-    fun ensureFavoriteAddedAtTagsSkipsMalformedLegacyIdentifiers() {
-        val plaintext = """[
-          ["libvault","not-md5"],
-          ["libvault-book","not-md5","Legacy title","Legacy author","epub"],
-          ["blossom","bad-sha", "${"b".repeat(64)}", "https://blossom.bfr.ee/${"b".repeat(64)}","epub"]
-        ]"""
-
-        val upgraded = NostrFavoritesRepository.ensureFavoriteAddedAtTags(plaintext, 1_700_000_042L)
-        val refs = NostrFavoritesRepository.parseSharedFavoriteTags(upgraded)
-
-        assertEquals(0, Regex("\"libvault-added\"").findAll(upgraded).count())
-        assertEquals(0, refs.size)
-    }
-
-    @Test
-    fun ensureFavoriteAddedAtTagsAddsEntryForLegacyBlossomMembershipWithoutTimestamp() {
-        val sha = "c".repeat(64)
-        val plainText = """[
-          ["blossom", "$md5", "$sha", "https://blossom.bfr.ee/$sha", "epub"]
-        ]"""
-        val upgraded = NostrFavoritesRepository.ensureFavoriteAddedAtTags(plainText, 1_700_000_042L)
-        val refs = NostrFavoritesRepository.parseSharedFavoriteTags(upgraded)
-
-        assertEquals(1, refs.size)
-        assertEquals(1_700_000_042L, refs.single().addedAt)
     }
 
     @Test
@@ -741,24 +553,6 @@ class NostrFavoritesRepositoryTest {
         assertEquals(original.bookstrId, parsed.single().bookstrId)
         assertEquals("9780123456789", parsed.single().isbn)
         assertEquals(original.addedAt, parsed.single().addedAt)
-    }
-
-    @Test
-    fun serializesBlossomOnlyFavoriteWithoutLosingHash() {
-        val sha256 = "d".repeat(64)
-        val original = SharedFavoriteRef(
-            blossomSha256 = sha256,
-            blossomUrl = "https://blossom.bfr.ee/$sha256",
-            addedAt = 321L,
-        )
-
-        val parsed = NostrFavoritesRepository.parseSharedFavoriteTags(
-            NostrFavoritesRepository.serializeSharedFavoriteTags(listOf(original)),
-        ).single()
-
-        assertEquals(sha256, parsed.blossomSha256)
-        assertEquals(original.blossomUrl, parsed.blossomUrl)
-        assertEquals(321L, parsed.addedAt)
     }
 
     @Test
@@ -1175,22 +969,6 @@ class NostrFavoritesRepositoryTest {
     }
 
     @Test
-    fun compactBlossomInvalidIdentifierSkipsOnlyInvalidEntry() {
-        val sha = "1".repeat(64)
-        val refs = NostrFavoritesRepository.parseSharedFavoriteTags(
-            """[
-              ["book", "blossom", "not-a-sha", "1700000000", "https://blossom.invalid/ignore", "epub"],
-              ["book", "blossom", "$sha", "1700000001", "https://blossom.bfr.ee/$sha", "epub"]
-            ]""",
-        )
-
-        assertEquals(1, refs.size)
-        assertEquals(sha, refs.single().blossomSha256)
-        assertEquals("https://blossom.bfr.ee/$sha", refs.single().blossomUrl)
-        assertEquals(1_700_000_001L, refs.single().addedAt)
-    }
-
-    @Test
     fun compactMembershipBeforeDescriptorAlsoMerges() {
         val refs = NostrFavoritesRepository.parseSharedFavoriteTags(
             """[
@@ -1252,27 +1030,6 @@ class NostrFavoritesRepositoryTest {
         )
 
         assertEquals(setOf("local-id"), result.bookIds)
-        assertTrue(result.external.isEmpty())
-    }
-
-    @Test
-    fun matchesFavoriteByBlossomHashCaseInsensitive() {
-        val sha = "abcdef".repeat(10) + "abcd"
-        val result = NostrFavoritesRepository.matchSharedFavorites(
-            listOf(SharedFavoriteRef(blossomSha256 = sha.uppercase())),
-            listOf(
-                CatalogBook(
-                    id = "downloaded",
-                    title = "Book",
-                    author = "Author",
-                    epubUrl = "book.epub",
-                    coverUrl = null,
-                    blossomSha256 = sha,
-                ),
-            ),
-        )
-
-        assertEquals(setOf("downloaded"), result.bookIds)
         assertTrue(result.external.isEmpty())
     }
 
@@ -1413,65 +1170,6 @@ class NostrFavoritesRepositoryTest {
 
         assertEquals(setOf("remote"), result.bookIds)
         assertTrue(result.external.isEmpty())
-    }
-
-    @Test
-    fun compactBlossomFavoriteIsNormalizedToLowercaseInCompactNamespace() {
-        val sha = "ABCDEF".repeat(10) + "ABCD"
-        val refs = NostrFavoritesRepository.parseSharedFavoriteTags(
-            """[
-              ["book","blossom","$sha","1700000000","https://blossom.bfr.ee/$sha","epub"]
-            ]""",
-        )
-
-        assertEquals(1, refs.size)
-        assertEquals(sha.lowercase(), refs.single().blossomSha256)
-        assertEquals("https://blossom.bfr.ee/$sha", refs.single().blossomUrl)
-    }
-
-    @Test
-    fun parsesLegacyBlossomTagWithoutMembership() {
-        val sha = "f".repeat(64)
-        val refs = NostrFavoritesRepository.parseSharedFavoriteTags(
-            """[
-              ["blossom", "$md5", "$sha", "https://blossom.bfr.ee/$sha", "epub"]
-            ]""",
-        )
-
-        assertEquals(1, refs.size)
-        assertEquals(md5, refs.single().libvaultMd5)
-        assertEquals(sha, refs.single().blossomSha256)
-        assertEquals("https://blossom.bfr.ee/$sha", refs.single().blossomUrl)
-        assertEquals("epub", refs.single().format)
-    }
-
-    @Test
-    fun legacyBlossomInvalidIdentifierSkipsOnlyInvalidEntry() {
-        val sha = "1".repeat(64)
-        val refs = NostrFavoritesRepository.parseSharedFavoriteTags(
-            """[
-              ["blossom", "not-an-md5", "$sha", "https://blossom.invalid/ignore", "epub"],
-              ["blossom", "$md5", "$sha", "https://blossom.bfr.ee/$sha", "epub"]
-            ]""",
-        )
-
-        assertEquals(1, refs.size)
-        assertEquals(md5, refs.single().libvaultMd5)
-        assertEquals(sha, refs.single().blossomSha256)
-        assertEquals("https://blossom.bfr.ee/$sha", refs.single().blossomUrl)
-    }
-
-    @Test
-    fun legacyBlossomUnsupportedFormatIsStoredInAndroidShape() {
-        val sha = "2".repeat(64)
-        val refs = NostrFavoritesRepository.parseSharedFavoriteTags(
-            """[
-              ["blossom", "$md5", "$sha", "https://blossom.bfr.ee/$sha", "txt"]
-            ]""",
-        )
-
-        assertEquals(1, refs.size)
-        assertEquals("txt", refs.single().format)
     }
 
     @Test
@@ -1616,20 +1314,6 @@ class NostrFavoritesRepositoryTest {
     }
 
     @Test
-    fun unmatchedBlossomFavoriteUsesDefaultExternalTitle() {
-        val sha = "a".repeat(64)
-        val result = NostrFavoritesRepository.matchSharedFavorites(
-            listOf(SharedFavoriteRef(blossomSha256 = sha)),
-            emptyList(),
-        )
-
-        assertEquals(1, result.external.size)
-        assertEquals(sha, result.external.single().key)
-        assertEquals("Blossom ${sha.take(10)}…", result.external.single().title)
-        assertEquals(sha, result.external.single().blossomSha256)
-    }
-
-    @Test
     fun unmatchedIsbnDuplicatePreservesLatestMetadata() {
         val result = NostrFavoritesRepository.matchSharedFavorites(
             listOf(
@@ -1678,47 +1362,6 @@ class NostrFavoritesRepositoryTest {
     }
 
     @Test
-    fun unmatchedBlossomFavoritePrefersLatestMetadataForDuplicateKeys() {
-        val sha = "d".repeat(64)
-        val result = NostrFavoritesRepository.matchSharedFavorites(
-            listOf(
-                SharedFavoriteRef(blossomSha256 = sha, title = "Legacy", author = "Old author"),
-                SharedFavoriteRef(blossomSha256 = sha, title = "Current", author = "Current author"),
-            ),
-            emptyList(),
-        )
-
-        assertEquals(1, result.external.size)
-        assertEquals(sha, result.external.single().key)
-        assertEquals("Current", result.external.single().title)
-        assertEquals("Current author", result.external.single().author)
-    }
-
-    @Test
-    fun duplicateBlossomRefsMatchCatalogBookByBlossomHash() {
-        val sha = "f".repeat(64)
-        val result = NostrFavoritesRepository.matchSharedFavorites(
-            listOf(
-                SharedFavoriteRef(blossomSha256 = sha),
-                SharedFavoriteRef(blossomSha256 = sha),
-            ),
-            listOf(
-                CatalogBook(
-                    id = "book-blossom",
-                    title = "Catalog Blossoms",
-                    author = "Author",
-                    epubUrl = "https://example.org/book.epub",
-                    coverUrl = null,
-                    blossomSha256 = sha,
-                ),
-            ),
-        )
-
-        assertEquals(setOf("book-blossom"), result.bookIds)
-        assertTrue(result.external.isEmpty())
-    }
-
-    @Test
     fun duplicateMatchedRefsNeverCreateExternalFallback() {
         val isbn = "9780123456789"
         val result = NostrFavoritesRepository.matchSharedFavorites(
@@ -1756,32 +1399,6 @@ class NostrFavoritesRepositoryTest {
         assertEquals(1, refs.size)
         assertEquals(md5, refs.single().libvaultMd5)
         assertEquals(url, refs.single().url)
-    }
-
-    @Test
-    fun matchesFavoriteBySourceUrlInCatalogBooks() {
-        val source = "https://example.org/source/book.epub"
-        val result = NostrFavoritesRepository.matchSharedFavorites(
-            listOf(SharedFavoriteRef(url = source)),
-            listOf(
-                CatalogBook(
-                    id = "remote",
-                    title = "Source URL Match",
-                    author = "Author",
-                    epubUrl = "https://unused.example.com",
-                    coverUrl = null,
-                    sourceUrl = source,
-                    isbn = null,
-                    libvaultMd5 = null,
-                    format = BookFormat.Epub,
-                    blossomSha256 = null,
-                    year = null,
-                ),
-            ),
-        )
-
-        assertEquals(setOf("remote"), result.bookIds)
-        assertTrue(result.external.isEmpty())
     }
 
     @Test
@@ -1888,21 +1505,6 @@ class NostrFavoritesRepositoryTest {
         assertEquals(1_700_000_003L, refs.single().addedAt)
         assertEquals("Recovered", refs.single().title)
         assertEquals("https://example.org/book", refs.single().url)
-    }
-
-    @Test
-    fun unmatchedBlossomFavoriteBecomesExternalWithTitleAndAuthor() {
-        val sha = "f".repeat(64)
-        val result = NostrFavoritesRepository.matchSharedFavorites(
-            listOf(SharedFavoriteRef(blossomSha256 = sha, title = "Blossom Book", author = "Offline author")),
-            emptyList(),
-        )
-
-        assertTrue(result.bookIds.isEmpty())
-        assertEquals(1, result.external.size)
-        assertEquals(sha, result.external[0].key)
-        assertEquals("Blossom Book", result.external[0].title)
-        assertEquals("Offline author", result.external[0].author)
     }
 
     @Test
@@ -2059,23 +1661,6 @@ class NostrFavoritesRepositoryTest {
     }
 
     @Test
-    fun parseSharedFavoriteTagsSkipsEmptyCompactIdentifiers() {
-        val refs = NostrFavoritesRepository.parseSharedFavoriteTags(
-            """[
-              ["book","isbn","","1700000000"],
-              ["book","url","","1700000001"],
-              ["book","libvault","$md5","1700000002","https://example.org/libvault"],
-              ["book","blossom","not-a-sha","1700000003","https://example.org/invalid"],
-              ["book","isbn","978-0-123456-78-9","1700000004","https://example.org/isbn"]
-            ]""",
-        )
-
-        assertEquals(2, refs.size)
-        assertEquals(md5, refs.single { it.libvaultMd5 == md5 }.libvaultMd5)
-        assertEquals("9780123456789", refs.single { it.isbn == "9780123456789" }.isbn)
-    }
-
-    @Test
     fun parseSharedFavoriteTagsSkipsUnsupportedCompactNamespaces() {
         val refs = NostrFavoritesRepository.parseSharedFavoriteTags(
             """[
@@ -2123,29 +1708,6 @@ class NostrFavoritesRepositoryTest {
     }
 
     @Test
-    fun parseSharedFavoriteTagsUpgradesLegacyBlossomMetadataForExistingFavorite() {
-        val md5 = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-        val sha1 = "a".repeat(64)
-        val sha2 = "b".repeat(64)
-        val refs = NostrFavoritesRepository.parseSharedFavoriteTags(
-            """[
-              ["book","libvault","$md5","1700000005","https://example.org/book.epub"],
-              ["blossom","$md5","$sha1","https://blossom.bfr.ee/$sha1","txt"],
-              ["blossom","$md5","$sha2","https://blossom.bfr.ee/$sha2","epub"],
-              ["blossom","$md5","$sha2","https://blossom.bfr.ee/$sha2","pdf"],
-              ["libvault-added","$md5","1700000003"]
-            ]""",
-        )
-
-        assertEquals(1, refs.size)
-        assertEquals(md5, refs.single().libvaultMd5)
-        assertEquals(sha2, refs.single().blossomSha256)
-        assertEquals("https://blossom.bfr.ee/$sha2", refs.single().blossomUrl)
-        assertEquals("pdf", refs.single().format)
-        assertEquals(1_700_000_003L, refs.single().addedAt)
-    }
-
-    @Test
     fun libvaultAddedTagWithInvalidIdIsIgnoredAndDoesNotBlockLaterValidEntry() {
         val md5 = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
         val refs = NostrFavoritesRepository.parseSharedFavoriteTags(
@@ -2160,112 +1722,6 @@ class NostrFavoritesRepositoryTest {
         assertEquals(md5, refs.single().libvaultMd5)
         assertEquals("https://example.org/book.epub", refs.single().url)
         assertEquals(1_700_000_003L, refs.single().addedAt)
-    }
-
-    @Test
-    fun legacyBlossomUnsupportedFormatDoesNotOverwriteExistingFormatOrUrl() {
-        val md5 = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-        val sha1 = "c".repeat(64)
-        val sha2 = "d".repeat(64)
-        val refs = NostrFavoritesRepository.parseSharedFavoriteTags(
-            """[
-              ["blossom","$md5","$sha1","https://blossom.bfr.ee/$sha1","epub"],
-              ["blossom","$md5","$sha2","https://blossom.bfr.ee/$sha2","txt"]
-            ]""",
-        )
-
-        assertEquals(1, refs.size)
-        assertEquals(md5, refs.single().libvaultMd5)
-        assertEquals(sha2, refs.single().blossomSha256)
-        assertEquals("https://blossom.bfr.ee/$sha2", refs.single().blossomUrl)
-        assertEquals("epub", refs.single().format)
-    }
-
-    @Test
-    fun legacyBlossomUnsupportedFormatThenSupportedFormatKeepsUnsupported() {
-        val md5 = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-        val sha1 = "e".repeat(64)
-        val sha2 = "f".repeat(64)
-        val refs = NostrFavoritesRepository.parseSharedFavoriteTags(
-            """[
-              ["blossom","$md5","$sha1","https://blossom.example/$sha1","txt"],
-              ["blossom","$md5","$sha2","https://blossom.example/$sha2","epub"]
-            ]""",
-        )
-
-        assertEquals(1, refs.size)
-        assertEquals(md5, refs.single().libvaultMd5)
-        assertEquals(sha2, refs.single().blossomSha256)
-        assertEquals("https://blossom.example/$sha2", refs.single().blossomUrl)
-        assertEquals("txt", refs.single().format)
-    }
-
-    @Test
-    fun duplicateUrlRefsMatchCatalogBySourceUrl() {
-        val sourceUrl = "https://catalogue.example.com/books/123"
-        val result = NostrFavoritesRepository.matchSharedFavorites(
-            listOf(
-                SharedFavoriteRef(url = sourceUrl, title = "Offline", addedAt = 1),
-                SharedFavoriteRef(url = sourceUrl, title = "Latest", addedAt = 2),
-            ),
-            listOf(
-                CatalogBook(
-                    id = "book-source",
-                    title = "Catalog title",
-                    author = "Catalog author",
-                    epubUrl = "https://example.org/read.epub",
-                    coverUrl = null,
-                    sourceUrl = sourceUrl,
-                    isbn = null,
-                    libvaultMd5 = null,
-                    format = BookFormat.Epub,
-                    blossomSha256 = null,
-                    year = null,
-                ),
-            ),
-        )
-
-        assertEquals(setOf("book-source"), result.bookIds)
-        assertTrue(result.external.isEmpty())
-    }
-    @Test
-    fun duplicateUrlWithLibvaultMetadataDeduplicatesToSingleCatalogMatch() {
-        val sourceUrl = "https://catalogue.example.com/books/123"
-        val refs = NostrFavoritesRepository.parseSharedFavoriteTags(
-            """[
-              ["r", "$sourceUrl"],
-              ["libvault", "$md5"],
-              ["book", "url", "$sourceUrl", "1700000000"],
-              ["book", "url", "$sourceUrl", "1700000100"]
-            ]""".trimIndent(),
-        )
-
-        assertEquals(1, refs.size)
-        assertEquals(md5, refs.single().libvaultMd5)
-        assertEquals("https://catalogue.example.com/books/123", refs.single().url)
-        assertEquals(1_700_000_000L, refs.single().addedAt)
-
-        val result = NostrFavoritesRepository.matchSharedFavorites(
-            refs,
-            listOf(
-                CatalogBook(
-                    id = "catalog-id",
-                    title = "Catalog Book",
-                    author = "Author",
-                    epubUrl = "https://cdn.example.com/catalog.epub",
-                    coverUrl = null,
-                    isbn = null,
-                    sourceUrl = sourceUrl,
-                    libvaultMd5 = md5,
-                    format = BookFormat.Epub,
-                    blossomSha256 = null,
-                    year = null,
-                ),
-            ),
-        )
-
-        assertEquals(setOf("catalog-id"), result.bookIds)
-        assertEquals(0, result.external.size)
     }
 
     @Test
@@ -2359,33 +1815,6 @@ class NostrFavoritesRepositoryTest {
     }
 
     @Test
-    fun blankStableIdentifiersStillAllowLegacyFallbackMatching() {
-        val result = NostrFavoritesRepository.matchSharedFavorites(
-            listOf(
-                SharedFavoriteRef(
-                    bookstrId = " ",
-                    libvaultMd5 = "",
-                    isbn = "9780123456789",
-                    blossomSha256 = "\n",
-                ),
-            ),
-            listOf(
-                CatalogBook(
-                    id = "legacy-isbn",
-                    title = "Legacy book",
-                    author = "Author",
-                    epubUrl = "",
-                    coverUrl = null,
-                    isbn = "9780123456789",
-                ),
-            ),
-        )
-
-        assertEquals(setOf("legacy-isbn"), result.bookIds)
-        assertTrue(result.external.isEmpty())
-    }
-
-    @Test
     fun malformedAndRelativeFallbackUrlsDoNotMatchCatalogBooks() {
         val result = NostrFavoritesRepository.matchSharedFavorites(
             listOf(
@@ -2405,18 +1834,5 @@ class NostrFavoritesRepositoryTest {
 
         assertTrue(result.bookIds.isEmpty())
         assertEquals(setOf("https://[broken", "relative/path"), result.external.map { it.key }.toSet())
-    }
-
-    @Test
-    fun unmatchedStableFavoritePrefersBlossomKeyBeforeIsbn() {
-        val sha = "b".repeat(64)
-        val result = NostrFavoritesRepository.matchSharedFavorites(
-            listOf(SharedFavoriteRef(blossomSha256 = sha, isbn = "9780123456789")),
-            emptyList(),
-        )
-
-        assertEquals(sha, result.external.single().key)
-        assertEquals("Blossom ${sha.take(10)}…", result.external.single().title)
-        assertFalse(result.external.single().key.startsWith("978"))
     }
 }

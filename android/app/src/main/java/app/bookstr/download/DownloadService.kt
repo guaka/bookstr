@@ -53,6 +53,7 @@ class DownloadService : Service() {
         }
     }
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        startForeground(1002, notification())
         val id = intent?.getStringExtra("id")
         if (id != null) scope.launch {
             val job = store.find(id) ?: return@launch

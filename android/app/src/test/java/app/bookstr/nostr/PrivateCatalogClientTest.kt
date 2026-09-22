@@ -32,8 +32,10 @@ class PrivateCatalogClientTest {
                     "EVENT" -> {
                         if (mode == "timeout") return
                         if (mode == "rejected") { socket.send(JSONArray().put("OK").put(frame.getJSONObject(1).getString("id")).put(false).toString()); return }
-                        val payload = JSONObject().put("type", "libcat.search.result").put("request_id", request).put("books", JSONArray())
+                        val payload = JSONObject().put("type", "libcat.search.result").put("request_id", request)
+                            .put("books", JSONArray())
                         if (mode == "error") payload.put("error", "Unavailable")
+                        else payload.put("status", "ready")
                         val response = runBlocking { PrivateCatalogWire.wrap(payload, CatalogService(user.getPublicKey()), catalog, 1000) }
                         socket.send("invalid frame")
                         socket.send(JSONArray().put("EVENT").put("wrong-subscription").put(response).toString())

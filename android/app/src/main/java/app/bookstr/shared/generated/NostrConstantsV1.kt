@@ -4,7 +4,6 @@ package app.bookstr.shared.generated
 object NostrConstantsV1 {
     const val PROGRESS_KIND = 30078
     const val FAVORITES_KIND = 30003
-    const val BLOSSOM_AUTHORIZATION_KIND = 24242
     const val FAVORITES_D_TAG = "libvault-favorites"
     const val COLLECTION_INDEX_D_TAG = "bookstr-collections"
     const val PROGRESS_PREFIX = "app.bookstr.progress."

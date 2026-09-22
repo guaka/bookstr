@@ -37,7 +37,6 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material3.CircularProgressIndicator
@@ -379,7 +378,6 @@ class ReaderActivity : ComponentActivity() {
                         year = bookYear,
                         rights = bookRights,
                         isSpeaking = isSpeaking,
-                        onBack = { closeReader() },
                         onSpeechClick = { toggleTextToSpeech() },
                         modifier = Modifier.align(Alignment.TopCenter),
                     )
@@ -893,13 +891,12 @@ class ReaderActivity : ComponentActivity() {
 }
 
 @Composable
-private fun ReaderChrome(
+internal fun ReaderChrome(
     title: String,
     author: String?,
     year: String?,
     rights: BookRights,
     isSpeaking: Boolean,
-    onBack: () -> Unit,
     onSpeechClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -919,19 +916,6 @@ private fun ReaderChrome(
             .background(androidx.compose.material3.MaterialTheme.colorScheme.primary.copy(alpha = 0.98f)),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Box(
-            modifier = Modifier
-                .size(24.dp)
-                .clickable(onClick = onBack),
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(
-                Icons.AutoMirrored.Filled.ArrowBack,
-                contentDescription = "Back",
-                tint = androidx.compose.material3.MaterialTheme.colorScheme.onPrimary,
-                modifier = Modifier.size(18.dp),
-            )
-        }
         Text(
             if (detail.isBlank()) title else "$title — $detail",
             fontSize = 11.sp,

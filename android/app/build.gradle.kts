@@ -66,7 +66,12 @@ android {
     defaultConfig {
         applicationId = "app.bookstr"
         minSdk = 27
-        ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64") }
+        // BOOKSTR_ANDROID_ABIS=arm64-v8a for device-only local builds (saves disk/time).
+        val abiFilterList = (System.getenv("BOOKSTR_ANDROID_ABIS") ?: "arm64-v8a,armeabi-v7a,x86_64")
+            .split(',')
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+        ndk { abiFilters += abiFilterList }
         targetSdk = 35
         versionCode = timestampVersionCode
         versionName = "0.0.3-$versionTimestamp"

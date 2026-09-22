@@ -27,6 +27,7 @@ class AcquisitionActivityTest {
     }
     @get:Rule val rules: RuleChain = RuleChain.outerRule(clean).around(compose)
     @Test fun navigatesSettingsSearchAndDownloadsWithoutAnAccount() {
+        compose.onNodeWithContentDescription("Continue reading").assertDoesNotExist()
         compose.onNodeWithContentDescription("Settings").performClick()
         compose.onNodeWithText("Install Huddle or another NIP-55 signer to connect.").assertExists()
         compose.onNodeWithContentDescription("Search").performClick()

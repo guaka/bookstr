@@ -45,7 +45,7 @@ class CatalogRepositoryDownloadMetadataCoverageTest {
     fun parseDownloadedBookMetadataFallsBackToObjectPayloadWhenNoBooksOrItemsFieldPresent() {
         val id = "a".repeat(64)
         val results = parseDownloadedBookMetadata(
-            """{"id":"$id","title":"Root payload","author":"Legacy","epubUrl":"https://example.org/book.epub","format":"epub","blossomSha256":"$id"}""",
+            """{"id":"$id","title":"Root payload","author":"Legacy","epubUrl":"https://example.org/book.epub","format":"epub"}""",
         )
 
         assertEquals(1, results.size)
@@ -53,7 +53,6 @@ class CatalogRepositoryDownloadMetadataCoverageTest {
         assertEquals("Root payload", results[0].title)
         assertEquals("Legacy", results[0].author)
         assertEquals(BookFormat.Epub, results[0].format)
-        assertEquals(id, results[0].blossomSha256)
     }
 
     @Test
@@ -91,23 +90,6 @@ class CatalogRepositoryDownloadMetadataCoverageTest {
         assertEquals(BookFormat.Epub, results[0].format)
         assertEquals("fallback", results[1].id)
         assertEquals(BookFormat.Pdf, results[1].format)
-    }
-
-    @Test
-    fun parseDownloadedBookMetadataAcceptsExtensionWhenFormatIsMissingAndRejectsInvalidShaInMetadata() {
-        val sha = "z".repeat(64)
-        val results = parseDownloadedBookMetadata(
-            """{"books":[
-              {"id":"valid","epubUrl":"https://example.org/book.bin","extension":"pdf","blossomSha256":"$sha"},
-              {"id":"invalid-blob","epubUrl":"https://example.org/skip-me.epub","format":"epub","blossomSha256":"zz"}
-            ]}""",
-        )
-
-        assertEquals(2, results.size)
-        assertEquals(BookFormat.Pdf, results[0].format)
-        assertEquals("valid", results[0].id)
-        assertNull(results[1].blossomSha256)
-        assertEquals(BookFormat.Epub, results[1].format)
     }
 
     @Test

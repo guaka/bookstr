@@ -50,8 +50,6 @@ data class SharedFavoriteRef(
     val author: String? = null,
     val year: String? = null,
     val format: String? = null,
-    val blossomSha256: String? = null,
-    val blossomUrl: String? = null,
     val addedAt: Long? = null,
     val rightsStatus: String = RIGHTS_UNKNOWN,
     val license: String? = null,
@@ -68,8 +66,6 @@ data class ExternalFavorite(
     val isbn: String?,
     val libvaultMd5: String?,
     val format: String? = null,
-    val blossomSha256: String? = null,
-    val blossomUrl: String? = null,
     val addedAt: Long? = null,
     val rightsStatus: String = RIGHTS_UNKNOWN,
     val license: String? = null,
@@ -178,8 +174,6 @@ class NostrFavoritesRepository(
                 author = book.author,
                 year = book.year,
                 format = book.format.extension,
-                blossomSha256 = book.blossomSha256,
-                blossomUrl = book.epubUrl.takeIf { !book.blossomSha256.isNullOrBlank() },
                 rightsStatus = book.rightsStatus,
                 license = book.license,
                 licenseUrl = book.licenseUrl,
@@ -380,7 +374,7 @@ class NostrFavoritesRepository(
                 val name = tag.optString(0)
                 val md5 = tag.optString(1).lowercase()
                 if (!MD5.matches(md5)) continue
-                if (name == "libvault" || name == "libvault-book" || name == "blossom") {
+                if (name == "libvault" || name == "libvault-book") {
                     favoriteIds += md5
                 }
                 if (name == "libvault-added") {
@@ -438,16 +432,7 @@ class NostrFavoritesRepository(
                                 .put(ref.licenseUrl.orEmpty())
                                 .put(ref.rightsSource.orEmpty()),
                         )
-                        if (!ref.blossomSha256.isNullOrBlank() || !ref.blossomUrl.isNullOrBlank()) {
-                            tags.put(
-                                JSONArray()
-                                    .put("blossom")
-                                    .put(ref.libvaultMd5)
-                                    .put(ref.blossomSha256.orEmpty())
-                                    .put(ref.blossomUrl.orEmpty())
-                                    .put(ref.format.orEmpty()),
-                            )
-                        }
+
                     }
                     !ref.bookstrId.isNullOrBlank() -> {
                         tags.put(
@@ -477,14 +462,6 @@ class NostrFavoritesRepository(
                                 .put(ref.rightsSource.orEmpty()),
                         )
                     }
-                    !ref.blossomSha256.isNullOrBlank() && SHA256.matches(ref.blossomSha256) -> tags.put(
-                        JSONArray()
-                            .put("book")
-                            .put("blossom")
-                            .put(ref.blossomSha256.lowercase())
-                            .put((ref.addedAt ?: 0L).toString())
-                            .put(ref.blossomUrl ?: ref.url.orEmpty()),
-                    )
                     !ref.url.isNullOrBlank() && normalizeIsbn(ref.isbn).isEmpty() -> tags.put(
                         JSONArray()
                             .put("book")
@@ -516,7 +493,6 @@ class NostrFavoritesRepository(
             val refs = mutableListOf<SharedFavoriteRef>()
             var pendingUrl: String? = null
             var currentIndex: Int? = null
-            val blossomOnlyIds = mutableSetOf<String>()
 
             fun validUrl(value: String?): String? {
                 val candidate = value?.takeIf { it.isNotBlank() } ?: return null
@@ -535,8 +511,6 @@ class NostrFavoritesRepository(
                     libvaultMd5 = old.libvaultMd5 ?: ref.libvaultMd5,
                     isbn = old.isbn ?: ref.isbn,
                     url = if (preferIncomingUrl) ref.url ?: old.url else old.url ?: ref.url,
-                    blossomSha256 = old.blossomSha256 ?: ref.blossomSha256,
-                    blossomUrl = old.blossomUrl ?: ref.blossomUrl,
                     addedAt = listOfNotNull(old.addedAt, ref.addedAt).minOrNull(),
                 )
                 currentIndex = index
@@ -569,10 +543,6 @@ class NostrFavoritesRepository(
                             namespace == "url" && validUrl(identifier) != null -> SharedFavoriteRef(
                                 url = validUrl(identifier), addedAt = addedAt,
                             )
-                            namespace == "blossom" && SHA256.matches(identifier) -> SharedFavoriteRef(
-                                url = locator, blossomSha256 = identifier.lowercase(),
-                                blossomUrl = locator, addedAt = addedAt,
-                            )
                             else -> null
                         }
                         if (ref != null) {
@@ -580,7 +550,6 @@ class NostrFavoritesRepository(
                                 (ref.libvaultMd5 != null && it.libvaultMd5 == ref.libvaultMd5) ||
                                     (ref.bookstrId != null && it.bookstrId == ref.bookstrId) ||
                                     (ref.isbn != null && normalizeIsbn(it.isbn) == ref.isbn) ||
-                                    (ref.blossomSha256 != null && it.blossomSha256 == ref.blossomSha256) ||
                                     (ref.url != null && it.url == ref.url)
                             }
                             if (existing >= 0) {
@@ -589,9 +558,9 @@ class NostrFavoritesRepository(
                             } else if (currentIndex != null) {
                                 val current = refs[currentIndex!!]
                                 val currentIsUrlOnly = current.libvaultMd5 == null && current.bookstrId == null &&
-                                    current.isbn == null && current.blossomSha256 == null
+                                    current.isbn == null
                                 val incomingIsUrlOnly = ref.libvaultMd5 == null && ref.bookstrId == null &&
-                                    ref.isbn == null && ref.blossomSha256 == null
+                                    ref.isbn == null
                                 if ((currentIsUrlOnly && ref.libvaultMd5 != null) ||
                                     (current.libvaultMd5 != null && incomingIsUrlOnly)
                                 ) {
@@ -620,7 +589,7 @@ class NostrFavoritesRepository(
                         } else {
                             val current = currentIndex?.let(refs::get)
                             if (legacyUrl != null && current != null && current.libvaultMd5 == null &&
-                                current.bookstrId == null && current.isbn == null && current.blossomSha256 == null
+                                current.bookstrId == null && current.isbn == null
                             ) {
                                 mergeAt(currentIndex!!, SharedFavoriteRef(libvaultMd5 = md5, url = legacyUrl))
                             } else {
@@ -728,30 +697,6 @@ class NostrFavoritesRepository(
                             currentIndex = refs.lastIndex
                         }
                     }
-                    name == "blossom" && MD5.matches(item.optString(1)) -> {
-                        val md5 = item.optString(1).lowercase()
-                        val index = refs.indexOfFirst { it.libvaultMd5 == md5 }
-                        if (index >= 0) {
-                            currentIndex = index
-                            replaceCurrent {
-                                it.copy(
-                                    blossomSha256 = item.optString(2).ifBlank { it.blossomSha256 },
-                                    blossomUrl = item.optString(3).ifBlank { it.blossomUrl },
-                                    format = if (md5 in blossomOnlyIds) it.format ?: item.optString(4).ifBlank { null }
-                                    else supportedFormat(item.optString(4)) ?: it.format,
-                                )
-                            }
-                        } else {
-                            refs += SharedFavoriteRef(
-                                libvaultMd5 = md5,
-                                blossomSha256 = item.optString(2).takeIf { SHA256.matches(it) }?.lowercase(),
-                                blossomUrl = validUrl(item.optString(3)),
-                                format = item.optString(4).ifBlank { null },
-                            )
-                            blossomOnlyIds += md5
-                            currentIndex = refs.lastIndex
-                        }
-                    }
                     name == "i" && item.optString(1).startsWith("isbn:") -> {
                         val isbn = normalizeIsbn(item.optString(1).removePrefix("isbn:"))
                         if (isbn.isEmpty()) continue
@@ -790,8 +735,6 @@ class NostrFavoritesRepository(
                     candidate.id == ref.bookstrId ||
                         (ref.libvaultMd5 != null &&
                             candidate.libvaultMd5.equals(ref.libvaultMd5, ignoreCase = true)) ||
-                        (ref.blossomSha256 != null &&
-                            candidate.blossomSha256.equals(ref.blossomSha256, ignoreCase = true)) ||
                         (!hasStableConflict && isbn.isNotEmpty() && normalizeIsbn(candidate.isbn) == isbn) ||
                         (!hasStableConflict && urlsMatch(ref.url, candidate.sourceUrl)) ||
                         (!hasStableConflict && urlsMatch(ref.url, candidate.epubUrl))
@@ -801,7 +744,7 @@ class NostrFavoritesRepository(
                     continue
                 }
 
-                val key = ref.libvaultMd5 ?: ref.bookstrId ?: ref.blossomSha256
+                val key = ref.libvaultMd5 ?: ref.bookstrId
                     ?: isbn.ifEmpty { null } ?: ref.url ?: continue
                 external[key] = ExternalFavorite(
                     key = key,
@@ -812,8 +755,6 @@ class NostrFavoritesRepository(
                     isbn = isbn.ifEmpty { null },
                     libvaultMd5 = ref.libvaultMd5,
                     format = ref.format,
-                    blossomSha256 = ref.blossomSha256,
-                    blossomUrl = ref.blossomUrl,
                     addedAt = ref.addedAt,
                     rightsStatus = ref.rightsStatus,
                     license = ref.license,
@@ -844,9 +785,7 @@ class NostrFavoritesRepository(
         private fun hasStableIdentityConflict(ref: SharedFavoriteRef, book: CatalogBook): Boolean =
             (!ref.bookstrId.isNullOrBlank() && book.id != ref.bookstrId) ||
                 (!ref.libvaultMd5.isNullOrBlank() && !book.libvaultMd5.isNullOrBlank() &&
-                    !book.libvaultMd5.equals(ref.libvaultMd5, ignoreCase = true)) ||
-                (!ref.blossomSha256.isNullOrBlank() && !book.blossomSha256.isNullOrBlank() &&
-                    !book.blossomSha256.equals(ref.blossomSha256, ignoreCase = true))
+                    !book.libvaultMd5.equals(ref.libvaultMd5, ignoreCase = true))
 
         private fun urlsMatch(left: String?, right: String?): Boolean {
             if (left.isNullOrBlank() || right.isNullOrBlank()) return false
@@ -856,7 +795,6 @@ class NostrFavoritesRepository(
 
         private fun fallbackExternalFavoriteTitle(ref: SharedFavoriteRef, key: String): String {
             ref.libvaultMd5?.let { return "MD5 ${it.take(10)}…" }
-            ref.blossomSha256?.let { return "Blossom ${it.take(10)}…" }
             val isbn = normalizeIsbn(ref.isbn)
             if (isbn.isNotEmpty()) return "ISBN $isbn"
             return key
@@ -870,7 +808,6 @@ class NostrFavoritesRepository(
         )
 
         private val MD5 = Regex("^[a-fA-F0-9]{32}$")
-        private val SHA256 = Regex("^[a-fA-F0-9]{64}$")
         private val COLLECTION_ID = Regex("^bookstr-collection-[a-f0-9]{32}$")
         private const val TAG = "NostrFavorites"
     }
