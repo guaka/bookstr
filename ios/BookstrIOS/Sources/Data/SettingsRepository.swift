@@ -30,6 +30,7 @@ final class SettingsRepository: ObservableObject {
         static let speechRate = "speech_rate"
         static let speechEngine = SpeechLanguageSettings.speechEngineKey
         static let speechLanguageSettings = "speech_language_settings"
+        static let speechLanguageOverride = "speech_language_override"
         static let keepReadingOnLockScreen = "keep_reading_on_lock_screen"
         static let wordSort = "word_sort"
         static let dictionarySource = "dictionary_source"
@@ -60,16 +61,24 @@ final class SettingsRepository: ObservableObject {
         didSet { defaults.set(speechRate, forKey: Keys.speechRate) }
     }
 
+    @Published var speechLanguageOverride: String {
+        didSet { defaults.set(speechLanguageOverride, forKey: Keys.speechLanguageOverride) }
+    }
+
     func speechChoice(for bookLanguage: String) -> SpeechPlaybackChoice {
+        let language = SpeechLanguageSettings.playbackLanguage(
+            override: speechLanguageOverride,
+            bookLanguage: bookLanguage
+        )
         let resolved = SpeechLanguageSettings.resolve(
-            bookLanguage: bookLanguage,
+            bookLanguage: language,
             settingsByLanguage: speechLanguageSettings,
             defaultRate: SpeechLanguageSettings.defaultRate
         )
         return SpeechPlaybackChoice(
             languageTag: resolved.languageTag,
             voiceIdentifier: resolved.voiceIdentifier,
-            rate: SpeechLanguageSettings.defaultRate
+            rate: SpeechLanguageSettings.clampRate(speechRate)
         )
     }
 
@@ -98,6 +107,8 @@ final class SettingsRepository: ObservableObject {
         self.readerFont = ReaderFont(rawValue: defaults.string(forKey: Keys.readerFont) ?? "") ?? .arial
         self.readerAlignment = ReaderAlignment(rawValue: defaults.string(forKey: Keys.readerAlignment) ?? "") ?? .justified
         self.speechVoiceIdentifier = defaults.string(forKey: Keys.speechVoice) ?? ""
+        self.speechLanguageOverride = defaults.string(forKey: Keys.speechLanguageOverride)
+            ?? SpeechLanguageSettings.automaticLanguage
         self.speechLanguageSettings = SpeechLanguageSettings.canonicalizeSettingsKeys(
             SpeechLanguageSettings.migrateLegacyEngine(
                 defaults.string(forKey: Keys.speechEngine),

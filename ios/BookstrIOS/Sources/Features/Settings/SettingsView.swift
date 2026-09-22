@@ -60,6 +60,13 @@ struct SettingsView: View {
             }
 
             Section("Text-to-speech") {
+                Picker("Read as", selection: $settings.speechLanguageOverride) {
+                    Text("Auto").tag(SpeechLanguageSettings.automaticLanguage)
+                    ForEach(speechLanguages, id: \.self) { language in
+                        Text(SpeechLanguageSettings.displayName(for: language)).tag(language)
+                    }
+                }
+                .accessibilityIdentifier("speech-language-override")
                 Picker("Language", selection: $selectedSpeechLanguage) {
                     ForEach(speechLanguages, id: \.self) { language in
                         Text(SpeechLanguageSettings.displayName(for: language)).tag(language)

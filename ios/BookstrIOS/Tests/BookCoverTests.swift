@@ -247,7 +247,7 @@ final class BookCoverTests: XCTestCase {
         var book = CatalogBook(
             id: "abc", title: "T", author: "A", epubUrl: "https://example.com/a.epub",
             coverUrl: nil, sourceUrl: nil, isbn: nil, libvaultMd5: nil,
-            format: .epub, blossomSha256: nil, year: nil
+            format: .epub, year: nil
         )
         XCTAssertNil(book.coverUrl)
         book.coverUrl = ""
@@ -260,17 +260,17 @@ final class BookCoverTests: XCTestCase {
         let unscanned = CatalogBook(
             id: "a", title: "T", author: "A", epubUrl: "https://example.com/a.epub",
             coverUrl: nil, sourceUrl: nil, isbn: nil, libvaultMd5: nil,
-            format: .epub, blossomSha256: nil, year: nil
+            format: .epub, year: nil
         )
         let negative = CatalogBook(
             id: "b", title: "T", author: "A", epubUrl: "https://example.com/b.epub",
             coverUrl: "", sourceUrl: nil, isbn: nil, libvaultMd5: nil,
-            format: .epub, blossomSha256: nil, year: nil
+            format: .epub, year: nil
         )
         let remote = CatalogBook(
             id: "c", title: "T", author: "A", epubUrl: "https://example.com/c.epub",
             coverUrl: "https://covers.example/c.jpg", sourceUrl: nil, isbn: nil, libvaultMd5: nil,
-            format: .epub, blossomSha256: nil, year: nil
+            format: .epub, year: nil
         )
         XCTAssertTrue(CatalogRepository.shouldScanEmbeddedCover(for: unscanned))
         XCTAssertFalse(CatalogRepository.shouldScanEmbeddedCover(for: negative))

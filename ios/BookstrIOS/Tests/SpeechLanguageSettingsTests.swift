@@ -130,6 +130,8 @@ final class SpeechLanguageSettingsTests: XCTestCase {
         XCTAssertTrue(SpeechEngineID.kokoroEnglish.supports(language: "en-GB"))
         XCTAssertTrue(SpeechEngineID.kokoroEnglish.supports(language: "English"))
         XCTAssertFalse(SpeechEngineID.kokoroEnglish.supports(language: "pt-PT"))
+        XCTAssertTrue(SpeechEngineID.kokoroBrazilianPortuguese.supports(language: "pt-BR"))
+        XCTAssertFalse(SpeechEngineID.kokoroBrazilianPortuguese.supports(language: "pt-PT"))
         XCTAssertTrue(SpeechEngineID.portuguesePortugal.supports(language: "pt_PT"))
         XCTAssertTrue(SpeechEngineID.portuguesePortugalMiro.supports(language: "pt"))
         XCTAssertTrue(SpeechEngineID.portuguesePortugalDii.supports(language: "por"))
@@ -142,6 +144,7 @@ final class SpeechLanguageSettingsTests: XCTestCase {
         XCTAssertEqual(
             SpeechVoiceID.speakers(for: "pt-br").map(\.id),
             [
+                SpeechEngineID.kokoroBrazilianPortuguese.rawValue,
                 SpeechEngineID.portuguesePortugal.rawValue,
                 SpeechEngineID.portuguesePortugalMiro.rawValue,
                 SpeechEngineID.portuguesePortugalDii.rawValue,
@@ -196,6 +199,22 @@ final class SpeechLanguageSettingsTests: XCTestCase {
         XCTAssertEqual(
             SpeechPlaybackChoice(languageTag: "en", voiceIdentifier: "system", rate: 0.48).engine,
             .apple
+        )
+    }
+
+    func testPlaybackLanguageOverrideLocksExplicitLanguage() {
+        XCTAssertEqual(
+            SpeechLanguageSettings.playbackLanguage(override: "en", bookLanguage: "ar"),
+            "en"
+        )
+        XCTAssertEqual(
+            SpeechLanguageSettings.playbackLanguage(override: "auto", bookLanguage: "pt_BR"),
+            "pt-br"
+        )
+        XCTAssertTrue(SpeechLanguageSettings.languagesForBookCodes([]).contains("pt-br"))
+        XCTAssertNotEqual(
+            SpeechLanguageSettings.displayName(for: "pt-br"),
+            SpeechLanguageSettings.displayName(for: "pt-pt")
         )
     }
 

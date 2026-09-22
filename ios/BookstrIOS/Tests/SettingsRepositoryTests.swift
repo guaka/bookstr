@@ -28,6 +28,7 @@ final class SettingsRepositoryTests: XCTestCase {
         }
         defaults.removePersistentDomain(forName: suite)
         let first = SettingsRepository(defaults: defaults)
+        XCTAssertEqual(first.speechLanguageOverride, "auto")
         first.theme = .night
         let second = SettingsRepository(defaults: defaults)
         XCTAssertEqual(second.theme, .night)
@@ -121,6 +122,7 @@ final class SettingsRepositoryTests: XCTestCase {
         first.setSpeechVoice(SpeechEngineID.portuguesePortugal.rawValue, for: "pt-PT")
         first.setSpeechVoice(SpeechEngineID.kokoroEnglish.rawValue, for: "en")
         let second = SettingsRepository(defaults: defaults)
+        XCTAssertEqual(second.speechLanguageOverride, "auto")
         XCTAssertEqual(second.speechChoice(for: "pt").voiceIdentifier, SpeechEngineID.portuguesePortugal.rawValue)
         XCTAssertEqual(second.speechChoice(for: "pt").neuralEngine, .portuguesePortugal)
         XCTAssertEqual(second.speechChoice(for: "en").voiceIdentifier, SpeechEngineID.kokoroEnglish.rawValue)
@@ -129,6 +131,8 @@ final class SettingsRepositoryTests: XCTestCase {
         XCTAssertEqual(second.speechChoice(for: "nl").neuralEngine, .dutchDii)
         second.selectDownloadedSpeechEngine(.system)
         XCTAssertEqual(second.speechChoice(for: "nl").neuralEngine, .dutchDii)
+        second.speechLanguageOverride = "en"
+        XCTAssertEqual(second.speechChoice(for: "ar").neuralEngine, .kokoroEnglish)
         second.setSpeechVoice("", for: "en")
         XCTAssertEqual(
             SettingsRepository(defaults: defaults).speechChoice(for: "en").voiceIdentifier,

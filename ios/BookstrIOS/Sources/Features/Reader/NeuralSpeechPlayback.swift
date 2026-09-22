@@ -57,7 +57,7 @@ private final class NeuralSpeechRenderer: NeuralSpeechSynthesizing, @unchecked S
                     let synthesizer = try self.synthesizer(for: spec)
                     let speaker: Int
                     switch spec.kind {
-                    case .kokoro(_, _, let configuredSpeaker): speaker = configuredSpeaker
+                    case .kokoro(_, _, let configuredSpeaker, _): speaker = configuredSpeaker
                     case .vits: speaker = 0
                     }
                     var collected: [Float] = []
@@ -108,12 +108,13 @@ private final class NeuralSpeechRenderer: NeuralSpeechSynthesizing, @unchecked S
         releaseSynthesizer()
         let created: SherpaOnnxOfflineTtsWrapper
         switch spec.kind {
-        case .kokoro(let model, let voices, _):
+        case .kokoro(let model, let voices, _, let language):
             let kokoro = sherpaOnnxOfflineTtsKokoroModelConfig(
                 model: spec.fileURL(model).path,
                 voices: spec.fileURL(voices).path,
                 tokens: spec.tokensURL.path,
-                dataDir: spec.dataDirectory.path
+                dataDir: spec.dataDirectory.path,
+                lang: language ?? ""
             )
             let modelConfig = sherpaOnnxOfflineTtsModelConfig(kokoro: kokoro, numThreads: NeuralSpeechBudget.onnxThreads)
             var config = sherpaOnnxOfflineTtsConfig(model: modelConfig, maxNumSentences: 1)
@@ -341,14 +342,14 @@ final class NeuralSpeechPlayback {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            self?.session.setConstrained(true)
+            Task { @MainActor [weak self] in self?.session.setConstrained(true) }
         }
         NotificationCenter.default.addObserver(
             forName: UIApplication.willEnterForegroundNotification,
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            self?.session.setConstrained(false)
+            Task { @MainActor [weak self] in self?.session.setConstrained(false) }
         }
         if UIApplication.shared.applicationState != .active {
             session.setConstrained(true)
@@ -409,6 +410,11 @@ final class NeuralSpeechPlayback {
         isPaused = false
         session.stop()
         endPlaybackTask()
+    }
+
+    func unload() {
+        stop()
+        renderer.unload()
     }
 
     private func beginPlaybackTask() {

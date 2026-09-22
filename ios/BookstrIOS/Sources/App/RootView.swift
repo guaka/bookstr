@@ -154,6 +154,10 @@ struct RootView: View {
             selectedTab = 3
             playback.requestClose()
         }
+        .onReceive(NotificationCenter.default.publisher(for: ReaderPlaybackSession.openSpeechSettingsNotification)) { _ in
+            playback.requestClose()
+            selectedTab = 4
+        }
         .onOpenURL { url in
             guard let connection = CatalogConnection(url: url, decodeNPub: NostrIdentity.hexPublicKey(from:)) else { return }
             guard settings.catalogConnection != connection else { return }
@@ -252,7 +256,6 @@ struct RootView: View {
             isbn: nil,
             libvaultMd5: nil,
             format: session.format,
-            blossomSha256: nil,
             year: session.year
         )
         presentLocalIfAvailable(

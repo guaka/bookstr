@@ -238,7 +238,6 @@ final class NostrSnippetPublishingTests: XCTestCase {
             isbn: isbn,
             libvaultMd5: nil,
             format: .epub,
-            blossomSha256: nil,
             year: "2026"
         )
     }

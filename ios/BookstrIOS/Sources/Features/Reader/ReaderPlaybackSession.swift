@@ -1,6 +1,21 @@
 import Combine
 import Foundation
 
+enum ReaderSpeechState: String, Equatable {
+    case idle
+    case preparing
+    case playing
+    case paused
+}
+
+enum ReaderSpeechPausePolicy {
+    static let expiration: TimeInterval = 300
+
+    static func shouldExpire(pausedAt: Date, now: Date) -> Bool {
+        now.timeIntervalSince(pausedAt) >= expiration
+    }
+}
+
 enum ReaderSpeechRetention {
     static func isRetained(
         speaking: Bool,
@@ -68,6 +83,7 @@ final class ReaderPlaybackSession: ObservableObject {
     }
 
     static let toggleSpeechNotification = Notification.Name("bookstrToggleReaderSpeech")
+    static let openSpeechSettingsNotification = Notification.Name("bookstrOpenSpeechSettings")
 
     @Published private(set) var item: Item?
     @Published private(set) var isVisible = false

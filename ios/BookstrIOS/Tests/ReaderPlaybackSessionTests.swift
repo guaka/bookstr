@@ -6,6 +6,19 @@ import XCTest
 #endif
 
 final class ReaderPlaybackSessionTests: XCTestCase {
+    func testPausedSpeechExpiresAtFiveMinutes() {
+        let pausedAt = Date(timeIntervalSince1970: 1_000)
+        XCTAssertFalse(ReaderSpeechPausePolicy.shouldExpire(
+            pausedAt: pausedAt,
+            now: pausedAt.addingTimeInterval(299.999)
+        ))
+        XCTAssertTrue(ReaderSpeechPausePolicy.shouldExpire(
+            pausedAt: pausedAt,
+            now: pausedAt.addingTimeInterval(300)
+        ))
+        XCTAssertEqual(ReaderSpeechPausePolicy.expiration, 300)
+    }
+
     func testLegacyReaderSessionUsesNewestAvailableComicProgress() throws {
         let legacyJSON = """
         {"bookId":"old-epub","bookTitle":"Old","format":"epub","pageIndex":0,"pageOffset":0}
@@ -313,7 +326,6 @@ final class ReaderPlaybackSessionTests: XCTestCase {
             isbn: nil,
             libvaultMd5: nil,
             format: .epub,
-            blossomSha256: nil,
             year: nil
         )
     }

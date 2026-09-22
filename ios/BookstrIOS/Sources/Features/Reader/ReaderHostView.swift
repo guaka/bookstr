@@ -27,6 +27,7 @@ struct ReaderHostView: View {
     @State private var pdfSelection: PDFTextSelection?
     @State private var showSearch = false
     @State private var searchQuery = ""
+    @State private var speechControlsExpanded = false
     @StateObject private var epubController = EPUBReaderController()
     @StateObject private var pdfController = PDFReaderController()
     @StateObject private var fb2Controller = FB2ReaderController()
@@ -153,6 +154,13 @@ struct ReaderHostView: View {
         .overlay(alignment: .top) {
             readerTopBar
         }
+        .overlay(alignment: .topTrailing) {
+            if activeFormat == .epub || activeFormat == .fb2 {
+                speechControlIsland
+                    .padding(.top, 52)
+                    .padding(.trailing, 8)
+            }
+        }
         .overlay(alignment: .bottom) { readerBottomBar }
         .ignoresSafeArea(.all, edges: .all)
         .sheet(isPresented: $showSections) {
@@ -236,8 +244,8 @@ struct ReaderHostView: View {
         }
         .onDisappear {
             UIApplication.shared.isIdleTimerDisabled = false
-            if epubController.isSpeechRetained { epubController.toggleSpeech() }
-            if fb2Controller.isSpeechRetained { fb2Controller.toggleSpeech(playback: fb2SpeechChoice) }
+            if epubController.isSpeechRetained { epubController.stopSpeechCompletely() }
+            if fb2Controller.isSpeechRetained { fb2Controller.stopSpeechCompletely() }
             epubController.endNowPlaying()
         }
         .onChange(of: showsReaderChrome) { _, _ in updateIdleTimer() }
@@ -245,6 +253,10 @@ struct ReaderHostView: View {
         .onChange(of: epubController.isSpeaking) { _, _ in syncPlaybackSpeech() }
         .onChange(of: fb2Controller.isSpeechRetained) { _, _ in syncPlaybackSpeech() }
         .onChange(of: fb2Controller.isSpeaking) { _, _ in syncPlaybackSpeech() }
+        .onChange(of: fb2Controller.speechLocator) { _, locator in
+            guard let locator else { return }
+            persistProgress(fb2Controller.progression, locator: locator, format: .fb2)
+        }
         .onReceive(
             NotificationCenter.default.publisher(
                 for: ReaderPlaybackSession.toggleSpeechNotification,
@@ -306,54 +318,17 @@ struct ReaderHostView: View {
             .buttonStyle(.plain)
             .accessibilityHint("Shows the complete rights statement and source")
 
-            if activeFormat == .epub {
+            if activeFormat == .epub || activeFormat == .fb2 {
                 Button {
-                    epubController.toggleSpeech()
-                    syncPlaybackSpeech()
+                    withAnimation(.snappy(duration: 0.2)) { speechControlsExpanded.toggle() }
                 } label: {
-                    Group {
-                        if epubController.isSpeechPreparing {
-                            ProgressView()
-                                .controlSize(.small)
-                        } else {
-                            Image(systemName: epubController.isSpeaking ? "stop.fill" : "play.fill")
-                                .font(.system(size: 16))
-                        }
-                    }
+                    Image(systemName: activeSpeechState == .playing ? "pause.fill" : "play.fill")
+                        .font(.system(size: 16))
                     .frame(width: 24, height: 24)
                 }
-                .accessibilityLabel(
-                    epubController.isSpeechPreparing
-                        ? "Preparing reading aloud"
-                        : (epubController.isSpeaking ? "Stop reading aloud" : "Read aloud")
-                )
+                .accessibilityLabel("Reading controls")
                 .accessibilityIdentifier("reader-speech-toggle")
-                .accessibilityValue(epubController.isSpeechPreparing ? "preparing" : "")
-            }
-
-            if activeFormat == .fb2 {
-                Button {
-                    fb2Controller.toggleSpeech(playback: fb2SpeechChoice)
-                    syncPlaybackSpeech()
-                } label: {
-                    Group {
-                        if fb2Controller.isSpeechPreparing {
-                            ProgressView()
-                                .controlSize(.small)
-                        } else {
-                            Image(systemName: fb2Controller.isSpeaking ? "stop.fill" : "play.fill")
-                                .font(.system(size: 16))
-                        }
-                    }
-                    .frame(width: 24, height: 24)
-                }
-                .accessibilityLabel(
-                    fb2Controller.isSpeechPreparing
-                        ? "Preparing reading aloud"
-                        : (fb2Controller.isSpeaking ? "Stop reading aloud" : "Read aloud")
-                )
-                .accessibilityIdentifier("reader-speech-toggle")
-                .accessibilityValue(fb2Controller.isSpeechPreparing ? "preparing" : "")
+                .accessibilityValue(speechControlsExpanded ? "expanded" : "collapsed")
             }
 
             if hasTableOfContents {
@@ -405,6 +380,115 @@ struct ReaderHostView: View {
 
     private var fb2SpeechChoice: SpeechPlaybackChoice {
         container.settingsRepository.speechChoice(for: fb2Controller.document?.language ?? "en")
+    }
+
+    private var activeSpeechState: ReaderSpeechState {
+        activeFormat == .epub ? epubController.speechState : fb2Controller.speechState
+    }
+
+    private var activeSpeechChoice: SpeechPlaybackChoice {
+        container.settingsRepository.speechChoice(for: book.language ?? fb2Controller.document?.language ?? "en")
+    }
+
+    private var speechControlIsland: some View {
+        HStack(spacing: 10) {
+            if speechControlsExpanded {
+                Button(action: toggleActiveSpeech) {
+                    if activeSpeechState == .preparing {
+                        ProgressView().controlSize(.small)
+                    } else {
+                        Image(systemName: activeSpeechState == .playing ? "pause.fill" : "play.fill")
+                    }
+                }
+                .accessibilityLabel(activeSpeechState == .playing ? "Pause reading aloud" : "Read aloud")
+                .accessibilityIdentifier("reader-speech-playback")
+
+                Menu {
+                    Button("Auto") { changeSpeechLanguage("auto") }
+                    ForEach(SpeechLanguageSettings.seededLanguageTags, id: \.self) { language in
+                        Button(SpeechLanguageSettings.displayName(for: language)) {
+                            changeSpeechLanguage(language)
+                        }
+                    }
+                } label: {
+                    Text(container.settingsRepository.speechLanguageOverride == "auto"
+                         ? "Auto"
+                         : container.settingsRepository.speechLanguageOverride.uppercased())
+                        .font(.caption.weight(.semibold))
+                }
+                .accessibilityLabel("Reading language")
+                .accessibilityIdentifier("reader-speech-language")
+
+                Menu {
+                    Button("Apple voices") { changeSpeechEngine(.system) }
+                    ForEach(SpeechEngineID.allCases.filter {
+                        $0.isNeural && $0.supports(language: activeSpeechChoice.languageTag)
+                    }, id: \.rawValue) { engine in
+                        if SpeechModelCatalog.model(engine)?.isInstalled == true {
+                            Button(engine.label) { changeSpeechEngine(engine) }
+                        } else {
+                            Button("\(engine.label) — Settings") { openSpeechSettings() }
+                        }
+                    }
+                } label: {
+                    Image(systemName: "waveform")
+                }
+                .accessibilityLabel("Reading voice")
+                .accessibilityIdentifier("reader-speech-engine")
+
+                Slider(
+                    value: Binding(
+                        get: { container.settingsRepository.speechRate },
+                        set: { container.settingsRepository.speechRate = $0 }
+                    ),
+                    in: SpeechLanguageSettings.minimumRate...SpeechLanguageSettings.maximumRate,
+                    onEditingChanged: { editing in if !editing { restartActiveSpeech() } }
+                )
+                .frame(width: 82)
+                .accessibilityLabel("Reading speed")
+                .accessibilityIdentifier("reader-speech-speed")
+
+                if activeSpeechState != .idle {
+                    Button(action: stopActiveSpeech) { Image(systemName: "stop.fill") }
+                        .accessibilityLabel("Stop reading aloud")
+                        .accessibilityIdentifier("reader-speech-stop")
+                }
+            }
+        }
+        .foregroundStyle(container.settingsRepository.theme.background)
+        .padding(.horizontal, speechControlsExpanded ? 14 : 0)
+        .frame(height: speechControlsExpanded ? 48 : 0)
+        .background(.ultraThinMaterial, in: Capsule())
+        .tint(container.settingsRepository.theme.primary)
+    }
+
+    private func changeSpeechLanguage(_ language: String) {
+        container.settingsRepository.speechLanguageOverride = language
+        restartActiveSpeech()
+    }
+
+    private func changeSpeechEngine(_ engine: SpeechEngineID) {
+        let language = activeSpeechChoice.languageTag
+        container.settingsRepository.setSpeechVoice(
+            engine == .system ? SpeechVoiceID.systemDefault : engine.rawValue,
+            for: language
+        )
+        restartActiveSpeech()
+    }
+
+    private func restartActiveSpeech() {
+        if activeFormat == .epub { epubController.restartSpeechWithCurrentSettings() }
+        else if activeFormat == .fb2 { fb2Controller.restartSpeech(playback: fb2SpeechChoice) }
+    }
+
+    private func stopActiveSpeech() {
+        if activeFormat == .epub { epubController.stopSpeechCompletely() }
+        else if activeFormat == .fb2 { fb2Controller.stopSpeechCompletely() }
+        syncPlaybackSpeech()
+    }
+
+    private func openSpeechSettings() {
+        NotificationCenter.default.post(name: ReaderPlaybackSession.openSpeechSettingsNotification, object: nil)
     }
 
     private var searchButton: some View {
@@ -994,10 +1078,15 @@ final class FB2ReaderController: NSObject, ObservableObject {
     @Published var searching = false
     @Published var isSpeaking = false
     @Published var isSpeechPreparing = false
+    @Published private(set) var speechState = ReaderSpeechState.idle
+    @Published private(set) var speechLocator: String?
     @Published private(set) var isSpeechRetained = false
     @Published var textSelection: ReaderTextSelection?
     private let speech = AVSpeechSynthesizer()
     private let neuralSpeech = NeuralSpeechPlayback()
+    private var pauseExpiryTask: Task<Void, Never>?
+    private var speechLocations: [(offset: Int, locator: String)] = []
+    private var lastPlayback: SpeechPlaybackChoice?
 
     override init() {
         super.init()
@@ -1066,22 +1155,31 @@ final class FB2ReaderController: NSObject, ObservableObject {
     }
 
     func toggleSpeech(playback: SpeechPlaybackChoice) {
-        if isSpeechSessionActive {
-            neuralSpeech.stop()
-            speech.stopSpeaking(at: .immediate)
-            isSpeechPreparing = false
-            setSpeaking(false)
-            return
+        switch speechState {
+        case .playing, .preparing:
+            pauseSpeech()
+        case .paused:
+            resumeSpeech()
+        case .idle:
+            let plan = speechPlan()
+            speechLocations = plan.locations
+            startSpeaking(text: plan.text, chunks: plan.chunks, playback: playback)
         }
-        startSpeaking(text: sections.flatMap(\.paragraphs).map(\.text).joined(separator: "\n\n"), playback: playback)
+    }
+
+    func stopSpeechCompletely() {
+        stopSpeech(unload: true)
+    }
+
+    func restartSpeech(playback: SpeechPlaybackChoice) {
+        guard speechState != .idle else { return }
+        stopSpeech()
+        toggleSpeech(playback: playback)
     }
 
     func speakFromSelection(_ selected: String, playback: SpeechPlaybackChoice) {
         if isSpeechSessionActive {
-            neuralSpeech.stop()
-            speech.stopSpeaking(at: .immediate)
-            isSpeechPreparing = false
-            setSpeaking(false)
+            stopSpeech()
         }
         let all = sections.flatMap(\.paragraphs).map(\.text).joined(separator: "\n\n")
         let needle = selected.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -1093,7 +1191,8 @@ final class FB2ReaderController: NSObject, ObservableObject {
         } else {
             spoken = needle
         }
-        startSpeaking(text: spoken, playback: playback)
+        speechLocations = []
+        startSpeaking(text: spoken, chunks: nil, playback: playback)
     }
 
     private var isSpeechSessionActive: Bool {
@@ -1110,12 +1209,14 @@ final class FB2ReaderController: NSObject, ObservableObject {
     private func setSpeaking(_ speaking: Bool) {
         isSpeaking = speaking
         if !speaking { isSpeechPreparing = false }
+        if speaking, !isSpeechPreparing { speechState = .playing }
         refreshSpeechRetention()
     }
 
     private func markSpeechStarted() {
         if isSpeechPreparing {
             isSpeechPreparing = false
+            speechState = .playing
             refreshSpeechRetention()
         }
     }
@@ -1124,7 +1225,7 @@ final class FB2ReaderController: NSObject, ObservableObject {
         isSpeechRetained = isSpeechSessionActive
     }
 
-    private func startSpeaking(text: String, playback: SpeechPlaybackChoice) {
+    private func startSpeaking(text: String, chunks: [SpeechQueueChunk]?, playback: SpeechPlaybackChoice) {
         guard !text.isEmpty else { return }
         do {
             let session = AVAudioSession.sharedInstance()
@@ -1134,6 +1235,8 @@ final class FB2ReaderController: NSObject, ObservableObject {
             return
         }
         isSpeechPreparing = true
+        speechState = .preparing
+        lastPlayback = playback
         setSpeaking(true)
         switch playback.engine {
         case .neural(let engine):
@@ -1142,17 +1245,18 @@ final class FB2ReaderController: NSObject, ObservableObject {
                 return
             }
             neuralSpeech.play(
-                chunks: [SpeechQueueChunk(text: text, offset: 0, pauseSeconds: 0)],
+                chunks: chunks ?? [SpeechQueueChunk(text: text, offset: 0, pauseSeconds: 0)],
                 engine: engine,
                 speed: Float(min(max(playback.rate / SpeechLanguageSettings.defaultRate, 0.73), 1.25)),
-                onPhrase: { [weak self] _ in
+                onPhrase: { [weak self] chunk in
                     self?.markSpeechStarted()
+                    self?.updateSpeechLocation(offset: chunk.offset)
                 },
                 onProgress: { [weak self] _, _ in
                     self?.markSpeechStarted()
                 },
                 completion: { [weak self] result in
-                    self?.setSpeaking(false)
+                    self?.finishSpeech()
                     if case .failure = result { return }
                 }
             )
@@ -1165,6 +1269,81 @@ final class FB2ReaderController: NSObject, ObservableObject {
             }
             utterance.rate = Float(playback.rate)
             speech.speak(utterance)
+        }
+    }
+
+    private func pauseSpeech() {
+        guard speechState == .playing || speechState == .preparing else { return }
+        if speech.isSpeaking { speech.pauseSpeaking(at: .word) }
+        if neuralSpeech.isPlaying { neuralSpeech.pause() }
+        isSpeaking = false
+        isSpeechPreparing = false
+        speechState = .paused
+        refreshSpeechRetention()
+        pauseExpiryTask?.cancel()
+        pauseExpiryTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(ReaderSpeechPausePolicy.expiration))
+            guard !Task.isCancelled else { return }
+            self?.stopSpeech(unload: true)
+        }
+    }
+
+    private func resumeSpeech() {
+        guard speechState == .paused else { return }
+        pauseExpiryTask?.cancel()
+        if speech.isPaused { speech.continueSpeaking() }
+        else if neuralSpeech.isPaused { neuralSpeech.resume() }
+        else if let lastPlayback {
+            stopSpeech()
+            toggleSpeech(playback: lastPlayback)
+            return
+        }
+        speechState = .playing
+        setSpeaking(true)
+    }
+
+    private func stopSpeech(unload: Bool = false) {
+        pauseExpiryTask?.cancel()
+        pauseExpiryTask = nil
+        if unload { neuralSpeech.unload() } else { neuralSpeech.stop() }
+        speech.stopSpeaking(at: .immediate)
+        speechState = .idle
+        setSpeaking(false)
+        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+    }
+
+    private func finishSpeech() {
+        pauseExpiryTask?.cancel()
+        speechState = .idle
+        setSpeaking(false)
+        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+    }
+
+    private func speechPlan() -> (text: String, chunks: [SpeechQueueChunk], locations: [(Int, String)]) {
+        var text = ""
+        var chunks: [SpeechQueueChunk] = []
+        var locations: [(Int, String)] = []
+        for section in sections.dropFirst(sectionIndex) {
+            for (paragraphIndex, paragraph) in section.paragraphs.enumerated() {
+                let value = paragraph.text.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !value.isEmpty else { continue }
+                if !text.isEmpty { text += "\n\n" }
+                let offset = (text as NSString).length
+                let locator = "fb2:\(section.id):\(paragraphIndex):0"
+                locations.append((offset, locator))
+                chunks.append(SpeechQueueChunk(text: value, offset: offset, pauseSeconds: 0.08))
+                text += value
+            }
+        }
+        return (text, chunks, locations)
+    }
+
+    private func updateSpeechLocation(offset: Int) {
+        guard let entry = speechLocations.last(where: { $0.offset <= offset }) else { return }
+        speechLocator = entry.locator
+        if let location = parseLocator(entry.locator),
+           let index = sections.firstIndex(where: { $0.id == location.sectionID }) {
+            _ = update(section: index, paragraph: location.paragraph)
         }
     }
 
@@ -1192,10 +1371,13 @@ extension FB2ReaderController: AVSpeechSynthesizerDelegate {
         Task { @MainActor in self.markSpeechStarted() }
     }
     nonisolated func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {
-        Task { @MainActor in self.setSpeaking(false) }
+        Task { @MainActor in self.finishSpeech() }
     }
     nonisolated func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didCancel utterance: AVSpeechUtterance) {
-        Task { @MainActor in self.setSpeaking(false) }
+        Task { @MainActor in if self.speechState != .paused { self.finishSpeech() } }
+    }
+    nonisolated func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, willSpeakRangeOfSpeechString range: NSRange, utterance: AVSpeechUtterance) {
+        Task { @MainActor in self.updateSpeechLocation(offset: range.location) }
     }
 }
 

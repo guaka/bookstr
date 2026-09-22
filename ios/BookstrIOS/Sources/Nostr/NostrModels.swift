@@ -35,44 +35,6 @@ enum NostrKinds {
     }
 }
 
-struct BlossomAuthorizationRequest: Equatable {
-    let kind: Int
-    let createdAt: Int64
-    let tags: [[String]]
-    let content: String
-}
-
-enum BlossomAuthorizationWire {
-    static let kind = NostrConstantsV1.blossomAuthorizationKind
-
-    static func unsignedGetEvent(
-        hash: String,
-        server: String,
-        now: Int64,
-        content: String
-    ) throws -> BlossomAuthorizationRequest {
-        guard hash.range(of: "^[a-fA-F0-9]{64}$", options: .regularExpression) != nil else {
-            throw NSError(domain: "BlossomAuthorization", code: 1,
-                          userInfo: [NSLocalizedDescriptionKey: "Invalid Blossom SHA-256"])
-        }
-        guard !server.isEmpty, !server.contains("/") else {
-            throw NSError(domain: "BlossomAuthorization", code: 2,
-                          userInfo: [NSLocalizedDescriptionKey: "Invalid Blossom server name"])
-        }
-        return BlossomAuthorizationRequest(
-            kind: kind,
-            createdAt: now,
-            tags: [
-                ["t", "get"],
-                ["expiration", String(now + 120)],
-                ["server", server],
-                ["x", hash.lowercased()]
-            ],
-            content: content
-        )
-    }
-}
-
 enum SnippetVisibility: String, Codable {
     case publicPost
     case privateNote

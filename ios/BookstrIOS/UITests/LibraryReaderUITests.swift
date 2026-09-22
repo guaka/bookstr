@@ -94,10 +94,18 @@ final class LibraryReaderUITests: XCTestCase {
         let readerToggle = app.buttons["reader-speech-toggle"]
         XCTAssertTrue(readerToggle.waitForExistence(timeout: 10), "EPUB reader did not expose speech control")
         readerToggle.tap()
-        let speaking = NSPredicate(format: "label CONTAINS[c] %@", "Stop reading aloud")
+
+        let playback = app.buttons["reader-speech-playback"]
+        XCTAssertTrue(playback.waitForExistence(timeout: 5), "Speech control did not expand")
+        XCTAssertTrue(app.buttons["reader-speech-language"].exists)
+        XCTAssertTrue(app.buttons["reader-speech-engine"].exists)
+        XCTAssertTrue(app.sliders["reader-speech-speed"].exists)
+        playback.tap()
+
+        let speaking = NSPredicate(format: "label CONTAINS[c] %@", "Pause reading aloud")
         XCTAssertTrue(
             XCTWaiter.wait(
-                for: [XCTNSPredicateExpectation(predicate: speaking, object: readerToggle)],
+                for: [XCTNSPredicateExpectation(predicate: speaking, object: playback)],
                 timeout: 8
             ) == .completed,
             "EPUB reader did not start speech before leaving the book"
@@ -119,6 +127,26 @@ final class LibraryReaderUITests: XCTestCase {
             app.buttons["app-speech-toggle"].waitForExistence(timeout: 5),
             "Search header did not keep the speech control while the book kept playing"
         )
+    }
+
+    func testEPUBKeepsReadingPositionBetweenLandscapeOrientations() throws {
+        let (_, chapter) = openEPUB()
+        let reader = app.webViews["epub-reader-webview"]
+        XCTAssertTrue(reader.waitForExistence(timeout: 5))
+        reader.swipeLeft(velocity: .fast)
+        XCTAssertTrue(chapter.waitForExistence(timeout: 5))
+
+        XCUIDevice.shared.orientation = .landscapeLeft
+        let progress = app.descendants(matching: .any)["reader-progress-epub"]
+        XCTAssertTrue(progress.waitForExistence(timeout: 5))
+        let landscapeLeftProgress = progress.value as? String
+
+        XCUIDevice.shared.orientation = .landscapeRight
+        XCTAssertTrue(progress.waitForExistence(timeout: 5))
+        XCTAssertEqual(progress.value as? String, landscapeLeftProgress)
+        XCTAssertTrue(chapter.exists, "The current chapter disappeared after rotating 90 degrees")
+
+        XCUIDevice.shared.orientation = .portrait
     }
 
     func testLibrarySortControlReordersFixtureBooks() {

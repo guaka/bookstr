@@ -31,7 +31,7 @@ final class SpeechModelStoreTests: XCTestCase {
                 repository: "example/kokoro",
                 revision: "abc",
                 files: [.init(path: "tokens.txt", expectedBytes: 4)],
-                kind: .kokoro(model: "tokens.txt", voices: "tokens.txt", speaker: 0)
+                kind: .kokoro(model: "tokens.txt", voices: "tokens.txt", speaker: 0, language: nil)
             )
         ]
     }
@@ -45,8 +45,9 @@ final class SpeechModelStoreTests: XCTestCase {
 
     func testCatalogBundledModelsAndSourceURLs() throws {
         SpeechModelCatalog.modelsOverride = nil
-        XCTAssertEqual(SpeechModelCatalog.bundledModels.count, 9)
+        XCTAssertEqual(SpeechModelCatalog.bundledModels.count, 10)
         let kokoro = try XCTUnwrap(SpeechModelCatalog.model(.kokoroEnglish))
+        let brazilianKokoro = try XCTUnwrap(SpeechModelCatalog.model(.kokoroBrazilianPortuguese))
         let tugao = try XCTUnwrap(SpeechModelCatalog.model(.portuguesePortugal))
         let miro = try XCTUnwrap(SpeechModelCatalog.model(.portuguesePortugalMiro))
         let dii = try XCTUnwrap(SpeechModelCatalog.model(.portuguesePortugalDii))
@@ -62,6 +63,12 @@ final class SpeechModelStoreTests: XCTestCase {
         XCTAssertTrue(dutch.files.contains(.init(path: "espeak-ng-data/nl_dict", expectedBytes: 65_979)))
         XCTAssertTrue(dutch.files.contains(.init(path: "espeak-ng-data/lang/gmw/nl", expectedBytes: 23)))
         XCTAssertEqual(kokoro.files.count, 23)
+        XCTAssertEqual(brazilianKokoro.repository, "csukuangfj/kokoro-multi-lang-v1_0")
+        XCTAssertEqual(
+            brazilianKokoro.kind,
+            .kokoro(model: "model.onnx", voices: "voices.bin", speaker: 42, language: "pt-br")
+        )
+        XCTAssertTrue(brazilianKokoro.files.contains(.init(path: "espeak-ng-data/lang/roa/pt-BR", expectedBytes: 109)))
         XCTAssertEqual(tugao.files.count, 22)
         XCTAssertEqual(miro.files.count, 22)
         XCTAssertEqual(dii.files.count, 22)
@@ -86,6 +93,7 @@ final class SpeechModelStoreTests: XCTestCase {
             [
                 "system",
                 "kokoro_en",
+                "kokoro_pt_br",
                 "piper_pt_pt",
                 "piper_pt_pt_miro",
                 "piper_pt_pt_dii",
