@@ -182,6 +182,11 @@ final class NeuralSpeechSessionTests: XCTestCase {
         XCTAssertEqual(player.scheduledCount, 1)
         XCTAssertEqual(phrases, [first], "the highlight stays on the playing phrase until its audio ends")
 
+        player.renderNext()
+        await settle()
+        XCTAssertEqual(player.scheduledCount, 2, "the successor is queued at the render boundary, before device playback completes")
+        XCTAssertEqual(phrases, [first], "rendering ahead must not move the reading position")
+
         player.finishNext()
         await settle()
         XCTAssertEqual(player.scheduledCount, 2)
@@ -552,6 +557,8 @@ private final class MockNeuralPlayer: NeuralSpeechScheduling {
     private(set) var resumeCount = 0
     private(set) var keepAliveActive = false
     private(set) var completions: [() -> Void] = []
+    private(set) var rendered: [() -> Void] = []
+    private var renderedAhead = 0
     var scheduleError: Error?
     var isPlaying: Bool { !completions.isEmpty || keepAliveActive }
 
@@ -559,11 +566,17 @@ private final class MockNeuralPlayer: NeuralSpeechScheduling {
         scheduledCount = 0
         scheduledSampleCounts.removeAll()
         completions.removeAll()
+        rendered.removeAll()
+        renderedAhead = 0
     }
 
     func pause() { pauseCount += 1 }
     func resume() { resumeCount += 1 }
-    func stop() { completions.removeAll() }
+    func stop() {
+        completions.removeAll()
+        rendered.removeAll()
+        renderedAhead = 0
+    }
     func setKeepAliveActive(_ active: Bool, sampleRate: Double) {
         keepAliveActive = active
     }
@@ -571,21 +584,38 @@ private final class MockNeuralPlayer: NeuralSpeechScheduling {
     func schedule(
         samples: [Float],
         sampleRate: Double,
+        onRendered: @escaping () -> Void,
         completion: @escaping () -> Void
     ) throws {
         if let scheduleError { throw scheduleError }
         scheduledCount += 1
         scheduledSampleCounts.append(samples.count)
+        rendered.append(onRendered)
         completions.append(completion)
     }
 
+    func renderNext() {
+        rendered.removeFirst()()
+        renderedAhead += 1
+    }
+
     func finishNext() {
+        if renderedAhead > 0 {
+            renderedAhead -= 1
+        } else {
+            rendered.removeFirst()()
+        }
         completions.removeFirst()()
     }
 
     func finishAllCurrentlyScheduled() {
-        let scheduled = completions
-        completions.removeAll()
+        let count = completions.count
+        for _ in 0..<count where renderedAhead < count {
+            renderNext()
+        }
+        let scheduled = Array(completions.prefix(count))
+        completions.removeFirst(min(count, completions.count))
+        renderedAhead = max(0, renderedAhead - count)
         scheduled.forEach { $0() }
     }
 }

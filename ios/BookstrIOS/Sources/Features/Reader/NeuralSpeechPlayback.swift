@@ -231,6 +231,7 @@ private final class NeuralAudioPlayer: NeuralSpeechScheduling {
     func schedule(
         samples: [Float],
         sampleRate: Double,
+        onRendered: @escaping () -> Void,
         completion: @escaping () -> Void
     ) throws {
         try prepare(sampleRate: sampleRate)
@@ -250,6 +251,18 @@ private final class NeuralAudioPlayer: NeuralSpeechScheduling {
         }
         player.scheduleBuffer(buffer, completionCallbackType: .dataPlayedBack) { _ in
             DispatchQueue.main.async(execute: completion)
+        }
+        // A one-frame marker gives us a render-boundary callback independently
+        // from .dataPlayedBack, whose delay includes Bluetooth/device latency.
+        // Scheduling the successor here keeps output continuous while the
+        // played-back callback remains authoritative for reading position.
+        guard let marker = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 1) else {
+            throw NeuralSpeechError.generationFailed
+        }
+        marker.frameLength = 1
+        marker.floatChannelData?[0][0] = 0
+        player.scheduleBuffer(marker, completionCallbackType: .dataRendered) { _ in
+            DispatchQueue.main.async(execute: onRendered)
         }
         if keepAliveEnabled, keepAliveRate == sampleRate, keepAlive.isPlaying == false {
             try? installKeepAlive(sampleRate: sampleRate)
