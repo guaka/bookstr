@@ -395,7 +395,9 @@ final class AppContainerTests: XCTestCase {
         let fileStore = JSONFileStore(subdirectory: subdirectory)
         fileStore.ensureBooksDirectory()
         fileStore.ensureCoversDirectory()
-        let settings = SettingsRepository(fileStore: fileStore)
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: subdirectory))
+        defaults.removePersistentDomain(forName: subdirectory)
+        let settings = SettingsRepository(defaults: defaults)
         let nip46 = Nip46Service()
         let catalog = CatalogRepository(
             fileStore: fileStore,

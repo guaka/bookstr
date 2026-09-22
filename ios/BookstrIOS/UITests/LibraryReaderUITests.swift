@@ -15,6 +15,7 @@ final class LibraryReaderUITests: XCTestCase {
     }
 
     override func tearDownWithError() throws {
+        XCUIDevice.shared.orientation = .portrait
         let attachment = XCTAttachment(screenshot: app.screenshot())
         attachment.name = name
         attachment.lifetime = .keepAlways
@@ -149,6 +150,37 @@ final class LibraryReaderUITests: XCTestCase {
         XCUIDevice.shared.orientation = .portrait
     }
 
+    func testReaderButtonIslandAndChromeScreenshotsAcrossRotation() throws {
+        app.terminate()
+        app.launchArguments = ["--ui-testing-library-fixtures", "--ui-testing-open-continuation"]
+        app.launch()
+        let reader = app.webViews["epub-reader-webview"]
+        XCTAssertTrue(reader.waitForExistence(timeout: 12))
+        let header = app.descendants(matching: .any)["reader-top-header"]
+        XCTAssertTrue(waitForReaderChromeToSettle(header))
+
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.96)).tap()
+        let island = app.descendants(matching: .any)["reader-button-island"]
+        XCTAssertTrue(island.waitForExistence(timeout: 4), "Bottom activation zone did not reveal the button island")
+        for identifier in ["continue", "search", "library", "words", "settings"] {
+            XCTAssertTrue(app.buttons["reader-pane-\(identifier)"].exists)
+        }
+        attachScreenshot(named: "reader-chrome-portrait")
+
+        XCUIDevice.shared.orientation = .landscapeLeft
+        XCTAssertTrue(waitForReaderChromeToSettle(header))
+        XCTAssertGreaterThan(app.frame.width, app.frame.height)
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.1, dy: 0.94)).tap()
+        XCTAssertTrue(island.waitForExistence(timeout: 4))
+        attachScreenshot(named: "reader-chrome-landscape-left")
+        XCUIDevice.shared.orientation = .landscapeRight
+        XCTAssertTrue(waitForReaderChromeToSettle(header))
+        XCTAssertGreaterThan(app.frame.width, app.frame.height)
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.1, dy: 0.94)).tap()
+        XCTAssertTrue(island.waitForExistence(timeout: 4))
+        attachScreenshot(named: "reader-chrome-landscape-right")
+    }
+
     func testLibrarySortControlReordersFixtureBooks() {
         let epub = app.buttons["library-book-ui-test-alice-epub"]
         let pdf = app.buttons["library-book-ui-test-alice-pdf"]
@@ -224,8 +256,21 @@ final class LibraryReaderUITests: XCTestCase {
         ) == .completed
     }
 
+    private func waitForReaderChromeToSettle(_ header: XCUIElement) -> Bool {
+        let predicate = NSPredicate { _, _ in
+            header.exists
+                && header.frame.minY <= 2
+                && abs(header.frame.width - self.app.frame.width) <= 4
+        }
+        return XCTWaiter.wait(
+            for: [XCTNSPredicateExpectation(predicate: predicate, object: header)],
+            timeout: 8
+        ) == .completed
+    }
+
     private func attachScreenshot(named name: String) {
-        let attachment = XCTAttachment(screenshot: app.screenshot())
+        let screenshot = XCUIScreen.main.screenshot()
+        let attachment = XCTAttachment(screenshot: screenshot)
         attachment.name = name
         attachment.lifetime = .keepAlways
         add(attachment)

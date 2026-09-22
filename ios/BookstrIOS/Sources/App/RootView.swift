@@ -41,67 +41,67 @@ struct RootView: View {
     @StateObject private var favoriteNetwork = FavoriteNetworkRecoveryMonitor()
 
     var body: some View {
-        TabView(selection: Binding(
-            get: { selectedTab },
-            set: { tab in
-                if tab == 0 {
-                    openContinuation(reportMissing: true)
-                } else {
-                    selectedTab = tab
+        ZStack(alignment: .topLeading) {
+            TabView(selection: Binding(
+                get: { selectedTab },
+                set: { tab in
+                    if tab == 0 {
+                        openContinuation(reportMissing: true)
+                    } else {
+                        selectedTab = tab
+                    }
                 }
-            }
-        )) {
-            Color.clear
+            )) {
+                Color.clear
+                    .tabItem {
+                        Image(systemName: "book.pages.fill")
+                            .accessibilityLabel("Continue reading")
+                    }
+                    .tag(0)
+
+                NavigationStack {
+                    SearchView()
+                }
+                .toolbarTitleDisplayMode(.inline)
                 .tabItem {
-                    Image(systemName: "book.pages.fill")
-                        .accessibilityLabel("Continue reading")
+                    Image(systemName: "magnifyingglass")
+                        .accessibilityLabel("Search")
                 }
-                .tag(0)
+                .tag(1)
 
-            NavigationStack {
-                SearchView()
-            }
-            .toolbarTitleDisplayMode(.inline)
-            .tabItem {
-                Image(systemName: "magnifyingglass")
-                    .accessibilityLabel("Search")
-            }
-            .tag(1)
+                NavigationStack {
+                    LibraryView()
+                }
+                .toolbarTitleDisplayMode(.inline)
+                .tabItem {
+                    Image(systemName: "book.fill")
+                        .accessibilityLabel("Library")
+                }
+                .tag(2)
 
-            NavigationStack {
-                LibraryView()
-            }
-            .toolbarTitleDisplayMode(.inline)
-            .tabItem {
-                Image(systemName: "book.fill")
-                    .accessibilityLabel("Library")
-            }
-            .tag(2)
+                NavigationStack {
+                    WordsView()
+                }
+                .toolbarTitleDisplayMode(.inline)
+                .tabItem {
+                    Image("SpellcheckTab")
+                        .accessibilityLabel("Words")
+                }
+                .tag(3)
 
-            NavigationStack {
-                WordsView()
+                NavigationStack {
+                    SettingsView()
+                }
+                .toolbarTitleDisplayMode(.inline)
+                .tabItem {
+                    Image(systemName: "gearshape.fill")
+                        .accessibilityLabel("Settings")
+                }
+                .tag(4)
             }
-            .toolbarTitleDisplayMode(.inline)
-            .tabItem {
-                Image("SpellcheckTab")
-                    .accessibilityLabel("Words")
-            }
-            .tag(3)
+            .tint(settings.theme.primary)
+            .background(settings.theme.background.ignoresSafeArea())
 
-            NavigationStack {
-                SettingsView()
-            }
-            .toolbarTitleDisplayMode(.inline)
-            .tabItem {
-                Image(systemName: "gearshape.fill")
-                    .accessibilityLabel("Settings")
-            }
-            .tag(4)
-        }
-        .tint(settings.theme.primary)
-        .preferredColorScheme(settings.theme.colorScheme)
-        .background(settings.theme.background.ignoresSafeArea())
-        .overlay {
             if let item = playback.item {
                 ReaderHostView(
                     book: item.book,
@@ -111,7 +111,15 @@ struct RootView: View {
                     highlightKind: item.highlightKind,
                     presentationOrigin: item.origin,
                     showsReaderChrome: playback.isVisible,
-                    onClose: { playback.requestClose() }
+                    onClose: { playback.requestClose() },
+                    onSelectPane: { pane in
+                        playback.requestClose()
+                        if pane == 0 {
+                            openContinuation(reportMissing: true)
+                        } else {
+                            selectedTab = pane
+                        }
+                    }
                 )
                 .id(playback.presentationNonce)
                 .environmentObject(container)
@@ -121,16 +129,35 @@ struct RootView: View {
                 .accessibilityHidden(!playback.isVisible)
             }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .preferredColorScheme(settings.theme.colorScheme)
         .overlay(alignment: .top) {
             // Custom island clock + battery; system status bar stays hidden.
-            ReaderClockLabel()
-                .foregroundStyle(
-                    playback.isVisible
-                        ? settings.theme.background
-                        : settings.theme.primary
+            GeometryReader { proxy in
+                let orientation: ReaderLayoutOrientation = proxy.size.height >= proxy.size.width
+                    ? .portrait : .landscapeLeft
+                let metrics = ReaderChromeMetrics(
+                    width: proxy.size.width,
+                    height: proxy.size.height,
+                    safeTop: proxy.safeAreaInsets.top,
+                    safeLeading: proxy.safeAreaInsets.leading,
+                    safeBottom: proxy.safeAreaInsets.bottom,
+                    safeTrailing: proxy.safeAreaInsets.trailing,
+                    orientation: orientation
                 )
-                .padding(.top, 1)
-                .allowsHitTesting(false)
+                ReaderClockLabel()
+                    .foregroundStyle(
+                        playback.isVisible
+                            ? settings.theme.background
+                            : settings.theme.primary
+                    )
+                    .frame(maxWidth: .infinity, alignment: .center)
+                    .padding(.top, metrics.clockTopPadding)
+                    // Root content begins below the status safe area. Translate
+                    // back into the physical top strip above the island.
+                    .offset(y: -proxy.safeAreaInsets.top)
+                    .allowsHitTesting(false)
+            }
         }
         .task {
             // Favorites retry can wait on relays/Amber — never block first paint or continuation.

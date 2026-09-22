@@ -1329,14 +1329,85 @@ final class FavoritesParserTests: XCTestCase {
     }
 
     @MainActor
-
+    private func checkOpeningCoverLayout(separateCover: Bool) async throws {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".epub")
+        defer { try? FileManager.default.removeItem(at: url) }
+        var entries = [
+            ("mimetype", "application/epub+zip"),
+            ("META-INF/container.xml", #"<?xml version="1.0"?><container><rootfiles><rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/></rootfiles></container>"#),
+            ("OEBPS/content.opf", #"<?xml version="1.0"?><package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="id"><metadata xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:identifier id="id">opening</dc:identifier><dc:title>Opening images</dc:title><dc:language>nl</dc:language></metadata><manifest><item id="cover" href="cover.xhtml" media-type="application/xhtml+xml"/><item id="chapter" href="chapter.xhtml" media-type="application/xhtml+xml"/><item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/></manifest><spine><itemref idref="cover" linear="no"/><itemref idref="chapter"/></spine></package>"#),
+            ("OEBPS/cover.xhtml", #"<html xmlns="http://www.w3.org/1999/xhtml"><head><title>Cover and index</title></head><body><svg xmlns="http://www.w3.org/2000/svg" id="front-cover" width="400" height="650" viewBox="0 0 400 650"><rect width="400" height="650" fill="green"/></svg><svg xmlns="http://www.w3.org/2000/svg" id="second-image" width="400" height="650" viewBox="0 0 400 650"><rect width="400" height="650" fill="blue"/></svg><nav id="opening-index"><h1>Inhoud</h1><a href="chapter.xhtml">Hoofdstuk een</a></nav></body></html>"#),
+            ("OEBPS/nav.xhtml", #"<html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops"><head><title>Contents</title></head><body><nav epub:type="toc"><ol><li><a href="chapter.xhtml">Hoofdstuk een</a></li></ol></nav></body></html>"#),
+            ("OEBPS/chapter.xhtml", #"<html xmlns="http://www.w3.org/1999/xhtml"><head><title>Chapter</title></head><body><h1>Hoofdstuk een</h1><p>Het verhaal begint hier.</p></body></html>"#)
+        ]
+        if separateCover {
+            entries[2].1 = entries[2].1
+                .replacingOccurrences(of: "<spine>", with: "<spine><itemref idref=\"titlepage\" linear=\"no\"/>")
+                .replacingOccurrences(of: "</manifest>", with: "<item id=\"titlepage\" href=\"titlepage.xhtml\" media-type=\"application/xhtml+xml\"/></manifest>")
+            entries[3].1 = entries[3].1.replacingOccurrences(of: "id=\"front-cover\"", with: "id=\"opening-image\"")
+            entries.append(("OEBPS/titlepage.xhtml", #"<html xmlns="http://www.w3.org/1999/xhtml"><head><title>Cover</title></head><body style="text-align:center;margin:0;padding:0"><div><svg xmlns="http://www.w3.org/2000/svg" id="front-cover" width="100%" height="100%" viewBox="0 0 781 1186" preserveAspectRatio="none"><rect width="781" height="1186" fill="green"/></svg></div></body></html>"#))
+        }
+        try makeStoredZip(entries).write(to: url)
+        let book = CatalogBook(
+            id: "opening-fixture", title: "Opening images", author: "Test",
+            epubUrl: url.absoluteString, coverUrl: nil, sourceUrl: nil, isbn: nil,
+            libvaultMd5: nil, format: .epub, year: nil
+        )
+        let controller = EPUBReaderController()
+        let view = EPUBReaderView(
+            book: book, fileURL: url, controller: controller,
+            initialCFI: nil, highlightCFI: nil
+        )
+        .frame(width: 390, height: 844)
+        .environmentObject(AppContainer.bootstrap())
+        let host = UIHostingController(rootView: view)
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let window = UIWindow(windowScene: scene)
+        window.frame = CGRect(x: 0, y: 0, width: 390, height: 844)
+        window.rootViewController = host
+        window.makeKeyAndVisible()
+        host.view.layoutIfNeeded()
+        defer { window.isHidden = true }
+        await fulfillment(of: [XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            controller.ready || controller.errorMessage != nil
+        }, object: nil)], timeout: 15)
+        XCTAssertNil(controller.errorMessage)
+        XCTAssertTrue(controller.ready)
+        let webView = try XCTUnwrap(findSubview(WKWebView.self, in: host.view))
+        let result = try await webView.callAsyncJavaScript(
+            """
+            const wait = () => new Promise(resolve => setTimeout(resolve, 700));
+            await wait();
+            const container = document.querySelector('.epub-container');
+            const opening = () => Array.from(document.querySelectorAll('iframe')).map(f => f.contentDocument).find(d => d && d.getElementById('front-cover'));
+            const doc = opening();
+            if (!doc) return { missingCover: true };
+            const cover = doc.getElementById('front-cover').getBoundingClientRect();
+            const imageDoc = Array.from(document.querySelectorAll('iframe')).map(f => f.contentDocument).find(d => d && d.getElementById('second-image'));
+            if (!imageDoc) return { missingImages: true };
+            const second = imageDoc.getElementById('second-image').getBoundingClientRect();
+            const index = imageDoc.getElementById('opening-index').getBoundingClientRect();
+            const ordered = cover.height > 300 && second.height > 300 && (doc !== imageDoc || second.top >= cover.bottom - 1) && index.top >= second.bottom - 1;
+            container.scrollTop = 350;
+            await wait();
+            const position = container.scrollTop;
+            const height = container.scrollHeight;
+            await wait();
+            const stable = Math.abs(container.scrollTop - position) < 3 && Math.abs(container.scrollHeight - height) < 3;
+            container.scrollTop = 0;
+            await wait();
+            const returned = opening();
+            const returnedHeight = returned ? returned.getElementById('front-cover').getBoundingClientRect().height : 0;
+            return { ordered, stable, scrolled: position > 300, restored: Math.abs(returnedHeight - cover.height) < 3 };
+            """, arguments: [:], in: nil, contentWorld: .page
+        ) as? [String: Bool]
+        XCTAssertEqual(result?["ordered"], true, "Images and index must stay in vertical order: \(String(describing: result))")
+        XCTAssertEqual(result?["stable"], true)
+        XCTAssertEqual(result?["scrolled"], true)
+        XCTAssertEqual(result?["restored"], true, "Cover must remain visible when returning to the beginning")
+    }
 
     @MainActor
-
-
-    @MainActor
-
-
     private func findSubview<T: UIView>(_ type: T.Type, in root: UIView) -> T? {
         if let match = root as? T { return match }
         return root.subviews.lazy.compactMap { self.findSubview(type, in: $0) }.first

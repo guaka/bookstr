@@ -1062,6 +1062,44 @@ final class ReaderAssetContractTests: XCTestCase {
         XCTAssertNotNil(info.range(of: #"<key>UIStatusBarHidden</key>\s*<true/>"#, options: .regularExpression))
     }
 
+    func testReaderChromeUsesSafeAreaGeometryAndAccessibleOverlayControls() throws {
+        let sources = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let host = try String(
+            contentsOf: sources.appendingPathComponent("Sources/Features/Reader/ReaderHostView.swift"),
+            encoding: .utf8
+        )
+        XCTAssertTrue(host.contains("chromeMetrics = ReaderDeviceGeometry.metrics(fallback: layoutOrientation)"))
+        XCTAssertTrue(host.contains("ReaderHeaderBackground("))
+        XCTAssertTrue(host.contains("ReaderTopIslandCutout"))
+        XCTAssertTrue(host.contains("cornerRadius: metrics.bottomCornerRadius"))
+        XCTAssertTrue(host.contains("frame(height: metrics.activationZoneHeight)"))
+        XCTAssertTrue(host.contains(".accessibilityHidden(true)"))
+        XCTAssertTrue(host.contains("accessibilityIdentifier(\"reader-button-island\")"))
+        for identifier in ["continue", "search", "library", "settings"] {
+            XCTAssertTrue(host.contains("identifier: \"\(identifier)\""))
+        }
+        XCTAssertTrue(host.contains("reader-pane-words"))
+        XCTAssertFalse(host.contains("let curve = min(16"))
+
+        let root = try String(
+            contentsOf: sources.appendingPathComponent("Sources/App/RootView.swift"),
+            encoding: .utf8
+        )
+        XCTAssertTrue(root.contains("safeTop: proxy.safeAreaInsets.top"))
+        XCTAssertTrue(root.contains("padding(.top, metrics.clockTopPadding)"))
+        XCTAssertTrue(root.contains("offset(y: -proxy.safeAreaInsets.top)"))
+        XCTAssertFalse(root.contains("ReaderClockLabel()\n                .foregroundStyle"))
+
+        let info = try String(
+            contentsOf: sources.appendingPathComponent("Info.plist"),
+            encoding: .utf8
+        )
+        XCTAssertTrue(info.contains("UIInterfaceOrientationLandscapeLeft"))
+        XCTAssertTrue(info.contains("UIInterfaceOrientationLandscapeRight"))
+    }
+
     /// `downloadedBooksLock` is a plain NSLock. Calling the public cache
     /// invalidation while it is held deadlocks the launch path and paints a
     /// blank first frame, so lock holders must use the locked variant.
