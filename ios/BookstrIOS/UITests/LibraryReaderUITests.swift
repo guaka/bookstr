@@ -101,8 +101,6 @@ final class LibraryReaderUITests: XCTestCase {
         XCTAssertTrue(app.buttons["reader-speech-language"].exists)
         XCTAssertTrue(app.buttons["reader-speech-engine"].exists)
         XCTAssertTrue(app.sliders["reader-speech-speed"].exists)
-        playback.tap()
-
         let speaking = NSPredicate(format: "label CONTAINS[c] %@", "Pause reading aloud")
         XCTAssertTrue(
             XCTWaiter.wait(

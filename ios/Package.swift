@@ -34,6 +34,7 @@ let package = Package(
                 "Shared/ScreenChrome.swift",
                 "Shared/Theme.swift",
                 "Data/CatalogRepository.swift",
+                "Data/CoverDiscoveryService.swift",
             ],
             sources: [
                 "Data/DictionaryRepository.swift",

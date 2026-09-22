@@ -38,7 +38,7 @@ struct SearchView: View {
                     Button { Task { await open(result) } } label: {
                         BookListDetails(title: result.title, author: result.author, year: result.year,
                                         format: result.format?.rawValue, language: result.language,
-                                        publisher: result.publisher, coverURL: result.coverUrl,
+                                        publisher: result.publisher, coverURL: result.coverUrl, bookID: result.id,
                                         rights: result.rights)
                     }
                     .buttonStyle(.plain)

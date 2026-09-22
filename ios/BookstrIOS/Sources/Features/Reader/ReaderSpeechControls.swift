@@ -6,7 +6,6 @@ struct ReaderSpeechControls: View {
     let state: ReaderSpeechState
     let choice: SpeechPlaybackChoice
     let languageOverride: String
-    let foregroundColor: Color
     let tint: Color
     let onToggle: () -> Void
     let onLanguageChange: (String) -> Void
@@ -24,15 +23,18 @@ struct ReaderSpeechControls: View {
                 rateSlider
                 if state != .idle {
                     Button(action: onStop) { Image(systemName: "stop.fill") }
+                        .frame(minWidth: 44, minHeight: 44)
                         .accessibilityLabel("Stop reading aloud")
                         .accessibilityIdentifier("reader-speech-stop")
                 }
             }
         }
-        .foregroundStyle(foregroundColor)
-        .padding(.horizontal, expanded ? 14 : 0)
-        .frame(height: expanded ? 48 : 0)
-        .background(.ultraThinMaterial, in: Capsule())
+        .foregroundStyle(.primary)
+        .padding(.horizontal, expanded ? 10 : 0)
+        .frame(height: expanded ? 52 : 0)
+        .background(Color(uiColor: .secondarySystemBackground), in: Capsule())
+        .overlay(Capsule().strokeBorder(.primary.opacity(expanded ? 0.22 : 0), lineWidth: 1))
+        .shadow(color: .black.opacity(expanded ? 0.22 : 0), radius: 8, y: 3)
         .tint(tint)
     }
 
@@ -44,6 +46,7 @@ struct ReaderSpeechControls: View {
                 Image(systemName: state == .playing ? "pause.fill" : "play.fill")
             }
         }
+        .frame(minWidth: 44, minHeight: 44)
         .accessibilityLabel(state == .playing ? "Pause reading aloud" : "Read aloud")
         .accessibilityIdentifier("reader-speech-playback")
     }
@@ -59,6 +62,7 @@ struct ReaderSpeechControls: View {
         } label: {
             Text(languageOverride == SpeechLanguageSettings.automaticLanguage ? "Auto" : languageOverride.uppercased())
                 .font(.caption.weight(.semibold))
+                .frame(minWidth: 44, minHeight: 44)
         }
         .accessibilityLabel("Reading language")
         .accessibilityIdentifier("reader-speech-language")
@@ -78,6 +82,7 @@ struct ReaderSpeechControls: View {
             }
         } label: {
             Image(systemName: "waveform")
+                .frame(minWidth: 44, minHeight: 44)
         }
         .accessibilityLabel("Reading voice")
         .accessibilityIdentifier("reader-speech-engine")

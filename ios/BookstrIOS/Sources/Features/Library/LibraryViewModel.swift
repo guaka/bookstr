@@ -128,12 +128,29 @@ final class LibraryViewModel: ObservableObject {
         coverRefreshTask?.cancel()
         // `nil` = not scanned yet; `""` = scanned with no cover (skip).
         let pending = seed.filter { CatalogRepository.shouldScanEmbeddedCover(for: $0) }
-        guard !pending.isEmpty else { return }
+        guard !pending.isEmpty else {
+            scheduleCoverDiscovery(seed, container: container)
+            return
+        }
         coverRefreshTask = Task { [weak self] in
             let stamped = await container.catalogRepository.ensureEmbeddedCovers(for: pending)
             guard let self, !Task.isCancelled else { return }
             self.applyEmbeddedCovers(stamped)
+            let byID = Dictionary(stamped.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+            self.scheduleCoverDiscovery(seed.map { byID[$0.id] ?? $0 }, container: container)
         }
+    }
+
+    private func scheduleCoverDiscovery(_ books: [CatalogBook], container: AppContainer) {
+        let displayed = Self.uniquedPreferringCover(books + reading + favorites)
+        let readingIDs = Set(reading.map(\.id)).union(
+            container.readerPlayback.item.map { [$0.book.id] } ?? []
+        )
+        container.coverDiscovery.enqueue(
+            displayed,
+            readingIDs: readingIDs,
+            favoriteIDs: Set(favorites.map(\.id))
+        )
     }
 
     private func applyEmbeddedCovers(_ stamped: [CatalogBook]) {

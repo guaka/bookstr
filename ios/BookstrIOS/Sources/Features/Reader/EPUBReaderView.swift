@@ -186,8 +186,10 @@ final class EPUBReaderController: NSObject, ObservableObject, AVSpeechSynthesize
     private var nowPlayingAuthor = ""
     private var nowPlayingParagraph = ""
     private var nowPlayingArtwork: MPMediaItemArtwork?
+    private var nowPlayingBookID = ""
     private var nowPlayingIsPlaying = false
     private var remoteCommandsConfigured = false
+    private var remoteTargets: [(MPRemoteCommand, Any)] = []
     private var audioSessionObservers: [NSObjectProtocol] = []
     private var speechStopRequested = false
     private var pauseExpiryTask: Task<Void, Never>?
@@ -220,11 +222,28 @@ final class EPUBReaderController: NSObject, ObservableObject, AVSpeechSynthesize
     func configureNowPlaying(book: CatalogBook) {
         nowPlayingTitle = book.title
         nowPlayingAuthor = book.author
+        nowPlayingBookID = book.id
+        refreshNowPlayingArtwork(book: book)
         configureRemoteCommands()
-        loadNowPlayingArtwork(from: book.coverUrl)
+    }
+
+    func refreshNowPlayingArtwork(book: CatalogBook) {
+        guard nowPlayingBookID == book.id else { return }
+        let image = CoverArtwork.image(for: book, discovery: AppContainer.shared.coverDiscovery)
+        nowPlayingArtwork = MPMediaItemArtwork(boundsSize: image.size) { _ in image }
+        if MPNowPlayingInfoCenter.default().nowPlayingInfo != nil {
+            updateNowPlaying(isPlaying: nowPlayingIsPlaying)
+        }
+        guard !AppContainer.shared.readerPlayback.isCarPlayPlayback,
+              AppContainer.shared.coverDiscovery.cachedURL(for: book.id) == nil,
+              let url = BookCoverView.coverURL(book.coverUrl), !url.isFileURL else { return }
+        loadNowPlayingArtwork(from: url, bookID: book.id)
     }
 
     func endNowPlaying() {
+        for (command, target) in remoteTargets { command.removeTarget(target) }
+        remoteTargets.removeAll()
+        remoteCommandsConfigured = false
         let center = MPNowPlayingInfoCenter.default()
         center.playbackState = .stopped
         center.nowPlayingInfo = nil
@@ -721,7 +740,7 @@ final class EPUBReaderController: NSObject, ObservableObject, AVSpeechSynthesize
         commands.pauseCommand.isEnabled = true
         commands.nextTrackCommand.isEnabled = true
         commands.previousTrackCommand.isEnabled = true
-        commands.playCommand.addTarget { [weak self] _ in
+        remoteTargets.append((commands.playCommand, commands.playCommand.addTarget { [weak self] _ in
             Task { @MainActor in
                 guard let self else { return }
                 if self.speechState == .paused {
@@ -731,26 +750,26 @@ final class EPUBReaderController: NSObject, ObservableObject, AVSpeechSynthesize
                 }
             }
             return .success
-        }
-        commands.pauseCommand.addTarget { [weak self] _ in
+        }))
+        remoteTargets.append((commands.pauseCommand, commands.pauseCommand.addTarget { [weak self] _ in
             Task { @MainActor in
                 guard let self else { return }
                 self.pauseSpeech()
             }
             return .success
-        }
-        commands.nextTrackCommand.addTarget { [weak self] _ in
+        }))
+        remoteTargets.append((commands.nextTrackCommand, commands.nextTrackCommand.addTarget { [weak self] _ in
             Task { @MainActor in
                 self?.skipSpokenPage(direction: 1)
             }
             return .success
-        }
-        commands.previousTrackCommand.addTarget { [weak self] _ in
+        }))
+        remoteTargets.append((commands.previousTrackCommand, commands.previousTrackCommand.addTarget { [weak self] _ in
             Task { @MainActor in
                 self?.skipSpokenPage(direction: -1)
             }
             return .success
-        }
+        }))
     }
 
     private func skipSpokenPage(direction: Int) {
@@ -778,13 +797,10 @@ final class EPUBReaderController: NSObject, ObservableObject, AVSpeechSynthesize
         let center = MPNowPlayingInfoCenter.default()
         center.playbackState = isPlaying ? .playing : .paused
         let paragraphLines = splitNowPlayingParagraph(nowPlayingParagraph)
-        let bookByline = nowPlayingAuthor.isEmpty
-            ? nowPlayingTitle
-            : "\(nowPlayingTitle) — \(nowPlayingAuthor)"
         var information: [String: Any] = [
-            MPMediaItemPropertyTitle: paragraphLines?.first ?? nowPlayingTitle,
-            MPMediaItemPropertyArtist: paragraphLines?.continuation ?? nowPlayingAuthor,
-            MPMediaItemPropertyAlbumTitle: paragraphLines == nil ? "Bookstr" : bookByline,
+            MPMediaItemPropertyTitle: nowPlayingTitle,
+            MPMediaItemPropertyArtist: nowPlayingAuthor,
+            MPMediaItemPropertyAlbumTitle: paragraphLines?.first ?? "Bookstr",
             MPMediaItemPropertyMediaType: MPMediaType.audioBook.rawValue,
             MPNowPlayingInfoPropertyPlaybackRate: isPlaying ? 1.0 : 0.0
         ]
@@ -826,15 +842,14 @@ final class EPUBReaderController: NSObject, ObservableObject, AVSpeechSynthesize
         }
     }
 
-    private func loadNowPlayingArtwork(from urlString: String?) {
-        guard let urlString, let url = URL(string: urlString) else { return }
+    private func loadNowPlayingArtwork(from url: URL, bookID: String) {
         Task { [weak self] in
             guard let (data, response) = try? await URLSession.shared.data(from: url),
                   let http = response as? HTTPURLResponse,
                   (200...299).contains(http.statusCode),
                   let image = UIImage(data: data), image.size.width > 0, image.size.height > 0
             else { return }
-            guard let self else { return }
+            guard let self, self.nowPlayingBookID == bookID else { return }
             self.nowPlayingArtwork = MPMediaItemArtwork(boundsSize: image.size) { _ in image }
             if MPNowPlayingInfoCenter.default().nowPlayingInfo != nil {
                 self.updateNowPlaying(isPlaying: self.nowPlayingIsPlaying)

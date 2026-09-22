@@ -14,7 +14,8 @@ final class AppContainerTests: XCTestCase {
         let observation = model.$reading.dropFirst().sink { _ in refreshes += 1 }
         let host = UIHostingController(rootView: NavigationStack {
             LibraryView(viewModel: model)
-        }.environmentObject(container).environmentObject(container.readerPlayback))
+        }.environmentObject(container).environmentObject(container.readerPlayback)
+            .environmentObject(container.coverDiscovery))
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
         let window = UIWindow(windowScene: scene)
         window.rootViewController = host
@@ -352,6 +353,7 @@ final class AppContainerTests: XCTestCase {
                 signerStore: signerStore,
                 nip46Service: nip46
             ),
+            coverDiscovery: CoverDiscoveryService(fileStore: fileStore),
             nostrClient: NostrClient(),
             signerStore: signerStore,
             nostrSyncService: sync,
@@ -478,6 +480,7 @@ final class AppContainerTests: XCTestCase {
             dictionaryRepository: DictionaryRepository(),
             favoriteMetadataRepository: favoriteMetadata,
             catalogRepository: catalog,
+            coverDiscovery: CoverDiscoveryService(fileStore: fileStore),
             nostrClient: NostrClient(),
             signerStore: signerStore,
             nostrSyncService: sync,

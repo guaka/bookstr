@@ -28,6 +28,56 @@ final class BookCoverTests: XCTestCase {
     }
 
 #if canImport(UIKit) && !SWIFT_PACKAGE
+    @MainActor
+    func testCoverSearchRejectsAmbiguousOrDifferentEditions() {
+        let exact = OpenLibraryCoverDocument(title: "The Great Book", authors: ["Jane Doe"], coverID: 12)
+        let other = OpenLibraryCoverDocument(title: "The Great Book: Illustrated", authors: ["Jane Doe"], coverID: 44)
+        XCTAssertEqual(CoverSearchMatch.coverID(title: "The Great Book", author: "Jane Doe", documents: [exact, other]), 12)
+        let conflict = OpenLibraryCoverDocument(title: "The Great Book", authors: ["Jane Doe"], coverID: 99)
+        XCTAssertNil(CoverSearchMatch.coverID(title: "The Great Book", author: "Jane Doe", documents: [exact, conflict]))
+        XCTAssertNil(CoverSearchMatch.coverID(title: "The Great Book", author: "John Doe", documents: [exact]))
+    }
+
+    @MainActor
+    func testDiscoveredCoverSurvivesQueueCompletionAndRelaunch() throws {
+        let directory = "cover-discovery-test-\(UUID().uuidString)"
+        let store = JSONFileStore(subdirectory: directory)
+        let root = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent(directory)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let bookID = "test-book"
+        let key = CoverDiscoveryService.key(for: bookID)
+        let image = UIGraphicsImageRenderer(size: CGSize(width: 64, height: 96)).jpegData(withCompressionQuality: 0.8) {
+            context in UIColor.blue.setFill(); context.fill(CGRect(x: 0, y: 0, width: 64, height: 96))
+        }
+        try image.write(to: store.discoveredCoverFileURL(key: key))
+        let service = CoverDiscoveryService(fileStore: store)
+        XCTAssertEqual(service.cachedURL(for: bookID), store.discoveredCoverFileURL(key: key))
+    }
+
+    @MainActor
+    func testAmbiguousSearchDoesNotCacheOrChangeBook() async throws {
+        let directory = "cover-search-test-\(UUID().uuidString)"
+        let store = JSONFileStore(subdirectory: directory)
+        let root = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent(directory)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let book = CatalogBook(id: "abc", title: "A Specific Book", author: "Jane Doe",
+                               epubUrl: "https://example.test/book.epub", coverUrl: nil,
+                               sourceUrl: nil, isbn: nil, libvaultMd5: nil, format: .epub, year: "2020")
+        let results = Data(#"{"docs":[{"title":"A Specific Book","author_name":["Jane Doe"],"cover_i":12},{"title":"A Specific Book","author_name":["Jane Doe"],"cover_i":13}]}"#.utf8)
+        let service = CoverDiscoveryService(fileStore: store) { url in
+            (results, HTTPURLResponse(url: url, statusCode: 200, httpVersion: nil, headerFields: nil)!)
+        }
+        service.enqueue([book])
+        try await Task.sleep(for: .milliseconds(300))
+        XCTAssertNil(service.cachedURL(for: book.id))
+        let entries = store.load("cover-discovery.json", as: [String: CoverLookupEntry].self, fallback: [:])
+        XCTAssertGreaterThan(entries[CoverDiscoveryService.key(for: book.id)]?.nextAttempt ?? .distantPast, Date())
+        XCTAssertEqual(book.title, "A Specific Book")
+        service.setActive(false)
+    }
+
     func testLocalCoverThumbnailIsDownsampledAndCached() throws {
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent("cover-thumbnail-\(UUID().uuidString).jpg")

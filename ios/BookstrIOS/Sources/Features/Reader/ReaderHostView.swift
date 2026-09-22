@@ -1,6 +1,7 @@
 import SwiftUI
 import Foundation
 import AVFoundation
+import MediaPlayer
 import UIKit
 
 struct ReaderHostView: View {
@@ -288,6 +289,7 @@ struct ReaderHostView: View {
             if epubController.isSpeechRetained { epubController.stopSpeechCompletely() }
             if fb2Controller.isSpeechRetained { fb2Controller.stopSpeechCompletely() }
             epubController.endNowPlaying()
+            fb2Controller.endNowPlaying()
         }
         .onChange(of: showsReaderChrome) { _, _ in updateIdleTimer() }
         .onChange(of: epubController.isSpeechRetained) { _, _ in syncPlaybackSpeech() }
@@ -300,6 +302,16 @@ struct ReaderHostView: View {
         }
         .onChange(of: playback.speechToggleToken) { _, _ in
             toggleActiveSpeech()
+        }
+        .onChange(of: epubController.ready) { _, _ in startCarPlaySpeechIfReady() }
+        .onChange(of: fb2Controller.ready) { _, _ in startCarPlaySpeechIfReady() }
+        .onChange(of: playback.carPlayStartToken) { _, _ in startCarPlaySpeechIfReady() }
+        .onReceive(container.coverDiscovery.$cachedURLs) { _ in
+            if activeFormat == .epub {
+                epubController.refreshNowPlayingArtwork(book: book)
+            } else if activeFormat == .fb2 {
+                fb2Controller.refreshNowPlayingArtwork(book: book)
+            }
         }
         .onChange(of: container.settingsRepository.theme) { _, theme in
             epubController.apply(theme: theme)
@@ -356,13 +368,15 @@ struct ReaderHostView: View {
 
             if activeFormat == .epub || activeFormat == .fb2 {
                 Button {
-                    withAnimation(.snappy(duration: 0.2)) { speechControlsExpanded.toggle() }
+                    toggleActiveSpeech()
+                    withAnimation(.snappy(duration: 0.2)) { speechControlsExpanded = true }
                 } label: {
                     Image(systemName: activeSpeechState == .playing ? "pause.fill" : "play.fill")
                         .font(.system(size: 16))
-                    .frame(width: 24, height: 24)
+                        .frame(width: 40, height: 40)
                 }
-                .accessibilityLabel("Reading controls")
+                .accessibilityLabel(activeSpeechState == .playing || activeSpeechState == .preparing
+                    ? "Pause reading aloud" : "Read aloud")
                 .accessibilityIdentifier("reader-speech-toggle")
                 .accessibilityValue(speechControlsExpanded ? "expanded" : "collapsed")
             }
@@ -456,7 +470,6 @@ struct ReaderHostView: View {
             state: activeSpeechState,
             choice: activeSpeechChoice,
             languageOverride: container.settingsRepository.speechLanguageOverride,
-            foregroundColor: container.settingsRepository.theme.background,
             tint: container.settingsRepository.theme.primary,
             onToggle: toggleActiveSpeech,
             onLanguageChange: changeSpeechLanguage,
@@ -534,6 +547,13 @@ struct ReaderHostView: View {
     private func toggleActiveSpeech() {
         activeSpeech?.toggle()
         syncPlaybackSpeech()
+    }
+
+    private func startCarPlaySpeechIfReady() {
+        guard (activeFormat == .epub && epubController.ready)
+                || (activeFormat == .fb2 && fb2Controller.ready),
+              playback.consumeCarPlayAutoplay(for: book.id) else { return }
+        if activeSpeechState != .playing && activeSpeechState != .preparing { toggleActiveSpeech() }
     }
 
     private var readerSearchSheet: some View {
@@ -780,6 +800,7 @@ struct ReaderHostView: View {
             let saved = container.progressRepository.get(bookId: book.id)
             let format = CatalogRepository.detectedFormat(fileURL: openedURL) ?? book.format
             resolvedFormat = format
+            if format == .fb2 { fb2Controller.configureNowPlaying(book: book) }
             if presentationOrigin == .user {
                 container.settingsRepository.saveReaderSelection(
                     ReaderSelection(bookId: book.id, format: format)
@@ -1232,6 +1253,70 @@ final class FB2ReaderController: NSObject, ObservableObject {
     private var pauseExpiryTask: Task<Void, Never>?
     private var speechLocations: [(offset: Int, locator: String)] = []
     private var lastPlayback: SpeechPlaybackChoice?
+    private var resumeParagraphIndex = 0
+    private var nowPlayingBookID = ""
+    private var nowPlayingTitle = ""
+    private var nowPlayingAuthor = ""
+    private var nowPlayingArtwork: MPMediaItemArtwork?
+    private var remoteTargets: [(MPRemoteCommand, Any)] = []
+
+    func configureNowPlaying(book: CatalogBook) {
+        nowPlayingBookID = book.id
+        nowPlayingTitle = book.title
+        nowPlayingAuthor = book.author
+        refreshNowPlayingArtwork(book: book)
+        guard remoteTargets.isEmpty else { return }
+        let commands = MPRemoteCommandCenter.shared()
+        commands.playCommand.isEnabled = true
+        commands.pauseCommand.isEnabled = true
+        remoteTargets.append((commands.playCommand, commands.playCommand.addTarget { [weak self] _ in
+            Task { @MainActor in
+                guard let self else { return }
+                if self.speechState == .paused { self.resumeSpeech() }
+                else if self.speechState == .idle, let playback = self.lastPlayback {
+                    self.toggleSpeech(playback: playback)
+                }
+            }
+            return .success
+        }))
+        remoteTargets.append((commands.pauseCommand, commands.pauseCommand.addTarget { [weak self] _ in
+            Task { @MainActor in self?.pauseSpeech() }
+            return .success
+        }))
+    }
+
+    func refreshNowPlayingArtwork(book: CatalogBook) {
+        guard nowPlayingBookID == book.id else { return }
+        let image = CoverArtwork.image(for: book, discovery: AppContainer.shared.coverDiscovery)
+        nowPlayingArtwork = MPMediaItemArtwork(boundsSize: image.size) { _ in image }
+        if MPNowPlayingInfoCenter.default().nowPlayingInfo != nil { updateNowPlaying() }
+    }
+
+    func endNowPlaying() {
+        for (command, target) in remoteTargets { command.removeTarget(target) }
+        remoteTargets.removeAll()
+        clearNowPlaying()
+    }
+
+    private func clearNowPlaying() {
+        MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
+        UIApplication.shared.endReceivingRemoteControlEvents()
+    }
+
+    private func updateNowPlaying() {
+        UIApplication.shared.beginReceivingRemoteControlEvents()
+        let playing = speechState == .playing || speechState == .preparing
+        let center = MPNowPlayingInfoCenter.default()
+        center.playbackState = playing ? .playing : .paused
+        var info: [String: Any] = [
+            MPMediaItemPropertyTitle: nowPlayingTitle,
+            MPMediaItemPropertyArtist: nowPlayingAuthor,
+            MPMediaItemPropertyMediaType: MPMediaType.audioBook.rawValue,
+            MPNowPlayingInfoPropertyPlaybackRate: playing ? 1.0 : 0.0
+        ]
+        if let nowPlayingArtwork { info[MPMediaItemPropertyArtwork] = nowPlayingArtwork }
+        center.nowPlayingInfo = info
+    }
 
     override init() {
         super.init()
@@ -1268,6 +1353,7 @@ final class FB2ReaderController: NSObject, ObservableObject {
                 let count = sections.reduce(0) { $0 + $1.paragraphs.count }
                 let rank = sections.prefix(index).reduce(0) { $0 + $1.paragraphs.count } + paragraph
                 progression = count > 1 ? Double(rank) / Double(count - 1) : progress(for: index)
+                resumeParagraphIndex = paragraph
                 requestedSectionID = sections[index].id
             }
             ready = true
@@ -1281,6 +1367,7 @@ final class FB2ReaderController: NSObject, ObservableObject {
         let rank = sections.prefix(index).reduce(0) { $0 + $1.paragraphs.count } + paragraphIndex
         progression = count > 1 ? Double(rank) / Double(count - 1) : progress(for: index)
         furthestProgression = max(furthestProgression, progression)
+        resumeParagraphIndex = paragraphIndex
         return "fb2:\(sections[index].id):\(max(0, paragraphIndex)):\(max(0, offset))"
     }
 
@@ -1381,6 +1468,7 @@ final class FB2ReaderController: NSObject, ObservableObject {
         }
         isSpeechPreparing = true
         speechState = .preparing
+        updateNowPlaying()
         lastPlayback = playback
         setSpeaking(true)
         switch playback.engine {
@@ -1424,6 +1512,7 @@ final class FB2ReaderController: NSObject, ObservableObject {
         isSpeaking = false
         isSpeechPreparing = false
         speechState = .paused
+        updateNowPlaying()
         refreshSpeechRetention()
         pauseExpiryTask?.cancel()
         pauseExpiryTask = Task { [weak self] in
@@ -1445,6 +1534,7 @@ final class FB2ReaderController: NSObject, ObservableObject {
         }
         speechState = .playing
         setSpeaking(true)
+        updateNowPlaying()
     }
 
     private func stopSpeech(unload: Bool = false) {
@@ -1454,6 +1544,7 @@ final class FB2ReaderController: NSObject, ObservableObject {
         speech.stopSpeaking(at: .immediate)
         speechState = .idle
         setSpeaking(false)
+        clearNowPlaying()
         try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
     }
 
@@ -1461,6 +1552,7 @@ final class FB2ReaderController: NSObject, ObservableObject {
         pauseExpiryTask?.cancel()
         speechState = .idle
         setSpeaking(false)
+        clearNowPlaying()
         try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
     }
 
@@ -1470,6 +1562,7 @@ final class FB2ReaderController: NSObject, ObservableObject {
         var locations: [(Int, String)] = []
         for section in sections.dropFirst(sectionIndex) {
             for (paragraphIndex, paragraph) in section.paragraphs.enumerated() {
+                if section.index == sectionIndex && paragraphIndex < resumeParagraphIndex { continue }
                 let value = paragraph.text.trimmingCharacters(in: .whitespacesAndNewlines)
                 guard !value.isEmpty else { continue }
                 if !text.isEmpty { text += "\n\n" }
