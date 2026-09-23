@@ -106,6 +106,7 @@ protocol NeuralSpeechScheduling: AnyObject {
     func schedule(
         samples: [Float],
         sampleRate: Double,
+        onRendered: @escaping () -> Void,
         completion: @escaping () -> Void
     ) throws
 }
@@ -161,6 +162,7 @@ final class NeuralSpeechSession {
     private var nextRender = 0
     private var nextSchedule = 0
     private var queuedOnPlayer = 0
+    private var awaitingRenderBoundary = false
     private var synthesizing = false
     private var sampleRate: Double = 24_000
     private var ready: [Int: (samples: [Float], sampleRate: Double)] = [:]
@@ -208,6 +210,7 @@ final class NeuralSpeechSession {
         nextRender = 0
         nextSchedule = 0
         queuedOnPlayer = 0
+        awaitingRenderBoundary = false
         synthesizing = false
         ready = [:]
         phraseDurations = [:]
@@ -255,6 +258,7 @@ final class NeuralSpeechSession {
         activePhrase = nil
         synthesizing = false
         queuedOnPlayer = 0
+        awaitingRenderBoundary = false
         ready.removeAll()
         phraseDurations.removeAll()
         chunks.removeAll()
@@ -308,11 +312,11 @@ final class NeuralSpeechSession {
     }
 
     private func scheduleReady() {
-        // Keep rendered lookahead in memory, but give AVAudioPlayerNode only
-        // the phrase that is actually next. If iOS flushes a node containing
-        // several scheduled buffers, it invokes all their completion handlers
-        // and narration appears to skip several paragraphs at once.
-        guard queuedOnPlayer == 0,
+        // Feed only one new phrase per render boundary. The next phrase can enter
+        // AVAudioPlayerNode once the current phrase has rendered, while reading
+        // position still advances only after the device reports it played back.
+        // This hides Bluetooth/output latency without queuing the whole lookahead.
+        guard !awaitingRenderBoundary,
               nextSchedule < chunks.count,
               let audio = ready[nextSchedule] else {
             prefetch()
@@ -321,7 +325,9 @@ final class NeuralSpeechSession {
         let index = nextSchedule
         nextSchedule += 1
         ready[index] = nil
+        let startsNow = queuedOnPlayer == 0
         queuedOnPlayer += 1
+        awaitingRenderBoundary = true
         let active = generation
         do {
             let voiced = NeuralSpeechAudio.trimTrailingSilence(
@@ -335,14 +341,30 @@ final class NeuralSpeechSession {
             )
             let duration = Double(samples.count) / max(audio.sampleRate, 1)
             phraseDurations[index] = duration
-            announcePhrase(index)
-            try player.schedule(samples: samples, sampleRate: audio.sampleRate) { [weak self] in
+            if startsNow {
+                announcePhrase(index)
+            }
+            try player.schedule(
+                samples: samples,
+                sampleRate: audio.sampleRate,
+                onRendered: { [weak self] in
+                    DispatchQueue.main.async {
+                        guard let self, self.generation == active else { return }
+                        self.awaitingRenderBoundary = false
+                        self.scheduleReady()
+                        self.prefetch()
+                    }
+                }
+            ) { [weak self] in
                 DispatchQueue.main.async {
                     guard let self, self.generation == active else { return }
                     self.queuedOnPlayer -= 1
                     if index == self.chunks.count - 1 {
                         self.finish()
                         return
+                    }
+                    if self.queuedOnPlayer > 0 {
+                        self.announcePhrase(index + 1)
                     }
                     self.scheduleReady()
                     self.prefetch()

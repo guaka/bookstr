@@ -98,20 +98,6 @@ final class ReaderAssetContractTests: XCTestCase {
         XCTAssertNil(PublicationUtilities.fb2Metadata(fileURL: url))
     }
 
-    func testPublicationHashReturnsNilWhenFileHandleCannotReadDirectory() throws {
-        let directory = FileManager.default.temporaryDirectory
-            .appendingPathComponent("bookstr-hash-directory-\(UUID().uuidString)", isDirectory: true)
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: directory) }
-        XCTAssertNil(PublicationUtilities.sha256(fileURL: directory))
-
-        let file = directory.appendingPathComponent("readable")
-        try Data("content".utf8).write(to: file)
-        XCTAssertNil(PublicationUtilities.sha256(fileURL: file) { _, _ in
-            throw CocoaError(.fileReadUnknown)
-        })
-    }
-
 #if !SWIFT_PACKAGE
     func testFreeLicensedCBRFixtureContainsFourReadableJPEGPages() throws {
         let fileURL = try comicFixture(named: "bobby-make-believe-public-domain", extension: "cbr")
@@ -748,7 +734,7 @@ final class ReaderAssetContractTests: XCTestCase {
         XCTAssertFalse(source.contains("errorMessage = \"No readable text is visible here.\""))
         XCTAssertTrue(source.contains("func dismissSpeechStatus()"))
         XCTAssertTrue(source.contains("continueSpeechAcrossSections()"))
-        XCTAssertTrue(source.contains("window.continueSpeechAfterSection && window.continueSpeechAfterSection"))
+        XCTAssertTrue(source.contains("continueSpeechAfterSection(true"))
         XCTAssertTrue(source.contains("exhausted: Bool = false"))
         XCTAssertTrue(source.contains("if !exhausted"))
         XCTAssertTrue(source.contains("speechStopRequested"))
@@ -1003,7 +989,10 @@ final class ReaderAssetContractTests: XCTestCase {
             .appendingPathComponent("Sources/Features/Reader/ReaderHostView.swift")
         let host = try String(contentsOf: hostURL, encoding: .utf8)
         XCTAssertTrue(host.contains("isSpeechPreparing"))
-        XCTAssertTrue(host.contains("Preparing reading aloud"))
+        XCTAssertTrue(host.contains("reader-speech-playback"))
+        XCTAssertTrue(host.contains("reader-speech-language"))
+        XCTAssertTrue(host.contains("reader-speech-engine"))
+        XCTAssertTrue(host.contains("reader-speech-speed"))
         let epubURL = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
             .deletingLastPathComponent()
@@ -1011,6 +1000,7 @@ final class ReaderAssetContractTests: XCTestCase {
         let epub = try String(contentsOf: epubURL, encoding: .utf8)
         XCTAssertTrue(epub.contains("isSpeechPreparing"))
         XCTAssertTrue(epub.contains("markSpeechStarted()"))
+        XCTAssertTrue(epub.contains("guard speechState != .paused else { return }"))
         let relaysIndex = try XCTUnwrap(settings.range(of: "settings-relays-editor")?.lowerBound)
         let logsIndex = try XCTUnwrap(settings.range(of: "speech-debug-logs")?.lowerBound)
         XCTAssertLessThan(relaysIndex, logsIndex, "speech logs must sit below the relays editor")
@@ -1070,6 +1060,44 @@ final class ReaderAssetContractTests: XCTestCase {
             encoding: .utf8
         )
         XCTAssertNotNil(info.range(of: #"<key>UIStatusBarHidden</key>\s*<true/>"#, options: .regularExpression))
+    }
+
+    func testReaderChromeUsesSafeAreaGeometryAndAccessibleOverlayControls() throws {
+        let sources = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let host = try String(
+            contentsOf: sources.appendingPathComponent("Sources/Features/Reader/ReaderHostView.swift"),
+            encoding: .utf8
+        )
+        XCTAssertTrue(host.contains("chromeMetrics = ReaderDeviceGeometry.metrics(fallback: layoutOrientation)"))
+        XCTAssertTrue(host.contains("ReaderHeaderBackground("))
+        XCTAssertTrue(host.contains("ReaderTopIslandCutout"))
+        XCTAssertTrue(host.contains("cornerRadius: metrics.bottomCornerRadius"))
+        XCTAssertTrue(host.contains("frame(height: metrics.activationZoneHeight)"))
+        XCTAssertTrue(host.contains(".accessibilityHidden(true)"))
+        XCTAssertTrue(host.contains("accessibilityIdentifier(\"reader-button-island\")"))
+        for identifier in ["continue", "search", "library", "settings"] {
+            XCTAssertTrue(host.contains("identifier: \"\(identifier)\""))
+        }
+        XCTAssertTrue(host.contains("reader-pane-words"))
+        XCTAssertFalse(host.contains("let curve = min(16"))
+
+        let root = try String(
+            contentsOf: sources.appendingPathComponent("Sources/App/RootView.swift"),
+            encoding: .utf8
+        )
+        XCTAssertTrue(root.contains("safeTop: proxy.safeAreaInsets.top"))
+        XCTAssertTrue(root.contains("padding(.top, metrics.clockTopPadding)"))
+        XCTAssertTrue(root.contains("offset(y: -proxy.safeAreaInsets.top)"))
+        XCTAssertFalse(root.contains("ReaderClockLabel()\n                .foregroundStyle"))
+
+        let info = try String(
+            contentsOf: sources.appendingPathComponent("Info.plist"),
+            encoding: .utf8
+        )
+        XCTAssertTrue(info.contains("UIInterfaceOrientationLandscapeLeft"))
+        XCTAssertTrue(info.contains("UIInterfaceOrientationLandscapeRight"))
     }
 
     /// `downloadedBooksLock` is a plain NSLock. Calling the public cache

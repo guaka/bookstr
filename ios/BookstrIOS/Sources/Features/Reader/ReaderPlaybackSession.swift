@@ -1,6 +1,21 @@
 import Combine
 import Foundation
 
+enum ReaderSpeechState: String, Equatable {
+    case idle
+    case preparing
+    case playing
+    case paused
+}
+
+enum ReaderSpeechPausePolicy {
+    static let expiration: TimeInterval = 300
+
+    static func shouldExpire(pausedAt: Date, now: Date) -> Bool {
+        now.timeIntervalSince(pausedAt) >= expiration
+    }
+}
+
 enum ReaderSpeechRetention {
     static func isRetained(
         speaking: Bool,
@@ -23,6 +38,63 @@ enum ReaderHighlightKind: String, Equatable {
 enum ReaderPresentationOrigin: Equatable {
     case user
     case continuation
+}
+
+enum ReaderLayoutOrientation: Equatable {
+    case portrait
+    case landscapeLeft
+    case landscapeRight
+}
+
+enum ReaderDynamicIslandEdge: Equatable {
+    case none
+    case top
+    case leading
+    case trailing
+}
+
+/// A single geometry contract for reader chrome. Keeping these values derived
+/// from the live safe area prevents rotation from changing the publication's
+/// viewport for arbitrary device-specific constants.
+struct ReaderChromeMetrics: Equatable {
+    static let dynamicIslandInsetThreshold: CGFloat = 51
+
+    let width: CGFloat
+    let height: CGFloat
+    let safeTop: CGFloat
+    let safeLeading: CGFloat
+    let safeBottom: CGFloat
+    let safeTrailing: CGFloat
+    let orientation: ReaderLayoutOrientation
+
+    var dynamicIslandEdge: ReaderDynamicIslandEdge {
+        switch orientation {
+        case .portrait:
+            return safeTop >= Self.dynamicIslandInsetThreshold ? .top : .none
+        case .landscapeLeft:
+            return max(safeLeading, safeTrailing) >= Self.dynamicIslandInsetThreshold ? .leading : .none
+        case .landscapeRight:
+            return max(safeLeading, safeTrailing) >= Self.dynamicIslandInsetThreshold ? .trailing : .none
+        }
+    }
+
+    var headerHeight: CGFloat {
+        max(48, safeTop + 44)
+    }
+
+    var controlsTopInset: CGFloat { max(safeTop, 0) }
+    var contentTopInset: CGFloat { headerHeight }
+    var horizontalControlInset: CGFloat { max(6, max(safeLeading, safeTrailing) + 6) }
+    var islandTopInset: CGFloat { max(7, safeTop - 51) }
+    var clockTopPadding: CGFloat { max(1, islandTopInset - 6) }
+    var progressHeight: CGFloat { max(18, safeBottom + 8) }
+    var activationZoneHeight: CGFloat { max(58, safeBottom + 52) }
+
+    var bottomCornerRadius: CGFloat {
+        let physicalInset = max(safeBottom + 12, max(safeLeading, safeTrailing) * 0.85)
+        guard physicalInset > 12 else { return 0 }
+        return min(56, max(20, physicalInset))
+    }
 }
 
 enum ReaderContinuationSelection {
@@ -68,6 +140,7 @@ final class ReaderPlaybackSession: ObservableObject {
     }
 
     static let toggleSpeechNotification = Notification.Name("bookstrToggleReaderSpeech")
+    static let openSpeechSettingsNotification = Notification.Name("bookstrOpenSpeechSettings")
 
     @Published private(set) var item: Item?
     @Published private(set) var isVisible = false

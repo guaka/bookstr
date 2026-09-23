@@ -49,7 +49,7 @@ final class BookRightsV1ContractTests: XCTestCase {
 
         let catalog = CatalogBook(
             id: "catalog", title: "Title", author: "Author", epubUrl: "book.cbz", coverUrl: nil,
-            sourceUrl: nil, isbn: nil, libvaultMd5: nil, format: .cbz, blossomSha256: nil, year: nil,
+            sourceUrl: nil, isbn: nil, libvaultMd5: nil, format: .cbz, year: nil,
             rightsStatus: "open", license: "CC BY 4.0", licenseUrl: nil, rightsSource: "test"
         )
         XCTAssertEqual(catalog.rights.status, .openLicense)

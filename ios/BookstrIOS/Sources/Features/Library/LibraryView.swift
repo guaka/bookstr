@@ -122,12 +122,12 @@ struct LibraryView: View {
                             if let book = CatalogRepository.fromExternalFavorite(favorite) {
                                 open(book)
                             } else {
-                                openError = "This favorite has not been published to Blossom yet."
+                                openError = "This favorite does not include a readable publication URL."
                             }
                         } label: {
                             BookListDetails(title: displayTitle(favorite), author: favorite.author ?? "Unknown author",
                                             year: favorite.year, format: favorite.format, language: nil,
-                                            publisher: favorite.blossomSha256 != nil ? "On Blossom" : "Not on Blossom",
+                                            publisher: favorite.url == nil ? nil : "Remote publication",
                                             coverURL: favorite.coverUrl,
                                             rights: favorite.rights)
                                 .textSelection(.enabled)

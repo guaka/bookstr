@@ -6,6 +6,71 @@ import XCTest
 #endif
 
 final class ReaderPlaybackSessionTests: XCTestCase {
+    func testDynamicIslandPortraitChromeUsesTopSafeArea() {
+        let metrics = ReaderChromeMetrics(
+            width: 393, height: 852,
+            safeTop: 59, safeLeading: 0, safeBottom: 34, safeTrailing: 0,
+            orientation: .portrait
+        )
+
+        XCTAssertEqual(metrics.dynamicIslandEdge, .top)
+        XCTAssertEqual(metrics.headerHeight, 103)
+        XCTAssertEqual(metrics.contentTopInset, 103)
+        XCTAssertEqual(metrics.islandTopInset, 8)
+        XCTAssertEqual(metrics.clockTopPadding, 2)
+        XCTAssertEqual(metrics.progressHeight, 42)
+        XCTAssertEqual(metrics.bottomCornerRadius, 46)
+        XCTAssertEqual(metrics.activationZoneHeight, 86)
+    }
+
+    func testNonIslandPortraitChromeKeepsContinuousHeader() {
+        let metrics = ReaderChromeMetrics(
+            width: 375, height: 667,
+            safeTop: 20, safeLeading: 0, safeBottom: 0, safeTrailing: 0,
+            orientation: .portrait
+        )
+
+        XCTAssertEqual(metrics.dynamicIslandEdge, .none)
+        XCTAssertEqual(metrics.headerHeight, 64)
+        XCTAssertEqual(metrics.bottomCornerRadius, 0)
+        XCTAssertEqual(metrics.progressHeight, 18)
+        XCTAssertEqual(metrics.activationZoneHeight, 58)
+    }
+
+    func testDynamicIslandMovesToCorrectLandscapeEdge() {
+        let left = ReaderChromeMetrics(
+            width: 852, height: 393,
+            safeTop: 0, safeLeading: 59, safeBottom: 21, safeTrailing: 59,
+            orientation: .landscapeLeft
+        )
+        let right = ReaderChromeMetrics(
+            width: 852, height: 393,
+            safeTop: 0, safeLeading: 59, safeBottom: 21, safeTrailing: 59,
+            orientation: .landscapeRight
+        )
+
+        XCTAssertEqual(left.dynamicIslandEdge, .leading)
+        XCTAssertEqual(right.dynamicIslandEdge, .trailing)
+        XCTAssertEqual(left.headerHeight, 48)
+        XCTAssertEqual(left.horizontalControlInset, 65)
+        XCTAssertEqual(left.progressHeight, 29)
+        XCTAssertEqual(left.bottomCornerRadius, 50.15, accuracy: 0.001)
+        XCTAssertEqual(left.activationZoneHeight, 73)
+    }
+
+    func testPausedSpeechExpiresAtFiveMinutes() {
+        let pausedAt = Date(timeIntervalSince1970: 1_000)
+        XCTAssertFalse(ReaderSpeechPausePolicy.shouldExpire(
+            pausedAt: pausedAt,
+            now: pausedAt.addingTimeInterval(299.999)
+        ))
+        XCTAssertTrue(ReaderSpeechPausePolicy.shouldExpire(
+            pausedAt: pausedAt,
+            now: pausedAt.addingTimeInterval(300)
+        ))
+        XCTAssertEqual(ReaderSpeechPausePolicy.expiration, 300)
+    }
+
     func testLegacyReaderSessionUsesNewestAvailableComicProgress() throws {
         let legacyJSON = """
         {"bookId":"old-epub","bookTitle":"Old","format":"epub","pageIndex":0,"pageOffset":0}
@@ -313,7 +378,6 @@ final class ReaderPlaybackSessionTests: XCTestCase {
             isbn: nil,
             libvaultMd5: nil,
             format: .epub,
-            blossomSha256: nil,
             year: nil
         )
     }

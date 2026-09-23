@@ -49,7 +49,8 @@ enum SpeechLanguageSettings {
     static let maximumRate = 0.60
     static let speechEngineKey = "speech_engine"
     /// Always available in TTS settings, regardless of library contents.
-    static let seededLanguageTags = ["en", "pt-pt", "fr", "de", "es", "ca", "nl"]
+    static let seededLanguageTags = ["en", "pt-pt", "pt-br", "fr", "de", "es", "ca", "nl"]
+    static let automaticLanguage = "auto"
 
     static func preferredLanguageTag(_ raw: String) -> String {
         let normalized = raw.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -185,8 +186,9 @@ enum SpeechLanguageSettings {
             guard !trimmed.isEmpty else { continue }
             let tag = preferredLanguageTag(trimmed)
             let base = baseLanguage(tag)
-            guard seen.insert(base).inserted else { continue }
-            ordered.append(base == "pt" ? "pt-pt" : base)
+            let key = base == "pt" ? tag : base
+            guard seen.insert(key).inserted else { continue }
+            ordered.append(base == "pt" ? tag : base)
         }
         return ordered.sorted {
             displayName(for: $0).localizedCaseInsensitiveCompare(displayName(for: $1)) == .orderedAscending
@@ -194,12 +196,26 @@ enum SpeechLanguageSettings {
     }
 
     static func displayName(for languageTag: String) -> String {
+        if languageTag == automaticLanguage { return "Auto" }
         let tag = preferredLanguageTag(languageTag)
         let base = baseLanguage(tag)
+        if base == "pt",
+           let name = Locale.current.localizedString(forIdentifier: tag.replacingOccurrences(of: "-", with: "_")),
+           !name.isEmpty {
+            return name
+        }
         if let name = Locale.current.localizedString(forLanguageCode: base), !name.isEmpty {
             return name
         }
         return base.uppercased()
+    }
+
+    static func playbackLanguage(override: String, bookLanguage: String?) -> String {
+        let selected = override.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if selected.isEmpty || selected == automaticLanguage {
+            return preferredLanguageTag(bookLanguage ?? "en")
+        }
+        return preferredLanguageTag(selected)
     }
 
     static func decodeSettings(_ data: Data?) -> [String: SpeechLanguageSetting] {

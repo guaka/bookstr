@@ -8,46 +8,6 @@ import XCTest
 #endif
 
 final class NostrClientProgressTests: XCTestCase {
-    func testSharedBlossomAuthorizationV1Fixtures() throws {
-        let fixture = try XCTUnwrap(
-            JSONSerialization.jsonObject(with: Data(contentsOf: blossomAuthorizationFixtureURL())) as? [String: Any]
-        )
-        XCTAssertEqual(fixture["version"] as? Int, 1)
-        for entry in try XCTUnwrap(fixture["cases"] as? [[String: Any]]) {
-            let name = try XCTUnwrap(entry["name"] as? String)
-            let request = try? BlossomAuthorizationWire.unsignedGetEvent(
-                hash: try XCTUnwrap(entry["hash"] as? String),
-                server: try XCTUnwrap(entry["server"] as? String),
-                now: try XCTUnwrap(entry["now"] as? Int64 ?? (entry["now"] as? NSNumber)?.int64Value),
-                content: try XCTUnwrap(entry["content"] as? String)
-            )
-            guard entry["valid"] as? Bool == true else {
-                XCTAssertNil(request, name)
-                continue
-            }
-            let value = try XCTUnwrap(request, name)
-            let actual: [String: Any] = [
-                "kind": value.kind,
-                "created_at": value.createdAt,
-                "tags": value.tags,
-                "content": value.content,
-            ]
-            XCTAssertTrue(
-                NSDictionary(dictionary: actual).isEqual(to: try XCTUnwrap(entry["expected"] as? [String: Any])),
-                name
-            )
-        }
-    }
-
-    private func blossomAuthorizationFixtureURL() -> URL {
-        URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .appendingPathComponent("shared/fixtures/blossom-authorization-v1.json")
-    }
-
     func testProgressRoundTripsRightsMetadata() throws {
         let content = NostrClient.progressContent(
             bookId: "book", progression: 0.4, cfi: "cfi", title: "Open", author: "Author", updatedAt: 1,

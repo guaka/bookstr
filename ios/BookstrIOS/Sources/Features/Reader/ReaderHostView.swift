@@ -15,6 +15,7 @@ struct ReaderHostView: View {
     var presentationOrigin: ReaderPresentationOrigin = .user
     var showsReaderChrome: Bool = true
     var onClose: (() -> Void)? = nil
+    var onSelectPane: ((Int) -> Void)? = nil
     @State private var localURL: URL?
     @State private var resolvedFormat: BookFormat?
     // The host must render a concrete view on its first frame. Starting with
@@ -27,6 +28,15 @@ struct ReaderHostView: View {
     @State private var pdfSelection: PDFTextSelection?
     @State private var showSearch = false
     @State private var searchQuery = ""
+    @State private var speechControlsExpanded = false
+    @State private var buttonIslandVisible = false
+    @State private var buttonIslandDismissTask: Task<Void, Never>?
+    @State private var layoutOrientation: ReaderLayoutOrientation = .portrait
+    @State private var chromeMetrics = ReaderChromeMetrics(
+        width: 393, height: 852,
+        safeTop: 59, safeLeading: 0, safeBottom: 34, safeTrailing: 0,
+        orientation: .portrait
+    )
     @StateObject private var epubController = EPUBReaderController()
     @StateObject private var pdfController = PDFReaderController()
     @StateObject private var fb2Controller = FB2ReaderController()
@@ -35,6 +45,26 @@ struct ReaderHostView: View {
     private var activeFormat: BookFormat { resolvedFormat ?? book.format }
 
     var body: some View {
+        ZStack {
+            readerBody(metrics: chromeMetrics)
+        }
+        // Rebuild the layout subtree when the interface rotates. UIKit updates
+        // the window geometry before every embedded reader reports its new
+        // viewport, while SwiftUI can otherwise retain the portrait proposal
+        // for this full-screen overlay.
+        .id(layoutOrientation)
+        .frame(width: chromeMetrics.width, height: chromeMetrics.height)
+        .onReceive(NotificationCenter.default.publisher(for: UIDevice.orientationDidChangeNotification)) { _ in
+            updateLayoutOrientation(UIDevice.current.orientation)
+            Task { @MainActor in
+                try? await Task.sleep(for: .milliseconds(100))
+                chromeMetrics = ReaderDeviceGeometry.metrics(fallback: layoutOrientation)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func readerBody(metrics: ReaderChromeMetrics) -> some View {
         Group {
             if loading {
                 ProgressView(Self.openingMessage(for: book))
@@ -51,7 +81,7 @@ struct ReaderHostView: View {
                         textSelection: $pdfSelection,
                         controller: pdfController
                     )
-                    .padding(.top, 48)
+                    .padding(.top, metrics.contentTopInset)
                 } else if activeFormat == .fb2 {
                     FB2ReaderView(
                         book: book,
@@ -62,7 +92,7 @@ struct ReaderHostView: View {
                             persistProgress(progression, locator: locator, format: .fb2)
                         }
                     )
-                    .padding(.top, 48)
+                    .padding(.top, metrics.contentTopInset)
                     .padding(.bottom, 5)
                 } else if activeFormat == .cbr || activeFormat == .cbz {
                     ComicReaderView(
@@ -75,13 +105,13 @@ struct ReaderHostView: View {
                             persistProgress(progression, locator: locator, format: activeFormat)
                         }
                     )
-                    .padding(.top, 48)
+                    .padding(.top, metrics.contentTopInset)
                     .padding(.bottom, 5)
                 } else {
                     EPUBReaderView(book: book, fileURL: localURL, controller: epubController,
                                    initialCFI: initialLocator, highlightCFI: highlightLocator,
                                    highlightKind: highlightKind)
-                        .padding(.top, 48)
+                        .padding(.top, metrics.contentTopInset)
                         .padding(.bottom, 5)
                 }
             } else {
@@ -150,10 +180,26 @@ struct ReaderHostView: View {
                     .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
             }
         }
-        .overlay(alignment: .top) {
-            readerTopBar
+        .overlay {
+            if buttonIslandVisible {
+                Color.clear
+                    .contentShape(Rectangle())
+                    .onTapGesture(perform: hideButtonIsland)
+                    .accessibilityHidden(true)
+            }
         }
-        .overlay(alignment: .bottom) { readerBottomBar }
+        .overlay(alignment: .top) {
+            readerTopBar(metrics: metrics)
+        }
+        .overlay(alignment: .topTrailing) {
+            if activeFormat == .epub || activeFormat == .fb2 {
+                speechControlIsland
+                    .padding(.top, metrics.headerHeight + 4)
+                    .padding(.trailing, max(8, metrics.safeTrailing + 8))
+            }
+        }
+        .overlay(alignment: .bottom) { readerBottomBar(metrics: metrics) }
+        .overlay(alignment: .bottom) { buttonIslandLayer(metrics: metrics) }
         .ignoresSafeArea(.all, edges: .all)
         .sheet(isPresented: $showSections) {
             NavigationStack {
@@ -233,11 +279,14 @@ struct ReaderHostView: View {
             dismissKeyboard()
             updateIdleTimer()
             syncPlaybackSpeech()
+            updateLayoutOrientation(UIDevice.current.orientation)
+            chromeMetrics = ReaderDeviceGeometry.metrics(fallback: layoutOrientation)
         }
         .onDisappear {
+            buttonIslandDismissTask?.cancel()
             UIApplication.shared.isIdleTimerDisabled = false
-            if epubController.isSpeechRetained { epubController.toggleSpeech() }
-            if fb2Controller.isSpeechRetained { fb2Controller.toggleSpeech(playback: fb2SpeechChoice) }
+            if epubController.isSpeechRetained { epubController.stopSpeechCompletely() }
+            if fb2Controller.isSpeechRetained { fb2Controller.stopSpeechCompletely() }
             epubController.endNowPlaying()
         }
         .onChange(of: showsReaderChrome) { _, _ in updateIdleTimer() }
@@ -245,6 +294,10 @@ struct ReaderHostView: View {
         .onChange(of: epubController.isSpeaking) { _, _ in syncPlaybackSpeech() }
         .onChange(of: fb2Controller.isSpeechRetained) { _, _ in syncPlaybackSpeech() }
         .onChange(of: fb2Controller.isSpeaking) { _, _ in syncPlaybackSpeech() }
+        .onChange(of: fb2Controller.speechLocator) { _, locator in
+            guard let locator else { return }
+            persistProgress(fb2Controller.progression, locator: locator, format: .fb2)
+        }
         .onReceive(
             NotificationCenter.default.publisher(
                 for: ReaderPlaybackSession.toggleSpeechNotification,
@@ -271,7 +324,7 @@ struct ReaderHostView: View {
     }
 
     @ViewBuilder
-    private var readerTopBar: some View {
+    private func readerTopBar(metrics: ReaderChromeMetrics) -> some View {
         HStack(alignment: .top, spacing: 0) {
             Button(action: closeReader) {
                 Image(systemName: "arrow.left")
@@ -306,54 +359,17 @@ struct ReaderHostView: View {
             .buttonStyle(.plain)
             .accessibilityHint("Shows the complete rights statement and source")
 
-            if activeFormat == .epub {
+            if activeFormat == .epub || activeFormat == .fb2 {
                 Button {
-                    epubController.toggleSpeech()
-                    syncPlaybackSpeech()
+                    withAnimation(.snappy(duration: 0.2)) { speechControlsExpanded.toggle() }
                 } label: {
-                    Group {
-                        if epubController.isSpeechPreparing {
-                            ProgressView()
-                                .controlSize(.small)
-                        } else {
-                            Image(systemName: epubController.isSpeaking ? "stop.fill" : "play.fill")
-                                .font(.system(size: 16))
-                        }
-                    }
+                    Image(systemName: activeSpeechState == .playing ? "pause.fill" : "play.fill")
+                        .font(.system(size: 16))
                     .frame(width: 24, height: 24)
                 }
-                .accessibilityLabel(
-                    epubController.isSpeechPreparing
-                        ? "Preparing reading aloud"
-                        : (epubController.isSpeaking ? "Stop reading aloud" : "Read aloud")
-                )
+                .accessibilityLabel("Reading controls")
                 .accessibilityIdentifier("reader-speech-toggle")
-                .accessibilityValue(epubController.isSpeechPreparing ? "preparing" : "")
-            }
-
-            if activeFormat == .fb2 {
-                Button {
-                    fb2Controller.toggleSpeech(playback: fb2SpeechChoice)
-                    syncPlaybackSpeech()
-                } label: {
-                    Group {
-                        if fb2Controller.isSpeechPreparing {
-                            ProgressView()
-                                .controlSize(.small)
-                        } else {
-                            Image(systemName: fb2Controller.isSpeaking ? "stop.fill" : "play.fill")
-                                .font(.system(size: 16))
-                        }
-                    }
-                    .frame(width: 24, height: 24)
-                }
-                .accessibilityLabel(
-                    fb2Controller.isSpeechPreparing
-                        ? "Preparing reading aloud"
-                        : (fb2Controller.isSpeaking ? "Stop reading aloud" : "Read aloud")
-                )
-                .accessibilityIdentifier("reader-speech-toggle")
-                .accessibilityValue(fb2Controller.isSpeechPreparing ? "preparing" : "")
+                .accessibilityValue(speechControlsExpanded ? "expanded" : "collapsed")
             }
 
             if hasTableOfContents {
@@ -391,9 +407,18 @@ struct ReaderHostView: View {
             }
         }
         .foregroundStyle(container.settingsRepository.theme.background)
-        .padding(.leading, 6)
-        .frame(height: 48)
-        .background(container.settingsRepository.theme.primary.opacity(0.98))
+        .padding(.leading, metrics.horizontalControlInset)
+        .padding(.trailing, metrics.horizontalControlInset)
+        .padding(.top, metrics.controlsTopInset)
+        .frame(height: metrics.headerHeight, alignment: .top)
+        .background {
+            ReaderHeaderBackground(
+                metrics: metrics,
+                color: container.settingsRepository.theme.primary.opacity(0.98)
+            )
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("reader-top-header")
     }
 
     private var hasTableOfContents: Bool {
@@ -405,6 +430,115 @@ struct ReaderHostView: View {
 
     private var fb2SpeechChoice: SpeechPlaybackChoice {
         container.settingsRepository.speechChoice(for: fb2Controller.document?.language ?? "en")
+    }
+
+    private var activeSpeechState: ReaderSpeechState {
+        activeFormat == .epub ? epubController.speechState : fb2Controller.speechState
+    }
+
+    private var activeSpeechChoice: SpeechPlaybackChoice {
+        container.settingsRepository.speechChoice(for: book.language ?? fb2Controller.document?.language ?? "en")
+    }
+
+    private var speechControlIsland: some View {
+        HStack(spacing: 10) {
+            if speechControlsExpanded {
+                Button(action: toggleActiveSpeech) {
+                    if activeSpeechState == .preparing {
+                        ProgressView().controlSize(.small)
+                    } else {
+                        Image(systemName: activeSpeechState == .playing ? "pause.fill" : "play.fill")
+                    }
+                }
+                .accessibilityLabel(activeSpeechState == .playing ? "Pause reading aloud" : "Read aloud")
+                .accessibilityIdentifier("reader-speech-playback")
+
+                Menu {
+                    Button("Auto") { changeSpeechLanguage("auto") }
+                    ForEach(SpeechLanguageSettings.seededLanguageTags, id: \.self) { language in
+                        Button(SpeechLanguageSettings.displayName(for: language)) {
+                            changeSpeechLanguage(language)
+                        }
+                    }
+                } label: {
+                    Text(container.settingsRepository.speechLanguageOverride == "auto"
+                         ? "Auto"
+                         : container.settingsRepository.speechLanguageOverride.uppercased())
+                        .font(.caption.weight(.semibold))
+                }
+                .accessibilityLabel("Reading language")
+                .accessibilityIdentifier("reader-speech-language")
+
+                Menu {
+                    Button("Apple voices") { changeSpeechEngine(.system) }
+                    ForEach(SpeechEngineID.allCases.filter {
+                        $0.isNeural && $0.supports(language: activeSpeechChoice.languageTag)
+                    }, id: \.rawValue) { engine in
+                        if SpeechModelCatalog.model(engine)?.isInstalled == true {
+                            Button(engine.label) { changeSpeechEngine(engine) }
+                        } else {
+                            Button("\(engine.label) — Settings") { openSpeechSettings() }
+                        }
+                    }
+                } label: {
+                    Image(systemName: "waveform")
+                }
+                .accessibilityLabel("Reading voice")
+                .accessibilityIdentifier("reader-speech-engine")
+
+                Slider(
+                    value: Binding(
+                        get: { container.settingsRepository.speechRate },
+                        set: { container.settingsRepository.speechRate = $0 }
+                    ),
+                    in: SpeechLanguageSettings.minimumRate...SpeechLanguageSettings.maximumRate,
+                    onEditingChanged: { editing in if !editing { restartActiveSpeech() } }
+                )
+                .frame(width: 82)
+                .accessibilityLabel("Reading speed")
+                .accessibilityIdentifier("reader-speech-speed")
+
+                if activeSpeechState != .idle {
+                    Button(action: stopActiveSpeech) { Image(systemName: "stop.fill") }
+                        .accessibilityLabel("Stop reading aloud")
+                        .accessibilityIdentifier("reader-speech-stop")
+                }
+            }
+        }
+        .foregroundStyle(container.settingsRepository.theme.background)
+        .padding(.horizontal, speechControlsExpanded ? 14 : 0)
+        .frame(height: speechControlsExpanded ? 48 : 0)
+        .background(.ultraThinMaterial, in: Capsule())
+        .tint(container.settingsRepository.theme.primary)
+    }
+
+    private func changeSpeechLanguage(_ language: String) {
+        container.settingsRepository.speechLanguageOverride = language
+        restartActiveSpeech()
+    }
+
+    private func changeSpeechEngine(_ engine: SpeechEngineID) {
+        let language = activeSpeechChoice.languageTag
+        container.settingsRepository.setSpeechVoice(
+            engine == .system ? SpeechVoiceID.systemDefault : engine.rawValue,
+            for: language
+        )
+        restartActiveSpeech()
+    }
+
+    private func restartActiveSpeech() {
+        if activeFormat == .epub { epubController.restartSpeechWithCurrentSettings() }
+        else if activeFormat == .fb2 { fb2Controller.restartSpeech(playback: fb2SpeechChoice) }
+    }
+
+    private func stopActiveSpeech() {
+        if activeFormat == .epub { epubController.stopSpeechCompletely() }
+        else if activeFormat == .fb2 { fb2Controller.stopSpeechCompletely() }
+        syncPlaybackSpeech()
+    }
+
+    private func openSpeechSettings() {
+        NotificationCenter.default.post(name: ReaderPlaybackSession.openSpeechSettingsNotification, object: nil)
     }
 
     private var searchButton: some View {
@@ -583,7 +717,7 @@ struct ReaderHostView: View {
     }
 
     @ViewBuilder
-    private var readerBottomBar: some View {
+    private func readerBottomBar(metrics: ReaderChromeMetrics) -> some View {
         let progress = activeFormat == .epub ? epubController.progression :
             (activeFormat == .fb2 ? fb2Controller.progression :
                 ((activeFormat == .cbr || activeFormat == .cbz) ? comicController.progression : pdfController.progression))
@@ -596,9 +730,10 @@ struct ReaderHostView: View {
             CurvedReaderProgress(
                 progress: progress,
                 furthest: furthest,
-                theme: container.settingsRepository.theme
+                theme: container.settingsRepository.theme,
+                cornerRadius: metrics.bottomCornerRadius
             )
-            .frame(height: 18)
+            .frame(height: metrics.progressHeight)
             .contentShape(Rectangle())
             .onTapGesture {
                 if hasTableOfContents { showSections = true }
@@ -609,6 +744,109 @@ struct ReaderHostView: View {
                 "\(Int(round(100 * progress))) percent"
             )
             .accessibilityIdentifier("reader-progress-\(activeFormat.rawValue)")
+        }
+    }
+
+    @ViewBuilder
+    private func buttonIslandLayer(metrics: ReaderChromeMetrics) -> some View {
+        ZStack(alignment: .bottom) {
+            Color.clear
+                .frame(maxWidth: .infinity)
+                .frame(height: metrics.activationZoneHeight)
+                .contentShape(Rectangle())
+                .onTapGesture(perform: revealButtonIsland)
+                .accessibilityHidden(true)
+
+            if buttonIslandVisible {
+                readerButtonIsland
+                    .padding(.horizontal, max(12, max(metrics.safeLeading, metrics.safeTrailing)))
+                    .padding(.bottom, max(8, metrics.safeBottom))
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+        }
+        .animation(.snappy(duration: 0.22), value: buttonIslandVisible)
+    }
+
+    private var readerButtonIsland: some View {
+        HStack(spacing: 2) {
+            readerPaneButton(index: 0, label: "Continue reading", identifier: "continue", systemImage: "book.pages.fill")
+            readerPaneButton(index: 1, label: "Search", identifier: "search", systemImage: "magnifyingglass")
+            readerPaneButton(index: 2, label: "Library", identifier: "library", systemImage: "book.fill")
+            Button {
+                selectPane(3)
+            } label: {
+                Image("SpellcheckTab")
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: 20, height: 20)
+                    .frame(maxWidth: .infinity, minHeight: 48)
+            }
+            .accessibilityLabel("Words")
+            .accessibilityIdentifier("reader-pane-words")
+            readerPaneButton(index: 4, label: "Settings", identifier: "settings", systemImage: "gearshape.fill")
+        }
+        .foregroundStyle(container.settingsRepository.theme.primary)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .frame(maxWidth: 360)
+        .background(.ultraThinMaterial, in: Capsule())
+        .overlay(Capsule().stroke(container.settingsRepository.theme.primary.opacity(0.18), lineWidth: 1))
+        .shadow(color: .black.opacity(0.22), radius: 16, y: 7)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("reader-button-island")
+    }
+
+    private func readerPaneButton(index: Int, label: String, identifier: String, systemImage: String) -> some View {
+        Button {
+            selectPane(index)
+        } label: {
+            Image(systemName: systemImage)
+                .font(.system(size: 18, weight: .semibold))
+                .frame(maxWidth: .infinity, minHeight: 48)
+        }
+        .accessibilityLabel(label)
+        .accessibilityIdentifier("reader-pane-\(identifier)")
+    }
+
+    private func selectPane(_ index: Int) {
+        scheduleButtonIslandDismissal()
+        if let onSelectPane {
+            onSelectPane(index)
+        } else {
+            closeReader()
+        }
+    }
+
+    private func revealButtonIsland() {
+        buttonIslandVisible = true
+        scheduleButtonIslandDismissal()
+    }
+
+    private func hideButtonIsland() {
+        buttonIslandDismissTask?.cancel()
+        buttonIslandDismissTask = nil
+        buttonIslandVisible = false
+    }
+
+    private func scheduleButtonIslandDismissal() {
+        buttonIslandDismissTask?.cancel()
+        buttonIslandDismissTask = Task {
+            try? await Task.sleep(for: .seconds(4))
+            guard !Task.isCancelled else { return }
+            await MainActor.run { buttonIslandVisible = false }
+        }
+    }
+
+    private func updateLayoutOrientation(_ deviceOrientation: UIDeviceOrientation) {
+        switch deviceOrientation {
+        case .portrait, .portraitUpsideDown:
+            layoutOrientation = .portrait
+        case .landscapeLeft:
+            layoutOrientation = .landscapeLeft
+        case .landscapeRight:
+            layoutOrientation = .landscapeRight
+        default:
+            break
         }
     }
 
@@ -694,18 +932,19 @@ private struct CurvedReaderProgress: View {
     let progress: Double
     let furthest: Double
     let theme: ReaderTheme
+    let cornerRadius: CGFloat
 
     var body: some View {
         let foreground = theme == .night
             ? Color(red: 232 / 255, green: 228 / 255, blue: 220 / 255)
             : Color(red: 28 / 255, green: 25 / 255, blue: 22 / 255)
         ZStack {
-            BottomScreenCurve()
+            BottomScreenCurve(cornerRadius: cornerRadius)
                 .stroke(foreground.opacity(0.32), style: StrokeStyle(lineWidth: 3, lineCap: .round))
-            BottomScreenCurve()
+            BottomScreenCurve(cornerRadius: cornerRadius)
                 .trim(from: 0, to: min(max(furthest, 0), 1))
                 .stroke(theme.primary.opacity(0.55), style: StrokeStyle(lineWidth: 3, lineCap: .round))
-            BottomScreenCurve()
+            BottomScreenCurve(cornerRadius: cornerRadius)
                 .trim(from: 0, to: min(max(progress, 0), 1))
                 .stroke(theme.primary, style: StrokeStyle(lineWidth: 3, lineCap: .round))
         }
@@ -715,9 +954,11 @@ private struct CurvedReaderProgress: View {
 }
 
 private struct BottomScreenCurve: Shape {
+    let cornerRadius: CGFloat
+
     func path(in rect: CGRect) -> Path {
         var path = Path()
-        let curve = min(16, rect.width / 5)
+        let curve = min(cornerRadius, rect.width / 5)
         path.move(to: CGPoint(x: 0, y: 0))
         path.addQuadCurve(
             to: CGPoint(x: curve, y: rect.maxY - 1),
@@ -732,9 +973,99 @@ private struct BottomScreenCurve: Shape {
     }
 }
 
+private struct ReaderHeaderBackground: View {
+    let metrics: ReaderChromeMetrics
+    let color: Color
+
+    var body: some View {
+        ZStack(alignment: .top) {
+            Rectangle().fill(color)
+            if metrics.dynamicIslandEdge == .top {
+                ReaderTopIslandCutout(topInset: metrics.islandTopInset)
+                    .fill(.black)
+                    .accessibilityHidden(true)
+            }
+        }
+    }
+}
+
+/// The central pill is surrounded by shallow, symmetric stepped shoulders so
+/// the reader header visually flows around the physical Dynamic Island.
+private struct ReaderTopIslandCutout: Shape {
+    let topInset: CGFloat
+
+    func path(in rect: CGRect) -> Path {
+        let center = rect.midX
+        let pillHalfWidth: CGFloat = min(63, rect.width * 0.18)
+        let shoulderHalfWidth = pillHalfWidth + 17
+        let top = min(max(0, topInset), rect.maxY)
+        let pillBottom = min(rect.maxY, top + 37)
+        let shoulderBottom = min(rect.maxY, pillBottom + 10)
+        let radius = min(18.5, (pillBottom - top) / 2)
+        var path = Path()
+        path.move(to: CGPoint(x: center - pillHalfWidth + radius, y: top))
+        path.addLine(to: CGPoint(x: center + pillHalfWidth - radius, y: top))
+        path.addQuadCurve(
+            to: CGPoint(x: center + pillHalfWidth, y: top + radius),
+            control: CGPoint(x: center + pillHalfWidth, y: top)
+        )
+        path.addLine(to: CGPoint(x: center + pillHalfWidth, y: pillBottom - 8))
+        path.addCurve(
+            to: CGPoint(x: center + shoulderHalfWidth, y: pillBottom + 2),
+            control1: CGPoint(x: center + pillHalfWidth + 1, y: pillBottom - 2),
+            control2: CGPoint(x: center + shoulderHalfWidth - 4, y: pillBottom - 2)
+        )
+        path.addQuadCurve(
+            to: CGPoint(x: center + pillHalfWidth + 7, y: shoulderBottom),
+            control: CGPoint(x: center + shoulderHalfWidth, y: shoulderBottom)
+        )
+        path.addLine(to: CGPoint(x: center - pillHalfWidth - 7, y: shoulderBottom))
+        path.addQuadCurve(
+            to: CGPoint(x: center - shoulderHalfWidth, y: pillBottom + 2),
+            control: CGPoint(x: center - shoulderHalfWidth, y: shoulderBottom)
+        )
+        path.addCurve(
+            to: CGPoint(x: center - pillHalfWidth, y: pillBottom - 8),
+            control1: CGPoint(x: center - shoulderHalfWidth + 4, y: pillBottom - 2),
+            control2: CGPoint(x: center - pillHalfWidth - 1, y: pillBottom - 2)
+        )
+        path.addLine(to: CGPoint(x: center - pillHalfWidth, y: top + radius))
+        path.addQuadCurve(
+            to: CGPoint(x: center - pillHalfWidth + radius, y: top),
+            control: CGPoint(x: center - pillHalfWidth, y: top)
+        )
+        path.closeSubpath()
+        return path
+    }
+}
+
 enum ReaderTopBarLayout {
     static func metadataWidth(containerWidth: CGFloat) -> CGFloat {
         min(100, max(70, containerWidth * 0.20))
+    }
+}
+
+enum ReaderDeviceGeometry {
+    @MainActor
+    static func metrics(fallback: ReaderLayoutOrientation = .portrait) -> ReaderChromeMetrics {
+        let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+        let scene = scenes.first { $0.activationState == .foregroundActive } ?? scenes.first
+        let window = scene?.windows.first(where: \.isKeyWindow) ?? scene?.windows.first
+        let bounds = window?.bounds ?? CGRect(x: 0, y: 0, width: 393, height: 852)
+        let safeArea = window?.safeAreaInsets ?? .zero
+        let orientation: ReaderLayoutOrientation
+        switch scene?.interfaceOrientation {
+        case .landscapeLeft: orientation = .landscapeLeft
+        case .landscapeRight: orientation = .landscapeRight
+        case .portrait, .portraitUpsideDown: orientation = .portrait
+        default: orientation = fallback
+        }
+        return ReaderChromeMetrics(
+            width: bounds.width, height: bounds.height,
+            safeTop: safeArea.top, safeLeading: safeArea.left,
+            safeBottom: safeArea.bottom, safeTrailing: safeArea.right,
+            orientation: orientation
+        )
     }
 }
 
@@ -994,10 +1325,15 @@ final class FB2ReaderController: NSObject, ObservableObject {
     @Published var searching = false
     @Published var isSpeaking = false
     @Published var isSpeechPreparing = false
+    @Published private(set) var speechState = ReaderSpeechState.idle
+    @Published private(set) var speechLocator: String?
     @Published private(set) var isSpeechRetained = false
     @Published var textSelection: ReaderTextSelection?
     private let speech = AVSpeechSynthesizer()
     private let neuralSpeech = NeuralSpeechPlayback()
+    private var pauseExpiryTask: Task<Void, Never>?
+    private var speechLocations: [(offset: Int, locator: String)] = []
+    private var lastPlayback: SpeechPlaybackChoice?
 
     override init() {
         super.init()
@@ -1066,22 +1402,31 @@ final class FB2ReaderController: NSObject, ObservableObject {
     }
 
     func toggleSpeech(playback: SpeechPlaybackChoice) {
-        if isSpeechSessionActive {
-            neuralSpeech.stop()
-            speech.stopSpeaking(at: .immediate)
-            isSpeechPreparing = false
-            setSpeaking(false)
-            return
+        switch speechState {
+        case .playing, .preparing:
+            pauseSpeech()
+        case .paused:
+            resumeSpeech()
+        case .idle:
+            let plan = speechPlan()
+            speechLocations = plan.locations
+            startSpeaking(text: plan.text, chunks: plan.chunks, playback: playback)
         }
-        startSpeaking(text: sections.flatMap(\.paragraphs).map(\.text).joined(separator: "\n\n"), playback: playback)
+    }
+
+    func stopSpeechCompletely() {
+        stopSpeech(unload: true)
+    }
+
+    func restartSpeech(playback: SpeechPlaybackChoice) {
+        guard speechState != .idle else { return }
+        stopSpeech()
+        toggleSpeech(playback: playback)
     }
 
     func speakFromSelection(_ selected: String, playback: SpeechPlaybackChoice) {
         if isSpeechSessionActive {
-            neuralSpeech.stop()
-            speech.stopSpeaking(at: .immediate)
-            isSpeechPreparing = false
-            setSpeaking(false)
+            stopSpeech()
         }
         let all = sections.flatMap(\.paragraphs).map(\.text).joined(separator: "\n\n")
         let needle = selected.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -1093,7 +1438,8 @@ final class FB2ReaderController: NSObject, ObservableObject {
         } else {
             spoken = needle
         }
-        startSpeaking(text: spoken, playback: playback)
+        speechLocations = []
+        startSpeaking(text: spoken, chunks: nil, playback: playback)
     }
 
     private var isSpeechSessionActive: Bool {
@@ -1110,12 +1456,14 @@ final class FB2ReaderController: NSObject, ObservableObject {
     private func setSpeaking(_ speaking: Bool) {
         isSpeaking = speaking
         if !speaking { isSpeechPreparing = false }
+        if speaking, !isSpeechPreparing { speechState = .playing }
         refreshSpeechRetention()
     }
 
     private func markSpeechStarted() {
         if isSpeechPreparing {
             isSpeechPreparing = false
+            speechState = .playing
             refreshSpeechRetention()
         }
     }
@@ -1124,7 +1472,7 @@ final class FB2ReaderController: NSObject, ObservableObject {
         isSpeechRetained = isSpeechSessionActive
     }
 
-    private func startSpeaking(text: String, playback: SpeechPlaybackChoice) {
+    private func startSpeaking(text: String, chunks: [SpeechQueueChunk]?, playback: SpeechPlaybackChoice) {
         guard !text.isEmpty else { return }
         do {
             let session = AVAudioSession.sharedInstance()
@@ -1134,6 +1482,8 @@ final class FB2ReaderController: NSObject, ObservableObject {
             return
         }
         isSpeechPreparing = true
+        speechState = .preparing
+        lastPlayback = playback
         setSpeaking(true)
         switch playback.engine {
         case .neural(let engine):
@@ -1142,17 +1492,18 @@ final class FB2ReaderController: NSObject, ObservableObject {
                 return
             }
             neuralSpeech.play(
-                chunks: [SpeechQueueChunk(text: text, offset: 0, pauseSeconds: 0)],
+                chunks: chunks ?? [SpeechQueueChunk(text: text, offset: 0, pauseSeconds: 0)],
                 engine: engine,
                 speed: Float(min(max(playback.rate / SpeechLanguageSettings.defaultRate, 0.73), 1.25)),
-                onPhrase: { [weak self] _ in
+                onPhrase: { [weak self] chunk in
                     self?.markSpeechStarted()
+                    self?.updateSpeechLocation(offset: chunk.offset)
                 },
                 onProgress: { [weak self] _, _ in
                     self?.markSpeechStarted()
                 },
                 completion: { [weak self] result in
-                    self?.setSpeaking(false)
+                    self?.finishSpeech()
                     if case .failure = result { return }
                 }
             )
@@ -1165,6 +1516,81 @@ final class FB2ReaderController: NSObject, ObservableObject {
             }
             utterance.rate = Float(playback.rate)
             speech.speak(utterance)
+        }
+    }
+
+    private func pauseSpeech() {
+        guard speechState == .playing || speechState == .preparing else { return }
+        if speech.isSpeaking { speech.pauseSpeaking(at: .word) }
+        if neuralSpeech.isPlaying { neuralSpeech.pause() }
+        isSpeaking = false
+        isSpeechPreparing = false
+        speechState = .paused
+        refreshSpeechRetention()
+        pauseExpiryTask?.cancel()
+        pauseExpiryTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(ReaderSpeechPausePolicy.expiration))
+            guard !Task.isCancelled else { return }
+            self?.stopSpeech(unload: true)
+        }
+    }
+
+    private func resumeSpeech() {
+        guard speechState == .paused else { return }
+        pauseExpiryTask?.cancel()
+        if speech.isPaused { speech.continueSpeaking() }
+        else if neuralSpeech.isPaused { neuralSpeech.resume() }
+        else if let lastPlayback {
+            stopSpeech()
+            toggleSpeech(playback: lastPlayback)
+            return
+        }
+        speechState = .playing
+        setSpeaking(true)
+    }
+
+    private func stopSpeech(unload: Bool = false) {
+        pauseExpiryTask?.cancel()
+        pauseExpiryTask = nil
+        if unload { neuralSpeech.unload() } else { neuralSpeech.stop() }
+        speech.stopSpeaking(at: .immediate)
+        speechState = .idle
+        setSpeaking(false)
+        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+    }
+
+    private func finishSpeech() {
+        pauseExpiryTask?.cancel()
+        speechState = .idle
+        setSpeaking(false)
+        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+    }
+
+    private func speechPlan() -> (text: String, chunks: [SpeechQueueChunk], locations: [(Int, String)]) {
+        var text = ""
+        var chunks: [SpeechQueueChunk] = []
+        var locations: [(Int, String)] = []
+        for section in sections.dropFirst(sectionIndex) {
+            for (paragraphIndex, paragraph) in section.paragraphs.enumerated() {
+                let value = paragraph.text.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !value.isEmpty else { continue }
+                if !text.isEmpty { text += "\n\n" }
+                let offset = (text as NSString).length
+                let locator = "fb2:\(section.id):\(paragraphIndex):0"
+                locations.append((offset, locator))
+                chunks.append(SpeechQueueChunk(text: value, offset: offset, pauseSeconds: 0.08))
+                text += value
+            }
+        }
+        return (text, chunks, locations)
+    }
+
+    private func updateSpeechLocation(offset: Int) {
+        guard let entry = speechLocations.last(where: { $0.offset <= offset }) else { return }
+        speechLocator = entry.locator
+        if let location = parseLocator(entry.locator),
+           let index = sections.firstIndex(where: { $0.id == location.sectionID }) {
+            _ = update(section: index, paragraph: location.paragraph)
         }
     }
 
@@ -1192,10 +1618,13 @@ extension FB2ReaderController: AVSpeechSynthesizerDelegate {
         Task { @MainActor in self.markSpeechStarted() }
     }
     nonisolated func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {
-        Task { @MainActor in self.setSpeaking(false) }
+        Task { @MainActor in self.finishSpeech() }
     }
     nonisolated func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didCancel utterance: AVSpeechUtterance) {
-        Task { @MainActor in self.setSpeaking(false) }
+        Task { @MainActor in if self.speechState != .paused { self.finishSpeech() } }
+    }
+    nonisolated func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, willSpeakRangeOfSpeechString range: NSRange, utterance: AVSpeechUtterance) {
+        Task { @MainActor in self.updateSpeechLocation(offset: range.location) }
     }
 }
 

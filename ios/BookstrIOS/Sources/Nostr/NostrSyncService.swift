@@ -162,7 +162,7 @@ final class NostrSyncService {
             updatedAt: now,
             rights: book.rights
         )
-        var event = NostrEvent(
+        let event = NostrEvent(
             id: nil,
             pubkey: signer.publicKeyHex,
             createdAt: now / 1000,
@@ -538,8 +538,6 @@ final class NostrSyncService {
             author: book.author,
             year: book.year,
             format: book.format.rawValue,
-            blossomSha256: book.blossomSha256,
-            blossomUrl: book.blossomSha256 == nil ? nil : book.epubUrl,
             addedAt: addedAt,
             rightsStatus: book.rightsStatus,
             license: book.license,
@@ -710,8 +708,7 @@ final class NostrSyncService {
             for ref in refs.prefix(12) {
                 let title = ref.title ?? "(no title)"
                 let md5 = ref.libvaultMd5 ?? "-"
-                let sha = ref.blossomSha256.map { String($0.prefix(8)) } ?? "-"
-                line("  ref \(title) md5=\(md5) blossom=\(sha) fmt=\(ref.format ?? "-")")
+                line("  ref \(title) md5=\(md5) fmt=\(ref.format ?? "-")")
             }
             if refs.count > 12 {
                 line("  … \(refs.count - 12) more")

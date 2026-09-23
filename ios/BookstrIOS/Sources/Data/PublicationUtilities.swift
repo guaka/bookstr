@@ -1,4 +1,3 @@
-import CryptoKit
 import Foundation
 #if canImport(LibArchive)
 import LibArchive
@@ -16,7 +15,6 @@ import AppKit
 #endif
 
 enum PublicationUtilities {
-    static let blossomHost = "blossom.bfr.ee"
     static let maxFB2Bytes: Int64 = 50 * 1024 * 1024
     static let maxComicEntries = 2_000
     static let maxComicPageBytes: UInt32 = 30 * 1024 * 1024
@@ -393,72 +391,33 @@ enum PublicationUtilities {
 
     static func publicationIdentityCandidates(for book: CatalogBook) -> [String] {
         var seen = Set<String>()
-        return [book.id, book.blossomSha256, book.libvaultMd5]
+        return [book.id, book.libvaultMd5]
             .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }
             .filter { !$0.isEmpty && seen.insert($0).inserted }
     }
 
     static func fromExternalFavorite(_ favorite: ExternalFavorite) -> CatalogBook? {
-        let sha256 = favorite.blossomSha256?.lowercased()
-        let validSha256 = sha256?.range(of: "^[a-f0-9]{64}$", options: .regularExpression) != nil
-            ? sha256 : nil
-        let md5 = favorite.libvaultMd5?.lowercased()
-            ?? (isMD5(favorite.key.lowercased()) ? favorite.key.lowercased() : nil)
-        if validSha256 == nil, md5 != nil {
-            return nil
-        }
-        let explicitBlossomURL = favorite.blossomUrl.flatMap { value -> String? in
-            guard let parsed = URL(string: value), parsed.scheme?.lowercased() == "https",
-                  parsed.host?.lowercased() == blossomHost else { return nil }
-            return parsed.absoluteString
-        }
-        let urlString = validSha256.map { explicitBlossomURL ?? "https://\(blossomHost)/\($0)" }
-            ?? favorite.url
-        guard let urlString,
+        guard let urlString = favorite.url,
               let parsed = URL(string: urlString),
               ["http", "https"].contains(parsed.scheme?.lowercased() ?? "") else {
             return nil
         }
         return CatalogBook(
-            id: validSha256 ?? favorite.key,
+            id: favorite.key,
             title: favorite.title,
             author: favorite.author ?? "Unknown",
             epubUrl: parsed.absoluteString,
             coverUrl: favorite.coverUrl,
-            sourceUrl: validSha256 == nil ? favorite.url : urlString,
+            sourceUrl: favorite.url,
             isbn: favorite.isbn,
             libvaultMd5: favorite.libvaultMd5,
             format: BookFormat.from(format: favorite.format, url: parsed.absoluteString),
-            blossomSha256: validSha256,
             year: favorite.year,
             rightsStatus: favorite.rightsStatus,
             license: favorite.license,
             licenseUrl: favorite.licenseUrl,
             rightsSource: favorite.rightsSource
         )
-    }
-
-    static func fromBlossomFavorite(_ favorite: ExternalFavorite) -> CatalogBook? {
-        guard favorite.blossomSha256 != nil else { return nil }
-        return fromExternalFavorite(favorite)
-    }
-
-    static func sha256(
-        fileURL: URL,
-        chunkSize: Int = 1_048_576,
-        readChunk: (FileHandle, Int) throws -> Data? = { try $0.read(upToCount: $1) }
-    ) -> String? {
-        guard chunkSize > 0, let handle = try? FileHandle(forReadingFrom: fileURL) else { return nil }
-        defer { try? handle.close() }
-        var hasher = SHA256()
-        do {
-            while let data = try readChunk(handle, chunkSize), !data.isEmpty {
-                hasher.update(data: data)
-            }
-            return hasher.finalize().map { String(format: "%02x", $0) }.joined()
-        } catch {
-            return nil
-        }
     }
 
     static func detectedFormat(fileURL: URL) -> BookFormat? {

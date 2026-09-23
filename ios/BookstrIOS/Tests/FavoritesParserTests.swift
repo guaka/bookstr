@@ -1,6 +1,5 @@
 import XCTest
 import PDFKit
-import CryptoKit
 #if canImport(UIKit)
 import UIKit
 import SwiftUI
@@ -13,6 +12,37 @@ import WebKit
 #endif
 
 final class FavoritesParserTests: XCTestCase {
+    func testRetiredBlossomTagsAreIgnoredAndLegacyJSONStillDecodes() throws {
+        let hash = String(repeating: "a", count: 64)
+        let tags: [Any] = [
+            ["book", "blossom", hash, "1700000000", "https://blossom.invalid/\(hash)"],
+            ["blossom", "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", hash, "https://blossom.invalid/\(hash)", "epub"],
+        ]
+        XCTAssertTrue(FavoritesParser.parseSharedFavoriteTags(tags).isEmpty)
+
+        let json = """
+        {"id":"local","title":"Local","author":"Author","epubUrl":"","coverUrl":null,
+         "sourceUrl":null,"isbn":null,"libvaultMd5":null,"format":"epub",
+         "blossomSha256":"\(hash)","year":null}
+        """
+        let book = try JSONDecoder().decode(CatalogBook.self, from: Data(json.utf8))
+        XCTAssertEqual(book.id, "local")
+        XCTAssertEqual(book.title, "Local")
+    }
+
+    func testIOSRuntimeContainsNoBlossomSupportSymbols() throws {
+        let sources = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent("Sources")
+        let files = try FileManager.default.subpathsOfDirectory(atPath: sources.path)
+            .filter { $0.hasSuffix(".swift") }
+        for file in files {
+            let text = try String(contentsOf: sources.appendingPathComponent(file), encoding: .utf8)
+            XCTAssertFalse(text.localizedCaseInsensitiveContains("blossom"), file)
+        }
+    }
+
     func testSharedCollectionSemanticsV1Fixtures() throws {
         let fixture = try XCTUnwrap(
             JSONSerialization.jsonObject(with: Data(contentsOf: collectionSemanticsFixtureURL())) as? [String: Any]
@@ -83,35 +113,10 @@ final class FavoritesParserTests: XCTestCase {
             (type, identifier, locator) = ("bookstr", value, ref.url ?? "")
         } else if let value = ref.isbn {
             (type, identifier, locator) = ("isbn", value, ref.url ?? "")
-        } else if let value = ref.blossomSha256 {
-            (type, identifier, locator) = ("blossom", value, ref.blossomUrl ?? "")
         } else {
             (type, identifier, locator) = ("url", ref.url ?? "", ref.url ?? "")
         }
         return ["type": type, "identifier": identifier, "locator": locator, "addedAt": ref.addedAt ?? 0]
-    }
-
-    func testSharedFavoriteReferenceV1Fixtures() throws {
-        let fixture = try XCTUnwrap(
-            JSONSerialization.jsonObject(with: Data(contentsOf: favoriteReferenceFixtureURL())) as? [String: Any]
-        )
-        XCTAssertEqual(fixture["version"] as? Int, 1)
-        for entry in try XCTUnwrap(fixture["cases"] as? [[String: Any]]) {
-            let name = try XCTUnwrap(entry["name"] as? String)
-            let tags = try XCTUnwrap(entry["tags"] as? [Any])
-            let expected = try XCTUnwrap(entry["expected"] as? [[String: Any]])
-            let actual = FavoritesParser.parseSharedFavoriteTags(tags).map(canonicalFavoriteReference)
-            XCTAssertTrue(NSArray(array: actual).isEqual(to: expected), name)
-        }
-    }
-
-    private func favoriteReferenceFixtureURL() -> URL {
-        URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .appendingPathComponent("shared/fixtures/favorite-reference-v1.json")
     }
 
     func testRightsNormalizationMarkersAndSafeURLs() {
@@ -149,24 +154,7 @@ final class FavoritesParserTests: XCTestCase {
         let legacy = FavoritesParser.parseSharedFavoriteTags([["book", "bookstr", "legacy", "1"]] as [Any])
         XCTAssertEqual(legacy.first?.rights.status, .unknown)
     }
-    func testPublicationIdentityCandidatesIncludeBlossomAndMD5AliasesOnce() {
-        let book = CatalogBook(
-            id: "legacy-id", title: "Alias test", author: "Author", epubUrl: "https://example.com/book.epub",
-            coverUrl: nil, sourceUrl: nil, isbn: nil,
-            libvaultMd5: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", format: .epub,
-            blossomSha256: "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB",
-            year: nil
-        )
 
-        XCTAssertEqual(
-            PublicationUtilities.publicationIdentityCandidates(for: book),
-            [
-                "legacy-id",
-                "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-                "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-            ]
-        )
-    }
 
     func testCompactItemTagsFallsBackToCollectionTimestampForInvalidAddedAt() {
         let tags = FavoritesParser.compactItemTags(
@@ -193,29 +181,7 @@ final class FavoritesParserTests: XCTestCase {
         XCTAssertEqual(FavoritesParser.splitItemTags(tag, limit: limit), [tag])
     }
 
-    func testParsesEncryptedNIP51TagFormat() {
-        let sha = String(repeating: "b", count: 64)
-        let md5 = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-        let tags: [Any] = [
-            ["r", "https://lib.b.bfr.ee/#book?md5=\(md5)"],
-            ["libvault", md5],
-            ["libvault-book", md5, "A Book", "An Author", "epub", "1234", "2024"],
-            ["blossom", md5, sha, "https://blossom.bfr.ee/\(sha)", "epub"],
-            ["i", "isbn:978-0-123456-78-9", "https://lib.b.bfr.ee/#book?md5=\(md5)"],
-            ["k", "isbn"]
-        ]
-        let refs = FavoritesParser.parseSharedFavoriteTags(tags)
-        XCTAssertEqual(refs.count, 1)
-        XCTAssertEqual(refs[0].libvaultMd5, md5)
-        XCTAssertEqual(refs[0].title, "A Book")
-        XCTAssertEqual(refs[0].author, "An Author")
-        XCTAssertEqual(refs[0].year, "2024")
-        XCTAssertEqual(refs[0].format, "epub")
-        XCTAssertEqual(refs[0].blossomSha256, sha)
-        XCTAssertEqual(refs[0].blossomUrl, "https://blossom.bfr.ee/\(sha)")
-        XCTAssertEqual(refs[0].isbn, "9780123456789")
-        XCTAssertEqual(refs[0].url, "https://lib.b.bfr.ee/#book?md5=\(md5)")
-    }
+
 
     func testMatchesPortableISBNsAndKeepsUnmatchedEditions() {
         let tags: [Any] = [
@@ -238,7 +204,6 @@ final class FavoritesParserTests: XCTestCase {
                     isbn: "978-0-123456-78-9",
                     libvaultMd5: nil,
                     format: .epub,
-                    blossomSha256: nil,
                     year: nil
                 )
             ]
@@ -248,125 +213,19 @@ final class FavoritesParserTests: XCTestCase {
         XCTAssertEqual(result.external[0].libvaultMd5, "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")
     }
 
-    func testBlossomFavoriteBecomesCatalogBook() {
-        let sha = String(repeating: "b", count: 64)
-        let favorite = ExternalFavorite(
-            key: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-            title: "A Book",
-            author: "An Author",
-            year: "2024",
-            url: nil,
-            isbn: "9780123456789",
-            libvaultMd5: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-            format: "epub",
-            blossomSha256: sha,
-            blossomUrl: "https://blossom.bfr.ee/\(sha)"
-        )
-        let book = PublicationUtilities.fromBlossomFavorite(favorite)
-        XCTAssertEqual(book?.id, sha)
-        XCTAssertEqual(book?.title, "A Book")
-        XCTAssertEqual(book?.epubUrl, "https://blossom.bfr.ee/\(sha)")
-    }
 
-    func testBlossomFavoriteSynthesizesURL() {
-        let sha = String(repeating: "c", count: 64)
-        let favorite = ExternalFavorite(
-            key: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-            title: "A Book",
-            author: "An Author",
-            year: nil,
-            url: nil,
-            isbn: nil,
-            libvaultMd5: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-            format: "epub",
-            blossomSha256: sha,
-            blossomUrl: nil
-        )
-        XCTAssertEqual(PublicationUtilities.fromBlossomFavorite(favorite)?.epubUrl, "https://blossom.bfr.ee/\(sha)")
-    }
 
-    func testBlossomFavoriteRejectsMalformedBlossomHash() {
-        let sha = String(repeating: "z", count: 64)
-        let favorite = ExternalFavorite(
-            key: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-            title: "Invalid Hash",
-            author: "Unknown",
-            year: nil,
-            url: nil,
-            isbn: nil,
-            libvaultMd5: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-            format: "epub",
-            blossomSha256: sha,
-            blossomUrl: "https://blossom.bfr.ee/\(sha)"
-        )
 
-        XCTAssertNil(PublicationUtilities.fromBlossomFavorite(favorite))
-    }
 
-    func testBlossomFavoriteNeverFallsBackToLibVaultLocator() {
-        let sha = String(repeating: "d", count: 64)
-        let favorite = ExternalFavorite(
-            key: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-            title: "A Book", author: "An Author", year: nil,
-            url: "https://lib.b.bfr.ee/api/files/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-            isbn: nil, libvaultMd5: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", format: "epub",
-            blossomSha256: sha, blossomUrl: nil
-        )
-        XCTAssertEqual(PublicationUtilities.fromBlossomFavorite(favorite)?.epubUrl,
-                       "https://blossom.bfr.ee/\(sha)")
-    }
 
-    func testLibVaultDescriptorWithoutBlossomIsNotFetchable() {
-        let md5 = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-        let favorite = ExternalFavorite(
-            key: md5,
-            title: "A Resolved Book",
-            author: "An Author",
-            year: "2024",
-            url: nil,
-            isbn: nil,
-            libvaultMd5: md5,
-            format: "pdf",
-            blossomSha256: nil,
-            blossomUrl: nil
-        )
-        XCTAssertNil(PublicationUtilities.fromExternalFavorite(favorite))
-    }
 
-    func testRegularDownloadFavoriteBecomesCatalogBook() {
-        let favorite = ExternalFavorite(
-            key: "gutenberg:123",
-            title: "A Search Favorite",
-            author: "An Author",
-            year: "2024",
-            url: "https://books-api.guaka.org/api/books/123/download",
-            isbn: nil,
-            libvaultMd5: nil,
-            format: "epub",
-            blossomSha256: nil,
-            blossomUrl: nil
-        )
-        let book = PublicationUtilities.fromExternalFavorite(favorite)
-        XCTAssertEqual(book?.id, "gutenberg:123")
-        XCTAssertEqual(book?.format, .epub)
-        XCTAssertEqual(book?.epubUrl, favorite.url)
-    }
 
-    func testFavoriteWithoutDownloadLocationCannotBecomeCatalogBook() {
-        let favorite = ExternalFavorite(
-            key: "missing",
-            title: "Unavailable",
-            author: nil,
-            year: nil,
-            url: nil,
-            isbn: nil,
-            libvaultMd5: nil,
-            format: "epub",
-            blossomSha256: nil,
-            blossomUrl: nil
-        )
-        XCTAssertNil(PublicationUtilities.fromExternalFavorite(favorite))
-    }
+
+
+
+
+
+
 
     func testParsesWrappedTagsObject() {
         let md5 = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
@@ -469,30 +328,9 @@ final class FavoritesParserTests: XCTestCase {
         XCTAssertEqual(refs, [SharedFavoriteRef(libvaultMd5: md5, addedAt: 1_700_000_000)])
     }
 
-    func testDuplicateCompactReferenceKeepsBlossomAssociation() {
-        let md5 = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-        let sha = String(repeating: "b", count: 64)
-        let refs = FavoritesParser.parseSharedFavoriteTags([
-            ["book", "libvault", md5, "1700000000"],
-            ["blossom", md5, sha, "https://blossom.bfr.ee/\(sha)", "pdf"],
-            ["book", "libvault", md5, "1700000100"]
-        ])
-        XCTAssertEqual(refs.count, 1)
-        XCTAssertEqual(refs[0].blossomSha256, sha)
-        XCTAssertEqual(refs[0].format, "pdf")
-        XCTAssertEqual(refs[0].addedAt, 1_700_000_000)
-    }
 
-    func testParsesInvalidCompactIdentifiersAsEmpty() {
-        let refs = FavoritesParser.parseSharedFavoriteTags([
-            ["book", "libvault", "not-an-md5", "1"],
-            ["book", "isbn", "123", "2"],
-            ["book", "blossom", "bad-hash", "3"],
-            ["book", "bookstr", "", "4"],
-        ])
 
-        XCTAssertEqual(refs.count, 0)
-    }
+
 
     func testCompactIsbnSkipsInvalidValueAndKeepsValidOne() {
         let refs = FavoritesParser.parseSharedFavoriteTags([
@@ -598,30 +436,9 @@ final class FavoritesParserTests: XCTestCase {
         XCTAssertEqual(refs[0].addedAt, 1_700_000_001)
     }
 
-    func testCompactBlossomInvalidIdentifierSkipsOnlyInvalidEntry() {
-        let sha = String(repeating: "c", count: 64)
-        let refs = FavoritesParser.parseSharedFavoriteTags([
-            ["book", "blossom", "not-a-sha", "1700000000", "https://blossom.invalid/bad"],
-            ["book", "blossom", sha, "1700000001", "https://blossom.bfr.ee/\(sha)"],
-        ])
 
-        XCTAssertEqual(refs.count, 1)
-        XCTAssertEqual(refs[0].blossomSha256, sha)
-        XCTAssertEqual(refs[0].addedAt, 1_700_000_001)
-        XCTAssertEqual(refs[0].blossomUrl, "https://blossom.bfr.ee/\(sha)")
-    }
 
-    func testCompactBlossomUnsupportedFormatIsIgnored() {
-        let sha = String(repeating: "d", count: 64)
-        let refs = FavoritesParser.parseSharedFavoriteTags([
-            ["book", "blossom", sha, "1700000000", "https://blossom.bfr.ee/\(sha)", "mp3"],
-        ])
 
-        XCTAssertEqual(refs.count, 1)
-        XCTAssertEqual(refs[0].blossomSha256, sha)
-        XCTAssertEqual(refs[0].format, nil)
-        XCTAssertEqual(refs[0].blossomUrl, "https://blossom.bfr.ee/\(sha)")
-    }
 
     func testLegacyBookstrMetadataEmptyFieldsDoNotOverwriteExisting() {
         let md5 = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
@@ -740,19 +557,7 @@ final class FavoritesParserTests: XCTestCase {
         XCTAssertEqual(refs[0].year, "2026")
     }
 
-    func testLegacyBlossomUnsupportedFormatIsIgnored() {
-        let md5 = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-        let sha = String(repeating: "e", count: 64)
-        let refs = FavoritesParser.parseSharedFavoriteTags([
-            ["blossom", md5, sha, "https://blossom.example/\(sha)", "txt", "extra"],
-        ])
 
-        XCTAssertEqual(refs.count, 1)
-        XCTAssertEqual(refs[0].libvaultMd5, md5)
-        XCTAssertEqual(refs[0].blossomSha256, sha)
-        XCTAssertEqual(refs[0].format, nil)
-        XCTAssertEqual(refs[0].blossomUrl, "https://blossom.example/\(sha)")
-    }
 
     func testLibvaultAddedWithUppercaseIdentifierMatchesExistingFavorite() {
         let md5 = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
@@ -779,17 +584,7 @@ final class FavoritesParserTests: XCTestCase {
         XCTAssertEqual(refs[0].year, "2024")
     }
 
-    func testFavoriteMatchesDownloadedBookByBlossomHash() {
-        let sha = String(repeating: "c", count: 64)
-        let result = FavoritesParser.matchSharedFavorites(
-            refs: [SharedFavoriteRef(blossomSha256: sha)],
-            books: [CatalogBook(id: sha, title: "Local", author: "Author", epubUrl: "",
-                                coverUrl: nil, sourceUrl: nil, isbn: nil, libvaultMd5: nil,
-                                format: .epub, blossomSha256: sha, year: nil)]
-        )
-        XCTAssertEqual(result.bookIds, [sha])
-        XCTAssertTrue(result.external.isEmpty)
-    }
+
 
     func testParseSharedFavoriteTagsRejectsNonJsonInput() {
         XCTAssertTrue(FavoritesParser.parseSharedFavoriteTags("null").isEmpty)
@@ -879,28 +674,7 @@ final class FavoritesParserTests: XCTestCase {
         XCTAssertEqual(refs[0].isbn, "9780123456789")
     }
 
-    func testMatchSharedFavoritesMatchesBlossomHashCaseInsensitive() {
-        let sha = String(repeating: "f", count: 64)
-        let result = FavoritesParser.matchSharedFavorites(
-            refs: [SharedFavoriteRef(blossomSha256: sha.uppercased())],
-            books: [CatalogBook(
-                id: "bloom",
-                title: "Blossom Book",
-                author: "Author",
-                epubUrl: "https://example.test/book.epub",
-                coverUrl: nil,
-                sourceUrl: nil,
-                isbn: nil,
-                libvaultMd5: nil,
-                format: .epub,
-                blossomSha256: sha,
-                year: nil
-            )]
-        )
 
-        XCTAssertEqual(result.bookIds, ["bloom"])
-        XCTAssertTrue(result.external.isEmpty)
-    }
 
     func testMatchSharedFavoritesMatchesBySourceUrl() {
         let sourceUrl = "https://example.com/book.epub"
@@ -916,7 +690,6 @@ final class FavoritesParserTests: XCTestCase {
                 isbn: nil,
                 libvaultMd5: nil,
                 format: .epub,
-                blossomSha256: nil,
                 year: nil
             )]
         )
@@ -938,7 +711,6 @@ final class FavoritesParserTests: XCTestCase {
                 isbn: nil,
                 libvaultMd5: nil,
                 format: .epub,
-                blossomSha256: nil,
                 year: nil
             )]
         )
@@ -964,7 +736,6 @@ final class FavoritesParserTests: XCTestCase {
                 isbn: isbn,
                 libvaultMd5: nil,
                 format: .epub,
-                blossomSha256: nil,
                 year: nil
             )]
         )
@@ -1012,42 +783,11 @@ final class FavoritesParserTests: XCTestCase {
         XCTAssertEqual(result.external[0].addedAt, 11)
     }
 
-    func testCompactNamespaceBlossomHashIsLowercased() {
-        let refs = FavoritesParser.parseSharedFavoriteTags([
-            ["book", "blossom", "ABCDEFABCDEFABCDEFABCDEFABCDEFABCDEFABCDEFABCDEFABCDEFABCDEFABCD", "1700000000", "https://blossom.bfr.ee/hash"],
-        ])
-        XCTAssertEqual(refs.count, 1)
-        XCTAssertEqual(refs[0].blossomSha256, "abcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcd")
-        XCTAssertEqual(refs[0].blossomUrl, "https://blossom.bfr.ee/hash")
-    }
 
-    func testParseSharedFavoriteTagsParsesLegacyBlossomTagAsLibvaultMetadata() {
-        let md5 = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-        let sha = String(repeating: "b", count: 64)
-        let refs = FavoritesParser.parseSharedFavoriteTags([
-            ["blossom", md5, sha, "https://blossom.bfr.ee/\(sha)", "epub"],
-        ])
-        XCTAssertEqual(refs.count, 1)
-        XCTAssertEqual(refs[0].libvaultMd5, md5)
-        XCTAssertEqual(refs[0].blossomSha256, sha)
-        XCTAssertEqual(refs[0].blossomUrl, "https://blossom.bfr.ee/\(sha)")
-        XCTAssertEqual(refs[0].format, "epub")
-    }
 
-    func testParseSharedFavoriteTagsSkipsLegacyBlossomInvalidIdentifierAndParsesNext() {
-        let md5 = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-        let sha = String(repeating: "c", count: 64)
-        let refs = FavoritesParser.parseSharedFavoriteTags([
-            ["blossom", "not-an-md5", sha, "https://blossom.invalid/ignored", "epub"],
-            ["blossom", md5, sha, "https://blossom.bfr.ee/\(sha)", "txt"],
-        ])
 
-        XCTAssertEqual(refs.count, 1)
-        XCTAssertEqual(refs[0].libvaultMd5, md5)
-        XCTAssertEqual(refs[0].blossomSha256, sha)
-        XCTAssertEqual(refs[0].blossomUrl, "https://blossom.bfr.ee/\(sha)")
-        XCTAssertNil(refs[0].format)
-    }
+
+
 
     func testMixedTypeCompactTagsSkipInvalidEntriesAndParseValidOne() {
         let refs = FavoritesParser.parseSharedFavoriteTags([
@@ -1075,7 +815,6 @@ final class FavoritesParserTests: XCTestCase {
                 isbn: nil,
                 libvaultMd5: md5.uppercased(),
                 format: .epub,
-                blossomSha256: nil,
                 year: nil
             )]
         )
@@ -1206,17 +945,7 @@ final class FavoritesParserTests: XCTestCase {
         XCTAssertEqual(result.external[0].libvaultMd5, md5)
     }
 
-    func testMatchSharedFavoritesFallbackTitleUsesBlossomPrefix() {
-        let sha = String(repeating: "b", count: 64)
-        let result = FavoritesParser.matchSharedFavorites(
-            refs: [SharedFavoriteRef(blossomSha256: sha)],
-            books: []
-        )
 
-        XCTAssertEqual(result.external.count, 1)
-        XCTAssertTrue(result.external[0].title.hasPrefix("Blossom \(sha.prefix(10))"))
-        XCTAssertEqual(result.external[0].key, sha)
-    }
 
     func testMatchSharedFavoritesPrefersLatestMetadataForDuplicateUrlKey() {
         let source = "https://example.org/duplicate.epub"
@@ -1249,7 +978,6 @@ final class FavoritesParserTests: XCTestCase {
                 isbn: "978-0-123456-78-9",
                 libvaultMd5: nil,
                 format: .epub,
-                blossomSha256: nil,
                 year: nil
             )]
         )
@@ -1274,7 +1002,6 @@ final class FavoritesParserTests: XCTestCase {
                 isbn: nil,
                 libvaultMd5: nil,
                 format: .epub,
-                blossomSha256: nil,
                 year: nil
             )]
         )
@@ -1283,31 +1010,7 @@ final class FavoritesParserTests: XCTestCase {
         XCTAssertEqual(result.external.count, 0)
     }
 
-    func testMatchSharedFavoritesDuplicateBlossomRefsMatchCatalogBookByBlossomKey() {
-        let sha = String(repeating: "f", count: 64)
-        let result = FavoritesParser.matchSharedFavorites(
-            refs: [
-                SharedFavoriteRef(blossomSha256: sha),
-                SharedFavoriteRef(blossomSha256: sha),
-            ],
-            books: [CatalogBook(
-                id: "book-blossom",
-                title: "Catalog Blossoms",
-                author: "Author",
-                epubUrl: "https://example.org/book.epub",
-                coverUrl: nil,
-                sourceUrl: nil,
-                isbn: nil,
-                libvaultMd5: nil,
-                format: .epub,
-                blossomSha256: sha,
-                year: nil
-            )]
-        )
 
-        XCTAssertEqual(result.bookIds, ["book-blossom"])
-        XCTAssertEqual(result.external.count, 0)
-    }
 
     func testPendingUrlSurvivesUnknownCompactTagUntilKnownConsumesIt() {
         let url = "https://example.org/books/123"
@@ -1452,27 +1155,7 @@ final class FavoritesParserTests: XCTestCase {
         XCTAssertNil(refs[0].author)
     }
 
-    func testCompactItemTagsAvoidsUntrustedBlossomURL() {
-        let md5 = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-        let sha = String(repeating: "e", count: 64)
-        let tags = FavoritesParser.compactItemTags(
-            refs: [
-                SharedFavoriteRef(
-                    libvaultMd5: md5,
-                    title: "Title",
-                    author: "Author",
-                    format: "epub",
-                    blossomSha256: sha,
-                    blossomUrl: "http://blossom.example.com/\(sha).epub",
-                    addedAt: 1_700_000_000
-                )
-            ],
-            fallbackAddedAt: 1_700_000_000
-        )
 
-        XCTAssertEqual(tags.count, 2)
-        XCTAssertNil(tags.first(where: { $0.first == "blossom" }))
-    }
 
     func testCompactItemTagsFallsBackToProvidedAddedAt() {
         let tags = FavoritesParser.compactItemTags(
@@ -1538,7 +1221,6 @@ final class FavoritesParserTests: XCTestCase {
                 isbn: "9781234567890",
                 libvaultMd5: nil,
                 format: .epub,
-                blossomSha256: nil,
                 year: nil
             )]
         )
@@ -1666,12 +1348,18 @@ final class FavoritesParserTests: XCTestCase {
             entries.append(("OEBPS/titlepage.xhtml", #"<html xmlns="http://www.w3.org/1999/xhtml"><head><title>Cover</title></head><body style="text-align:center;margin:0;padding:0"><div><svg xmlns="http://www.w3.org/2000/svg" id="front-cover" width="100%" height="100%" viewBox="0 0 781 1186" preserveAspectRatio="none"><rect width="781" height="1186" fill="green"/></svg></div></body></html>"#))
         }
         try makeStoredZip(entries).write(to: url)
-        let book = CatalogBook(id: "opening-fixture", title: "Opening images", author: "Test",
-            epubUrl: url.absoluteString, coverUrl: nil, sourceUrl: nil, isbn: nil, libvaultMd5: nil,
-            format: .epub, blossomSha256: nil, year: nil)
+        let book = CatalogBook(
+            id: "opening-fixture", title: "Opening images", author: "Test",
+            epubUrl: url.absoluteString, coverUrl: nil, sourceUrl: nil, isbn: nil,
+            libvaultMd5: nil, format: .epub, year: nil
+        )
         let controller = EPUBReaderController()
-        let view = EPUBReaderView(book: book, fileURL: url, controller: controller, initialCFI: nil, highlightCFI: nil)
-            .frame(width: 390, height: 844).environmentObject(AppContainer.bootstrap())
+        let view = EPUBReaderView(
+            book: book, fileURL: url, controller: controller,
+            initialCFI: nil, highlightCFI: nil
+        )
+        .frame(width: 390, height: 844)
+        .environmentObject(AppContainer.bootstrap())
         let host = UIHostingController(rootView: view)
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
         let window = UIWindow(windowScene: scene)
@@ -1720,274 +1408,6 @@ final class FavoritesParserTests: XCTestCase {
     }
 
     @MainActor
-    func testPublicDomainAliceEpubActuallyReachesReadyReader() async throws {
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".epub")
-        defer { try? FileManager.default.removeItem(at: url) }
-        try makeAliceEpub().write(to: url)
-        let book = CatalogBook(
-            id: "test-alice", title: "Alice's Adventures in Wonderland", author: "Lewis Carroll",
-            epubUrl: url.absoluteString, coverUrl: nil, sourceUrl: nil, isbn: nil, libvaultMd5: nil,
-            format: .epub, blossomSha256: nil, year: "1865"
-        )
-        let controller = EPUBReaderController()
-        let container = AppContainer.bootstrap()
-        container.settingsRepository.theme = .night
-        let view = EPUBReaderView(
-            book: book, fileURL: url, controller: controller, initialCFI: nil, highlightCFI: nil
-        ).frame(width: 390, height: 844).environmentObject(container)
-        let host = UIHostingController(rootView: view)
-        guard let scene = UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene }).first else {
-            throw XCTSkip("The hosted EPUB reader needs a UIWindowScene")
-        }
-        let window = UIWindow(windowScene: scene)
-        window.frame = CGRect(x: 0, y: 0, width: 390, height: 844)
-        window.rootViewController = host
-        window.makeKeyAndVisible()
-        host.view.setNeedsLayout()
-        host.view.layoutIfNeeded()
-        defer { window.isHidden = true }
-
-        let finished = XCTNSPredicateExpectation(
-            predicate: NSPredicate { _, _ in controller.ready || controller.errorMessage != nil },
-            object: nil
-        )
-        await fulfillment(of: [finished], timeout: 10)
-        XCTAssertNil(controller.errorMessage, "stage: \(controller.loadingStage)")
-        XCTAssertTrue(controller.ready, "stalled at stage: \(controller.loadingStage)")
-
-        guard let webView = findSubview(WKWebView.self, in: host.view) else {
-            return XCTFail("The mounted reader did not contain a WKWebView")
-        }
-        XCTAssertTrue(
-            webView.gestureRecognizers?.contains(where: { $0.name == "bookstr-saved-highlight-tap" }) == true,
-            "The mounted reader did not install its native saved-highlight tap recognizer"
-        )
-        let visibleText = try await webView.callAsyncJavaScript(
-            "return Array.from(document.querySelectorAll('iframe')).map(frame => frame.contentDocument?.body?.innerText || '').join(' ');",
-            arguments: [:], in: nil, contentWorld: .page
-        ) as? String
-        XCTAssertTrue(visibleText?.contains("Alice was beginning") == true, "ready reader had no visible chapter text")
-
-        let wordCFI = try await webView.callAsyncJavaScript(
-            """
-            const contents = rendition.getContents()[0];
-            const doc = contents.document;
-            const walker = doc.createTreeWalker(doc.body, NodeFilter.SHOW_TEXT);
-            let node;
-            while ((node = walker.nextNode()) && !(node.nodeValue || '').includes('Alice')) {}
-            if (!node) return false;
-            const start = node.nodeValue.indexOf('Alice');
-            const range = doc.createRange();
-            range.setStart(node, start);
-            range.setEnd(node, start + 'Alice'.length);
-            const cfi = contents.cfiFromRange(range);
-            window.setReaderHighlights(JSON.stringify({ words: [cfi], marks: [] }));
-            const rect = range.getBoundingClientRect();
-            const frame = Array.from(document.querySelectorAll('iframe')).find(item => item.contentDocument === doc);
-            const frameRect = frame.getBoundingClientRect();
-            const tapX = frameRect.left + rect.left + rect.width / 2;
-            const tapY = frameRect.top + rect.top + rect.height / 2;
-            (document.elementFromPoint(tapX, tapY) || frame).dispatchEvent(new MouseEvent('click', {
-              bubbles: true, cancelable: true, view: window,
-              clientX: tapX, clientY: tapY
-            }));
-            return cfi;
-            """,
-            arguments: [:], in: nil, contentWorld: .page
-        ) as? String
-        let tappedWordCFI = try XCTUnwrap(wordCFI)
-        XCTAssertFalse(tappedWordCFI.isEmpty)
-        let wordNavigation = XCTNSPredicateExpectation(
-            predicate: NSPredicate { _, _ in
-                container.wordNavigation.requestedHighlight == SavedHighlightRequest(
-                    kind: .word, locator: tappedWordCFI, text: ""
-                )
-            },
-            object: nil
-        )
-        await fulfillment(of: [wordNavigation], timeout: 3)
-
-        let markCFI = try await webView.callAsyncJavaScript(
-            """
-            const contents = rendition.getContents()[0];
-            const doc = contents.document;
-            const walker = doc.createTreeWalker(doc.body, NodeFilter.SHOW_TEXT);
-            let node;
-            while ((node = walker.nextNode()) && !(node.nodeValue || '').includes('White Rabbit')) {}
-            if (!node) return '';
-            const start = node.nodeValue.indexOf('White Rabbit');
-            const range = doc.createRange();
-            range.setStart(node, start);
-            range.setEnd(node, start + 'White Rabbit'.length);
-            const cfi = contents.cfiFromRange(range);
-            window.setReaderHighlights(JSON.stringify({ words: [], marks: [cfi] }));
-            const rect = range.getBoundingClientRect();
-            const frame = Array.from(document.querySelectorAll('iframe')).find(item => item.contentDocument === doc);
-            const frameRect = frame.getBoundingClientRect();
-            const tapX = frameRect.left + rect.left + rect.width / 2;
-            const tapY = frameRect.top + rect.top + rect.height / 2;
-            (document.elementFromPoint(tapX, tapY) || frame).dispatchEvent(new MouseEvent('click', {
-              bubbles: true, cancelable: true, view: window,
-              clientX: tapX, clientY: tapY
-            }));
-            return cfi;
-            """,
-            arguments: [:], in: nil, contentWorld: .page
-        ) as? String
-        XCTAssertFalse(markCFI?.isEmpty ?? true)
-        let markNavigation = XCTNSPredicateExpectation(
-            predicate: NSPredicate { _, _ in
-                container.wordNavigation.requestedHighlight == SavedHighlightRequest(
-                    kind: .mark,
-                    locator: markCFI ?? "",
-                    text: ""
-                )
-            },
-            object: nil
-        )
-        await fulfillment(of: [markNavigation], timeout: 3)
-
-        let layoutJSON = try await webView.callAsyncJavaScript(
-            """
-            const container = document.querySelector('.epub-container');
-            const frame = document.querySelector('iframe');
-            return JSON.stringify({
-              scrollHeight: container?.scrollHeight || 0,
-              clientHeight: container?.clientHeight || 0,
-              misclassifiedAsCover: Boolean(frame?.contentDocument?.getElementById('bookstr-cover-layout'))
-            });
-            """,
-            arguments: [:], in: nil, contentWorld: .page
-        ) as? String
-        let layoutData = try XCTUnwrap(layoutJSON?.data(using: .utf8))
-        let layout = try XCTUnwrap(JSONSerialization.jsonObject(with: layoutData) as? [String: Any])
-        let scrollHeight = try XCTUnwrap(layout["scrollHeight"] as? Double)
-        let clientHeight = try XCTUnwrap(layout["clientHeight"] as? Double)
-        XCTAssertFalse(layout["misclassifiedAsCover"] as? Bool ?? true)
-        XCTAssertGreaterThan(scrollHeight, clientHeight + 100, "long first chapter had no vertical scroll range")
-
-        let offsetsJSON = try await webView.callAsyncJavaScript(
-            """
-            const container = document.querySelector('.epub-container');
-            container.scrollTo({ top: 0, behavior: 'auto' });
-            window.nextPage();
-            await new Promise(resolve => setTimeout(resolve, 400));
-            const first = container?.scrollTop || 0;
-            window.nextPage();
-            await new Promise(resolve => setTimeout(resolve, 400));
-            const second = container?.scrollTop || 0;
-            window.prevPage();
-            await new Promise(resolve => setTimeout(resolve, 400));
-            const reversedOnce = container?.scrollTop || 0;
-            window.prevPage();
-            await new Promise(resolve => setTimeout(resolve, 400));
-            return JSON.stringify({
-              first,
-              second,
-              reversedOnce,
-              backAtStart: container?.scrollTop || 0
-            });
-            """,
-            arguments: [:], in: nil, contentWorld: .page
-        ) as? String
-        let offsetsData = try XCTUnwrap(offsetsJSON?.data(using: .utf8))
-        let offsets = try XCTUnwrap(JSONSerialization.jsonObject(with: offsetsData) as? [String: Double])
-        let first = try XCTUnwrap(offsets["first"])
-        let second = try XCTUnwrap(offsets["second"])
-        let reversedOnce = try XCTUnwrap(offsets["reversedOnce"])
-        let backAtStart = try XCTUnwrap(offsets["backAtStart"])
-        XCTAssertGreaterThan(first, 100, "nextPage did not advance through the scrollable chapter")
-        XCTAssertGreaterThan(second, first + 100, "a second nextPage call stayed on the same page")
-        XCTAssertLessThan(reversedOnce, second - 100, "prevPage did not reverse one viewport")
-        XCTAssertLessThan(backAtStart, 10, "two prevPage calls did not return to the beginning")
-
-        let snapshot = try await webView.takeSnapshot(configuration: nil)
-        XCTAssertGreaterThan(snapshot.size.width, 100)
-        XCTAssertGreaterThan(snapshot.size.height, 100)
-    }
-
-    @MainActor
-    func testEPUBReaderCanAdjustFontPercentViaReaderAPI() async throws {
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".epub")
-        defer { try? FileManager.default.removeItem(at: url) }
-        try makeAliceEpub().write(to: url)
-        let book = CatalogBook(
-            id: "test-alice", title: "Alice's Adventures in Wonderland", author: "Lewis Carroll",
-            epubUrl: url.absoluteString, coverUrl: nil, sourceUrl: nil, isbn: nil, libvaultMd5: nil,
-            format: .epub, blossomSha256: nil, year: "1865"
-        )
-        let controller = EPUBReaderController()
-        let container = AppContainer.bootstrap()
-        let view = EPUBReaderView(
-            book: book, fileURL: url, controller: controller, initialCFI: nil, highlightCFI: nil
-        ).frame(width: 390, height: 844).environmentObject(container)
-        let host = UIHostingController(rootView: view)
-        guard let scene = UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene }).first else {
-            throw XCTSkip("The hosted EPUB reader needs a UIWindowScene")
-        }
-        let window = UIWindow(windowScene: scene)
-        window.frame = CGRect(x: 0, y: 0, width: 390, height: 844)
-        window.rootViewController = host
-        window.makeKeyAndVisible()
-        host.view.setNeedsLayout()
-        host.view.layoutIfNeeded()
-        defer { window.isHidden = true }
-
-        let finished = XCTNSPredicateExpectation(
-            predicate: NSPredicate { _, _ in controller.ready || controller.errorMessage != nil },
-            object: nil
-        )
-        await fulfillment(of: [finished], timeout: 30)
-        XCTAssertNil(controller.errorMessage, "stage: \(controller.loadingStage)")
-        XCTAssertTrue(controller.ready, "stalled at stage: \(controller.loadingStage)")
-
-        guard let webView = findSubview(WKWebView.self, in: host.view) else {
-            return XCTFail("The mounted reader did not contain a WKWebView")
-        }
-        let adjustAvailable = try await webView.callAsyncJavaScript(
-            "return typeof window.adjustReaderFont;",
-            arguments: [:], in: nil, contentWorld: .page
-        ) as? String
-        XCTAssertEqual(adjustAvailable, "function")
-
-        let fontPercentBefore = try await webView.callAsyncJavaScript(
-            "return window.readerFontPercent;",
-            arguments: [:], in: nil, contentWorld: .page
-        ) as? NSNumber
-        XCTAssertNotNil(fontPercentBefore)
-        let before = fontPercentBefore?.intValue ?? 100
-
-        try await webView.callAsyncJavaScript(
-            "window.adjustReaderFont(10);",
-            arguments: [:], in: nil, contentWorld: .page
-        )
-        let fontPercentAfterIncrease = try await webView.callAsyncJavaScript(
-            "return window.readerFontPercent;",
-            arguments: [:], in: nil, contentWorld: .page
-        ) as? NSNumber
-        XCTAssertEqual(fontPercentAfterIncrease?.intValue, min(before + 10, 180))
-
-        try await webView.callAsyncJavaScript(
-            "window.adjustReaderFont(-1000);",
-            arguments: [:], in: nil, contentWorld: .page
-        )
-        let fontPercentAfterDecrease = try await webView.callAsyncJavaScript(
-            "return window.readerFontPercent;",
-            arguments: [:], in: nil, contentWorld: .page
-        ) as? NSNumber
-        XCTAssertEqual(fontPercentAfterDecrease?.intValue, 75)
-
-        try await webView.callAsyncJavaScript(
-            "window.adjustReaderFont(1000);",
-            arguments: [:], in: nil, contentWorld: .page
-        )
-        let fontPercentAfterClamp = try await webView.callAsyncJavaScript(
-            "return window.readerFontPercent;",
-            arguments: [:], in: nil, contentWorld: .page
-        ) as? NSNumber
-        XCTAssertEqual(fontPercentAfterClamp?.intValue, 180)
-    }
-
     private func findSubview<T: UIView>(_ type: T.Type, in root: UIView) -> T? {
         if let match = root as? T { return match }
         return root.subviews.lazy.compactMap { self.findSubview(type, in: $0) }.first
@@ -2000,15 +1420,6 @@ final class FavoritesParserTests: XCTestCase {
         let padding = String(repeating: "x", count: 65_530)
         try makeStoredZip([("padding.txt", padding), ("META-INF/container.xml", "<container/>")]).write(to: url)
         XCTAssertTrue(PublicationUtilities.isStructurallyValidPublication(fileURL: url, format: .epub))
-    }
-
-    func testIncrementalPublicationHashMatchesCryptoKit() throws {
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        defer { try? FileManager.default.removeItem(at: url) }
-        let data = Data(String(repeating: "Alice in Wonderland. ", count: 10_000).utf8)
-        try data.write(to: url)
-        let expected = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
-        XCTAssertEqual(PublicationUtilities.sha256(fileURL: url, chunkSize: 31), expected)
     }
 
     func testZipWithoutEpubContainerIsRejected() throws {
@@ -2070,33 +1481,9 @@ final class FavoritesParserTests: XCTestCase {
         XCTAssertTrue(PublicationUtilities.isStructurallyValidPublication(fileURL: valid, format: .fb2))
     }
 
-    func testUnavailableSearchResultMatchesExternalFavoriteByStableID() {
-        let result = BookSearchResult(
-            id: "openlibrary:OL123M", source: "openlibrary", title: "A Book", author: "An Author",
-            year: "2024", publisher: nil, language: "en", format: nil, downloadUrl: nil,
-            coverUrl: nil, rating: 0, editionCount: 1
-        )
-        let favorite = ExternalFavorite(
-            key: result.id, title: result.title, author: result.author, year: result.year,
-            url: nil, isbn: nil, libvaultMd5: nil, format: nil,
-            blossomSha256: nil, blossomUrl: nil
-        )
-        XCTAssertTrue(SearchFavoriteMatcher.matches(result, favorite: favorite))
-    }
 
-    func testSearchResultMatchesLegacyFavoriteByTitleAndAuthor() {
-        let result = BookSearchResult(
-            id: "new-id", source: "catalog", title: "A Book", author: "An Author",
-            year: nil, publisher: nil, language: nil, format: .epub, downloadUrl: nil,
-            coverUrl: nil, rating: 0, editionCount: 1
-        )
-        let favorite = ExternalFavorite(
-            key: "old-id", title: "a book", author: "an author", year: nil,
-            url: nil, isbn: nil, libvaultMd5: nil, format: "epub",
-            blossomSha256: nil, blossomUrl: nil
-        )
-        XCTAssertTrue(SearchFavoriteMatcher.matches(result, favorite: favorite))
-    }
+
+
 
     func testSerializesFavoriteMetadataForOfflineClients() {
         let md5 = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
@@ -2303,35 +1690,9 @@ final class FavoritesParserTests: XCTestCase {
         XCTAssertEqual(result.external[0].author, "New")
     }
 
-    func testMatchSharedFavoritesUnmatchedBlossomReferenceUsesBlossomKey() {
-        let sha = String(repeating: "d", count: 64)
-        let result = FavoritesParser.matchSharedFavorites(
-            refs: [SharedFavoriteRef(title: "Offline blossom", author: "Archive", blossomSha256: sha)],
-            books: []
-        )
 
-        XCTAssertEqual(result.bookIds, Set<String>())
-        XCTAssertEqual(result.external.count, 1)
-        XCTAssertEqual(result.external[0].key, sha)
-        XCTAssertEqual(result.external[0].title, "Offline blossom")
-        XCTAssertEqual(result.external[0].author, "Archive")
-    }
 
-    func testMatchSharedFavoritesUnmatchedBlossomReferencePrefersLatestMetadataForDuplicateKeys() {
-        let sha = String(repeating: "d", count: 64)
-        let result = FavoritesParser.matchSharedFavorites(
-            refs: [
-                SharedFavoriteRef(title: "Legacy title", author: "Old author", blossomSha256: sha),
-                SharedFavoriteRef(title: "Current title", author: "Current author", blossomSha256: sha),
-            ],
-            books: []
-        )
 
-        XCTAssertEqual(result.external.count, 1)
-        XCTAssertEqual(result.external[0].key, sha)
-        XCTAssertEqual(result.external[0].title, "Current title")
-        XCTAssertEqual(result.external[0].author, "Current author")
-    }
 
     func testParseSharedFavoriteTagsKeepsEarliestAddedAtFromLaterUrlMembership() {
         let md5 = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
@@ -2386,7 +1747,6 @@ final class FavoritesParserTests: XCTestCase {
             isbn: "9780123456789",
             libvaultMd5: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
             format: .epub,
-            blossomSha256: nil,
             year: nil
         )
 
@@ -2408,7 +1768,6 @@ final class FavoritesParserTests: XCTestCase {
             isbn: nil,
             libvaultMd5: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
             format: .epub,
-            blossomSha256: nil,
             year: nil
         )
 
@@ -2431,7 +1790,6 @@ final class FavoritesParserTests: XCTestCase {
             isbn: nil,
             libvaultMd5: nil,
             format: .epub,
-            blossomSha256: nil,
             year: nil
         )
 
@@ -2450,7 +1808,6 @@ final class FavoritesParserTests: XCTestCase {
             isbn: nil,
             libvaultMd5: nil,
             format: .epub,
-            blossomSha256: nil,
             year: nil
         )
         let ref = SharedFavoriteRef(url: "HTTPS://Catalog.Example/books/one?source=nostr#chapter")
@@ -2479,7 +1836,6 @@ final class FavoritesParserTests: XCTestCase {
             isbn: "9780123456789",
             libvaultMd5: nil,
             format: .epub,
-            blossomSha256: nil,
             year: nil
         )
 
@@ -2489,40 +1845,9 @@ final class FavoritesParserTests: XCTestCase {
         XCTAssertEqual(result.external.first?.key, "source:expected")
     }
 
-    func testBlankStableIdentifiersStillAllowLegacyFallbackMatching() {
-        let ref = SharedFavoriteRef(
-            bookstrId: " ",
-            libvaultMd5: "",
-            isbn: "9780123456789",
-            blossomSha256: "\n"
-        )
-        let book = CatalogBook(
-            id: "legacy-isbn", title: "Legacy book", author: "Author", epubUrl: "",
-            coverUrl: nil, sourceUrl: nil, isbn: "9780123456789", libvaultMd5: nil,
-            format: .epub, blossomSha256: nil, year: nil
-        )
 
-        XCTAssertTrue(FavoritesParser.matches(ref, book: book))
-        XCTAssertEqual(
-            FavoritesParser.matchSharedFavorites(refs: [ref], books: [book]).bookIds,
-            Set(["legacy-isbn"])
-        )
-    }
 
-    func testMalformedFallbackURLDoesNotMatchCatalogBook() {
-        let ref = SharedFavoriteRef(url: "https://[broken")
-        let book = CatalogBook(
-            id: "catalog-book", title: "Catalog book", author: "Author",
-            epubUrl: "https://catalog.example/books/one", coverUrl: nil, sourceUrl: nil,
-            isbn: nil, libvaultMd5: nil, format: .epub, blossomSha256: nil, year: nil
-        )
 
-        XCTAssertFalse(FavoritesParser.matches(ref, book: book))
-        XCTAssertEqual(
-            FavoritesParser.matchSharedFavorites(refs: [ref], books: [book]).external.first?.key,
-            "https://[broken"
-        )
-    }
 
     func testReadsChunkManifestWithNoiseInStringPayload() {
         let manifest = FavoritesParser.chunkManifest(
@@ -2641,23 +1966,7 @@ final class FavoritesParserTests: XCTestCase {
         XCTAssertEqual(refs[0].addedAt, 1_700_000_010)
     }
 
-    func testParseSharedFavoriteTagsLegacyBlossomTagsUpdateExistingLibvaultFavorite() {
-        let md5 = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-        let sha1 = String(repeating: "c", count: 64)
-        let sha2 = String(repeating: "d", count: 64)
-        let refs = FavoritesParser.parseSharedFavoriteTags([
-            ["book", "libvault", md5, "1700000005", "https://example.org/book.epub"],
-            ["blossom", md5, sha1, "https://blossom.bfr.ee/\(sha1)", "txt"],
-            ["blossom", md5, sha2, "https://blossom.bfr.ee/\(sha2)", "epub"],
-        ])
 
-        XCTAssertEqual(refs.count, 1)
-        XCTAssertEqual(refs[0].libvaultMd5, md5)
-        XCTAssertEqual(refs[0].blossomSha256, sha2)
-        XCTAssertEqual(refs[0].blossomUrl, "https://blossom.bfr.ee/\(sha2)")
-        XCTAssertEqual(refs[0].format, "epub")
-        XCTAssertEqual(refs[0].url, "https://example.org/book.epub")
-    }
 
     func testParseSharedFavoriteTagsSkipsInvalidLibvaultAddedTagWhenValidOneComesLater() {
         let md5 = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
@@ -2673,54 +1982,11 @@ final class FavoritesParserTests: XCTestCase {
         XCTAssertEqual(refs[0].addedAt, 1_700_000_003)
     }
 
-    func testLegacyBlossomUnsupportedFormatDoesNotOverwriteExistingFormat() {
-        let md5 = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-        let sha1 = String(repeating: "e", count: 64)
-        let sha2 = String(repeating: "f", count: 64)
-        let refs = FavoritesParser.parseSharedFavoriteTags([
-            ["blossom", md5, sha1, "https://blossom.example/\(sha1)", "epub"],
-            ["blossom", md5, sha2, "https://blossom.example/\(sha2)", "txt"],
-        ])
 
-        XCTAssertEqual(refs.count, 1)
-        XCTAssertEqual(refs[0].libvaultMd5, md5)
-        XCTAssertEqual(refs[0].blossomSha256, sha2)
-        XCTAssertEqual(refs[0].blossomUrl, "https://blossom.example/\(sha2)")
-        XCTAssertEqual(refs[0].format, "epub")
-    }
 
-    func testLegacyBlossomUnsupportedFormatDoesNotOverwriteExistingLibvaultFormat() {
-        let md5 = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-        let sha = String(repeating: "g", count: 64)
-        let refs = FavoritesParser.parseSharedFavoriteTags([
-            ["libvault-book", md5, "Existing title", "Existing author", "epub", "1", "2025"],
-            ["blossom", md5, sha, "https://blossom.example/\(sha)", "txt"],
-        ])
 
-        XCTAssertEqual(refs.count, 1)
-        XCTAssertEqual(refs[0].libvaultMd5, md5)
-        XCTAssertEqual(refs[0].blossomSha256, sha)
-        XCTAssertEqual(refs[0].blossomUrl, "https://blossom.example/\(sha)")
-        XCTAssertEqual(refs[0].format, "epub")
-        XCTAssertEqual(refs[0].title, "Existing title")
-        XCTAssertEqual(refs[0].author, "Existing author")
-    }
 
-    func testLegacyBlossomSupportedFormatsCanOverridePreviousSupportedFormat() {
-        let md5 = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-        let sha1 = String(repeating: "e", count: 64)
-        let sha2 = String(repeating: "f", count: 64)
-        let refs = FavoritesParser.parseSharedFavoriteTags([
-            ["blossom", md5, sha1, "https://blossom.example/\(sha1)", "epub"],
-            ["blossom", md5, sha2, "https://blossom.example/\(sha2)", "pdf"],
-        ])
 
-        XCTAssertEqual(refs.count, 1)
-        XCTAssertEqual(refs[0].libvaultMd5, md5)
-        XCTAssertEqual(refs[0].blossomSha256, sha2)
-        XCTAssertEqual(refs[0].blossomUrl, "https://blossom.example/\(sha2)")
-        XCTAssertEqual(refs[0].format, "pdf")
-    }
 
     func testMatchSharedFavoritesMatchesByDuplicateSourceUrlRefs() {
         let sourceUrl = "https://catalogue.example.com/books/123"
@@ -2740,7 +2006,6 @@ final class FavoritesParserTests: XCTestCase {
                     isbn: nil,
                     libvaultMd5: nil,
                     format: .epub,
-                    blossomSha256: nil,
                     year: nil
                 )
             ],
@@ -2807,43 +2072,7 @@ final class FavoritesParserTests: XCTestCase {
         XCTAssertNil(collection)
     }
 
-    func testMatchSharedFavoritesMatchesByBlossomSha256() {
-        let sha = String(repeating: "a", count: 64)
-        let result = FavoritesParser.matchSharedFavorites(
-            refs: [
-                SharedFavoriteRef(
-                    libvaultMd5: nil,
-                    isbn: nil,
-                    url: nil,
-                    title: "Remote favorite",
-                    author: "Archive",
-                    year: nil,
-                    format: nil,
-                    blossomSha256: sha,
-                    blossomUrl: nil,
-                    addedAt: 1_700_000_000
-                )
-            ],
-            books: [
-                CatalogBook(
-                    id: "local-book",
-                    title: "Local title",
-                    author: "Reader",
-                    epubUrl: "https://example.org/local.epub",
-                    coverUrl: nil,
-                    sourceUrl: nil,
-                    isbn: nil,
-                    libvaultMd5: nil,
-                    format: .epub,
-                    blossomSha256: sha,
-                    year: "2025"
-                )
-            ]
-        )
 
-        XCTAssertEqual(result.bookIds, Set(["local-book"]))
-        XCTAssertTrue(result.external.isEmpty)
-    }
 
     func testCollectionIndexTagsIncludesTombstonesAndDescription() {
         let snapshot = CollectionSnapshot(
@@ -2928,7 +2157,6 @@ final class FavoritesParserTests: XCTestCase {
                     isbn: nil,
                     libvaultMd5: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
                     format: .epub,
-                    blossomSha256: nil,
                     year: nil
                 )
             ]
@@ -2982,7 +2210,6 @@ final class FavoritesParserTests: XCTestCase {
                     isbn: nil,
                     libvaultMd5: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
                     format: .epub,
-                    blossomSha256: nil,
                     year: nil
                 )
             ]
@@ -3015,24 +2242,7 @@ final class FavoritesParserTests: XCTestCase {
         XCTAssertEqual(refs[0].addedAt, 1_700_000_001)
     }
 
-    func testFavoriteDefaultModelsAndComputedRightsAreUsable() {
-        XCTAssertEqual(SharedFavorites(), SharedFavorites(bookIds: [], external: []))
-        XCTAssertEqual(CollectionSnapshot(), CollectionSnapshot(collections: [], tombstones: []))
 
-        let external = ExternalFavorite(
-            key: "external", title: "Open book", author: nil, year: nil,
-            url: "https://example.test/book.cbz", isbn: nil, libvaultMd5: nil, format: "cbz",
-            blossomSha256: nil, blossomUrl: nil, rightsStatus: "open_license", license: "CC BY 4.0"
-        )
-        XCTAssertEqual(external.id, "external")
-        XCTAssertEqual(external.rights.compactLabel, "CC BY 4.0")
-
-        let ref = SharedFavoriteRef(
-            bookstrId: "book", url: "https://example.test/book.cbz", title: "Comic", format: "cbz",
-            rightsStatus: "public_domain", license: "Public domain"
-        )
-        XCTAssertEqual(ref.rights.status, .publicDomain)
-    }
 
     func testFavoriteConvenienceSerializationUsesCurrentTimestampFallback() throws {
         let ref = SharedFavoriteRef(bookstrId: "book", title: "Comic", format: "cbz", addedAt: 0)
@@ -3044,50 +2254,7 @@ final class FavoritesParserTests: XCTestCase {
         XCTAssertEqual(FavoritesParser.parseSharedFavoriteTags(serialized).first?.bookstrId, "book")
     }
 
-    func testCompactTagsCoverEveryIdentityAndOptionalLocatorCombination() {
-        let md5 = String(repeating: "a", count: 32)
-        let sha = String(repeating: "b", count: 64)
-        let refs = [
-            SharedFavoriteRef(libvaultMd5: md5, title: "Archive", blossomSha256: sha,
-                              blossomUrl: "https://example.test/archive.cbr", addedAt: -1),
-            SharedFavoriteRef(blossomSha256: sha, blossomUrl: "https://example.test/blob", addedAt: 2),
-            SharedFavoriteRef(bookstrId: "book", url: "https://example.test/book", addedAt: 3),
-            SharedFavoriteRef(isbn: "978-1-2345-6789-7", url: "https://example.test/isbn", addedAt: 4),
-            SharedFavoriteRef(url: "https://example.test/url", addedAt: 5),
-            SharedFavoriteRef(title: "No identity")
-        ]
-        let tags = FavoritesParser.compactItemTags(refs: refs, fallbackAddedAt: 99)
-        XCTAssertTrue(tags.contains { $0.prefix(3) == ["book", "libvault", md5] })
-        XCTAssertTrue(tags.contains { $0.prefix(3) == ["book", "blossom", sha] })
-        XCTAssertTrue(tags.contains { $0.prefix(3) == ["book", "bookstr", "book"] })
-        XCTAssertTrue(tags.contains { $0.prefix(3) == ["book", "isbn", "9781234567897"] })
-        XCTAssertTrue(tags.contains { $0.prefix(3) == ["book", "url", "https://example.test/url"] })
-        XCTAssertTrue(tags.contains { $0.first == "blossom" })
-    }
 
-    func testSearchFavoriteMatcherCoversStableURLAndMetadataPaths() {
-        let result = BookSearchResult(
-            id: "result", source: "source", title: "Title", author: "Author", year: nil,
-            publisher: nil, language: nil, format: .epub, downloadUrl: "https://example.test/book.epub",
-            coverUrl: nil, rating: 0, editionCount: 0
-        )
-        let base = ExternalFavorite(
-            key: "different", title: "Other", author: nil, year: nil,
-            url: nil, isbn: nil, libvaultMd5: nil, format: nil, blossomSha256: nil, blossomUrl: nil
-        )
-        XCTAssertTrue(SearchFavoriteMatcher.matches(
-            result,
-            favorite: ExternalFavorite(
-                key: "result", title: "Other", author: nil, year: nil,
-                url: nil, isbn: nil, libvaultMd5: nil, format: nil, blossomSha256: nil, blossomUrl: nil
-            )
-        ))
-        var byURL = base
-        byURL = ExternalFavorite(
-            key: byURL.key, title: byURL.title, author: byURL.author, year: nil,
-            url: result.downloadUrl, isbn: nil, libvaultMd5: nil, format: nil, blossomSha256: nil, blossomUrl: nil
-        )
-        XCTAssertTrue(SearchFavoriteMatcher.matches(result, favorite: byURL))
-        XCTAssertFalse(SearchFavoriteMatcher.matches(result, favorite: base))
-    }
+
+
 }

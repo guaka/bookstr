@@ -37,22 +37,22 @@ enum LibraryUITestFixtures {
         let epub = CatalogBook(
             id: epubID, title: "Alice EPUB Fixture", author: "Lewis Carroll",
             epubUrl: "", coverUrl: nil, sourceUrl: nil, isbn: nil, libvaultMd5: nil,
-            format: .epub, blossomSha256: nil, year: "1865"
+            format: .epub, year: "1865"
         )
         let pdf = CatalogBook(
             id: pdfID, title: "Alice PDF Fixture", author: "Lewis Carroll",
             epubUrl: "", coverUrl: nil, sourceUrl: nil, isbn: nil, libvaultMd5: nil,
-            format: .pdf, blossomSha256: nil, year: "1865"
+            format: .pdf, year: "1865"
         )
         let cbz = CatalogBook(
             id: cbzID, title: "Comic CBZ Fixture", author: "Bookstr Tests",
             epubUrl: "", coverUrl: nil, sourceUrl: nil, isbn: nil, libvaultMd5: nil,
-            format: .cbz, blossomSha256: nil, year: "2026", language: "pt-BR"
+            format: .cbz, year: "2026", language: "pt-BR"
         )
         let cbr = CatalogBook(
             id: cbrID, title: "Comic CBR Fixture", author: "Public domain",
             epubUrl: "", coverUrl: nil, sourceUrl: nil, isbn: nil, libvaultMd5: nil,
-            format: .cbr, blossomSha256: nil, year: nil
+            format: .cbr, year: nil
         )
 
         try? epubData().write(to: fileStore.bookFileURL(bookId: epubID, format: .epub), options: .atomic)

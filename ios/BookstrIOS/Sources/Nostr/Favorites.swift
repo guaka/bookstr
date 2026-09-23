@@ -13,8 +13,6 @@ struct SharedFavoriteRef: Codable, Equatable {
     var author: String?
     var year: String?
     var format: String?
-    var blossomSha256: String?
-    var blossomUrl: String?
     var addedAt: Int64?
     var rightsStatus: String? = nil
     var license: String? = nil
@@ -36,8 +34,6 @@ struct ExternalFavorite: Identifiable, Equatable {
     let isbn: String?
     let libvaultMd5: String?
     let format: String?
-    let blossomSha256: String?
-    let blossomUrl: String?
     var addedAt: Int64? = nil
     var rightsStatus: String? = nil
     var license: String? = nil
@@ -133,16 +129,7 @@ enum FavoritesParser {
                     "", "", "", "", ref.rights.status.rawValue, ref.rights.license ?? "",
                     ref.rights.licenseURL ?? "", ref.rights.source ?? ""
                 ])
-                if let sha256 = ref.blossomSha256?.lowercased(), isSHA256(sha256),
-                   let url = ref.blossomUrl ?? ref.url, url.lowercased().hasPrefix("https://") {
-                    tags.append(["blossom", md5, sha256, url, ref.format ?? ""])
-                }
                 return tags
-            }
-            if let sha256 = ref.blossomSha256?.lowercased(), isSHA256(sha256) {
-                var tag = ["book", "blossom", sha256, addedAt]
-                if let locator = ref.blossomUrl ?? ref.url, !locator.isEmpty { tag.append(locator) }
-                return [tag]
             }
             if let bookstrId = ref.bookstrId, !bookstrId.isEmpty {
                 var tag = ["book", "bookstr", bookstrId, addedAt]
@@ -195,7 +182,6 @@ enum FavoritesParser {
         let hasStableConflict = hasStableIdentityConflict(ref, book: book)
         return ref.bookstrId == book.id
             || (ref.libvaultMd5 != nil && ref.libvaultMd5?.lowercased() == book.libvaultMd5?.lowercased())
-            || (ref.blossomSha256 != nil && ref.blossomSha256?.lowercased() == book.blossomSha256?.lowercased())
             || (!hasStableConflict && !normalizeISBN(ref.isbn).isEmpty
                 && normalizeISBN(ref.isbn) == normalizeISBN(book.isbn))
             || (!hasStableConflict && ref.url != nil
@@ -310,7 +296,7 @@ enum FavoritesParser {
 
         func isURLOnly(_ ref: SharedFavoriteRef) -> Bool {
             ref.url != nil && ref.libvaultMd5 == nil && ref.bookstrId == nil
-                && ref.isbn == nil && ref.blossomSha256 == nil
+                && ref.isbn == nil
         }
 
         func rights(_ parts: [String], offset: Int) -> BookRights {
@@ -332,7 +318,6 @@ enum FavoritesParser {
                 (ref.libvaultMd5 != nil && existing.libvaultMd5 == ref.libvaultMd5)
                     || (ref.bookstrId != nil && existing.bookstrId == ref.bookstrId)
                     || (ref.isbn != nil && normalizeISBN(existing.isbn) == normalizeISBN(ref.isbn))
-                    || (ref.blossomSha256 != nil && existing.blossomSha256 == ref.blossomSha256)
                     || (ref.url != nil && existing.url == ref.url)
             }
             if let index {
@@ -346,8 +331,6 @@ enum FavoritesParser {
                 old.author = old.author ?? ref.author
                 old.year = old.year ?? ref.year
                 old.format = old.format ?? ref.format
-                old.blossomSha256 = old.blossomSha256 ?? ref.blossomSha256
-                old.blossomUrl = old.blossomUrl ?? ref.blossomUrl
                 old.coverUrl = old.coverUrl ?? ref.coverUrl
                 old.addedAt = [old.addedAt, ref.addedAt].compactMap { $0 }.min()
                 let preferred = BookRights.preferred(current: old.rights, incoming: ref.rights)
@@ -397,9 +380,6 @@ enum FavoritesParser {
                     if !isbn.isEmpty { appendOrMerge(SharedFavoriteRef(isbn: isbn, url: locator, addedAt: addedAt)) }
                 case "url" where validURL(identifier) != nil:
                     appendOrMerge(SharedFavoriteRef(url: identifier, addedAt: addedAt))
-                case "blossom" where isSHA256(identifier):
-                    appendOrMerge(SharedFavoriteRef(url: locator, blossomSha256: identifier.lowercased(),
-                                                    blossomUrl: locator, addedAt: addedAt))
                 default:
                     continue
                 }
@@ -480,28 +460,6 @@ enum FavoritesParser {
                     refs.append(SharedFavoriteRef(libvaultMd5: md5, addedAt: addedAt))
                     currentIndex = refs.count - 1
                 }
-            case "blossom" where isMD5(parts.dropFirst().first):
-                let md5 = parts[1].lowercased()
-                if let index = refs.firstIndex(where: { $0.libvaultMd5 == md5 }) {
-                    currentIndex = index
-                    replaceCurrent { current in
-                        var next = current
-                        if parts.count > 2, !parts[2].isEmpty { next.blossomSha256 = parts[2] }
-                        if parts.count > 3, !parts[3].isEmpty { next.blossomUrl = parts[3] }
-                        if parts.count > 4, isSupportedBookFormat(parts[4]) { next.format = parts[4] }
-                        return next
-                    }
-                } else {
-                    refs.append(
-                        SharedFavoriteRef(
-                            libvaultMd5: md5,
-                            format: parts.count > 4 && isSupportedBookFormat(parts[4]) ? parts[4] : nil,
-                            blossomSha256: parts.count > 2 && !parts[2].isEmpty ? parts[2] : nil,
-                            blossomUrl: parts.count > 3 && !parts[3].isEmpty ? parts[3] : nil
-                        )
-                    )
-                    currentIndex = refs.count - 1
-                }
             case "i" where parts.count > 1 && parts[1].hasPrefix("isbn:"):
                 let isbn = normalizeISBN(String(parts[1].dropFirst(5)))
                 guard !isbn.isEmpty else { continue }
@@ -542,7 +500,6 @@ enum FavoritesParser {
                 return candidate.id == ref.bookstrId
                     || (ref.libvaultMd5 != nil
                         && candidate.libvaultMd5?.lowercased() == ref.libvaultMd5?.lowercased())
-                    || (ref.blossomSha256 != nil && candidate.blossomSha256?.lowercased() == ref.blossomSha256?.lowercased())
                     || (!hasStableConflict && !isbn.isEmpty && normalizeISBN(candidate.isbn) == isbn)
                     || (!hasStableConflict && ref.url != nil && urlsMatch(ref.url, candidate.sourceUrl))
                     || (!hasStableConflict && ref.url != nil && urlsMatch(ref.url, candidate.epubUrl))
@@ -551,7 +508,7 @@ enum FavoritesParser {
                 matched.insert(book.id)
                 continue
             }
-            guard let key = ref.libvaultMd5 ?? ref.bookstrId ?? ref.blossomSha256
+            guard let key = ref.libvaultMd5 ?? ref.bookstrId
                     ?? (isbn.isEmpty ? nil : isbn) ?? ref.url else {
                 continue
             }
@@ -564,8 +521,6 @@ enum FavoritesParser {
                 isbn: isbn.isEmpty ? nil : isbn,
                 libvaultMd5: ref.libvaultMd5,
                 format: ref.format,
-                blossomSha256: ref.blossomSha256,
-                blossomUrl: ref.blossomUrl,
                 addedAt: ref.addedAt,
                 rightsStatus: ref.rightsStatus, license: ref.license,
                 licenseUrl: ref.licenseUrl, rightsSource: ref.rightsSource,
@@ -587,7 +542,6 @@ enum FavoritesParser {
 
     private static func fallbackTitle(for ref: SharedFavoriteRef, key: String) -> String {
         if let md5 = ref.libvaultMd5 { return "MD5 \(md5.prefix(10))…" }
-        if let sha = ref.blossomSha256 { return "Blossom \(sha.prefix(10))…" }
         let isbn = normalizeISBN(ref.isbn)
         if !isbn.isEmpty { return "ISBN \(isbn)" }
         return key
@@ -596,12 +550,9 @@ enum FavoritesParser {
     private static func hasStableIdentityConflict(_ ref: SharedFavoriteRef, book: CatalogBook) -> Bool {
         let bookstrID = ref.bookstrId?.trimmingCharacters(in: .whitespacesAndNewlines)
         let md5 = ref.libvaultMd5?.trimmingCharacters(in: .whitespacesAndNewlines)
-        let blossom = ref.blossomSha256?.trimmingCharacters(in: .whitespacesAndNewlines)
         return (bookstrID?.isEmpty == false && book.id != bookstrID)
             || (md5?.isEmpty == false && book.libvaultMd5 != nil
                 && book.libvaultMd5?.lowercased() != md5?.lowercased())
-            || (blossom?.isEmpty == false && book.blossomSha256 != nil
-                && book.blossomSha256?.lowercased() != blossom?.lowercased())
     }
 
     private static func urlsMatch(_ lhs: String?, _ rhs: String?) -> Bool {
@@ -626,11 +577,6 @@ enum FavoritesParser {
 
     private static func isMD5(_ value: String?) -> Bool {
         guard let value, value.count == 32 else { return false }
-        return value.allSatisfy { $0.isHexDigit }
-    }
-
-    private static func isSHA256(_ value: String?) -> Bool {
-        guard let value, value.count == 64 else { return false }
         return value.allSatisfy { $0.isHexDigit }
     }
 

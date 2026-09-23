@@ -52,7 +52,7 @@ final class FavoriteOutboxTests: XCTestCase {
         CatalogBook(
             id: id, title: "Book title", author: "Author", epubUrl: "https://example.org/book.epub",
             coverUrl: nil, sourceUrl: nil, isbn: nil, libvaultMd5: nil, format: .epub,
-            blossomSha256: nil, year: nil
+            year: nil
         )
     }
 

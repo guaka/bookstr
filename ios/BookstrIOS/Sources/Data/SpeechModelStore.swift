@@ -3,6 +3,7 @@ import Foundation
 enum SpeechEngineID: String, CaseIterable, Identifiable {
     case system
     case kokoroEnglish = "kokoro_en"
+    case kokoroBrazilianPortuguese = "kokoro_pt_br"
     case portuguesePortugal = "piper_pt_pt"
     case portuguesePortugalMiro = "piper_pt_pt_miro"
     case portuguesePortugalDii = "piper_pt_pt_dii"
@@ -18,6 +19,7 @@ enum SpeechEngineID: String, CaseIterable, Identifiable {
         switch self {
         case .system: "Apple voices"
         case .kokoroEnglish: "Kokoro · English"
+        case .kokoroBrazilianPortuguese: "Kokoro · Português (Brasil)"
         case .portuguesePortugal: "Tugão · Português (Portugal)"
         case .portuguesePortugalMiro: "Miro · Português (Portugal)"
         case .portuguesePortugalDii: "Dii · Português (Portugal)"
@@ -34,6 +36,7 @@ enum SpeechEngineID: String, CaseIterable, Identifiable {
     var preferredLanguageTag: String {
         switch self {
         case .system, .kokoroEnglish: "en"
+        case .kokoroBrazilianPortuguese: "pt-br"
         case .portuguesePortugal, .portuguesePortugalMiro, .portuguesePortugalDii: "pt-pt"
         case .frenchMiro: "fr"
         case .germanMiro: "de"
@@ -47,6 +50,7 @@ enum SpeechEngineID: String, CaseIterable, Identifiable {
         switch self {
         case .system: true
         case .kokoroEnglish: SpeechLanguageSettings.isEnglish(language)
+        case .kokoroBrazilianPortuguese: SpeechLanguageSettings.preferredLanguageTag(language) == "pt-br"
         case .portuguesePortugal, .portuguesePortugalMiro, .portuguesePortugalDii:
             SpeechLanguageSettings.isPortuguese(language)
         case .frenchMiro: SpeechLanguageSettings.isFrench(language)
@@ -59,7 +63,7 @@ enum SpeechEngineID: String, CaseIterable, Identifiable {
 }
 
 enum SpeechModelKind: Equatable {
-    case kokoro(model: String, voices: String, speaker: Int)
+    case kokoro(model: String, voices: String, speaker: Int, language: String?)
     case vits(model: String)
 }
 
@@ -138,7 +142,19 @@ enum SpeechModelCatalog {
                 .init(path: "voices.bin", expectedBytes: 5_755_904),
                 .init(path: "tokens.txt", expectedBytes: 1_078)
             ] + commonEspeakFiles,
-            kind: .kokoro(model: "model.onnx", voices: "voices.bin", speaker: 0)
+            kind: .kokoro(model: "model.onnx", voices: "voices.bin", speaker: 0, language: nil)
+        ),
+        SpeechModelSpec(
+            id: .kokoroBrazilianPortuguese,
+            repository: "csukuangfj/kokoro-multi-lang-v1_0",
+            revision: "f7b96bb6bef5c5da4d3aa4f4e0498fbbf62dc78b",
+            files: [
+                .init(path: "model.onnx", expectedBytes: 325_560_556),
+                .init(path: "voices.bin", expectedBytes: 28_200_960),
+                .init(path: "tokens.txt", expectedBytes: 687),
+                .init(path: "espeak-ng-data/lang/roa/pt-BR", expectedBytes: 109)
+            ] + commonEspeakFiles,
+            kind: .kokoro(model: "model.onnx", voices: "voices.bin", speaker: 42, language: "pt-br")
         ),
         SpeechModelSpec(
             id: .portuguesePortugal,

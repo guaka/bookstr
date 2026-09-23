@@ -159,6 +159,7 @@ final class EPUBReaderController: NSObject, ObservableObject, AVSpeechSynthesize
     @Published var ready = false
     @Published var isSpeaking = false
     @Published var isSpeechPreparing = false
+    @Published private(set) var speechState = ReaderSpeechState.idle
     @Published private(set) var isSpeechRetained = false
     @Published var loadingStage = "Opening book"
     @Published var rights = BookRights()
@@ -166,6 +167,9 @@ final class EPUBReaderController: NSObject, ObservableObject, AVSpeechSynthesize
     @Published var searchResults: [EPUBSearchResult] = []
     @Published var searching = false
     fileprivate var speechLocator = ""
+    fileprivate var checkpointHandler: (() -> Void)?
+    fileprivate var playbackChoiceProvider: ((String) -> SpeechPlaybackChoice)?
+    fileprivate var resetSpeechLanguageHandler: (() -> Void)?
 
     fileprivate weak var webView: WKWebView?
     private let speech = AVSpeechSynthesizer()
@@ -186,6 +190,7 @@ final class EPUBReaderController: NSObject, ObservableObject, AVSpeechSynthesize
     private var remoteCommandsConfigured = false
     private var audioSessionObservers: [NSObjectProtocol] = []
     private var speechStopRequested = false
+    private var pauseExpiryTask: Task<Void, Never>?
 
     override init() {
         super.init()
@@ -194,6 +199,7 @@ final class EPUBReaderController: NSObject, ObservableObject, AVSpeechSynthesize
     }
 
     deinit {
+        pauseExpiryTask?.cancel()
         audioSessionObservers.forEach(NotificationCenter.default.removeObserver)
     }
 
@@ -250,15 +256,81 @@ final class EPUBReaderController: NSObject, ObservableObject, AVSpeechSynthesize
     }
 
     func toggleSpeech() {
-        if isSpeechSessionActive {
-            stopSpeech()
-        } else {
+        switch speechState {
+        case .playing, .preparing:
+            pauseSpeech()
+        case .paused:
+            resumeSpeech()
+        case .idle:
             guard ready else {
                 errorMessage = "The reader is still preparing text for speech."
                 return
             }
             requestSpeechText()
         }
+    }
+
+    func stopSpeechCompletely() {
+        stopSpeech(unload: true)
+    }
+
+    func restartSpeechWithCurrentSettings() {
+        guard speechState != .idle else { return }
+        checkpointHandler?()
+        resetSpeechLanguageHandler?()
+        stopSpeech()
+        requestSpeechText(after: 80)
+    }
+
+    func restoreVisibleLocationAfterLayout() {
+        let anchor = speechLocator.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !anchor.isEmpty else { return }
+        evaluate(
+            "setTimeout(function(){window.restoreReaderLocation && window.restoreReaderLocation(" +
+                "\(Self.js(anchor)));}, 220); null;"
+        )
+    }
+
+    private func pauseSpeech() {
+        guard speechState == .playing || speechState == .preparing else { return }
+        checkpointHandler?()
+        if speech.isSpeaking { speech.pauseSpeaking(at: .word) }
+        if neuralSpeech.isPlaying { neuralSpeech.pause() }
+        isSpeechPreparing = false
+        isSpeaking = false
+        speechState = .paused
+        refreshSpeechRetention()
+        updateNowPlaying(isPlaying: false)
+        pauseExpiryTask?.cancel()
+        pauseExpiryTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(ReaderSpeechPausePolicy.expiration))
+            guard !Task.isCancelled else { return }
+            self?.expirePausedSpeech()
+        }
+    }
+
+    private func resumeSpeech() {
+        guard speechState == .paused else { return }
+        pauseExpiryTask?.cancel()
+        pauseExpiryTask = nil
+        do { try AVAudioSession.sharedInstance().setActive(true) } catch { return }
+        if speech.isPaused {
+            speech.continueSpeaking()
+        } else if neuralSpeech.isPaused {
+            neuralSpeech.resume()
+        } else {
+            requestSpeechText()
+            return
+        }
+        speechState = .playing
+        setSpeaking(true)
+        updateNowPlaying(isPlaying: true)
+    }
+
+    private func expirePausedSpeech() {
+        guard speechState == .paused else { return }
+        checkpointHandler?()
+        stopSpeech(unload: true)
     }
 
     private var isSpeechSessionActive: Bool {
@@ -276,12 +348,14 @@ final class EPUBReaderController: NSObject, ObservableObject, AVSpeechSynthesize
     private func setSpeaking(_ speaking: Bool) {
         isSpeaking = speaking
         if !speaking { isSpeechPreparing = false }
+        if speaking, !isSpeechPreparing { speechState = .playing }
         refreshSpeechRetention()
     }
 
     private func markSpeechStarted() {
         if isSpeechPreparing {
             isSpeechPreparing = false
+            speechState = .playing
             refreshSpeechRetention()
         }
     }
@@ -303,6 +377,9 @@ final class EPUBReaderController: NSObject, ObservableObject, AVSpeechSynthesize
             SpeechQueueChunk(text: $0.text, offset: $0.offset, pauseSeconds: $0.pauseSeconds, speak: $0.speak)
         }
         guard playbackQueue.accept(requestID: requestID, chunks: preparedChunks) else { return }
+        // A WebKit reply can arrive after the user pauses while text is still
+        // being prepared. Keep the checkpoint and wait for an explicit resume.
+        guard speechState != .paused else { return }
         guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             stopSpeech()
             // End-of-book continuation replies with exhausted; do not treat that
@@ -409,12 +486,13 @@ final class EPUBReaderController: NSObject, ObservableObject, AVSpeechSynthesize
     }
 
     nonisolated func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, willSpeakRangeOfSpeechString characterRange: NSRange, utterance: AVSpeechUtterance) {
+        let identifier = ObjectIdentifier(utterance)
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
             self.markSpeechStarted()
-            guard let offset = self.utteranceOffsets[ObjectIdentifier(utterance)] else { return }
-            if self.utteranceMapsSpokenRanges[ObjectIdentifier(utterance)] == false,
-               let length = self.utteranceHighlightLengths[ObjectIdentifier(utterance)] {
+            guard let offset = self.utteranceOffsets[identifier] else { return }
+            if self.utteranceMapsSpokenRanges[identifier] == false,
+               let length = self.utteranceHighlightLengths[identifier] {
                 self.updateSpeechProgress(start: offset, end: offset + max(1, length))
                 return
             }
@@ -423,26 +501,34 @@ final class EPUBReaderController: NSObject, ObservableObject, AVSpeechSynthesize
     }
 
     nonisolated func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {
+        let identifier = ObjectIdentifier(utterance)
+        let voiceIdentifier = utterance.voice?.identifier
+        let rate = Double(utterance.rate)
         DispatchQueue.main.async { [weak self] in
-            self?.finishUtterance(utterance)
+            self?.finishUtterance(identifier, voiceIdentifier: voiceIdentifier, rate: rate)
         }
     }
 
     nonisolated func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didCancel utterance: AVSpeechUtterance) {
+        let identifier = ObjectIdentifier(utterance)
+        let voiceIdentifier = utterance.voice?.identifier
+        let rate = Double(utterance.rate)
         DispatchQueue.main.async { [weak self] in
-            self?.finishUtterance(utterance)
+            self?.finishUtterance(identifier, voiceIdentifier: voiceIdentifier, rate: rate)
         }
     }
 
-    private func finishUtterance(_ utterance: AVSpeechUtterance) {
-        let identifier = ObjectIdentifier(utterance)
+    private func finishUtterance(_ identifier: ObjectIdentifier, voiceIdentifier: String?, rate: Double) {
         guard activeUtterance == identifier else { return }
         activeUtterance = nil
         utteranceOffsets.removeValue(forKey: identifier)
         utteranceHighlightLengths.removeValue(forKey: identifier)
         utteranceMapsSpokenRanges.removeValue(forKey: identifier)
         if !playbackQueue.isEmpty {
-            speakNextUtterance(voice: utterance.voice, rate: Double(utterance.rate))
+            speakNextUtterance(
+                voice: voiceIdentifier.flatMap(AVSpeechSynthesisVoice.init(identifier:)),
+                rate: rate
+            )
             return
         }
         if speechStopRequested {
@@ -453,6 +539,9 @@ final class EPUBReaderController: NSObject, ObservableObject, AVSpeechSynthesize
     }
 
     private func finishSpeech() {
+        checkpointHandler?()
+        pauseExpiryTask?.cancel()
+        speechState = .idle
         setSpeaking(false)
         updateNowPlaying(isPlaying: false)
         deactivateAudioSession()
@@ -466,18 +555,20 @@ final class EPUBReaderController: NSObject, ObservableObject, AVSpeechSynthesize
             finishSpeech()
             return
         }
-        speechLocator = ""
+        checkpointHandler?()
         speechStatusMessage = nil
         let requestID = UUID().uuidString
         playbackQueue.beginRequest(id: requestID)
         setSpeaking(true)
         updateNowPlaying(isPlaying: true)
-        evaluate(
-            "window.continueSpeechAfterSection && window.continueSpeechAfterSection(true, \(Self.js(requestID)))"
-        )
+        evaluate("setTimeout(function(){window.continueSpeechAfterSection && " +
+            "window.continueSpeechAfterSection(true, \(Self.js(requestID)));}, 150)")
     }
 
-    private func stopSpeech() {
+    private func stopSpeech(unload: Bool = false) {
+        checkpointHandler?()
+        pauseExpiryTask?.cancel()
+        pauseExpiryTask = nil
         speechStopRequested = true
         playbackQueue.cancel()
         activeUtterance = nil
@@ -485,9 +576,10 @@ final class EPUBReaderController: NSObject, ObservableObject, AVSpeechSynthesize
         utteranceHighlightLengths.removeAll()
         utteranceMapsSpokenRanges.removeAll()
         neuralChunkOffset = nil
-        neuralSpeech.stop()
+        if unload { neuralSpeech.unload() } else { neuralSpeech.stop() }
         speech.stopSpeaking(at: .immediate)
         isSpeechPreparing = false
+        speechState = .idle
         setSpeaking(false)
         updateNowPlaying(isPlaying: false)
         deactivateAudioSession()
@@ -500,6 +592,7 @@ final class EPUBReaderController: NSObject, ObservableObject, AVSpeechSynthesize
         let requestID = UUID().uuidString
         playbackQueue.beginRequest(id: requestID)
         isSpeechPreparing = true
+        speechState = .preparing
         setSpeaking(true)
         updateNowPlaying(isPlaying: true)
         let request = "window.requestSpeechText && window.requestSpeechText(true, \(Self.js(requestID)), \(Self.js(speechLocator)))"
@@ -567,83 +660,52 @@ final class EPUBReaderController: NSObject, ObservableObject, AVSpeechSynthesize
             object: AVAudioSession.sharedInstance(),
             queue: .main
         ) { [weak self] notification in
-            self?.handleAudioInterruption(notification)
+            let type = notification.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt
+            let options = notification.userInfo?[AVAudioSessionInterruptionOptionKey] as? UInt
+            Task { @MainActor [weak self] in
+                self?.handleAudioInterruption(typeValue: type, optionsValue: options)
+            }
         })
         audioSessionObservers.append(center.addObserver(
             forName: AVAudioSession.routeChangeNotification,
             object: AVAudioSession.sharedInstance(),
             queue: .main
         ) { [weak self] notification in
-            self?.handleRouteChange(notification)
+            let reason = notification.userInfo?[AVAudioSessionRouteChangeReasonKey] as? UInt
+            Task { @MainActor [weak self] in self?.handleRouteChange(reasonValue: reason) }
         })
     }
 
-    private func handleAudioInterruption(_ notification: Notification) {
-        guard let info = notification.userInfo,
-              let typeValue = info[AVAudioSessionInterruptionTypeKey] as? UInt,
+    private func handleAudioInterruption(typeValue: UInt?, optionsValue: UInt?) {
+        guard let typeValue,
               let type = AVAudioSession.InterruptionType(rawValue: typeValue)
         else { return }
         switch type {
         case .began:
             BookstrDebugLog.shared.record("interrupt began")
-            if speech.isSpeaking {
-                speech.pauseSpeaking(at: .word)
-                setSpeaking(false)
-                updateNowPlaying(isPlaying: false)
-            } else if neuralSpeech.isPlaying {
-                neuralSpeech.pause()
-                setSpeaking(false)
-                updateNowPlaying(isPlaying: false)
-            }
+            pauseSpeech()
         case .ended:
-            let options = (info[AVAudioSessionInterruptionOptionKey] as? UInt)
+            let options = optionsValue
                 .map(AVAudioSession.InterruptionOptions.init(rawValue:)) ?? []
             BookstrDebugLog.shared.record(
                 "interrupt ended shouldResume=\(options.contains(.shouldResume))"
             )
             guard options.contains(.shouldResume) else { return }
-            resumeSpeechAfterInterruption()
+            resumeSpeech()
         @unknown default:
             break
         }
     }
 
-    private func handleRouteChange(_ notification: Notification) {
-        guard let info = notification.userInfo,
-              let reasonValue = info[AVAudioSessionRouteChangeReasonKey] as? UInt,
+    private func handleRouteChange(reasonValue: UInt?) {
+        guard let reasonValue,
               let reason = AVAudioSession.RouteChangeReason(rawValue: reasonValue)
         else { return }
         // AirPods reconnect / headset plug: keep the session active if we were speaking.
         if reason == .newDeviceAvailable || reason == .categoryChange {
             BookstrDebugLog.shared.record("route \(reason.rawValue)")
             guard isSpeechRetained else { return }
-            try? AVAudioSession.sharedInstance().setActive(true)
-            if neuralSpeech.isPaused {
-                neuralSpeech.resume()
-                setSpeaking(true)
-                updateNowPlaying(isPlaying: true)
-            } else if speech.isPaused {
-                speech.continueSpeaking()
-                setSpeaking(true)
-                updateNowPlaying(isPlaying: true)
-            }
-        }
-    }
-
-    private func resumeSpeechAfterInterruption() {
-        do {
-            try AVAudioSession.sharedInstance().setActive(true)
-        } catch {
-            return
-        }
-        if speech.isPaused {
-            speech.continueSpeaking()
-            setSpeaking(true)
-            updateNowPlaying(isPlaying: true)
-        } else if neuralSpeech.isPaused || neuralChunkOffset != nil {
-            neuralSpeech.resume()
-            setSpeaking(true)
-            updateNowPlaying(isPlaying: true)
+            resumeSpeech()
         }
     }
 
@@ -662,14 +724,8 @@ final class EPUBReaderController: NSObject, ObservableObject, AVSpeechSynthesize
         commands.playCommand.addTarget { [weak self] _ in
             Task { @MainActor in
                 guard let self else { return }
-                if self.speech.isPaused {
-                    self.speech.continueSpeaking()
-                    self.setSpeaking(true)
-                    self.updateNowPlaying(isPlaying: true)
-                } else if self.activeSpeechEngine != .system, !self.neuralSpeech.isPlaying, self.neuralChunkOffset != nil {
-                    self.neuralSpeech.resume()
-                    self.setSpeaking(true)
-                    self.updateNowPlaying(isPlaying: true)
+                if self.speechState == .paused {
+                    self.resumeSpeech()
                 } else if !self.isSpeaking && !self.playbackQueue.hasPendingRequest {
                     self.requestSpeechText()
                 }
@@ -679,15 +735,7 @@ final class EPUBReaderController: NSObject, ObservableObject, AVSpeechSynthesize
         commands.pauseCommand.addTarget { [weak self] _ in
             Task { @MainActor in
                 guard let self else { return }
-                if self.speech.isSpeaking {
-                    self.speech.pauseSpeaking(at: .word)
-                    self.setSpeaking(false)
-                    self.updateNowPlaying(isPlaying: false)
-                } else if self.neuralSpeech.isPlaying {
-                    self.neuralSpeech.pause()
-                    self.setSpeaking(false)
-                    self.updateNowPlaying(isPlaying: false)
-                }
+                self.pauseSpeech()
             }
             return .success
         }
@@ -948,6 +996,9 @@ struct EPUBReaderView: UIViewRepresentable {
         private let progressSync = ReaderProgressSyncDebouncer()
 
         private var resignObserver: NSObjectProtocol?
+        private var orientationObserver: NSObjectProtocol?
+        private var lastSpeechPersistAt = Date.distantPast
+        private var lockedSpeechLanguage: String?
 
         init(container: AppContainer, book: CatalogBook, fileURL: URL, controller: EPUBReaderController,
              initialCFI: String?, highlightCFI: String?, highlightKind: ReaderHighlightKind?) {
@@ -959,6 +1010,16 @@ struct EPUBReaderView: UIViewRepresentable {
             self.highlightCFI = highlightCFI
             self.highlightKind = highlightKind
             super.init()
+            controller.checkpointHandler = { [weak self] in
+                self?.persistCurrentLocator()
+            }
+            controller.playbackChoiceProvider = { [weak self] contentLanguage in
+                self?.speechChoice(contentLanguage: contentLanguage)
+                    ?? SpeechPlaybackChoice(languageTag: "en", voiceIdentifier: "", rate: SpeechLanguageSettings.defaultRate)
+            }
+            controller.resetSpeechLanguageHandler = { [weak self] in
+                self?.lockedSpeechLanguage = nil
+            }
             resignObserver = NotificationCenter.default.addObserver(
                 forName: UIApplication.willResignActiveNotification,
                 object: nil,
@@ -966,11 +1027,24 @@ struct EPUBReaderView: UIViewRepresentable {
             ) { [weak self] _ in
                 self?.persistCurrentLocator()
             }
+            orientationObserver = NotificationCenter.default.addObserver(
+                forName: UIDevice.orientationDidChangeNotification,
+                object: nil,
+                queue: .main
+            ) { [weak self] _ in
+                Task { @MainActor [weak self] in
+                    self?.persistCurrentLocator()
+                    self?.controller.restoreVisibleLocationAfterLayout()
+                }
+            }
         }
 
         deinit {
             if let resignObserver {
                 NotificationCenter.default.removeObserver(resignObserver)
+            }
+            if let orientationObserver {
+                NotificationCenter.default.removeObserver(orientationObserver)
             }
         }
 
@@ -1346,6 +1420,11 @@ struct EPUBReaderView: UIViewRepresentable {
             controller.sectionIndex = item.sectionIndex
             controller.sectionCount = item.sectionCount
             controller.speechLocator = item.cfi
+            if item.source == "speech" {
+                let now = Date()
+                guard now.timeIntervalSince(lastSpeechPersistAt) >= 2 else { return }
+                lastSpeechPersistAt = now
+            }
             container.progressRepository.save(bookId: book.id, progression: item.progression, cfi: item.cfi)
             container.settingsRepository.saveReaderSession(
                 ReaderSession(bookId: book.id, bookTitle: book.title, format: .epub, author: book.author,
@@ -1530,13 +1609,29 @@ struct EPUBReaderView: UIViewRepresentable {
         private func handleSpeech(_ json: String?) {
             guard let item = object(from: json), let text = item["text"] as? String else { return }
             let chunks = controller.parseSpeechChunks(item["chunks"])
+            let contentLanguage = item["language"] as? String ?? "en"
             controller.speak(
                 text: text,
-                playback: container.settingsRepository.speechChoice(for: item["language"] as? String ?? "en"),
+                playback: controller.playbackChoiceProvider?(contentLanguage)
+                    ?? container.settingsRepository.speechChoice(for: contentLanguage),
                 chunks: chunks.isEmpty ? nil : chunks,
                 requestID: item["requestID"] as? String,
                 exhausted: item["exhausted"] as? Bool ?? false
             )
+        }
+
+        private func speechChoice(contentLanguage: String) -> SpeechPlaybackChoice {
+            let override = container.settingsRepository.speechLanguageOverride
+            if override != SpeechLanguageSettings.automaticLanguage {
+                return container.settingsRepository.speechChoice(for: override)
+            }
+            if lockedSpeechLanguage == nil {
+                let publicationLanguage = book.language?.trimmingCharacters(in: .whitespacesAndNewlines)
+                lockedSpeechLanguage = SpeechLanguageSettings.preferredLanguageTag(
+                    publicationLanguage?.isEmpty == false ? publicationLanguage! : contentLanguage
+                )
+            }
+            return container.settingsRepository.speechChoice(for: lockedSpeechLanguage ?? "en")
         }
     }
 }

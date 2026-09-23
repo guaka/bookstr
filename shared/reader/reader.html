@@ -1599,6 +1599,12 @@
       lastSpeechCfi = String(cfi || "").trim();
     };
 
+    window.restoreReaderLocation = function(cfi) {
+      const anchor = String(cfi || "").trim();
+      if (!anchor || !rendition || typeof rendition.display !== "function") return;
+      return rendition.display(anchor);
+    };
+
     window.requestSpeechText = function(notifyNative, requestID, fromCfi) {
       if (!rendition) return;
       let resumeCfi = String(fromCfi || lastSpeechCfi || "").trim();

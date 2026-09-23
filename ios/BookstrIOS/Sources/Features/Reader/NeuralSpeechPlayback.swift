@@ -57,7 +57,7 @@ private final class NeuralSpeechRenderer: NeuralSpeechSynthesizing, @unchecked S
                     let synthesizer = try self.synthesizer(for: spec)
                     let speaker: Int
                     switch spec.kind {
-                    case .kokoro(_, _, let configuredSpeaker): speaker = configuredSpeaker
+                    case .kokoro(_, _, let configuredSpeaker, _): speaker = configuredSpeaker
                     case .vits: speaker = 0
                     }
                     var collected: [Float] = []
@@ -108,12 +108,13 @@ private final class NeuralSpeechRenderer: NeuralSpeechSynthesizing, @unchecked S
         releaseSynthesizer()
         let created: SherpaOnnxOfflineTtsWrapper
         switch spec.kind {
-        case .kokoro(let model, let voices, _):
+        case .kokoro(let model, let voices, _, let language):
             let kokoro = sherpaOnnxOfflineTtsKokoroModelConfig(
                 model: spec.fileURL(model).path,
                 voices: spec.fileURL(voices).path,
                 tokens: spec.tokensURL.path,
-                dataDir: spec.dataDirectory.path
+                dataDir: spec.dataDirectory.path,
+                lang: language ?? ""
             )
             let modelConfig = sherpaOnnxOfflineTtsModelConfig(kokoro: kokoro, numThreads: NeuralSpeechBudget.onnxThreads)
             var config = sherpaOnnxOfflineTtsConfig(model: modelConfig, maxNumSentences: 1)
@@ -230,6 +231,7 @@ private final class NeuralAudioPlayer: NeuralSpeechScheduling {
     func schedule(
         samples: [Float],
         sampleRate: Double,
+        onRendered: @escaping () -> Void,
         completion: @escaping () -> Void
     ) throws {
         try prepare(sampleRate: sampleRate)
@@ -249,6 +251,18 @@ private final class NeuralAudioPlayer: NeuralSpeechScheduling {
         }
         player.scheduleBuffer(buffer, completionCallbackType: .dataPlayedBack) { _ in
             DispatchQueue.main.async(execute: completion)
+        }
+        // A one-frame marker gives us a render-boundary callback independently
+        // from .dataPlayedBack, whose delay includes Bluetooth/device latency.
+        // Scheduling the successor here keeps output continuous while the
+        // played-back callback remains authoritative for reading position.
+        guard let marker = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 1) else {
+            throw NeuralSpeechError.generationFailed
+        }
+        marker.frameLength = 1
+        marker.floatChannelData?[0][0] = 0
+        player.scheduleBuffer(marker, completionCallbackType: .dataRendered) { _ in
+            DispatchQueue.main.async(execute: onRendered)
         }
         if keepAliveEnabled, keepAliveRate == sampleRate, keepAlive.isPlaying == false {
             try? installKeepAlive(sampleRate: sampleRate)
@@ -341,14 +355,14 @@ final class NeuralSpeechPlayback {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            self?.session.setConstrained(true)
+            Task { @MainActor [weak self] in self?.session.setConstrained(true) }
         }
         NotificationCenter.default.addObserver(
             forName: UIApplication.willEnterForegroundNotification,
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            self?.session.setConstrained(false)
+            Task { @MainActor [weak self] in self?.session.setConstrained(false) }
         }
         if UIApplication.shared.applicationState != .active {
             session.setConstrained(true)
@@ -409,6 +423,11 @@ final class NeuralSpeechPlayback {
         isPaused = false
         session.stop()
         endPlaybackTask()
+    }
+
+    func unload() {
+        stop()
+        renderer.unload()
     }
 
     private func beginPlaybackTask() {

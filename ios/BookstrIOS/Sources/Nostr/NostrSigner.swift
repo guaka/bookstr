@@ -63,31 +63,6 @@ struct Nip46Signer: NostrSigner {
     }
 }
 
-enum BlossomAuthorization {
-    static func get(signer: NostrSigner, hash: String, server: String, now: Int64? = nil) async throws -> String {
-        let timestamp = now ?? Int64(Date().timeIntervalSince1970)
-        let request = try BlossomAuthorizationWire.unsignedGetEvent(
-            hash: hash,
-            server: server,
-            now: timestamp,
-            content: "Download a Bookstr book"
-        )
-        let event = NostrEvent(
-            id: nil,
-            pubkey: signer.publicKeyHex,
-            createdAt: request.createdAt,
-            kind: request.kind,
-            tags: request.tags,
-            content: request.content,
-            sig: nil
-        )
-        let signed = try await signer.sign(event)
-        let encoded = try JSONEncoder().encode(signed).base64EncodedString().replacingOccurrences(of: "=", with: "")
-        return "Nostr \(encoded)"
-    }
-}
-
-
 extension PrivateCatalogCrypto {
     static let native = PrivateCatalogCrypto(ephemeralSigner: {
         let key = try KeyPair()

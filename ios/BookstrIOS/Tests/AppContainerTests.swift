@@ -79,7 +79,7 @@ final class AppContainerTests: XCTestCase {
             CatalogBook(
                 id: "book-\(index)", title: "Title \(index)", author: "Author \(index)",
                 epubUrl: "https://example.test/\(index).epub", coverUrl: nil, sourceUrl: nil,
-                isbn: nil, libvaultMd5: nil, format: .epub, blossomSha256: nil, year: "2026"
+                isbn: nil, libvaultMd5: nil, format: .epub, year: "2026"
             )
         }
 
@@ -146,18 +146,15 @@ final class AppContainerTests: XCTestCase {
     func testLibraryPullDownFilterMatchesBookMetadata() {
         let epub = CatalogBook(
             id: "epub", title: "EPUB", author: "Author", epubUrl: "https://example.org/book.epub",
-            coverUrl: nil, sourceUrl: nil, isbn: nil, libvaultMd5: nil, format: .epub,
-            blossomSha256: nil, year: nil
+            coverUrl: nil, sourceUrl: nil, isbn: nil, libvaultMd5: nil, format: .epub, year: nil
         )
         let cbz = CatalogBook(
             id: "cbz", title: "Comic", author: "Artist", epubUrl: "https://example.org/book.cbz",
-            coverUrl: nil, sourceUrl: nil, isbn: nil, libvaultMd5: nil, format: .cbz,
-            blossomSha256: nil, year: nil, language: "ja"
+            coverUrl: nil, sourceUrl: nil, isbn: nil, libvaultMd5: nil, format: .cbz, year: nil, language: "ja"
         )
         let external = ExternalFavorite(
             key: "external", title: "External comic", author: "Artist", year: nil,
-            url: nil, isbn: nil, libvaultMd5: nil, format: "CBZ",
-            blossomSha256: nil, blossomUrl: nil
+            url: nil, isbn: nil, libvaultMd5: nil, format: "CBZ"
         )
 
         XCTAssertEqual(LibraryViewModel.filtered([epub, cbz], by: "comic artist").map(\.id), ["cbz"])
@@ -171,13 +168,12 @@ final class AppContainerTests: XCTestCase {
     func testLibraryDedupesPreferringUsableCover() {
         let withoutCover = CatalogBook(
             id: "book", title: "T", author: "A", epubUrl: "https://example.org/a.epub",
-            coverUrl: nil, sourceUrl: nil, isbn: nil, libvaultMd5: nil, format: .epub,
-            blossomSha256: nil, year: nil
+            coverUrl: nil, sourceUrl: nil, isbn: nil, libvaultMd5: nil, format: .epub, year: nil
         )
         let withCover = CatalogBook(
             id: "book", title: "T", author: "A", epubUrl: "https://example.org/a.epub",
             coverUrl: "https://covers.example/a.jpg", sourceUrl: nil, isbn: nil, libvaultMd5: nil,
-            format: .epub, blossomSha256: nil, year: nil
+            format: .epub, year: nil
         )
         let merged = LibraryViewModel.uniquedPreferringCover([withoutCover, withCover])
         XCTAssertEqual(merged.count, 1)
@@ -197,8 +193,7 @@ final class AppContainerTests: XCTestCase {
         let container = AppContainer.bootstrap()
         let book = CatalogBook(
             id: "alice", title: "Alice", author: "Carroll", epubUrl: "https://example.org/a.epub",
-            coverUrl: nil, sourceUrl: nil, isbn: nil, libvaultMd5: nil, format: .epub,
-            blossomSha256: nil, year: nil
+            coverUrl: nil, sourceUrl: nil, isbn: nil, libvaultMd5: nil, format: .epub, year: nil
         )
 
         container.readerPlayback.present(book: book)
@@ -232,13 +227,11 @@ final class AppContainerTests: XCTestCase {
 
         let alpha = CatalogBook(
             id: "alpha", title: "Alpha", author: "Zulu", epubUrl: "https://example.org/a.epub",
-            coverUrl: nil, sourceUrl: nil, isbn: nil, libvaultMd5: nil, format: .epub,
-            blossomSha256: nil, year: nil
+            coverUrl: nil, sourceUrl: nil, isbn: nil, libvaultMd5: nil, format: .epub, year: nil
         )
         let beta = CatalogBook(
             id: "beta", title: "Beta", author: "Alice", epubUrl: "https://example.org/b.epub",
-            coverUrl: nil, sourceUrl: nil, isbn: nil, libvaultMd5: nil, format: .epub,
-            blossomSha256: nil, year: nil
+            coverUrl: nil, sourceUrl: nil, isbn: nil, libvaultMd5: nil, format: .epub, year: nil
         )
         let progress = [
             alpha.id: BookProgress(bookId: alpha.id, progression: 0.2, cfi: "a", updatedAt: 20),
@@ -256,11 +249,11 @@ final class AppContainerTests: XCTestCase {
     func testLibrarySortsExternalFavoritesByEveryOptionAndUsesTitleAsTieBreaker() {
         let alpha = ExternalFavorite(
             key: "alpha", title: "Alpha", author: "Zulu", year: nil, url: nil, isbn: nil,
-            libvaultMd5: nil, format: nil, blossomSha256: nil, blossomUrl: nil, addedAt: 20
+            libvaultMd5: nil, format: nil, addedAt: 20
         )
         let beta = ExternalFavorite(
             key: "beta", title: "Beta", author: "Alice", year: nil, url: nil, isbn: nil,
-            libvaultMd5: nil, format: nil, blossomSha256: nil, blossomUrl: nil, addedAt: 10
+            libvaultMd5: nil, format: nil, addedAt: 10
         )
 
         XCTAssertEqual(LibraryViewModel.sorted([beta, alpha], by: .recent).map(\.id), ["alpha", "beta"])
@@ -271,11 +264,11 @@ final class AppContainerTests: XCTestCase {
         let untimed = [
             ExternalFavorite(
                 key: "beta-untimed", title: "Beta", author: nil, year: nil, url: nil, isbn: nil,
-                libvaultMd5: nil, format: nil, blossomSha256: nil, blossomUrl: nil
+                libvaultMd5: nil, format: nil
             ),
             ExternalFavorite(
                 key: "alpha-untimed", title: "Alpha", author: nil, year: nil, url: nil, isbn: nil,
-                libvaultMd5: nil, format: nil, blossomSha256: nil, blossomUrl: nil
+                libvaultMd5: nil, format: nil
             ),
         ]
         XCTAssertEqual(LibraryViewModel.sorted(untimed, by: .recent).map(\.id), ["alpha-untimed", "beta-untimed"])
@@ -322,8 +315,6 @@ final class AppContainerTests: XCTestCase {
                             author: "Author",
                             year: nil,
                             format: "epub",
-                            blossomSha256: nil,
-                            blossomUrl: nil,
                             addedAt: 1_700_000_000
                         )
                     ],
@@ -385,13 +376,11 @@ final class AppContainerTests: XCTestCase {
     func testReaderOpeningMessageUsesBookTitle() {
         let titled = CatalogBook(
             id: "a", title: "  Alice  ", author: "Carroll", epubUrl: "https://example.org/a.epub",
-            coverUrl: nil, sourceUrl: nil, isbn: nil, libvaultMd5: nil, format: .epub,
-            blossomSha256: nil, year: nil
+            coverUrl: nil, sourceUrl: nil, isbn: nil, libvaultMd5: nil, format: .epub, year: nil
         )
         let blank = CatalogBook(
             id: "b", title: "   ", author: "Author", epubUrl: "https://example.org/b.epub",
-            coverUrl: nil, sourceUrl: nil, isbn: nil, libvaultMd5: nil, format: .pdf,
-            blossomSha256: nil, year: nil
+            coverUrl: nil, sourceUrl: nil, isbn: nil, libvaultMd5: nil, format: .pdf, year: nil
         )
         XCTAssertEqual(ReaderHostView.openingMessage(for: titled), "Opening Alice…")
         XCTAssertEqual(ReaderHostView.openingMessage(for: blank), "Opening book…")
@@ -406,7 +395,9 @@ final class AppContainerTests: XCTestCase {
         let fileStore = JSONFileStore(subdirectory: subdirectory)
         fileStore.ensureBooksDirectory()
         fileStore.ensureCoversDirectory()
-        let settings = SettingsRepository(fileStore: fileStore)
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: subdirectory))
+        defaults.removePersistentDomain(forName: subdirectory)
+        let settings = SettingsRepository(defaults: defaults)
         let nip46 = Nip46Service()
         let catalog = CatalogRepository(
             fileStore: fileStore,
@@ -417,8 +408,7 @@ final class AppContainerTests: XCTestCase {
         let bookID = String(repeating: "b", count: 64)
         let book = CatalogBook(
             id: bookID, title: "Locked", author: "Author", epubUrl: "",
-            coverUrl: nil, sourceUrl: nil, isbn: nil, libvaultMd5: nil, format: .epub,
-            blossomSha256: bookID, year: nil
+            coverUrl: nil, sourceUrl: nil, isbn: nil, libvaultMd5: nil, format: .epub, year: nil
         )
         fileStore.save("downloaded-books.json", value: [book])
 
@@ -442,8 +432,7 @@ final class AppContainerTests: XCTestCase {
         let bookID = String(repeating: "a", count: 64)
         let book = CatalogBook(
             id: bookID, title: "Delete Me", author: "Author", epubUrl: "",
-            coverUrl: nil, sourceUrl: nil, isbn: nil, libvaultMd5: nil, format: .pdf,
-            blossomSha256: bookID, year: nil
+            coverUrl: nil, sourceUrl: nil, isbn: nil, libvaultMd5: nil, format: .pdf, year: nil
         )
         let publication = fileStore.bookFileURL(bookId: bookID, format: .pdf)
         let pdf = UIGraphicsPDFRenderer(bounds: CGRect(x: 0, y: 0, width: 300, height: 400)).pdfData { context in
