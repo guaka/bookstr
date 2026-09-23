@@ -38,6 +38,8 @@ struct RightsDetailsItem: Identifiable {
     let year: String?
     let format: String?
     let rights: BookRights
+    var coverURL: String? = nil
+    var bookID: String? = nil
 }
 
 struct RightsDetailsView: View {
@@ -47,6 +49,24 @@ struct RightsDetailsView: View {
     var body: some View {
         NavigationStack {
             List {
+                Section {
+                    HStack {
+                        Spacer()
+                        BookCoverView(
+                            urlString: item.coverURL,
+                            bookID: item.bookID,
+                            title: item.title,
+                            author: item.author ?? "",
+                            displayWidth: 112,
+                            displayHeight: 166
+                        )
+                        Spacer()
+                    }
+                    .padding(.vertical, 8)
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel("Cover of \(item.title)")
+                    .accessibilityIdentifier("book-details-cover")
+                }
                 Section("Book") {
                     LabeledContent("Title", value: item.title)
                     if let author = item.author, !author.isEmpty { LabeledContent("Author", value: author) }

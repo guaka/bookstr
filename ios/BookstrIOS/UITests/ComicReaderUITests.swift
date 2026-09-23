@@ -95,7 +95,7 @@ final class ComicReaderUITests: XCTestCase {
         XCTAssertTrue(book.waitForExistence(timeout: 8), "Missing \(format) UI-test fixture")
         book.tap()
 
-        XCTAssertTrue(app.buttons["reader-back"].waitForExistence(timeout: 10), "\(format) reader was not presented")
+        XCTAssertTrue(app.buttons["reader-book-details"].waitForExistence(timeout: 10), "\(format) reader was not presented")
         let reader = comicReader(format: format)
         XCTAssertTrue(reader.waitForExistence(timeout: 15), "\(format) web reader did not appear")
         XCTAssertTrue(

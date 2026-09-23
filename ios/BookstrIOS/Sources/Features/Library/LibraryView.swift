@@ -142,7 +142,8 @@ struct LibraryView: View {
                             Button("Rights details") {
                                 rightsDetails = RightsDetailsItem(
                                     title: favorite.title, author: favorite.author, year: favorite.year,
-                                    format: favorite.format, rights: favorite.rights
+                                    format: favorite.format, rights: favorite.rights,
+                                    coverURL: favorite.coverUrl, bookID: favorite.key
                                 )
                             }
                         }
@@ -321,7 +322,8 @@ struct LibraryView: View {
     private func details(for book: CatalogBook) -> RightsDetailsItem {
         RightsDetailsItem(
             title: book.title, author: book.author, year: book.year,
-            format: book.format.rawValue, rights: book.rights
+            format: book.format.rawValue, rights: book.rights,
+            coverURL: book.coverUrl, bookID: book.id
         )
     }
 }

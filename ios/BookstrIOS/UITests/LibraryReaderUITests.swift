@@ -23,7 +23,7 @@ final class LibraryReaderUITests: XCTestCase {
     }
 
     func testEPUBNavigationSearchAndPDFRenderingJourney() throws {
-        let (back, chapter) = openEPUB()
+        let chapter = openEPUB()
         let initialY = chapter.frame.minY
         let reader = app.webViews["epub-reader-webview"]
         XCTAssertTrue(reader.waitForExistence(timeout: 5))
@@ -48,7 +48,7 @@ final class LibraryReaderUITests: XCTestCase {
         let title = app.staticTexts["reader-title"]
         XCTAssertTrue(title.waitForExistence(timeout: 4))
         XCTAssertLessThan(title.frame.maxX, app.frame.width * 0.36)
-        XCTAssertLessThan(title.frame.minY, back.frame.midY)
+        XCTAssertLessThan(title.frame.minY, app.buttons["reader-book-details"].frame.midY)
         XCTAssertTrue(app.descendants(matching: .any)["reader-progress-epub"].waitForExistence(timeout: 4))
         app.buttons["reader-search"].tap()
         let searchScope = app.staticTexts.matching(
@@ -71,10 +71,10 @@ final class LibraryReaderUITests: XCTestCase {
         epubResult.tap()
         XCTAssertTrue(waitForDisappearance(epubQuery, timeout: 4))
 
-        back.tap()
+        exitReaderToLibrary()
         XCTAssertTrue(app.tabBars.buttons["Library"].waitForExistence(timeout: 5))
 
-        let (_, pdfReader) = openPDF()
+        let pdfReader = openPDF()
         XCTAssertEqual(pdfReader.value as? String, "1 rendered pages")
         XCTAssertTrue(app.descendants(matching: .any)["reader-progress-pdf"].waitForExistence(timeout: 4))
         app.buttons["reader-search"].tap()
@@ -91,7 +91,7 @@ final class LibraryReaderUITests: XCTestCase {
     }
 
     func testSpeechKeepsPlayingAndHeaderToggleStaysAfterLeavingReader() throws {
-        let (back, _) = openEPUB()
+        _ = openEPUB()
         let readerToggle = app.buttons["reader-speech-toggle"]
         XCTAssertTrue(readerToggle.waitForExistence(timeout: 10), "EPUB reader did not expose speech control")
         readerToggle.tap()
@@ -110,7 +110,7 @@ final class LibraryReaderUITests: XCTestCase {
             "EPUB reader did not start speech before leaving the book"
         )
 
-        back.tap()
+        exitReaderToLibrary()
         XCTAssertTrue(app.tabBars.buttons["Library"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.buttons["library-book-ui-test-alice-epub"].waitForExistence(timeout: 5))
         XCTAssertTrue(
@@ -129,7 +129,7 @@ final class LibraryReaderUITests: XCTestCase {
     }
 
     func testEPUBKeepsReadingPositionBetweenLandscapeOrientations() throws {
-        let (_, chapter) = openEPUB()
+        let chapter = openEPUB()
         let reader = app.webViews["epub-reader-webview"]
         XCTAssertTrue(reader.waitForExistence(timeout: 5))
         reader.swipeLeft(velocity: .fast)
@@ -198,18 +198,38 @@ final class LibraryReaderUITests: XCTestCase {
         XCTAssertLessThan(epub.frame.minY, pdf.frame.minY)
     }
 
-    private func openEPUB() -> (back: XCUIElement, chapter: XCUIElement) {
+    func testStoppingSpeechHidesIslandAndBookDetailsShowsCover() throws {
+        _ = openEPUB()
+        app.buttons["reader-speech-toggle"].tap()
+        let stop = app.buttons["reader-speech-stop"]
+        XCTAssertTrue(stop.waitForExistence(timeout: 8))
+        stop.tap()
+        XCTAssertFalse(app.buttons["reader-speech-playback"].waitForExistence(timeout: 2))
+        let details = app.buttons["reader-book-details"]
+        XCTAssertTrue(details.exists)
+        details.tap()
+        XCTAssertTrue(app.descendants(matching: .any)["book-details-cover"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Book details"].exists)
+    }
+
+    private func exitReaderToLibrary() {
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.96)).tap()
+        let library = app.buttons["reader-pane-library"]
+        XCTAssertTrue(library.waitForExistence(timeout: 4))
+        library.tap()
+    }
+
+    private func openEPUB() -> XCUIElement {
         let epub = app.buttons["library-book-ui-test-alice-epub"]
         XCTAssertTrue(epub.waitForExistence(timeout: 5))
         epub.tap()
 
-        let back = app.buttons["reader-back"]
-        XCTAssertTrue(back.waitForExistence(timeout: 10), "EPUB reader was not presented")
+        XCTAssertTrue(app.buttons["reader-book-details"].waitForExistence(timeout: 10), "EPUB reader was not presented")
         let chapter = app.staticTexts.matching(
             NSPredicate(format: "label CONTAINS[c] %@", "Down the Rabbit-Hole")
         ).firstMatch
         XCTAssertTrue(chapter.waitForExistence(timeout: 12), "EPUB opened but did not expose visible chapter text")
-        return (back, chapter)
+        return chapter
     }
 
     private func chooseSort(_ label: String) {
@@ -221,16 +241,15 @@ final class LibraryReaderUITests: XCTestCase {
         option.tap()
     }
 
-    private func openPDF() -> (back: XCUIElement, reader: XCUIElement) {
+    private func openPDF() -> XCUIElement {
         let pdf = app.buttons["library-book-ui-test-alice-pdf"]
         XCTAssertTrue(pdf.waitForExistence(timeout: 5))
         pdf.tap()
 
-        let back = app.buttons["reader-back"]
-        XCTAssertTrue(back.waitForExistence(timeout: 10), "PDF reader was not presented")
+        XCTAssertTrue(app.buttons["reader-book-details"].waitForExistence(timeout: 10), "PDF reader was not presented")
         let reader = app.descendants(matching: .any)["pdf-reader"]
         XCTAssertTrue(reader.waitForExistence(timeout: 10), "PDF rendered view did not appear")
-        return (back, reader)
+        return reader
     }
 
     private func waitForY(_ element: XCUIElement, below maximum: CGFloat) -> Bool {

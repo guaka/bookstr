@@ -318,24 +318,22 @@ final class AppShellUITests: XCTestCase {
         let epub = app.buttons["library-book-ui-test-alice-epub"]
         XCTAssertTrue(epub.waitForExistence(timeout: 5))
         epub.tap()
-        let initialBack = app.buttons["reader-back"]
-        XCTAssertTrue(initialBack.waitForExistence(timeout: 10))
-        initialBack.tap()
+        XCTAssertTrue(app.buttons["reader-book-details"].waitForExistence(timeout: 10))
+        exitReaderToLibrary()
         XCTAssertTrue(app.tabBars.buttons["Library"].waitForExistence(timeout: 5))
 
         let continueTab = app.tabBars.buttons["Continue reading"]
         XCTAssertTrue(continueTab.waitForExistence(timeout: 5))
         continueTab.tap()
 
-        let back = app.buttons["reader-back"]
-        XCTAssertTrue(back.waitForExistence(timeout: 10), "Continue reading did not open the reader")
+        XCTAssertTrue(app.buttons["reader-book-details"].waitForExistence(timeout: 10), "Continue reading did not open the reader")
         XCTAssertTrue(
             app.staticTexts.matching(
                 NSPredicate(format: "label CONTAINS[c] %@", "Down the Rabbit-Hole")
             ).firstMatch.waitForExistence(timeout: 10),
             "Continued EPUB did not expose its chapter text"
         )
-        back.tap()
+        exitReaderToLibrary()
         XCTAssertTrue(app.tabBars.buttons["Library"].waitForExistence(timeout: 5))
     }
 
@@ -349,7 +347,7 @@ final class AppShellUITests: XCTestCase {
         XCTAssertTrue(epub.waitForExistence(timeout: 5))
         epub.tap()
 
-        XCTAssertTrue(app.buttons["reader-back"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.buttons["reader-book-details"].waitForExistence(timeout: 10))
         XCTAssertTrue(app.buttons["reader-speech-toggle"].waitForExistence(timeout: 5))
         XCTAssertTrue(
             app.staticTexts.matching(
@@ -363,6 +361,13 @@ final class AppShellUITests: XCTestCase {
         XCTAssertTrue(tab.waitForExistence(timeout: 5), "Missing " + label + " tab")
         tab.tap()
         XCTAssertTrue(tab.isSelected, label + " tab was not selected")
+    }
+
+    private func exitReaderToLibrary() {
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.96)).tap()
+        let library = app.buttons["reader-pane-library"]
+        XCTAssertTrue(library.waitForExistence(timeout: 4))
+        library.tap()
     }
 
     private func reveal(_ element: XCUIElement) {

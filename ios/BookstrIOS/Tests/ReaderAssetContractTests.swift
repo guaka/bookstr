@@ -687,11 +687,14 @@ final class ReaderAssetContractTests: XCTestCase {
         XCTAssertEqual(ReaderClockLabel.labelText(for: date, batteryPercent: 84, charging: true), "13:07 84% charging")
     }
 
-    func testReaderHeaderKeepsMetadataLeftOfTheCameraIsland() {
-        XCTAssertEqual(ReaderTopBarLayout.metadataWidth(containerWidth: 320), 70)
-        XCTAssertEqual(ReaderTopBarLayout.metadataWidth(containerWidth: 393), 78.6, accuracy: 0.001)
-        XCTAssertEqual(ReaderTopBarLayout.metadataWidth(containerWidth: 430), 86, accuracy: 0.001)
-        XCTAssertEqual(ReaderTopBarLayout.metadataWidth(containerWidth: 600), 100)
+    func testReaderHeaderUsesBothCameraIslandShouldersWithoutOverlappingCutout() {
+        for width: CGFloat in [320, 393, 430] {
+            let shoulder = ReaderTopBarLayout.shoulderWidth(containerWidth: width, horizontalInset: 6)
+            let cutoutHalfWidth = min(63, width * 0.18) + 17
+            XCTAssertGreaterThanOrEqual(shoulder, 44)
+            XCTAssertLessThanOrEqual(2 * shoulder + 2 * cutoutHalfWidth + 24, width)
+        }
+        XCTAssertEqual(ReaderTopBarLayout.shoulderWidth(containerWidth: 393, horizontalInset: 6), 104.5)
     }
 #endif
 
@@ -1084,6 +1087,9 @@ final class ReaderAssetContractTests: XCTestCase {
         XCTAssertTrue(host.contains("chromeMetrics = ReaderDeviceGeometry.metrics(fallback: layoutOrientation)"))
         XCTAssertTrue(host.contains("ReaderHeaderBackground("))
         XCTAssertTrue(host.contains("ReaderTopIslandCutout"))
+        XCTAssertTrue(host.contains("reader-book-details"))
+        XCTAssertFalse(host.contains("reader-back"))
+        XCTAssertTrue(host.contains("speechControlsExpanded &&"))
         XCTAssertTrue(host.contains("cornerRadius: metrics.bottomCornerRadius"))
         XCTAssertTrue(host.contains("frame(height: metrics.activationZoneHeight)"))
         XCTAssertTrue(host.contains(".accessibilityHidden(true)"))

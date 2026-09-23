@@ -55,6 +55,7 @@ struct ReaderHostView: View {
         // for this full-screen overlay.
         .id(layoutOrientation)
         .frame(width: chromeMetrics.width, height: chromeMetrics.height)
+        .accessibilityAction(.escape) { closeReader() }
         .onReceive(NotificationCenter.default.publisher(for: UIDevice.orientationDidChangeNotification)) { _ in
             updateLayoutOrientation(UIDevice.current.orientation)
             Task { @MainActor in
@@ -193,7 +194,7 @@ struct ReaderHostView: View {
             readerTopBar(metrics: metrics)
         }
         .overlay(alignment: .topTrailing) {
-            if activeFormat == .epub || activeFormat == .fb2 {
+            if speechControlsExpanded && (activeFormat == .epub || activeFormat == .fb2) {
                 speechControlIsland
                     .padding(.top, metrics.headerHeight + 4)
                     .padding(.trailing, max(8, metrics.safeTrailing + 8))
@@ -271,7 +272,8 @@ struct ReaderHostView: View {
             RightsDetailsView(item: RightsDetailsItem(
                 title: book.title, author: book.author, year: book.year,
                 format: activeFormat.rawValue,
-                rights: activeFormat == .epub ? epubController.rights : book.rights
+                rights: activeFormat == .epub ? epubController.rights : book.rights,
+                coverURL: book.coverUrl, bookID: book.id
             ))
         }
         .sheet(isPresented: $showSearch) { readerSearchSheet }
@@ -296,6 +298,9 @@ struct ReaderHostView: View {
         .onChange(of: epubController.isSpeaking) { _, _ in syncPlaybackSpeech() }
         .onChange(of: fb2Controller.isSpeechRetained) { _, _ in syncPlaybackSpeech() }
         .onChange(of: fb2Controller.isSpeaking) { _, _ in syncPlaybackSpeech() }
+        .onChange(of: activeSpeechState) { previous, current in
+            if previous != .idle && current == .idle { speechControlsExpanded = false }
+        }
         .onChange(of: fb2Controller.speechLocator) { _, locator in
             guard let locator else { return }
             persistProgress(fb2Controller.progression, locator: locator, format: .fb2)
@@ -332,48 +337,92 @@ struct ReaderHostView: View {
 
     @ViewBuilder
     private func readerTopBar(metrics: ReaderChromeMetrics) -> some View {
-        HStack(alignment: .top, spacing: 0) {
-            Button(action: closeReader) {
-                Image(systemName: "arrow.left")
-                    .font(.system(size: 18, weight: .medium))
-                    .frame(width: 40, height: 40)
-            }
-            .accessibilityLabel("Back")
-            .accessibilityIdentifier("reader-back")
-
-            VStack(alignment: .leading, spacing: 1) {
-                Text(book.title)
-                    .font(.system(size: 10, weight: .semibold))
-                    .lineLimit(1)
-                    .accessibilityIdentifier("reader-title")
-                if !readerByline.isEmpty {
+        VStack(spacing: 0) {
+            if metrics.dynamicIslandEdge == .top {
+                let shoulderWidth = ReaderTopBarLayout.shoulderWidth(
+                    containerWidth: metrics.width,
+                    horizontalInset: metrics.horizontalControlInset
+                )
+                HStack(alignment: .top, spacing: 0) {
+                    Text(book.title)
+                        .font(.system(size: 11, weight: .semibold))
+                        .lineLimit(2)
+                        .frame(width: shoulderWidth, alignment: .leading)
+                        .accessibilityIdentifier("reader-title")
+                    Spacer(minLength: 0)
                     Text(readerByline)
-                        .font(.system(size: 8))
-                        .lineLimit(1)
+                        .font(.system(size: 9))
+                        .lineLimit(2)
+                        .multilineTextAlignment(.trailing)
                         .opacity(0.82)
+                        .frame(width: shoulderWidth, alignment: .trailing)
                 }
-            }
-            .padding(.top, 2)
-            .containerRelativeFrame(.horizontal, alignment: .topLeading) { width, _ in
-                ReaderTopBarLayout.metadataWidth(containerWidth: width)
-            }
+                .padding(.horizontal, metrics.horizontalControlInset)
+                .padding(.top, metrics.islandTopInset + 4)
+                .frame(height: metrics.safeTop, alignment: .top)
 
-            Spacer(minLength: 0)
-
-            Button { showRightsDetails = true } label: {
-                RightsBadge(rights: activeFormat == .epub ? epubController.rights : book.rights)
+                HStack(spacing: 0) {
+                    bookDetailsButton
+                    Spacer(minLength: 0)
+                    readerActionButtons
+                }
+                .padding(.horizontal, metrics.horizontalControlInset)
+                .frame(height: 44)
+            } else {
+                HStack(spacing: 0) {
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(book.title)
+                            .font(.system(size: 11, weight: .semibold))
+                            .lineLimit(1)
+                            .accessibilityIdentifier("reader-title")
+                        if !readerByline.isEmpty {
+                            Text(readerByline)
+                                .font(.system(size: 9))
+                                .lineLimit(1)
+                                .opacity(0.82)
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    bookDetailsButton
+                    readerActionButtons
+                }
+                .padding(.horizontal, metrics.horizontalControlInset)
+                .padding(.top, metrics.controlsTopInset)
+                .frame(height: metrics.headerHeight, alignment: .top)
             }
-            .buttonStyle(.plain)
-            .accessibilityHint("Shows the complete rights statement and source")
+        }
+        .foregroundStyle(container.settingsRepository.theme.background)
+        .frame(height: metrics.headerHeight, alignment: .top)
+        .background {
+            ReaderHeaderBackground(
+                metrics: metrics,
+                color: container.settingsRepository.theme.primary.opacity(0.98)
+            )
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("reader-top-header")
+    }
 
+    private var bookDetailsButton: some View {
+        Button { showRightsDetails = true } label: {
+            Image(systemName: "info.circle")
+                .frame(width: 44, height: 44)
+        }
+        .font(.system(size: 17, weight: .medium))
+        .buttonStyle(.plain)
+        .accessibilityLabel("Book details")
+        .accessibilityIdentifier("reader-book-details")
+    }
+
+    private var readerActionButtons: some View {
+        HStack(spacing: 0) {
             if activeFormat == .epub || activeFormat == .fb2 {
                 Button {
                     toggleActiveSpeech()
                     withAnimation(.snappy(duration: 0.2)) { speechControlsExpanded = true }
                 } label: {
                     Image(systemName: activeSpeechState == .playing ? "pause.fill" : "play.fill")
-                        .font(.system(size: 16))
-                        .frame(width: 40, height: 40)
+                        .frame(width: 44, height: 44)
                 }
                 .accessibilityLabel(activeSpeechState == .playing || activeSpeechState == .preparing
                     ? "Pause reading aloud" : "Read aloud")
@@ -384,7 +433,7 @@ struct ReaderHostView: View {
             if hasTableOfContents {
                 Button { showSections = true } label: {
                     Image(systemName: "list.bullet")
-                        .frame(width: 36, height: 40)
+                        .frame(width: 44, height: 44)
                 }
                 .accessibilityLabel("Table of contents")
                 .accessibilityIdentifier("reader-contents")
@@ -396,38 +445,20 @@ struct ReaderHostView: View {
 
             if activeFormat == .cbr || activeFormat == .cbz {
                 Menu {
-                    Button("Zoom In", systemImage: "plus.magnifyingglass") {
-                        comicController.zoomIn()
-                    }
-                    .disabled(comicController.zoomScale >= ComicReaderController.maximumZoom)
-                    Button("Fit Page", systemImage: "arrow.down.right.and.arrow.up.left") {
-                        comicController.fitPage()
-                    }
-                    Button("Zoom Out", systemImage: "minus.magnifyingglass") {
-                        comicController.zoomOut()
-                    }
-                    .disabled(comicController.zoomScale <= ComicReaderController.minimumZoom)
+                    Button("Zoom In", systemImage: "plus.magnifyingglass") { comicController.zoomIn() }
+                        .disabled(comicController.zoomScale >= ComicReaderController.maximumZoom)
+                    Button("Fit Page", systemImage: "arrow.down.right.and.arrow.up.left") { comicController.fitPage() }
+                    Button("Zoom Out", systemImage: "minus.magnifyingglass") { comicController.zoomOut() }
+                        .disabled(comicController.zoomScale <= ComicReaderController.minimumZoom)
                 } label: {
                     Image(systemName: "magnifyingglass")
-                        .frame(width: 40, height: 40)
+                        .frame(width: 44, height: 44)
                 }
                 .accessibilityLabel("Comic zoom, \(Int(round(comicController.zoomScale * 100))) percent")
                 .accessibilityIdentifier("reader-comic-zoom")
             }
         }
-        .foregroundStyle(container.settingsRepository.theme.background)
-        .padding(.leading, metrics.horizontalControlInset)
-        .padding(.trailing, metrics.horizontalControlInset)
-        .padding(.top, metrics.controlsTopInset)
-        .frame(height: metrics.headerHeight, alignment: .top)
-        .background {
-            ReaderHeaderBackground(
-                metrics: metrics,
-                color: container.settingsRepository.theme.primary.opacity(0.98)
-            )
-        }
-        .accessibilityElement(children: .contain)
-        .accessibilityIdentifier("reader-top-header")
+        .font(.system(size: 17, weight: .medium))
     }
 
     private var hasTableOfContents: Bool {
@@ -500,6 +531,7 @@ struct ReaderHostView: View {
 
     private func stopActiveSpeech() {
         activeSpeech?.stop()
+        withAnimation(.snappy(duration: 0.2)) { speechControlsExpanded = false }
         syncPlaybackSpeech()
     }
 
@@ -512,7 +544,7 @@ struct ReaderHostView: View {
             showSearch = true
         } label: {
             Image(systemName: "magnifyingglass")
-                .frame(width: 40, height: 40)
+                .frame(width: 44, height: 44)
         }
         .accessibilityLabel("Search inside book")
         .accessibilityIdentifier("reader-search")
@@ -959,8 +991,10 @@ private struct ReaderTopIslandCutout: Shape {
 }
 
 enum ReaderTopBarLayout {
-    static func metadataWidth(containerWidth: CGFloat) -> CGFloat {
-        min(100, max(70, containerWidth * 0.20))
+    static func shoulderWidth(containerWidth: CGFloat, horizontalInset: CGFloat) -> CGFloat {
+        let pillHalfWidth = min(63, containerWidth * 0.18)
+        let blackShoulderHalfWidth = pillHalfWidth + 17
+        return max(44, (containerWidth - 2 * blackShoulderHalfWidth) / 2 - 2 * horizontalInset)
     }
 }
 

@@ -47,7 +47,8 @@ struct SearchView: View {
                         Button("Rights details") {
                             rightsDetails = RightsDetailsItem(
                                 title: result.title, author: result.author, year: result.year,
-                                format: result.format?.rawValue, rights: result.rights
+                                format: result.format?.rawValue, rights: result.rights,
+                                coverURL: result.coverUrl, bookID: result.id
                             )
                         }
                     }
