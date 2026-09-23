@@ -96,7 +96,7 @@ struct ReaderSpeechControls: View {
                 if !editing { onRateCommit() }
             }
         )
-        .frame(width: 82)
+        .frame(width: 120)
         .accessibilityLabel("Reading speed")
         .accessibilityIdentifier("reader-speech-speed")
     }

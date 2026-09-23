@@ -9,6 +9,7 @@ struct ReaderSpeechAdapter {
     let isPlaying: Bool
     let toggle: () -> Void
     let restart: () -> Void
+    let updateRate: (Double) -> Void
     let stop: () -> Void
 
     init(epub controller: EPUBReaderController) {
@@ -17,6 +18,7 @@ struct ReaderSpeechAdapter {
         isPlaying = controller.isSpeaking
         toggle = { controller.toggleSpeech() }
         restart = { controller.restartSpeechWithCurrentSettings() }
+        updateRate = { controller.updateSpeechRate($0) }
         stop = { controller.stopSpeechCompletely() }
     }
 
@@ -26,6 +28,7 @@ struct ReaderSpeechAdapter {
         isPlaying = controller.isSpeaking
         toggle = { controller.toggleSpeech(playback: playback) }
         restart = { controller.restartSpeech(playback: playback) }
+        updateRate = { controller.updateSpeechRate($0) }
         stop = { controller.stopSpeechCompletely() }
     }
 }

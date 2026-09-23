@@ -498,7 +498,7 @@ struct ReaderHostView: View {
             onToggle: toggleActiveSpeech,
             onLanguageChange: changeSpeechLanguage,
             onEngineChange: changeSpeechEngine,
-            onRateCommit: restartActiveSpeech,
+            onRateCommit: updateActiveSpeechRate,
             onStop: stopActiveSpeech,
             onOpenSettings: openSpeechSettings
         )
@@ -520,6 +520,10 @@ struct ReaderHostView: View {
 
     private func restartActiveSpeech() {
         activeSpeech?.restart()
+    }
+
+    private func updateActiveSpeechRate() {
+        activeSpeech?.updateRate(container.settingsRepository.speechRate)
     }
 
     private func stopActiveSpeech() {
@@ -1442,6 +1446,20 @@ final class FB2ReaderController: NSObject, ObservableObject {
         guard speechState != .idle else { return }
         stopSpeech()
         toggleSpeech(playback: playback)
+    }
+
+    func updateSpeechRate(_ rate: Double) {
+        guard var lastPlayback else { return }
+        lastPlayback.rate = SpeechLanguageSettings.clampRate(rate)
+        self.lastPlayback = lastPlayback
+        guard speechState != .idle else { return }
+        if lastPlayback.neuralEngine != nil {
+            neuralSpeech.updateSpeed(Float(min(max(lastPlayback.rate / SpeechLanguageSettings.defaultRate, 0.73), 1.25)))
+        } else {
+            // AVSpeechUtterance cannot change speed mid-utterance. FB2 uses one
+            // long utterance, so restart at the current paragraph, not the next.
+            restartSpeech(playback: lastPlayback)
+        }
     }
 
     func speakFromSelection(_ selected: String, playback: SpeechPlaybackChoice) {

@@ -180,7 +180,7 @@ final class EPUBReaderController: NSObject, ObservableObject, AVSpeechSynthesize
     private var playbackQueue = SpeechPlaybackQueue()
     private var activeUtterance: ObjectIdentifier?
     private var activeSpeechEngine = SpeechEngineID.system
-    private var neuralSpeechRate = SpeechLanguageSettings.defaultRate
+    private var currentSpeechRate = SpeechLanguageSettings.defaultRate
     private var neuralChunkOffset: Int?
     private var nowPlayingTitle = "Bookstr"
     private var nowPlayingAuthor = ""
@@ -299,6 +299,12 @@ final class EPUBReaderController: NSObject, ObservableObject, AVSpeechSynthesize
         resetSpeechLanguageHandler?()
         stopSpeech()
         requestSpeechText(after: 80)
+    }
+
+    func updateSpeechRate(_ rate: Double) {
+        currentSpeechRate = SpeechLanguageSettings.clampRate(rate)
+        guard speechState != .idle, activeSpeechEngine.isNeural else { return }
+        neuralSpeech.updateSpeed(Float(min(max(currentSpeechRate / SpeechLanguageSettings.defaultRate, 0.73), 1.25)))
     }
 
     func restoreVisibleLocationAfterLayout() {
@@ -433,6 +439,7 @@ final class EPUBReaderController: NSObject, ObservableObject, AVSpeechSynthesize
         activeUtterance = nil
         setSpeaking(true)
         updateNowPlaying(isPlaying: true)
+        currentSpeechRate = playback.rate
         switch playback.engine {
         case .neural(let engine):
             guard engine.supports(language: playback.languageTag) else {
@@ -441,7 +448,6 @@ final class EPUBReaderController: NSObject, ObservableObject, AVSpeechSynthesize
                 return
             }
             activeSpeechEngine = engine
-            neuralSpeechRate = playback.rate
             var neuralChunks: [SpeechQueueChunk] = []
             while let chunk = playbackQueue.next() {
                 neuralChunks.append(chunk)
@@ -522,22 +528,20 @@ final class EPUBReaderController: NSObject, ObservableObject, AVSpeechSynthesize
     nonisolated func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {
         let identifier = ObjectIdentifier(utterance)
         let voiceIdentifier = utterance.voice?.identifier
-        let rate = Double(utterance.rate)
         DispatchQueue.main.async { [weak self] in
-            self?.finishUtterance(identifier, voiceIdentifier: voiceIdentifier, rate: rate)
+            self?.finishUtterance(identifier, voiceIdentifier: voiceIdentifier)
         }
     }
 
     nonisolated func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didCancel utterance: AVSpeechUtterance) {
         let identifier = ObjectIdentifier(utterance)
         let voiceIdentifier = utterance.voice?.identifier
-        let rate = Double(utterance.rate)
         DispatchQueue.main.async { [weak self] in
-            self?.finishUtterance(identifier, voiceIdentifier: voiceIdentifier, rate: rate)
+            self?.finishUtterance(identifier, voiceIdentifier: voiceIdentifier)
         }
     }
 
-    private func finishUtterance(_ identifier: ObjectIdentifier, voiceIdentifier: String?, rate: Double) {
+    private func finishUtterance(_ identifier: ObjectIdentifier, voiceIdentifier: String?) {
         guard activeUtterance == identifier else { return }
         activeUtterance = nil
         utteranceOffsets.removeValue(forKey: identifier)
@@ -546,7 +550,7 @@ final class EPUBReaderController: NSObject, ObservableObject, AVSpeechSynthesize
         if !playbackQueue.isEmpty {
             speakNextUtterance(
                 voice: voiceIdentifier.flatMap(AVSpeechSynthesisVoice.init(identifier:)),
-                rate: rate
+                rate: currentSpeechRate
             )
             return
         }

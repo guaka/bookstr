@@ -413,6 +413,10 @@ final class NeuralSpeechPlayback {
         session.pause()
     }
 
+    func updateSpeed(_ speed: Float) {
+        session.updateSpeed(speed)
+    }
+
     func resume() {
         isPaused = false
         beginPlaybackTask()

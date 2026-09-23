@@ -232,6 +232,11 @@ final class NeuralSpeechSession {
         prefetch()
     }
 
+    /// Already-rendered audio keeps playing; future synthesis uses the new speed.
+    func updateSpeed(_ speed: Float) {
+        self.speed = speed
+    }
+
     func pause() {
         if !phrasePaused {
             phraseElapsed += Date().timeIntervalSince(phraseAnchor)
