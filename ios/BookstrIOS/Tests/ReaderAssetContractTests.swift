@@ -177,6 +177,11 @@ final class ReaderAssetContractTests: XCTestCase {
         XCTAssertEqual(SpeechSpokenText.normalize("\"Hello,\" she said."), "Hello, she said.")
         XCTAssertEqual(SpeechSpokenText.normalize("\""), "")
         XCTAssertEqual(SpeechSpokenText.normalize(".\""), ".")
+        XCTAssertEqual(SpeechSpokenText.normalize("He walked home.'"), "He walked home.")
+        XCTAssertEqual(SpeechSpokenText.normalize("He walked home.’"), "He walked home.")
+        XCTAssertEqual(SpeechSpokenText.normalize(".'"), ".")
+        XCTAssertEqual(SpeechSpokenText.normalize("‘Hello,’ she said."), "Hello, she said.")
+        XCTAssertEqual(SpeechSpokenText.normalize("Don't wake O’Connor."), "Don't wake O’Connor.")
         XCTAssertEqual(SpeechQueueChunk(text: "He left[1].", offset: 0, pauseSeconds: 0).speak, "He left.")
         XCTAssertEqual(
             SpeechQueueChunk(text: "100,000", offset: 0, pauseSeconds: 0, speak: "one hundred thousand").speak,
