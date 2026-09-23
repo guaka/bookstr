@@ -14,9 +14,15 @@ typealias BookCoverPlatformImage = NSImage
 /// the embedded-cover cache.
 struct BookCoverView: View {
     let urlString: String?
+    var bookID: String? = nil
+    var title: String = "Book"
+    var author: String = ""
+#if canImport(UIKit)
+    @EnvironmentObject private var coverDiscovery: CoverDiscoveryService
+#endif
     @State private var localImage: BookCoverPlatformImage?
 
-    private static let localImageCache: NSCache<NSURL, BookCoverPlatformImage> = {
+    nonisolated(unsafe) private static let localImageCache: NSCache<NSURL, BookCoverPlatformImage> = {
         let cache = NSCache<NSURL, BookCoverPlatformImage>()
         cache.totalCostLimit = 12 * 1_024 * 1_024
         return cache
@@ -24,7 +30,7 @@ struct BookCoverView: View {
 
     var body: some View {
         Group {
-            if let url = Self.coverURL(urlString) {
+            if let url = displayedURL {
                 if url.isFileURL {
                     localCover(url)
                 } else {
@@ -35,7 +41,7 @@ struct BookCoverView: View {
                                 .resizable()
                                 .aspectRatio(contentMode: .fill)
                         default:
-                            placeholder
+                            discoveredFallback
                         }
                     }
                 }
@@ -50,6 +56,14 @@ struct BookCoverView: View {
                 .strokeBorder(.quaternary, lineWidth: 0.5)
         )
         .accessibilityHidden(true)
+    }
+
+    private var displayedURL: URL? {
+#if canImport(UIKit)
+        Self.coverURL(urlString) ?? bookID.flatMap { coverDiscovery.cachedURL(for: $0) }
+#else
+        Self.coverURL(urlString)
+#endif
     }
 
     @ViewBuilder
@@ -71,13 +85,17 @@ struct BookCoverView: View {
         }
         .task(id: url) {
             localImage = nil
+#if canImport(UIKit)
             localImage = await Task.detached(priority: .utility) {
                 Self.thumbnailImage(at: url)
             }.value
+#else
+            localImage = Self.thumbnailImage(at: url)
+#endif
         }
     }
 
-    static func thumbnailImage(at url: URL) -> BookCoverPlatformImage? {
+    nonisolated static func thumbnailImage(at url: URL) -> BookCoverPlatformImage? {
         if let cached = localImageCache.object(forKey: url as NSURL) { return cached }
         guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
               let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, [
@@ -97,13 +115,27 @@ struct BookCoverView: View {
     }
 
     private var placeholder: some View {
-        ZStack {
-            Rectangle().fill(.quaternary)
-            Image(systemName: "book.closed")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+#if canImport(UIKit)
+        Image(uiImage: CoverTitleCard.image(title: title, author: author, key: bookID ?? title))
+            .resizable()
+            .aspectRatio(contentMode: .fill)
+#else
+        ZStack { Color.secondary.opacity(0.12); Image(systemName: "book.closed").foregroundStyle(.secondary) }
+#endif
+    }
+
+#if canImport(UIKit)
+    @ViewBuilder
+    private var discoveredFallback: some View {
+        if let url = bookID.flatMap({ coverDiscovery.cachedURL(for: $0) }) {
+            localCover(url)
+        } else {
+            placeholder
         }
     }
+#else
+    private var discoveredFallback: some View { placeholder }
+#endif
 
     static let width: CGFloat = 42
     static let height: CGFloat = 62
@@ -115,3 +147,52 @@ struct BookCoverView: View {
         return url
     }
 }
+
+#if canImport(UIKit)
+enum CoverTitleCard {
+    private static let cache = NSCache<NSString, UIImage>()
+    private static let colors: [UIColor] = [
+        UIColor(red: 0.18, green: 0.36, blue: 0.32, alpha: 1),
+        UIColor(red: 0.30, green: 0.29, blue: 0.47, alpha: 1),
+        UIColor(red: 0.49, green: 0.29, blue: 0.25, alpha: 1),
+        UIColor(red: 0.20, green: 0.36, blue: 0.48, alpha: 1)
+    ]
+
+    static func image(title: String, author: String, key: String) -> UIImage {
+        let cacheKey = "\(key)|\(title)|\(author)" as NSString
+        if let cached = cache.object(forKey: cacheKey) { return cached }
+        let size = CGSize(width: 320, height: 480)
+        let index = key.utf8.reduce(0) { ($0 &+ Int($1)) % colors.count }
+        let image = UIGraphicsImageRenderer(size: size).image { context in
+            colors[index].setFill()
+            context.fill(CGRect(origin: .zero, size: size))
+            UIColor.white.withAlphaComponent(0.48).setStroke()
+            let border = UIBezierPath(rect: CGRect(x: 18, y: 18, width: 284, height: 444))
+            border.lineWidth = 2
+            border.stroke()
+            let heading = title.isEmpty ? "Book" : title
+            (heading as NSString).draw(in: CGRect(x: 34, y: 82, width: 252, height: 248), withAttributes: [
+                .font: UIFont.systemFont(ofSize: 35, weight: .bold),
+                .foregroundColor: UIColor.white
+            ])
+            (author as NSString).draw(in: CGRect(x: 34, y: 370, width: 252, height: 64), withAttributes: [
+                .font: UIFont.systemFont(ofSize: 20, weight: .medium),
+                .foregroundColor: UIColor.white
+            ])
+        }
+        cache.setObject(image, forKey: cacheKey)
+        return image
+    }
+}
+
+@MainActor
+enum CoverArtwork {
+    static func image(for book: CatalogBook, discovery: CoverDiscoveryService) -> UIImage {
+        if let url = BookCoverView.coverURL(book.coverUrl), url.isFileURL,
+           let image = BookCoverView.thumbnailImage(at: url) { return image }
+        if let url = discovery.cachedURL(for: book.id),
+           let image = BookCoverView.thumbnailImage(at: url) { return image }
+        return CoverTitleCard.image(title: book.title, author: book.author, key: book.id)
+    }
+}
+#endif

@@ -6,6 +6,23 @@ import XCTest
 #endif
 
 final class ReaderPlaybackSessionTests: XCTestCase {
+    func testCarPlaySelectionUsesLocalFileAndConsumesAutoplayOnce() {
+        let session = ReaderPlaybackSession()
+        let book = CatalogBook(id: "book", title: "Title", author: "Author",
+                               epubUrl: "", coverUrl: nil, sourceUrl: nil, isbn: nil,
+                               libvaultMd5: nil, format: .epub, year: nil)
+        let url = URL(fileURLWithPath: "/tmp/book.epub")
+        session.presentForCarPlay(book: book, localURL: url, locator: "epubcfi(/6/2)")
+        XCTAssertFalse(session.isVisible)
+        XCTAssertTrue(session.isCarPlayPlayback)
+        XCTAssertEqual(session.item?.preparedURL, url)
+        XCTAssertEqual(session.item?.initialLocator, "epubcfi(/6/2)")
+        XCTAssertTrue(session.consumeCarPlayAutoplay(for: book.id))
+        XCTAssertFalse(session.consumeCarPlayAutoplay(for: book.id))
+        session.present(book: book)
+        XCTAssertFalse(session.isCarPlayPlayback)
+    }
+
     func testDynamicIslandPortraitChromeUsesTopSafeArea() {
         let metrics = ReaderChromeMetrics(
             width: 393, height: 852,

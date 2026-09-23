@@ -1,6 +1,7 @@
 import Foundation
 
 final class AppContainer: ObservableObject {
+    @MainActor static let shared = AppContainer.bootstrap()
     let settingsRepository: SettingsRepository
     let progressRepository: ProgressRepository
     let vocabularyRepository: VocabularyRepository
@@ -11,6 +12,7 @@ final class AppContainer: ObservableObject {
     let favoriteMetadataRepository: FavoriteMetadataRepository
     let downloads = BookDownloadQueue(fileURL: FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("bookstr/downloads.json"))
     let catalogRepository: CatalogRepository
+    let coverDiscovery: CoverDiscoveryService
     let nostrClient: NostrClient
     let signerStore: SignerStore
     let nostrSyncService: NostrSyncService
@@ -26,6 +28,7 @@ final class AppContainer: ObservableObject {
         dictionaryRepository: DictionaryRepository,
         favoriteMetadataRepository: FavoriteMetadataRepository,
         catalogRepository: CatalogRepository,
+        coverDiscovery: CoverDiscoveryService,
         nostrClient: NostrClient,
         signerStore: SignerStore,
         nostrSyncService: NostrSyncService,
@@ -40,13 +43,14 @@ final class AppContainer: ObservableObject {
         self.dictionaryRepository = dictionaryRepository
         self.favoriteMetadataRepository = favoriteMetadataRepository
         self.catalogRepository = catalogRepository
+        self.coverDiscovery = coverDiscovery
         self.nostrClient = nostrClient
         self.signerStore = signerStore
         self.nostrSyncService = nostrSyncService
         self.nip46Service = nip46Service
     }
 
-    static func bootstrap() -> AppContainer {
+    @MainActor static func bootstrap() -> AppContainer {
         let fileStore = JSONFileStore(subdirectory: "bookstr")
         let settings = SettingsRepository()
 #if DEBUG
@@ -90,6 +94,7 @@ final class AppContainer: ObservableObject {
             dictionaryRepository: dictionary,
             favoriteMetadataRepository: favoriteMetadata,
             catalogRepository: catalog,
+            coverDiscovery: CoverDiscoveryService(fileStore: fileStore),
             nostrClient: nostr,
             signerStore: signerStore,
             nostrSyncService: sync,

@@ -88,6 +88,10 @@ targets:
         UIViewControllerBasedStatusBarAppearance: true
         UIApplicationSceneManifest:
           UIApplicationSupportsMultipleScenes: false
+          UISceneConfigurations:
+            CPTemplateApplicationSceneSessionRoleApplication:
+              - UISceneClassName: CPTemplateApplicationScene
+                UISceneDelegateClassName: $(PRODUCT_MODULE_NAME).CarPlaySceneDelegate
   BookstrIOSTests:
     type: bundle.unit-test
     platform: iOS

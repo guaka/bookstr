@@ -12,6 +12,8 @@
 		A11CE0010000000000000003 /* ReaderProgressRecorder.swift in Sources */ = {isa = PBXBuildFile; fileRef = A11CE0010000000000000013 /* ReaderProgressRecorder.swift */; };
 		A11CE0010000000000000004 /* ReaderSpeechControls.swift in Sources */ = {isa = PBXBuildFile; fileRef = A11CE0010000000000000014 /* ReaderSpeechControls.swift */; };
 		A11CE0010000000000000005 /* ReaderSpeechAdapter.swift in Sources */ = {isa = PBXBuildFile; fileRef = A11CE0010000000000000015 /* ReaderSpeechAdapter.swift */; };
+		C0A000000000000000000001 /* CoverDiscoveryService.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0A000000000000000000002 /* CoverDiscoveryService.swift */; };
+		C0A000000000000000000003 /* CarPlaySceneDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0A000000000000000000004 /* CarPlaySceneDelegate.swift */; };
 		06A573B5278C4256361ADD02 /* Favorites.swift in Sources */ = {isa = PBXBuildFile; fileRef = C5D2047C5FEB6AC49E9AA4E3 /* Favorites.swift */; };
 		0C0E91F7C3119FAB5C128CB7 /* AppContainer.swift in Sources */ = {isa = PBXBuildFile; fileRef = D92A1F44EF6DBC86327645B5 /* AppContainer.swift */; };
 		0C920034F3CD450FC5F2C4F6 /* CatalogConnection.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9847A6895EB85899989819A /* CatalogConnection.swift */; };
@@ -146,6 +148,8 @@
 		A11CE0010000000000000013 /* ReaderProgressRecorder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReaderProgressRecorder.swift; sourceTree = "<group>"; };
 		A11CE0010000000000000014 /* ReaderSpeechControls.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReaderSpeechControls.swift; sourceTree = "<group>"; };
 		A11CE0010000000000000015 /* ReaderSpeechAdapter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReaderSpeechAdapter.swift; sourceTree = "<group>"; };
+		C0A000000000000000000002 /* CoverDiscoveryService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoverDiscoveryService.swift; sourceTree = "<group>"; };
+		C0A000000000000000000004 /* CarPlaySceneDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CarPlaySceneDelegate.swift; sourceTree = "<group>"; };
 		020A583BD242E7950EE25CC1 /* BookstrIOSApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BookstrIOSApp.swift; sourceTree = "<group>"; };
 		051B88602D4D938D28CAF8AE /* LICENSE-LGPL-2.1.txt */ = {isa = PBXFileReference; lastKnownFileType = text; path = "LICENSE-LGPL-2.1.txt"; sourceTree = "<group>"; };
 		05418DD35E388592E61BA7F1 /* BookRightsV1ContractTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BookRightsV1ContractTests.swift; sourceTree = "<group>"; };
@@ -450,6 +454,7 @@
 			children = (
 				B9847A6895EB85899989819A /* CatalogConnection.swift */,
 				87B9B26B320EF361E399E7BD /* CatalogRepository.swift */,
+				C0A000000000000000000002 /* CoverDiscoveryService.swift */,
 				4DAA78A29237C20D1A10F4DE /* CatalogSearchPage.swift */,
 				1771139F922E3CBEECA1BD71 /* DictionaryRepository.swift */,
 				23275C7851892FD731C80E1F /* JSONFileStore.swift */,
@@ -494,6 +499,7 @@
 			isa = PBXGroup;
 			children = (
 				D92A1F44EF6DBC86327645B5 /* AppContainer.swift */,
+				C0A000000000000000000004 /* CarPlaySceneDelegate.swift */,
 				A11CE0010000000000000011 /* AppPane.swift */,
 				020A583BD242E7950EE25CC1 /* BookstrIOSApp.swift */,
 				CB16A31ED46BFAD72E7F9860 /* LibraryUITestFixtures.swift */,
@@ -735,6 +741,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				0C0E91F7C3119FAB5C128CB7 /* AppContainer.swift in Sources */,
+				C0A000000000000000000003 /* CarPlaySceneDelegate.swift in Sources */,
 				A11CE0010000000000000001 /* AppPane.swift in Sources */,
 				4FDD58CB140494132D4C1AD7 /* BookCoverView.swift in Sources */,
 				7E9A3D2F1C3FA3632F284D7B /* BookListFacetFilters.swift in Sources */,
@@ -743,6 +750,7 @@
 				0C920034F3CD450FC5F2C4F6 /* CatalogConnection.swift in Sources */,
 				53863C25530B305911B7C837 /* CatalogProviderRecordV1.swift in Sources */,
 				293BA6273B450613E6F76A53 /* CatalogRepository.swift in Sources */,
+				C0A000000000000000000001 /* CoverDiscoveryService.swift in Sources */,
 				B3CC7B8758DC78B929428DAA /* CatalogSearchPage.swift in Sources */,
 				FC133E8CF49FBFA03C75CDF3 /* ComicReaderView.swift in Sources */,
 				886215C0EB2EE4536C15FA17 /* DictionaryRepository.swift in Sources */,

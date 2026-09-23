@@ -371,6 +371,8 @@ final class CatalogRepository {
                 return await MainActor.run {
                     PublicationUtilities.pdfCover(fileURL: sourceURL)
                 }
+            case .fb2:
+                return PublicationUtilities.fb2Cover(fileURL: sourceURL)
             default:
                 return nil
             }

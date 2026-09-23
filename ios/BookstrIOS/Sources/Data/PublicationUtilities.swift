@@ -176,6 +176,55 @@ enum PublicationUtilities {
         return EmbeddedCover(data: data, pathExtension: "jpg")
     }
 
+    /// FB2 coverpage references a base64-encoded <binary> by ID. The parser
+    /// only retains that one payload, rather than every illustration in the book.
+    static func fb2Cover(fileURL: URL) -> EmbeddedCover? {
+        guard let data = fb2Data(fileURL: fileURL), Int64(data.count) <= maxFB2Bytes else { return nil }
+        let delegate = FB2CoverParser()
+        let parser = XMLParser(data: data)
+        parser.delegate = delegate
+        parser.shouldProcessNamespaces = false
+        parser.shouldResolveExternalEntities = false
+        guard parser.parse(), let encoded = delegate.encoded,
+              encoded.utf8.count <= maxCoverBytes * 2,
+              let image = Data(base64Encoded: encoded, options: .ignoreUnknownCharacters) else { return nil }
+        return validatedCover(image)
+    }
+
+    private final class FB2CoverParser: NSObject, XMLParserDelegate {
+        private var inCoverpage = false
+        private var targetID: String?
+        private var inTargetBinary = false
+        private var payload = ""
+        var encoded: String?
+
+        func parser(_ parser: XMLParser, didStartElement elementName: String,
+                    namespaceURI: String?, qualifiedName: String?, attributes: [String: String]) {
+            let name = elementName.split(separator: ":").last.map(String.init)?.lowercased() ?? elementName.lowercased()
+            if name == "coverpage" { inCoverpage = true }
+            if inCoverpage, name == "image",
+               let href = attributes.first(where: { $0.key.lowercased().hasSuffix("href") })?.value,
+               href.hasPrefix("#") { targetID = String(href.dropFirst()) }
+            if name == "binary", let targetID, attributes["id"] == targetID { inTargetBinary = true }
+        }
+
+        func parser(_ parser: XMLParser, foundCharacters string: String) {
+            guard inTargetBinary else { return }
+            payload += string
+            if payload.utf8.count > PublicationUtilities.maxCoverBytes * 2 { parser.abortParsing() }
+        }
+
+        func parser(_ parser: XMLParser, didEndElement elementName: String,
+                    namespaceURI: String?, qualifiedName: String?) {
+            let name = elementName.split(separator: ":").last.map(String.init)?.lowercased() ?? elementName.lowercased()
+            if name == "coverpage" { inCoverpage = false }
+            if name == "binary", inTargetBinary {
+                encoded = payload
+                inTargetBinary = false
+            }
+        }
+    }
+
     /// One defensive pass over the ZIP central directory returning the first
     /// stored or raw-deflate entry whose name satisfies `where`. Names, sizes,
     /// and offsets are bounded before any payload is inflated.

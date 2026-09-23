@@ -56,6 +56,20 @@ final class JSONFileStore {
         coversDirectory.appendingPathComponent("\(bookId).\(ext)")
     }
 
+    func discoveredCoverFileURL(key: String) -> URL {
+        let directory = root.appendingPathComponent("discovered-covers", isDirectory: true)
+        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        return directory.appendingPathComponent("\(key).jpg")
+    }
+
+    func discoveredCoverURLs() -> [String: URL] {
+        let directory = root.appendingPathComponent("discovered-covers", isDirectory: true)
+        let files = (try? FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: [.isRegularFileKey])) ?? []
+        return Dictionary(uniqueKeysWithValues: files.filter { $0.pathExtension == "jpg" }.map {
+            ($0.deletingPathExtension().lastPathComponent, $0)
+        })
+    }
+
     /// Lowercased book id → cached cover file URL, loaded in one directory
     /// scan so list builds never stat per book.
     func cachedCoverURLs() -> [String: URL] {

@@ -88,6 +88,9 @@ final class ReaderPlaybackSession: ObservableObject {
     @Published private(set) var isSpeechPlaying = false
     @Published private(set) var speechToggleToken = 0
     @Published private(set) var presentationNonce = 0
+    @Published private(set) var carPlayStartToken = 0
+    @Published private(set) var isCarPlayPlayback = false
+    private(set) var pendingCarPlayBookID: String?
 
     var showsBackgroundSpeechControl: Bool {
         item != nil && !isVisible && speechRetained
@@ -101,6 +104,8 @@ final class ReaderPlaybackSession: ObservableObject {
         highlightKind: ReaderHighlightKind? = nil,
         origin: ReaderPresentationOrigin = .user
     ) {
+        isCarPlayPlayback = false
+        if origin == .user { pendingCarPlayBookID = nil }
         // Keep the last opened book mounted so Continue / Back → reopen skips a
         // cold WKWebView + EPUB decode. Remount when jumping to a highlight.
         if var current = item, current.book.id == book.id, highlightLocator == nil, highlightKind == nil {
@@ -131,6 +136,20 @@ final class ReaderPlaybackSession: ObservableObject {
     func requestClose() {
         // Hide without tearing down so returning to the same book is instant.
         isVisible = false
+    }
+
+    func presentForCarPlay(book: CatalogBook, localURL: URL, locator: String?) {
+        present(book: book, preparedURL: localURL, initialLocator: locator, origin: .continuation)
+        isVisible = false
+        isCarPlayPlayback = true
+        pendingCarPlayBookID = book.id
+        carPlayStartToken += 1
+    }
+
+    func consumeCarPlayAutoplay(for bookID: String) -> Bool {
+        guard pendingCarPlayBookID == bookID else { return false }
+        pendingCarPlayBookID = nil
+        return true
     }
 
     func updateSpeechState(retained: Bool, playing: Bool) {
