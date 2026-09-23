@@ -101,36 +101,42 @@ struct BookListDetails: View {
     var publisher: String? = nil
     var coverURL: String? = nil
     var bookID: String? = nil
+    var preferDiscoveredCover = false
     let rights: BookRights
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
         let layout = dynamicTypeSize.isAccessibilitySize
-            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 6))
-            : AnyLayout(HStackLayout(alignment: .top, spacing: 10))
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 5))
+            : AnyLayout(HStackLayout(alignment: .top, spacing: 7))
         layout {
-            BookCoverView(urlString: coverURL, bookID: bookID, title: title, author: author)
-            VStack(alignment: .leading, spacing: 3) {
-                Text(title).font(.subheadline.weight(.semibold)).foregroundStyle(.primary)
+            BookCoverView(urlString: coverURL, bookID: bookID, title: title, author: author,
+                          displayWidth: 36, displayHeight: 52,
+                          preferDiscoveredCover: preferDiscoveredCover)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title).font(.footnote.weight(.semibold)).foregroundStyle(.primary)
+                    .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 2)
                     .fixedSize(horizontal: false, vertical: true)
-                Text(author).font(.footnote).foregroundStyle(.secondary)
-                HStack(alignment: .top, spacing: 5) {
+                Text(author).font(.caption).foregroundStyle(.secondary)
+                    .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 1)
+                HStack(alignment: .top, spacing: 4) {
                     RightsBadge(rights: rights)
                     if let publisher, !publisher.isEmpty {
                         Text(publisher).font(.caption2).foregroundStyle(.secondary)
+                            .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 1)
                     }
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            VStack(alignment: .trailing, spacing: 3) {
-                if let format { Text(format.uppercased()).font(.caption.weight(.medium)) }
+            VStack(alignment: .trailing, spacing: 2) {
+                if let format { Text(format.uppercased()).font(.caption2.weight(.medium)) }
                 if let year { Text(year).font(.caption2) }
                 if let badge = BookListFacetFilters.languageBadge(language) {
                     Text(badge).font(.caption2)
                 }
             }
             .foregroundStyle(.secondary)
-            .frame(width: dynamicTypeSize.isAccessibilitySize ? nil : 58, alignment: .trailing)
+            .frame(width: dynamicTypeSize.isAccessibilitySize ? nil : 50, alignment: .trailing)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .contentShape(Rectangle())
@@ -159,7 +165,7 @@ private struct BackgroundSpeechToolbarModifier: ViewModifier {
 
 extension View {
     func bookstrListRow() -> some View {
-        listRowInsets(EdgeInsets(top: 9, leading: 12, bottom: 9, trailing: 12))
+        listRowInsets(EdgeInsets(top: 5, leading: 10, bottom: 5, trailing: 10))
     }
 
     func bookstrScreenTitle(_ title: String) -> some View {

@@ -31,9 +31,10 @@ final class ReaderPlaybackSessionTests: XCTestCase {
         )
 
         XCTAssertEqual(metrics.dynamicIslandEdge, .top)
-        XCTAssertEqual(metrics.headerHeight, 59)
-        XCTAssertEqual(metrics.contentTopInset, 59)
+        XCTAssertEqual(metrics.headerHeight, 45)
+        XCTAssertEqual(metrics.contentTopInset, 45)
         XCTAssertEqual(metrics.islandTopInset, 8)
+        XCTAssertEqual(metrics.islandControlsTopInset, 1)
         XCTAssertEqual(metrics.clockTopPadding, 0)
         XCTAssertEqual(metrics.progressHeight, 42)
         XCTAssertEqual(metrics.bottomCornerRadius, 46)

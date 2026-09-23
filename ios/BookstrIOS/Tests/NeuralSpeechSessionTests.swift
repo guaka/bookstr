@@ -204,6 +204,35 @@ final class NeuralSpeechSessionTests: XCTestCase {
         XCTAssertFalse(player.keepAliveActive)
     }
 
+    func testSpeedChangeKeepsCurrentPhraseAndAppliesToNextSynthesis() async {
+        let synthesizer = MockNeuralSynthesizer()
+        let player = MockNeuralPlayer()
+        let session = NeuralSpeechSession(synthesizer: synthesizer, player: player)
+        let first = SpeechQueueChunk(text: "First paragraph.", offset: 0, pauseSeconds: 0)
+        let second = SpeechQueueChunk(text: "Second paragraph.", offset: 17, pauseSeconds: 0)
+        var phrases: [SpeechQueueChunk] = []
+        session.start(
+            chunks: [first, second], engine: .kokoroEnglish, speed: 1,
+            onPhrase: { phrases.append($0) }, onProgress: { _, _ in }, completion: { _ in }
+        )
+        XCTAssertEqual(synthesizer.speeds, [1])
+
+        session.updateSpeed(1.2)
+        XCTAssertTrue(phrases.isEmpty)
+        synthesizer.complete()
+        await settle()
+        XCTAssertEqual(phrases, [first])
+        XCTAssertEqual(synthesizer.speeds, [1, 1.2])
+
+        synthesizer.complete()
+        await settle()
+        XCTAssertEqual(phrases, [first], "changing speed must not advance the reading position")
+        player.finishNext()
+        await settle()
+        XCTAssertEqual(phrases, [first, second])
+        session.stop()
+    }
+
     func testSideChannelKeepAliveDoesNotDelaySpokenAudio() async {
         let synthesizer = MockNeuralSynthesizer()
         synthesizer.sampleCount = 8
@@ -520,6 +549,7 @@ final class NeuralSpeechSessionTests: XCTestCase {
 
 private final class MockNeuralSynthesizer: NeuralSpeechSynthesizing {
     private(set) var texts: [String] = []
+    private(set) var speeds: [Float] = []
     private var pending: [(Result<(samples: [Float], sampleRate: Double), Error>) -> Void] = []
     var sampleCount = 82
     private(set) var constrained = false
@@ -540,6 +570,7 @@ private final class MockNeuralSynthesizer: NeuralSpeechSynthesizing {
         completion: @escaping (Result<(samples: [Float], sampleRate: Double), Error>) -> Void
     ) {
         texts.append(text)
+        speeds.append(speed)
         pending.append(completion)
     }
 

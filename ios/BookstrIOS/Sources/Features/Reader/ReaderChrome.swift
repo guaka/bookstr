@@ -40,9 +40,12 @@ struct ReaderChromeMetrics: Equatable {
     }
 
     var headerHeight: CGFloat {
-        dynamicIslandEdge == .top ? max(48, safeTop) : max(48, safeTop + 44)
+        // In portrait, stop at the physical island's lower edge. The reading
+        // surface can then use the strip between the island and safe-area edge.
+        dynamicIslandEdge == .top ? islandTopInset + 37 : max(48, safeTop + 44)
     }
     var controlsTopInset: CGFloat { max(safeTop, 0) }
+    var islandControlsTopInset: CGFloat { max(0, headerHeight - 44) }
     var contentTopInset: CGFloat { headerHeight }
     var horizontalControlInset: CGFloat { max(6, max(safeLeading, safeTrailing) + 6) }
     var islandTopInset: CGFloat { max(7, safeTop - 51) }

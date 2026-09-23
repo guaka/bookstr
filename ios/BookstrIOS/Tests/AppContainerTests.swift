@@ -276,6 +276,60 @@ final class AppContainerTests: XCTestCase {
         XCTAssertEqual(LibraryViewModel.sorted(untimed, by: .author).map(\.id), ["alpha-untimed", "beta-untimed"])
     }
 
+    @MainActor
+    func testLibraryFavoritesExcludeListedPublicationsButKeepDifferentEditions() {
+        let hash = String(repeating: "a", count: 32)
+        let listed = CatalogBook(
+            id: "catalog-id", title: "Shared Title", author: "A", epubUrl: "https://example.org/edition.epub",
+            coverUrl: nil, sourceUrl: nil, isbn: nil, libvaultMd5: hash, format: .epub, year: nil
+        )
+        let duplicateByHash = CatalogBook(
+            id: "favorite-alias", title: "Shared Title", author: "A", epubUrl: "",
+            coverUrl: nil, sourceUrl: nil, isbn: nil, libvaultMd5: hash, format: .epub, year: nil
+        )
+        let differentEdition = CatalogBook(
+            id: "different-edition", title: "Shared Title", author: "A", epubUrl: "https://example.org/other.epub",
+            coverUrl: nil, sourceUrl: nil, isbn: nil, libvaultMd5: nil, format: .epub, year: nil
+        )
+        let duplicateExternal = ExternalFavorite(
+            key: "remote-alias", title: "Shared Title", author: "A", year: nil,
+            url: "https://example.org/edition.epub", isbn: nil, libvaultMd5: nil, format: "epub"
+        )
+        let unrelatedExternal = ExternalFavorite(
+            key: "remote-other", title: "Shared Title", author: "A", year: nil,
+            url: "https://example.org/third.epub", isbn: nil, libvaultMd5: nil, format: "epub"
+        )
+
+        let shown = LibraryViewModel.favoritesNotAlreadyListed(
+            [duplicateByHash, differentEdition],
+            externalFavorites: [duplicateExternal, unrelatedExternal],
+            listedBooks: [listed]
+        )
+        XCTAssertEqual(shown.books.map(\.id), ["different-edition"])
+        XCTAssertEqual(shown.external.map(\.key), ["remote-other"])
+    }
+
+    @MainActor
+    func testLibraryAlwaysPromotesActiveBookWithoutDuplicatingItsPublication() {
+        let first = CatalogBook(
+            id: "first", title: "First", author: "A", epubUrl: "https://example.org/first.epub",
+            coverUrl: nil, sourceUrl: nil, isbn: nil, libvaultMd5: nil, format: .epub, year: nil
+        )
+        let active = CatalogBook(
+            id: "active", title: "Active", author: "B", epubUrl: "https://example.org/active.epub",
+            coverUrl: nil, sourceUrl: nil, isbn: nil, libvaultMd5: nil, format: .epub, year: nil
+        )
+        let activeAlias = CatalogBook(
+            id: "alias", title: "Active", author: "B", epubUrl: active.epubUrl,
+            coverUrl: nil, sourceUrl: nil, isbn: nil, libvaultMd5: nil, format: .epub, year: nil
+        )
+
+        XCTAssertEqual(LibraryViewModel.promotingActiveBook(nil, in: [first]).map(\.id), ["first"])
+        XCTAssertEqual(LibraryViewModel.promotingActiveBook(active, in: [first, active]).map(\.id), ["active", "first"])
+        XCTAssertEqual(LibraryViewModel.promotingActiveBook(active, in: [first]).map(\.id), ["active", "first"])
+        XCTAssertEqual(LibraryViewModel.promotingActiveBook(active, in: [first, activeAlias]).map(\.id), ["alias", "first"])
+    }
+
     func testLibraryForegroundLoadPlanAlwaysAppliesCacheAndDefersNetworkWithIdentity() {
         let withIdentity = LibraryForegroundLoadPlan.make(hasNostrIdentity: true)
         XCTAssertTrue(withIdentity.applyCachedFavorites)

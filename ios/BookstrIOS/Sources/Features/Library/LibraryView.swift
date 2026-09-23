@@ -43,11 +43,18 @@ struct LibraryView: View {
         let sortedReading = LibraryViewModel.sorted(
             filteredReading, by: selectedSort, progress: viewModel.progress
         )
+        let visibleReading = LibraryViewModel.promotingActiveBook(
+            playback.item?.book, in: sortedReading
+        )
+        let unlistedFavorites = LibraryViewModel.favoritesNotAlreadyListed(
+            filteredFavorites, externalFavorites: filteredExternalFavorites,
+            listedBooks: visibleReading
+        )
         let sortedFavorites = LibraryViewModel.sorted(
-            filteredFavorites, by: selectedSort, progress: viewModel.progress
+            unlistedFavorites.books, by: selectedSort, progress: viewModel.progress
         )
         let sortedExternalFavorites = LibraryViewModel.sorted(
-            filteredExternalFavorites, by: selectedSort
+            unlistedFavorites.external, by: selectedSort
         )
 
         return List {
@@ -60,14 +67,14 @@ struct LibraryView: View {
                 }
             }
 
-            Section("Books") {
-                if sortedReading.isEmpty {
+            Section {
+                if visibleReading.isEmpty {
                     Text(viewModel.reading.isEmpty
                          ? "Downloaded books will appear here."
                          : "No books match your filter.")
                         .foregroundStyle(.secondary)
                 } else {
-                    ForEach(sortedReading) { book in
+                    ForEach(visibleReading) { book in
                         Button { open(book) } label: {
                             bookRow(book, showProgress: true)
                         }
@@ -90,13 +97,14 @@ struct LibraryView: View {
                 }
             }
 
-            Section("Favorites") {
-                if sortedFavorites.isEmpty && sortedExternalFavorites.isEmpty {
-                    Text(viewModel.favorites.isEmpty && viewModel.externalFavorites.isEmpty
-                         ? emptyFavoritesCopy
-                         : "No favorite books match your filter.")
-                        .foregroundStyle(.secondary)
-                } else {
+            if sortedFavorites.isEmpty && sortedExternalFavorites.isEmpty {
+                if viewModel.reading.isEmpty && viewModel.favorites.isEmpty && viewModel.externalFavorites.isEmpty {
+                    Section("Favorites") {
+                        Text(emptyFavoritesCopy).foregroundStyle(.secondary)
+                    }
+                }
+            } else {
+                Section("Favorites") {
                     ForEach(sortedFavorites) { book in
                         Button { open(book) } label: {
                             bookRow(book, showProgress: false)
@@ -130,6 +138,7 @@ struct LibraryView: View {
                                             publisher: favorite.url == nil ? nil : "Remote publication",
                                             coverURL: favorite.coverUrl,
                                             bookID: favorite.key,
+                                            preferDiscoveredCover: true,
                                             rights: favorite.rights)
                                 .textSelection(.enabled)
 
@@ -143,7 +152,8 @@ struct LibraryView: View {
                                 rightsDetails = RightsDetailsItem(
                                     title: favorite.title, author: favorite.author, year: favorite.year,
                                     format: favorite.format, rights: favorite.rights,
-                                    coverURL: favorite.coverUrl, bookID: favorite.key
+                                    coverURL: favorite.coverUrl, bookID: favorite.key,
+                                    preferDiscoveredCover: true
                                 )
                             }
                         }
@@ -293,7 +303,8 @@ struct LibraryView: View {
             HStack(alignment: .top, spacing: 8) {
                 BookListDetails(title: book.title, author: book.author, year: book.year,
                                 format: book.format.rawValue, language: book.language,
-                                coverURL: book.coverUrl, bookID: book.id, rights: book.rights)
+                                coverURL: book.coverUrl, bookID: book.id,
+                                preferDiscoveredCover: true, rights: book.rights)
                 if openingBookID == book.id { ProgressView() }
             }
             if showProgress, let item = viewModel.progress[book.id], item.progression > 0 {
@@ -323,7 +334,8 @@ struct LibraryView: View {
         RightsDetailsItem(
             title: book.title, author: book.author, year: book.year,
             format: book.format.rawValue, rights: book.rights,
-            coverURL: book.coverUrl, bookID: book.id
+            coverURL: book.coverUrl, bookID: book.id,
+            preferDiscoveredCover: true
         )
     }
 }
