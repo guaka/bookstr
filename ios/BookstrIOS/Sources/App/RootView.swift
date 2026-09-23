@@ -55,7 +55,8 @@ struct RootView: View {
                 .tag(AppPane.library)
 
                 NavigationStack {
-                    SearchView(requestedQuery: requestedSearch)
+                    SearchView(requestedQuery: requestedSearch,
+                               isActive: selectedTab == .search && !playback.isVisible)
                 }
                 .toolbarTitleDisplayMode(.inline)
                 .tabItem {

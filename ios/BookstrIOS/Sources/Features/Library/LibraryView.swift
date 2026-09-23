@@ -40,12 +40,15 @@ struct LibraryView: View {
         let filteredExternalFavorites = LibraryViewModel.filtered(
             viewModel.externalFavorites, by: libraryFilter, facets: activeFacets
         )
-        let unlistedFavorites = LibraryViewModel.favoritesNotAlreadyListed(
-            filteredFavorites, externalFavorites: filteredExternalFavorites,
-            listedBooks: filteredReading
-        )
         let sortedReading = LibraryViewModel.sorted(
             filteredReading, by: selectedSort, progress: viewModel.progress
+        )
+        let visibleReading = LibraryViewModel.promotingActiveBook(
+            playback.item?.book, in: sortedReading
+        )
+        let unlistedFavorites = LibraryViewModel.favoritesNotAlreadyListed(
+            filteredFavorites, externalFavorites: filteredExternalFavorites,
+            listedBooks: visibleReading
         )
         let sortedFavorites = LibraryViewModel.sorted(
             unlistedFavorites.books, by: selectedSort, progress: viewModel.progress
@@ -65,13 +68,13 @@ struct LibraryView: View {
             }
 
             Section {
-                if sortedReading.isEmpty {
+                if visibleReading.isEmpty {
                     Text(viewModel.reading.isEmpty
                          ? "Downloaded books will appear here."
                          : "No books match your filter.")
                         .foregroundStyle(.secondary)
                 } else {
-                    ForEach(sortedReading) { book in
+                    ForEach(visibleReading) { book in
                         Button { open(book) } label: {
                             bookRow(book, showProgress: true)
                         }

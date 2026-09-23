@@ -309,6 +309,27 @@ final class AppContainerTests: XCTestCase {
         XCTAssertEqual(shown.external.map(\.key), ["remote-other"])
     }
 
+    @MainActor
+    func testLibraryAlwaysPromotesActiveBookWithoutDuplicatingItsPublication() {
+        let first = CatalogBook(
+            id: "first", title: "First", author: "A", epubUrl: "https://example.org/first.epub",
+            coverUrl: nil, sourceUrl: nil, isbn: nil, libvaultMd5: nil, format: .epub, year: nil
+        )
+        let active = CatalogBook(
+            id: "active", title: "Active", author: "B", epubUrl: "https://example.org/active.epub",
+            coverUrl: nil, sourceUrl: nil, isbn: nil, libvaultMd5: nil, format: .epub, year: nil
+        )
+        let activeAlias = CatalogBook(
+            id: "alias", title: "Active", author: "B", epubUrl: active.epubUrl,
+            coverUrl: nil, sourceUrl: nil, isbn: nil, libvaultMd5: nil, format: .epub, year: nil
+        )
+
+        XCTAssertEqual(LibraryViewModel.promotingActiveBook(nil, in: [first]).map(\.id), ["first"])
+        XCTAssertEqual(LibraryViewModel.promotingActiveBook(active, in: [first, active]).map(\.id), ["active", "first"])
+        XCTAssertEqual(LibraryViewModel.promotingActiveBook(active, in: [first]).map(\.id), ["active", "first"])
+        XCTAssertEqual(LibraryViewModel.promotingActiveBook(active, in: [first, activeAlias]).map(\.id), ["alias", "first"])
+    }
+
     func testLibraryForegroundLoadPlanAlwaysAppliesCacheAndDefersNetworkWithIdentity() {
         let withIdentity = LibraryForegroundLoadPlan.make(hasNostrIdentity: true)
         XCTAssertTrue(withIdentity.applyCachedFavorites)

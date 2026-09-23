@@ -112,6 +112,7 @@ final class AppShellUITests: XCTestCase {
         let pdf = app.buttons["library-book-ui-test-alice-pdf"]
         XCTAssertTrue(epub.waitForExistence(timeout: 10))
         XCTAssertGreaterThanOrEqual(epub.frame.width, app.frame.width - 32)
+        XCTAssertLessThanOrEqual(epub.frame.height, 72)
         XCTAssertEqual(epub.staticTexts["EPUB"].frame.maxX, pdf.staticTexts["PDF"].frame.maxX, accuracy: 1)
         XCTAssertLessThanOrEqual(epub.staticTexts["Alice EPUB Fixture"].frame.height, 19)
         let libraryScreenshot = XCTAttachment(screenshot: app.screenshot())
@@ -129,6 +130,27 @@ final class AppShellUITests: XCTestCase {
         XCTAssertTrue(book.label.contains("Fixture Press"))
         XCTAssertLessThanOrEqual(book.frame.minX, 13)
         XCTAssertGreaterThanOrEqual(book.frame.width, app.frame.width - 80)
+    }
+
+    func testAuthorLinkRunsSearchWithoutSubmittingAgain() throws {
+        app.terminate()
+        app.launchArguments += ["--ui-testing-torrent-fixture"]
+        app.launch()
+        selectTab("Library")
+        let epub = app.buttons["library-book-ui-test-alice-epub"]
+        XCTAssertTrue(epub.waitForExistence(timeout: 10))
+        epub.tap()
+        let author = app.buttons["reader-author-search"]
+        XCTAssertTrue(author.waitForExistence(timeout: 10))
+        author.tap()
+        let query = app.searchFields.firstMatch
+        XCTAssertTrue(query.waitForExistence(timeout: 5))
+        XCTAssertEqual(query.value as? String, "Lewis Carroll")
+        XCTAssertTrue(
+            app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "search.open.")).firstMatch
+                .waitForExistence(timeout: 10),
+            "Tapping the author must run the catalog search without another submit"
+        )
     }
 
     func testBookRowsStackEditionDetailsForAccessibilityText() throws {

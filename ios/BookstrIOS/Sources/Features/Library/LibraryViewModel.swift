@@ -315,6 +315,16 @@ final class LibraryViewModel: ObservableObject {
         )
     }
 
+    static func promotingActiveBook(_ active: CatalogBook?, in sortedBooks: [CatalogBook]) -> [CatalogBook] {
+        guard let active else { return sortedBooks }
+        let activeKeys = Set(publicationKeys(for: active))
+        let existing = sortedBooks.first { !activeKeys.isDisjoint(with: publicationKeys(for: $0)) }
+        let pinned = existing ?? active
+        return [pinned] + sortedBooks.filter {
+            activeKeys.isDisjoint(with: publicationKeys(for: $0))
+        }
+    }
+
     private static func publicationKeys(for book: CatalogBook) -> [String] {
         var keys = CatalogRepository.publicationIdentityCandidates(for: book).map { "id:\($0)" }
         for value in [book.epubUrl, book.sourceUrl] {

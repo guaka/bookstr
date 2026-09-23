@@ -9,8 +9,10 @@ struct SearchView: View {
     @EnvironmentObject private var container: AppContainer
     @EnvironmentObject private var playback: ReaderPlaybackSession
     var requestedQuery: BookSearchRequest?
+    var isActive = true
     @State private var query = ""
     @State private var programmaticQuery: String?
+    @State private var handledRequestID: UUID?
     @State private var searchPresented = false
     @State private var results: [BookSearchResult] = []
     @State private var searching = false
@@ -103,13 +105,9 @@ struct SearchView: View {
             automaticLoadOffset = nil
         }
         .onDisappear { searchTask?.cancel() }
-        .task(id: requestedQuery?.id) {
-            guard let requestedQuery else { return }
-            programmaticQuery = requestedQuery.query
-            query = requestedQuery.query
-            searchPresented = true
-            await runSearch()
-        }
+        .onAppear(perform: startRequestedSearchIfReady)
+        .onChange(of: requestedQuery?.id) { _, _ in startRequestedSearchIfReady() }
+        .onChange(of: isActive) { _, _ in startRequestedSearchIfReady() }
         .overlay { if searching { ProgressView().allowsHitTesting(false) } }
         .toolbar {
             if languageOptions.count > 1 || !selectedLanguage.isEmpty {
@@ -185,8 +183,19 @@ struct SearchView: View {
         searchTask = Task { await runSearch(more: true) }
     }
 
-    private func runSearch(more: Bool = false) async {
-        let term = more ? searchedQuery : query.trimmingCharacters(in: .whitespacesAndNewlines)
+    private func startRequestedSearchIfReady() {
+        guard isActive, let requestedQuery,
+              handledRequestID != requestedQuery.id else { return }
+        handledRequestID = requestedQuery.id
+        programmaticQuery = requestedQuery.query
+        query = requestedQuery.query
+        searchPresented = false
+        searchTask?.cancel()
+        searchTask = Task { await runSearch(queryTerm: requestedQuery.query) }
+    }
+
+    private func runSearch(more: Bool = false, queryTerm: String? = nil) async {
+        let term = more ? searchedQuery : (queryTerm ?? query).trimmingCharacters(in: .whitespacesAndNewlines)
         guard term.count >= 2 else {
             message = "Type at least 2 characters to search."
             return
