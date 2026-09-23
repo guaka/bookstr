@@ -63,7 +63,7 @@ final class ComicReaderUITests: XCTestCase {
 
     func testExplicitComicSelectionSurvivesRelaunch() {
         _ = openComic(id: "ui-test-comic-cbz", format: "CBZ", pageCount: 3)
-        XCTAssertEqual(app.staticTexts["reader-title"].label, "Comic CBZ Fixture")
+        XCTAssertEqual(app.buttons["reader-book-details"].label, "Book details for Comic CBZ Fixture")
 
         app.terminate()
         app.launchArguments = [
@@ -76,7 +76,7 @@ final class ComicReaderUITests: XCTestCase {
         let reader = comicReader(format: "CBZ")
         XCTAssertTrue(reader.waitForExistence(timeout: 15), "Relaunch did not restore the explicitly opened comic")
         XCTAssertTrue(waitForValue(reader, containing: "Page 1 of 3"))
-        XCTAssertEqual(app.staticTexts["reader-title"].label, "Comic CBZ Fixture")
+        XCTAssertEqual(app.buttons["reader-book-details"].label, "Book details for Comic CBZ Fixture")
         XCTAssertFalse(
             app.staticTexts.matching(NSPredicate(format: "label CONTAINS[c] %@", "Down the Rabbit-Hole")).firstMatch.exists,
             "Relaunch restored the stale EPUB instead of the comic"
@@ -95,7 +95,7 @@ final class ComicReaderUITests: XCTestCase {
         XCTAssertTrue(book.waitForExistence(timeout: 8), "Missing \(format) UI-test fixture")
         book.tap()
 
-        XCTAssertTrue(app.buttons["reader-back"].waitForExistence(timeout: 10), "\(format) reader was not presented")
+        XCTAssertTrue(app.buttons["reader-book-details"].waitForExistence(timeout: 10), "\(format) reader was not presented")
         let reader = comicReader(format: format)
         XCTAssertTrue(reader.waitForExistence(timeout: 15), "\(format) web reader did not appear")
         XCTAssertTrue(

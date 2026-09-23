@@ -82,6 +82,7 @@ final class CoverDiscoveryService: ObservableObject {
     private var worker: Task<Void, Never>?
     private var isActive = true
     private var isCarPlayConnected = false
+    private var embeddedLookups: Set<String> = []
     private static let stateFile = "cover-discovery.json"
     private static let requestSpacing: UInt64 = 5_000_000_000
 
@@ -103,6 +104,41 @@ final class CoverDiscoveryService: ObservableObject {
 
     func cachedURL(for bookID: String) -> URL? {
         cachedURLs[Self.key(for: bookID)]
+    }
+
+    /// Details opens immediately; inspect the exact local edition first and
+    /// only fall back to the persisted online lookup queue if it has no cover.
+    func prioritize(_ book: CatalogBook, localPublicationURL: URL?) {
+        let key = Self.key(for: book.id)
+        guard cachedURLs[key] == nil else { return }
+        if let existing = BookCoverView.coverURL(book.coverUrl), existing.isFileURL,
+           FileManager.default.fileExists(atPath: existing.path) { return }
+        guard book.format == .epub, let localPublicationURL,
+              FileManager.default.fileExists(atPath: localPublicationURL.path) else {
+            prioritizeOnlineLookup(for: book)
+            return
+        }
+        guard embeddedLookups.insert(key).inserted else { return }
+        Task { [weak self] in
+            let embedded = await Task.detached(priority: .utility) {
+                PublicationUtilities.epubCover(fileURL: localPublicationURL)
+            }.value
+            guard let self else { return }
+            self.embeddedLookups.remove(key)
+            if let embedded, let image = UIImage(data: embedded.data), self.save(image, for: key) { return }
+            self.prioritizeOnlineLookup(for: book)
+        }
+    }
+
+    private func prioritizeOnlineLookup(for book: CatalogBook) {
+        enqueue([book], readingIDs: [book.id])
+        let key = Self.key(for: book.id)
+        guard var entry = entries[key] else { return }
+        entry.priority = 0
+        entry.nextAttempt = Date()
+        entries[key] = entry
+        persist()
+        resume()
     }
 
     func enqueue(_ books: [CatalogBook], readingIDs: Set<String> = [], favoriteIDs: Set<String> = []) {
@@ -237,7 +273,8 @@ final class CoverDiscoveryService: ObservableObject {
     }
 
     private func save(_ image: UIImage, for key: String) -> Bool {
-        guard !Task.isCancelled, let data = image.jpegData(compressionQuality: 0.82) else { return false }
+        guard !Task.isCancelled, cachedURLs[key] == nil,
+              let data = image.jpegData(compressionQuality: 0.82) else { return false }
         let url = fileStore.discoveredCoverFileURL(key: key)
         guard (try? data.write(to: url, options: .atomic)) != nil else { return false }
         cachedURLs[key] = url

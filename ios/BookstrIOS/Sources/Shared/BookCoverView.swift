@@ -17,6 +17,9 @@ struct BookCoverView: View {
     var bookID: String? = nil
     var title: String = "Book"
     var author: String = ""
+    var displayWidth: CGFloat = 42
+    var displayHeight: CGFloat = 62
+    var preferDiscoveredCover = false
 #if canImport(UIKit)
     @EnvironmentObject private var coverDiscovery: CoverDiscoveryService
 #endif
@@ -49,7 +52,7 @@ struct BookCoverView: View {
                 placeholder
             }
         }
-        .frame(width: Self.width, height: Self.height)
+        .frame(width: displayWidth, height: displayHeight)
         .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 4, style: .continuous)
@@ -60,7 +63,10 @@ struct BookCoverView: View {
 
     private var displayedURL: URL? {
 #if canImport(UIKit)
-        Self.coverURL(urlString) ?? bookID.flatMap { coverDiscovery.cachedURL(for: $0) }
+        if preferDiscoveredCover, let cached = bookID.flatMap({ coverDiscovery.cachedURL(for: $0) }) {
+            return cached
+        }
+        return Self.coverURL(urlString) ?? bookID.flatMap { coverDiscovery.cachedURL(for: $0) }
 #else
         Self.coverURL(urlString)
 #endif

@@ -35,6 +35,7 @@ struct RootView: View {
     @EnvironmentObject private var settings: SettingsRepository
     @EnvironmentObject private var playback: ReaderPlaybackSession
     @State private var selectedTab = AppPane.library
+    @State private var requestedSearch: BookSearchRequest?
     @State private var continueError: String?
     @State private var pendingCatalog: CatalogConnection?
     @State private var attemptedInitialContinuation = false
@@ -42,33 +43,7 @@ struct RootView: View {
 
     var body: some View {
         ZStack(alignment: .topLeading) {
-            TabView(selection: Binding(
-                get: { selectedTab },
-                set: { tab in
-                    if tab == .continueReading {
-                        openContinuation(reportMissing: true)
-                    } else {
-                        selectedTab = tab
-                    }
-                }
-            )) {
-                Color.clear
-                    .tabItem {
-                        Image(systemName: "book.pages.fill")
-                            .accessibilityLabel("Continue reading")
-                    }
-                    .tag(AppPane.continueReading)
-
-                NavigationStack {
-                    SearchView()
-                }
-                .toolbarTitleDisplayMode(.inline)
-                .tabItem {
-                    Image(systemName: "magnifyingglass")
-                        .accessibilityLabel("Search")
-                }
-                .tag(AppPane.search)
-
+            TabView(selection: $selectedTab) {
                 NavigationStack {
                     LibraryView()
                 }
@@ -78,6 +53,16 @@ struct RootView: View {
                         .accessibilityLabel("Library")
                 }
                 .tag(AppPane.library)
+
+                NavigationStack {
+                    SearchView(requestedQuery: requestedSearch)
+                }
+                .toolbarTitleDisplayMode(.inline)
+                .tabItem {
+                    Image(systemName: "magnifyingglass")
+                        .accessibilityLabel("Search")
+                }
+                .tag(AppPane.search)
 
                 NavigationStack {
                     WordsView()
@@ -118,11 +103,12 @@ struct RootView: View {
                     },
                     onSelectPane: { pane in
                         playback.requestClose()
-                        if pane == .continueReading {
-                            openContinuation(reportMissing: true)
-                        } else {
-                            selectedTab = pane
-                        }
+                        selectedTab = pane
+                    },
+                    onSearchAuthor: { author in
+                        playback.requestClose()
+                        requestedSearch = BookSearchRequest(query: author)
+                        selectedTab = .search
                     }
                 )
                 .id(playback.presentationNonce)

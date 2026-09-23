@@ -39,12 +39,14 @@ struct ReaderChromeMetrics: Equatable {
         }
     }
 
-    var headerHeight: CGFloat { max(48, safeTop + 44) }
+    var headerHeight: CGFloat {
+        dynamicIslandEdge == .top ? max(48, safeTop) : max(48, safeTop + 44)
+    }
     var controlsTopInset: CGFloat { max(safeTop, 0) }
     var contentTopInset: CGFloat { headerHeight }
     var horizontalControlInset: CGFloat { max(6, max(safeLeading, safeTrailing) + 6) }
     var islandTopInset: CGFloat { max(7, safeTop - 51) }
-    var clockTopPadding: CGFloat { max(1, islandTopInset - 6) }
+    var clockTopPadding: CGFloat { max(0, islandTopInset - 8) }
     var progressHeight: CGFloat { max(18, safeBottom + 8) }
     var activationZoneHeight: CGFloat { max(58, safeBottom + 52) }
 
