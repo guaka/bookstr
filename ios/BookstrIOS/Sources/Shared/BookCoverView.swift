@@ -19,6 +19,7 @@ struct BookCoverView: View {
     var author: String = ""
     var displayWidth: CGFloat = 42
     var displayHeight: CGFloat = 62
+    var preferDiscoveredCover = false
 #if canImport(UIKit)
     @EnvironmentObject private var coverDiscovery: CoverDiscoveryService
 #endif
@@ -62,7 +63,10 @@ struct BookCoverView: View {
 
     private var displayedURL: URL? {
 #if canImport(UIKit)
-        Self.coverURL(urlString) ?? bookID.flatMap { coverDiscovery.cachedURL(for: $0) }
+        if preferDiscoveredCover, let cached = bookID.flatMap({ coverDiscovery.cachedURL(for: $0) }) {
+            return cached
+        }
+        return Self.coverURL(urlString) ?? bookID.flatMap { coverDiscovery.cachedURL(for: $0) }
 #else
         Self.coverURL(urlString)
 #endif

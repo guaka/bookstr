@@ -78,6 +78,41 @@ final class BookCoverTests: XCTestCase {
         service.setActive(false)
     }
 
+    @MainActor
+    func testOpeningDetailsPrioritizesCoverFromExactEPUBWithoutChangingMetadata() async throws {
+        let directory = "cover-details-test-\(UUID().uuidString)"
+        let store = JSONFileStore(subdirectory: directory)
+        let root = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent(directory)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let epubURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("cover-details-\(UUID().uuidString).epub")
+        defer { try? FileManager.default.removeItem(at: epubURL) }
+        let image = UIGraphicsImageRenderer(size: CGSize(width: 80, height: 120)).jpegData(withCompressionQuality: 0.8) {
+            context in UIColor.blue.setFill(); context.fill(CGRect(x: 0, y: 0, width: 80, height: 120))
+        }
+        let opf = #"<?xml version="1.0"?><package xmlns="http://www.idpf.org/2007/opf" version="3.0"><metadata/><manifest><item id="cover" href="cover.jpg" media-type="image/jpeg" properties="cover-image"/></manifest><spine/></package>"#
+        try Self.makeZIP(entries: [
+            ("META-INF/container.xml", containerXML(rootPath: "content.opf")),
+            ("content.opf", Data(opf.utf8)),
+            ("cover.jpg", image),
+        ]).write(to: epubURL)
+        let book = CatalogBook(id: "exact-edition", title: "Exact Edition", author: "Jane Doe",
+                               epubUrl: "", coverUrl: "https://example.test/uncertain.jpg",
+                               sourceUrl: nil, isbn: nil, libvaultMd5: nil, format: .epub, year: nil)
+        let service = CoverDiscoveryService(fileStore: store) { _ in
+            XCTFail("Embedded cover should avoid online lookup")
+            throw URLError(.notConnectedToInternet)
+        }
+        service.prioritize(book, localPublicationURL: epubURL)
+        for _ in 0..<30 where service.cachedURL(for: book.id) == nil {
+            try await Task.sleep(for: .milliseconds(100))
+        }
+        XCTAssertNotNil(service.cachedURL(for: book.id))
+        XCTAssertEqual(book.coverUrl, "https://example.test/uncertain.jpg")
+        service.setActive(false)
+    }
+
     func testLocalCoverThumbnailIsDownsampledAndCached() throws {
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent("cover-thumbnail-\(UUID().uuidString).jpg")

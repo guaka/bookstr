@@ -1094,9 +1094,11 @@ final class ReaderAssetContractTests: XCTestCase {
         XCTAssertTrue(host.contains("frame(height: metrics.activationZoneHeight)"))
         XCTAssertTrue(host.contains(".accessibilityHidden(true)"))
         XCTAssertTrue(host.contains("accessibilityIdentifier(\"reader-button-island\")"))
-        for identifier in ["continue", "search", "library", "settings"] {
+        for identifier in ["library", "search", "settings"] {
             XCTAssertTrue(host.contains("identifier: \"\(identifier)\""))
         }
+        XCTAssertFalse(host.contains("identifier: \"continue\""))
+        XCTAssertTrue(host.contains("reader-author-search"))
         XCTAssertTrue(host.contains("reader-pane-words"))
         XCTAssertFalse(host.contains("let curve = min(16"))
 

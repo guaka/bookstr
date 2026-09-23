@@ -40,6 +40,7 @@ struct RightsDetailsItem: Identifiable {
     let rights: BookRights
     var coverURL: String? = nil
     var bookID: String? = nil
+    var preferDiscoveredCover = false
 }
 
 struct RightsDetailsView: View {
@@ -58,7 +59,8 @@ struct RightsDetailsView: View {
                             title: item.title,
                             author: item.author ?? "",
                             displayWidth: 112,
-                            displayHeight: 166
+                            displayHeight: 166,
+                            preferDiscoveredCover: item.preferDiscoveredCover
                         )
                         Spacer()
                     }

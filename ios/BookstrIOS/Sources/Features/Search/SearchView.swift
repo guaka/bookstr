@@ -1,8 +1,14 @@
 import SwiftUI
 
+struct BookSearchRequest: Equatable {
+    let id = UUID()
+    let query: String
+}
+
 struct SearchView: View {
     @EnvironmentObject private var container: AppContainer
     @EnvironmentObject private var playback: ReaderPlaybackSession
+    var requestedQuery: BookSearchRequest?
     @State private var query = ""
     @State private var searchPresented = false
     @State private var results: [BookSearchResult] = []
@@ -78,6 +84,12 @@ struct SearchView: View {
             nextOffset = nil
         }
         .onDisappear { searchTask?.cancel() }
+        .task(id: requestedQuery?.id) {
+            guard let requestedQuery else { return }
+            query = requestedQuery.query
+            searchPresented = true
+            await runSearch()
+        }
         .overlay { if searching { ProgressView().allowsHitTesting(false) } }
         .toolbar {
             if languageOptions.count > 1 {

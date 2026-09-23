@@ -319,22 +319,17 @@ final class AppShellUITests: XCTestCase {
         XCTAssertTrue(epub.waitForExistence(timeout: 5))
         epub.tap()
         XCTAssertTrue(app.buttons["reader-book-details"].waitForExistence(timeout: 10))
-        exitReaderToLibrary()
-        XCTAssertTrue(app.tabBars.buttons["Library"].waitForExistence(timeout: 5))
-
-        let continueTab = app.tabBars.buttons["Continue reading"]
-        XCTAssertTrue(continueTab.waitForExistence(timeout: 5))
-        continueTab.tap()
-
-        XCTAssertTrue(app.buttons["reader-book-details"].waitForExistence(timeout: 10), "Continue reading did not open the reader")
-        XCTAssertTrue(
-            app.staticTexts.matching(
-                NSPredicate(format: "label CONTAINS[c] %@", "Down the Rabbit-Hole")
-            ).firstMatch.waitForExistence(timeout: 10),
-            "Continued EPUB did not expose its chapter text"
+        XCTAssertFalse(app.tabBars.buttons["Continue reading"].exists)
+        let author = app.buttons["reader-author-search"]
+        XCTAssertTrue(author.waitForExistence(timeout: 5))
+        author.tap()
+        XCTAssertTrue(app.tabBars.buttons["Search"].waitForExistence(timeout: 5))
+        let authorQuery = app.searchFields.firstMatch
+        XCTAssertTrue(authorQuery.waitForExistence(timeout: 5))
+        let populated = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "value == %@", "Lewis Carroll"), object: authorQuery
         )
-        exitReaderToLibrary()
-        XCTAssertTrue(app.tabBars.buttons["Library"].waitForExistence(timeout: 5))
+        XCTAssertEqual(XCTWaiter.wait(for: [populated], timeout: 5), .completed)
     }
 
     func testLibraryFixturesExposeBothReadableFormats() throws {

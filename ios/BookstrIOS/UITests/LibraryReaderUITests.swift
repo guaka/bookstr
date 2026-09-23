@@ -45,10 +45,10 @@ final class LibraryReaderUITests: XCTestCase {
         let clock = app.descendants(matching: .any)["reader-clock"]
         XCTAssertTrue(clock.waitForExistence(timeout: 4))
         XCTAssertFalse(clock.label.localizedCaseInsensitiveContains("epub"))
-        let title = app.staticTexts["reader-title"]
+        let title = app.buttons["reader-book-details"]
         XCTAssertTrue(title.waitForExistence(timeout: 4))
         XCTAssertLessThan(title.frame.maxX, app.frame.width * 0.36)
-        XCTAssertLessThan(title.frame.minY, app.buttons["reader-book-details"].frame.midY)
+        XCTAssertLessThan(title.frame.minY, app.frame.height * 0.08)
         XCTAssertTrue(app.descendants(matching: .any)["reader-progress-epub"].waitForExistence(timeout: 4))
         app.buttons["reader-search"].tap()
         let searchScope = app.staticTexts.matching(
@@ -160,9 +160,10 @@ final class LibraryReaderUITests: XCTestCase {
         app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.96)).tap()
         let island = app.descendants(matching: .any)["reader-button-island"]
         XCTAssertTrue(island.waitForExistence(timeout: 4), "Bottom activation zone did not reveal the button island")
-        for identifier in ["continue", "search", "library", "words", "settings"] {
+        for identifier in ["library", "search", "words", "settings"] {
             XCTAssertTrue(app.buttons["reader-pane-\(identifier)"].exists)
         }
+        XCTAssertFalse(app.buttons["reader-pane-continue"].exists)
         attachScreenshot(named: "reader-chrome-portrait")
 
         XCUIDevice.shared.orientation = .landscapeLeft
