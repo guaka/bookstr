@@ -962,6 +962,8 @@ final class ReaderAssetContractTests: XCTestCase {
         XCTAssertTrue(library.contains("library-language-filter"))
         XCTAssertTrue(library.contains("library-format-filter"))
         XCTAssertTrue(library.contains("BookListFacetFilters"))
+        XCTAssertFalse(library.contains("Section(\"Books\")"))
+        XCTAssertTrue(library.contains("favoritesNotAlreadyListed"))
 
         let searchURL = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()

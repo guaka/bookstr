@@ -40,14 +40,18 @@ struct LibraryView: View {
         let filteredExternalFavorites = LibraryViewModel.filtered(
             viewModel.externalFavorites, by: libraryFilter, facets: activeFacets
         )
+        let unlistedFavorites = LibraryViewModel.favoritesNotAlreadyListed(
+            filteredFavorites, externalFavorites: filteredExternalFavorites,
+            listedBooks: filteredReading
+        )
         let sortedReading = LibraryViewModel.sorted(
             filteredReading, by: selectedSort, progress: viewModel.progress
         )
         let sortedFavorites = LibraryViewModel.sorted(
-            filteredFavorites, by: selectedSort, progress: viewModel.progress
+            unlistedFavorites.books, by: selectedSort, progress: viewModel.progress
         )
         let sortedExternalFavorites = LibraryViewModel.sorted(
-            filteredExternalFavorites, by: selectedSort
+            unlistedFavorites.external, by: selectedSort
         )
 
         return List {
@@ -60,7 +64,7 @@ struct LibraryView: View {
                 }
             }
 
-            Section("Books") {
+            Section {
                 if sortedReading.isEmpty {
                     Text(viewModel.reading.isEmpty
                          ? "Downloaded books will appear here."
@@ -90,13 +94,14 @@ struct LibraryView: View {
                 }
             }
 
-            Section("Favorites") {
-                if sortedFavorites.isEmpty && sortedExternalFavorites.isEmpty {
-                    Text(viewModel.favorites.isEmpty && viewModel.externalFavorites.isEmpty
-                         ? emptyFavoritesCopy
-                         : "No favorite books match your filter.")
-                        .foregroundStyle(.secondary)
-                } else {
+            if sortedFavorites.isEmpty && sortedExternalFavorites.isEmpty {
+                if viewModel.reading.isEmpty && viewModel.favorites.isEmpty && viewModel.externalFavorites.isEmpty {
+                    Section("Favorites") {
+                        Text(emptyFavoritesCopy).foregroundStyle(.secondary)
+                    }
+                }
+            } else {
+                Section("Favorites") {
                     ForEach(sortedFavorites) { book in
                         Button { open(book) } label: {
                             bookRow(book, showProgress: false)

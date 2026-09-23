@@ -300,6 +300,45 @@ final class LibraryViewModel: ObservableObject {
         }
     }
 
+    /// A favorite is still retained in the model; this only avoids showing
+    /// the same publication twice in the visible Library list. Titles are not
+    /// identities because different editions may share a title.
+    static func favoritesNotAlreadyListed(
+        _ favorites: [CatalogBook],
+        externalFavorites: [ExternalFavorite],
+        listedBooks: [CatalogBook]
+    ) -> (books: [CatalogBook], external: [ExternalFavorite]) {
+        let listed = Set(listedBooks.flatMap(publicationKeys))
+        return (
+            favorites.filter { listed.isDisjoint(with: publicationKeys(for: $0)) },
+            externalFavorites.filter { listed.isDisjoint(with: publicationKeys(for: $0)) }
+        )
+    }
+
+    private static func publicationKeys(for book: CatalogBook) -> [String] {
+        var keys = CatalogRepository.publicationIdentityCandidates(for: book).map { "id:\($0)" }
+        for value in [book.epubUrl, book.sourceUrl] {
+            if let url = publicationURLKey(value) { keys.append(url) }
+        }
+        return keys
+    }
+
+    private static func publicationKeys(for favorite: ExternalFavorite) -> [String] {
+        var keys = [favorite.key, favorite.libvaultMd5]
+            .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }
+            .filter { !$0.isEmpty }
+            .map { "id:\($0)" }
+        if let url = publicationURLKey(favorite.url) { keys.append(url) }
+        return keys
+    }
+
+    private static func publicationURLKey(_ value: String?) -> String? {
+        guard let value = value?.trimmingCharacters(in: .whitespacesAndNewlines),
+              let url = URL(string: value),
+              ["http", "https"].contains(url.scheme?.lowercased() ?? "") else { return nil }
+        return "url:\(url.absoluteString)"
+    }
+
     static func filtered(
         _ books: [CatalogBook],
         by query: String,

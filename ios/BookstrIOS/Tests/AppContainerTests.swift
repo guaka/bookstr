@@ -276,6 +276,39 @@ final class AppContainerTests: XCTestCase {
         XCTAssertEqual(LibraryViewModel.sorted(untimed, by: .author).map(\.id), ["alpha-untimed", "beta-untimed"])
     }
 
+    @MainActor
+    func testLibraryFavoritesExcludeListedPublicationsButKeepDifferentEditions() {
+        let hash = String(repeating: "a", count: 32)
+        let listed = CatalogBook(
+            id: "catalog-id", title: "Shared Title", author: "A", epubUrl: "https://example.org/edition.epub",
+            coverUrl: nil, sourceUrl: nil, isbn: nil, libvaultMd5: hash, format: .epub, year: nil
+        )
+        let duplicateByHash = CatalogBook(
+            id: "favorite-alias", title: "Shared Title", author: "A", epubUrl: "",
+            coverUrl: nil, sourceUrl: nil, isbn: nil, libvaultMd5: hash, format: .epub, year: nil
+        )
+        let differentEdition = CatalogBook(
+            id: "different-edition", title: "Shared Title", author: "A", epubUrl: "https://example.org/other.epub",
+            coverUrl: nil, sourceUrl: nil, isbn: nil, libvaultMd5: nil, format: .epub, year: nil
+        )
+        let duplicateExternal = ExternalFavorite(
+            key: "remote-alias", title: "Shared Title", author: "A", year: nil,
+            url: "https://example.org/edition.epub", isbn: nil, libvaultMd5: nil, format: "epub"
+        )
+        let unrelatedExternal = ExternalFavorite(
+            key: "remote-other", title: "Shared Title", author: "A", year: nil,
+            url: "https://example.org/third.epub", isbn: nil, libvaultMd5: nil, format: "epub"
+        )
+
+        let shown = LibraryViewModel.favoritesNotAlreadyListed(
+            [duplicateByHash, differentEdition],
+            externalFavorites: [duplicateExternal, unrelatedExternal],
+            listedBooks: [listed]
+        )
+        XCTAssertEqual(shown.books.map(\.id), ["different-edition"])
+        XCTAssertEqual(shown.external.map(\.key), ["remote-other"])
+    }
+
     func testLibraryForegroundLoadPlanAlwaysAppliesCacheAndDefersNetworkWithIdentity() {
         let withIdentity = LibraryForegroundLoadPlan.make(hasNostrIdentity: true)
         XCTAssertTrue(withIdentity.applyCachedFavorites)
