@@ -352,7 +352,7 @@ struct ReaderHostView: View {
                     readerActionButtons(buttonWidth: shoulderWidth / 3)
                 }
                 .padding(.horizontal, metrics.horizontalControlInset)
-                .padding(.top, metrics.islandTopInset)
+                .padding(.top, metrics.islandControlsTopInset)
                 .frame(height: metrics.headerHeight, alignment: .top)
             } else {
                 HStack(spacing: 0) {

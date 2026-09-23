@@ -156,6 +156,7 @@ final class LibraryReaderUITests: XCTestCase {
         XCTAssertTrue(reader.waitForExistence(timeout: 12))
         let header = app.descendants(matching: .any)["reader-top-header"]
         XCTAssertTrue(waitForReaderChromeToSettle(header))
+        XCTAssertLessThanOrEqual(header.frame.height, 52, "The blue header must end at the camera island")
 
         app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.96)).tap()
         let island = app.descendants(matching: .any)["reader-button-island"]

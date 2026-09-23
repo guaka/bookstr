@@ -87,7 +87,12 @@ struct SearchView: View {
             }
         }
         .bookstrScreenTitle("Search")
-        .searchable(text: $query, isPresented: $searchPresented, prompt: "Title, author, ISBN, publisher")
+        .searchable(
+            text: $query,
+            isPresented: $searchPresented,
+            placement: .navigationBarDrawer(displayMode: .always),
+            prompt: "Title, author, ISBN, publisher"
+        )
         .onSubmit(of: .search) {
             searchTask?.cancel()
             searchTask = Task { await runSearch() }

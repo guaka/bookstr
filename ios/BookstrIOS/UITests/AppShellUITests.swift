@@ -179,6 +179,29 @@ final class AppShellUITests: XCTestCase {
         search.tap()
         search.typeText("author")
         XCTAssertGreaterThanOrEqual(search.frame.minY, 54)
+        XCTAssertTrue(app.keyboards.firstMatch.exists)
+        XCTAssertTrue(search.isHittable, "Search must remain visible above the keyboard while typing")
+    }
+
+    func testSearchFieldRemainsVisibleWhenRefocusingAfterResults() throws {
+        app.terminate()
+        app.launchArguments += ["--ui-testing-torrent-fixture"]
+        app.launch()
+        selectTab("Search")
+        let search = app.searchFields["Title, author, ISBN, publisher"]
+        XCTAssertTrue(search.waitForExistence(timeout: 5))
+        search.tap()
+        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
+        XCTAssertTrue(search.isHittable)
+        search.typeText("Torrent\n")
+        let result = app.buttons.matching(
+            NSPredicate(format: "identifier BEGINSWITH %@", "search.open.")
+        ).firstMatch
+        XCTAssertTrue(result.waitForExistence(timeout: 10))
+        search.tap()
+        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
+        XCTAssertTrue(search.isHittable, "Results must not hide the search field when the keyboard reappears")
+        XCTAssertLessThan(search.frame.maxY, app.keyboards.firstMatch.frame.minY)
     }
 
     func testConcurrentTorrentDownloadsRestoreAfterRelaunch() throws {
