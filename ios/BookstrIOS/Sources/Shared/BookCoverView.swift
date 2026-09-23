@@ -63,10 +63,9 @@ struct BookCoverView: View {
 
     private var displayedURL: URL? {
 #if canImport(UIKit)
-        if preferDiscoveredCover, let cached = bookID.flatMap({ coverDiscovery.cachedURL(for: $0) }) {
-            return cached
-        }
-        return Self.coverURL(urlString) ?? bookID.flatMap { coverDiscovery.cachedURL(for: $0) }
+        return Self.resolvedURL(urlString,
+                                cached: bookID.flatMap { coverDiscovery.cachedURL(for: $0) },
+                                preferDiscovered: preferDiscoveredCover)
 #else
         Self.coverURL(urlString)
 #endif
@@ -151,6 +150,11 @@ struct BookCoverView: View {
               let url = URL(string: value),
               ["http", "https", "file"].contains(url.scheme?.lowercased() ?? "") else { return nil }
         return url
+    }
+
+    static func resolvedURL(_ value: String?, cached: URL?, preferDiscovered: Bool) -> URL? {
+        if preferDiscovered, let cached { return cached }
+        return coverURL(value) ?? cached
     }
 }
 

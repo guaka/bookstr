@@ -130,6 +130,7 @@ struct LibraryView: View {
                                             publisher: favorite.url == nil ? nil : "Remote publication",
                                             coverURL: favorite.coverUrl,
                                             bookID: favorite.key,
+                                            preferDiscoveredCover: true,
                                             rights: favorite.rights)
                                 .textSelection(.enabled)
 
@@ -143,7 +144,8 @@ struct LibraryView: View {
                                 rightsDetails = RightsDetailsItem(
                                     title: favorite.title, author: favorite.author, year: favorite.year,
                                     format: favorite.format, rights: favorite.rights,
-                                    coverURL: favorite.coverUrl, bookID: favorite.key
+                                    coverURL: favorite.coverUrl, bookID: favorite.key,
+                                    preferDiscoveredCover: true
                                 )
                             }
                         }
@@ -293,7 +295,8 @@ struct LibraryView: View {
             HStack(alignment: .top, spacing: 8) {
                 BookListDetails(title: book.title, author: book.author, year: book.year,
                                 format: book.format.rawValue, language: book.language,
-                                coverURL: book.coverUrl, bookID: book.id, rights: book.rights)
+                                coverURL: book.coverUrl, bookID: book.id,
+                                preferDiscoveredCover: true, rights: book.rights)
                 if openingBookID == book.id { ProgressView() }
             }
             if showProgress, let item = viewModel.progress[book.id], item.progression > 0 {
@@ -323,7 +326,8 @@ struct LibraryView: View {
         RightsDetailsItem(
             title: book.title, author: book.author, year: book.year,
             format: book.format.rawValue, rights: book.rights,
-            coverURL: book.coverUrl, bookID: book.id
+            coverURL: book.coverUrl, bookID: book.id,
+            preferDiscoveredCover: true
         )
     }
 }

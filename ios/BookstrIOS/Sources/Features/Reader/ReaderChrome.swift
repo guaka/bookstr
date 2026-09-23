@@ -40,7 +40,8 @@ struct ReaderChromeMetrics: Equatable {
     }
 
     var headerHeight: CGFloat {
-        dynamicIslandEdge == .top ? max(48, safeTop) : max(48, safeTop + 44)
+        // End at the cutout's lower shoulder, not at the safe-area boundary.
+        dynamicIslandEdge == .top ? max(48, islandTopInset + 47) : max(48, safeTop + 44)
     }
     var controlsTopInset: CGFloat { max(safeTop, 0) }
     var contentTopInset: CGFloat { headerHeight }

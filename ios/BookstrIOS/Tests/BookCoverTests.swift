@@ -27,6 +27,14 @@ final class BookCoverTests: XCTestCase {
         XCTAssertNil(BookCoverView.coverURL(nil))
     }
 
+    func testLibraryCanPreferValidatedCachedCoverWithoutChangingCatalogURL() {
+        let remote = "https://example.test/old-cover.jpg"
+        let cached = URL(fileURLWithPath: "/tmp/exact-edition.jpg")
+        XCTAssertEqual(BookCoverView.resolvedURL(remote, cached: cached, preferDiscovered: true), cached)
+        XCTAssertEqual(BookCoverView.resolvedURL(remote, cached: cached, preferDiscovered: false)?.absoluteString, remote)
+        XCTAssertEqual(BookCoverView.resolvedURL(remote, cached: nil, preferDiscovered: true)?.absoluteString, remote)
+    }
+
 #if canImport(UIKit) && !SWIFT_PACKAGE
     @MainActor
     func testCoverSearchRejectsAmbiguousOrDifferentEditions() {

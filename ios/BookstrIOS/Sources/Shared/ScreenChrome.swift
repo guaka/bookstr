@@ -101,6 +101,7 @@ struct BookListDetails: View {
     var publisher: String? = nil
     var coverURL: String? = nil
     var bookID: String? = nil
+    var preferDiscoveredCover = false
     let rights: BookRights
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
@@ -109,7 +110,8 @@ struct BookListDetails: View {
             ? AnyLayout(VStackLayout(alignment: .leading, spacing: 6))
             : AnyLayout(HStackLayout(alignment: .top, spacing: 10))
         layout {
-            BookCoverView(urlString: coverURL, bookID: bookID, title: title, author: author)
+            BookCoverView(urlString: coverURL, bookID: bookID, title: title, author: author,
+                          preferDiscoveredCover: preferDiscoveredCover)
             VStack(alignment: .leading, spacing: 3) {
                 Text(title).font(.subheadline.weight(.semibold)).foregroundStyle(.primary)
                     .fixedSize(horizontal: false, vertical: true)

@@ -10,10 +10,12 @@ struct SearchView: View {
     @EnvironmentObject private var playback: ReaderPlaybackSession
     var requestedQuery: BookSearchRequest?
     @State private var query = ""
+    @State private var programmaticQuery: String?
     @State private var searchPresented = false
     @State private var results: [BookSearchResult] = []
     @State private var searching = false
     @State private var nextOffset: Int?
+    @State private var automaticLoadOffset: Int?
     @State private var searchedQuery = ""
     @State private var searchGeneration = UUID()
     @State private var searchTask: Task<Void, Never>?
@@ -34,12 +36,14 @@ struct SearchView: View {
         }
 
         return Group {
-            if results.isEmpty {
+            if results.isEmpty && nextOffset == nil {
                 ContentUnavailableView("Search books", systemImage: "magnifyingglass", description: Text(message ?? "Title, author, ISBN, publisher"))
-            } else if visibleResults.isEmpty {
-                ContentUnavailableView("No matches", systemImage: "line.3.horizontal.decrease.circle", description: Text("No results match the selected filters."))
             } else {
                 List {
+                  if visibleResults.isEmpty {
+                      ContentUnavailableView("No matches", systemImage: "line.3.horizontal.decrease.circle",
+                                             description: Text("No loaded results match the selected filters."))
+                  }
                   ForEach(visibleResults) { result in
                     Button { Task { await open(result) } } label: {
                         BookListDetails(title: result.title, author: result.author, year: result.year,
@@ -60,11 +64,20 @@ struct SearchView: View {
                     }
                     .bookstrListRow()
                   }
-                  if nextOffset != nil {
-                      Button { searchTask = Task { await runSearch(more: true) } } label: { Image(systemName: "arrow.down") }
-                          .accessibilityLabel("Load more catalog results")
-                          .accessibilityIdentifier("search.load-more")
-                          .disabled(searching)
+                  if let nextOffset {
+                      HStack(spacing: 8) {
+                          if searching { ProgressView() }
+                          Text(searching ? "Loading more books…" : "Scroll down for more books")
+                              .font(.footnote)
+                              .foregroundStyle(.secondary)
+                      }
+                      .frame(maxWidth: .infinity, minHeight: 44)
+                      .accessibilityIdentifier("search-pagination-status")
+                      .onAppear(perform: loadMoreIfNeeded)
+                      .onDisappear {
+                          if !searching { automaticLoadOffset = nil }
+                      }
+                      .id(nextOffset)
                   }
                 }
                 .listStyle(.plain)
@@ -77,22 +90,29 @@ struct SearchView: View {
             searchTask?.cancel()
             searchTask = Task { await runSearch() }
         }
-        .onChange(of: query) { _, _ in
+        .onChange(of: query) { _, newValue in
+            if newValue == programmaticQuery {
+                programmaticQuery = nil
+                return
+            }
+            programmaticQuery = nil
             searchTask?.cancel()
             searchGeneration = UUID()
             searching = false
             nextOffset = nil
+            automaticLoadOffset = nil
         }
         .onDisappear { searchTask?.cancel() }
         .task(id: requestedQuery?.id) {
             guard let requestedQuery else { return }
+            programmaticQuery = requestedQuery.query
             query = requestedQuery.query
             searchPresented = true
             await runSearch()
         }
         .overlay { if searching { ProgressView().allowsHitTesting(false) } }
         .toolbar {
-            if languageOptions.count > 1 {
+            if languageOptions.count > 1 || !selectedLanguage.isEmpty {
                 ToolbarItem(placement: .topBarTrailing) {
                     Menu {
                         Picker("Language", selection: $selectedLanguage) {
@@ -108,7 +128,7 @@ struct SearchView: View {
                     .accessibilityIdentifier("search-language-filter")
                 }
             }
-            if formatOptions.count > 1 {
+            if formatOptions.count > 1 || !selectedFormat.isEmpty {
                 ToolbarItem(placement: .topBarTrailing) {
                     Menu {
                         Picker("Format", selection: $selectedFormat) {
@@ -157,6 +177,12 @@ struct SearchView: View {
             }
         }
         .sheet(item: $rightsDetails) { RightsDetailsView(item: $0) }
+    }
+
+    private func loadMoreIfNeeded() {
+        guard let offset = nextOffset, !searching, automaticLoadOffset != offset else { return }
+        automaticLoadOffset = offset
+        searchTask = Task { await runSearch(more: true) }
     }
 
     private func runSearch(more: Bool = false) async {
