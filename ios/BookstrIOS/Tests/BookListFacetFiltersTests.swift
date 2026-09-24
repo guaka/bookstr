@@ -47,6 +47,16 @@ final class BookListFacetFiltersTests: XCTestCase {
         )
     }
 
+    func testSearchFiltersAreRelevantForDifferentOrMissingMetadata() {
+        XCTAssertFalse(BookListFacetFilters.hasLanguageChoices([]))
+        XCTAssertFalse(BookListFacetFilters.hasLanguageChoices(["en", "English"]))
+        XCTAssertTrue(BookListFacetFilters.hasLanguageChoices(["en", "pt-BR"]))
+        XCTAssertTrue(BookListFacetFilters.hasLanguageChoices(["en", nil]))
+        XCTAssertFalse(BookListFacetFilters.hasFormatChoices([".EPUB", "epub"]))
+        XCTAssertTrue(BookListFacetFilters.hasFormatChoices(["epub", "pdf"]))
+        XCTAssertTrue(BookListFacetFilters.hasFormatChoices(["epub", nil]))
+    }
+
     func testSanitizeClearsStaleSelections() {
         var filters = BookListFacetFilters(language: "de", format: "cbr")
         filters.sanitize(languages: ["en", "pt"], formats: ["epub", "pdf"])

@@ -22,11 +22,12 @@ final class SpeechLanguageSettingsTests: XCTestCase {
 
     func testPreferredLanguageTagNormalizesPortugueseAndBlanks() {
         XCTAssertEqual(SpeechLanguageSettings.preferredLanguageTag("  "), "en")
-        XCTAssertEqual(SpeechLanguageSettings.preferredLanguageTag("pt"), "pt-pt")
-        XCTAssertEqual(SpeechLanguageSettings.preferredLanguageTag("PT-BR"), "pt-br")
-        XCTAssertEqual(SpeechLanguageSettings.preferredLanguageTag("por"), "pt-pt")
-        XCTAssertEqual(SpeechLanguageSettings.preferredLanguageTag("por-BR"), "pt-br")
-        XCTAssertEqual(SpeechLanguageSettings.preferredLanguageTag("Português"), "pt-pt")
+        XCTAssertEqual(SpeechLanguageSettings.preferredLanguageTag("pt"), "pt")
+        XCTAssertEqual(SpeechLanguageSettings.preferredLanguageTag("PT-BR"), "pt")
+        XCTAssertEqual(SpeechLanguageSettings.preferredLanguageTag("pt-PT"), "pt")
+        XCTAssertEqual(SpeechLanguageSettings.preferredLanguageTag("por"), "pt")
+        XCTAssertEqual(SpeechLanguageSettings.preferredLanguageTag("por-BR"), "pt")
+        XCTAssertEqual(SpeechLanguageSettings.preferredLanguageTag("Português"), "pt")
         XCTAssertEqual(SpeechLanguageSettings.preferredLanguageTag("en_US"), "en-us")
         XCTAssertEqual(SpeechLanguageSettings.preferredLanguageTag(" FR-fr "), "fr-fr")
         XCTAssertEqual(SpeechLanguageSettings.preferredLanguageTag("English"), "en")
@@ -53,7 +54,7 @@ final class SpeechLanguageSettingsTests: XCTestCase {
 
     func testPortugueseWithoutSettingsUsesSystemDefault() {
         let choice = SpeechLanguageSettings.resolve(bookLanguage: "pt", settingsByLanguage: [:])
-        XCTAssertEqual(choice.languageTag, "pt-pt")
+        XCTAssertEqual(choice.languageTag, "pt")
         XCTAssertEqual(choice.voiceIdentifier, SpeechVoiceID.systemDefault)
         XCTAssertNil(choice.neuralEngine)
     }
@@ -79,13 +80,13 @@ final class SpeechLanguageSettingsTests: XCTestCase {
         XCTAssertEqual(choice.engine, .apple)
     }
 
-    func testRegionalSettingIsPreferredOverLanguageOnly() {
+    func testBasePortugueseSettingOutranksOldRegionalSetting() {
         let settings = [
             "pt": SpeechLanguageSetting(voiceIdentifier: "pt-generic"),
             "pt-pt": SpeechLanguageSetting(voiceIdentifier: "pt-portugal"),
         ]
         let choice = SpeechLanguageSettings.resolve(bookLanguage: "pt-PT", settingsByLanguage: settings)
-        XCTAssertEqual(choice.voiceIdentifier, "pt-portugal")
+        XCTAssertEqual(choice.voiceIdentifier, "pt-generic")
     }
 
     func testSingleRegionalSettingMatchesBareLanguage() {
@@ -95,6 +96,29 @@ final class SpeechLanguageSettingsTests: XCTestCase {
             "luciana"
         )
         XCTAssertNil(SpeechLanguageSettings.setting(for: "fr", in: settings))
+    }
+
+    func testSavedRegionalPortugueseVoicesMergeIntoOneLanguage() {
+        let brazil = SpeechLanguageSetting(voiceIdentifier: SpeechEngineID.kokoroBrazilianPortuguese.rawValue)
+        let portugal = SpeechLanguageSetting(voiceIdentifier: SpeechEngineID.portuguesePortugal.rawValue)
+        XCTAssertEqual(SpeechLanguageSettings.canonicalizeSettingsKeys(["pt-br": brazil]), ["pt": brazil])
+        XCTAssertEqual(SpeechLanguageSettings.canonicalizeSettingsKeys(["pt-pt": portugal]), ["pt": portugal])
+        XCTAssertEqual(
+            SpeechLanguageSettings.canonicalizeSettingsKeys(["pt-pt": portugal, "pt-br": brazil]),
+            ["pt": brazil]
+        )
+        XCTAssertEqual(
+            SpeechLanguageSettings.canonicalizeSettingsKeys(["pt": portugal, "pt-br": brazil]),
+            ["pt": portugal]
+        )
+        XCTAssertEqual(
+            SpeechLanguageSettings.resolve(bookLanguage: "pt-PT", settingsByLanguage: ["pt": brazil]).neuralEngine,
+            .kokoroBrazilianPortuguese
+        )
+        XCTAssertEqual(
+            SpeechLanguageSettings.resolve(bookLanguage: "pt-BR", settingsByLanguage: ["pt": portugal]).neuralEngine,
+            .portuguesePortugal
+        )
     }
 
     func testAmbiguousRegionalSettingsDoNotGuess() {
@@ -131,7 +155,9 @@ final class SpeechLanguageSettingsTests: XCTestCase {
         XCTAssertTrue(SpeechEngineID.kokoroEnglish.supports(language: "English"))
         XCTAssertFalse(SpeechEngineID.kokoroEnglish.supports(language: "pt-PT"))
         XCTAssertTrue(SpeechEngineID.kokoroBrazilianPortuguese.supports(language: "pt-BR"))
-        XCTAssertFalse(SpeechEngineID.kokoroBrazilianPortuguese.supports(language: "pt-PT"))
+        XCTAssertTrue(SpeechEngineID.kokoroBrazilianPortuguese.supports(language: "pt-PT"))
+        XCTAssertTrue(SpeechEngineID.kokoroBrazilianPortuguese.supports(language: "pt"))
+        XCTAssertFalse(SpeechEngineID.kokoroBrazilianPortuguese.supports(language: "en"))
         XCTAssertTrue(SpeechEngineID.portuguesePortugal.supports(language: "pt_PT"))
         XCTAssertTrue(SpeechEngineID.portuguesePortugalMiro.supports(language: "pt"))
         XCTAssertTrue(SpeechEngineID.portuguesePortugalDii.supports(language: "por"))
@@ -150,6 +176,7 @@ final class SpeechLanguageSettingsTests: XCTestCase {
                 SpeechEngineID.portuguesePortugalDii.rawValue,
             ]
         )
+        XCTAssertEqual(SpeechVoiceID.speakers(for: "pt-PT").map(\.id), SpeechVoiceID.speakers(for: "pt").map(\.id))
         XCTAssertTrue(SpeechEngineID.system.supports(language: "fr"))
         XCTAssertEqual(SpeechEngineID.kokoroEnglish.label, "Kokoro · English")
         XCTAssertEqual(SpeechEngineID.portuguesePortugal.label, "Tugão · Português (Portugal)")
@@ -209,10 +236,10 @@ final class SpeechLanguageSettingsTests: XCTestCase {
         )
         XCTAssertEqual(
             SpeechLanguageSettings.playbackLanguage(override: "auto", bookLanguage: "pt_BR"),
-            "pt-br"
+            "pt"
         )
-        XCTAssertTrue(SpeechLanguageSettings.languagesForBookCodes([]).contains("pt-br"))
-        XCTAssertNotEqual(
+        XCTAssertTrue(SpeechLanguageSettings.languagesForBookCodes([]).contains("pt"))
+        XCTAssertEqual(
             SpeechLanguageSettings.displayName(for: "pt-br"),
             SpeechLanguageSettings.displayName(for: "pt-pt")
         )
@@ -224,7 +251,7 @@ final class SpeechLanguageSettingsTests: XCTestCase {
             SpeechEngineID.kokoroEnglish.rawValue
         )
         XCTAssertEqual(
-            SpeechLanguageSettings.migrateLegacyEngine("piper_pt_pt", into: [:])["pt-pt"]?.voiceIdentifier,
+            SpeechLanguageSettings.migrateLegacyEngine("piper_pt_pt", into: [:])["pt"]?.voiceIdentifier,
             SpeechEngineID.portuguesePortugal.rawValue
         )
         let existing = ["en": SpeechLanguageSetting(voiceIdentifier: "samantha")]

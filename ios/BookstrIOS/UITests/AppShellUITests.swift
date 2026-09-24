@@ -26,7 +26,7 @@ final class AppShellUITests: XCTestCase {
         app.launchArguments += ["--ui-testing-torrent-fixture"]
         app.launch()
         selectTab("Search")
-        let query = app.searchFields.firstMatch
+        let query = app.textFields["search-query"]
         XCTAssertTrue(query.waitForExistence(timeout: 10))
         query.tap(); query.typeText("Torrent Reading Fixture\n")
         let book = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "search.open.")).firstMatch
@@ -64,6 +64,24 @@ final class AppShellUITests: XCTestCase {
         XCTAssertTrue(app.descendants(matching: .any)["speech-voice-nl"].exists)
     }
 
+    func testPortugueseOffersBrazilAndPortugalVoicesTogether() throws {
+        selectTab("Settings")
+        let language = app.descendants(matching: .any)["speech-language"]
+        reveal(language)
+        XCTAssertTrue(language.waitForExistence(timeout: 5))
+        language.tap()
+        let portuguese = pickerChoice("Portuguese")
+        XCTAssertTrue(portuguese.waitForExistence(timeout: 5))
+        portuguese.tap()
+        XCTAssertTrue(app.descendants(matching: .any)["speech-voice-pt"].waitForExistence(timeout: 5))
+        let brazil = app.buttons["speech-model-kokoro_pt_br"]
+        let portugal = app.buttons["speech-model-piper_pt_pt"]
+        reveal(brazil)
+        XCTAssertTrue(brazil.waitForExistence(timeout: 5))
+        reveal(portugal)
+        XCTAssertTrue(portugal.waitForExistence(timeout: 5))
+    }
+
     func testDownloadedDutchVoiceIsAutomaticallySelected() throws {
         selectTab("Settings")
         let language = app.descendants(matching: .any)["speech-language"]
@@ -87,7 +105,7 @@ final class AppShellUITests: XCTestCase {
         app.launchArguments += ["--ui-testing-torrent-fixture"]
         app.launch()
         selectTab("Search")
-        let query = app.searchFields.firstMatch
+        let query = app.textFields["search-query"]
         XCTAssertTrue(query.waitForExistence(timeout: 10))
         query.tap()
         query.typeText("Torrent Reading Fixture\n")
@@ -123,7 +141,7 @@ final class AppShellUITests: XCTestCase {
         app.launchArguments += ["--ui-testing-torrent-fixture", "--ui-testing-torrent-multiple"]
         app.launch()
         selectTab("Search")
-        let query = app.searchFields["Title, author, ISBN, publisher"]
+        let query = app.textFields["search-query"]
         query.tap(); query.typeText("Torrent\n")
         let book = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@ AND label BEGINSWITH %@", "search.open.", "Torrent Reading Fixture")).element
         XCTAssertTrue(book.waitForExistence(timeout: 10))
@@ -143,7 +161,7 @@ final class AppShellUITests: XCTestCase {
         let author = app.buttons["reader-author-search"]
         XCTAssertTrue(author.waitForExistence(timeout: 10))
         author.tap()
-        let query = app.searchFields.firstMatch
+        let query = app.textFields["search-query"]
         XCTAssertTrue(query.waitForExistence(timeout: 5))
         XCTAssertEqual(query.value as? String, "Lewis Carroll")
         XCTAssertTrue(
@@ -175,24 +193,29 @@ final class AppShellUITests: XCTestCase {
         XCTAssertGreaterThanOrEqual(library.frame.minY, 54)
         app.buttons["Close"].tap()
         selectTab("Search")
-        let search = app.searchFields["Title, author, ISBN, publisher"]
+        let search = app.textFields["search-query"]
+        XCTAssertTrue(search.waitForExistence(timeout: 5))
+        let restingY = search.frame.minY
         search.tap()
         search.typeText("author")
         XCTAssertGreaterThanOrEqual(search.frame.minY, 54)
+        XCTAssertEqual(search.frame.minY, restingY, accuracy: 2)
         XCTAssertTrue(app.keyboards.firstMatch.exists)
         XCTAssertTrue(search.isHittable, "Search must remain visible above the keyboard while typing")
     }
 
     func testSearchFieldRemainsVisibleWhenRefocusingAfterResults() throws {
         app.terminate()
-        app.launchArguments += ["--ui-testing-torrent-fixture"]
+        app.launchArguments += ["--ui-testing-torrent-fixture", "--ui-testing-torrent-multiple"]
         app.launch()
         selectTab("Search")
-        let search = app.searchFields["Title, author, ISBN, publisher"]
+        let search = app.textFields["search-query"]
         XCTAssertTrue(search.waitForExistence(timeout: 5))
+        let restingY = search.frame.minY
         search.tap()
         XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
         XCTAssertTrue(search.isHittable)
+        XCTAssertEqual(search.frame.minY, restingY, accuracy: 2)
         search.typeText("Torrent\n")
         let result = app.buttons.matching(
             NSPredicate(format: "identifier BEGINSWITH %@", "search.open.")
@@ -201,7 +224,36 @@ final class AppShellUITests: XCTestCase {
         search.tap()
         XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
         XCTAssertTrue(search.isHittable, "Results must not hide the search field when the keyboard reappears")
+        XCTAssertEqual(search.frame.minY, restingY, accuracy: 2)
         XCTAssertLessThan(search.frame.maxY, app.keyboards.firstMatch.frame.minY)
+        result.swipeUp()
+        XCTAssertFalse(app.keyboards.firstMatch.exists, "Scrolling results should dismiss the keyboard")
+        XCTAssertEqual(search.frame.minY, restingY, accuracy: 2)
+    }
+
+    func testRelevantSearchFiltersStayVisibleWhileEditing() throws {
+        app.terminate()
+        app.launchArguments += [
+            "--ui-testing-torrent-fixture", "--ui-testing-torrent-multiple",
+            "--ui-testing-torrent-mixed-facets",
+        ]
+        app.launch()
+        selectTab("Search")
+        let search = app.textFields["search-query"]
+        XCTAssertTrue(search.waitForExistence(timeout: 5))
+        search.tap()
+        search.typeText("Torrent\n")
+        let language = app.buttons["search-language-filter"]
+        let format = app.buttons["search-format-filter"]
+        XCTAssertTrue(language.waitForExistence(timeout: 10))
+        XCTAssertTrue(format.waitForExistence(timeout: 5))
+        search.tap()
+        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
+        XCTAssertTrue(language.isHittable)
+        XCTAssertTrue(format.isHittable)
+        app.buttons["search-clear"].tap()
+        XCTAssertEqual(search.value as? String, "Title, author, ISBN, publisher")
+        XCTAssertTrue(app.keyboards.firstMatch.exists)
     }
 
     func testConcurrentTorrentDownloadsRestoreAfterRelaunch() throws {
@@ -209,7 +261,7 @@ final class AppShellUITests: XCTestCase {
         app.launchArguments += ["--ui-testing-torrent-fixture", "--ui-testing-torrent-multiple", "--ui-testing-torrent-pending"]
         app.launch()
         selectTab("Search")
-        let query = app.searchFields["Title, author, ISBN, publisher"]
+        let query = app.textFields["search-query"]
         query.tap(); query.typeText("Torrent\n")
         let first = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@ AND label BEGINSWITH %@", "search.open.", "Torrent Reading Fixture")).element
         let second = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@ AND label BEGINSWITH %@", "search.open.", "Second Torrent Fixture")).element
@@ -369,7 +421,7 @@ final class AppShellUITests: XCTestCase {
         XCTAssertTrue(author.waitForExistence(timeout: 5))
         author.tap()
         XCTAssertTrue(app.tabBars.buttons["Search"].waitForExistence(timeout: 5))
-        let authorQuery = app.searchFields.firstMatch
+        let authorQuery = app.textFields["search-query"]
         XCTAssertTrue(authorQuery.waitForExistence(timeout: 5))
         let populated = XCTNSPredicateExpectation(
             predicate: NSPredicate(format: "value == %@", "Lewis Carroll"), object: authorQuery

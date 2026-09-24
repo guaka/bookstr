@@ -107,8 +107,10 @@ final class SettingsRepository: ObservableObject {
         self.readerFont = ReaderFont(rawValue: defaults.string(forKey: Keys.readerFont) ?? "") ?? .arial
         self.readerAlignment = ReaderAlignment(rawValue: defaults.string(forKey: Keys.readerAlignment) ?? "") ?? .justified
         self.speechVoiceIdentifier = defaults.string(forKey: Keys.speechVoice) ?? ""
-        self.speechLanguageOverride = defaults.string(forKey: Keys.speechLanguageOverride)
+        let savedSpeechLanguage = defaults.string(forKey: Keys.speechLanguageOverride)
             ?? SpeechLanguageSettings.automaticLanguage
+        self.speechLanguageOverride = savedSpeechLanguage == SpeechLanguageSettings.automaticLanguage
+            ? savedSpeechLanguage : SpeechLanguageSettings.preferredLanguageTag(savedSpeechLanguage)
         self.speechLanguageSettings = SpeechLanguageSettings.canonicalizeSettingsKeys(
             SpeechLanguageSettings.migrateLegacyEngine(
                 defaults.string(forKey: Keys.speechEngine),

@@ -39,6 +39,14 @@ struct BookListFacetFilters: Equatable, Sendable {
         Array(Set(values.map(normalizedFormat).filter { !$0.isEmpty })).sorted()
     }
 
+    static func hasLanguageChoices(_ values: [String?]) -> Bool {
+        Set(values.map(normalizedLanguage)).count > 1
+    }
+
+    static func hasFormatChoices(_ values: [String?]) -> Bool {
+        Set(values.map(normalizedFormat)).count > 1
+    }
+
     mutating func sanitize(languages: [String], formats: [String]) {
         if !language.isEmpty, !languages.contains(language) { language = "" }
         if !format.isEmpty, !formats.contains(format) { format = "" }

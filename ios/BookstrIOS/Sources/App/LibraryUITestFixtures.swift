@@ -212,7 +212,12 @@ extension LibraryUITestFixtures {
         }
         var records = [record(original, title: "Torrent Reading Fixture", id: 1234)]
         if arguments.contains("--ui-testing-torrent-multiple") {
-            records.append(record(original + Data("\n% Second edition\n".utf8), title: "Second Torrent Fixture", id: 2345))
+            var second = record(original + Data("\n% Second edition\n".utf8), title: "Second Torrent Fixture", id: 2345)
+            if arguments.contains("--ui-testing-torrent-mixed-facets") {
+                second["language"] = "pt"
+                second["extension"] = "epub"
+            }
+            records.append(second)
         }
         // The private catalog is injected below. No fixture key is used for
         // signing, and the test disables relay connections.
