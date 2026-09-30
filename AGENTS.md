@@ -4,11 +4,27 @@
 
 - Make repository changes on a dedicated branch and deliver them through a pull
   request. Do not push commits directly to the default branch.
-- GitHub Actions CI is currently unavailable due to an account billing /
-  spending-limit issue: jobs fail before running tests. Until Actions is
-  restored, use local tests, coverage reports, and relevant device checks for
-  validation, and report what was actually verified. These infrastructure
-  failures are not evidence of test failures or passing checks.
+- GitHub Actions is disabled in this private repository's settings because the
+  owner does not want to use an Actions budget. Do not re-enable Actions or
+  trigger billed workflows without an explicit request. Old red checks failed
+  before their jobs started because of billing; they say nothing about the code.
+
+## Local CI for pull requests
+
+- Treat `.github/workflows/` as the checklist for local validation. Before
+  opening or updating a pull request, run the relevant workflow commands on
+  the latest branch head, including generated-file checks, tests, builds,
+  coverage gates, and end-to-end checks for the affected platforms. Run Android
+  connected tests only on emulators; never clear app data on a personal device.
+- Keep pull requests in a tested state: fix failing local checks before marking
+  a pull request ready for review, and rerun affected checks after changes or
+  merges from its base branch. For stacked pull requests, validate against the
+  actual base branch rather than assuming `main`.
+- Record the exact commands, results, coverage, and tested environment in the
+  pull request description or a follow-up comment. If a relevant check cannot
+  run locally, say why and mark the pull request as draft until the gap is
+  resolved or the user explicitly accepts it. Never present a skipped check or
+  an old GitHub billing failure as a passing test.
 
 ## Device data safety
 
