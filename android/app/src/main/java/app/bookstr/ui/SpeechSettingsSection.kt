@@ -26,9 +26,10 @@ class SpeechSettingsViewModel(application: Application, val models: SpeechModels
     var selected by mutableStateOf("en")
     var voice by mutableStateOf(settings.voice(selected))
     var installed by mutableStateOf(models.models.filter(models::installed).map { it.id }.toSet())
-    var busy by mutableStateOf<String?>(null)
-    var progress by mutableStateOf(0f)
-    var error by mutableStateOf<String?>(null)
+    var downloads by mutableStateOf<Map<String, Float>>(emptyMap())
+    var errors by mutableStateOf<Map<String, String>>(emptyMap())
+    val busy: String? get() = downloads.keys.firstOrNull()
+    val error: String? get() = errors.values.firstOrNull()
     var systemVoices by mutableStateOf<List<Pair<String, String>>>(emptyList())
     private var tts: TextToSpeech? = null
 
@@ -53,29 +54,34 @@ class SpeechSettingsViewModel(application: Application, val models: SpeechModels
     }
     fun selectVoice(id: String) { settings.setVoice(selected, id); voice = id }
     fun install(model: SpeechModel) {
-        if (busy != null) return
-        busy = model.id; progress = 0f; error = null
+        if (model.id in downloads) return
+        downloads = downloads + (model.id to 0f)
+        errors = errors - model.id
         viewModelScope.launch {
             try {
-                models.install(model) { value -> progress = value }
+                models.install(model) { value ->
+                    viewModelScope.launch(Dispatchers.Main.immediate) {
+                        if (model.id in downloads) downloads = downloads + (model.id to value)
+                    }
+                }
                 installed = installed + model.id
                 settings.setVoice(model.language, model.id)
                 if (selected == model.language) voice = model.id
             } catch (cancelled: CancellationException) { throw cancelled
-            } catch (failure: Exception) { error = failure.message
-            } finally { busy = null }
+            } catch (failure: Exception) { errors = errors + (model.id to (failure.message ?: "Voice download failed"))
+            } finally { downloads = downloads - model.id }
         }
     }
     fun remove(model: SpeechModel) {
-        if (busy != null) return
+        if (model.id in downloads) return
         try {
             models.remove(model); installed = installed - model.id
             if (settings.voice(model.language) == model.id) {
                 settings.setVoice(model.language, "")
                 if (selected == model.language) voice = ""
             }
-            error = null
-        } catch (failure: Exception) { error = failure.message }
+            errors = errors - model.id
+        } catch (failure: Exception) { errors = errors + (model.id to (failure.message ?: "Could not remove voice")) }
     }
     override fun onCleared() { tts?.shutdown() }
 }
@@ -83,14 +89,14 @@ class SpeechSettingsViewModel(application: Application, val models: SpeechModels
 @Composable
 fun SpeechSettingsSection(model: SpeechSettingsViewModel = viewModel()) {
     SpeechSettingsControls(model.languages, model.selected, model.voice, model.models.models, model.installed,
-        model.systemVoices, model.busy, model.progress, model.error,
+        model.systemVoices, model.downloads, model.errors,
         model::selectLanguage, model::selectVoice, model::install, model::remove)
 }
 
 @Composable
 fun SpeechSettingsControls(
     languages: List<String>, language: String, voice: String, models: List<SpeechModel>, installed: Set<String>,
-    systemVoices: List<Pair<String, String>>, busy: String?, progress: Float, error: String?,
+    systemVoices: List<Pair<String, String>>, downloads: Map<String, Float>, errors: Map<String, String>,
     onLanguage: (String) -> Unit, onVoice: (String) -> Unit, onInstall: (SpeechModel) -> Unit, onRemove: (SpeechModel) -> Unit,
 ) {
     Text("Text-to-speech", style = MaterialTheme.typography.titleSmall)
@@ -103,16 +109,18 @@ fun SpeechSettingsControls(
                 Text("${model.bytes / 1_000_000} MB", style = MaterialTheme.typography.bodySmall)
             }
             TextButton(
-                enabled = busy == null,
+                enabled = model.id !in downloads,
                 modifier = Modifier.testTag("speech-model-${model.id}"),
                 onClick = { if (model.id in installed) onRemove(model) else onInstall(model) },
             ) { Text(if (model.id in installed) "Remove" else "Download") }
         }
-        if (busy == model.id) LinearProgressIndicator(progress = { progress }, modifier = Modifier.fillMaxWidth().testTag("speech-download-progress"))
+        downloads[model.id]?.let { progress ->
+            LinearProgressIndicator(progress = { progress }, modifier = Modifier.fillMaxWidth().testTag("speech-download-progress-${model.id}"))
+        }
+        errors[model.id]?.let { message -> Text(message, color = MaterialTheme.colorScheme.error, modifier = Modifier.testTag("speech-error-${model.id}")) }
     }
     val choices = listOf("" to "System default") + matching.filter { it.id in installed }.map { it.id to it.label } + systemVoices
     SpeechPicker("Voice", "speech-voice", voice, choices, onVoice)
-    error?.let { Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.testTag("speech-error")) }
 }
 
 @Composable

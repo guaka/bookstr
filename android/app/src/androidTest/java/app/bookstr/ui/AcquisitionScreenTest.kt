@@ -24,14 +24,58 @@ class AcquisitionScreenTest {
             SearchScreen(query = query.value, results = listOf(result), searching = false, openingBookId = null,
                 message = null, isFavorite = { false }, readingProgress = { null }, onQueryChange = { query.value = it },
                 onSearch = { searched = true }, onOpen = { opened = it.id == hash }, onToggleFavorite = {},
-                hasMore = true, onLoadMore = { more = true }, onDownloads = { downloads = true })
+                nextOffset = 20, onLoadMore = { more = true }, onDownloads = { downloads = true })
         }
         compose.onNodeWithTag("search.query").performTextInput("Fixture")
         compose.onNodeWithTag("search.submit").performClick()
         compose.onNodeWithTag("search.open.$hash").performClick()
-        compose.onNodeWithTag("search.load-more").performScrollTo().performClick()
+        compose.waitUntil(5_000) { more }
+        compose.onNodeWithTag("search.load-more").assertDoesNotExist()
         compose.onNodeWithTag("search.downloads").performScrollTo().performClick()
         assertTrue(searched && opened && more && downloads)
+    }
+    @Test fun searchLoadsNextPageAtEndOnlyOncePerOffset() {
+        val offset = mutableStateOf<Int?>(20)
+        val searching = mutableStateOf(false)
+        var loads = 0
+        val results = (0 until 30).map { index ->
+            BookSearchResult("result-$index", "libcat", "Fixture $index", "Bookstr", format = BookFormat.Pdf)
+        }
+        compose.setContent {
+            SearchScreen(query = "fixture", results = results, searching = searching.value,
+                openingBookId = null, message = null, isFavorite = { false }, readingProgress = { null },
+                onQueryChange = {}, onSearch = {}, onOpen = {}, onToggleFavorite = {},
+                nextOffset = offset.value, onLoadMore = { loads++; searching.value = true })
+        }
+        compose.runOnIdle { assertEquals(0, loads) }
+        compose.onNodeWithTag("search.results").performScrollToIndex(33)
+        compose.waitUntil(5_000) { loads == 1 }
+        compose.runOnIdle { searching.value = false }
+        compose.waitForIdle()
+        compose.runOnIdle { assertEquals(1, loads); offset.value = 40 }
+        compose.waitUntil(5_000) { loads == 2 }
+        compose.onNodeWithTag("search.load-more").assertDoesNotExist()
+    }
+    @Test fun searchHidesKeyboardFocusWhenFilteringAndOmitsMetadataOnlyRows() {
+        val readable = BookSearchResult(hash, "libcat", "Readable", "Author", language = "en",
+            format = BookFormat.Epub, libvaultMd5 = hash)
+        val metadata = readable.copy(id = "metadata", title = "Metadata", format = null, libvaultMd5 = null)
+        val query = mutableStateOf("books")
+        compose.setContent {
+            SearchScreen(query.value, results = listOf(readable, metadata), searching = false,
+                openingBookId = null, message = null, isFavorite = { false }, readingProgress = { null },
+                onQueryChange = { query.value = it }, onSearch = {}, onOpen = {}, onToggleFavorite = {})
+        }
+        compose.onNodeWithTag("search.open.metadata").assertDoesNotExist()
+        compose.onNodeWithText("English").assertExists()
+        compose.onNodeWithTag("search.query").performClick().assertIsFocused()
+        compose.onNodeWithTag("search.language").performClick()
+        compose.onNodeWithTag("search.language.en").performClick()
+        compose.onNodeWithTag("search.query").assertIsNotFocused()
+        compose.onNodeWithTag("search.query").performClick().performTextInput(" extra")
+        compose.onNodeWithTag("search.query").assertIsFocused()
+        compose.onNodeWithText("Search", useUnmergedTree = true).performClick()
+        compose.onNodeWithTag("search.query").assertIsNotFocused()
     }
     @Test fun downloadsExposePauseResumeCancelAndVerifiedReadActions() {
         val book = CatalogBook(hash, "Fixture", "Bookstr", "", null, format = BookFormat.Pdf, libvaultMd5 = hash)
@@ -45,7 +89,8 @@ class AcquisitionScreenTest {
         compose.onNodeWithTag("download.resume.$hash").performClick(); assertEquals("resume", action)
         compose.onNodeWithTag("download.cancel.$hash").performClick(); assertEquals("cancel", action)
         compose.runOnIdle { job.value = job.value.copy(state = "complete", size = 100, bytes = 100) }
-        compose.onNodeWithTag("download.open.$hash").performClick(); assertTrue(read)
+        compose.onNodeWithTag("download.$hash").performClick(); assertTrue(read)
+        compose.onNodeWithText("Read").assertDoesNotExist()
     }
 
     @Test fun searchFacetsCombineAndUnknownAuthorsAndHeartsAreHidden() {
@@ -86,6 +131,7 @@ class AcquisitionScreenTest {
         val second = first.copy(id = "b".repeat(32), title = "Second")
         store.enqueue(first, TorrentEdition(first.id, 1, "fiction", 100))
         store.enqueue(second, TorrentEdition(second.id, 2, "fiction", 100))
+        assertEquals(listOf(second.id, first.id), store.jobs.value.map { it.book.id })
         compose.setContent {
             val jobs = store.jobs.collectAsState()
             DownloadsSheet(jobs.value, {}, { _, _ -> }, {})
@@ -94,8 +140,24 @@ class AcquisitionScreenTest {
         compose.runOnIdle { store.update(store.find(hash)!!.copy(bytes = 50, size = 100, state = "downloading")) }
         val after = compose.onNodeWithTag("download.$hash").fetchSemanticsNode().boundsInRoot.top
         assertEquals(before, after)
-        assertTrue(after < compose.onNodeWithTag("download.${second.id}").fetchSemanticsNode().boundsInRoot.top)
+        assertTrue(after > compose.onNodeWithTag("download.${second.id}").fetchSemanticsNode().boundsInRoot.top)
         root.deleteRecursively()
+    }
+
+    @Test fun resumedDownloadMovesToTopWithoutMovingProgressUpdates() {
+        val context = androidx.test.core.app.ApplicationProvider.getApplicationContext<android.content.Context>()
+        val root = java.io.File(context.cacheDir, "resume-order-${System.nanoTime()}")
+        try {
+            val store = app.bookstr.download.DownloadStore(root)
+            val first = CatalogBook(hash, "First", "Author", "", null)
+            val second = first.copy(id = "b".repeat(32), title = "Second")
+            store.enqueue(first, TorrentEdition(first.id, 1, "fiction", 100))
+            store.enqueue(second, TorrentEdition(second.id, 2, "fiction", 100))
+            store.update(store.find(first.id)!!.copy(state = "paused"))
+            store.enqueue(first, TorrentEdition(first.id, 1, "fiction", 100))
+            assertEquals(listOf(first.id, second.id), store.jobs.value.map { it.book.id })
+            assertEquals(listOf(first.id, second.id), app.bookstr.download.DownloadStore(root).jobs.value.map { it.book.id })
+        } finally { root.deleteRecursively() }
     }
 
     @Test fun downloadsFilterByBothFacetsWithoutChangingJobs() {

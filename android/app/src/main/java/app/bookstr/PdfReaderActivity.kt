@@ -208,6 +208,8 @@ class PdfReaderActivity : ComponentActivity() {
                         }
                     },
                     onBack = { closeReader() },
+                    onSelectTab = { tab -> openMainTab(tab) },
+                    onAuthorClick = { author -> searchReaderAuthor(author) },
                 )
             }
         }
@@ -427,6 +429,8 @@ private fun PdfDocument(
     onZoomChanged: (Float) -> Unit,
     onPositionChanged: (Int, Int) -> Unit,
     onBack: () -> Unit,
+    onSelectTab: (Int) -> Unit,
+    onAuthorClick: (String) -> Unit,
 ) {
     val listState = androidx.compose.foundation.lazy.rememberLazyListState(
         initialFirstVisibleItemIndex = initialPage,
@@ -556,7 +560,12 @@ private fun PdfDocument(
             author = author,
             year = year,
             onBack = onBack,
+            onAuthorClick = onAuthorClick,
             modifier = Modifier.align(Alignment.TopCenter),
+        )
+        app.bookstr.ui.ReaderBottomNavigation(
+            onSelectTab = onSelectTab,
+            modifier = Modifier.align(Alignment.BottomCenter),
         )
         dictionary?.let { state ->
             Card(
@@ -597,6 +606,7 @@ private fun PdfReaderChrome(
     author: String?,
     year: String?,
     onBack: () -> Unit,
+    onAuthorClick: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var clock by remember { mutableStateOf(LocalTime.now().format(PDF_TIME_FORMAT)) }
@@ -606,8 +616,6 @@ private fun PdfReaderChrome(
             delay(30_000)
         }
     }
-    val detail = listOfNotNull(author?.takeIf(String::isNotBlank), year?.takeIf(String::isNotBlank))
-        .joinToString(" · ")
     Row(
         modifier = modifier
             .fillMaxWidth()
@@ -626,13 +634,7 @@ private fun PdfReaderChrome(
                 modifier = Modifier.size(18.dp),
             )
         }
-        Text(
-            if (detail.isBlank()) title else "$title — $detail",
-            fontSize = 11.sp,
-            color = androidx.compose.material3.MaterialTheme.colorScheme.onPrimary,
-            maxLines = 1,
-            modifier = Modifier.weight(1f),
-        )
+        app.bookstr.ui.ReaderHeaderText(title, author, year, onAuthorClick, Modifier.weight(1f))
         Text(
             "$clock  PDF",
             fontSize = 9.sp,

@@ -36,6 +36,18 @@ class AcquisitionActivityTest {
         compose.onNodeWithTag("search.downloads").performClick()
         compose.onNodeWithTag("downloads.sheet").assertExists()
     }
+    @Test fun readerAuthorOpensSearchWithAuthorQuery() {
+        compose.runOnUiThread {
+            compose.activity.startActivity(
+                Intent(compose.activity, MainActivity::class.java)
+                    .putExtra(MainActivity.EXTRA_SELECT_TAB, 3)
+                    .putExtra(MainActivity.EXTRA_SEARCH_QUERY, "Octavia Butler")
+                    .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP),
+            )
+        }
+        compose.onNodeWithTag("search.query").assertTextContains("Octavia Butler")
+        compose.onNodeWithTag("signer.setup").assertExists()
+    }
     @Test fun searchWithoutSignerOffersSetupInsteadOfFailure() {
         compose.onNodeWithContentDescription("Search").performClick()
         compose.onNodeWithTag("search.query").performTextInput("Alice")

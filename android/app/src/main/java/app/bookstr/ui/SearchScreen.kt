@@ -14,8 +14,12 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Search
@@ -35,8 +39,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.material3.TextButton
-import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontWeight
@@ -53,7 +55,7 @@ import kotlinx.coroutines.delay
 @Composable
 fun SearchScreen(
     query: String,
-    hasMore: Boolean = false,
+    nextOffset: Int? = null,
     onLoadMore: () -> Unit = {},
     onDownloads: () -> Unit = {},
     results: List<BookSearchResult>,
@@ -69,16 +71,38 @@ fun SearchScreen(
 ) {
     var language by rememberSaveable { mutableStateOf("") }
     var format by rememberSaveable { mutableStateOf("") }
-    val languages = BookListFilters.languages(results.map { it.language })
-    val formats = BookListFilters.formats(results.map { it.format?.extension })
+    val readable = results.filter(BookSearchResult::isReadable)
+    val languages = BookListFilters.languages(readable.map { it.language })
+    val formats = BookListFilters.formats(readable.map { it.format?.extension })
     val filters = BookListFilters(language, format).sanitize(languages, formats)
     LaunchedEffect(filters) { language = filters.language; format = filters.format }
-    val visible = results.filter { filters.matches(it.language, it.format?.extension) }
+    val visible = readable.filter { filters.matches(it.language, it.format?.extension) }
+    val listState = rememberLazyListState()
+    var requestedOffset by remember(query) { mutableStateOf<Int?>(null) }
+    val nearEnd by remember(listState) {
+        derivedStateOf {
+            val layout = listState.layoutInfo
+            layout.totalItemsCount > 0 &&
+                (layout.visibleItemsInfo.lastOrNull()?.index ?: -1) >= layout.totalItemsCount - 3
+        }
+    }
+    LaunchedEffect(nextOffset, searching, nearEnd) {
+        if (nextOffset == null) requestedOffset = null
+        else if (!searching && nearEnd && requestedOffset != nextOffset) {
+            requestedOffset = nextOffset
+            onLoadMore()
+        }
+    }
     val focusManager = LocalFocusManager.current
     val keyboardController = LocalSoftwareKeyboardController.current
-    val searchFocusRequester = androidx.compose.runtime.remember { FocusRequester() }
+    fun dismissKeyboard() {
+        focusManager.clearFocus()
+        keyboardController?.hide()
+    }
     LazyColumn(
-        modifier = Modifier.fillMaxSize(),
+        state = listState,
+        modifier = Modifier.fillMaxSize().testTag("search.results")
+            .pointerInput(Unit) { detectTapGestures(onTap = { dismissKeyboard() }) },
         contentPadding = PaddingValues(start = 6.dp, top = 2.dp, end = 6.dp, bottom = 8.dp),
         verticalArrangement = Arrangement.spacedBy(7.dp),
     ) {
@@ -91,11 +115,6 @@ fun SearchScreen(
             }
         }
         item {
-            LaunchedEffect(Unit) {
-                androidx.compose.runtime.withFrameNanos { }
-                searchFocusRequester.requestFocus()
-                keyboardController?.show()
-            }
             OutlinedTextField(
                 value = query,
                 onValueChange = onQueryChange,
@@ -103,18 +122,17 @@ fun SearchScreen(
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
                 keyboardActions = KeyboardActions(onSearch = {
-                    focusManager.clearFocus()
+                    dismissKeyboard()
                     onSearch()
                 }),
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .focusRequester(searchFocusRequester).testTag("search.query"),
+                    .fillMaxWidth().testTag("search.query"),
                 trailingIcon = {
                     IconButton(
                         modifier = Modifier.testTag("search.submit"),
                         enabled = query.trim().length >= 2 && !searching,
                         onClick = {
-                            focusManager.clearFocus()
+                            dismissKeyboard()
                             onSearch()
                         },
                     ) {
@@ -127,9 +145,13 @@ fun SearchScreen(
                 },
             )
         }
-        item { TextButton(onClick = onDownloads, modifier = Modifier.testTag("search.downloads")) { Text("Downloads") } }
-            item { BookFilterBar("search", languages, formats, filters.language, filters.format,
-                { language = it }, { format = it }) }
+        item {
+            Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.CenterEnd) {
+                TextButton(onClick = { dismissKeyboard(); onDownloads() }, modifier = Modifier.testTag("search.downloads")) { Text("Downloads") }
+            }
+        }
+        item { BookFilterBar("search", languages, formats, filters.language, filters.format,
+            { dismissKeyboard(); language = it }, { dismissKeyboard(); format = it }) }
         if (!message.isNullOrBlank()) {
             item {
                 Text(
@@ -155,7 +177,7 @@ fun SearchScreen(
                     .testTag("search.open.${result.id}")
                     .combinedClickable(
                         enabled = book != null && openingBookId == null,
-                        onClick = { onOpen(result) },
+                        onClick = { dismissKeyboard(); onOpen(result) },
                         onLongClick = {},
                     ),
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
@@ -203,20 +225,6 @@ fun SearchScreen(
                                 overflow = TextOverflow.Ellipsis,
                             )
                         }
-                        Text(
-                            text = buildList {
-                                add(result.source)
-                                result.language?.uppercase()?.let(::add)
-                                result.format?.extension?.uppercase()?.let(::add)
-                                if (result.rating > 0) add("★ ${"%.1f".format(result.rating)}")
-                                if (result.editionCount > 0) add("${result.editionCount} editions")
-                                if (!result.isReadable) add("metadata only")
-                            }.joinToString(" · "),
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.secondary,
-                            maxLines = 2,
-                            overflow = TextOverflow.Ellipsis,
-                        )
                         if (bookProgress != null) {
                             Text(
                                 text = buildList {
@@ -237,10 +245,24 @@ fun SearchScreen(
                             )
                         }
                     }
-
+                    Column(
+                        modifier = Modifier.widthIn(max = 140.dp).padding(horizontal = 10.dp),
+                        horizontalAlignment = Alignment.End,
+                    ) {
+                        result.language?.let { Text(languageDisplayName(it), style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.secondary, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+                        result.format?.let { Text(it.extension.uppercase(), style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.secondary) }
+                        Text(result.source, style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.secondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        if (result.rating > 0) Text("★ ${"%.1f".format(result.rating)}", style = MaterialTheme.typography.labelSmall)
+                        if (result.editionCount > 0) Text("${result.editionCount} editions", style = MaterialTheme.typography.labelSmall)
+                    }
                 }
             }
         }
-        if (hasMore) item { TextButton(onClick = onLoadMore, enabled = !searching, modifier = Modifier.testTag("search.load-more")) { Text("Load more") } }
+        if (searching && results.isNotEmpty()) item {
+            CircularProgressIndicator(modifier = Modifier.padding(12.dp).testTag("search.loading-more"))
+        }
     }
 }

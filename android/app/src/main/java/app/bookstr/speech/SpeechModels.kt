@@ -15,6 +15,7 @@ data class SpeechModelFile(val path: String, val bytes: Long)
 data class SpeechModel(
     val id: String, val language: String, val label: String, val repository: String,
     val revision: String, val kind: String, val model: String, val files: List<SpeechModelFile>,
+    val speaker: Int = 0, val engineLanguage: String? = null,
 ) {
     val bytes: Long get() = files.sumOf { it.bytes }
 }
@@ -95,7 +96,8 @@ class SpeechModels(
                 val files = item.getJSONArray("files")
                 SpeechModel(item.getString("id"), item.getString("language"), item.getString("label"), item.getString("repository"),
                     item.getString("revision"), item.getString("kind"), item.getString("model"),
-                    (0 until files.length()).map { files.getJSONObject(it).let { file -> SpeechModelFile(file.getString("path"), file.getLong("bytes")) } })
+                    (0 until files.length()).map { files.getJSONObject(it).let { file -> SpeechModelFile(file.getString("path"), file.getLong("bytes")) } },
+                    item.optInt("speaker", 0), item.optString("engineLanguage").takeIf(String::isNotBlank))
             }
         }
     }

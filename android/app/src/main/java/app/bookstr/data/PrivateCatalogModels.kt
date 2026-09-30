@@ -47,6 +47,7 @@ data class CatalogSearchPage(val books: List<BookSearchResult>, val nextOffset: 
                 val md5 = record.optString("md5").lowercase()
                 if (!Regex("[0-9a-f]{32}").matches(md5)) return@mapNotNull null
                 val format = BookFormat.entries.find { it.extension == record.optString("extension").lowercase() }
+                    ?: return@mapNotNull null
                 fun text(key: String) = record.optString(key).takeUnless { it.isBlank() || it == "null" }
                 BookSearchResult(id = md5, source = "libcat", title = text("title") ?: "Untitled",
                     author = text("authors") ?: text("author") ?: "Unknown author", year = text("year"),

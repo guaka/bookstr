@@ -8,9 +8,18 @@ import android.webkit.WebResourceResponse
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.lifecycleScope
 import androidx.webkit.WebViewAssetLoader
 import app.bookstr.data.BookFormat
+import app.bookstr.ui.ReaderBottomNavigation
 import kotlinx.coroutines.launch
 import java.io.File
 
@@ -22,6 +31,10 @@ class ComicReaderActivity : ComponentActivity() {
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        WindowInsetsControllerCompat(window, window.decorView).apply {
+            hide(WindowInsetsCompat.Type.systemBars())
+            systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+        }
         bookId = intent.getStringExtra(EXTRA_BOOK_ID).orEmpty()
         val app = application as BookstrApp
         format = BookFormat.from(intent.getStringExtra(EXTRA_FORMAT), intent.getStringExtra(EXTRA_URL).orEmpty())
@@ -55,7 +68,15 @@ class ComicReaderActivity : ComponentActivity() {
                 }
             }
         }
-        setContentView(web)
+        setContent {
+            Box(Modifier.fillMaxSize()) {
+                AndroidView(factory = { web }, modifier = Modifier.fillMaxSize())
+                ReaderBottomNavigation(
+                    onSelectTab = { tab -> openMainTab(tab) },
+                    modifier = Modifier.align(Alignment.BottomCenter),
+                )
+            }
+        }
         web.loadUrl("https://appassets.androidplatform.net/assets/comic-reader.html")
     }
 

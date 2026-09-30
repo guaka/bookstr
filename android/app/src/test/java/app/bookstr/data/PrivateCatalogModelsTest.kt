@@ -31,8 +31,12 @@ class PrivateCatalogModelsTest {
         assertEquals("", book.asCatalogBook()?.epubUrl)
         assertEquals(1, CatalogSearchPage.merge(page.books, page.books).size)
         assertNull(CatalogSearchPage.parse(response, 50).nextOffset)
-        val unsupported = CatalogSearchPage.parse(JSONObject("""{"books":[{"md5":"$hash","extension":"exe"}]}"""), 0).books.single()
-        assertFalse(unsupported.isReadable); assertNull(unsupported.asCatalogBook())
+        assertTrue(CatalogSearchPage.parse(JSONObject("""{"books":[{"md5":"$hash","extension":"exe"}]}"""), 0).books.isEmpty())
+        assertEquals(listOf("epub", "pdf", "fb2", "cbr", "cbz"),
+            libcatSearchRequest("  Book  ", 50).getJSONArray("formats").let { formats ->
+                (0 until formats.length()).map(formats::getString)
+            })
+        assertEquals("Book", libcatSearchRequest("  Book  ", 50).getString("query"))
         assertTrue(CatalogSearchPage.parse(JSONObject(), 0).books.isEmpty())
         assertThrows(Exception::class.java) { CatalogSearchPage.parse(JSONObject().put("books", "bad"), 0) }
     }

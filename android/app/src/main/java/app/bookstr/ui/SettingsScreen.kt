@@ -1,5 +1,6 @@
 package app.bookstr.ui
 
+import android.graphics.Typeface
 import android.content.Intent
 import android.net.Uri
 import androidx.compose.foundation.layout.Arrangement
@@ -47,6 +48,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import app.bookstr.BuildConfig
 import app.bookstr.R
@@ -134,7 +136,12 @@ fun SettingsScreen(
                         FilterChip(
                             selected = readerFont == option,
                             onClick = { onReaderFontChange(option) },
-                            label = { Text(option.label) },
+                            label = {
+                                Text(
+                                    option.label,
+                                    fontFamily = readerFontPreviewFamily(option),
+                                )
+                            },
                         )
                     }
                 }
@@ -476,6 +483,17 @@ fun SettingsScreen(
         )
     }
 }
+
+internal fun readerFontPreviewFamily(font: ReaderFont): FontFamily =
+    FontFamily(Typeface.create(font.previewTypefaceName, Typeface.NORMAL))
+
+private val ReaderFont.previewTypefaceName: String
+    get() = when (this) {
+        ReaderFont.Arial -> "Arial"
+        ReaderFont.Georgia -> "Georgia"
+        ReaderFont.Palatino -> "Palatino"
+        ReaderFont.System -> "sans-serif"
+    }
 
 private fun formatPackSize(bytes: Long): String = "%.1f MB".format(bytes / 1_048_576.0)
 

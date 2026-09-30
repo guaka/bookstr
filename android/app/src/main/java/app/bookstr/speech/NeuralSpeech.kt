@@ -23,7 +23,7 @@ class NeuralSpeech(private val models: SpeechModels) {
             val data = models.pronunciationDirectory(model).path
             val path = File(directory, model.model).path
             if (model.kind == "kokoro") {
-                config.kokoro = OfflineTtsKokoroModelConfig(model = path, voices = File(directory, "voices.bin").path, tokens = tokens, dataDir = data)
+                config.kokoro = OfflineTtsKokoroModelConfig(model = path, voices = File(directory, "voices.bin").path, tokens = tokens, dataDir = data, lang = model.engineLanguage.orEmpty())
             } else {
                 config.vits = OfflineTtsVitsModelConfig(model = path, tokens = tokens, dataDir = data)
             }
@@ -37,7 +37,7 @@ class NeuralSpeech(private val models: SpeechModels) {
             output.write(ByteArray(44))
             for (phrase in phrases(text)) {
                 if (cancelled()) return
-                val audio = synthesizer.generate(phrase)
+                val audio = synthesizer.generate(phrase, model.speaker)
                 check(audio.samples.isNotEmpty()) { "Voice could not generate audio" }
                 val pcm = java.nio.ByteBuffer.allocate(audio.samples.size * 2).order(java.nio.ByteOrder.LITTLE_ENDIAN)
                 for (sample in audio.samples) pcm.putShort((sample.coerceIn(-1f, 1f) * 32767).toInt().toShort())

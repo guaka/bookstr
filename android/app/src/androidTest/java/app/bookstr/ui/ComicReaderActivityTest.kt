@@ -3,6 +3,7 @@ package app.bookstr.ui
 import android.graphics.Bitmap
 import android.graphics.Color
 import android.view.ViewGroup
+import android.view.View
 import android.webkit.WebView
 import androidx.test.core.app.ActivityScenario
 import androidx.test.core.app.ApplicationProvider
@@ -22,11 +23,16 @@ import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 
 class ComicReaderActivityTest {
+    private fun findWebView(view: View): WebView? {
+        if (view is WebView) return view
+        if (view is ViewGroup) for (index in 0 until view.childCount) findWebView(view.getChildAt(index))?.let { return it }
+        return null
+    }
     private fun evaluate(scenario: ActivityScenario<ComicReaderActivity>, script: String): String {
         val value = AtomicReference<String>()
         val done = CountDownLatch(1)
         scenario.onActivity { activity ->
-            val web = activity.findViewById<ViewGroup>(android.R.id.content).getChildAt(0) as WebView
+            val web = findWebView(activity.findViewById(android.R.id.content)) ?: error("Comic WebView was not found")
             web.evaluateJavascript(script) { value.set(it); done.countDown() }
         }
         assertTrue("WebView evaluation completed", done.await(5, TimeUnit.SECONDS))

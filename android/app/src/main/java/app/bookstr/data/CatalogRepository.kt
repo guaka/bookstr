@@ -169,8 +169,7 @@ open class CatalogRepository(
         val signer = requireNotNull(NostrSignerFactory.create(context, settings)) {
             "Connect a Nostr signer to search LibCat"
         }
-        val response = privateCatalog.request(JSONObject().put("type", "libcat.search")
-            .put("query", query.trim()).put("search_type", "all").put("limit", 50).put("offset", offset), signer, service())
+        val response = privateCatalog.request(libcatSearchRequest(query, offset), signer, service())
         return CatalogSearchPage.parse(response, offset)
     }
 
@@ -835,3 +834,11 @@ open class CatalogRepository(
         }
     }
 }
+
+internal fun libcatSearchRequest(query: String, offset: Int): JSONObject = JSONObject()
+    .put("type", "libcat.search")
+    .put("query", query.trim())
+    .put("search_type", "all")
+    .put("limit", 50)
+    .put("offset", offset)
+    .put("formats", JSONArray(BookFormat.entries.map { it.extension }))

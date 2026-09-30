@@ -54,6 +54,7 @@ class NarrationService : MediaBrowserServiceCompat(), TextToSpeech.OnInitListene
     private var textToSpeechReady = false
     private var foregroundStarted = false
     private var isPlaying = false
+    private var sessionActive = false
     private var resumeAfterAudioFocus = false
     private var pendingPlay = false
     @Volatile private var generation = 0
@@ -234,6 +235,7 @@ class NarrationService : MediaBrowserServiceCompat(), TextToSpeech.OnInitListene
         }
         when (intent?.action) {
             ACTION_SPEAK -> {
+                sessionActive = true
                 readBookMetadata(intent)
                 speechText = intent.getStringExtra(EXTRA_TEXT).orEmpty()
                 speechLanguage = intent.getStringExtra(EXTRA_LANGUAGE).orEmpty().ifBlank { "en" }
@@ -247,8 +249,11 @@ class NarrationService : MediaBrowserServiceCompat(), TextToSpeech.OnInitListene
                 notifyChildrenChanged(ROOT_ID)
             }
             ACTION_TOGGLE -> {
+                if (intent.hasExtra(EXTRA_BOOK_ID) && intent.getStringExtra(EXTRA_BOOK_ID) != bookId) {
+                    speechChunkInputs = emptyList()
+                }
+                sessionActive = true
                 readBookMetadata(intent)
-                speechChunkInputs = emptyList()
                 ensureForeground()
                 if (isPlaying) pauseNarration() else playOrRequestText()
             }
@@ -676,6 +681,7 @@ class NarrationService : MediaBrowserServiceCompat(), TextToSpeech.OnInitListene
 
     private fun stopNarration(removeNotification: Boolean) {
         generation += 1
+        sessionActive = false
         pendingPlay = false
         isPlaying = false
         speechText = ""
@@ -900,7 +906,12 @@ class NarrationService : MediaBrowserServiceCompat(), TextToSpeech.OnInitListene
                 .putExtra(EXTRA_OFFSET, offset)
                 .putExtra(EXTRA_LENGTH, length)
                 .putExtra(EXTRA_MESSAGE, message)
-                .putExtra(EXTRA_CLEAR_PROGRESS, clearProgress),
+                .putExtra(EXTRA_CLEAR_PROGRESS, clearProgress)
+                .putExtra(EXTRA_SESSION_ACTIVE, sessionActive)
+                .putExtra(EXTRA_BOOK_ID, bookId)
+                .putExtra(EXTRA_BOOK_TITLE, bookTitle)
+                .putExtra(EXTRA_BOOK_AUTHOR, bookAuthor)
+                .putExtra(EXTRA_COVER_URL, bookCoverUrl),
         )
     }
 
@@ -929,6 +940,11 @@ class NarrationService : MediaBrowserServiceCompat(), TextToSpeech.OnInitListene
         const val EXTRA_LENGTH = "length"
         const val EXTRA_MESSAGE = "message"
         const val EXTRA_CLEAR_PROGRESS = "clear_progress"
+        const val EXTRA_SESSION_ACTIVE = "session_active"
+        const val EXTRA_BOOK_ID = "book_id"
+        const val EXTRA_BOOK_TITLE = "book_title"
+        const val EXTRA_BOOK_AUTHOR = "book_author"
+        const val EXTRA_COVER_URL = "cover_url"
 
         private const val ACTION_SPEAK = "app.bookstr.action.NARRATION_SPEAK"
         private const val ACTION_TOGGLE = "app.bookstr.action.NARRATION_TOGGLE"
@@ -937,10 +953,6 @@ class NarrationService : MediaBrowserServiceCompat(), TextToSpeech.OnInitListene
         private const val ACTION_PARAGRAPH = "app.bookstr.action.NARRATION_PARAGRAPH"
         private const val EXTRA_TEXT = "text"
         private const val EXTRA_LANGUAGE = "language"
-        private const val EXTRA_BOOK_ID = "book_id"
-        private const val EXTRA_BOOK_TITLE = "book_title"
-        private const val EXTRA_BOOK_AUTHOR = "book_author"
-        private const val EXTRA_COVER_URL = "cover_url"
         private const val EXTRA_PARAGRAPH = "paragraph"
         private const val EXTRA_CHUNKS = "chunks"
         private const val CHANNEL_ID = "bookstr-narration"
@@ -996,6 +1008,11 @@ class NarrationService : MediaBrowserServiceCompat(), TextToSpeech.OnInitListene
 
         fun stop(context: Context) {
             context.startService(Intent(context, NarrationService::class.java).setAction(ACTION_STOP))
+        }
+
+        /** Toggle the current session without changing its book metadata. */
+        fun togglePlayback(context: Context) {
+            context.startService(Intent(context, NarrationService::class.java).setAction(ACTION_TOGGLE))
         }
 
         fun sync(context: Context) {

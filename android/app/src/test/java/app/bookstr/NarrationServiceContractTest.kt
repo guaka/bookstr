@@ -64,4 +64,18 @@ class NarrationServiceContractTest {
         assertTrue(source.contains("Service.START_STICKY"))
         assertTrue(source.contains("abandonAudioFocusRequest"))
     }
+
+    @Test
+    fun appIslandCanObserveAndControlAnExistingSession() {
+        val service = File("src/main/java/app/bookstr/NarrationService.kt").readText()
+        val island = File("src/main/java/app/bookstr/ui/NarrationIsland.kt").readText()
+
+        assertTrue(service.contains("const val EXTRA_SESSION_ACTIVE = \"session_active\""))
+        assertTrue(service.contains(".putExtra(EXTRA_SESSION_ACTIVE, sessionActive)"))
+        assertTrue(service.contains("fun togglePlayback(context: Context)"))
+        assertTrue(island.contains("NarrationService.sync(context)"))
+        assertTrue(island.contains("NarrationService.togglePlayback(context)"))
+        assertTrue(island.contains("NarrationService.stop(context)"))
+        assertTrue(island.contains("testTag(\"narration.island\")"))
+    }
 }

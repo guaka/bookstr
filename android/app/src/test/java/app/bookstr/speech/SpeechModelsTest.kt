@@ -16,8 +16,13 @@ class SpeechModelsTest {
     private val fixture = SpeechModel("test", "nl", "Dutch", "test/repo", "123", "vits", "voice.onnx", listOf(SpeechModelFile("voice.onnx", 4), SpeechModelFile("data/tokens", 2)))
     @Test fun catalogMatchesIOSAndIncludesPinnedDutchVoice() {
         val models = SpeechModels.parse(File("src/main/assets/speech-models.json").readText())
-        assertEquals(9, models.size)
+        assertEquals(10, models.size)
         assertEquals(setOf("en", "pt-pt", "fr", "de", "es", "ca", "nl"), models.map { it.language }.toSet())
+        val brazilian = models.single { it.id == "kokoro_pt_br" }
+        assertEquals(42, brazilian.speaker)
+        assertEquals("pt-br", brazilian.engineLanguage)
+        assertEquals("csukuangfj/kokoro-multi-lang-v1_0", brazilian.repository)
+        assertTrue(brazilian.files.any { it.path == "espeak-ng-data/lang/roa/pt-BR" && it.bytes == 109L })
         val ios = File("../../ios/BookstrIOS/Sources/Data/SpeechModelStore.swift").readText()
         models.forEach { model ->
             assertTrue(model.revision.matches(Regex("[a-f0-9]{40}")))

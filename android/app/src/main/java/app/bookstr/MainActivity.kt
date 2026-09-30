@@ -31,6 +31,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -46,6 +48,7 @@ import app.bookstr.nostr.ExternalSigner
 import app.bookstr.nostr.Nip55
 import app.bookstr.nostr.NostrCrypto
 import app.bookstr.ui.BookstrNavigationBar
+import app.bookstr.ui.NarrationIsland
 import app.bookstr.ui.LibraryScreen
 import app.bookstr.ui.SearchScreen
 import app.bookstr.ui.SignerSetupDialog
@@ -60,6 +63,9 @@ class MainActivity : ComponentActivity() {
     private var showDownloads by mutableStateOf(false)
     private lateinit var amberSession: AmberIntentSession
     private var requestedWord by mutableStateOf<String?>(null)
+    private var requestedTab by mutableStateOf<Int?>(null)
+    private var requestedTabKey by mutableStateOf(0)
+    private var requestedSearchQuery by mutableStateOf<String?>(null)
     private var wordRequestKey by mutableStateOf(0)
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -71,6 +77,8 @@ class MainActivity : ComponentActivity() {
         pendingInvitation = intent.dataString?.takeIf { it.startsWith("bookstr:") }
         showDownloads = intent.getBooleanExtra("open_downloads", false)
         requestedWord = intent.getStringExtra(EXTRA_OPEN_WORD)
+        requestedTab = intent.getIntExtra(EXTRA_SELECT_TAB, -1).takeIf { it in 0..3 }
+        requestedSearchQuery = intent.getStringExtra(EXTRA_SEARCH_QUERY)
 
         if (intent.getBooleanExtra(EXTRA_PIN_SHORTCUT, false)) {
             window.decorView.post { requestHomeShortcut() }
@@ -84,7 +92,7 @@ class MainActivity : ComponentActivity() {
         val vocabularyRepository = app.vocabularyRepository
         val dictionaryRepository = app.dictionaryRepository
 
-        if (savedInstanceState == null && pendingInvitation == null && !showDownloads) {
+        if (savedInstanceState == null && pendingInvitation == null && !showDownloads && requestedTab == null) {
             settings.readerSession()?.let { session ->
                 val publication = catalog.publicationFile(session.bookId, session.format)
                 if (publication.isFile) {
@@ -141,7 +149,8 @@ class MainActivity : ComponentActivity() {
             var readerFont by remember { mutableStateOf(settings.readerFont) }
             var readerAlignment by remember { mutableStateOf(settings.readerAlignment) }
             BookstrThemeFromSettings(readerTheme = theme) {
-                var selectedTab by remember { mutableStateOf(if (requestedWord.isNullOrBlank()) 0 else 1) }
+                var selectedTab by remember { mutableStateOf(requestedTab ?: if (requestedWord.isNullOrBlank()) 0 else 1) }
+                LaunchedEffect(requestedTab, requestedTabKey) { requestedTab?.let { selectedTab = it } }
                 var books by remember { mutableStateOf<List<CatalogBook>>(emptyList()) }
                 var favoriteIds by remember { mutableStateOf(emptySet<String>()) }
                 var externalFavorites by remember {
@@ -404,6 +413,13 @@ class MainActivity : ComponentActivity() {
                         } finally {
                             searching = false
                         }
+                    }
+                }
+                LaunchedEffect(requestedSearchQuery, requestedTabKey) {
+                    requestedSearchQuery?.takeIf(String::isNotBlank)?.let { author ->
+                        searchQuery = author
+                        selectedTab = 3
+                        runSearch()
                     }
                 }
 
@@ -799,7 +815,7 @@ class MainActivity : ComponentActivity() {
 
                             3 -> SearchScreen(
                                 query = searchQuery,
-                                hasMore = nextOffset != null && searchedQuery == searchQuery.trim(),
+                                nextOffset = nextOffset.takeIf { searchedQuery == searchQuery.trim() },
                                 onLoadMore = { runSearch(true) },
                                 onDownloads = { showDownloads = true },
                                 results = searchResults,
@@ -881,6 +897,7 @@ class MainActivity : ComponentActivity() {
                                 },
                             )
                         }
+                        NarrationIsland(Modifier.align(Alignment.TopCenter).padding(12.dp))
                     }
                 }
             }
@@ -902,6 +919,9 @@ class MainActivity : ComponentActivity() {
         pendingInvitation = intent.dataString?.takeIf { it.startsWith("bookstr:") }
         showDownloads = intent.getBooleanExtra("open_downloads", false)
         requestedWord = intent.getStringExtra(EXTRA_OPEN_WORD)
+        requestedTab = intent.getIntExtra(EXTRA_SELECT_TAB, -1).takeIf { it in 0..3 }
+        requestedSearchQuery = intent.getStringExtra(EXTRA_SEARCH_QUERY)
+        requestedTabKey += 1
         wordRequestKey += 1
     }
 
@@ -936,6 +956,8 @@ class MainActivity : ComponentActivity() {
     companion object {
         const val EXTRA_PIN_SHORTCUT = "pin_shortcut"
         const val EXTRA_OPEN_WORD = "open_word"
+        const val EXTRA_SELECT_TAB = "select_tab"
+        const val EXTRA_SEARCH_QUERY = "search_query"
         private fun npubFromSettings(pubkeyHex: String?): String =
             pubkeyHex?.let { npubFromHex(it) }.orEmpty()
 

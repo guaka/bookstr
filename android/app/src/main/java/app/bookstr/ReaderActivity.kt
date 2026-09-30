@@ -79,6 +79,9 @@ import app.bookstr.data.DictionaryDefinition
 import app.bookstr.nostr.AmberIntentSession
 import app.bookstr.ui.theme.BookstrThemeFromSettings
 import app.bookstr.ui.RightsMarker
+import app.bookstr.ui.ReaderBottomNavigation
+import app.bookstr.ui.ReaderHeaderText
+import app.bookstr.ui.NarrationIsland
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.json.JSONObject
@@ -120,6 +123,7 @@ class ReaderActivity : ComponentActivity() {
     private var referenceDecisionMade = false
     private var showProgressPrompt by mutableStateOf(false)
     private var isSpeaking by mutableStateOf(false)
+    private var narrationActive by mutableStateOf(false)
     private var speechMessage by mutableStateOf<String?>(null)
     private var readerTheme: ReaderTheme = ReaderTheme.Paper
     private var readerFont: ReaderFont = ReaderFont.Arial
@@ -381,7 +385,12 @@ class ReaderActivity : ComponentActivity() {
                         isSpeaking = isSpeaking,
                         onBack = { closeReader() },
                         onSpeechClick = { toggleTextToSpeech() },
+                        onAuthorClick = { author -> searchReaderAuthor(author) },
                         modifier = Modifier.align(Alignment.TopCenter),
+                    )
+                    NarrationIsland(
+                        modifier = Modifier.align(Alignment.TopCenter)
+                            .padding(top = 32.dp, start = 12.dp, end = 12.dp).zIndex(4f),
                     )
                     speechMessage?.let { message ->
                         Text(
@@ -407,6 +416,10 @@ class ReaderActivity : ComponentActivity() {
                             .fillMaxWidth()
                             .height(5.dp)
                             .zIndex(2f),
+                    )
+                    ReaderBottomNavigation(
+                        onSelectTab = { tab -> openMainTab(tab) },
+                        modifier = Modifier.align(Alignment.BottomCenter).zIndex(3f),
                     )
                     if (showSections) {
                         AlertDialog(
@@ -630,13 +643,17 @@ class ReaderActivity : ComponentActivity() {
     }
 
     private fun closeReader() {
-        NarrationService.stop(this)
-        closingReader = true
-        finish()
+        if (narrationActive) openMainTab(0)
+        else {
+            closingReader = true
+            finish()
+        }
     }
 
     private fun handleNarrationEvent(intent: Intent) {
+        if (intent.getStringExtra(NarrationService.EXTRA_BOOK_ID) != bookId) return
         isSpeaking = intent.getBooleanExtra(NarrationService.EXTRA_IS_PLAYING, false)
+        narrationActive = intent.getBooleanExtra(NarrationService.EXTRA_SESSION_ACTIVE, false)
         speechMessage = intent.getStringExtra(NarrationService.EXTRA_MESSAGE)
 
         if (intent.getBooleanExtra(NarrationService.EXTRA_CLEAR_PROGRESS, false)) {
@@ -901,6 +918,7 @@ private fun ReaderChrome(
     isSpeaking: Boolean,
     onBack: () -> Unit,
     onSpeechClick: () -> Unit,
+    onAuthorClick: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var clock by remember { mutableStateOf(LocalTime.now().format(TIME_FORMAT)) }
@@ -910,8 +928,6 @@ private fun ReaderChrome(
             delay(30_000)
         }
     }
-    val detail = listOfNotNull(author?.takeIf(String::isNotBlank), year?.takeIf(String::isNotBlank))
-        .joinToString(" · ")
     Row(
         modifier = modifier
             .fillMaxWidth()
@@ -932,13 +948,7 @@ private fun ReaderChrome(
                 modifier = Modifier.size(18.dp),
             )
         }
-        Text(
-            if (detail.isBlank()) title else "$title — $detail",
-            fontSize = 11.sp,
-            color = androidx.compose.material3.MaterialTheme.colorScheme.onPrimary,
-            maxLines = 1,
-            modifier = Modifier.weight(1f),
-        )
+        ReaderHeaderText(title, author, year, onAuthorClick, Modifier.weight(1f))
         RightsMarker(
             rightsStatus = rights.status,
             license = rights.license,
