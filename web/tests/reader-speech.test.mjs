@@ -763,7 +763,13 @@ function speechDocument(buildChildren) {
       .split(',')
       .map((part) => part.trim().toLowerCase())
       .filter(Boolean)
-      .some((part) => element.localName === part);
+      .some((part) => {
+        if (part === '*') return true;
+        const tag = part.replace(/\[.*$/, '');
+        if (element.localName !== tag) return false;
+        const attribute = part.match(/\[([^=\]]+)/);
+        return !attribute || element.getAttribute(attribute[1]) !== null;
+      });
   }
 
   function collect(root, selector, includeRoot) {
@@ -777,7 +783,7 @@ function speechDocument(buildChildren) {
     return found;
   }
 
-  function createElement(tag, kids = []) {
+  function createElement(tag, kids = [], attributes = {}) {
     const element = {
       tagName: String(tag).toUpperCase(),
       localName: String(tag).toLowerCase(),
@@ -786,7 +792,10 @@ function speechDocument(buildChildren) {
       parentElement: null,
       ownerDocument: null,
       className: '',
-      getAttribute() { return null; },
+      getAttribute(name) { return attributes[name] ?? null; },
+      get textContent() {
+        return this.childNodes.map((child) => child.nodeType === 3 ? child.nodeValue : child.textContent).join('');
+      },
       closest(selector) {
         let current = this;
         while (current) {
@@ -941,4 +950,115 @@ test('speakableBlocks falls back to body when no block tags carry text', () => {
 test('speakableBlocks returns an empty list for missing documents', () => {
   assert.deepEqual(BookstrSpeech.speakableBlocks(null), []);
   assert.deepEqual(BookstrSpeech.speakableBlocks({}), []);
+});
+
+test('speech skips semantic chapter navigation while keeping nearby prose', () => {
+  const document = speechDocument((el) => [
+    el('nav', [el('li', ['Chapter one']), el('li', ['Chapter two'])], { 'epub:type': 'toc' }),
+    el('p', ['The story begins here.']),
+  ]);
+  assert.deepEqual(BookstrSpeech.speakableBlocks(document).map((node) => node.textContent),
+    ['The story begins here.']);
+  assert.equal(BookstrSpeech.isOpeningNavigationDocument(document, true), false);
+  const tocOnly = speechDocument((el) => [el('nav', [el('li', ['Chapter one'])])]);
+  assert.deepEqual(BookstrSpeech.speakableBlocks(tocOnly), []);
+});
+
+test('speech recognizes unmarked opening contents lists without skipping later chapter links', () => {
+  const document = speechDocument((el) => [
+    el('h1', ['Contents']),
+    el('ol', [
+      el('li', [el('a', ['First chapter'], { href: '#one' })]),
+      el('li', [el('a', ['Second chapter'], { href: '#two' })]),
+      el('li', [el('a', ['Third chapter'], { href: '#three' })]),
+    ]),
+  ]);
+  assert.equal(BookstrSpeech.isOpeningNavigationDocument(document, true), true);
+  assert.equal(BookstrSpeech.isOpeningNavigationDocument(document, false), false);
+  const prose = speechDocument((el) => [el('h1', ['Chapter one']), el('p', ['The story starts.'])]);
+  assert.equal(BookstrSpeech.isOpeningNavigationDocument(prose, true), false);
+});
+
+test('mobile speech advances past a contents page and rebuilds highlights after layout', async () => {
+  const html = await readFile(new URL('../../shared/reader/reader.html', import.meta.url), 'utf8');
+  const inline = html.match(/<script>([\s\S]*?)<\/script>/)?.[1];
+  assert.ok(inline);
+  const messages = [];
+  const events = {};
+  const noopElement = { addEventListener() {}, contains() { return false; } };
+  const context = {
+    document: {
+      getElementById() { return noopElement; },
+      addEventListener() {},
+      body: {},
+    },
+    localStorage: { getItem() { return null; }, setItem() {} },
+    AndroidBridge: { onSpeechText(json) { messages.push(JSON.parse(json)); } },
+    BookstrSpeech: {
+      ...BookstrSpeech,
+      speakableBlocks(doc) { return doc.blocks; },
+      visibleText(block) { return block.textContent; },
+    },
+    console,
+    setTimeout,
+    requestAnimationFrame(callback) { callback(); },
+    addEventListener(name, callback) { events[name] = callback; },
+  };
+  context.window = context;
+  vm.createContext(context);
+  vm.runInContext(inline, context);
+  const makeDocument = (text, role = '') => {
+    const block = { textContent: text, getBoundingClientRect() { return { bottom: 1 }; } };
+    const body = { textContent: text, getAttribute(name) { return name === 'role' ? role : null; } };
+    return {
+      blocks: [block], body, documentElement: { lang: 'en' }, defaultView: {},
+      querySelectorAll() { return []; },
+    };
+  };
+  let currentIndex = 0;
+  let chapter = makeDocument('The story begins here.');
+  const contents = makeDocument('Chapter one Chapter two Chapter three', 'doc-toc');
+  context.mockBook = { spine: { spineItems: [{ href: 'contents' }, { href: 'chapter' }] } };
+  context.mockRendition = {
+    getContents() { return [{ document: currentIndex === 0 ? contents : chapter }]; },
+    currentLocation() { return { start: { index: currentIndex } }; },
+    display() { currentIndex = 1; return Promise.resolve(); },
+  };
+  vm.runInContext('book = mockBook; rendition = mockRendition', context);
+  context.requestSpeechText(true, null, '');
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(messages.length, 1);
+  assert.equal(messages[0].text, 'The story begins here.');
+  const replacement = makeDocument('The story begins here.');
+  chapter = replacement;
+  vm.runInContext('lastSpeechCfi = "current-position"', context);
+  events.resize();
+  assert.equal(vm.runInContext('speechBlocks[0].element', context), replacement.blocks[0]);
+  assert.equal(vm.runInContext('speechBlocks[0].start', context), 0);
+  assert.equal(vm.runInContext('speechPlanStartCfi', context), '');
+  assert.equal(vm.runInContext('lastSpeechCfi', context), 'current-position');
+  assert.equal(messages.length, 1);
+
+  const selected = makeDocument('Before selected after.');
+  const textNode = { nodeValue: selected.blocks[0].textContent, parentElement: selected.blocks[0] };
+  selected.blocks[0].ownerDocument = selected;
+  selected.blocks[0].contains = (node) => node === textNode;
+  selected.createRange = () => ({
+    startContainer: selected.blocks[0],
+    selectNodeContents() {},
+    collapse(atEnd) { this.atEnd = atEnd; },
+  });
+  selected.createTreeWalker = () => {
+    let visited = false;
+    return { nextNode() { if (visited) return null; visited = true; return textNode; } };
+  };
+  context.NodeFilter = { SHOW_TEXT: 4 };
+  chapter = selected;
+  context.mockRendition.getContents = () => [{
+    document: selected,
+    cfiFromRange(range) { return range.atEnd ? 'z' : 'a'; },
+    range() { return { startContainer: textNode, startOffset: 7 }; },
+  }];
+  const fromSelection = context.requestSpeechText(false, null, 'm');
+  assert.equal(fromSelection.text, 'selected after.');
 });

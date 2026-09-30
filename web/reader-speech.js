@@ -317,6 +317,42 @@
     return parts.join("");
   }
 
+  function hasNavigationMeaning(element) {
+    if (!element) return false;
+    const name = String(element.localName || element.tagName || "").toLowerCase();
+    const attribute = typeof element.getAttribute === "function"
+      ? function(key) { return String(element.getAttribute(key) || "").toLowerCase(); }
+      : function() { return ""; };
+    return name === "nav" || /\b(?:toc|landmarks|lot|loi)\b/.test(attribute("epub:type")) ||
+      /\b(?:doc-toc|doc-index)\b/.test(attribute("role"));
+  }
+
+  function isNavigationSpeechBlock(element) {
+    for (let current = element; current; current = current.parentElement) {
+      if (hasNavigationMeaning(current)) return true;
+    }
+    return false;
+  }
+
+  function isOpeningNavigationDocument(document, earlySection) {
+    if (!document || !document.body) return false;
+    if (isNavigationSpeechBlock(document.body)) return true;
+    if (!earlySection || typeof document.querySelectorAll !== "function") return false;
+    const heading = Array.from(document.querySelectorAll("h1, h2, h3"))
+      .find(function(node) {
+        return /^(?:table of contents|contents|chapters|list of (?:chapters|figures|illustrations|tables))\b/i
+          .test(normalizeText(node.textContent));
+      });
+    if (!heading) return false;
+    const links = Array.from(document.querySelectorAll("a[href]"));
+    if (links.length < 3) return false;
+    const linkLength = links.reduce(function(total, link) {
+      return total + normalizeText(link.textContent).length;
+    }, 0);
+    const bodyLength = normalizeText(document.body.textContent).length;
+    return bodyLength > 0 && linkLength / bodyLength >= 0.5;
+  }
+
   const SPEAKABLE_PRIMARY_SELECTOR =
     "h1, h2, h3, h4, h5, h6, p, blockquote, pre, figcaption, dt, dd, li";
   const SPEAKABLE_CONTAINER_SELECTOR = "div, section, article";
@@ -330,6 +366,7 @@
     ));
     const blocks = [];
     candidates.forEach(function(element) {
+      if (isNavigationSpeechBlock(element)) return;
       if (primarySet.has(element)) {
         // Nested primaries (e.g. li inside a heading) are spoken via the ancestor.
         const parent = element.parentElement;
@@ -355,7 +392,10 @@
       if (!normalizeText(visibleText(element))) return;
       blocks.push(element);
     });
-    if (!blocks.length && document.body && normalizeText(visibleText(document.body))) {
+    const hasNavigation = Array.from(document.querySelectorAll("*"))
+      .some(hasNavigationMeaning);
+    if (!blocks.length && document.body && !hasNavigation && !isNavigationSpeechBlock(document.body) &&
+        normalizeText(visibleText(document.body))) {
       return [document.body];
     }
     return blocks;
@@ -831,6 +871,8 @@
     mappedIndexAtPoint,
     isSilentSpeechParent,
     visibleText,
+    isNavigationSpeechBlock,
+    isOpeningNavigationDocument,
     speakableBlocks,
     speakablePrimarySelector: SPEAKABLE_PRIMARY_SELECTOR,
     speakableContainerSelector: SPEAKABLE_CONTAINER_SELECTOR,
