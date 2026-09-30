@@ -129,7 +129,8 @@ test('opening a book shows its title instead of technical reader stages', () => 
   assert.doesNotMatch(host, /Opening \\\(activeFormat\.rawValue\.uppercased\(\)\)/);
   assert.doesNotMatch(host, /loadingStage \+ "…"/);
   const shared = read('shared/reader/reader.html');
-  assert.match(shared, /onReaderStage\("Opening book"\)/);
+  assert.match(shared, /reportReaderStartupStage\("fetching"\)/);
+  assert.match(shared, /reportReaderStartupStage\("rendering"\)/);
   assert.doesNotMatch(shared, /Opening archive/);
   assert.doesNotMatch(shared, /Laying out pages/);
   assert.doesNotMatch(shared, /Decoding EPUB/);

@@ -142,6 +142,12 @@
     let activeSpeechHighlightWindow = null;
     let lastSpeechCfi = "";
     let speechActive = false;
+    let readerStartupStage = "starting";
+
+    function reportReaderStartupStage(stage) {
+      readerStartupStage = stage;
+      if (window.AndroidBridge && AndroidBridge.onReaderStage) AndroidBridge.onReaderStage(stage);
+    }
 
     function base64ToArrayBuffer(base64) {
       const binary = atob(base64);
@@ -277,21 +283,17 @@
     }
 
     function openBook(source, cfi, theme, highlightCfi, bookId, highlightKind) {
-      if (window.AndroidBridge && AndroidBridge.onReaderStage) AndroidBridge.onReaderStage("Opening book");
+      reportReaderStartupStage("parsing");
       currentBookId = String(bookId || "");
       lastSpeechCfi = String(cfi || "").trim();
       speechActive = false;
       applyTheme(theme || "paper");
       try {
         book = ePub(source);
-        if (window.AndroidBridge && AndroidBridge.onReaderStage) AndroidBridge.onReaderStage("Opening book");
       } catch (error) {
         return Promise.reject(error);
       }
       return waitForReaderViewport().then(function() { return book.ready; }).then(function() {
-        if (window.AndroidBridge && AndroidBridge.onReaderStage) {
-          AndroidBridge.onReaderStage("Opening book");
-        }
         includeOpeningSpineItems(book.spine.spineItems);
         reportBookMetadata();
         reportBookSections();
@@ -359,6 +361,7 @@
         rendition.on("relocated", function(location) {
           reportLocation(location);
         });
+        reportReaderStartupStage("rendering");
         return rendition.display(cfi || undefined);
       }).then(function() {
         const highlights = restoredHighlights(highlightCfi, highlightKind || "word");
@@ -366,6 +369,7 @@
         activeReaderHighlights.words.forEach(function(value) { applyHighlight(value, "word"); });
         activeReaderHighlights.marks.forEach(function(value) { applyHighlight(value, "mark"); });
         if (highlightCfi) positionReferenceBelowTop();
+        reportReaderStartupStage("ready");
         if (window.AndroidBridge) AndroidBridge.onReaderReady();
         const restore = String(cfi || "").trim();
         function reportRestoredLocation() {
@@ -500,14 +504,17 @@
     }
 
     window.loadBook = function(base64, cfi, theme, highlightCfi, bookId, highlightKind) {
-      if (window.AndroidBridge && AndroidBridge.onReaderStage) AndroidBridge.onReaderStage("Opening book");
+      reportReaderStartupStage("decoding");
       const loading = openBook(
         base64ToArrayBuffer(base64), cfi, theme, highlightCfi || null, bookId || "", highlightKind || null
       );
-      return reportPromise(withTimeout(loading, 30000, "EPUB reader timed out"));
+      return reportPromise(withTimeout(loading, 30000, function() {
+        return "EPUB reader timed out while " + readerStartupStage;
+      }));
     };
 
     window.loadBookUrl = function(url, cfi, theme, highlightCfi, bookId, highlightKind) {
+      reportReaderStartupStage("fetching");
       const loading = fetch(url, { cache: "no-store" }).then(function(response) {
         // WKURLSchemeHandler-backed resources can have an opaque status of 0 even
         // when WebKit successfully delivered the complete local response.
@@ -519,13 +526,15 @@
         if (!buffer.byteLength) throw new Error("Downloaded EPUB is empty");
         return openBook(buffer, cfi, theme, highlightCfi, bookId, highlightKind || null);
       });
-      return reportPromise(withTimeout(loading, 30000, "EPUB reader timed out"));
+      return reportPromise(withTimeout(loading, 30000, function() {
+        return "EPUB reader timed out while " + readerStartupStage;
+      }));
     };
 
     function withTimeout(promise, milliseconds, message) {
       let timer;
       const timeout = new Promise(function(_, reject) {
-        timer = setTimeout(function() { reject(new Error(message)); }, milliseconds);
+        timer = setTimeout(function() { reject(new Error(typeof message === "function" ? message() : message)); }, milliseconds);
       });
       return Promise.race([promise, timeout]).finally(function() { clearTimeout(timer); });
     }
