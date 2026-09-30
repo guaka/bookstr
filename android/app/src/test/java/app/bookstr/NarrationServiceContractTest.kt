@@ -2,10 +2,26 @@ package app.bookstr
 
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
+import org.junit.Assert.assertEquals
 import org.junit.Test
 import java.io.File
 
 class NarrationServiceContractTest {
+    @Test
+    fun staleOrDuplicateDelayedChunksCannotStartAndKokoroUsesShorterPauses() {
+        assertTrue(NarrationPlaybackTiming.shouldComplete(4, 4, 1, 1))
+        assertFalse(NarrationPlaybackTiming.shouldComplete(3, 4, 1, 1))
+        assertFalse(NarrationPlaybackTiming.shouldComplete(4, 4, 0, 1))
+        assertTrue(NarrationPlaybackTiming.shouldStart(4, 4, 2, 2, false))
+        assertFalse(NarrationPlaybackTiming.shouldStart(3, 4, 2, 2, false))
+        assertFalse(NarrationPlaybackTiming.shouldStart(4, 4, 1, 2, false))
+        assertFalse(NarrationPlaybackTiming.shouldStart(4, 4, 2, 2, true))
+        assertEquals(480L, NarrationPlaybackTiming.pauseMillis(480, neural = false))
+        assertEquals(160L, NarrationPlaybackTiming.pauseMillis(480, neural = true))
+        assertEquals(220L, NarrationPlaybackTiming.pauseMillis(750, neural = true))
+        assertEquals(0L, NarrationPlaybackTiming.pauseMillis(40, neural = true))
+    }
+
     @Test
     fun manifestPublishesForegroundMediaAndAndroidAutoService() {
         val manifest = File("src/main/AndroidManifest.xml").readText()
