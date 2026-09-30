@@ -15,8 +15,81 @@ import org.junit.Test
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 
 class NeuralNarrationServiceTest {
+    @Test fun narrationRateActionPersistsAndPublishesTheSelectedLanguageRate() {
+        val app = ApplicationProvider.getApplicationContext<BookstrApp>()
+        val observed = CountDownLatch(1)
+        val reportedRate = AtomicBoolean(false)
+        val receiver = object : BroadcastReceiver() {
+            override fun onReceive(context: Context, intent: Intent) {
+                if (intent.getStringExtra(NarrationService.EXTRA_LANGUAGE) == "en" &&
+                    intent.getFloatExtra(NarrationService.EXTRA_RATE, 0f) == 0.56f
+                ) {
+                    reportedRate.set(true)
+                    observed.countDown()
+                }
+            }
+        }
+        app.registerReceiver(receiver, IntentFilter(NarrationService.ACTION_EVENT), Context.RECEIVER_NOT_EXPORTED)
+        try {
+            ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+                scenario.onActivity { NarrationService.setSpeechRate(it, "en", 0.56f) }
+                assertTrue("Rate action did not publish narration state", observed.await(10, TimeUnit.SECONDS))
+                assertTrue(reportedRate.get())
+                assertEquals(0.56f, SpeechSettings(app.getSharedPreferences("bookstr_settings", Context.MODE_PRIVATE)).rate("en"), 0f)
+            }
+        } finally {
+            app.unregisterReceiver(receiver)
+            app.getSharedPreferences("bookstr_settings", Context.MODE_PRIVATE).edit().remove("speech_rate_en").apply()
+        }
+    }
+
+    @Test fun stopIfDifferentBookKeepsMatchingSessionAndStopsForAnotherBook() {
+        val app = ApplicationProvider.getApplicationContext<BookstrApp>()
+        app.settingsRepository.clearReaderSession()
+        val kept = CountDownLatch(1)
+        val stopped = CountDownLatch(1)
+        val differentBookStopped = CountDownLatch(1)
+        val stopEvents = AtomicInteger(0)
+        val expectDifferentBookStop = AtomicBoolean(false)
+        val receiver = object : BroadcastReceiver() {
+            override fun onReceive(context: Context, intent: Intent) {
+                if (intent.getBooleanExtra(NarrationService.EXTRA_SESSION_ACTIVE, false) &&
+                    intent.getStringExtra(NarrationService.EXTRA_BOOK_ID) == "stop-if-different-test"
+                ) kept.countDown()
+                if (!intent.getBooleanExtra(NarrationService.EXTRA_SESSION_ACTIVE, true)) {
+                    stopEvents.incrementAndGet()
+                    stopped.countDown()
+                    if (expectDifferentBookStop.get()) differentBookStopped.countDown()
+                }
+            }
+        }
+        app.registerReceiver(receiver, IntentFilter(NarrationService.ACTION_EVENT), Context.RECEIVER_NOT_EXPORTED)
+        try {
+            ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+                scenario.onActivity { NarrationService.stop(it) }
+                assertTrue("Prior narration session did not stop", stopped.await(10, TimeUnit.SECONDS))
+                scenario.onActivity {
+                    NarrationService.toggle(it, "stop-if-different-test", "Stop test", null, null)
+                }
+                assertTrue("Narration session did not start", kept.await(10, TimeUnit.SECONDS))
+                val stopsBeforeMatchingBook = stopEvents.get()
+                scenario.onActivity { NarrationService.stopIfDifferentBook(it, "stop-if-different-test") }
+                // The matching request must leave the service session running.
+                Thread.sleep(300)
+                assertEquals(stopsBeforeMatchingBook, stopEvents.get())
+                expectDifferentBookStop.set(true)
+                scenario.onActivity { NarrationService.stopIfDifferentBook(it, "another-book") }
+                assertTrue("Different-book request did not stop narration", differentBookStopped.await(10, TimeUnit.SECONDS))
+            }
+        } finally {
+            app.unregisterReceiver(receiver)
+            app.stopService(Intent(app, NarrationService::class.java))
+        }
+    }
+
     @Test fun startingNarrationRequestsReaderTextInAutoplayState() {
         val app = ApplicationProvider.getApplicationContext<BookstrApp>()
         app.settingsRepository.clearReaderSession()

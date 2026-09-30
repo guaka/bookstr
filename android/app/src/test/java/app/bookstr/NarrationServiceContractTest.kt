@@ -89,6 +89,8 @@ class NarrationServiceContractTest {
             .all { it.pauseMillis == 0L })
         assertTrue(phrases.zipWithNext().all { (left, right) -> left.offset + left.text.length < right.offset })
         assertTrue(phrases.all { it.speak.length <= 140 })
+        assertTrue(phrases.first().speak.length <= 70)
+        assertTrue(phrases[continuationIndex].speak.length <= 70)
         assertEquals("synth-9-0", phrases.first().id)
         assertTrue(phrases.dropLast(1).none { it.isFinal })
         assertTrue(phrases.last().isFinal)

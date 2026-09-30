@@ -89,8 +89,11 @@ class NeuralSpeech(private val models: SpeechModels) {
             val result = mutableListOf<String>()
             var remaining = text.trim()
             while (remaining.isNotEmpty()) {
-                val window = remaining.take(140)
-                val end = if (remaining.length > 140) window.indexOfLast { it.isWhitespace() || it in ".!?;:," }.takeIf { it >= 0 }?.plus(1) ?: 140 else remaining.length
+                // The next sentence is rendered on the same executor as the current one.
+                // A short first phrase lets playback resume before its longer tail is ready.
+                val limit = if (result.isEmpty()) 70 else 140
+                val window = remaining.take(limit)
+                val end = if (remaining.length > limit) window.indexOfLast { it.isWhitespace() || it in ".!?;:," }.takeIf { it >= 0 }?.plus(1) ?: limit else remaining.length
                 val phrase = remaining.take(end).trim()
                 if (phrase.any { it.isLetterOrDigit() }) result += phrase
                 remaining = remaining.drop(end).trimStart()

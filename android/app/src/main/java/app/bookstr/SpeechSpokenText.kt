@@ -2,6 +2,7 @@ package app.bookstr
 
 import com.ibm.icu.text.BreakIterator
 import com.ibm.icu.text.RuleBasedNumberFormat
+import app.bookstr.speech.SpeechLanguages
 import java.util.Locale
 
 internal object SpeechSpokenText {
@@ -17,7 +18,7 @@ internal object SpeechSpokenText {
     fun normalize(text: String): String = normalize(text, null)
 
     fun normalize(text: String, languageTag: String?): String {
-        val locale = languageTag?.let(Locale::forLanguageTag)
+        val locale = languageTag?.let { Locale.forLanguageTag(SpeechLanguages.tag(it)) }
         val withoutCommas = if (locale == null || locale.language == "en") {
             text.replace(grouped) { match -> match.value.replace(",", "") }
         } else text

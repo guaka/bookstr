@@ -37,6 +37,10 @@ class ReaderTextToSpeechTest {
         assertEquals("pt-PT", ReaderActivity.preferredSpeechLocale("pt").toLanguageTag())
         assertEquals("pt-BR", ReaderActivity.preferredSpeechLocale("pt-BR").toLanguageTag())
         assertEquals("pt-PT", ReaderActivity.preferredSpeechLocale("pt-PT").toLanguageTag())
+        assertEquals(
+            SpeechSpokenText.normalize("Em 2024.", "pt-PT"),
+            SpeechSpokenText.normalize("Em 2024.", "pt"),
+        )
         assertEquals("nl", ReaderActivity.preferredSpeechLocale("Dutch").toLanguageTag())
         assertEquals("nl", ReaderActivity.preferredSpeechLocale("nld").toLanguageTag())
         assertEquals("nl-NL", ReaderActivity.preferredSpeechLocale("nl_NL").toLanguageTag())

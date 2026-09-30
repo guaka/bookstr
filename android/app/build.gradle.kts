@@ -264,8 +264,13 @@ dependencies {
 // Copy the emulator's run-as-accessible coverage file into app/build/coverage/full.ec.
 tasks.register<JacocoReport>("jacocoCombinedDebugReport") {
     group = "verification"
+    dependsOn("testDebugUnitTest", "compileDebugKotlin", "compileDebugJavaWithJavac")
     reports { xml.required.set(true); html.required.set(true) }
     classDirectories.setFrom(fileTree("$buildDir/tmp/kotlin-classes/debug"), fileTree("$buildDir/intermediates/javac/debug/classes"))
     sourceDirectories.setFrom(files("src/main/java"))
-    executionData.setFrom(fileTree(buildDir) { include("**/*.exec", "**/*.ec") })
+    executionData.setFrom(
+        layout.buildDirectory.file("outputs/unit_test_code_coverage/debugUnitTest/testDebugUnitTest.exec"),
+        layout.buildDirectory.file("coverage/full.ec"),
+        layout.buildDirectory.file("coverage/narration-new.ec"),
+    )
 }

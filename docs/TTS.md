@@ -11,6 +11,11 @@ Only speech input is normalized or spelled out. Displayed book text and chunk
 offsets continue to use the original text. Existing footnote removal and
 pronunciation overrides remain in their current pipeline.
 
+Android's offline neural player renders one phrase ahead. It keeps the first
+phrase of each sentence to at most 70 characters so a long new sentence can
+start sooner after a short one; later phrases can use 140 characters. This
+changes only synthesis units, not displayed text or saved reading positions.
+
 For English speech input, Dr., Mr., Mrs., e.g., and U.S. expand to their
 spoken forms (doctor, mister, missus, for example, and United States). This
 avoids spelling punctuation or introducing sentence breaks. ICU sentence

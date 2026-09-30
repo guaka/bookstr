@@ -11,6 +11,11 @@ sdkmanager 'platforms;android-35' 'build-tools;35.0.0' 'ndk;27.2.12479018' 'cmak
 ./gradlew --max-workers=2 connectedDebugAndroidTest createDebugAndroidTestCoverageReport
 ```
 
+For a combined JVM and emulator report, pull emulator coverage into
+`app/build/coverage/full.ec`, then run `./gradlew jacocoCombinedDebugReport`.
+The report is at
+`app/build/reports/jacoco/jacocoCombinedDebugReport/jacocoCombinedDebugReport.xml`.
+
 Run connected tests only on an emulator. Gradle's
 connected-test cleanup can uninstall the app and erase its local data, including
 downloaded books and reading progress. For a personal tablet, build the APK and
