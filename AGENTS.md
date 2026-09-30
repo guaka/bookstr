@@ -10,6 +10,15 @@
   validation, and report what was actually verified. These infrastructure
   failures are not evidence of test failures or passing checks.
 
+## Device data safety
+
+- Run Android connected tests only on emulators. Gradle's
+  connected-test cleanup can uninstall Bookstr and erase app-local downloads,
+  settings, and reading progress.
+- On a personal device, inspect the installed package and APK certificates,
+  then update with `adb install -r`. Never use `adb uninstall`, `pm clear`, or a
+  Gradle connected-test task on that device to make an install or test pass.
+
 ## Web UI restraint
 
 - Do not add explanatory labels, helper sentences, badges, columns, or status copy unless the user explicitly requests them or they are required for accessibility.
