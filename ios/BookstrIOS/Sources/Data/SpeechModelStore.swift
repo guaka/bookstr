@@ -36,8 +36,8 @@ enum SpeechEngineID: String, CaseIterable, Identifiable {
     var preferredLanguageTag: String {
         switch self {
         case .system, .kokoroEnglish: "en"
-        case .kokoroBrazilianPortuguese: "pt-br"
-        case .portuguesePortugal, .portuguesePortugalMiro, .portuguesePortugalDii: "pt-pt"
+        case .kokoroBrazilianPortuguese, .portuguesePortugal,
+             .portuguesePortugalMiro, .portuguesePortugalDii: "pt"
         case .frenchMiro: "fr"
         case .germanMiro: "de"
         case .spanishMiro: "es"
@@ -50,7 +50,7 @@ enum SpeechEngineID: String, CaseIterable, Identifiable {
         switch self {
         case .system: true
         case .kokoroEnglish: SpeechLanguageSettings.isEnglish(language)
-        case .kokoroBrazilianPortuguese: SpeechLanguageSettings.preferredLanguageTag(language) == "pt-br"
+        case .kokoroBrazilianPortuguese: SpeechLanguageSettings.isPortuguese(language)
         case .portuguesePortugal, .portuguesePortugalMiro, .portuguesePortugalDii:
             SpeechLanguageSettings.isPortuguese(language)
         case .frenchMiro: SpeechLanguageSettings.isFrench(language)

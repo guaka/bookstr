@@ -13,7 +13,7 @@ struct SearchView: View {
     @State private var query = ""
     @State private var programmaticQuery: String?
     @State private var handledRequestID: UUID?
-    @State private var searchPresented = false
+    @FocusState private var searchFocused: Bool
     @State private var results: [BookSearchResult] = []
     @State private var searching = false
     @State private var nextOffset: Int?
@@ -31,72 +31,81 @@ struct SearchView: View {
     var body: some View {
         let languageOptions = BookListFacetFilters.languages(from: results.map(\.language))
         let formatOptions = BookListFacetFilters.formats(from: results.map { $0.format?.rawValue })
+        let showLanguageFilter = BookListFacetFilters.hasLanguageChoices(results.map(\.language))
+            || !selectedLanguage.isEmpty
+        let showFormatFilter = BookListFacetFilters.hasFormatChoices(results.map { $0.format?.rawValue })
+            || !selectedFormat.isEmpty
         var facets = BookListFacetFilters(language: selectedLanguage, format: selectedFormat)
         facets.sanitize(languages: languageOptions, formats: formatOptions)
         let visibleResults = results.filter {
             facets.matches(language: $0.language, format: $0.format?.rawValue)
         }
 
-        return Group {
-            if results.isEmpty && nextOffset == nil {
-                ContentUnavailableView("Search books", systemImage: "magnifyingglass", description: Text(message ?? "Title, author, ISBN, publisher"))
-            } else {
-                List {
-                  if visibleResults.isEmpty {
-                      ContentUnavailableView("No matches", systemImage: "line.3.horizontal.decrease.circle",
-                                             description: Text("No loaded results match the selected filters."))
-                  }
-                  ForEach(visibleResults) { result in
-                    Button { Task { await open(result) } } label: {
-                        BookListDetails(title: result.title, author: result.author, year: result.year,
-                                        format: result.format?.rawValue, language: result.language,
-                                        publisher: result.publisher, coverURL: result.coverUrl, bookID: result.id,
-                                        rights: result.rights)
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityIdentifier("search.open.\(result.id)")
-                    .contextMenu {
-                        Button("Rights details") {
-                            rightsDetails = RightsDetailsItem(
-                                title: result.title, author: result.author, year: result.year,
-                                format: result.format?.rawValue, rights: result.rights,
-                                coverURL: result.coverUrl, bookID: result.id
-                            )
+        return VStack(spacing: 0) {
+            searchBar
+            if showLanguageFilter || showFormatFilter {
+                filterBar(
+                    languages: languageOptions, formats: formatOptions,
+                    showLanguage: showLanguageFilter, showFormat: showFormatFilter
+                )
+            }
+            Group {
+                if results.isEmpty && nextOffset == nil {
+                    ContentUnavailableView("Search books", systemImage: "magnifyingglass", description: Text(message ?? "Title, author, ISBN, publisher"))
+                } else {
+                    List {
+                        if visibleResults.isEmpty {
+                            ContentUnavailableView("No matches", systemImage: "line.3.horizontal.decrease.circle",
+                                                   description: Text("No loaded results match the selected filters."))
+                        }
+                        ForEach(visibleResults) { result in
+                            Button { Task { await open(result) } } label: {
+                                BookListDetails(title: result.title, author: result.author, year: result.year,
+                                                format: result.format?.rawValue, language: result.language,
+                                                publisher: result.publisher, coverURL: result.coverUrl, bookID: result.id,
+                                                rights: result.rights)
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityIdentifier("search.open.\(result.id)")
+                            .contextMenu {
+                                Button("Rights details") {
+                                    rightsDetails = RightsDetailsItem(
+                                        title: result.title, author: result.author, year: result.year,
+                                        format: result.format?.rawValue, rights: result.rights,
+                                        coverURL: result.coverUrl, bookID: result.id
+                                    )
+                                }
+                            }
+                            .bookstrListRow()
+                        }
+                        if let nextOffset {
+                            HStack(spacing: 8) {
+                                if searching { ProgressView() }
+                                Text(searching ? "Loading more books…" : "Scroll down for more books")
+                                    .font(.footnote)
+                                    .foregroundStyle(.secondary)
+                            }
+                            .frame(maxWidth: .infinity, minHeight: 44)
+                            .accessibilityIdentifier("search-pagination-status")
+                            .onAppear(perform: loadMoreIfNeeded)
+                            .onDisappear {
+                                if !searching { automaticLoadOffset = nil }
+                            }
+                            .id(nextOffset)
                         }
                     }
-                    .bookstrListRow()
-                  }
-                  if let nextOffset {
-                      HStack(spacing: 8) {
-                          if searching { ProgressView() }
-                          Text(searching ? "Loading more books…" : "Scroll down for more books")
-                              .font(.footnote)
-                              .foregroundStyle(.secondary)
-                      }
-                      .frame(maxWidth: .infinity, minHeight: 44)
-                      .accessibilityIdentifier("search-pagination-status")
-                      .onAppear(perform: loadMoreIfNeeded)
-                      .onDisappear {
-                          if !searching { automaticLoadOffset = nil }
-                      }
-                      .id(nextOffset)
-                  }
+                    .listStyle(.plain)
+                    .contentMargins(.horizontal, 0, for: .scrollContent)
+                    .scrollDismissesKeyboard(.immediately)
+                    .simultaneousGesture(
+                        DragGesture(minimumDistance: 8).onChanged { _ in
+                            if searchFocused { searchFocused = false }
+                        }
+                    )
                 }
-                .listStyle(.plain)
-                .contentMargins(.horizontal, 0, for: .scrollContent)
             }
         }
         .bookstrScreenTitle("Search")
-        .searchable(
-            text: $query,
-            isPresented: $searchPresented,
-            placement: .navigationBarDrawer(displayMode: .always),
-            prompt: "Title, author, ISBN, publisher"
-        )
-        .onSubmit(of: .search) {
-            searchTask?.cancel()
-            searchTask = Task { await runSearch() }
-        }
         .onChange(of: query) { _, newValue in
             if newValue == programmaticQuery {
                 programmaticQuery = nil
@@ -115,38 +124,6 @@ struct SearchView: View {
         .onChange(of: isActive) { _, _ in startRequestedSearchIfReady() }
         .overlay { if searching { ProgressView().allowsHitTesting(false) } }
         .toolbar {
-            if languageOptions.count > 1 || !selectedLanguage.isEmpty {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Menu {
-                        Picker("Language", selection: $selectedLanguage) {
-                            Text("All languages").tag("")
-                            ForEach(languageOptions, id: \.self) { language in
-                                Text(BookListFacetFilters.displayLabel(for: language)).tag(language)
-                            }
-                        }
-                    } label: {
-                        Image(systemName: selectedLanguage.isEmpty ? "globe" : "globe.badge.chevron.backward")
-                    }
-                    .accessibilityLabel("Filter by language")
-                    .accessibilityIdentifier("search-language-filter")
-                }
-            }
-            if formatOptions.count > 1 || !selectedFormat.isEmpty {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Menu {
-                        Picker("Format", selection: $selectedFormat) {
-                            Text("All formats").tag("")
-                            ForEach(formatOptions, id: \.self) { format in
-                                Text(BookListFacetFilters.displayLabel(for: format)).tag(format)
-                            }
-                        }
-                    } label: {
-                        Image(systemName: selectedFormat.isEmpty ? "doc" : "doc.badge.ellipsis")
-                    }
-                    .accessibilityLabel("Filter by format")
-                    .accessibilityIdentifier("search-format-filter")
-                }
-            }
             ToolbarItem(placement: .topBarTrailing) {
                 Button { showingDownloads = true } label: { Image(systemName: "arrow.down.circle") }
                     .accessibilityLabel("Downloads")
@@ -182,6 +159,95 @@ struct SearchView: View {
         .sheet(item: $rightsDetails) { RightsDetailsView(item: $0) }
     }
 
+    private var searchBar: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "magnifyingglass")
+                .foregroundStyle(.secondary)
+                .accessibilityHidden(true)
+            TextField("Title, author, ISBN, publisher", text: $query)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .submitLabel(.search)
+                .focused($searchFocused)
+                .onSubmit {
+                    searchFocused = false
+                    searchTask?.cancel()
+                    searchTask = Task { await runSearch() }
+                }
+                .accessibilityLabel("Search books")
+                .accessibilityIdentifier("search-query")
+            if !query.isEmpty {
+                Button {
+                    query = ""
+                    searchFocused = true
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(.secondary)
+                        .frame(minWidth: 44, minHeight: 44)
+                }
+                .accessibilityLabel("Clear search")
+                .accessibilityIdentifier("search-clear")
+            }
+        }
+        .padding(.leading, 14)
+        .padding(.trailing, 4)
+        .frame(minHeight: 46)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+        .padding(.horizontal, 12)
+        .padding(.top, 8)
+        .padding(.bottom, 10)
+        .background(Color(uiColor: .systemBackground))
+    }
+
+    private func filterBar(
+        languages: [String], formats: [String],
+        showLanguage: Bool, showFormat: Bool
+    ) -> some View {
+        HStack(spacing: 8) {
+            if showLanguage {
+                Menu {
+                    Picker("Language", selection: $selectedLanguage) {
+                        Text("All languages").tag("")
+                        ForEach(languages, id: \.self) { language in
+                            Text(BookListFacetFilters.displayLabel(for: language)).tag(language)
+                        }
+                    }
+                } label: {
+                    Label(
+                        selectedLanguage.isEmpty ? "Language" : BookListFacetFilters.displayLabel(for: selectedLanguage),
+                        systemImage: "globe"
+                    )
+                }
+                .accessibilityLabel("Filter by language")
+                .accessibilityIdentifier("search-language-filter")
+            }
+            if showFormat {
+                Menu {
+                    Picker("Format", selection: $selectedFormat) {
+                        Text("All formats").tag("")
+                        ForEach(formats, id: \.self) { format in
+                            Text(BookListFacetFilters.displayLabel(for: format)).tag(format)
+                        }
+                    }
+                } label: {
+                    Label(
+                        selectedFormat.isEmpty ? "Format" : BookListFacetFilters.displayLabel(for: selectedFormat),
+                        systemImage: "doc"
+                    )
+                }
+                .accessibilityLabel("Filter by format")
+                .accessibilityIdentifier("search-format-filter")
+            }
+        }
+        .font(.caption.weight(.medium))
+        .buttonStyle(.bordered)
+        .controlSize(.small)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 12)
+        .padding(.bottom, 8)
+        .background(Color(uiColor: .systemBackground))
+    }
+
     private func loadMoreIfNeeded() {
         guard let offset = nextOffset, !searching, automaticLoadOffset != offset else { return }
         automaticLoadOffset = offset
@@ -194,7 +260,7 @@ struct SearchView: View {
         handledRequestID = requestedQuery.id
         programmaticQuery = requestedQuery.query
         query = requestedQuery.query
-        searchPresented = false
+        searchFocused = false
         searchTask?.cancel()
         searchTask = Task { await runSearch(queryTerm: requestedQuery.query) }
     }
@@ -235,7 +301,7 @@ struct SearchView: View {
             catch { actionMessage = error.localizedDescription }
         } else {
             container.downloads.enqueue(result, prepare: container.catalogRepository.prepareForOpening)
-            searchPresented = false
+            searchFocused = false
             showingDownloads = true
         }
     }

@@ -125,6 +125,10 @@ final class SettingsRepositoryTests: XCTestCase {
         XCTAssertEqual(second.speechLanguageOverride, "auto")
         XCTAssertEqual(second.speechChoice(for: "pt").voiceIdentifier, SpeechEngineID.portuguesePortugal.rawValue)
         XCTAssertEqual(second.speechChoice(for: "pt").neuralEngine, .portuguesePortugal)
+        XCTAssertEqual(second.speechChoice(for: "pt-BR").neuralEngine, .portuguesePortugal)
+        second.setSpeechVoice(SpeechEngineID.kokoroBrazilianPortuguese.rawValue, for: "pt-BR")
+        XCTAssertEqual(second.speechChoice(for: "pt-PT").neuralEngine, .kokoroBrazilianPortuguese)
+        XCTAssertEqual(second.speechLanguageSettings.keys.filter { $0 == "pt" }.count, 1)
         XCTAssertEqual(second.speechChoice(for: "en").voiceIdentifier, SpeechEngineID.kokoroEnglish.rawValue)
         XCTAssertEqual(second.speechChoice(for: "en").engine, .neural(.kokoroEnglish))
         second.selectDownloadedSpeechEngine(.dutchDii)
@@ -175,6 +179,20 @@ final class SettingsRepositoryTests: XCTestCase {
         let repo = SettingsRepository(defaults: defaults)
         XCTAssertEqual(repo.speechChoice(for: "pt").neuralEngine, .portuguesePortugal)
         XCTAssertEqual(repo.speechChoice(for: "en").engine, .apple)
+        defaults.removePersistentDomain(forName: suite)
+    }
+
+    func testSavedRegionalPortugueseOverrideBecomesSingleLanguage() {
+        let suite = "bookstr-speech-portuguese-\(UUID().uuidString)"
+        guard let defaults = UserDefaults(suiteName: suite) else {
+            XCTFail("Could not create isolated UserDefaults")
+            return
+        }
+        defaults.removePersistentDomain(forName: suite)
+        defaults.set("pt-BR", forKey: "speech_language_override")
+        let repo = SettingsRepository(defaults: defaults)
+        XCTAssertEqual(repo.speechLanguageOverride, "pt")
+        XCTAssertEqual(repo.speechChoice(for: "pt-PT").languageTag, "pt")
         defaults.removePersistentDomain(forName: suite)
     }
 

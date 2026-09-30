@@ -49,7 +49,7 @@ enum SpeechLanguageSettings {
     static let maximumRate = 0.60
     static let speechEngineKey = "speech_engine"
     /// Always available in TTS settings, regardless of library contents.
-    static let seededLanguageTags = ["en", "pt-pt", "pt-br", "fr", "de", "es", "ca", "nl"]
+    static let seededLanguageTags = ["en", "pt", "fr", "de", "es", "ca", "nl"]
     static let automaticLanguage = "auto"
 
     static func preferredLanguageTag(_ raw: String) -> String {
@@ -58,14 +58,11 @@ enum SpeechLanguageSettings {
             .lowercased()
             .folding(options: .diacriticInsensitive, locale: Locale(identifier: "en"))
         if normalized.isEmpty { return "en" }
-        if normalized.hasPrefix("portugu") { return "pt-pt" }
+        if normalized.hasPrefix("portugu") { return "pt" }
         let parts = normalized.split(separator: "-").map(String.init)
         let base = iso639Base(parts.first ?? normalized)
         let region = parts.dropFirst().first
-        if base == "pt" {
-            if region == "br" { return "pt-br" }
-            return "pt-pt"
-        }
+        if base == "pt" { return "pt" }
         if let region { return "\(base)-\(region)" }
         return base
     }
@@ -127,7 +124,9 @@ enum SpeechLanguageSettings {
         _ settings: [String: SpeechLanguageSetting]
     ) -> [String: SpeechLanguageSetting] {
         var next: [String: SpeechLanguageSetting] = [:]
-        for (key, value) in settings {
+        // A previously saved regional voice still applies to all Portuguese books.
+        // Prefer an explicit base-language choice if both regional settings existed.
+        for (key, value) in settings.sorted(by: { $0.key == "pt" || ($1.key != "pt" && $0.key < $1.key) }) {
             let tag = preferredLanguageTag(key)
             if let existing = next[tag] {
                 if existing.voiceIdentifier.isEmpty && !value.voiceIdentifier.isEmpty {
@@ -186,9 +185,9 @@ enum SpeechLanguageSettings {
             guard !trimmed.isEmpty else { continue }
             let tag = preferredLanguageTag(trimmed)
             let base = baseLanguage(tag)
-            let key = base == "pt" ? tag : base
+            let key = base
             guard seen.insert(key).inserted else { continue }
-            ordered.append(base == "pt" ? tag : base)
+            ordered.append(base)
         }
         return ordered.sorted {
             displayName(for: $0).localizedCaseInsensitiveCompare(displayName(for: $1)) == .orderedAscending
@@ -199,11 +198,6 @@ enum SpeechLanguageSettings {
         if languageTag == automaticLanguage { return "Auto" }
         let tag = preferredLanguageTag(languageTag)
         let base = baseLanguage(tag)
-        if base == "pt",
-           let name = Locale.current.localizedString(forIdentifier: tag.replacingOccurrences(of: "-", with: "_")),
-           !name.isEmpty {
-            return name
-        }
         if let name = Locale.current.localizedString(forLanguageCode: base), !name.isEmpty {
             return name
         }
