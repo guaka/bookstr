@@ -12,20 +12,7 @@ import androidx.core.content.pm.ShortcutInfoCompat
 import androidx.core.content.pm.ShortcutManagerCompat
 import androidx.core.graphics.drawable.IconCompat
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Book
-import androidx.compose.material.icons.automirrored.filled.MenuBook
-import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.Spellcheck
-import androidx.compose.material3.Icon
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
-import androidx.compose.material3.LocalMinimumInteractiveComponentSize
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.LaunchedEffect
@@ -37,7 +24,6 @@ import app.bookstr.data.CatalogConnection
 import app.bookstr.data.CatalogSearchPage
 import app.bookstr.download.DownloadService
 import app.bookstr.ui.DownloadsSheet
-import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -45,7 +31,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -60,6 +45,7 @@ import app.bookstr.nostr.AmberIntentSession
 import app.bookstr.nostr.ExternalSigner
 import app.bookstr.nostr.Nip55
 import app.bookstr.nostr.NostrCrypto
+import app.bookstr.ui.BookstrNavigationBar
 import app.bookstr.ui.LibraryScreen
 import app.bookstr.ui.SearchScreen
 import app.bookstr.ui.SettingsScreen
@@ -464,123 +450,9 @@ class MainActivity : ComponentActivity() {
                 }
                 Scaffold(
                     bottomBar = {
-                        CompositionLocalProvider(LocalMinimumInteractiveComponentSize provides 40.dp) {
-                            NavigationBar(
-                                modifier = Modifier.height(40.dp),
-                                windowInsets = WindowInsets(0, 0, 0, 0),
-                            ) {
-                                NavigationBarItem(
-                                    selected = false,
-                                    onClick = {
-                                        val session = settings.readerSession()
-                                        if (session == null) {
-                                            error = "No recent book to continue"
-                                        } else {
-                                            val publication = catalog.publicationFile(session.bookId, session.format)
-                                            if (!publication.isFile) {
-                                                error = "The recent book is no longer downloaded"
-                                            } else {
-                                                startActivity(
-                                                    if (session.format == BookFormat.Cbr || session.format == BookFormat.Cbz) {
-                                                        ComicReaderActivity.intent(this@MainActivity, session.bookId, session.format, session.bookTitle)
-                                                    } else if (session.format == BookFormat.Pdf) {
-                                                        PdfReaderActivity.intent(
-                                                            context = this@MainActivity,
-                                                            bookId = session.bookId,
-                                                            bookTitle = session.bookTitle,
-                                                            author = session.author,
-                                                            year = session.year,
-                                                            pageIndex = session.pageIndex,
-                                                            pageOffset = session.pageOffset,
-                                                        )
-                                                    } else if (session.format == BookFormat.Fb2) {
-                                                        Fb2ReaderActivity.intent(
-                                                            context = this@MainActivity,
-                                                            bookId = session.bookId,
-                                                            bookTitle = session.bookTitle,
-                                                            author = session.author,
-                                                            year = session.year,
-                                                            locator = session.locator,
-                                                            rightsStatus = session.rightsStatus,
-                                                            license = session.license,
-                                                            licenseUrl = session.licenseUrl,
-                                                            rightsSource = session.rightsSource,
-                                                        )
-                                                    } else {
-                                                        ReaderActivity.intent(
-                                                            context = this@MainActivity,
-                                                            bookId = session.bookId,
-                                                            bookTitle = session.bookTitle,
-                                                            author = session.author,
-                                                            year = session.year,
-                                                            initialCfi = session.locator,
-                                                            theme = settings.theme,
-                                                            rightsStatus = session.rightsStatus,
-                                                            license = session.license,
-                                                            licenseUrl = session.licenseUrl,
-                                                            rightsSource = session.rightsSource,
-                                                        )
-                                                    },
-                                                )
-                                            }
-                                        }
-                                    },
-                                    icon = {
-                                        Icon(
-                                            Icons.AutoMirrored.Filled.MenuBook,
-                                            contentDescription = "Continue reading",
-                                            modifier = Modifier.size(18.dp),
-                                        )
-                                    },
-                                )
-                                NavigationBarItem(
-                                    selected = selectedTab == 3,
-                                    onClick = { selectedTab = 3 },
-                                    icon = {
-                                        Icon(
-                                            Icons.Default.Search,
-                                            contentDescription = "Search",
-                                            modifier = Modifier.size(18.dp),
-                                        )
-                                    },
-                                )
-                                NavigationBarItem(
-                                    selected = selectedTab == 0,
-                                    onClick = { selectedTab = 0 },
-                                    icon = {
-                                        Icon(
-                                            Icons.Default.Book,
-                                            contentDescription = "Library",
-                                            modifier = Modifier.size(18.dp),
-                                        )
-                                    },
-                                )
-                                NavigationBarItem(
-                                    selected = selectedTab == 1,
-                                    onClick = {
-                                        selectedTab = 1
-                                        refreshMissingWordDefinitions()
-                                    },
-                                    icon = {
-                                        Icon(
-                                            Icons.Default.Spellcheck,
-                                            contentDescription = "Words",
-                                            modifier = Modifier.size(18.dp),
-                                        )
-                                    },
-                                )
-                                NavigationBarItem(
-                                    selected = selectedTab == 2,
-                                    onClick = { selectedTab = 2 },
-                                    icon = {
-                                        Icon(
-                                            Icons.Default.Settings,
-                                            contentDescription = "Settings",
-                                            modifier = Modifier.size(18.dp),
-                                        )
-                                    },
-                                )
-                            }
+                        BookstrNavigationBar(selectedTab = selectedTab) { tab ->
+                            selectedTab = tab
+                            if (tab == 1) refreshMissingWordDefinitions()
                         }
                     },
                 ) { padding ->
