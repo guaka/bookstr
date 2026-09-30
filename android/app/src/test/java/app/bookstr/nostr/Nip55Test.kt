@@ -1,10 +1,16 @@
 package app.bookstr.nostr
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class Nip55Test {
+    @Test fun prefersAmberAndHuddleButNotOtherApps() {
+        assertTrue(Nip55.isPreferredSigner("Amber", "com.example.signer"))
+        assertTrue(Nip55.isPreferredSigner("Signer", "com.example.huddle"))
+        assertFalse(Nip55.isPreferredSigner("Other signer", "com.example.other"))
+    }
     @Test
     fun normalizeHexPubkey() {
         val hex = "3bf0c63fcb93463407af97a5e5ee64fa883d107ef9e558472c4eb9aaaefa459d"

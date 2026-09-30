@@ -8,6 +8,8 @@ import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import app.bookstr.BookstrApp
 import app.bookstr.MainActivity
+import app.bookstr.data.NostrAuthMode
+import app.bookstr.util.Bech32
 import org.junit.Assert.*
 import org.junit.Rule
 import org.junit.Test
@@ -34,15 +36,32 @@ class AcquisitionActivityTest {
         compose.onNodeWithTag("search.downloads").performClick()
         compose.onNodeWithTag("downloads.sheet").assertExists()
     }
-    @Test fun searchWithoutSignerShowsLibCatConnectionPrompt() {
+    @Test fun searchWithoutSignerOffersSetupInsteadOfFailure() {
         compose.onNodeWithContentDescription("Search").performClick()
         compose.onNodeWithTag("search.query").performTextInput("Alice")
         compose.onNodeWithTag("search.submit").performClick()
-        compose.waitUntil(timeoutMillis = 5_000) {
-            compose.onAllNodesWithText("Search failed: Connect a Nostr signer to search LibCat")
-                .fetchSemanticsNodes().isNotEmpty()
-        }
-        compose.onNodeWithText("Search failed: Connect a Nostr signer to search LibCat").assertExists()
+        compose.onNodeWithTag("signer.setup").assertExists()
+        compose.onNodeWithTag("signer.choice.generate").assertExists()
+        compose.onNodeWithTag("signer.choice.import").assertExists()
+        compose.onNodeWithTag("signer.choice.connect").assertExists()
+        compose.onNodeWithTag("signer.setup-confirm").performClick()
+        compose.onNodeWithTag("signer.generated-key").assertExists()
+        compose.onNodeWithTag("signer.setup-confirm").performClick()
+        compose.onNodeWithTag("signer.setup").assertDoesNotExist()
+        assertEquals(NostrAuthMode.Nsec, (compose.activity.application as BookstrApp).settingsRepository.authMode)
+    }
+    @Test fun invalidImportedKeyKeepsChooserOpen() {
+        compose.onNodeWithContentDescription("Search").performClick()
+        compose.onNodeWithTag("search.query").performTextInput("Alice")
+        compose.onNodeWithTag("search.submit").performClick()
+        compose.onNodeWithTag("signer.choice.import").performClick()
+        compose.onNodeWithTag("signer.import-key").performTextInput("not a key")
+        compose.onNodeWithTag("signer.setup-confirm").performClick()
+        compose.onNodeWithTag("signer.setup-error").assertExists()
+        assertEquals(NostrAuthMode.None, (compose.activity.application as BookstrApp).settingsRepository.authMode)
+        compose.onNodeWithTag("signer.import-key").performTextReplacement(Bech32.encode("nsec", ByteArray(32) { 1 }))
+        compose.onNodeWithTag("signer.setup-confirm").performClick()
+        assertEquals(NostrAuthMode.Nsec, (compose.activity.application as BookstrApp).settingsRepository.authMode)
     }
     @Test fun catalogInvitationsRequireConfirmationAndPersistAcrossRecreation() {
         val uri = "bookstr://catalog?v=1&npub=npub1zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zygse4sl3h&name=Fixture&relay=wss%3A%2F%2Frelay.example"

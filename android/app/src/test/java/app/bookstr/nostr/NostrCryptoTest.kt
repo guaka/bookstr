@@ -6,10 +6,31 @@ import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.security.SecureRandom
 
 class NostrCryptoTest {
+    @Test fun generatedSecretIsValidAndUnique() {
+        val first = NostrCrypto.generateNsec()
+        val second = NostrCrypto.generateNsec()
+        assertTrue(first.startsWith("nsec1"))
+        assertEquals(32, NostrCrypto.parsePrivateKey(first).size)
+        assertNotEquals(first, second)
+        assertEquals(64, NostrCrypto.publicKeyHex(NostrCrypto.parsePrivateKey(first)).length)
+    }
+    @Test fun generationRetriesAnInvalidSecret() {
+        val random = object : SecureRandom() {
+            var attempts = 0
+            override fun nextBytes(bytes: ByteArray) {
+                if (attempts++ > 0) bytes[31] = 1
+            }
+        }
+        val nsec = NostrCrypto.generateNsec(random)
+        assertEquals(2, random.attempts)
+        assertEquals(64, NostrCrypto.publicKeyHex(NostrCrypto.parsePrivateKey(nsec)).length)
+    }
     private val privateKey = ByteArray(32).also { it[31] = 1 }
 
     @Test

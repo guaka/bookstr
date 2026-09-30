@@ -48,6 +48,7 @@ import app.bookstr.nostr.NostrCrypto
 import app.bookstr.ui.BookstrNavigationBar
 import app.bookstr.ui.LibraryScreen
 import app.bookstr.ui.SearchScreen
+import app.bookstr.ui.SignerSetupDialog
 import app.bookstr.ui.SettingsScreen
 import app.bookstr.ui.WordsScreen
 import app.bookstr.ui.theme.BookstrThemeFromSettings
@@ -159,6 +160,8 @@ class MainActivity : ComponentActivity() {
                 var searchResults by remember { mutableStateOf<List<BookSearchResult>>(emptyList()) }
                 var searching by remember { mutableStateOf(false) }
                 var searchMessage by remember { mutableStateOf<String?>(null) }
+                var showSignerSetup by remember { mutableStateOf(false) }
+                var signerSetupError by remember { mutableStateOf<String?>(null) }
 
                 var authMode by remember { mutableStateOf(settings.authMode) }
                 var npubDisplay by remember { mutableStateOf(npubFromSettings(settings.pubkeyHex)) }
@@ -371,6 +374,12 @@ class MainActivity : ComponentActivity() {
                         } else searchMessage
                         return
                     }
+                    if (!settings.hasNostrIdentity()) {
+                        signerSetupError = null
+                        showSignerSetup = true
+                        searchMessage = null
+                        return
+                    }
                     scope.launch {
                         searching = true
                         searchMessage = "Searching…"
@@ -435,6 +444,44 @@ class MainActivity : ComponentActivity() {
                     }
                 }
                 LaunchedEffect(authMode, npubDisplay) { searchResults = emptyList(); nextOffset = null }
+                if (showSignerSetup) {
+                    SignerSetupDialog(
+                        preferredSignerLabel = Nip55.preferredSignerLabel(this@MainActivity),
+                        signerAvailable = Nip55.isSignerAvailable(this@MainActivity),
+                        connecting = connectingAmber,
+                        connectionError = signerSetupError,
+                        onDismiss = { showSignerSetup = false },
+                        onSaveNsec = { value ->
+                            val pubkey = NostrCrypto.publicKeyHex(NostrCrypto.parsePrivateKey(value))
+                            settings.connectNsec(value, pubkey)
+                            nsec = value
+                            authMode = NostrAuthMode.Nsec
+                            npubDisplay = npubFromHex(pubkey)
+                            showNsec = false
+                            showSignerSetup = false
+                            runSearch()
+                        },
+                        onConnectSigner = {
+                            scope.launch {
+                                connectingAmber = true
+                                signerSetupError = null
+                                try {
+                                    val (pubkey, _) = ExternalSigner.connectViaIntent(settings)
+                                    authMode = settings.authMode
+                                    npubDisplay = npubFromHex(pubkey)
+                                    nsec = ""
+                                    showNsec = false
+                                    showSignerSetup = false
+                                    runSearch()
+                                } catch (e: Exception) {
+                                    signerSetupError = e.message ?: "Could not connect signer app"
+                                } finally {
+                                    connectingAmber = false
+                                }
+                            }
+                        },
+                    )
+                }
                 if (showDownloads) DownloadsSheet(downloadJobs, onDismiss = { showDownloads = false },
                     onAction = { action, id -> DownloadService.dispatch(this@MainActivity, action, id) },
                     onOpen = { showDownloads = false; openBook(it.book) })
