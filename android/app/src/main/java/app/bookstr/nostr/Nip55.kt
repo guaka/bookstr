@@ -53,6 +53,15 @@ object Nip55 {
             .queryIntentActivities(discoveryIntent(), PackageManager.MATCH_DEFAULT_ONLY)
             .isNotEmpty()
 
+    fun preferredSignerLabel(context: Context): String? =
+        context.packageManager
+            .queryIntentActivities(discoveryIntent(), PackageManager.MATCH_DEFAULT_ONLY)
+            .map { info -> info.loadLabel(context.packageManager).toString() to info.activityInfo.packageName }
+            .firstOrNull { (label, packageName) -> isPreferredSigner(label, packageName) }?.first
+
+    internal fun isPreferredSigner(label: String, packageName: String): Boolean =
+        listOf(label, packageName).any { it.contains("amber", true) || it.contains("huddle", true) }
+
     fun discoveryIntent(): Intent =
         Intent(Intent.ACTION_VIEW, Uri.parse("$SCHEME:"))
 

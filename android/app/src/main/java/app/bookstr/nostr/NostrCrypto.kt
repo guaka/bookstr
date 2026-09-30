@@ -10,6 +10,13 @@ import java.security.SecureRandom
 object NostrCrypto {
     private val secp by lazy { Secp256k1.get() }
 
+    fun generateNsec(random: SecureRandom = SecureRandom()): String {
+        while (true) {
+            val key = ByteArray(32).also(random::nextBytes)
+            if (runCatching { publicKeyHex(key) }.isSuccess) return Bech32.encode("nsec", key)
+        }
+    }
+
     fun parsePrivateKey(input: String): ByteArray {
         val trimmed = input.trim()
         return when {
