@@ -234,6 +234,8 @@ class NarrationService : MediaBrowserServiceCompat(), TextToSpeech.OnInitListene
         }
         when (intent?.action) {
             ACTION_SPEAK -> {
+                generation += 1
+                resetAudioPipeline(cancelSynthesis = true)
                 readBookMetadata(intent)
                 speechText = intent.getStringExtra(EXTRA_TEXT).orEmpty()
                 speechLanguage = intent.getStringExtra(EXTRA_LANGUAGE).orEmpty().ifBlank { "en" }
@@ -473,7 +475,9 @@ class NarrationService : MediaBrowserServiceCompat(), TextToSpeech.OnInitListene
     }
 
     private fun playChunk(index: Int) {
+        if (mediaPlayer != null) return
         val chunk = speechQueue.getOrNull(index) ?: return finishNaturally()
+        val playingGeneration = generation
         val file = audioFiles[index]?.takeIf(File::isFile) ?: return
         val player = MediaPlayer()
         runCatching {
@@ -484,7 +488,7 @@ class NarrationService : MediaBrowserServiceCompat(), TextToSpeech.OnInitListene
                     .build(),
             )
             player.setDataSource(file.absolutePath)
-            player.setOnCompletionListener { onChunkPlaybackComplete(index) }
+            player.setOnCompletionListener { onChunkPlaybackComplete(playingGeneration, index) }
             player.setOnErrorListener { _, what, extra ->
                 onSpeechError(chunk.id, what.takeIf { it != 0 } ?: extra)
                 true
@@ -505,8 +509,8 @@ class NarrationService : MediaBrowserServiceCompat(), TextToSpeech.OnInitListene
         }
     }
 
-    private fun onChunkPlaybackComplete(index: Int) {
-        if (index != currentPlaybackIndex) return
+    private fun onChunkPlaybackComplete(completedGeneration: Int, index: Int) {
+        if (!NarrationPlaybackTiming.shouldComplete(completedGeneration, generation, index, currentPlaybackIndex)) return
         mainHandler.removeCallbacks(progressTicker)
         mediaPlayer?.release()
         mediaPlayer = null
@@ -520,12 +524,20 @@ class NarrationService : MediaBrowserServiceCompat(), TextToSpeech.OnInitListene
             return
         }
         currentPlaybackIndex += 1
+        val nextIndex = currentPlaybackIndex
+        val scheduledGeneration = generation
         mainHandler.postDelayed(
             {
-                if (readyAudio.contains(currentPlaybackIndex)) playChunk(currentPlaybackIndex)
-                else synthesizeChunk(currentPlaybackIndex)
+                if (!NarrationPlaybackTiming.shouldStart(
+                        scheduledGeneration, generation, nextIndex, currentPlaybackIndex, mediaPlayer != null
+                    )) return@postDelayed
+                if (readyAudio.contains(nextIndex)) playChunk(nextIndex)
+                else synthesizeChunk(nextIndex)
             },
-            speechQueue.getOrNull(currentPlaybackIndex)?.pauseMillis ?: SENTENCE_PAUSE_MILLIS,
+            NarrationPlaybackTiming.pauseMillis(
+                speechQueue.getOrNull(nextIndex)?.pauseMillis ?: SENTENCE_PAUSE_MILLIS,
+                neuralModel != null,
+            ),
         )
     }
 
@@ -1036,3 +1048,25 @@ private data class IncomingNarrationChunk(
 )
 
 private data class SpeechMarker(val start: Int, val end: Int, val frame: Int)
+
+internal object NarrationPlaybackTiming {
+    fun shouldComplete(
+        completedGeneration: Int,
+        currentGeneration: Int,
+        completedIndex: Int,
+        currentIndex: Int,
+    ): Boolean = completedGeneration == currentGeneration && completedIndex == currentIndex
+
+    fun shouldStart(
+        scheduledGeneration: Int,
+        currentGeneration: Int,
+        scheduledIndex: Int,
+        currentIndex: Int,
+        playerActive: Boolean,
+    ): Boolean = scheduledGeneration == currentGeneration && scheduledIndex == currentIndex && !playerActive
+
+    fun pauseMillis(requested: Long, neural: Boolean): Long =
+        if (!neural) requested.coerceAtLeast(0L)
+        else if (requested <= 100L) 0L
+        else (requested / 3L).coerceIn(0L, 220L)
+}

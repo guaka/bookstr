@@ -114,6 +114,8 @@ class ReaderActivity : ComponentActivity() {
     private var initialCfi: String? = null
     private var highlightCfi: String? = null
     private var lastCfi: String? = null
+    private var selectedSpeechCfi: String? = null
+    private var pendingSpeechCfi: String? = null
     private var closingReader = false
     private var referenceJump = false
     private var readerInteracted = false
@@ -219,8 +221,9 @@ class ReaderActivity : ComponentActivity() {
                             )
                         },
                         onSections = { sections -> readerSections = sections },
-                        onReaderLongPress = { selectedText ->
+                        onReaderLongPress = { selectedText, cfi ->
                             longPressedText = selectedText
+                            selectedSpeechCfi = cfi.takeIf(String::isNotBlank)
                             showReaderMenu = true
                         },
                         onSearchResults = { results ->
@@ -462,6 +465,7 @@ class ReaderActivity : ComponentActivity() {
                                     }
                                     ReaderMenuAction(if (isSpeaking) "Pause reading aloud" else "Read aloud from here") {
                                         showReaderMenu = false
+                                        if (!isSpeaking) pendingSpeechCfi = selectedSpeechCfi
                                         toggleTextToSpeech()
                                     }
                                     ReaderMenuAction("Make text larger") {
@@ -684,7 +688,8 @@ class ReaderActivity : ComponentActivity() {
     }
 
     private fun speechRequestScript(notifyNative: Boolean = true): String {
-        val cfiJs = JSONObject.quote(lastCfi.orEmpty())
+        val cfiJs = JSONObject.quote(if (notifyNative) pendingSpeechCfi ?: lastCfi.orEmpty() else lastCfi.orEmpty())
+        if (notifyNative) pendingSpeechCfi = null
         return "requestSpeechText(${if (notifyNative) "true" else "false"}, null, $cfiJs);"
     }
 
@@ -1028,7 +1033,7 @@ private fun ReaderWebView(
     onReaderReady: () -> Unit,
     onMetadata: (String?, String?, String?, String?) -> Unit,
     onSections: (List<ReaderSection>) -> Unit,
-    onReaderLongPress: (String) -> Unit,
+    onReaderLongPress: (String, String) -> Unit,
     onSearchResults: (List<ReaderSearchResult>) -> Unit,
     onReaderError: (String) -> Unit,
     onWordSelected: (String, String, String, String) -> Unit,
@@ -1183,9 +1188,10 @@ private fun ReaderWebView(
                         }
 
                         @JavascriptInterface
-                        fun onReaderLongPress(selectedText: String) {
+                        fun onReaderLongPress(selectionJson: String) {
+                            val selection = runCatching { JSONObject(selectionJson) }.getOrNull() ?: return
                             (ctx as? ComponentActivity)?.runOnUiThread {
-                                onReaderLongPress(selectedText.trim())
+                                onReaderLongPress(selection.optString("text").trim(), selection.optString("cfi"))
                             }
                         }
 

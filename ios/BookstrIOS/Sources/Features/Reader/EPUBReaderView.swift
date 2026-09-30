@@ -1361,7 +1361,7 @@ struct EPUBReaderView: UIViewRepresentable {
         }
 
         fileprivate func readFromHereFromEditMenu() {
-            withCurrentSelection { [self] selection in
+            withCurrentSelection(preferWeb: true) { [self] selection in
                 self.controller.speakFromLocator(selection.locator)
             }
         }
