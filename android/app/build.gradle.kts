@@ -129,6 +129,16 @@ tasks.named("preBuild").configure {
     dependsOn(syncReaderAssets)
 }
 
+val verifyDisposableAndroidDevice by tasks.registering(Exec::class) {
+    group = "verification"
+    description = "Keep connected Android tests off devices with personal app data"
+    commandLine("bash", rootProject.file("scripts/require-emulator.sh"), android.sdkDirectory.resolve("platform-tools/adb"))
+}
+
+tasks.matching { it.name == "connectedDebugAndroidTest" }.configureEach {
+    dependsOn(verifyDisposableAndroidDevice)
+}
+
 tasks.matching { it.name == "packageRelease" }.configureEach {
     doFirst {
         val missing = buildList {

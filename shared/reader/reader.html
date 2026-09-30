@@ -138,6 +138,7 @@
     window.readerFontPercent = readerFontPercent;
     let nativePinchStartFontPercent = readerFontPercent;
     let speechBlocks = [];
+    let speechPlanStartCfi = "";
     let activeSpeechBlock = null;
     let activeSpeechHighlightWindow = null;
     let lastSpeechCfi = "";
@@ -326,6 +327,9 @@
             applyTypographyToDocument(contentDocument);
           }
           applyContinuousShellBackground();
+          if (speechActive && speechBlocks.length) {
+            requestAnimationFrame(function() { window.refreshSpeechBlocks(); });
+          }
         });
         rendition.on("selected", function(cfi, contents) {
           const selectedRange = contents && contents.window && contents.window.getSelection();
@@ -810,9 +814,15 @@
         if (window.bookstrNativeSwipeNavigation) return;
         event.preventDefault();
         event.stopPropagation();
-        const selection = contentDocument.defaultView && contentDocument.defaultView.getSelection
-          ? contentDocument.defaultView.getSelection().toString().trim() : "";
-        if (window.AndroidBridge) AndroidBridge.onReaderLongPress(selection);
+        const selected = captureLiveTextSelection();
+        let cfi = selected && selected.cfi || "";
+        if (!cfi && typeof contentDocument.caretRangeFromPoint === "function") {
+          cfi = rangeToCfi(contentDocument.caretRangeFromPoint(event.clientX, event.clientY));
+        }
+        if (window.AndroidBridge && AndroidBridge.onReaderLongPress) AndroidBridge.onReaderLongPress(JSON.stringify({
+          text: selected && selected.text || "",
+          cfi: cfi
+        }));
       }, true);
     }
 
@@ -1607,9 +1617,10 @@
 
     window.requestSpeechText = function(notifyNative, requestID, fromCfi) {
       if (!rendition) return;
-      let resumeCfi = String(fromCfi || lastSpeechCfi || "").trim();
+      let resumeCfi = String(fromCfi == null ? lastSpeechCfi || "" : fromCfi).trim();
+      speechPlanStartCfi = resumeCfi;
       if (resumeCfi) lastSpeechCfi = resumeCfi;
-      speechActive = true;
+      if (notifyNative !== false) speechActive = true;
       clearSpeechProgress(false);
 
       function collectSpeechParts(activeResumeCfi) {
@@ -1622,6 +1633,10 @@
         contentsList.forEach(function(contents) {
           if (totalLength >= 100000 || !contents || !contents.document) return;
           const contentDocument = contents.document;
+          if (window.BookstrSpeech && window.BookstrSpeech.isOpeningNavigationDocument &&
+              window.BookstrSpeech.isOpeningNavigationDocument(
+                contentDocument, currentSpeechSpineIndex() <= 4
+              )) return;
           if (!language) language = String(contentDocument.documentElement.lang || "").trim();
           const frame = contentDocument.defaultView && contentDocument.defaultView.frameElement;
           const frameTop = frame && frame.getBoundingClientRect ? frame.getBoundingClientRect().top : 0;
@@ -1630,7 +1645,6 @@
             : Array.from(contentDocument.querySelectorAll(
               "h1, h2, h3, h4, h5, h6, p, blockquote, pre, figcaption, dt, dd, li"
             ));
-          if (!blocks.length && contentDocument.body) blocks = [contentDocument.body];
           blocks.forEach(function(block) {
             if (totalLength >= 100000) return;
             let text = window.BookstrSpeech && window.BookstrSpeech.visibleText
@@ -1695,10 +1709,28 @@
         exhausted: false,
       };
       if (notifyNative !== false && window.AndroidBridge && AndroidBridge.onSpeechText) {
-        AndroidBridge.onSpeechText(JSON.stringify(payload));
+        if (parts.length) AndroidBridge.onSpeechText(JSON.stringify(payload));
+        else window.continueSpeechAfterSection(true, requestID, 0);
       }
       return payload;
     };
+
+    window.refreshSpeechBlocks = function() {
+      if (!speechActive || !speechBlocks.length) return;
+      const currentCfi = lastSpeechCfi;
+      const startCfi = speechPlanStartCfi;
+      const previousBlocks = speechBlocks;
+      window.requestSpeechText(false, null, startCfi);
+      if (!speechBlocks.length) speechBlocks = previousBlocks;
+      lastSpeechCfi = currentCfi;
+      speechPlanStartCfi = startCfi;
+    };
+    window.addEventListener("resize", function() {
+      if (!speechActive || !speechBlocks.length) return;
+      requestAnimationFrame(function() {
+        requestAnimationFrame(function() { window.refreshSpeechBlocks(); });
+      });
+    });
 
     function emitSpeechPayload(payload) {
       if (window.AndroidBridge && AndroidBridge.onSpeechText) {

@@ -4,6 +4,11 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Density
+import app.bookstr.tabletFontMultiplier
 import app.bookstr.data.ReaderTheme
 
 private val WhiteColorScheme = lightColorScheme(
@@ -47,11 +52,15 @@ fun BookstrTheme(
         ReaderTheme.Night -> NightColorScheme
     }
 
-    MaterialTheme(
-        colorScheme = colorScheme,
-        typography = Typography,
-        content = content,
-    )
+    val density = LocalDensity.current
+    val multiplier = tabletFontMultiplier(LocalConfiguration.current.smallestScreenWidthDp)
+    CompositionLocalProvider(LocalDensity provides Density(density.density, density.fontScale * multiplier)) {
+        MaterialTheme(
+            colorScheme = colorScheme,
+            typography = Typography,
+            content = content,
+        )
+    }
 }
 
 @Composable

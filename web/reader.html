@@ -845,6 +845,9 @@
         for (const view of contentViews) {
           const contentDocument = view && view.document;
           if (!contentDocument) continue;
+          const location = rendition.currentLocation && rendition.currentLocation();
+          const earlySection = !location || !location.start || location.start.index <= 4;
+          if (window.BookstrSpeech.isOpeningNavigationDocument(contentDocument, earlySection)) continue;
           if (!language) language = String(contentDocument.documentElement.lang || "").trim();
           const frame = contentDocument.defaultView && contentDocument.defaultView.frameElement;
           const frameTop = frame && frame.getBoundingClientRect ? frame.getBoundingClientRect().top : 0;
@@ -853,9 +856,6 @@
             : Array.from(contentDocument.querySelectorAll(
               "h1, h2, h3, h4, h5, h6, p, li, blockquote, pre, figcaption, dt, dd"
             ));
-          if (!elements.length && contentDocument.body) {
-            elements = [contentDocument.body];
-          }
           for (const element of elements) {
             let text = String(
               window.BookstrSpeech.visibleText

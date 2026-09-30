@@ -712,6 +712,8 @@ final class ReaderAssetContractTests: XCTestCase {
         XCTAssertTrue(html.contains("payload.source = \"speech\""))
         XCTAssertTrue(html.contains("window.requestSpeechText = function(notifyNative, requestID, fromCfi)"))
         XCTAssertTrue(html.contains("window.BookstrSpeech.speakableBlocks"))
+        XCTAssertTrue(html.contains("window.BookstrSpeech.isOpeningNavigationDocument"))
+        XCTAssertTrue(html.contains("window.refreshSpeechBlocks = function()"))
         XCTAssertTrue(html.contains("function collectSpeechParts(activeResumeCfi)"))
         XCTAssertTrue(html.contains("if (!collected.parts.length && resumeCfi)"))
         XCTAssertTrue(html.contains("collected = collectSpeechParts(\"\")"))
@@ -746,6 +748,7 @@ final class ReaderAssetContractTests: XCTestCase {
         XCTAssertTrue(source.contains("exhausted: Bool = false"))
         XCTAssertTrue(source.contains("if !exhausted"))
         XCTAssertTrue(source.contains("speechStopRequested"))
+        XCTAssertTrue(source.contains("withCurrentSelection(preferWeb: true) { [self] selection in"))
 
         let hostURL = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
