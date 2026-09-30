@@ -22,4 +22,17 @@ class SpeechSettingsTest {
         restored.setVoice("nl", "")
         assertEquals("", restored.voice("Dutch")); assertEquals("kokoro_en", restored.voice("English"))
     }
+
+    @Test fun storesClampedReadingRatePerLanguageAcrossRepositoryRecreation() {
+        val prefs = RuntimeEnvironment.getApplication().getSharedPreferences("speech-rate-test", Context.MODE_PRIVATE)
+        val settings = SpeechSettings(prefs)
+        assertEquals(SpeechSettings.DEFAULT_RATE, settings.rate("nl"), 0.0001f)
+        settings.setRate("Dutch", 0.55f)
+        settings.setRate("en", 0.1f)
+        val restored = SpeechSettings(prefs)
+        assertEquals(0.55f, restored.rate("nld"), 0.0001f)
+        assertEquals(SpeechSettings.MINIMUM_RATE, restored.rate("English"), 0.0001f)
+        restored.setRate("nl", 0.9f)
+        assertEquals(SpeechSettings.MAXIMUM_RATE, restored.rate("Dutch"), 0.0001f)
+    }
 }

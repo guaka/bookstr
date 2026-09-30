@@ -2,10 +2,19 @@ package app.bookstr.ui
 
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.width
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Description
+import androidx.compose.material.icons.filled.Language
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.unit.dp
 import java.util.Locale
 
 internal fun languageDisplayName(value: String): String {
@@ -26,20 +35,26 @@ internal fun languageDisplayName(value: String): String {
 
 @Composable
 fun BookFilterBar(prefix: String, languages: List<String>, formats: List<String>,
-                  language: String, format: String, onLanguage: (String) -> Unit, onFormat: (String) -> Unit) {
-    Row {
-        FilterMenu("$prefix.language", "All languages", languages, language, ::languageDisplayName, onLanguage)
-        FilterMenu("$prefix.format", "All formats", formats, format, { it.uppercase(java.util.Locale.ROOT) }, onFormat)
+                  language: String, format: String, onLanguage: (String) -> Unit, onFormat: (String) -> Unit,
+                  modifier: Modifier = Modifier) {
+    Row(modifier = modifier, horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+        FilterMenu("$prefix.language", "All languages", languages, language, ::languageDisplayName,
+            Icons.Default.Language, onLanguage, Modifier.weight(1f))
+        FilterMenu("$prefix.format", "All formats", formats, format,
+            { it.uppercase(Locale.ROOT) }, Icons.Default.Description, onFormat, Modifier.weight(1f))
     }
 }
 
 @Composable
 private fun FilterMenu(tag: String, all: String, options: List<String>, selection: String,
-                       display: (String) -> String, onSelect: (String) -> Unit) {
+                       display: (String) -> String, icon: androidx.compose.ui.graphics.vector.ImageVector,
+                       onSelect: (String) -> Unit, modifier: Modifier = Modifier) {
     var expanded by remember { mutableStateOf(false) }
-    Box {
-        TextButton(onClick = { expanded = true }, modifier = Modifier.testTag(tag)) {
-            Text(if (selection.isEmpty()) all else display(selection))
+    Box(modifier) {
+        TextButton(onClick = { expanded = true }, modifier = Modifier.fillMaxWidth().testTag(tag)) {
+            Icon(icon, contentDescription = null, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.width(5.dp))
+            Text(if (selection.isEmpty()) all else display(selection), maxLines = 1)
         }
         DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
             (listOf("") + options).forEach { option ->

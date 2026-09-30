@@ -23,6 +23,16 @@ class ReaderTextToSpeechTest {
     }
 
     @Test
+    fun abbreviationPeriodDoesNotBecomeASpeechChunkBoundary() {
+        val text = "word ".repeat(20) + "Dr. Smith continued with " + "more words ".repeat(20)
+        val chunks = ReaderActivity.speechChunks(text, "en-US")
+
+        assertTrue(chunks.size > 1)
+        assertEquals(text.trim(), chunks.joinToString(" "))
+        assertTrue(chunks.none { it.endsWith("Dr.") })
+    }
+
+    @Test
     fun genericPortugueseDefaultsToEuropeanWhileRegionalTagsArePreserved() {
         assertEquals("pt-PT", ReaderActivity.preferredSpeechLocale("pt").toLanguageTag())
         assertEquals("pt-BR", ReaderActivity.preferredSpeechLocale("pt-BR").toLanguageTag())
@@ -54,13 +64,13 @@ class ReaderTextToSpeechTest {
         assertTrue(readerSource.contains("EXTRA_REQUEST_CONTINUE"))
         assertTrue(readerSource.contains("continueSpeechAfterSection"))
         assertTrue(readerSource.contains("optBoolean(\"exhausted\""))
-        assertTrue(serviceSource.contains("engine?.setSpeechRate(1.0f)"))
+        assertTrue(serviceSource.contains("engine?.setSpeechRate(speechSpeedMultiplier())"))
         assertTrue(serviceSource.contains("engine.voices"))
         assertTrue(serviceSource.contains("SpeechVoiceSelection.resolve("))
         assertTrue(serviceSource.contains("synthesizeToFile"))
         assertTrue(serviceSource.contains("MediaPlayer()"))
         assertTrue(serviceSource.contains("player.currentPosition"))
-        assertTrue(serviceSource.contains("SENTENCE_PAUSE_MILLIS = 240L"))
+        assertTrue(serviceSource.contains("SENTENCE_PAUSE_MILLIS = 100L"))
         assertTrue(serviceSource.contains("KeepEngineDefault"))
     }
 
@@ -98,5 +108,26 @@ class ReaderTextToSpeechTest {
     fun emptyLanguageDefaultsToEnglish() {
         assertEquals("en", ReaderActivity.preferredSpeechLocale("  ").toLanguageTag())
         assertEquals("fr-FR", ReaderActivity.preferredSpeechLocale(" FR-fr ").toLanguageTag())
+    }
+
+    @Test
+    fun spokenTextUsesLocaleSpelloutAndRetainsEnglishAbbreviations() {
+        val source = "Dr. Smith saw Mr. Jones and Mrs. Brown on 9/10/2024. e.g. U.S. history changed in 2024!"
+        for (locale in listOf("en", "nl", "pt-PT", "pt-BR")) {
+            val numericText = if (locale == "en") "There were 1,234.5 coins." else "There were 1.234,5 coins."
+            val spoken = SpeechSpokenText.normalize("$source $numericText", locale)
+            if (locale == "en") {
+                assertTrue(spoken.contains("doctor"))
+                assertTrue(spoken.contains("mister"))
+                assertTrue(spoken.contains("missus"))
+                assertTrue(spoken.contains("for example"))
+                assertTrue(spoken.contains("United States"))
+            } else {
+                assertTrue("$locale abbreviation", spoken.contains("Dr."))
+                assertTrue("$locale abbreviation", spoken.contains("e.g."))
+            }
+            assertTrue("$locale sentence ending", spoken.contains("!"))
+            assertTrue("$locale numbers spelled", !Regex("\\d").containsMatchIn(spoken))
+        }
     }
 }

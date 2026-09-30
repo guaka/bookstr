@@ -17,6 +17,50 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 
 class NeuralNarrationServiceTest {
+    @Test fun startingNarrationRequestsReaderTextInAutoplayState() {
+        val app = ApplicationProvider.getApplicationContext<BookstrApp>()
+        app.settingsRepository.clearReaderSession()
+        val requested = CountDownLatch(1)
+        val suppliedWhilePaused = CountDownLatch(1)
+        val playing = AtomicBoolean(false)
+        val remainedPaused = AtomicBoolean(false)
+        val receiver = object : BroadcastReceiver() {
+            override fun onReceive(context: Context, intent: Intent) {
+                if (intent.getBooleanExtra(NarrationService.EXTRA_REQUEST_TEXT, false)) {
+                    playing.set(intent.getBooleanExtra(NarrationService.EXTRA_IS_PLAYING, false))
+                    requested.countDown()
+                }
+                if (intent.getBooleanExtra(NarrationService.EXTRA_HAS_TEXT, false) &&
+                    !intent.getBooleanExtra(NarrationService.EXTRA_IS_PLAYING, false)
+                ) {
+                    remainedPaused.set(true)
+                    suppliedWhilePaused.countDown()
+                }
+            }
+        }
+        app.registerReceiver(receiver, IntentFilter(NarrationService.ACTION_EVENT), Context.RECEIVER_NOT_EXPORTED)
+        try {
+            ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+                scenario.onActivity {
+                    NarrationService.toggle(it, "autoplay-test", "Autoplay fixture", null, null)
+                }
+                assertTrue("Narration did not request text", requested.await(10, TimeUnit.SECONDS))
+                assertTrue("Text request was left paused", playing.get())
+                scenario.onActivity {
+                    NarrationService.toggle(it, "autoplay-test", "Autoplay fixture", null, null)
+                }
+                scenario.onActivity {
+                    NarrationService.speak(it, "A short fixture sentence.", "en", bookId = "autoplay-test", title = "Autoplay fixture", author = null, coverUrl = null)
+                }
+                assertTrue("Pause during text request was ignored", suppliedWhilePaused.await(10, TimeUnit.SECONDS))
+                assertTrue(remainedPaused.get())
+                scenario.onActivity { NarrationService.stop(it) }
+            }
+        } finally {
+            app.unregisterReceiver(receiver)
+        }
+    }
+
     @Test fun dutchNarrationPlaysReportsProgressAndRequestsTheNextSection() = runBlocking {
         val app = ApplicationProvider.getApplicationContext<BookstrApp>()
         app.settingsRepository.clearReaderSession()

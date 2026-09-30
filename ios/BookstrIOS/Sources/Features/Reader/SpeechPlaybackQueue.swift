@@ -21,10 +21,15 @@ struct SpeechQueueChunk: Equatable {
 }
 
 enum SpeechSpokenText {
-    static func normalize(_ text: String) -> String {
+    static func normalize(_ text: String) -> String { normalize(text, languageTag: nil) }
+
+    static func normalize(_ text: String, languageTag: String?) -> String {
         let output = NSMutableString(string: text)
-        replace(pattern: #"\d{1,3}(?:,\d{3})+(?:\.\d+)?"#, in: output) { match in
-            match.replacingOccurrences(of: ",", with: "")
+        let requestedLocale = languageTag.map(Locale.init(identifier:))
+        if requestedLocale == nil || requestedLocale?.language.languageCode?.identifier == "en" {
+            replace(pattern: #"\d{1,3}(?:,\d{3})+(?:\.\d+)?"#, in: output) { match in
+                match.replacingOccurrences(of: ",", with: "")
+            }
         }
         replace(pattern: #"\d{1,3}(?:[\u00A0\u202F ]\d{3})+(?:[.,]\d+)?"#, in: output) { match in
             match
@@ -45,7 +50,65 @@ enum SpeechSpokenText {
         }
         spoken = spoken.replacingOccurrences(of: " ,", with: ",")
         spoken = spoken.replacingOccurrences(of: " .", with: ".")
-        return spoken.trimmingCharacters(in: .whitespacesAndNewlines)
+        let cleaned = spoken.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let languageTag, !cleaned.isEmpty else { return cleaned }
+        let locale = requestedLocale ?? Locale(identifier: languageTag)
+        let prepared = locale.language.languageCode?.identifier == "en" ? expandEnglishAbbreviations(cleaned) : cleaned
+        let numberFormatter = NumberFormatter()
+        numberFormatter.locale = locale
+        numberFormatter.numberStyle = .spellOut
+        // Foundation's sentence enumeration is backed by the system ICU data.
+        // Enumerating by sentence keeps number conversion scoped to natural
+        // utterances while preserving the original punctuation and spacing.
+        var result = ""
+        prepared.enumerateSubstrings(in: prepared.startIndex..<prepared.endIndex, options: [.bySentences, .substringNotRequired]) { _, range, _, _ in
+            let sentence = String(prepared[range])
+            result += spellNumbers(sentence, formatter: numberFormatter)
+        }
+        return result.isEmpty ? prepared : result
+    }
+
+    private static func expandEnglishAbbreviations(_ text: String) -> String {
+        let replacements: [(String, String)] = [
+            (#"(?i)\bMrs\."#, "missus"),
+            (#"(?i)\bMr\."#, "mister"),
+            (#"(?i)\bDr\."#, "doctor"),
+            (#"(?i)\be\.g\."#, "for example"),
+            (#"(?i)\bU\.S\."#, "United States"),
+        ]
+        return replacements.reduce(text) { value, item in
+            value.replacingOccurrences(of: item.0, with: item.1, options: .regularExpression)
+        }
+    }
+
+    private static let numberPattern = #"(?<![\p{L}\p{N}])\d+(?:[.,]\d+)?(?![\p{L}\p{N}])"#
+    private static let europeanGroupedPattern = #"(?<![\p{L}\p{N}])\d{1,3}(?:\.\d{3})+(?:,\d+)?(?![\p{L}\p{N}])"#
+
+    private static func spellNumbers(_ text: String, formatter: NumberFormatter) -> String {
+        guard let regex = try? NSRegularExpression(pattern: numberPattern),
+              let europeanRegex = try? NSRegularExpression(pattern: europeanGroupedPattern) else { return text }
+        let locale = formatter.locale?.language.languageCode?.identifier ?? ""
+        let european = NSMutableString(string: text)
+        if locale == "nl" || locale == "pt" {
+            let source = text as NSString
+            for match in europeanRegex.matches(in: text, range: NSRange(location: 0, length: source.length)).reversed() {
+                let raw = source.substring(with: match.range)
+                let normalized = raw.replacingOccurrences(of: ".", with: "").replacingOccurrences(of: ",", with: ".")
+                let replacement = Double(normalized).flatMap { formatter.string(from: NSNumber(value: $0)) } ?? raw
+                european.replaceCharacters(in: match.range, with: replacement)
+            }
+        }
+        let sourceText = european as String
+        let nsText = sourceText as NSString
+        let matches = regex.matches(in: sourceText, range: NSRange(location: 0, length: nsText.length))
+        let result = NSMutableString(string: sourceText)
+        for match in matches.reversed() {
+            let raw = nsText.substring(with: match.range)
+            let value = Double(raw.replacingOccurrences(of: ",", with: "."))
+            let replacement = value.flatMap { formatter.string(from: NSNumber(value: $0)) } ?? raw
+            result.replaceCharacters(in: match.range, with: replacement)
+        }
+        return result as String
     }
 
     private static func replace(

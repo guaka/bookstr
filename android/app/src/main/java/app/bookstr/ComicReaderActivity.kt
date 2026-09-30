@@ -2,6 +2,8 @@ package app.bookstr
 
 import android.annotation.SuppressLint
 import android.os.Bundle
+import android.os.Build
+import android.view.WindowManager
 import android.webkit.JavascriptInterface
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
@@ -37,6 +39,7 @@ class ComicReaderActivity : ComponentActivity() {
         }
         bookId = intent.getStringExtra(EXTRA_BOOK_ID).orEmpty()
         val app = application as BookstrApp
+        applyLockScreenPolicy(app.settingsRepository.keepReadingOnLockScreen)
         format = BookFormat.from(intent.getStringExtra(EXTRA_FORMAT), intent.getStringExtra(EXTRA_URL).orEmpty())
         archive = app.catalogRepository.publicationFile(bookId, format)
         val loader = WebViewAssetLoader.Builder()
@@ -78,6 +81,20 @@ class ComicReaderActivity : ComponentActivity() {
             }
         }
         web.loadUrl("https://appassets.androidplatform.net/assets/comic-reader.html")
+    }
+
+    override fun onResume() {
+        super.onResume()
+        applyLockScreenPolicy((application as BookstrApp).settingsRepository.keepReadingOnLockScreen)
+    }
+
+    private fun applyLockScreenPolicy(enabled: Boolean) {
+        if (enabled) window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        else window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+            setShowWhenLocked(enabled)
+            setTurnScreenOn(enabled)
+        }
     }
 
     private fun quote(value: String) = org.json.JSONObject.quote(value)

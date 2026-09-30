@@ -34,8 +34,9 @@ export BOOST_ROOT=/opt/homebrew/opt/boost
 export ANDROID_HOME="$HOME/Library/Android/sdk"
 ./gradlew --max-workers=2 testDebugUnitTest assembleDebug
 APK=app/build/outputs/apk/debug/app-debug.apk
-"$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$APK" | head -n 2
-"$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --print-certs "$APK"
+BUILD_TOOLS="$(dirname "$(find "$ANDROID_HOME/build-tools" -mindepth 2 -maxdepth 2 -name apksigner | sort | tail -n 1)")"
+"$BUILD_TOOLS/aapt" dump badging "$APK" | head -n 2
+"$BUILD_TOOLS/apksigner" verify --print-certs "$APK"
 adb devices -l
 ```
 
@@ -57,6 +58,27 @@ emulator. Search automatically requests the next page near the list end; newly
 queued downloads appear first, and completed rows open when tapped. In a reader,
 tap the bottom edge to reveal the four app destinations.
 Tap an author's name in the EPUB, PDF, or FB2 header to search for that author.
+
+### Update over Wi-Fi
+
+On the tablet, enable **Developer options → Wireless debugging**, then choose
+**Pair device with pairing code**. Keep that dialog open while running:
+
+```sh
+adb pair TABLET_IP:PAIRING_PORT
+# Enter the code shown on the tablet when prompted.
+adb mdns services
+adb connect TABLET_IP:CONNECT_PORT
+adb -s TABLET_IP:CONNECT_PORT shell getprop ro.serialno
+adb -s TABLET_IP:CONNECT_PORT install -r "$APK"
+```
+
+Use the `_adb-tls-connect._tcp` port from `adb mdns services` or the tablet's
+Wireless debugging screen for `CONNECT_PORT`; it differs from `PAIRING_PORT`.
+Compare the returned serial with the USB serial before installing. If pairing
+times out, reopen the pairing dialog for a fresh code and port. The same signer
+and first-install-time checks above apply over Wi-Fi. Avoid plain `adb tcpip`
+debugging on a shared network.
 
 NIP-44 test vectors are from <https://github.com/paulmillr/nip44> (`nip44.vectors.json`).
 Native instrumentation uses a tiny local HTTP seed fixture, not a public book or

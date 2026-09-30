@@ -338,13 +338,13 @@ class LibraryScreenTest {
         }
 
         composeRule.onNodeWithTag("library.language").performClick()
-        composeRule.onNodeWithTag("library.language.EN").assertExists()
-        composeRule.onNodeWithTag("library.language.UND").assertExists()
+        composeRule.onNodeWithTag("library.language.en").assertExists()
+        composeRule.onNodeWithTag("library.language.und").assertExists()
         composeRule.onNodeWithText("English").assertIsDisplayed()
         composeRule.onNodeWithText("Undefined").assertIsDisplayed()
         composeRule.onNodeWithText("EN").assertDoesNotExist()
 
-        composeRule.onNodeWithTag("library.language.UND").performClick()
+        composeRule.onNodeWithTag("library.language.und").performClick()
         composeRule.onNodeWithTag("library.language").assertTextEquals("Undefined")
         composeRule.onNodeWithText("Unspecified title").assertIsDisplayed()
         composeRule.onNodeWithText("English title").assertDoesNotExist()

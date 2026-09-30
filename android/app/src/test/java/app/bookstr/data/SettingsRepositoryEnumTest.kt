@@ -25,6 +25,8 @@ class SettingsRepositoryEnumTest {
         assertEquals(ReaderFont.Georgia, ReaderFont.fromKey("georgia"))
         assertEquals(ReaderFont.Palatino, ReaderFont.fromKey("palatino"))
         assertEquals(ReaderFont.System, ReaderFont.fromKey("system"))
+        assertEquals(ReaderFont.Roboto, ReaderFont.fromKey("roboto"))
+        assertEquals(ReaderFont.NotoSerif, ReaderFont.fromKey("noto-serif"))
         assertEquals(ReaderAlignment.Justified, ReaderAlignment.fromKey("justified"))
         assertEquals(ReaderAlignment.Left, ReaderAlignment.fromKey("left"))
     }

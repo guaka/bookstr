@@ -1,5 +1,28 @@
 # Text-to-Speech Direction
 
+## Locale-aware speech text
+
+Mobile TTS preprocessing runs after the original text and its reading offsets
+have been established. Android uses ICU4J's sentence BreakIterator and
+RuleBasedNumberFormat; iOS uses Foundation sentence enumeration and
+NumberFormatter spell-out, backed by the system's ICU data. The selected voice
+locale is passed through as a BCP 47 tag (en, nl, pt-PT, or pt-BR).
+Only speech input is normalized or spelled out. Displayed book text and chunk
+offsets continue to use the original text. Existing footnote removal and
+pronunciation overrides remain in their current pipeline.
+
+For English speech input, Dr., Mr., Mrs., e.g., and U.S. expand to their
+spoken forms (doctor, mister, missus, for example, and United States). This
+avoids spelling punctuation or introducing sentence breaks. ICU sentence
+boundaries are used when processing numbers; punctuation and genuine sentence
+endings are preserved. ICU/Foundation do not provide a
+reliable semantic date parser or a complete editorial abbreviation lexicon.
+Dates such as 9/10/2024 are therefore spelled as numeric components, and
+ambiguous numeric dates keep the source order; meaning is not inferred.
+Other abbreviations, initials, and edition-specific forms may still be
+pronounced according to the installed voice. Spell-out wording depends on the
+OS ICU/locale data and may differ by OS release or by TTS voice.
+
 ## iOS Dutch voice
 
 In Settings → Text-to-speech, choose Dutch and download **Dii · Nederlands**.

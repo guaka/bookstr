@@ -21,6 +21,8 @@ enum class ReaderFont(val key: String, val label: String) {
     Georgia("georgia", "Georgia"),
     Palatino("palatino", "Palatino"),
     System("system", "System"),
+    Roboto("roboto", "Roboto"),
+    NotoSerif("noto-serif", "Noto Serif"),
     ;
 
     companion object {

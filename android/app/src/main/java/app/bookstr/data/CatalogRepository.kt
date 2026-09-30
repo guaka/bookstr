@@ -17,6 +17,7 @@ import java.io.IOException
 import java.util.concurrent.TimeUnit
 import java.util.zip.ZipFile
 import java.io.BufferedInputStream
+import java.text.Normalizer
 import javax.xml.parsers.SAXParserFactory
 import org.xml.sax.Attributes
 import org.xml.sax.InputSource
@@ -89,10 +90,13 @@ data class BookSearchResult(
     val license: String? = null,
     val licenseUrl: String? = null,
     val rightsSource: String? = null,
+    val torrentEdition: TorrentEdition? = null,
+    val unavailableReason: String? = null,
 ) {
-    val isReadable: Boolean get() = (!downloadUrl.isNullOrBlank() || libvaultMd5 != null) && format != null
+    val isReadable: Boolean get() = unavailableReason == null && (!downloadUrl.isNullOrBlank() || libvaultMd5 != null) && format != null
 
     fun asCatalogBook(): CatalogBook? {
+        if (unavailableReason != null) return null
         val url = downloadUrl ?: if (libvaultMd5 != null) "" else return null
         val bookFormat = format ?: return null
         return CatalogBook(
@@ -113,6 +117,24 @@ data class BookSearchResult(
         )
     }
 }
+
+/** Finds the local publication that a catalog result refers to, including another edition ID. */
+fun matchingDownloadedBook(result: BookSearchResult, downloadedBooks: List<CatalogBook>): CatalogBook? {
+    downloadedBooks.firstOrNull { it.id == result.id }?.let { return it }
+    val title = normalizedBookIdentity(result.title)
+    val author = normalizedBookIdentity(result.author)
+    if (title.isBlank() || author.isBlank()) return null
+    return downloadedBooks.firstOrNull {
+        normalizedBookIdentity(it.title) == title && normalizedBookIdentity(it.author) == author
+    }
+}
+
+private fun normalizedBookIdentity(value: String): String = Normalizer
+    .normalize(value, Normalizer.Form.NFD)
+    .replace(Regex("\\p{Mn}+"), "")
+    .lowercase()
+    .replace(Regex("[^\\p{L}\\p{N}]+"), " ")
+    .trim()
 
 open class CatalogRepository(
     private val context: Context,
@@ -841,4 +863,3 @@ internal fun libcatSearchRequest(query: String, offset: Int): JSONObject = JSONO
     .put("search_type", "all")
     .put("limit", 50)
     .put("offset", offset)
-    .put("formats", JSONArray(BookFormat.entries.map { it.extension }))

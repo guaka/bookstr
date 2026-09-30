@@ -1,6 +1,7 @@
 package app.bookstr
 
 import android.content.Intent
+import android.app.KeyguardManager
 import android.os.Bundle
 import android.util.Log
 import androidx.activity.ComponentActivity
@@ -38,6 +39,7 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import app.bookstr.data.CatalogBook
 import app.bookstr.data.BookSearchResult
+import app.bookstr.data.matchingDownloadedBook
 import app.bookstr.data.SharedFavoriteRef
 import app.bookstr.data.CatalogRepository
 import app.bookstr.data.BookFormat
@@ -92,7 +94,13 @@ class MainActivity : ComponentActivity() {
         val vocabularyRepository = app.vocabularyRepository
         val dictionaryRepository = app.dictionaryRepository
 
-        if (savedInstanceState == null && pendingInvitation == null && !showDownloads && requestedTab == null) {
+        if (shouldRestoreReaderOnLaunch(
+                isLocked = getSystemService(KeyguardManager::class.java)?.isKeyguardLocked == true,
+                isFreshLaunch = savedInstanceState == null,
+                hasInvitation = pendingInvitation != null,
+                openingDownloads = showDownloads,
+                requestedTab = requestedTab,
+            )) {
             settings.readerSession()?.let { session ->
                 val publication = catalog.publicationFile(session.bookId, session.format)
                 if (publication.isFile) {
@@ -315,6 +323,7 @@ class MainActivity : ComponentActivity() {
                 fun openBook(book: CatalogBook) {
                     if (openingBookId != null) return
                     openingBookId = book.id
+                    NarrationService.stopIfDifferentBook(this@MainActivity, book.id)
                     scope.launch {
                         try {
                             catalog.ensureDownloaded(book)
@@ -430,11 +439,7 @@ class MainActivity : ComponentActivity() {
                             favorite.author.orEmpty().equals(result.author, ignoreCase = true))
                 }
 
-                fun matchingSearchBook(result: BookSearchResult) = books.firstOrNull { book ->
-                    book.id == result.id ||
-                        (book.title.equals(result.title, ignoreCase = true) &&
-                            book.author.equals(result.author, ignoreCase = true))
-                }
+                fun matchingSearchBook(result: BookSearchResult) = matchingDownloadedBook(result, books)
 
                 fun isSearchFavorite(result: BookSearchResult): Boolean =
                     result.id in favoriteIds ||
@@ -602,6 +607,7 @@ class MainActivity : ComponentActivity() {
                                         error = "This book is no longer downloaded. Open it from Library first."
                                     } else {
                                         val book = books.firstOrNull { it.id == word.bookId }
+                                        NarrationService.stopIfDifferentBook(this@MainActivity, word.bookId)
                                         startActivity(if (isPdf) {
                                             val parts = word.cfi.split(':')
                                             PdfReaderActivity.intent(
@@ -824,7 +830,8 @@ class MainActivity : ComponentActivity() {
                                 message = searchMessage,
                                 isFavorite = ::isSearchFavorite,
                                 readingProgress = { result ->
-                                    progress[result.id] ?: matchingSearchBook(result)?.let { progress[it.id] }
+                                    matchingSearchBook(result)?.takeIf { catalog.publicationFile(it.id, it.format).isFile }
+                                        ?.let { progress[it.id] }
                                 },
                                 onQueryChange = {
                                     searchQuery = it
@@ -835,12 +842,17 @@ class MainActivity : ComponentActivity() {
                                     }
                                 },
                                 onSearch = { runSearch() },
-                                onOpen = { result -> result.asCatalogBook()?.let { book ->
+                                onOpen = { result ->
+                                    val localBook = matchingSearchBook(result)?.takeIf {
+                                        catalog.publicationFile(it.id, it.format).isFile
+                                    }
+                                    if (localBook != null) openBook(localBook)
+                                    else result.asCatalogBook()?.let { book ->
                                     if (book.libvaultMd5 != null && !catalog.publicationFile(book.id, book.format).isFile) {
                                         openingBookId = book.id
                                         scope.launch {
                                             try {
-                                                val edition = catalog.resolveEdition(book)
+                                                val edition = result.torrentEdition ?: catalog.resolveEdition(book)
                                                 app.downloadStore.enqueue(book, edition)
                                                 DownloadService.dispatch(this@MainActivity)
                                                 showDownloads = true
@@ -897,7 +909,60 @@ class MainActivity : ComponentActivity() {
                                 },
                             )
                         }
-                        NarrationIsland(Modifier.align(Alignment.TopCenter).padding(12.dp))
+                        NarrationIsland(
+                            Modifier.align(Alignment.TopCenter).padding(12.dp),
+                            onOpenBook = { bookId, title, author ->
+                                val book = books.firstOrNull { it.id == bookId }
+                                if (book != null) {
+                                    openBook(book)
+                                } else {
+                                    val session = settings.readerSession()?.takeIf { it.bookId == bookId }
+                                    if (session != null && catalog.publicationFile(session.bookId, session.format).isFile) {
+                                        startActivity(
+                                            when (session.format) {
+                                                BookFormat.Cbr, BookFormat.Cbz -> ComicReaderActivity.intent(
+                                                    this@MainActivity, session.bookId, session.format, title,
+                                                )
+                                                BookFormat.Pdf -> PdfReaderActivity.intent(
+                                                    context = this@MainActivity,
+                                                    bookId = session.bookId,
+                                                    bookTitle = title,
+                                                    author = session.author ?: author.takeIf(String::isNotBlank),
+                                                    year = session.year,
+                                                    pageIndex = session.pageIndex,
+                                                    pageOffset = session.pageOffset,
+                                                )
+                                                BookFormat.Fb2 -> Fb2ReaderActivity.intent(
+                                                    context = this@MainActivity,
+                                                    bookId = session.bookId,
+                                                    bookTitle = title,
+                                                    author = session.author ?: author.takeIf(String::isNotBlank),
+                                                    year = session.year,
+                                                    locator = session.locator,
+                                                    rightsStatus = session.rightsStatus,
+                                                    license = session.license,
+                                                    licenseUrl = session.licenseUrl,
+                                                    rightsSource = session.rightsSource,
+                                                )
+                                                else -> ReaderActivity.intent(
+                                                    context = this@MainActivity,
+                                                    bookId = session.bookId,
+                                                    bookTitle = title,
+                                                    author = session.author ?: author.takeIf(String::isNotBlank),
+                                                    year = session.year,
+                                                    initialCfi = session.locator,
+                                                    theme = settings.theme,
+                                                    rightsStatus = session.rightsStatus,
+                                                    license = session.license,
+                                                    licenseUrl = session.licenseUrl,
+                                                    rightsSource = session.rightsSource,
+                                                )
+                                            },
+                                        )
+                                    }
+                                }
+                            },
+                        )
                     }
                 }
             }
@@ -972,3 +1037,11 @@ class MainActivity : ComponentActivity() {
         }
     }
 }
+
+internal fun shouldRestoreReaderOnLaunch(
+    isLocked: Boolean,
+    isFreshLaunch: Boolean,
+    hasInvitation: Boolean,
+    openingDownloads: Boolean,
+    requestedTab: Int?,
+): Boolean = isLocked && isFreshLaunch && !hasInvitation && !openingDownloads && requestedTab == null

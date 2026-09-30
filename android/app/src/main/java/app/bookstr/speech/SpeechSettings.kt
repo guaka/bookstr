@@ -5,9 +5,22 @@ import java.util.Locale
 
 /** Per-language choices shared by Settings and every narration entry point. */
 class SpeechSettings(private val preferences: SharedPreferences) {
+    fun rate(language: String): Float = preferences.getFloat(rateKey(language), DEFAULT_RATE).coerceIn(MINIMUM_RATE, MAXIMUM_RATE)
+    fun setRate(language: String, rate: Float) {
+        preferences.edit().putFloat(rateKey(language), rate.coerceIn(MINIMUM_RATE, MAXIMUM_RATE)).apply()
+    }
+
     fun voice(language: String): String = preferences.getString("speech_voice_${SpeechLanguages.tag(language)}", "").orEmpty()
     fun setVoice(language: String, voice: String) {
         preferences.edit().putString("speech_voice_${SpeechLanguages.tag(language)}", voice).apply()
+    }
+
+    private fun rateKey(language: String) = "speech_rate_${SpeechLanguages.tag(language)}"
+
+    companion object {
+        const val DEFAULT_RATE = 0.48f
+        const val MINIMUM_RATE = 0.35f
+        const val MAXIMUM_RATE = 0.60f
     }
 }
 

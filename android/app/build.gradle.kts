@@ -209,6 +209,7 @@ tasks.register<JacocoReport>("jacocoDebugUnitTestReport") {
 }
 
 dependencies {
+    implementation("com.ibm.icu:icu4j:76.1")
     val composeBom = platform("androidx.compose:compose-bom:2024.10.01")
     implementation(composeBom)
     androidTestImplementation(composeBom)

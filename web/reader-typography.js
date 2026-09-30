@@ -9,7 +9,9 @@
     arial: "Arial, Helvetica, sans-serif",
     georgia: "Georgia, 'Times New Roman', serif",
     palatino: "Palatino, 'Palatino Linotype', 'Iowan Old Style', serif",
-    system: "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
+    system: "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
+    roboto: "Roboto, 'Arial', sans-serif",
+    "noto-serif": "'Noto Serif', Georgia, 'Times New Roman', serif"
   };
 
   function normalizeFont(name) {
