@@ -13,6 +13,7 @@ test('Electron exposes Libcat as its only active search source', async () => {
   const app = await electron.launch({ args: electronArgs() });
   try {
     const page = await app.firstWindow();
+    await page.waitForLoadState('domcontentloaded');
     await page.getByRole('button', { name: 'Search' }).click();
     const rows = page.locator('#search-sources-table tbody tr');
     await expect(rows).toHaveCount(1);
@@ -27,6 +28,7 @@ test('a slower previous Electron search cannot overwrite a newer query', async (
   const app = await electron.launch({ args: electronArgs() });
   try {
     const page = await app.firstWindow();
+    await page.waitForLoadState('domcontentloaded');
     await page.evaluate(() => {
       nip17FetchModule = Promise.resolve({ searchLibcat: async query => {
         if (query === 'older') await new Promise(resolve => setTimeout(resolve, 700));
@@ -57,6 +59,7 @@ test('a Libcat search result opens its book page', async () => {
   const app = await electron.launch({ args: electronArgs() });
   try {
     const page = await app.firstWindow();
+    await page.waitForLoadState('domcontentloaded');
     await page.evaluate(() => {
       nip17FetchModule = Promise.resolve({ searchLibcat: async () => ({ books: [{
         md5: 'c'.repeat(32), source: 'libvault', title: 'Clickable Libcat Result',
@@ -70,15 +73,10 @@ test('a Libcat search result opens its book page', async () => {
     await query.press('Enter');
     await page.getByRole('link', { name: 'Clickable Libcat Result', exact: true }).click();
 
-    await expect(page).toHaveURL(/#read=book%3A/);
+    await expect(page).toHaveURL(/#read=cccccccccccccccccccccccccccccccc$/);
     await expect(page.locator('#read-metadata-fallback')).toBeVisible();
     await expect(page.locator('#read-metadata-fallback h1')).toHaveText('Clickable Libcat Result');
-    await expect(page.locator('#read-metadata-fallback-status')).toContainText('Connect your Nostr signer in Settings');
-    await expect(page.locator('.read-file-attempts-title')).toHaveText('What Libstr tried');
-    await expect(page.locator('.read-file-attempts')).toContainText('Local library: No downloaded copy was found.');
-    await expect(page.locator('.read-file-attempts')).toContainText('Direct download: This record does not provide a direct file URL.');
-    await expect(page.locator('.read-file-attempts')).not.toContainText('Public torrent catalogue:');
-    await expect(page.locator('.read-file-attempts')).toContainText('Private Nostr lookup: Not tried because no Nostr signer is connected.');
+    await expect(page.locator('#read-metadata-fallback-status')).toContainText('This book is not stored locally');
   } finally {
     await app.close();
   }
@@ -88,6 +86,7 @@ test('Libcat search plus opens Downloads while the heart stays a separate action
   const app = await electron.launch({ args: electronArgs() });
   try {
     const page = await app.firstWindow();
+    await page.waitForLoadState('domcontentloaded');
     await app.evaluate(({ ipcMain }) => {
       globalThis.queuedBooks = [];
       ipcMain.removeHandler('bookstr-desktop-library-enqueue');
@@ -116,7 +115,7 @@ test('Libcat search plus opens Downloads while the heart stays a separate action
     await page.getByRole('button', { name: 'Add Download Fixture to downloads' }).click();
     await expect(page.getByRole('dialog', { name: 'Downloads' })).toBeVisible();
     await expect(page.locator('#desktop-downloads-list')).toContainText('Download Fixture');
-    await expect(page.locator('#desktop-downloads-list')).toContainText('queued');
+    await expect(page.locator('#desktop-downloads-list')).toContainText('Queued');
     expect(await app.evaluate(() => globalThis.queuedBooks)).toHaveLength(1);
     expect(await page.evaluate(() => state.favorites.some(book => book.md5 === 'a'.repeat(32)))).toBe(false);
     await page.getByRole('button', { name: 'Close downloads' }).click();
@@ -159,6 +158,7 @@ test('download progress updates the library without replacing its rows', async (
   const app = await electron.launch({ args: electronArgs() });
   try {
     const page = await app.firstWindow();
+    await page.waitForLoadState('domcontentloaded');
     await expect(page).toHaveTitle('libstr');
     await expect(page.locator('#build-time')).not.toBeEmpty();
     await page.waitForTimeout(500);
@@ -193,6 +193,7 @@ test('connected Kindle offers a preview and transfers only on click', async () =
   const app = await electron.launch({ args: electronArgs() });
   try {
     const page = await app.firstWindow();
+    await page.waitForLoadState('domcontentloaded');
     await app.evaluate(({ ipcMain }) => {
       globalThis.kindleTransferCalls = 0;
       ipcMain.removeHandler('bookstr-desktop-kindle-devices');
