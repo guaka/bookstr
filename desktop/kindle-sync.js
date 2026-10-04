@@ -132,10 +132,14 @@ class KindleSync {
     throw new Error('Kindle is disconnected.');
   }
 
-  async localBooks() {
+  async localBooks(bookId) {
     const books = [];
     const skipped = [];
-    for (const job of this.store.downloads()) {
+    const jobs = this.store.downloads();
+    if (bookId !== undefined && !jobs.some(job => job.bookId === bookId)) throw new Error('Downloaded book was not found.');
+    for (const job of jobs) {
+      if (bookId !== undefined && job.bookId !== bookId) continue;
+      if (bookId !== undefined && !['ready', 'seeding'].includes(job.status)) throw new Error('Book is not downloaded.');
       if (!['ready', 'seeding'].includes(job.status)) continue;
       const extension = String(job.extension || '').toLowerCase();
       if (!FORMATS.has(extension)) {
@@ -151,12 +155,13 @@ class KindleSync {
         skipped.push({ title: job.title || job.bookId, reason: error.message || String(error) });
       }
     }
+    if (bookId !== undefined && skipped.length) throw new Error(skipped[0].reason);
     return { books, skipped };
   }
 
-  async preview(id) {
+  async preview(id, bookId) {
     const { transport, device } = await this.findDevice(id);
-    const { books, skipped } = await this.localBooks();
+    const { books, skipped } = await this.localBooks(bookId);
     const sizes = new Set(books.map(book => book.size));
     const existing = await transport.files(device, sizes);
     const remoteHashes = new Set();
@@ -172,13 +177,13 @@ class KindleSync {
       alreadyPresent: books.length - missing.length, skipped };
   }
 
-  async transfer(id) {
+  async transfer(id, bookId) {
     if (this.syncing) throw new Error('A Kindle transfer is already running.');
     this.syncing = true;
     try {
       const { transport, device } = await this.findDevice(id);
-      const plan = await this.preview(id);
-      const { books } = await this.localBooks();
+      const plan = await this.preview(id, bookId);
+      const { books } = await this.localBooks(bookId);
       const missingIds = new Set(plan.missing.map(book => book.bookId));
       const transferred = [];
       const errors = [];

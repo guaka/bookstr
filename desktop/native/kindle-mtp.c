@@ -26,13 +26,17 @@ static void device_id(char *target, size_t size, LIBMTP_raw_device_t *raw) {
 static LIBMTP_mtpdevice_t *open_kindle(const char *id) {
   LIBMTP_raw_device_t *raw = NULL;
   int count = 0;
-  if (LIBMTP_Detect_Raw_Devices(&raw, &count) != LIBMTP_ERROR_NONE) return NULL;
+  if (LIBMTP_Detect_Raw_Devices(&raw, &count) != LIBMTP_ERROR_NONE) {
+    fputs("Kindle USB discovery failed while opening the device.\n", stderr);
+    return NULL;
+  }
   LIBMTP_mtpdevice_t *device = NULL;
   for (int i = 0; i < count; ++i) {
     char candidate[40];
     device_id(candidate, sizeof(candidate), &raw[i]);
     if (raw[i].device_entry.vendor_id == 0x1949 && strcmp(candidate, id) == 0) {
       device = LIBMTP_Open_Raw_Device_Uncached(&raw[i]);
+      if (!device) fputs("Kindle MTP open failed; reconnect in USB transfer mode and close other transfer apps.\n", stderr);
       break;
     }
   }
@@ -52,26 +56,20 @@ static LIBMTP_folder_t *documents_folder(LIBMTP_folder_t *folder) {
 static int list_devices(void) {
   LIBMTP_raw_device_t *raw = NULL;
   int count = 0;
-  if (LIBMTP_Detect_Raw_Devices(&raw, &count) != LIBMTP_ERROR_NONE) { puts("[]"); return 0; }
+  if (LIBMTP_Detect_Raw_Devices(&raw, &count) != LIBMTP_ERROR_NONE) {
+    fputs("Kindle USB discovery failed.\n", stderr);
+    puts("[]");
+    return 0;
+  }
   putchar('[');
   int printed = 0;
   for (int i = 0; i < count; ++i) {
     if (raw[i].device_entry.vendor_id != 0x1949) continue;
-    LIBMTP_mtpdevice_t *device = LIBMTP_Open_Raw_Device_Uncached(&raw[i]);
-    if (!device) continue;
-    LIBMTP_folder_t *folders = LIBMTP_Get_Folder_List(device);
-    if (documents_folder(folders)) {
-      char id[40];
-      device_id(id, sizeof(id), &raw[i]);
-      char *friendly = LIBMTP_Get_Friendlyname(device);
-      if (printed++) putchar(',');
-      printf("{\"id\":"); json_string(id);
-      printf(",\"name\":"); json_string(friendly ? friendly : "Kindle");
-      putchar('}');
-      free(friendly);
-    }
-    LIBMTP_destroy_folder_t(folders);
-    LIBMTP_Release_Device(device);
+    char id[40];
+    device_id(id, sizeof(id), &raw[i]);
+    if (printed++) putchar(',');
+    printf("{\"id\":"); json_string(id);
+    printf(",\"name\":\"Kindle\"}");
   }
   puts("]");
   free(raw);
@@ -81,7 +79,11 @@ static int list_devices(void) {
 static int list_files(LIBMTP_mtpdevice_t *device) {
   LIBMTP_folder_t *folders = LIBMTP_Get_Folder_List(device);
   LIBMTP_folder_t *documents = documents_folder(folders);
-  if (!documents) { LIBMTP_destroy_folder_t(folders); return 1; }
+  if (!documents) {
+    fputs("Kindle Documents folder could not be read during preview.\n", stderr);
+    LIBMTP_destroy_folder_t(folders);
+    return 1;
+  }
   LIBMTP_file_t *files = LIBMTP_Get_Filelisting(device);
   putchar('[');
   int printed = 0;
