@@ -1,7 +1,7 @@
 import { normalizeRightsV2 } from '../rights/rights.mjs';
 import { sourceDescriptor } from './source-registry.mjs';
 
-const FORMATS = new Set(['epub', 'pdf', 'fb2']);
+const FORMATS = new Set(['epub', 'pdf', 'fb2', 'cbz', 'cbr']);
 const AVAILABILITY = new Set(['open', 'borrow', 'buy', 'preview', 'restricted']);
 
 function text(value, max = 512) {

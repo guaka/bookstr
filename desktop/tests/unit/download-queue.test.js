@@ -117,6 +117,13 @@ test('queue rejects records without a supported edition or downloadable file', a
   } }), /downloadable file/);
 });
 
+test('LibGen comic acquisitions accept CBZ and CBR formats', async () => {
+  const queue = new DownloadQueue({ store: {}, acquisitionManager: {} });
+  for (const extension of ['cbz', 'cbr']) {
+    assert.equal((await queue.prepare({ kind: 'libgen', record: { ...book, extension } })).fields.extension, extension);
+  }
+});
+
 test('provider downloads preserve their source and allow trusted open files', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'bookstr-provider-queue-'));
   const store = new LibraryStore({ dbPath: path.join(root, 'library.sqlite'), libraryRoot: root });

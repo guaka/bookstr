@@ -1751,3 +1751,12 @@ test('availabilitySourcesForBook returns unique source list for readUrl with que
     ['Gutenberg', 'Cached'],
   );
 });
+
+
+test('language labels resolve catalog codes to English names', () => {
+  for (const [code, name] of [['CAT', 'Catalan'], ['ca', 'Catalan'], ['EN', 'English'], ['eng', 'English'], ['FR', 'French'], ['fre', 'French'], ['pt_BR', 'Brazilian Portuguese'], ['english', 'English']]) {
+    assert.equal(globalThis.BookMetadata.languageLabel(code), name);
+  }
+  assert.equal(globalThis.BookMetadata.languageLabel('unknown'), '');
+  assert.equal(globalThis.BookMetadata.languageLabel('Klingon language'), 'Klingon language');
+});

@@ -26,6 +26,7 @@ const { LibraryImporter, hashFile, safeExtension } = require('./library-import')
 const { localBookCover, localBookMetadata, safeCoverID } = require('./library-cover');
 const { AcquisitionManager } = require('./acquisition-manager');
 const { DownloadQueue } = require('./download-queue');
+const { downloadsForRenderer } = require('./library-downloads');
 const { KindleSync, MountedKindles } = require('./kindle-sync');
 const { MtpKindles } = require('./kindle-mtp');
 const { ComicPdfConverter } = require('./comic-pdf');
@@ -80,6 +81,7 @@ const LIBRARY_PANES = [
   { label: 'Search', pane: 'search', accelerator: 'CmdOrCtrl+3' },
   { label: 'Devices', pane: 'people', accelerator: 'CmdOrCtrl+4' },
   { label: 'Words', pane: 'words', accelerator: 'CmdOrCtrl+5' },
+  { label: 'Downloads', pane: 'downloads', accelerator: 'CmdOrCtrl+6' },
 ];
 const DICTIONARY_PROXY_BASE_URL = process.env.NODE_ENV === 'test'
   ? process.env.BOOKSTR_DESKTOP_TEST_DICTIONARY_BASE_URL
@@ -1340,7 +1342,10 @@ function setupIpcHandlers() {
   ipcMain.handle('bookstr-desktop-device-set-registry-event', (_event, event) => {
     return ingestTrustedDeviceRegistryEvent(event);
   });
-  ipcMain.handle('bookstr-desktop-library-downloads', () => getLibraryStore().downloads());
+  ipcMain.handle('bookstr-desktop-library-downloads', () => downloadsForRenderer(
+    getLibraryStore().downloads(),
+    resolveRegisteredLibraryFile,
+  ));
   ipcMain.handle('bookstr-desktop-library-enqueue', (_event, request) => getDownloadQueue().enqueue(request));
   ipcMain.handle('bookstr-desktop-library-retry-download', (_event, bookId) => getDownloadQueue().retry(bookId));
   ipcMain.handle('bookstr-desktop-kindle-devices', () => getKindleSync().devices());

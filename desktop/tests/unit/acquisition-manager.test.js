@@ -6,11 +6,16 @@ const fsp = require('node:fs/promises');
 const path = require('node:path');
 const { Readable } = require('node:stream');
 const test = require('node:test');
-const { AcquisitionManager, createProgressThrottle, libgenTorrentMetadataURL } = require('../../acquisition-manager');
+const { AcquisitionManager, createProgressThrottle, extensionFor, libgenTorrentMetadataURL } = require('../../acquisition-manager');
 const { LibraryImporter } = require('../../library-import');
 const { LibraryStore } = require('../../library-store');
 
 const BOOK_SHA256 = crypto.createHash('sha256').update('book bytes').digest('hex');
+
+test('acquisition format validation includes CBZ and CBR', () => {
+  assert.equal(extensionFor('cbz'), 'cbz');
+  assert.equal(extensionFor('cbr'), 'cbr');
+});
 
 test('1000 torrent progress samples coalesce to at most 11 persistence/IPC updates', () => {
   let now = 0;

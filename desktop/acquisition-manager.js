@@ -81,7 +81,7 @@ function safePath(root, value) {
 
 function extensionFor(format) {
   const extension = String(format || '').trim().toLowerCase().replace(/^\./, '');
-  if (!['epub', 'pdf', 'fb2'].includes(extension)) throw new TypeError('unsupported acquisition format');
+  if (!['epub', 'pdf', 'fb2', 'cbz', 'cbr'].includes(extension)) throw new TypeError('unsupported acquisition format');
   return extension;
 }
 

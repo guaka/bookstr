@@ -1976,11 +1976,6 @@
       .device-transfer-form { display: grid; grid-template-columns: minmax(12rem, 1fr) minmax(10rem, 1fr) auto; gap: 0.5rem; }
       .device-transfer-form input { min-width: 0; }
       .device-transfer-note { margin: 0; color: var(--muted); font-size: 0.82rem; }
-      .desktop-downloads-dialog { width: min(38rem, calc(100vw - 2rem)); max-height: 80vh; border: 1px solid var(--border, #b8b8b8); border-radius: .8rem; background: var(--page-bg, #fff); color: var(--page-text, #222); padding: 1rem; }
-      .desktop-downloads-dialog::backdrop { background: rgba(0, 0, 0, .45); }
-      .desktop-downloads-dialog header { display: flex; align-items: center; justify-content: space-between; }
-      .desktop-downloads-dialog header h2 { margin: 0 0 .5rem; }
-      .desktop-downloads-dialog header button { background: none; border: 0; color: inherit; font-size: 1.5rem; cursor: pointer; }
       .desktop-download-job { padding: .65rem 0; border-top: 1px solid var(--border, #b8b8b8); display: grid; gap: .3rem; }
       .desktop-download-job progress { width: 100%; }
       .desktop-download-job small { color: var(--muted-text, #666); }
@@ -2101,11 +2096,12 @@
           </div>
         </details>
       </section>
-      <dialog id="desktop-downloads-dialog" aria-label="Downloads" class="desktop-downloads-dialog">
-        <header><h2>Downloads</h2><button id="desktop-downloads-close" type="button" aria-label="Close downloads">×</button></header>
+      <section id="downloads-tab" aria-label="Downloads" class="card hidden" data-tab-panel="downloads">
+        <h2>Downloads</h2>
+        <p id="desktop-downloads-summary" role="status"></p>
         <p id="desktop-downloads-notice" role="status" aria-live="polite"></p>
         <div id="desktop-downloads-list" aria-live="polite"></div>
-      </dialog>
+      </section>
 
       <section id="reading-library-tab" class="card hidden" data-tab-panel="reading">
         <div class="library-columns">
@@ -2467,9 +2463,11 @@
       const searchForm = document.getElementById('search-form');
       const resultsEl = document.getElementById('results');
       const desktopDownloadsButton = document.getElementById('desktop-downloads-button');
-      const desktopDownloadsDialog = document.getElementById('desktop-downloads-dialog');
+      const desktopDownloadsPane = document.getElementById('downloads-tab');
+      const desktopDownloadsSummary = document.getElementById('desktop-downloads-summary');
+      let desktopHiddenCompletedIds = new Set();
+      let desktopDownloadEntryNeedsSnapshot = false;
       const desktopDownloadsList = document.getElementById('desktop-downloads-list');
-      const desktopDownloadsClose = document.getElementById('desktop-downloads-close');
       const desktopDownloadsNotice = document.getElementById('desktop-downloads-notice');
       const desktopKindleOffer = document.getElementById('desktop-kindle-offer');
       const desktopKindleDevice = document.getElementById('desktop-kindle-device');
@@ -5443,22 +5441,6 @@
         };
       }
 
-      function rememberDownloadingBooks(downloads) {
-        const activeStatuses = new Set(['queued', 'finding-peers', 'downloading', 'retrying']);
-        let changed = false;
-        for (const download of downloads || []) {
-          if (!activeStatuses.has(String(download?.status || '').toLowerCase())) continue;
-          const book = bookFromDesktopDownload(download);
-          if (book) changed = addBookToLibrary(book, null, { sync: false, render: false }) || changed;
-        }
-        if (!changed) return false;
-        renderFavorites();
-        renderHome();
-        renderButtonsState();
-        if (state.settings.useNip7 && nostrSigner?.signEvent) queueFavoriteSync();
-        return true;
-      }
-
       function desktopDownloadingBookCount() {
         const activeStatuses = new Set(['queued', 'finding-peers', 'downloading', 'retrying']);
         return new Set([...desktopDownloadByBook.values()]
@@ -5470,8 +5452,8 @@
       function isBookReadableNow(book) {
         const cached = cachedBookKeys.has(bookCacheKey(book, book.readUrl || book.url));
         const download = desktopDownloadForBook(book);
+        if (isDesktopMode) return download?.readable === true;
         return cached
-          || (isDesktopMode && ['ready', 'seeding'].includes(String(download?.status || '').toLowerCase()))
           || isBookSeeded(book)
           || Boolean(BookMetadata.canonicalReadUrl(book, BOOKS_API_BASE));
       }
@@ -5568,10 +5550,15 @@
 
       function updateDesktopDownloadSummary() {
         const summary = desktopDownloadSummary();
+        if (isDesktopMode) {
+          desktopDownloadsSummary.textContent = `${desktopDownloadingBookCount()} downloading · ${desktopSeededBookIds.size} seeding · ↓ ${transferRateLabel(desktopTransferRates.download)} · ↑ ${transferRateLabel(desktopTransferRates.upload)}`;
+          return;
+        }
         if (summary && status.textContent !== summary) status.textContent = summary;
       }
 
       function updateHomeDownloadRows() {
+        if (isDesktopMode) return;
         for (const row of homeReadingList.querySelectorAll('.book-table-row[data-download-book-id]')) {
           if (!desktopDownloadByBook.has(row.dataset.downloadBookId)) continue;
           const label = torrentStatusForBook({ md5: row.dataset.downloadBookId });
@@ -5601,7 +5588,6 @@
           && isMd5(download?.md5 || download?.bookId)
           && Number(download?.sourceNativeId || 0) > 0
         ));
-        rememberDownloadingBooks((downloads || []).filter(download => !download.queuedFromSearch));
         desktopSeededBookIds.clear();
         desktopTransferRates.download = 0;
         desktopTransferRates.upload = 0;
@@ -5621,7 +5607,7 @@
         updateDesktopDownloadSummary();
         updateReadTorrentStatus();
         const signature = JSON.stringify([
-          (downloads || []).map(download => [download.bookId, download.status, download.title, download.error]).sort((a, b) => String(a[0]).localeCompare(String(b[0]))),
+          (downloads || []).map(download => [download.bookId, download.status, download.title, download.error, download.readable, download.completedAt]).sort((a, b) => String(a[0]).localeCompare(String(b[0]))),
           [...desktopSeededBookIds].sort(),
         ]);
         const structureChanged = !wasReady || signature !== desktopDownloadStateSignature;
@@ -5637,6 +5623,7 @@
         const isCached = book => cachedBookKeys.has(bookCacheKey(book, book.readUrl || book.url));
         const availabilityLabel = book => {
           if (isCached(book)) return 'Cached';
+          if (isDesktopMode && options.library) return 'Available';
           const torrentStatus = options.library ? torrentStatusForBook(book) : '';
           if (torrentStatus) return torrentStatus;
           const sources = BookMetadata.availabilitySourcesForBook(book, false);
@@ -5736,6 +5723,11 @@
             <span class="row-actions home-book-status" role="cell">${statusMarkup}</span>
           `;
           row.querySelector('[data-action="open"]')?.addEventListener('click', (event) => {
+            if (isDesktopMode && !options.library && options.routeOnly) {
+              event.preventDefault();
+              void queueSearchDownload(book);
+              return;
+            }
             if (options.routeOnly) return;
             event.preventDefault();
             options.onOpen?.(book);
@@ -5756,6 +5748,16 @@
           row.querySelector('[data-action="queue-download-title"]')?.addEventListener('click', () => {
             void queueSearchDownload(book);
           });
+          if (isDesktopMode && options.library && isBookReadableNow(book) && ['pdf', 'txt', 'cbz', 'cbr'].includes(resultFormat(book))) {
+            const send = document.createElement('button');
+            send.type = 'button';
+            send.className = 'chip-btn';
+            send.textContent = 'Send to Kindle';
+            send.dataset.action = 'send-kindle';
+            send.setAttribute('aria-label', `Send ${book.title || 'book'} to Kindle`);
+            send.addEventListener('click', () => void sendLibraryBookToKindle(book, send));
+            row.querySelector('.row-actions').append(send);
+          }
           row.querySelector('[data-action="delete-library"]')?.addEventListener('click', () => {
             void deleteLibraryBook(book);
           });
@@ -5788,12 +5790,12 @@
         return exactSearchTokens(query).every(term => available.has(term));
       }
 
-      function configureSearchResultFilter(select, wrap, values, allLabel, selected) {
+      function configureSearchResultFilter(select, wrap, values, allLabel, selected, labelForValue = value => value.toUpperCase()) {
         const visible = values.length > 1;
         wrap.classList.toggle('hidden', !visible);
         if (!visible) return '';
         select.replaceChildren();
-        for (const [value, label] of [['', allLabel], ...values.map(value => [value, value.toUpperCase()])]) {
+        for (const [value, label] of [['', allLabel], ...values.map(value => [value, labelForValue(value)])]) {
           const option = document.createElement('option');
           option.value = value;
           option.textContent = label;
@@ -5821,7 +5823,8 @@
         const languages = [...new Set(searchResultBooks.map(resultLanguage).filter(Boolean))].sort();
         const formats = [...new Set(searchResultBooks.map(resultFormat).filter(Boolean))].sort();
         searchResultFilter.language = configureSearchResultFilter(
-          searchLanguageFilter, searchLanguageFilterWrap, languages, 'All languages', searchResultFilter.language
+          searchLanguageFilter, searchLanguageFilterWrap, languages, 'All languages', searchResultFilter.language,
+          value => isDesktopMode ? BookMetadata.languageLabel(value) : value.toUpperCase()
         );
         searchResultFilter.format = configureSearchResultFilter(
           searchFormatFilter, searchFormatFilterWrap, formats, 'All formats', searchResultFilter.format
@@ -5949,9 +5952,33 @@
         }
       }
 
+      async function sendLibraryBookToKindle(book, button) {
+        button.disabled = true;
+        try {
+          const job = desktopDownloadForBook(book);
+          const devices = await desktopBridge.kindle.devices();
+          if (!devices.length) throw new Error('No Kindle connected.');
+          const deviceId = devices.some(device => device.id === currentKindleId) ? currentKindleId : devices[0].id;
+          const result = await desktopBridge.kindle.transfer(deviceId, job.bookId);
+          status.textContent = result.transferred.length ? 'Copied to Kindle' :
+            result.alreadyPresent ? 'Already on Kindle' :
+            result.errors[0]?.error || 'Could not copy to Kindle';
+        } catch (error) {
+          status.textContent = error?.message || String(error);
+        } finally {
+          button.disabled = false;
+        }
+      }
+
       async function renderDesktopDownloads() {
         if (!isDesktopMode || !desktopBridge?.library?.downloads) return;
-        const jobs = await desktopBridge.library.downloads();
+        const allJobs = await desktopBridge.library.downloads();
+        if (desktopDownloadEntryNeedsSnapshot) {
+          desktopHiddenCompletedIds = new Set(allJobs.filter(job => ['ready', 'seeding'].includes(String(job.status).toLowerCase())).map(job => job.bookId));
+          desktopDownloadEntryNeedsSnapshot = false;
+        }
+        const jobs = allJobs.filter(job =>
+          !['ready', 'seeding'].includes(String(job.status).toLowerCase()) || !desktopHiddenCompletedIds.has(job.bookId));
         desktopDownloadsList.replaceChildren();
         if (!jobs.length && !desktopDownloadsNotice.textContent) {
           const empty = document.createElement('p');
@@ -6005,34 +6032,10 @@
             read.textContent = 'Read';
             read.setAttribute('aria-label', `Read ${job.title || 'book'}`);
             read.addEventListener('click', async () => {
-              desktopDownloadsDialog.close();
               await refreshDesktopDownloadStates();
               await openBook(bookFromDesktopDownload(job));
             });
             actions.append(read);
-          }
-          if (['ready', 'seeding'].includes(jobStatus) && ['pdf', 'txt'].includes(String(job.extension || '').toLowerCase())) {
-            const send = document.createElement('button');
-            send.type = 'button';
-            send.textContent = 'Send to Kindle';
-            send.setAttribute('aria-label', `Send ${job.title || 'book'} to Kindle`);
-            send.addEventListener('click', async () => {
-              send.disabled = true;
-              try {
-                const devices = await desktopBridge.kindle.devices();
-                if (!devices.length) throw new Error('No Kindle connected.');
-                const deviceId = devices.some(device => device.id === currentKindleId) ? currentKindleId : devices[0].id;
-                const result = await desktopBridge.kindle.transfer(deviceId, job.bookId);
-                state.textContent = result.transferred.length ? 'Copied to Kindle' :
-                  result.alreadyPresent ? 'Already on Kindle' :
-                  result.errors[0]?.error || 'Could not copy to Kindle';
-              } catch (error) {
-                state.textContent = error?.message || String(error);
-              } finally {
-                send.disabled = false;
-              }
-            });
-            actions.append(send);
           }
           if (actions.childElementCount) row.append(actions);
           desktopDownloadsList.append(row);
@@ -6041,7 +6044,8 @@
 
       async function openDesktopDownloads() {
         if (!isDesktopMode) return;
-        if (!desktopDownloadsDialog.open) desktopDownloadsDialog.showModal();
+        await refreshDesktopDownloadStates();
+        activateTab('downloads', { updateHash: true });
         await renderDesktopDownloads();
       }
 
@@ -6081,10 +6085,9 @@
       }
 
       desktopDownloadsButton.addEventListener('click', () => void openDesktopDownloads());
-      desktopDownloadsClose.addEventListener('click', () => desktopDownloadsDialog.close());
       desktopBridge?.library?.onDownloadsChanged?.(() => {
         void refreshDesktopDownloadStates();
-        if (desktopDownloadsDialog.open) void renderDesktopDownloads();
+        if (activeTab === 'downloads') void renderDesktopDownloads();
       });
 
       async function refreshKindleOffer() {
@@ -6290,6 +6293,10 @@
       }
 
       function showReadMetadataFallback(book) {
+        if (isDesktopMode && !isBookReadableNow(book)) {
+          void openDesktopDownloads();
+          return;
+        }
         const frame = document.getElementById('reader-frame');
         if (!frame?.parentElement) return;
         frame.parentElement.classList.add('metadata-fallback-visible');
@@ -6300,6 +6307,19 @@
           frame.parentElement.insertBefore(panel, frame);
         }
         panel.replaceChildren();
+        if (isDesktopMode) {
+          const label = document.createElement('p');
+          label.textContent = ['cbz', 'cbr'].includes(resultFormat(book)) ? 'Opening comic…' : 'Opening book…';
+          const progress = document.createElement('progress');
+          progress.id = 'read-comic-opening-progress';
+          progress.setAttribute('aria-label', label.textContent);
+          panel.append(label, progress);
+          panel.hidden = false;
+          panel.style.display = 'grid';
+          frame.hidden = false;
+          frame.classList.add('reader-pending');
+          return;
+        }
         const coverCandidates = bookCoverUrls(book).filter(url => url && !url.startsWith('data:image/'));
         const coverUrl = coverCandidates[0] || '';
         panel.style.gridTemplateColumns = coverUrl ? 'minmax(0,9rem) minmax(0,1fr)' : 'minmax(0,1fr)';
@@ -6966,12 +6986,17 @@
       function renderHome() {
         const needle = homeQueryInput.value.trim().toLocaleLowerCase();
         const library = BookMetadata.mergeLibraryState(state.reading, state.favorites);
-        const enrichedLibrary = library;
+        const completedDownloads = [...new Map([...desktopDownloadByBook.values()].map(job => [job.bookId, job])).values()]
+          .filter(job => job.readable === true).map(bookFromDesktopDownload).filter(Boolean);
+        const enrichedLibrary = isDesktopMode
+          ? BookMetadata.dedupeLibraryBooks([...library, ...completedDownloads]).filter(isBookReadableNow)
+            .sort((left, right) => Number(desktopDownloadForBook(right)?.completedAt || 0) - Number(desktopDownloadForBook(left)?.completedAt || 0))
+          : library;
         const languages = [...new Set(enrichedLibrary.map(resultLanguage).filter(Boolean))].sort();
         const formats = [...new Set(enrichedLibrary.map(resultFormat).filter(Boolean))].sort();
         homeLibraryFilter.language = configureHomeLibraryFilter(
           homeLanguageFilter, homeLanguageFilterWrap, languages, 'All languages',
-          homeLibraryFilter.language, value => value.toUpperCase()
+          homeLibraryFilter.language, value => isDesktopMode ? BookMetadata.languageLabel(value) : value.toUpperCase()
         );
         homeLibraryFilter.format = configureHomeLibraryFilter(
           homeFormatFilter, homeFormatFilterWrap, formats, 'All formats',
@@ -6987,22 +7012,31 @@
           && (!homeLibraryFilter.format || resultFormat(book) === homeLibraryFilter.format)
           && matchesQuery(book)
         ));
-        const visibleCount = matchingBooks.length === library.length
-          ? `${library.length} ${library.length === 1 ? 'book' : 'books'}`
-          : `${matchingBooks.length} of ${library.length} books`;
+        const visibleCount = matchingBooks.length === enrichedLibrary.length
+          ? `${enrichedLibrary.length} ${enrichedLibrary.length === 1 ? 'book' : 'books'}`
+          : `${matchingBooks.length} of ${enrichedLibrary.length} books`;
         const readableCount = matchingBooks.filter(isBookReadableNow).length;
         const downloadingCount = desktopDownloadingBookCount();
         const seedingCount = enrichedLibrary.filter(isBookSeeded).length;
         const transferRates = isDesktopMode
           ? ` · ↓ ${transferRateLabel(desktopTransferRates.download)} · ↑ ${transferRateLabel(desktopTransferRates.upload)}`
           : '';
-        homeLibraryCount.textContent = `${visibleCount} · ${readableCount} readable now · ${downloadingCount} downloading · ${seedingCount} seeding${transferRates}`;
+        homeLibraryCount.textContent = isDesktopMode ? visibleCount
+          : `${visibleCount} · ${readableCount} readable now · ${downloadingCount} downloading · ${seedingCount} seeding${transferRates}`;
         renderHomeBookList(homeReadingList, matchingBooks, 'No books match these filters.');
       }
 
       function activateTab(tab, { updateHash = false } = {}) {
         if (tab === 'words' && !hasActiveWords()) tab = 'home';
-        activeTab = ['home', 'search', 'reading', 'words', 'people', 'settings'].includes(tab) ? tab : 'home';
+        if (tab === 'downloads' && isDesktopMode && activeTab !== 'downloads') {
+          desktopDownloadEntryNeedsSnapshot = !desktopDownloadStatesReady;
+          desktopHiddenCompletedIds = new Set([...desktopDownloadByBook.values()]
+            .filter(job => ['ready', 'seeding'].includes(String(job.status).toLowerCase())).map(job => job.bookId));
+        }
+        activeTab = ['home', 'search', 'reading', 'words', 'people', 'settings', ...(isDesktopMode ? ['downloads'] : [])].includes(tab) ? tab : 'home';
+        desktopDownloadsPane.classList.toggle('hidden', activeTab !== 'downloads');
+        desktopDownloadsButton.setAttribute('aria-selected', String(activeTab === 'downloads'));
+        if (activeTab === 'downloads') void renderDesktopDownloads();
         homeTab.classList.toggle('hidden', activeTab !== 'home');
         searchTab.classList.toggle('hidden', activeTab !== 'search');
         readingLibraryTab.classList.toggle('hidden', activeTab !== 'reading');
@@ -7050,6 +7084,8 @@
           const readUrl = activeReadingBook?.readUrl || activeReadingBook?.url || '';
           const routeValue = activeReadingBook ? readRouteValue(activeReadingBook, readUrl) : '';
           setHashRoute(routeValue ? `read=${encodeURIComponent(routeValue)}` : 'reading');
+        } else if (activeTab === 'downloads') {
+          setHashRoute('downloads');
         } else if (activeTab === 'words') {
           setHashRoute('words');
         } else if (activeTab === 'people') {
@@ -9167,6 +9203,10 @@
           requestAnimationFrame(() => homeQueryInput.focus());
           return;
         }
+        if (route === 'downloads' && isDesktopMode) {
+          activateTab('downloads');
+          return;
+        }
         if (route === 'settings') {
           activateTab('settings');
           return;
@@ -9489,8 +9529,6 @@
         const md5 = String(progress?.bookId || '').trim().toLowerCase();
         if (!isMd5(md5)) return;
         desktopDownloadByBook.set(md5, { ...desktopDownloadByBook.get(md5), ...progress, status: 'downloading' });
-        const downloadingBook = bookFromDesktopDownload(desktopDownloadByBook.get(md5));
-        if (downloadingBook && !desktopDownloadByBook.get(md5).queuedFromSearch) addBookToLibrary(downloadingBook);
         if (activeReadingBook && desktopBookIds(activeReadingBook).includes(md5)) {
           updateReadTorrentStatus(activeReadingBook);
         }
@@ -9498,6 +9536,7 @@
         desktopDownloadStatusTimer = setTimeout(updateDesktopDownloadSummary, 180);
         clearTimeout(desktopDownloadRenderTimer);
         desktopDownloadRenderTimer = setTimeout(() => {
+          if (activeTab === 'downloads') void renderDesktopDownloads();
           if (activeTab === 'home') updateHomeDownloadRows();
           if (activeTab === 'search' && !queryInput.value.trim()) renderSearchSources();
         }, 200);

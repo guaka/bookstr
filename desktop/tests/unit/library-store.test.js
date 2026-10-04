@@ -46,6 +46,30 @@ test('download and linked-folder APIs never return filesystem paths', () => with
   });
 }));
 
+test('download completion timestamp stays fixed through seeding progress and resets on retry', () => withStore(store => {
+  store.upsertBook({ id: 'book-completion', title: 'Completed' });
+  const completed = store.setDownload({ bookId: 'book-completion', status: 'ready' }).completedAt;
+  assert.ok(completed > 0);
+  store.setDownload({ bookId: 'book-completion', status: 'seeding', bytes: 10, totalBytes: 10 });
+  assert.equal(store.downloads()[0].completedAt, completed);
+  store.setDownload({ bookId: 'book-completion', status: 'downloading', bytes: 1, totalBytes: 20 });
+  assert.equal(store.downloads()[0].completedAt, null);
+}));
+
+test('legacy completed downloads receive their prior update timestamp during migration', () => {
+  const root = fs.mkdtempSync(path.join(__dirname, '.bookstr-library-migration-'));
+  const dbPath = path.join(root, 'library.sqlite');
+  const libraryRoot = path.join(root, 'files');
+  let store = new LibraryStore({ dbPath, libraryRoot });
+  store.upsertBook({ id: 'legacy-ready', title: 'Legacy' });
+  store.setDownload({ bookId: 'legacy-ready', status: 'ready' });
+  store.db.prepare('UPDATE downloads SET completed_at = NULL, updated_at = 123 WHERE book_id = ?').run('legacy-ready');
+  store.close();
+  store = new LibraryStore({ dbPath, libraryRoot });
+  try { assert.equal(store.downloads()[0].completedAt, 123); }
+  finally { store.close(); fs.rmSync(root, { recursive: true, force: true }); }
+});
+
 test('path traversal is rejected at the storage boundary', () => withStore(store => {
   store.upsertBook({ id: 'book-1', title: 'Book' });
   assert.throws(() => store.registerLibraryFile({ bookId: 'book-1', relativePath: '../secret.epub' }), /relative path/);
