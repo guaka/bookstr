@@ -101,10 +101,10 @@ class DownloadQueue {
       while (this.pending.length) {
         const { bookId, request } = this.pending.shift();
         try {
-          let lastProgressNoticeAt = 0;
+          let lastProgressNoticeAt = null;
           const onProgress = () => {
             const now = Date.now();
-            if (now - lastProgressNoticeAt < 500) return;
+            if (lastProgressNoticeAt !== null && now - lastProgressNoticeAt < 500) return;
             lastProgressNoticeAt = now;
             this.onUpdate();
           };

@@ -26,6 +26,19 @@
   resolved or the user explicitly accepts it. Never present a skipped check or
   an old GitHub billing failure as a passing test.
 
+## Local resource safety
+
+- Run at most one Electron or Playwright instance and one Playwright worker at
+  a time. Do not overlap Electron end-to-end suites, native builds, or native
+  dependency installation.
+- Before native dependency installs, native builds, or torrent end-to-end
+  tests, inspect process RSS. If memory use grows and stays above a few GB,
+  stop the task and investigate before continuing. Do not let Codex or Electron
+  approach the reported 70 GB usage.
+- Cap the Node.js heap for long-running checks when that helps bound memory.
+  Prefer one focused test command at a time and report observed peak memory
+  when available.
+
 ## Device data safety
 
 - Run Android connected tests only on emulators. Gradle's
