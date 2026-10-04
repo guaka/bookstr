@@ -58,7 +58,9 @@ ${declarations.join('\n')}
 
 export function renderSwift(value) {
   validateConstants(value);
-  const declarations = Object.entries(value.kinds).map(([name, item]) => `    static let ${name}Kind = ${item}`)
+  const declarations = Object.entries(value.kinds)
+    .filter(([name]) => name !== 'blossomAuthorization')
+    .map(([name, item]) => `    static let ${name}Kind = ${item}`)
     .concat(Object.entries(value.dTags).map(([name, item]) => `    static let ${name}DTag = ${JSON.stringify(item)}`))
     .concat(Object.entries(value.prefixes).map(([name, item]) => `    static let ${name}Prefix = ${JSON.stringify(item)}`));
   return `${header('//')}enum NostrConstantsV1 {
