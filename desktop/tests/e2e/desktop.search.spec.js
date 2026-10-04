@@ -393,6 +393,7 @@ test('a completed PDF download sends only its selected book to Kindle', async ()
       });
     });
     await page.reload();
+    await page.getByRole('button', { name: 'Search' }).click();
     await page.getByRole('button', { name: 'Downloads' }).click();
     await expect(page.getByRole('button', { name: 'Send Fixture PDF to Kindle' })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Send Fixture EPUB to Kindle' })).toHaveCount(0);
