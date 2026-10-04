@@ -28,6 +28,7 @@ const { AcquisitionManager } = require('./acquisition-manager');
 const { DownloadQueue } = require('./download-queue');
 const { KindleSync, MountedKindles } = require('./kindle-sync');
 const { MtpKindles } = require('./kindle-mtp');
+const { ComicPdfConverter } = require('./comic-pdf');
 const { ElectronDevicePairing } = require('./device-pairing');
 const { CatalogInvitations } = require('./catalog-invitations');
 const { nip19: catalogNip19 } = require('nostr-tools');
@@ -228,6 +229,7 @@ function getKindleSync() {
   if (!kindleSync) kindleSync = new KindleSync({
     store: getLibraryStore(),
     resolveFile: resolveRegisteredLibraryFile,
+    comicConverter: new ComicPdfConverter({ cacheRoot: path.join(libraryDataDir, '.kindle-converted') }),
     transports: [
       new MountedKindles(),
       new MtpKindles({

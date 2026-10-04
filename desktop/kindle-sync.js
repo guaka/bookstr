@@ -110,11 +110,13 @@ class MountedKindles {
 }
 
 class KindleSync {
-  constructor({ store, resolveFile, transports = [new MountedKindles()], onProgress = () => {} } = {}) {
+  constructor({ store, resolveFile, transports = [new MountedKindles()], comicConverter = null,
+    onProgress = () => {} } = {}) {
     if (!store || !resolveFile) throw new TypeError('store and resolveFile are required');
     this.store = store;
     this.resolveFile = resolveFile;
     this.transports = transports;
+    this.comicConverter = comicConverter;
     this.onProgress = onProgress;
     this.syncing = false;
   }
@@ -137,8 +139,13 @@ class KindleSync {
     const skipped = [];
     for (const job of this.store.downloads()) {
       if (!['ready', 'seeding'].includes(job.status)) continue;
-      const extension = String(job.extension || '').toLowerCase();
-      if (!FORMATS.has(extension)) {
+      // Some catalog records call a .cbz/.cbr title EPUB; the converter checks
+      // the archive for an EPUB package before treating that title as a comic.
+      const declaredExtension = String(job.extension || '').toLowerCase();
+      const titleExtension = path.extname(String(job.title || '')).slice(1).toLowerCase();
+      const extension = declaredExtension === 'epub' && ['cbz', 'cbr'].includes(titleExtension)
+        ? titleExtension : declaredExtension;
+      if (!FORMATS.has(extension) && !['cbz', 'cbr'].includes(extension)) {
         skipped.push({ title: job.title || job.bookId, reason: `${extension || 'unknown'} is not supported for USB transfer` });
         continue;
       }
@@ -146,7 +153,13 @@ class KindleSync {
         const { filePath } = await this.resolveFile(job.bookId);
         const digest = await hashFile(filePath);
         if (job.sha256 && job.sha256.toLowerCase() !== digest.sha256) throw new Error('Local checksum mismatch');
-        books.push({ ...job, extension, path: filePath, sha256: digest.sha256, size: digest.size });
+        if (extension === 'cbz' || extension === 'cbr') {
+          if (!this.comicConverter) throw new Error('Comic PDF conversion is unavailable.');
+          const pdf = await this.comicConverter.convert(filePath, digest.sha256);
+          books.push({ ...job, extension: 'pdf', path: pdf.path, sha256: pdf.sha256, size: pdf.size });
+        } else {
+          books.push({ ...job, extension, path: filePath, sha256: digest.sha256, size: digest.size });
+        }
       } catch (error) {
         skipped.push({ title: job.title || job.bookId, reason: error.message || String(error) });
       }

@@ -65,6 +65,7 @@
           "download-queue.js",
           "kindle-sync.js",
           "kindle-mtp.js",
+          "comic-pdf.js",
           "main.js",
           "preload.js",
           "security-policy.js",
@@ -100,9 +101,14 @@
       {
         "from": "native",
         "to": ".",
-        "filter": ["kindle-mtp", "kindle-wpd.ps1", "lib/**/*"]
+        "filter": [
+          "kindle-mtp",
+          "kindle-wpd.ps1",
+          "lib/**/*"
+        ]
       }
     ],
+    "asarUnpack": ["node_modules/7zip-bin-full/**/*"],
     "extraMetadata": {
       "main": "desktop/main.js"
     },
@@ -157,7 +163,9 @@
     ]
   },
   "dependencies": {
+    "7zip-bin-full": "^26.3.1",
     "nostr-tools": "^2.25.0",
+    "pdfkit": "^0.17.2",
     "qrcode": "^1.5.4",
     "webtorrent": "^3.0.21"
   },
