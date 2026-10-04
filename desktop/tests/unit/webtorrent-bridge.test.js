@@ -14,6 +14,7 @@ const {
 
 function fakeClientFactory(log) {
   return async options => {
+    log.clientsCreated = (log.clientsCreated || 0) + 1;
     log.clientOptions = options;
     const client = {
       torrents: [],
@@ -31,6 +32,11 @@ function fakeClientFactory(log) {
         const torrent = { infoHash: typeof id === 'string' ? id : 'b'.repeat(40), private: Boolean(options.private), addPeer(peer) { log.peer = peer; } };
         client.torrents.push(torrent);
         return torrent;
+      },
+      remove(torrent, options) {
+        log.removed ||= [];
+        log.removed.push({ torrent, options });
+        client.torrents.splice(client.torrents.indexOf(torrent), 1);
       },
       destroy(callback) { log.destroyed = true; callback?.(); },
     };
@@ -88,6 +94,34 @@ test('Electron retains ordinary torrent support when WebRTC is unavailable', asy
   await bridge.start();
   assert.equal(bridge.webRTCEnabled, false);
   assert.equal(log.clientOptions.tracker, undefined);
+});
+
+test('torrent client bounds peer managers and retires a completed swarm before rejecting new work', async () => {
+  const log = { adds: [] };
+  const bridge = new WebTorrentBridge({ clientFactory: fakeClientFactory(log) });
+  for (let index = 0; index < 8; index += 1) await bridge.addPublic(`torrent-${index}`);
+  assert.equal(log.clientOptions.maxConns, 16);
+  assert.equal(log.adds.length, 8);
+  await assert.rejects(() => bridge.addPublic('torrent-over-cap'), /maximum active torrent count reached \(8\)/);
+  assert.equal(log.adds.length, 8);
+  const oldest = bridge.client.torrents[0];
+  oldest.done = true;
+  await bridge.addPublic('torrent-after-seed-eviction');
+  assert.equal(log.removed[0].torrent, oldest);
+  assert.equal(log.removed[0].options, undefined);
+  assert.equal(bridge.client.torrents.length, 8);
+  assert.equal(log.adds.length, 9);
+  await bridge.stop();
+});
+
+test('simultaneous torrent requests share one bounded WebTorrent client', async () => {
+  const log = { adds: [] };
+  const bridge = new WebTorrentBridge({ clientFactory: fakeClientFactory(log) });
+  const results = await Promise.allSettled(Array.from({ length: 10 }, (_, index) => bridge.addPublic(`parallel-${index}`)));
+  assert.equal(log.clientsCreated, 1);
+  assert.equal(results.filter(result => result.status === 'fulfilled').length, 8);
+  assert.equal(bridge.client.torrents.length, 8);
+  await bridge.stop();
 });
 
 test('private add disables all public discovery', async () => {
