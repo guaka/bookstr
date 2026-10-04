@@ -14,6 +14,8 @@ const PUBLIC_ICE_SERVERS = Object.freeze([
 const DEFAULT_DOWNLOAD_LIMIT = 10 * 1000 * 1000;
 const PUBLIC_UPLOAD_LIMIT = 1000 * 1000;
 const MAX_TRANSFER_LIMIT = 1000 * 1000 * 1000;
+const MAX_ACTIVE_TORRENTS = 8;
+const MAX_CONNECTIONS_PER_TORRENT = 16;
 const PIECE_LENGTH = 256 * 1024;
 
 function safeDigest(value) {
@@ -128,27 +130,37 @@ class WebTorrentBridge {
     this.downloadLimit = safeTransferLimit(downloadLimit, DEFAULT_DOWNLOAD_LIMIT);
     this.uploadLimit = safeTransferLimit(uploadLimit, PUBLIC_UPLOAD_LIMIT);
     this.client = null;
+    this.startPromise = null;
     this.webRTCEnabled = false;
+    this.pendingTorrentAdds = 0;
+    // Serialize capacity checks so concurrent add/seed cannot oversubscribe
+    // while an eviction await yields the event loop.
+    this.capacityMutex = Promise.resolve();
   }
 
   async start() {
     if (this.client) return this.client;
-    const wrtc = await this.webRTCFactory?.();
-    this.webRTCEnabled = Boolean(wrtc?.RTCPeerConnection);
-    this.client = await this.clientFactory({
-      downloadLimit: this.downloadLimit,
-      uploadLimit: this.uploadLimit,
-      path: this.dataDir,
-      ...(this.webRTCEnabled ? {
-        tracker: {
-          wrtc,
-          rtcConfig: { iceServers: this.iceServers },
-        },
-      } : {}),
-    });
-    if (typeof this.client.throttleDownload === 'function') this.client.throttleDownload(this.downloadLimit);
-    if (typeof this.client.throttleUpload === 'function') this.client.throttleUpload(this.uploadLimit);
-    return this.client;
+    if (this.startPromise) return this.startPromise;
+    this.startPromise = (async () => {
+      const wrtc = await this.webRTCFactory?.();
+      this.webRTCEnabled = Boolean(wrtc?.RTCPeerConnection);
+      this.client = await this.clientFactory({
+        downloadLimit: this.downloadLimit,
+        uploadLimit: this.uploadLimit,
+        maxConns: MAX_CONNECTIONS_PER_TORRENT,
+        path: this.dataDir,
+        ...(this.webRTCEnabled ? {
+          tracker: {
+            wrtc,
+            rtcConfig: { iceServers: this.iceServers },
+          },
+        } : {}),
+      });
+      if (typeof this.client.throttleDownload === 'function') this.client.throttleDownload(this.downloadLimit);
+      if (typeof this.client.throttleUpload === 'function') this.client.throttleUpload(this.uploadLimit);
+      return this.client;
+    })().finally(() => { this.startPromise = null; });
+    return this.startPromise;
   }
 
   async setLimits({ downloadLimit, uploadLimit } = {}) {
@@ -167,6 +179,7 @@ class WebTorrentBridge {
     const client = await this.start();
     const opts = seedOptions({ sha256, extension, trackers: this.trackers });
     if (this.dataDir) opts.path = this.dataDir;
+    await this.#reserveCapacity(client);
     return new Promise((resolve, reject) => {
       let settled = false;
       const finish = torrent => {
@@ -193,10 +206,12 @@ class WebTorrentBridge {
       };
       try {
         const returned = client.seed(input, opts, finish);
+        this.#releaseCapacityReservation();
         // Test doubles and some compatible clients return a ready torrent but
         // do not invoke the callback; real WebTorrent always invokes it.
         if (returned?.ready && !settled) finish(returned);
       } catch (error) {
+        this.#releaseCapacityReservation();
         reject(error);
       }
     });
@@ -219,7 +234,13 @@ class WebTorrentBridge {
       announce: Array.isArray(announce) && announce.length ? announce : this.trackers,
       deselect: deselect === true,
     };
-    const torrent = client.add(torrentId, options);
+    await this.#reserveCapacity(client);
+    let torrent;
+    try {
+      torrent = client.add(torrentId, options);
+    } finally {
+      this.#releaseCapacityReservation();
+    }
     if (torrent && bookId) {
       torrent.bookstrBookId = String(bookId);
       torrent.bookstrBookIds ||= new Set();
@@ -329,15 +350,21 @@ class WebTorrentBridge {
   async addPrivate(torrentId, { path: downloadPath, peer } = {}) {
     const peerAddress = safePeerAddress(peer);
     const client = await this.start();
-    const torrent = client.add(torrentId, {
-      path: downloadPath ? safePath(downloadPath) : this.dataDir,
-      private: true,
-      announce: [],
-      dht: false,
-      tracker: false,
-      utPex: false,
-      lsd: false,
-    });
+    await this.#reserveCapacity(client);
+    let torrent;
+    try {
+      torrent = client.add(torrentId, {
+        path: downloadPath ? safePath(downloadPath) : this.dataDir,
+        private: true,
+        announce: [],
+        dht: false,
+        tracker: false,
+        utPex: false,
+        lsd: false,
+      });
+    } finally {
+      this.#releaseCapacityReservation();
+    }
     // An info hash is available synchronously for the supported private
     // handoff inputs (magnet/info-hash/torrent bytes). If a compatible client
     // resolves it asynchronously, wait for the same event before calling the
@@ -361,6 +388,33 @@ class WebTorrentBridge {
       throw new Error('private torrent did not expose an info hash before peer handoff');
     }
     return torrent;
+  }
+
+  async #reserveCapacity(client) {
+    let release;
+    const previous = this.capacityMutex;
+    this.capacityMutex = new Promise(resolve => { release = resolve; });
+    await previous;
+    try {
+      while (Array.isArray(client.torrents)
+        && client.torrents.length + this.pendingTorrentAdds >= MAX_ACTIVE_TORRENTS) {
+        // Completed swarms can be removed without deleting their on-disk data.
+        // Retire the oldest completed swarm so new work can proceed while
+        // keeping the total number of peer managers bounded.
+        const completed = client.torrents.find(torrent => torrent.done || Number(torrent.progress) >= 1);
+        if (!completed) {
+          throw new Error(`maximum active torrent count reached (${MAX_ACTIVE_TORRENTS}); retry after a transfer completes`);
+        }
+        await this.remove(completed);
+      }
+      this.pendingTorrentAdds += 1;
+    } finally {
+      release();
+    }
+  }
+
+  #releaseCapacityReservation() {
+    this.pendingTorrentAdds = Math.max(0, this.pendingTorrentAdds - 1);
   }
 
   addPeer(torrent, peer) {

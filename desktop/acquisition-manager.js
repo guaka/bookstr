@@ -10,6 +10,59 @@ const { pipeline } = require('node:stream/promises');
 const DEFAULT_MAX_ACQUISITION_BYTES = 512 * 1024 * 1024;
 const LIBGEN_TORRENT_METADATA_BASE_URL = 'https://annas-archive.gl/dyn/small_file/torrents/external/libgen_rs_non_fic';
 const MAX_TORRENT_METADATA_BYTES = 8 * 1024 * 1024;
+const TORRENT_PROGRESS_INTERVAL_MS = 100;
+
+function createProgressThrottle(onProgress, intervalMs = TORRENT_PROGRESS_INTERVAL_MS, {
+  now = Date.now,
+  schedule = setTimeout,
+  unschedule = clearTimeout,
+} = {}) {
+  let lastSentAt = -Infinity;
+  let pending = null;
+  let timer = null;
+  const send = progress => {
+    lastSentAt = now();
+    onProgress?.(progress);
+  };
+  const clear = () => {
+    if (timer !== null) unschedule(timer);
+    timer = null;
+  };
+  return {
+    report(progress) {
+      const elapsed = now() - lastSentAt;
+      if (elapsed >= intervalMs) {
+        clear();
+        pending = null;
+        send(progress);
+        return;
+      }
+      pending = progress;
+      if (timer === null) {
+        timer = schedule(() => {
+          timer = null;
+          if (pending !== null) {
+            const latest = pending;
+            pending = null;
+            send(latest);
+          }
+        }, Math.max(0, intervalMs - elapsed));
+      }
+    },
+    flush() {
+      clear();
+      if (pending !== null) {
+        const latest = pending;
+        pending = null;
+        send(latest);
+      }
+    },
+    cancel() {
+      clear();
+      pending = null;
+    },
+  };
+}
 
 let catalogModulePromise;
 function catalogModule() {
@@ -373,6 +426,10 @@ class AcquisitionManager {
     await fsp.mkdir(stageDir, { recursive: true });
     let torrent;
     let keepSeeding = false;
+    const progressThrottle = createProgressThrottle(progress => {
+      this.store.setDownload({ bookId: md5, status: 'downloading', bytes: progress.bytes, totalBytes: progress.totalBytes, source: 'torrent' });
+      onProgress?.({ bookId: md5, source: 'torrent', ...progress });
+    });
     try {
       const response = await this.fetch(metadataURL, { signal, redirect: 'error' });
       if (!response?.ok) throw new Error(`torrent metadata returned HTTP ${response?.status || 0}`);
@@ -388,11 +445,9 @@ class AcquisitionManager {
         bookId: md5,
         signal,
         maxBytes: this.maxBytes,
-        onProgress: progress => {
-          this.store.setDownload({ bookId: md5, status: 'downloading', bytes: progress.bytes, totalBytes: progress.totalBytes, source: 'torrent' });
-          onProgress?.({ bookId: md5, source: 'torrent', ...progress });
-        },
+        onProgress: progress => progressThrottle.report(progress),
       });
+      progressThrottle.flush();
       torrent = selected.torrent;
       const stats = await fsp.stat(selected.filePath);
       if (!stats.isFile() || stats.size <= 0 || stats.size > this.maxBytes) throw new Error('downloaded torrent file is invalid');
@@ -409,6 +464,7 @@ class AcquisitionManager {
       }
       return { book: storedBook, source: 'torrent', sha256: imported.sha256, size: imported.size, extension: imported.extension };
     } catch (error) {
+      progressThrottle.cancel();
       this.store.setDownload({ bookId: md5, status: 'failed', source: 'torrent', error: error?.message || String(error) });
       throw error;
     } finally {
@@ -552,6 +608,7 @@ module.exports = {
   extensionFor,
   privateHostname,
   safePath,
+  createProgressThrottle,
   libgenTorrentMetadataURL,
   LIBGEN_TORRENT_METADATA_BASE_URL,
 };

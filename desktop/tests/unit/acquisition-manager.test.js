@@ -6,11 +6,41 @@ const fsp = require('node:fs/promises');
 const path = require('node:path');
 const { Readable } = require('node:stream');
 const test = require('node:test');
-const { AcquisitionManager, libgenTorrentMetadataURL } = require('../../acquisition-manager');
+const { AcquisitionManager, createProgressThrottle, libgenTorrentMetadataURL } = require('../../acquisition-manager');
 const { LibraryImporter } = require('../../library-import');
 const { LibraryStore } = require('../../library-store');
 
 const BOOK_SHA256 = crypto.createHash('sha256').update('book bytes').digest('hex');
+
+test('1000 torrent progress samples coalesce to at most 11 persistence/IPC updates', () => {
+  let now = 0;
+  let nextTimerId = 0;
+  const timers = new Map();
+  const reported = [];
+  const throttle = createProgressThrottle(value => reported.push(value), 100, {
+    now: () => now,
+    schedule: (callback, delay) => {
+      const id = ++nextTimerId;
+      timers.set(id, { callback, dueAt: now + delay });
+      return id;
+    },
+    unschedule: id => timers.delete(id),
+  });
+  for (let sample = 1; sample <= 1000; sample += 1) {
+    now = sample - 1;
+    throttle.report({ bytes: sample });
+    for (const [id, timer] of timers) {
+      if (timer.dueAt <= now) {
+        timers.delete(id);
+        timer.callback();
+        break;
+      }
+    }
+  }
+  throttle.flush();
+  assert.equal(reported.length, 11);
+  assert.deepEqual(reported.at(-1), { bytes: 1000 });
+});
 
 async function withManager(fn) {
   const root = await fsp.mkdtemp(path.join(__dirname, '.bookstr-acquisition-'));
