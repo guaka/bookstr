@@ -24,6 +24,8 @@ import androidx.compose.ui.platform.testTag
 import app.bookstr.data.CatalogConnection
 import app.bookstr.data.CatalogSearchPage
 import app.bookstr.download.DownloadService
+import app.bookstr.kindle.KindleRequest
+import app.bookstr.kindle.KindleTransferHost
 import app.bookstr.ui.DownloadsSheet
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
@@ -173,6 +175,7 @@ class MainActivity : ComponentActivity() {
                 var nextOffset by remember { mutableStateOf<Int?>(null) }
                 var searchedQuery by remember { mutableStateOf("") }
                 val downloadJobs by app.downloadStore.jobs.collectAsState()
+                var kindleRequest by remember { mutableStateOf<KindleRequest?>(null) }
                 var searchQuery by remember { mutableStateOf("") }
                 var searchResults by remember { mutableStateOf<List<BookSearchResult>>(emptyList()) }
                 var searching by remember { mutableStateOf(false) }
@@ -505,7 +508,9 @@ class MainActivity : ComponentActivity() {
                 }
                 if (showDownloads) DownloadsSheet(downloadJobs, onDismiss = { showDownloads = false },
                     onAction = { action, id -> DownloadService.dispatch(this@MainActivity, action, id) },
-                    onOpen = { showDownloads = false; openBook(it.book) })
+                    onOpen = { showDownloads = false; openBook(it.book) },
+                    onSendToKindle = { kindleRequest = KindleRequest(it.book.id) })
+                KindleTransferHost(app, kindleRequest) { kindleRequest = null }
                 pendingInvitation?.let { raw ->
                     val connection = runCatching { CatalogConnection.parse(raw) }.getOrNull()
                     AlertDialog(onDismissRequest = { pendingInvitation = null },
@@ -540,6 +545,9 @@ class MainActivity : ComponentActivity() {
                                     error = "This favorite has not been published to Blossom yet."
                                 },
                                 publicationSize = { book -> catalog.publicationSize(book) },
+                                canSendToKindle = { book -> book.format == BookFormat.Pdf &&
+                                    downloadJobs.any { it.book.id == book.id && it.state == "complete" } },
+                                onSendToKindle = { book -> kindleRequest = KindleRequest(book.id) },
                                 onUnfavoriteBook = { book ->
                                     scope.launch {
                                         try {

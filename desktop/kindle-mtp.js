@@ -27,11 +27,20 @@ class MtpKindles {
       ? ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', this.helper, action, ...args]
       : [action, ...args];
     const { stdout } = await this.runner(executable, argv, { timeout: 120000, windowsHide: true, maxBuffer: 16 * 1024 * 1024 });
-    return JSON.parse(stdout.trim() || 'null');
+    // libmtp prints device discovery messages on stdout before our JSON reply.
+    const response = stdout.trim().split(/\r?\n/).at(-1);
+    return JSON.parse(response || 'null');
   }
 
   async devices() {
-    const entries = await this.command('devices').catch(() => []);
+    let entries;
+    try {
+      entries = await this.command('devices');
+    } catch (error) {
+      const detail = String(error?.stderr || error?.code || 'adapter error').replace(/\s+/g, ' ').trim().slice(0, 200);
+      process.stderr.write(`Kindle MTP discovery failed: ${detail}\n`);
+      return [];
+    }
     return (Array.isArray(entries) ? entries : []).map(entry => ({
       id: `mtp:${this.platform}:${String(entry.id)}`,
       helperId: String(entry.id),

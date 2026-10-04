@@ -28,6 +28,7 @@ const { AcquisitionManager } = require('./acquisition-manager');
 const { DownloadQueue } = require('./download-queue');
 const { KindleSync, MountedKindles } = require('./kindle-sync');
 const { MtpKindles } = require('./kindle-mtp');
+const { ComicPdfConverter } = require('./comic-pdf');
 const { ElectronDevicePairing } = require('./device-pairing');
 const { CatalogInvitations } = require('./catalog-invitations');
 const { nip19: catalogNip19 } = require('nostr-tools');
@@ -228,6 +229,7 @@ function getKindleSync() {
   if (!kindleSync) kindleSync = new KindleSync({
     store: getLibraryStore(),
     resolveFile: resolveRegisteredLibraryFile,
+    comicConverter: new ComicPdfConverter({ cacheRoot: path.join(libraryDataDir, '.kindle-converted') }),
     transports: [
       new MountedKindles(),
       new MtpKindles({
@@ -1342,8 +1344,8 @@ function setupIpcHandlers() {
   ipcMain.handle('bookstr-desktop-library-enqueue', (_event, request) => getDownloadQueue().enqueue(request));
   ipcMain.handle('bookstr-desktop-library-retry-download', (_event, bookId) => getDownloadQueue().retry(bookId));
   ipcMain.handle('bookstr-desktop-kindle-devices', () => getKindleSync().devices());
-  ipcMain.handle('bookstr-desktop-kindle-preview', (_event, id) => getKindleSync().preview(String(id || '')));
-  ipcMain.handle('bookstr-desktop-kindle-transfer', (_event, id) => getKindleSync().transfer(String(id || '')));
+  ipcMain.handle('bookstr-desktop-kindle-preview', (_event, id, bookId) => getKindleSync().preview(String(id || ''), bookId === undefined ? undefined : String(bookId)));
+  ipcMain.handle('bookstr-desktop-kindle-transfer', (_event, id, bookId) => getKindleSync().transfer(String(id || ''), bookId === undefined ? undefined : String(bookId)));
   ipcMain.handle('bookstr-desktop-library-linked-folders', () => getLibraryStore().linkedFolders());
   ipcMain.handle('bookstr-desktop-library-link-folder', (_event, folder) => getLibraryStore().linkFolder(folder));
   ipcMain.handle('bookstr-desktop-library-open-reader', (_event, bookId) => getLibraryStore().openReader(bookId));

@@ -2477,6 +2477,8 @@
       const desktopKindleTransfer = document.getElementById('desktop-kindle-transfer');
       let currentKindleId = '';
       let kindleTransferRunning = false;
+      let kindleOfferRefreshing = false;
+      let kindleOfferQueued = false;
       const searchResultFilters = document.getElementById('search-result-filters');
       const searchResultCount = document.getElementById('search-result-count');
       const searchLanguageFilterWrap = document.getElementById('search-language-filter-wrap');
@@ -6009,6 +6011,29 @@
             });
             actions.append(read);
           }
+          if (['ready', 'seeding'].includes(jobStatus) && ['pdf', 'txt'].includes(String(job.extension || '').toLowerCase())) {
+            const send = document.createElement('button');
+            send.type = 'button';
+            send.textContent = 'Send to Kindle';
+            send.setAttribute('aria-label', `Send ${job.title || 'book'} to Kindle`);
+            send.addEventListener('click', async () => {
+              send.disabled = true;
+              try {
+                const devices = await desktopBridge.kindle.devices();
+                if (!devices.length) throw new Error('No Kindle connected.');
+                const deviceId = devices.some(device => device.id === currentKindleId) ? currentKindleId : devices[0].id;
+                const result = await desktopBridge.kindle.transfer(deviceId, job.bookId);
+                state.textContent = result.transferred.length ? 'Copied to Kindle' :
+                  result.alreadyPresent ? 'Already on Kindle' :
+                  result.errors[0]?.error || 'Could not copy to Kindle';
+              } catch (error) {
+                state.textContent = error?.message || String(error);
+              } finally {
+                send.disabled = false;
+              }
+            });
+            actions.append(send);
+          }
           if (actions.childElementCount) row.append(actions);
           desktopDownloadsList.append(row);
         }
@@ -6064,6 +6089,8 @@
 
       async function refreshKindleOffer() {
         if (!isDesktopMode || kindleTransferRunning || !desktopBridge?.kindle) return;
+        if (kindleOfferRefreshing) { kindleOfferQueued = true; return; }
+        kindleOfferRefreshing = true;
         try {
           const devices = await desktopBridge.kindle.devices();
           deviceKindleList.replaceChildren();
@@ -6104,6 +6131,12 @@
         } catch (error) {
           desktopKindleSummary.textContent = error?.message || String(error);
           desktopKindleTransfer.disabled = true;
+        } finally {
+          kindleOfferRefreshing = false;
+          if (kindleOfferQueued) {
+            kindleOfferQueued = false;
+            void refreshKindleOffer();
+          }
         }
       }
 

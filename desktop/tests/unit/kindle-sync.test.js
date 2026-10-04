@@ -42,8 +42,20 @@ test('Kindle preview hashes existing files and transfer copies only missing supp
     assert.deepEqual(plan.missing.map(item => item.title), ['New PDF']);
     assert.equal(plan.alreadyPresent, 1);
     assert.match(plan.skipped[0].reason, /epub is not supported/);
+    assert.deepEqual((await sync.preview(device.id, 'b')).missing.map(item => item.bookId), ['b']);
+    assert.equal((await sync.preview(device.id, 'a')).alreadyPresent, 1);
+    await assert.rejects(() => sync.preview(device.id, 'c'), /epub is not supported/);
+    await assert.rejects(() => sync.transfer(device.id, 'unknown'), /not found/);
+    store.setDownload({ bookId: 'b', status: 'downloading', bytes: 4, totalBytes: 20 });
+    await assert.rejects(() => sync.preview(device.id, 'b'), /Book is not downloaded/);
+    store.setDownload({ bookId: 'b', status: 'ready', bytes: 20, totalBytes: 20 });
+    const missingFile = new KindleSync({ store, resolveFile: async () => { throw new Error('Local file is missing'); }, transports: [transport] });
+    await assert.rejects(() => missingFile.preview(device.id, 'b'), /Local file is missing/);
+    const single = await sync.transfer(device.id, 'b');
+    assert.deepEqual(single.transferred, ['b']);
+    assert.equal((await sync.transfer(device.id, 'b')).alreadyPresent, 1);
     const result = await sync.transfer(device.id);
-    assert.deepEqual(result.transferred, ['b']);
+    assert.deepEqual(result.transferred, []);
     assert.equal((await sync.preview(device.id)).missing.length, 0);
     assert.equal(await fs.readFile(path.join(documents, 'renamed-existing.pdf'), 'utf8'), 'existing PDF bytes');
     assert.match(safeFilename({ title: 'A/B', authors: 'C:D', extension: 'pdf' }, digest('bytes')), /^A B - C D - [a-f0-9]{16}\.pdf$/);
@@ -60,8 +72,8 @@ test('MTP transport uses its packaged helper and verifies copied bytes', async (
   const calls = [];
   const runner = async (_executable, args) => {
     calls.push(args);
-    if (args[0] === 'devices') return { stdout: '[{"id":"1-2","name":"Kindle Scribe"}]' };
-    if (args[0] === 'files') return { stdout: '[{"id":"17","name":"old.pdf","size":10}]' };
+    if (args[0] === 'devices') return { stdout: 'Device 0 is a Kindle Scribe.\n[{"id":"1-2","name":"Kindle Scribe"}]\n' };
+    if (args[0] === 'files') return { stdout: 'Device 0 is a Kindle Scribe.\n[{"id":"17","name":"old.pdf","size":10}]\n' };
     if (args[0] === 'get') { await fs.writeFile(args[3], remote.get(args[2])); return { stdout: '{"ok":true}' }; }
     if (args[0] === 'put') { remote.set('18', await fs.readFile(args[2])); return { stdout: '{"id":"18"}' }; }
     throw new Error('unexpected command');
@@ -78,6 +90,43 @@ test('MTP transport uses its packaged helper and verifies copied bytes', async (
     assert.equal(remote.get('18').toString(), 'new PDF');
     assert.ok(calls.some(call => call[0] === 'put'));
   } finally { await fs.rm(root, { recursive: true, force: true }); }
+});
+
+test('MTP discovery reports bounded adapter diagnostics without hiding the device-list failure', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'bookstr-mtp-discovery-'));
+  const helper = path.join(root, 'kindle-mtp');
+  const originalWrite = process.stderr.write;
+  let diagnostics = '';
+  process.stderr.write = chunk => { diagnostics += String(chunk); return true; };
+  try {
+    await fs.writeFile(helper, 'fixture');
+    for (const [error, expected] of [
+      [Object.assign(new Error('helper failed'), { stderr: 'Kindle MTP open failed.\n', code: 'EIO' }), /Kindle MTP open failed/],
+      [Object.assign(new Error('helper failed'), { code: 'ETIMEDOUT' }), /ETIMEDOUT/],
+      [new Error('helper failed'), /adapter error/],
+      [Object.assign(new Error('helper failed'), { stderr: 'x'.repeat(300) }), /x{200}/],
+    ]) {
+      diagnostics = '';
+      const transport = new MtpKindles({ platform: 'darwin', resourcesPath: root, stagingRoot: path.join(root, 'staging'),
+        runner: async () => { throw error; } });
+      assert.deepEqual(await transport.devices(), []);
+      assert.match(diagnostics, expected);
+      assert.ok(diagnostics.length <= 240);
+    }
+  } finally {
+    process.stderr.write = originalWrite;
+    await fs.rm(root, { recursive: true, force: true });
+  }
+});
+
+test('native MTP discovery lists Amazon USB ids without opening or scanning folders', async () => {
+  const source = await fs.readFile(path.join(__dirname, '../../native/kindle-mtp.c'), 'utf8');
+  const body = source.match(/static int list_devices\(void\) \{([\s\S]*?)\n\}/)?.[1];
+  assert.ok(body, 'native device-list function is present');
+  assert.match(body, /device_entry\.vendor_id != 0x1949/);
+  assert.doesNotMatch(body, /LIBMTP_Open_Raw_Device_Uncached|LIBMTP_Get_Folder_List|documents_folder/);
+  assert.match(source, /Kindle MTP open failed/);
+  assert.match(source, /Kindle Documents folder could not be read during preview/);
 });
 
 test('mounted Kindle refuses low space and never overwrites a destination', async () => {

@@ -367,3 +367,39 @@ test('connected Kindle offers a preview and transfers only on click', async () =
     await expect.poll(() => app.evaluate(() => globalThis.kindleTransferCalls)).toBe(1);
   } finally { await app.close(); }
 });
+
+test('a completed PDF download sends only its selected book to Kindle', async () => {
+  const app = await electron.launch({ args: electronArgs() });
+  try {
+    const page = await app.firstWindow();
+    await app.evaluate(({ ipcMain }) => {
+      globalThis.singleKindleTransfer = null;
+      ipcMain.removeHandler('bookstr-desktop-library-downloads');
+      ipcMain.handle('bookstr-desktop-library-downloads', () => [
+        { bookId: 'pdf-1', title: 'Fixture PDF', extension: 'pdf', status: 'ready' },
+        { bookId: 'epub-1', title: 'Fixture EPUB', extension: 'epub', status: 'ready' },
+      ]);
+      ipcMain.removeHandler('bookstr-desktop-kindle-devices');
+      ipcMain.handle('bookstr-desktop-kindle-devices', () => [{ id: 'mounted:fixture', name: 'Kindle', kind: 'mounted' }]);
+      ipcMain.removeHandler('bookstr-desktop-kindle-preview');
+      ipcMain.handle('bookstr-desktop-kindle-preview', () => ({
+        device: { id: 'mounted:fixture', name: 'Kindle', kind: 'mounted' },
+        missing: [], alreadyPresent: 0, skipped: [],
+      }));
+      ipcMain.removeHandler('bookstr-desktop-kindle-transfer');
+      ipcMain.handle('bookstr-desktop-kindle-transfer', (_event, deviceId, bookId) => {
+        globalThis.singleKindleTransfer = { deviceId, bookId };
+        return { transferred: [bookId], alreadyPresent: 0, skipped: [], errors: [] };
+      });
+    });
+    await page.reload();
+    await page.getByRole('button', { name: 'Search' }).click();
+    await page.getByRole('button', { name: 'Downloads' }).click();
+    await expect(page.getByRole('button', { name: 'Send Fixture PDF to Kindle' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Send Fixture EPUB to Kindle' })).toHaveCount(0);
+    await page.getByRole('button', { name: 'Send Fixture PDF to Kindle' }).click();
+    await expect.poll(() => app.evaluate(() => globalThis.singleKindleTransfer)).toEqual({
+      deviceId: 'mounted:fixture', bookId: 'pdf-1',
+    });
+  } finally { await app.close(); }
+});

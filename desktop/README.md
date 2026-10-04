@@ -54,6 +54,12 @@ unprivileged user under Xvfb, and removes the test container when it finishes.
 
 ## Notes
 
+- Completed CBZ/CBR downloads with JPEG or PNG pages are converted to cached
+  PDFs for Kindle transfer. Archives are limited to 256 MiB, 300 pages, 24 MiB
+  per page, and 512 MiB of expanded page data; unsupported or encrypted comics
+  appear in the Kindle preview's skipped count. The bundled [7-Zip](https://www.7-zip.org/)
+  extractor is distributed under the LGPL with the unRAR restriction; its
+  source is available from the linked project.
 - Main and reader windows use a shared persisted session so library state and
   reading progress remain in sync across windows.
 - Reader windows receive signed payloads from the main process via a constrained

@@ -75,6 +75,8 @@ fun LibraryScreen(
     onOpenBook: (CatalogBook) -> Unit,
     onOpenExternal: (ExternalFavorite) -> Unit,
     publicationSize: (CatalogBook) -> Long? = { null },
+    canSendToKindle: (CatalogBook) -> Boolean = { false },
+    onSendToKindle: (CatalogBook) -> Unit = {},
     onUnfavoriteBook: (CatalogBook) -> Unit = {},
     onUnfavoriteExternal: (ExternalFavorite) -> Unit = {},
     onDeleteBook: (CatalogBook) -> Unit = {},
@@ -165,6 +167,7 @@ fun LibraryScreen(
             progress = progress[book.id],
             isFavorite = book.id in favoriteIds,
             publicationBytes = publicationSize(book),
+            canSendToKindle = canSendToKindle(book),
             onDismiss = { selectedBook = null },
             onOpen = {
                 selectedBook = null
@@ -177,6 +180,10 @@ fun LibraryScreen(
             onDelete = {
                 selectedBook = null
                 pendingDelete = book
+            },
+            onSendToKindle = {
+                selectedBook = null
+                onSendToKindle(book)
             },
         )
     }
@@ -280,10 +287,12 @@ private fun BookDetailsDialog(
     progress: BookProgress?,
     isFavorite: Boolean,
     publicationBytes: Long?,
+    canSendToKindle: Boolean,
     onDismiss: () -> Unit,
     onOpen: () -> Unit,
     onUnfavorite: () -> Unit,
     onDelete: () -> Unit,
+    onSendToKindle: () -> Unit,
 ) {
     FullScreenDetails(title = "Book details", onDismiss = onDismiss) {
         Text(book.title, style = MaterialTheme.typography.headlineMedium)
@@ -307,6 +316,11 @@ private fun BookDetailsDialog(
         RightsDetails(book.rightsStatus, book.license, book.licenseUrl, book.rightsSource)
         Spacer(modifier = Modifier.height(12.dp))
         Button(onClick = onOpen, modifier = Modifier.fillMaxWidth()) { Text("Open book") }
+        if (canSendToKindle && publicationBytes != null) {
+            OutlinedButton(onClick = onSendToKindle, modifier = Modifier.fillMaxWidth().testTag("library.kindle.${book.id}")) {
+                Text("Send to Kindle")
+            }
+        }
         if (isFavorite) {
             OutlinedButton(onClick = onUnfavorite, modifier = Modifier.fillMaxWidth()) {
                 Text("Unfavorite")
