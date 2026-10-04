@@ -603,21 +603,27 @@
     return [...merged.values()];
   }
 
-  function matchesBookFilter(book, query, isCached = () => false) {
+  function createBookFilterMatcher(query, isCached = () => false) {
     const terms = String(query || '').trim().toLocaleLowerCase().split(/\s+/).filter(Boolean);
-    if (!terms.length) return true;
-    const searchable = [
-      resolveTitle(book),
-      book?.authors || book?.author,
-      book?.year,
-      availabilityForBook(book),
-      isCached(book) ? 'cached yes' : 'cached no',
-      book?.extension || book?.format,
-      book?.language,
-      book?.isReading ? 'reading currently reading' : '',
-      book?.isFavorite ? 'favorite favourite heart' : '',
-    ].filter(Boolean).join(' ').toLocaleLowerCase();
-    return terms.every(term => searchable.includes(term));
+    if (!terms.length) return () => true;
+    return book => {
+      const searchable = [
+        resolveTitle(book),
+        book?.authors || book?.author,
+        book?.year,
+        availabilityForBook(book),
+        isCached(book) ? 'cached yes' : 'cached no',
+        book?.extension || book?.format,
+        book?.language,
+        book?.isReading ? 'reading currently reading' : '',
+        book?.isFavorite ? 'favorite favourite heart' : '',
+      ].filter(Boolean).join(' ').toLocaleLowerCase();
+      return terms.every(term => searchable.includes(term));
+    };
+  }
+
+  function matchesBookFilter(book, query, isCached = () => false) {
+    return createBookFilterMatcher(query, isCached)(book);
   }
 
   function isbnForBook(book) {
@@ -776,6 +782,7 @@
     sortBooks,
     dedupeLibraryBooks,
     matchesBookFilter,
+    createBookFilterMatcher,
     sameLibraryBook,
     mergeLibraryState,
     isbnForBook,

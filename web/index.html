@@ -2448,6 +2448,7 @@
       homeFavoritesSection?.remove();
       const homeBookSorts = Object.create(null);
       const homeLibraryFilter = { language: '', format: '' };
+      let homeLibraryFilterTimer = null;
       const desktopDownloadByBook = new Map();
       let desktopReadyEditions = [];
       let desktopDownloadStateSignature = '';
@@ -6896,13 +6897,14 @@
           homeLibraryFilter.format, value => value.toLowerCase()
         );
         homeResultFilters.classList.toggle('hidden', languages.length <= 1 && formats.length <= 1);
+        const matchesQuery = BookMetadata.createBookFilterMatcher(
+          needle,
+          item => cachedBookKeys.has(bookCacheKey(item, item.readUrl || item.url))
+        );
         const matchingBooks = enrichedLibrary.filter(book => (
           (!homeLibraryFilter.language || resultLanguage(book) === homeLibraryFilter.language)
           && (!homeLibraryFilter.format || resultFormat(book) === homeLibraryFilter.format)
-          && BookMetadata.matchesBookFilter(
-            book, needle,
-            item => cachedBookKeys.has(bookCacheKey(item, item.readUrl || item.url))
-          )
+          && matchesQuery(book)
         ));
         const visibleCount = matchingBooks.length === library.length
           ? `${library.length} ${library.length === 1 ? 'book' : 'books'}`
@@ -8310,7 +8312,10 @@
         if (!queryInput.value.trim()) renderSearchSources();
       });
       renderSearchSources();
-      homeQueryInput.addEventListener('input', renderHome);
+      homeQueryInput.addEventListener('input', () => {
+        clearTimeout(homeLibraryFilterTimer);
+        homeLibraryFilterTimer = setTimeout(renderHome, 80);
+      });
       homeLanguageFilter.addEventListener('change', () => {
         homeLibraryFilter.language = homeLanguageFilter.value;
         renderHome();
