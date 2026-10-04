@@ -16,7 +16,7 @@ function pngHeader(relativePath) {
   };
 }
 
-test('desktop, iOS, and Android share the restrained 2026 icon artwork', () => {
+test('platform icons retain their intended artwork variants', () => {
   const desktopIcon = pngHeader('desktop/assets/icon-macos.png');
   const webIcon = pngHeader('web/public/apple-touch-icon.png');
   const iosIcon = pngHeader('ios/BookstrIOS/Assets.xcassets/AppIcon.appiconset/AppIcon.png');
@@ -29,6 +29,10 @@ test('desktop, iOS, and Android share the restrained 2026 icon artwork', () => {
     { width: webIcon.width, height: webIcon.height, colorType: webIcon.colorType },
     { width: 1024, height: 1024, colorType: 2 },
   );
-  assert.deepEqual(iosIcon.contents, webIcon.contents);
+  assert.deepEqual(
+    { width: iosIcon.width, height: iosIcon.height, colorType: iosIcon.colorType },
+    { width: 1024, height: 1024, colorType: 2 },
+  );
+  assert.equal(iosIcon.contents.equals(webIcon.contents), false);
   assert.deepEqual(androidIcon.contents, desktopIcon.contents);
 });

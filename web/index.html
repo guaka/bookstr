@@ -1969,6 +1969,16 @@
       .device-transfer-form { display: grid; grid-template-columns: minmax(12rem, 1fr) minmax(10rem, 1fr) auto; gap: 0.5rem; }
       .device-transfer-form input { min-width: 0; }
       .device-transfer-note { margin: 0; color: var(--muted); font-size: 0.82rem; }
+      .desktop-downloads-dialog { width: min(38rem, calc(100vw - 2rem)); max-height: 80vh; border: 1px solid var(--border, #b8b8b8); border-radius: .8rem; background: var(--page-bg, #fff); color: var(--page-text, #222); padding: 1rem; }
+      .desktop-downloads-dialog::backdrop { background: rgba(0, 0, 0, .45); }
+      .desktop-downloads-dialog header { display: flex; align-items: center; justify-content: space-between; }
+      .desktop-downloads-dialog header h2 { margin: 0 0 .5rem; }
+      .desktop-downloads-dialog header button { background: none; border: 0; color: inherit; font-size: 1.5rem; cursor: pointer; }
+      .desktop-download-job { padding: .65rem 0; border-top: 1px solid var(--border, #b8b8b8); display: grid; gap: .3rem; }
+      .desktop-download-job progress { width: 100%; }
+      .desktop-download-job small { color: var(--muted-text, #666); }
+      .desktop-kindle-offer { display: flex; align-items: center; gap: .6rem; padding: .55rem .7rem; background: var(--panel-bg, #eee); border-radius: .55rem; }
+      .desktop-kindle-offer.hidden { display: none; }
       @media (max-width: 700px) {
         .nip17-exchange-grid { grid-template-columns: 1fr; }
         .device-transfer-form { grid-template-columns: 1fr; }
@@ -1987,11 +1997,17 @@
           <button id="home-tab-btn" class="header-tab" type="button" aria-label="Home, Command 1" aria-selected="true" title="Home · ⌘1"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4.5h4v15H4zM10 4.5h4v15h-4zM16 4.5h4v15h-4z"/><path d="M3 19.5h18M5.5 7.5h1M11.5 7.5h1M17.5 7.5h1"/></svg></button>
           <button id="reading-tab-btn" class="header-tab" type="button" aria-label="Reading, Command 2" aria-selected="false" title="Reading · ⌘2"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5.5c3.2-.8 5.9-.2 8 1.6v12c-2.1-1.8-4.8-2.4-8-1.6z"/><path d="M20 5.5c-3.2-.8-5.9-.2-8 1.6v12c2.1-1.8 4.8-2.4 8-1.6z"/></svg></button>
           <button id="search-tab-btn" class="header-tab" type="button" aria-label="Search, Command 3" aria-selected="false" title="Search · ⌘3"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m15.5 15.5 5 5"/></svg></button>
-          <button id="people-tab-btn" class="header-tab" type="button" aria-label="People, Command 4" aria-selected="false" title="People · ⌘4"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="3"/><circle cx="17" cy="10" r="2.5"/><path d="M3.5 20c.4-4 2.2-6 5.5-6s5.1 2 5.5 6M14 15c3.5-.6 5.5 1 6 5"/></svg></button>
+          <button id="people-tab-btn" class="header-tab" type="button" aria-label="People, Command 4" aria-selected="false" title="People · ⌘4"><svg class="social-nav-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="3"/><circle cx="17" cy="10" r="2.5"/><path d="M3.5 20c.4-4 2.2-6 5.5-6s5.1 2 5.5 6M14 15c3.5-.6 5.5 1 6 5"/></svg><svg class="device-nav-icon hidden" viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="2.5" width="14" height="19" rx="2"/><path d="M9 18.5h6"/></svg></button>
           <button id="words-tab-btn" class="header-tab words-tab-icon hidden" type="button" aria-label="Words, Command 5" aria-selected="false" title="Words · ⌘5">Aᵥ</button>
           <button id="settings-btn" class="header-tab icon-btn" aria-label="Settings" aria-selected="false" aria-pressed="false" title="Settings"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15.25A3.25 3.25 0 1 0 12 8.75a3.25 3.25 0 0 0 0 6.5Z"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06-1.87 1.87-.06-.06A1.7 1.7 0 0 0 16 18.4a1.7 1.7 0 0 0-1 .6 1.7 1.7 0 0 0-.4 1.1V20h-2.65v-.09A1.7 1.7 0 0 0 10.9 18.4a1.7 1.7 0 0 0-1.87.34l-.06.06-1.87-1.87.06-.06A1.7 1.7 0 0 0 7.5 15a1.7 1.7 0 0 0-.6-1 1.7 1.7 0 0 0-1.1-.4H5.7v-2.65h.09A1.7 1.7 0 0 0 7.5 9.9a1.7 1.7 0 0 0-.34-1.87l-.06-.06L8.97 6.1l.06.06A1.7 1.7 0 0 0 10.9 6.5a1.7 1.7 0 0 0 1-.6 1.7 1.7 0 0 0 .4-1.1V4.7h2.65v.09A1.7 1.7 0 0 0 16 6.5a1.7 1.7 0 0 0 1.87-.34l.06-.06 1.87 1.87-.06.06A1.7 1.7 0 0 0 19.4 9.9a1.7 1.7 0 0 0 .6 1 1.7 1.7 0 0 0 1.1.4h.09v2.65h-.09A1.7 1.7 0 0 0 19.4 15Z"/></svg></button>
         </div>
       </header>
+
+      <aside id="desktop-kindle-offer" class="desktop-kindle-offer hidden" aria-live="polite">
+        <select id="desktop-kindle-device" aria-label="Connected Kindle" class="hidden"></select>
+        <span id="desktop-kindle-summary"></span>
+        <button id="desktop-kindle-transfer" type="button">Put missing books on Kindle</button>
+      </aside>
 
       <section id="home-tab" class="card" data-tab-panel="home">
         <form id="home-search-form" class="home-search" autocomplete="off">
@@ -2027,6 +2043,7 @@
 
       <section id="search-tab" class="card" data-tab-panel="search">
         <h2 class="search-title">Search books</h2>
+        <button id="desktop-downloads-button" type="button" class="chip-btn hidden" aria-label="Downloads" title="Downloads">↓</button>
         <p id="status" class="note" aria-live="polite"></p>
         <form id="search-form" class="row-3" autocomplete="off">
           <input id="query-input" placeholder="Search title, author, ISBN, publisher" aria-label="Book search query" />
@@ -2073,13 +2090,17 @@
           </div>
         </details>
       </section>
+      <dialog id="desktop-downloads-dialog" aria-label="Downloads" class="desktop-downloads-dialog">
+        <header><h2>Downloads</h2><button id="desktop-downloads-close" type="button" aria-label="Close downloads">×</button></header>
+        <div id="desktop-downloads-list" aria-live="polite"></div>
+      </dialog>
 
       <section id="reading-library-tab" class="card hidden" data-tab-panel="reading">
         <div class="library-columns">
           <div class="library-column">
-            <h3>Nostr favorites</h3>
+            <h3 id="favorites-heading">Nostr favorites</h3>
             <ul id="favorites-list" class="sublist"></ul>
-            <p class="meta-note">Click a title to open. Favorites sync through your Nostr signer.</p>
+            <p id="favorites-sync-note" class="meta-note">Click a title to open. Favorites sync through your Nostr signer.</p>
           </div>
           <div class="library-column">
             <h3>Reading library</h3>
@@ -2106,9 +2127,13 @@
       </section>
 
       <section id="people-tab" class="card hidden" data-tab-panel="people">
+        <section id="device-kindle-panel" class="device-transfer-panel hidden" aria-labelledby="device-kindle-title">
+          <h3 id="device-kindle-title">Kindles</h3>
+          <div id="device-kindle-list" class="device-transfer-devices" aria-live="polite"></div>
+        </section>
         <section id="device-transfer-panel" class="device-transfer-panel hidden" aria-labelledby="device-transfer-title">
           <div>
-            <h3 id="device-transfer-title">Devices &amp; transfers</h3>
+            <h3 id="device-transfer-title">Paired devices</h3>
             <p id="device-transfer-summary" class="device-transfer-summary" role="status">Checking this device…</p>
           </div>
           <div class="device-transfer-actions">
@@ -2426,6 +2451,16 @@
       const searchType = document.getElementById('search-type');
       const searchForm = document.getElementById('search-form');
       const resultsEl = document.getElementById('results');
+      const desktopDownloadsButton = document.getElementById('desktop-downloads-button');
+      const desktopDownloadsDialog = document.getElementById('desktop-downloads-dialog');
+      const desktopDownloadsList = document.getElementById('desktop-downloads-list');
+      const desktopDownloadsClose = document.getElementById('desktop-downloads-close');
+      const desktopKindleOffer = document.getElementById('desktop-kindle-offer');
+      const desktopKindleDevice = document.getElementById('desktop-kindle-device');
+      const desktopKindleSummary = document.getElementById('desktop-kindle-summary');
+      const desktopKindleTransfer = document.getElementById('desktop-kindle-transfer');
+      let currentKindleId = '';
+      let kindleTransferRunning = false;
       const searchResultFilters = document.getElementById('search-result-filters');
       const searchResultCount = document.getElementById('search-result-count');
       const searchLanguageFilterWrap = document.getElementById('search-language-filter-wrap');
@@ -2459,6 +2494,8 @@
       const peopleTab = document.getElementById('people-tab');
       const peopleList = document.getElementById('people-list');
       const deviceTransferPanel = document.getElementById('device-transfer-panel');
+      const deviceKindlePanel = document.getElementById('device-kindle-panel');
+      const deviceKindleList = document.getElementById('device-kindle-list');
       const deviceTransferSummary = document.getElementById('device-transfer-summary');
       const deviceTransferDevices = document.getElementById('device-transfer-devices');
       const deviceTransferRefresh = document.getElementById('device-transfer-refresh');
@@ -2483,6 +2520,19 @@
       let activeTab = 'home';
       const desktopBridge = window.bookstrDesktop || null;
       const isDesktopMode = window.location.protocol === 'app:' && Boolean(desktopBridge?.openReader);
+      desktopDownloadsButton.classList.toggle('hidden', !isDesktopMode);
+      if (isDesktopMode) {
+        peopleTabBtn.setAttribute('aria-label', 'Devices, Command 4');
+        peopleTabBtn.title = 'Devices · ⌘4';
+        peopleTabBtn.querySelector('.social-nav-icon').classList.add('hidden');
+        peopleTabBtn.querySelector('.device-nav-icon').classList.remove('hidden');
+        peopleList.classList.add('hidden');
+        deviceKindlePanel.classList.remove('hidden');
+        document.getElementById('favorites-heading').textContent = 'Favorites';
+        document.getElementById('favorites-sync-note').classList.add('hidden');
+        homeSyncRefresh.setAttribute('aria-label', 'Refresh reading and words');
+        homeSyncRefresh.title = 'Refresh reading and words';
+      }
       document.body.classList.toggle('desktop-mode', isDesktopMode);
       if (isDesktopMode) {
         document.title = 'libstr';
@@ -3129,6 +3179,7 @@
 
       let nostrPeopleSyncTask;
       async function syncNostrPeopleFromNip7() {
+        if (isDesktopMode) return false;
         const pubkey = state.nip7.pubkey;
         if (!state.settings.useNip7 || !pubkey) return false;
         if (nostrPeopleSyncTask) return nostrPeopleSyncTask;
@@ -3244,6 +3295,7 @@
       }
 
       async function syncFavoritesToNostr() {
+        if (isDesktopMode) return [];
         if (!nostrSigner?.signEvent || !nostrSigner?.nip44?.encrypt) {
           throw new Error(`${nostrSignerName} with NIP-44 support is required to sync favorites.`);
         }
@@ -3328,6 +3380,7 @@
       }
 
       async function syncFavoriteDeletionToNostr() {
+        if (isDesktopMode) return;
         const pubkey = state.nip7.pubkey || await nostrSigner?.getPublicKey?.();
         if (!pubkey || !nostrSigner?.signEvent || !nostrSigner?.nip44?.encrypt) {
           throw new Error(`Connect your ${nostrSignerName} to delete this book from Nostr favorites.`);
@@ -3350,6 +3403,7 @@
 
       let favoriteSyncTimer;
       function queueFavoriteSync() {
+        if (isDesktopMode) return;
         clearTimeout(favoriteSyncTimer);
         favoriteSyncTimer = setTimeout(() => {
           syncFavoritesToNostr().catch((error) => {
@@ -3867,7 +3921,7 @@
 
       function applyNostrSnapshot(snapshot, { render = true, authoritativeFavorites = false } = {}) {
         const next = { ...snapshot };
-        if (Array.isArray(next.favorites)) {
+        if (!isDesktopMode && Array.isArray(next.favorites)) {
           const normalizedFavorites = next.favorites
             .map(normalizeFavoriteFromRemote)
             .map(preserveFavoriteMetadata);
@@ -3880,7 +3934,7 @@
         if (Array.isArray(next.reading)) {
           state.reading = mergeReadingSnapshot(state.reading, next.reading).slice();
         }
-        state.favorites = BookMetadata.dedupeLibraryBooks([...state.favorites, ...state.reading]);
+        state.favorites = BookMetadata.dedupeLibraryBooks(isDesktopMode ? state.favorites : [...state.favorites, ...state.reading]);
         if (Array.isArray(next.words)) {
           const merged = new Map();
           [...state.words, ...next.words].map(normalizeVocabularyWord).filter(Boolean).forEach((word) => {
@@ -3955,7 +4009,7 @@
           }
           try {
             const [favorites, reading, words] = await Promise.all([
-              pullNostrFavorites(pubkey),
+              isDesktopMode ? Promise.resolve(null) : pullNostrFavorites(pubkey),
               pullNostrReading(pubkey),
               pullNostrWords(pubkey),
             ]);
@@ -3970,10 +4024,12 @@
               words: state.words,
             });
             if (document.activeElement !== null) {
-              status.textContent = 'Synced latest Nostr library data.';
+              status.textContent = isDesktopMode ? 'Synced reading and words.' : 'Synced latest Nostr library data.';
             }
             lastNostrSyncAt = Date.now();
-            setHomeSyncState('ready', `Synced · ${nostrSyncCounts(favorites, reading, words)}`);
+            setHomeSyncState('ready', isDesktopMode
+              ? `Synced · ${reading.length} reading · ${words.length} words`
+              : `Synced · ${nostrSyncCounts(favorites, reading, words)}`);
             return true;
           } catch (error) {
             if (cached) {
@@ -3982,7 +4038,7 @@
             } else {
               setHomeSyncState('failed', 'Sync failed · retry');
             }
-            status.textContent = `Nostr library sync failed: ${error?.message || error}`;
+            status.textContent = `${isDesktopMode ? 'Reading and words sync' : 'Nostr library sync'} failed: ${error?.message || error}`;
             return false;
           }
         })();
@@ -4167,6 +4223,7 @@
             license: item.license || item.rights || '',
             ...rights,
             readUrl: directReadUrl,
+            sourceFileUrl: item.read_url || item.readUrl || '',
             fallback: Boolean(directReadUrl)
           };
         }).sort((a, b) => Number(Boolean(b.readUrl)) - Number(Boolean(a.readUrl)));
@@ -4941,7 +4998,7 @@
 
       async function deleteLibraryBook(book) {
         const title = book?.title || 'this book';
-        if (!window.confirm(`Delete ${title} from your library across apps?`)) return;
+        if (!window.confirm(isDesktopMode ? `Remove ${title} from your library?` : `Delete ${title} from your library across apps?`)) return;
         const wasFavorite = state.favorites.some(item => BookMetadata.sameLibraryBook(item, book));
         const wasReading = state.reading.some(item => BookMetadata.sameLibraryBook(item, book));
         state.favorites = state.favorites.filter(item => !BookMetadata.sameLibraryBook(item, book));
@@ -4956,15 +5013,17 @@
         renderFavorites();
         renderReading();
         renderHome();
-        status.textContent = `Removed ${title} locally; syncing deletion…`;
+        status.textContent = isDesktopMode ? `Removed ${title} from your library.` : `Removed ${title} locally; syncing deletion…`;
         try {
           const tasks = [];
-          if (wasFavorite) tasks.push(syncFavoriteDeletionToNostr());
+          if (wasFavorite && !isDesktopMode) tasks.push(syncFavoriteDeletionToNostr());
           if (wasReading) tasks.push(publishReadingDeletion(book));
           if (tasks.length) await Promise.all(tasks);
-          status.textContent = `Deleted ${title} from your library across apps.`;
+          if (!isDesktopMode) status.textContent = `Deleted ${title} from your library across apps.`;
         } catch (error) {
-          status.textContent = `Deleted ${title} locally; cross-app sync failed: ${error?.message || error}`;
+          status.textContent = isDesktopMode
+            ? `Removed ${title} locally; reading sync failed: ${error?.message || error}`
+            : `Deleted ${title} locally; cross-app sync failed: ${error?.message || error}`;
         }
       }
 
@@ -5182,7 +5241,7 @@
         favoritesList.innerHTML = '';
         if (!state.favorites.length) {
           const p = document.createElement('li');
-          p.textContent = 'No Nostr favorites yet.';
+          p.textContent = isDesktopMode ? 'No favorites yet.' : 'No Nostr favorites yet.';
           favoritesList.appendChild(p);
           return;
         }
@@ -5512,7 +5571,7 @@
             desktopDownloadByBook.set(identity, download);
           }
         }
-        rememberDownloadingBooks(downloads);
+        rememberDownloadingBooks((downloads || []).filter(download => !download.queuedFromSearch));
         desktopSeededBookIds.clear();
         desktopTransferRates.download = 0;
         desktopTransferRates.upload = 0;
@@ -5618,6 +5677,8 @@
           const inLibrary = isLibraryBook(book);
           const statusMarkup = options.library
             ? `<button type="button" class="library-delete" data-action="delete-library" aria-label="Delete ${escapeHtml(book.title || 'book')} from library" title="Delete from library"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3m3 0-1 13H7L6 7m4 4v5m4-5v5"/></svg></button>`
+            : isDesktopMode && options.routeOnly
+              ? `<button type="button" class="chip-btn" data-action="queue-download" aria-label="Add ${escapeHtml(book.title || 'book')} to downloads" title="Download">+</button><button type="button" class="chip-btn" data-action="add-library" data-md5="${escapeHtml(book.md5)}" aria-label="${inLibrary ? 'Already in favorites' : 'Add to favorites'}" title="${inLibrary ? 'Already in favorites' : 'Add to favorites'}"${inLibrary ? ' disabled' : ''}>${inLibrary ? '♥' : '♡'}</button>`
             : `<button type="button" class="chip-btn" data-action="add-library" data-md5="${escapeHtml(book.md5)}" aria-label="${inLibrary ? 'Already in library' : 'Add to library'}" title="${inLibrary ? 'Already in library' : 'Add to library'}"${inLibrary ? ' disabled' : ''}>${inLibrary ? '✓' : '+'}</button>`;
           const row = document.createElement('article');
           row.className = 'book-table-row';
@@ -5647,6 +5708,9 @@
           });
           row.querySelector('[data-action="add-library"]')?.addEventListener('click', (event) => {
             addBookToLibrary(book, event.currentTarget);
+          });
+          row.querySelector('[data-action="queue-download"]')?.addEventListener('click', () => {
+            void queueSearchDownload(book);
           });
           row.querySelector('[data-action="delete-library"]')?.addEventListener('click', () => {
             void deleteLibraryBook(book);
@@ -5791,10 +5855,10 @@
         const exists = state.favorites.some(item => BookMetadata.sameLibraryBook(item, book));
         if (exists) {
           if (button) {
-            button.textContent = '✓';
+            button.textContent = isDesktopMode && button.closest('#results') ? '♥' : '✓';
             button.disabled = true;
-            button.setAttribute('aria-label', 'Already in library');
-            button.title = 'Already in library';
+            button.setAttribute('aria-label', isDesktopMode && button.closest('#results') ? 'Already in favorites' : 'Already in library');
+            button.title = button.getAttribute('aria-label');
           }
           return false;
         }
@@ -5814,10 +5878,10 @@
         state.favorites = sortByUpdatedAt(BookMetadata.dedupeLibraryBooks(state.favorites));
         localStorage.setItem(FAVORITES_KEY, JSON.stringify(state.favorites));
         if (button) {
-          button.textContent = '✓';
+          button.textContent = isDesktopMode && button.closest('#results') ? '♥' : '✓';
           button.disabled = true;
-          button.setAttribute('aria-label', 'Already in library');
-          button.title = 'Already in library';
+          button.setAttribute('aria-label', isDesktopMode && button.closest('#results') ? 'Already in favorites' : 'Already in library');
+          button.title = button.getAttribute('aria-label');
         }
         if (render) {
           renderFavorites();
@@ -5834,11 +5898,168 @@
           const md5 = btn.getAttribute('data-md5') || '';
           const inLibrary = state.favorites.some(item => String(item?.md5 || '') === md5)
             || state.reading.some(item => String(item?.md5 || '') === md5);
-          btn.textContent = inLibrary ? '✓' : '+';
+          btn.textContent = isDesktopMode ? (inLibrary ? '♥' : '♡') : (inLibrary ? '✓' : '+');
           btn.disabled = inLibrary;
-          btn.setAttribute('aria-label', inLibrary ? 'Already in library' : 'Add to library');
-          btn.title = inLibrary ? 'Already in library' : 'Add to library';
+          btn.setAttribute('aria-label', isDesktopMode ? (inLibrary ? 'Already in favorites' : 'Add to favorites') : (inLibrary ? 'Already in library' : 'Add to library'));
+          btn.title = btn.getAttribute('aria-label');
         }
+      }
+
+      async function renderDesktopDownloads() {
+        if (!isDesktopMode || !desktopBridge?.library?.downloads) return;
+        const jobs = await desktopBridge.library.downloads();
+        desktopDownloadsList.replaceChildren();
+        if (!jobs.length) {
+          const empty = document.createElement('p');
+          empty.textContent = 'No downloads yet.';
+          desktopDownloadsList.append(empty);
+        }
+        for (const job of jobs) {
+          const row = document.createElement('div');
+          row.className = 'desktop-download-job';
+          row.setAttribute('data-download-id', job.bookId);
+          const title = document.createElement('strong');
+          title.textContent = job.title || job.bookId;
+          const state = document.createElement('small');
+          state.textContent = job.error || job.status;
+          row.append(title, state);
+          if (Number(job.totalBytes) > 0 && !['ready', 'seeding'].includes(job.status)) {
+            const progress = document.createElement('progress');
+            progress.max = Number(job.totalBytes);
+            progress.value = Math.min(progress.max, Math.max(0, Number(job.bytes) || 0));
+            row.append(progress);
+          }
+          if (job.status === 'failed') {
+            const retry = document.createElement('button');
+            retry.type = 'button';
+            retry.textContent = 'Retry';
+            retry.setAttribute('aria-label', `Retry ${job.title || 'book'}`);
+            retry.addEventListener('click', async () => {
+              retry.disabled = true;
+              try { await desktopBridge.library.retryDownload(job.bookId); }
+              catch (error) { state.textContent = error?.message || String(error); }
+              await renderDesktopDownloads();
+            });
+            row.append(retry);
+          }
+          desktopDownloadsList.append(row);
+        }
+      }
+
+      async function openDesktopDownloads() {
+        if (!isDesktopMode) return;
+        if (!desktopDownloadsDialog.open) desktopDownloadsDialog.showModal();
+        await renderDesktopDownloads();
+      }
+
+      async function queueSearchDownload(book) {
+        try {
+          let resolved = book;
+          let edition = BookMetadata.libgenTorrentMetadataForBook(resolved);
+          if (!edition && isMd5(book.md5)) {
+            resolved = await resolvePrivateTorrentBook(book);
+            if (!resolved) throw new Error('No downloadable edition matched this book.');
+            edition = BookMetadata.libgenTorrentMetadataForBook(resolved);
+          }
+          if (edition) {
+            await desktopBridge.library.enqueue({ kind: 'libgen', record: {
+              ...resolved, md5: edition.md5, libgenId: edition.libgenId,
+            } });
+          } else {
+            const provider = String(book.source || '').toLowerCase();
+            const recordId = String(book.sourceNativeId || book.md5 || '').replace(/^[^:]+:/, '');
+            await desktopBridge.library.enqueue({ kind: 'provider', record: {
+              provider, recordId, title: book.title, authors: book.authors,
+              languages: [book.language].flat().filter(Boolean), year: book.year, isbn: book.isbn,
+              ...BookMetadata.normalizeRights(book),
+              acquisitions: [{ format: book.extension, url: book.sourceFileUrl || book.readUrl, sha256: book.sha256,
+                size: book.filesize, availability: 'open' }],
+            } });
+          }
+          await refreshDesktopDownloadStates();
+          await openDesktopDownloads();
+        } catch (error) {
+          status.textContent = error?.message || String(error);
+        }
+      }
+
+      desktopDownloadsButton.addEventListener('click', () => void openDesktopDownloads());
+      desktopDownloadsClose.addEventListener('click', () => desktopDownloadsDialog.close());
+      desktopBridge?.library?.onDownloadsChanged?.(() => {
+        void refreshDesktopDownloadStates();
+        if (desktopDownloadsDialog.open) void renderDesktopDownloads();
+      });
+
+      async function refreshKindleOffer() {
+        if (!isDesktopMode || kindleTransferRunning || !desktopBridge?.kindle) return;
+        try {
+          const devices = await desktopBridge.kindle.devices();
+          deviceKindleList.replaceChildren();
+          if (!devices.length) {
+            deviceKindleList.textContent = 'No Kindle connected.';
+          }
+          for (const device of devices) {
+            const row = document.createElement('div');
+            row.className = 'device-transfer-device';
+            const name = document.createElement('strong');
+            name.textContent = device.name;
+            const select = document.createElement('button');
+            select.type = 'button';
+            select.textContent = 'Select';
+            select.setAttribute('aria-label', `Select ${device.name}`);
+            select.addEventListener('click', () => {
+              currentKindleId = device.id;
+              void refreshKindleOffer();
+            });
+            row.append(name, select);
+            deviceKindleList.append(row);
+          }
+          desktopKindleOffer.classList.toggle('hidden', devices.length === 0);
+          if (!devices.length) { currentKindleId = ''; return; }
+          if (!devices.some(device => device.id === currentKindleId)) currentKindleId = devices[0].id;
+          desktopKindleDevice.replaceChildren(...devices.map(device => new Option(device.name, device.id)));
+          desktopKindleDevice.value = currentKindleId;
+          desktopKindleDevice.classList.toggle('hidden', devices.length < 2);
+          const preview = await desktopBridge.kindle.preview(currentKindleId);
+          desktopKindleSummary.textContent = `${preview.device.name}: ${preview.missing.length} missing · ${preview.alreadyPresent} already there · ${preview.skipped.length} skipped`;
+          desktopKindleTransfer.disabled = preview.missing.length === 0;
+          const selected = devices.findIndex(device => device.id === currentKindleId);
+          if (selected >= 0) {
+            const details = document.createElement('small');
+            details.textContent = `${preview.missing.length} missing · ${preview.alreadyPresent} already there`;
+            deviceKindleList.children[selected]?.querySelector('strong')?.after(details);
+          }
+        } catch (error) {
+          desktopKindleSummary.textContent = error?.message || String(error);
+          desktopKindleTransfer.disabled = true;
+        }
+      }
+
+      desktopKindleDevice.addEventListener('change', () => {
+        currentKindleId = desktopKindleDevice.value;
+        void refreshKindleOffer();
+      });
+      desktopKindleTransfer.addEventListener('click', async () => {
+        if (!currentKindleId || kindleTransferRunning) return;
+        kindleTransferRunning = true;
+        desktopKindleTransfer.disabled = true;
+        try {
+          const result = await desktopBridge.kindle.transfer(currentKindleId);
+          desktopKindleSummary.textContent = `${result.transferred.length} copied · ${result.alreadyPresent} already there · ${result.skipped.length} skipped · ${result.errors.length} failed`;
+        } catch (error) {
+          desktopKindleSummary.textContent = error?.message || String(error);
+        } finally {
+          kindleTransferRunning = false;
+          void refreshKindleOffer();
+        }
+      });
+      desktopBridge?.kindle?.onProgress?.(progress => {
+        if (progress.done) return;
+        desktopKindleSummary.textContent = `Copying ${progress.title || 'book'} · ${progress.completed} of ${progress.total}`;
+      });
+      if (isDesktopMode) {
+        void refreshKindleOffer();
+        window.setInterval(() => void refreshKindleOffer(), 10000);
       }
 
       function setHashRoute(route) {
@@ -6509,10 +6730,10 @@
           renderReading();
           renderHome();
           const syncTasks = [];
-          if (refreshed.isFavorite) syncTasks.push(syncFavoritesToNostr());
+          if (refreshed.isFavorite && !isDesktopMode) syncTasks.push(syncFavoritesToNostr());
           if (refreshed.isReading) syncTasks.push(publishReadingMetadata(refreshed));
           if (syncTasks.length) await Promise.all(syncTasks);
-          status.textContent = `Updated ${refreshed.title || title} from Open Library and all.books across apps.`;
+          status.textContent = `Updated ${refreshed.title || title} from Open Library and all.books${isDesktopMode ? '.' : ' across apps.'}`;
         } catch (error) {
           status.textContent = `Could not refresh ${title}: ${error?.message || error}`;
         }
@@ -6691,9 +6912,11 @@
         if (activeTab === 'search' && !queryInput.value.trim()) renderSearchSources();
         if (activeTab === 'words') requestAnimationFrame(() => wordsFilter.focus());
         if (activeTab === 'people') {
-          renderPeople();
-          void refreshDeviceTransferPanel();
-          if (!state.followingLoaded) void syncNostrPeopleFromNip7();
+          if (isDesktopMode) void refreshDeviceTransferPanel();
+          else {
+            renderPeople();
+            if (!state.followingLoaded) void syncNostrPeopleFromNip7();
+          }
         }
         if (!updateHash) return;
         if (activeTab === 'home') {
@@ -6710,7 +6933,7 @@
         } else if (activeTab === 'words') {
           setHashRoute('words');
         } else if (activeTab === 'people') {
-          setHashRoute('people');
+          setHashRoute(isDesktopMode ? 'devices' : 'people');
         } else {
           setHashRoute('settings');
         }
@@ -8371,7 +8594,7 @@
             .sort((a, b) => Number(b.updatedAt || 0) - Number(a.updatedAt || 0))
             .slice();
         }
-        state.favorites = BookMetadata.dedupeLibraryBooks([...state.favorites, ...state.reading]);
+        state.favorites = BookMetadata.dedupeLibraryBooks(isDesktopMode ? state.favorites : [...state.favorites, ...state.reading]);
         localStorage.setItem(FAVORITES_KEY, JSON.stringify(state.favorites));
         if (Array.isArray(words)) {
           state.words = words.map(normalizeVocabularyWord).filter(Boolean).slice(0, 120);
@@ -8725,7 +8948,7 @@
             status.textContent = `Connected to ${nostrSignerName}.`;
           }
           if (!opts.skipSync) void syncNostrLibraryFromNip7();
-          void syncNostrPeopleFromNip7();
+          if (!isDesktopMode) void syncNostrPeopleFromNip7();
           return true;
         } catch (error) {
           if (opts.silent && previous && typeof previous.pubkey === 'string' && previous.pubkey) {
@@ -8819,7 +9042,7 @@
           activateTab('settings');
           return;
         }
-        if (route === 'people') {
+        if (route === 'people' || (route === 'devices' && isDesktopMode)) {
           activateTab('people');
           return;
         }

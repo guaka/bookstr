@@ -1,0 +1,151 @@
+/* Small libmtp process boundary for Kindle e-readers. Only Amazon USB devices
+ * are exposed, and writes are confined to their existing Documents folder. */
+#include <libmtp.h>
+#include <inttypes.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <strings.h>
+#include <sys/stat.h>
+
+static void json_string(const char *value) {
+  putchar('"');
+  for (const unsigned char *p = (const unsigned char *)(value ? value : ""); *p; ++p) {
+    if (*p == '"' || *p == '\\') { putchar('\\'); putchar(*p); }
+    else if (*p < 32) printf("\\u%04x", *p);
+    else putchar(*p);
+  }
+  putchar('"');
+}
+
+static void device_id(char *target, size_t size, LIBMTP_raw_device_t *raw) {
+  snprintf(target, size, "%u-%u", raw->bus_location, raw->devnum);
+}
+
+static LIBMTP_mtpdevice_t *open_kindle(const char *id) {
+  LIBMTP_raw_device_t *raw = NULL;
+  int count = 0;
+  if (LIBMTP_Detect_Raw_Devices(&raw, &count) != LIBMTP_ERROR_NONE) return NULL;
+  LIBMTP_mtpdevice_t *device = NULL;
+  for (int i = 0; i < count; ++i) {
+    char candidate[40];
+    device_id(candidate, sizeof(candidate), &raw[i]);
+    if (raw[i].device_entry.vendor_id == 0x1949 && strcmp(candidate, id) == 0) {
+      device = LIBMTP_Open_Raw_Device_Uncached(&raw[i]);
+      break;
+    }
+  }
+  free(raw);
+  return device;
+}
+
+static LIBMTP_folder_t *documents_folder(LIBMTP_folder_t *folder) {
+  for (LIBMTP_folder_t *it = folder; it; it = it->sibling) {
+    if (it->name && (strcasecmp(it->name, "documents") == 0)) return it;
+    LIBMTP_folder_t *child = documents_folder(it->child);
+    if (child) return child;
+  }
+  return NULL;
+}
+
+static int list_devices(void) {
+  LIBMTP_raw_device_t *raw = NULL;
+  int count = 0;
+  if (LIBMTP_Detect_Raw_Devices(&raw, &count) != LIBMTP_ERROR_NONE) { puts("[]"); return 0; }
+  putchar('[');
+  int printed = 0;
+  for (int i = 0; i < count; ++i) {
+    if (raw[i].device_entry.vendor_id != 0x1949) continue;
+    LIBMTP_mtpdevice_t *device = LIBMTP_Open_Raw_Device_Uncached(&raw[i]);
+    if (!device) continue;
+    LIBMTP_folder_t *folders = LIBMTP_Get_Folder_List(device);
+    if (documents_folder(folders)) {
+      char id[40];
+      device_id(id, sizeof(id), &raw[i]);
+      char *friendly = LIBMTP_Get_Friendlyname(device);
+      if (printed++) putchar(',');
+      printf("{\"id\":"); json_string(id);
+      printf(",\"name\":"); json_string(friendly ? friendly : "Kindle");
+      putchar('}');
+      free(friendly);
+    }
+    LIBMTP_destroy_folder_t(folders);
+    LIBMTP_Release_Device(device);
+  }
+  puts("]");
+  free(raw);
+  return 0;
+}
+
+static int list_files(LIBMTP_mtpdevice_t *device) {
+  LIBMTP_folder_t *folders = LIBMTP_Get_Folder_List(device);
+  LIBMTP_folder_t *documents = documents_folder(folders);
+  if (!documents) { LIBMTP_destroy_folder_t(folders); return 1; }
+  LIBMTP_file_t *files = LIBMTP_Get_Filelisting(device);
+  putchar('[');
+  int printed = 0;
+  for (LIBMTP_file_t *file = files; file; file = file->next) {
+    if (file->parent_id != documents->folder_id || !file->filename || !file->filesize) continue;
+    if (printed++) putchar(',');
+    printf("{\"id\":\"%" PRIu32 "\",\"name\":", file->item_id);
+    json_string(file->filename);
+    printf(",\"size\":%" PRIu64 "}", file->filesize);
+  }
+  puts("]");
+  LIBMTP_destroy_file_t(files);
+  LIBMTP_destroy_folder_t(folders);
+  return 0;
+}
+
+static int receive_file(LIBMTP_mtpdevice_t *device, const char *id, const char *destination) {
+  char *end = NULL;
+  unsigned long value = strtoul(id, &end, 10);
+  if (!id[0] || !end || *end || value > UINT32_MAX) return 1;
+  if (LIBMTP_Get_File_To_File(device, (uint32_t)value, destination, NULL, NULL) != 0) return 1;
+  puts("{\"ok\":true}");
+  return 0;
+}
+
+static int send_file(LIBMTP_mtpdevice_t *device, const char *source, const char *name) {
+  if (!name[0] || strchr(name, '/') || strchr(name, '\\')) return 1;
+  struct stat info;
+  if (stat(source, &info) != 0 || !S_ISREG(info.st_mode)) return 1;
+  LIBMTP_folder_t *folders = LIBMTP_Get_Folder_List(device);
+  LIBMTP_folder_t *documents = documents_folder(folders);
+  if (!documents) { LIBMTP_destroy_folder_t(folders); return 1; }
+  LIBMTP_file_t *existing = LIBMTP_Get_Filelisting(device);
+  for (LIBMTP_file_t *it = existing; it; it = it->next) {
+    if (it->parent_id == documents->folder_id && it->filename && strcmp(it->filename, name) == 0) {
+      LIBMTP_destroy_file_t(existing);
+      LIBMTP_destroy_folder_t(folders);
+      return 1;
+    }
+  }
+  LIBMTP_destroy_file_t(existing);
+  LIBMTP_file_t *file = LIBMTP_new_file_t();
+  file->filename = strdup(name);
+  file->filesize = (uint64_t)info.st_size;
+  file->parent_id = documents->folder_id;
+  file->storage_id = documents->storage_id;
+  file->filetype = LIBMTP_FILETYPE_UNKNOWN;
+  int result = LIBMTP_Send_File_From_File(device, source, file, NULL, NULL);
+  if (result == 0) printf("{\"id\":\"%" PRIu32 "\"}\n", file->item_id);
+  LIBMTP_destroy_file_t(file);
+  LIBMTP_destroy_folder_t(folders);
+  return result == 0 ? 0 : 1;
+}
+
+int main(int argc, char **argv) {
+  LIBMTP_Init();
+  if (argc == 2 && strcmp(argv[1], "devices") == 0) return list_devices();
+  if (argc < 3) return 2;
+  LIBMTP_mtpdevice_t *device = open_kindle(argv[2]);
+  if (!device) { fputs("Kindle is disconnected or in use.\n", stderr); return 1; }
+  int result = 2;
+  if (argc == 3 && strcmp(argv[1], "files") == 0) result = list_files(device);
+  else if (argc == 5 && strcmp(argv[1], "get") == 0) result = receive_file(device, argv[3], argv[4]);
+  else if (argc == 5 && strcmp(argv[1], "put") == 0) result = send_file(device, argv[3], argv[4]);
+  LIBMTP_Release_Device(device);
+  return result;
+}

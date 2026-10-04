@@ -106,7 +106,7 @@ test('People loads the connected user follow list and public book lists', () => 
   assert.match(html, /readRelayEvents\(NOSTR_TRUSTROOTS_PROFILE_RELAY,[\s\S]*?kinds: \[0\],[\s\S]*?\{ authenticate: true \}/);
   assert.match(html, /new Set\(\[\.\.\.NOSTR_RELAYS, \.\.\.NOSTR_SOCIAL_RELAYS\]\)/);
   assert.match(html, /tools\.verifyEvent\(event\)/);
-  assert.match(html, /setHashRoute\('people'\)/);
+  assert.match(html, /setHashRoute\(isDesktopMode \? 'devices' : 'people'\)/);
 });
 
 test('served web app remains React- and bundle-free', () => {
@@ -792,7 +792,7 @@ test('Home can delete a book locally and across synced clients', () => {
   assert.match(html, /async function deleteLibraryBook\(book\)/);
   assert.match(html, /state\.favorites = state\.favorites\.filter\(item => !BookMetadata\.sameLibraryBook\(item, book\)\)/);
   assert.match(html, /state\.reading = state\.reading\.filter\(item => !BookMetadata\.sameLibraryBook\(item, book\)\)/);
-  assert.match(html, /if \(wasFavorite\) tasks\.push\(syncFavoriteDeletionToNostr\(\)\)/);
+  assert.match(html, /if \(wasFavorite && !isDesktopMode\) tasks\.push\(syncFavoriteDeletionToNostr\(\)\)/);
   assert.match(html, /async function syncFavoriteDeletionToNostr\(\)/);
   assert.match(html, /const previousEvents = await previousFavoriteSnapshotEvents\(pubkey\)/);
   assert.match(html, /kind: 5,[\s\S]*?tags: deletedIds\.map\(id => \['e', id\]\)/);
@@ -826,7 +826,7 @@ test('Home can refresh and sync Open Library and all.books metadata without LibV
   assert.match(html, /if \(openLibraryMetadata && \(/);
   assert.match(html, /const wantedAuthor = authorMatchKey\(book\.authors \|\| book\.author\)/);
   assert.match(html, /merge\(matched, matched\?\.source \|\| 'remote'\);\s*mergeOpenLibraryMetadata\(\)/);
-  assert.match(html, /if \(refreshed\.isFavorite\) syncTasks\.push\(syncFavoritesToNostr\(\)\)/);
+  assert.match(html, /if \(refreshed\.isFavorite && !isDesktopMode\) syncTasks\.push\(syncFavoritesToNostr\(\)\)/);
   assert.match(html, /if \(refreshed\.isReading\) syncTasks\.push\(publishReadingMetadata\(refreshed\)\)/);
 });
 
@@ -1108,7 +1108,8 @@ test('downloaded book state keeps its SHA-256 bridge when the repository MD5 bec
 test('Nostr library sync presents a compact state and resulting counts', () => {
   assert.match(html, /Syncing with \$\{relayNames\}…/);
   assert.match(html, /\$\{favorites\.length\} favorites · \$\{reading\.length\} reading · \$\{words\.length\} words/);
-  assert.match(html, /setHomeSyncState\('ready', `Synced · \$\{nostrSyncCounts\(favorites, reading, words\)\}`\)/);
+  assert.match(html, /\? `Synced · \$\{reading\.length\} reading · \$\{words\.length\} words`/);
+  assert.match(html, /: `Synced · \$\{nostrSyncCounts\(favorites, reading, words\)\}`\)/);
   assert.doesNotMatch(html, /account\.slice\(0, 16\)/);
   assert.doesNotMatch(html, /eventDetail/);
   assert.match(html, /homeLibraryHeading\.append\(homeSync\)/);
@@ -1172,7 +1173,7 @@ test('tabs persist selection in route hash transitions', () => {
   assert.match(html, /activeTab = \['home', 'search', 'reading', 'words', 'people', 'settings'\]\.includes\(tab\) \? tab : 'home';/);
   assert.match(html, /setHashRoute\(routeValue \? `read=\$\{encodeURIComponent\(routeValue\)\}` : 'reading'\);/);
   assert.match(html, /setHashRoute\('words'\);/);
-  assert.match(html, /setHashRoute\('people'\);/);
+  assert.match(html, /setHashRoute\(isDesktopMode \? 'devices' : 'people'\);/);
   assert.match(html, /setHashRoute\('settings'\);/);
 });
 

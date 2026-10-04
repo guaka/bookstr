@@ -13,10 +13,10 @@ test('Electron exposes private device discovery and guarded transfer controls', 
   const app = await electron.launch({ args: electronArgs() });
   try {
     const window = await app.firstWindow();
-    await window.getByRole('button', { name: 'People' }).click();
+    await window.getByRole('button', { name: 'Devices, Command 4' }).click();
     const panel = window.locator('#device-transfer-panel');
     await expect(panel).toBeVisible();
-    await expect(panel.getByRole('heading', { name: 'Devices & transfers' })).toBeVisible();
+    await expect(panel.getByRole('heading', { name: 'Paired devices' })).toBeVisible();
     await expect(panel).not.toContainText(/torrent|magnet|peer/i);
     await expect(window.locator('#device-transfer-summary')).toContainText('Bookstr desktop');
     await window.getByRole('button', { name: 'Prepare private presence' }).click();

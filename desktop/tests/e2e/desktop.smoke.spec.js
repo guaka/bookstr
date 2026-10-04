@@ -106,7 +106,7 @@ test('libstr desktop app opens with preload bridge', async () => {
       const header = document.querySelector('.app-header');
       const navigation = document.querySelector('.app-header-right');
       const button = document.querySelector('.app-header-right .header-tab');
-      const icon = button.querySelector('svg');
+      const icon = button.querySelector('svg:not(.hidden)');
       const brand = document.querySelector('.brand-mark');
       const headerRect = header.getBoundingClientRect();
       const navigationRect = navigation.getBoundingClientRect();
@@ -129,12 +129,18 @@ test('libstr desktop app opens with preload bridge', async () => {
     expect(toolbarGeometry.backdropFilter).toContain('blur(18px)');
     expect(toolbarGeometry.navigationRadius).toBeGreaterThanOrEqual(12);
 
-    await firstWindow.getByRole('button', { name: 'People' }).click();
-    await expect(firstWindow.locator('#people-tab')).toContainText('Nostr signer not connected.');
-    await expect(firstWindow.locator('#people-tab')).not.toContainText('NIP-07');
+    const devicesButton = firstWindow.getByRole('button', { name: 'Devices, Command 4' });
+    await expect(devicesButton.locator('.device-nav-icon')).toBeVisible();
+    await expect(devicesButton.locator('.social-nav-icon')).toBeHidden();
+    await devicesButton.click();
+    await expect(firstWindow.locator('#device-transfer-panel')).toBeVisible();
+    await expect(firstWindow.locator('#people-list')).toBeHidden();
+    await expect(firstWindow.locator('#people-tab')).not.toContainText('No follows found.');
+    await expect.poll(() => firstWindow.evaluate(() => location.hash)).toBe('#devices');
     await firstWindow.getByRole('button', { name: 'Reading' }).click();
-    await expect(firstWindow.locator('#reading-library-tab')).toContainText('Favorites sync through your Nostr signer.');
-    await expect(firstWindow.locator('#reading-library-tab')).not.toContainText('NIP-07');
+    await expect(firstWindow.locator('#favorites-heading')).toHaveText('Favorites');
+    await expect(firstWindow.locator('#favorites-sync-note')).toBeHidden();
+    await expect(firstWindow.locator('#home-sync-refresh')).toHaveAttribute('aria-label', 'Refresh reading and words');
 
     await firstWindow.getByRole('button', { name: 'Search' }).click();
     await expect(firstWindow.locator('#search-tab')).toBeVisible();
@@ -340,6 +346,7 @@ test('desktop pane shortcuts work from controls and the single reader window', a
 
     await library.keyboard.press(shortcut(4));
     await expect(library.locator('#people-tab')).toBeVisible();
+    await expect(library.getByRole('button', { name: 'Devices, Command 4' })).toHaveAttribute('aria-selected', 'true');
 
     await library.keyboard.press(shortcut(5));
     await expect(library.locator('#words-tab')).toBeVisible();

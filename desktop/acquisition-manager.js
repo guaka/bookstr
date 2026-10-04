@@ -419,14 +419,17 @@ class AcquisitionManager {
     }
   }
 
-  async acquire(record, { format, preferTorrent = true, includeRestricted = false, signal, onProgress } = {}) {
+  async acquire(record, { format, preferTorrent = true, includeRestricted = false, allowUnverifiedOpen = false, signal, onProgress } = {}) {
     const { listAcquisitions, normalizeProviderRecord, providerBookFields } = await catalogModule();
     const normalized = normalizeProviderRecord(record);
     const fields = providerBookFields(record);
     const candidates = listAcquisitions(normalized, { format, preferTorrent, includeRestricted })
       // Private torrents require an authenticated peer handoff. Until that
       // exists, do not attempt them as ordinary catalog acquisitions.
-      .filter(candidate => !candidate.private && /^[a-f0-9]{64}$/i.test(candidate.sha256));
+      .filter(candidate => !candidate.private && (
+        /^[a-f0-9]{64}$/i.test(candidate.sha256)
+        || (allowUnverifiedOpen && candidate.availability === 'open' && candidate.url && !candidate.torrent)
+      ));
     if (!candidates.length) throw new Error('no eligible acquisition with a verified SHA-256 is available');
     const rankedCandidates = candidates.map((candidate, index) => {
       const source = sourceKey(normalized.provider, candidate, normalized.recordId);
@@ -460,6 +463,7 @@ class AcquisitionManager {
             source,
             provider: normalized.provider,
             descriptor,
+            allowMissingSize: allowUnverifiedOpen && !candidate.sha256,
           });
         const imported = await this.importer.importFile(stagedPath, {
           extension: extensionFor(candidate.format),
@@ -481,20 +485,20 @@ class AcquisitionManager {
     throw new AggregateError(errors, 'all eligible acquisitions failed');
   }
 
-  async downloadHTTP(candidate, stageDir, { signal, onProgress, source, provider, descriptor } = {}) {
+  async downloadHTTP(candidate, stageDir, { signal, onProgress, source, provider, descriptor, allowMissingSize = false } = {}) {
     const url = assertTrustedURL(candidate.url, {
       provider,
       descriptor,
       origins: this.trustedOrigins,
     });
     const metadataSize = Number(candidate.size);
-    if (!Number.isSafeInteger(metadataSize) || metadataSize <= 0) throw new Error('source must advertise a positive file size');
+    if (!Number.isSafeInteger(metadataSize) || (metadataSize <= 0 && !allowMissingSize)) throw new Error('source must advertise a positive file size');
     if (metadataSize > this.maxBytes) throw new Error('source exceeds the maximum acquisition size');
     const response = await this.fetch(url, { signal, redirect: 'error' });
     if (!response?.ok) throw new Error(`source returned HTTP ${response?.status || 0}`);
     const headerSize = responseLength(response);
     if (headerSize !== null && headerSize > this.maxBytes) throw new Error('source exceeds the maximum acquisition size');
-    if (headerSize !== null && headerSize !== metadataSize) throw new Error('source size does not match metadata');
+    if (headerSize !== null && metadataSize > 0 && headerSize !== metadataSize) throw new Error('source size does not match metadata');
     const expectedSize = metadataSize || headerSize;
     if (!expectedSize) throw new Error('source did not advertise a file size');
     const maxBytes = this.maxBytes;

@@ -19,6 +19,8 @@ desktop/.npm-cache/
 desktop/.tmp/
 desktop/.openssl.cnf
 desktop/test-results/
+desktop/native/kindle-mtp
+desktop/native/lib/
 .codex-ci-artifacts/
 ios/.*Derived*/
 ios/.deviceDerived/
