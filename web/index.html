@@ -1984,6 +1984,10 @@
       .desktop-download-job { padding: .65rem 0; border-top: 1px solid var(--border, #b8b8b8); display: grid; gap: .3rem; }
       .desktop-download-job progress { width: 100%; }
       .desktop-download-job small { color: var(--muted-text, #666); }
+      .desktop-download-job-actions { display: flex; gap: .4rem; }
+      #desktop-downloads-notice:empty { display: none; }
+      .result-title[data-action="queue-download-title"] { padding: 0; border: 0; background: none; font: inherit; text-align: left; cursor: pointer; }
+      .result-title[data-action="queue-download-title"]:hover { text-decoration: underline; }
       .desktop-kindle-offer { display: flex; align-items: center; gap: .6rem; padding: .55rem .7rem; background: var(--panel-bg, #eee); border-radius: .55rem; }
       .desktop-kindle-offer.hidden { display: none; }
       @media (max-width: 700px) {
@@ -2004,6 +2008,7 @@
           <button id="home-tab-btn" class="header-tab" type="button" aria-label="Home, Command 1" aria-selected="true" title="Home · ⌘1"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4.5h4v15H4zM10 4.5h4v15h-4zM16 4.5h4v15h-4z"/><path d="M3 19.5h18M5.5 7.5h1M11.5 7.5h1M17.5 7.5h1"/></svg></button>
           <button id="reading-tab-btn" class="header-tab" type="button" aria-label="Reading, Command 2" aria-selected="false" title="Reading · ⌘2"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5.5c3.2-.8 5.9-.2 8 1.6v12c-2.1-1.8-4.8-2.4-8-1.6z"/><path d="M20 5.5c-3.2-.8-5.9-.2-8 1.6v12c2.1-1.8 4.8-2.4 8-1.6z"/></svg></button>
           <button id="search-tab-btn" class="header-tab" type="button" aria-label="Search, Command 3" aria-selected="false" title="Search · ⌘3"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m15.5 15.5 5 5"/></svg></button>
+          <button id="desktop-downloads-button" type="button" class="header-tab hidden" aria-label="Downloads" title="Downloads"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m-4-4 4 4 4-4M4 19h16"/></svg></button>
           <button id="people-tab-btn" class="header-tab" type="button" aria-label="People, Command 4" aria-selected="false" title="People · ⌘4"><svg class="social-nav-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="3"/><circle cx="17" cy="10" r="2.5"/><path d="M3.5 20c.4-4 2.2-6 5.5-6s5.1 2 5.5 6M14 15c3.5-.6 5.5 1 6 5"/></svg><svg class="device-nav-icon hidden" viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="2.5" width="14" height="19" rx="2"/><path d="M9 18.5h6"/></svg></button>
           <button id="words-tab-btn" class="header-tab words-tab-icon hidden" type="button" aria-label="Words, Command 5" aria-selected="false" title="Words · ⌘5">Aᵥ</button>
           <button id="settings-btn" class="header-tab icon-btn" aria-label="Settings" aria-selected="false" aria-pressed="false" title="Settings"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15.25A3.25 3.25 0 1 0 12 8.75a3.25 3.25 0 0 0 0 6.5Z"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06-1.87 1.87-.06-.06A1.7 1.7 0 0 0 16 18.4a1.7 1.7 0 0 0-1 .6 1.7 1.7 0 0 0-.4 1.1V20h-2.65v-.09A1.7 1.7 0 0 0 10.9 18.4a1.7 1.7 0 0 0-1.87.34l-.06.06-1.87-1.87.06-.06A1.7 1.7 0 0 0 7.5 15a1.7 1.7 0 0 0-.6-1 1.7 1.7 0 0 0-1.1-.4H5.7v-2.65h.09A1.7 1.7 0 0 0 7.5 9.9a1.7 1.7 0 0 0-.34-1.87l-.06-.06L8.97 6.1l.06.06A1.7 1.7 0 0 0 10.9 6.5a1.7 1.7 0 0 0 1-.6 1.7 1.7 0 0 0 .4-1.1V4.7h2.65v.09A1.7 1.7 0 0 0 16 6.5a1.7 1.7 0 0 0 1.87-.34l.06-.06 1.87 1.87-.06.06A1.7 1.7 0 0 0 19.4 9.9a1.7 1.7 0 0 0 .6 1 1.7 1.7 0 0 0 1.1.4h.09v2.65h-.09A1.7 1.7 0 0 0 19.4 15Z"/></svg></button>
@@ -2050,7 +2055,6 @@
 
       <section id="search-tab" class="card" data-tab-panel="search">
         <h2 class="search-title">Search books</h2>
-        <button id="desktop-downloads-button" type="button" class="chip-btn hidden" aria-label="Downloads" title="Downloads">↓</button>
         <p id="status" class="note" aria-live="polite"></p>
         <form id="search-form" class="row-3" autocomplete="off">
           <input id="query-input" placeholder="Search title, author, ISBN, publisher" aria-label="Book search query" />
@@ -2099,6 +2103,7 @@
       </section>
       <dialog id="desktop-downloads-dialog" aria-label="Downloads" class="desktop-downloads-dialog">
         <header><h2>Downloads</h2><button id="desktop-downloads-close" type="button" aria-label="Close downloads">×</button></header>
+        <p id="desktop-downloads-notice" role="status" aria-live="polite"></p>
         <div id="desktop-downloads-list" aria-live="polite"></div>
       </dialog>
 
@@ -2465,6 +2470,7 @@
       const desktopDownloadsDialog = document.getElementById('desktop-downloads-dialog');
       const desktopDownloadsList = document.getElementById('desktop-downloads-list');
       const desktopDownloadsClose = document.getElementById('desktop-downloads-close');
+      const desktopDownloadsNotice = document.getElementById('desktop-downloads-notice');
       const desktopKindleOffer = document.getElementById('desktop-kindle-offer');
       const desktopKindleDevice = document.getElementById('desktop-kindle-device');
       const desktopKindleSummary = document.getElementById('desktop-kindle-summary');
@@ -5706,6 +5712,7 @@
           const coverKey = String(book?.md5 || BookMetadata.bookIdentity(book) || '').trim().toLowerCase();
           const fullAuthors = String(book.authors || book.author || '').trim();
           const inLibrary = isLibraryBook(book);
+          const canQueueFromTitle = isDesktopMode && options.routeOnly && !canOpen && isMd5(book.md5);
           const statusMarkup = options.library
             ? `<button type="button" class="library-delete" data-action="delete-library" aria-label="Delete ${escapeHtml(book.title || 'book')} from library" title="Delete from library"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3m3 0-1 13H7L6 7m4 4v5m4-5v5"/></svg></button>`
             : isDesktopMode && options.routeOnly
@@ -5717,7 +5724,7 @@
           if (options.library && book.md5) row.dataset.downloadBookId = String(book.md5).toLowerCase();
           row.innerHTML = `
             <span class="result-cover-slot" role="cell"><img class="result-cover-placeholder" src="${escapeHtml(coverPlaceholder)}" alt="">${coverUrl ? `<img class="result-cover" src="${escapeHtml(coverUrl)}" alt="" loading="lazy">` : ''}</span>
-            <span class="result-cell" role="cell">${canOpen ? `<a class="result-title ${titleAvailabilityClass}" data-action="open" href="#read=${encodeURIComponent(readRouteValue(book, readUrl))}">${escapeHtml(book.title)}</a>` : `<span class="result-title ${titleAvailabilityClass}">${escapeHtml(book.title)}</span>`}${titleDetails ? `<small>${titleDetails}</small>` : ''}</span>
+            <span class="result-cell" role="cell">${canOpen ? `<a class="result-title ${titleAvailabilityClass}" data-action="open" href="#read=${encodeURIComponent(readRouteValue(book, readUrl))}">${escapeHtml(book.title)}</a>` : canQueueFromTitle ? `<button type="button" class="result-title ${titleAvailabilityClass}" data-action="queue-download-title" aria-label="Download ${escapeHtml(book.title || 'book')}">${escapeHtml(book.title)}</button>` : `<span class="result-title ${titleAvailabilityClass}">${escapeHtml(book.title)}</span>`}${titleDetails ? `<small>${titleDetails}</small>` : ''}</span>
             <span class="result-cell" role="cell">${authorQuery ? `<a class="result-author" data-action="author-search" href="#search=${encodeURIComponent(authorQuery)}" title="${escapeHtml(fullAuthors)}" aria-label="${escapeHtml(fullAuthors)}">${escapeHtml(fullAuthors)}</a>` : `<span class="result-author" title="${escapeHtml(fullAuthors)}" aria-label="${escapeHtml(fullAuthors)}">${escapeHtml(fullAuthors)}</span>`}</span>
 			<span class="result-cell result-rights" role="cell">${rightsMarkerMarkup(book)}</span>
 			<span class="result-cell result-year" role="cell">${escapeHtml(book.year || '—')}</span>
@@ -5742,6 +5749,9 @@
             addBookToLibrary(book, event.currentTarget);
           });
           row.querySelector('[data-action="queue-download"]')?.addEventListener('click', () => {
+            void queueSearchDownload(book);
+          });
+          row.querySelector('[data-action="queue-download-title"]')?.addEventListener('click', () => {
             void queueSearchDownload(book);
           });
           row.querySelector('[data-action="delete-library"]')?.addEventListener('click', () => {
@@ -5941,7 +5951,7 @@
         if (!isDesktopMode || !desktopBridge?.library?.downloads) return;
         const jobs = await desktopBridge.library.downloads();
         desktopDownloadsList.replaceChildren();
-        if (!jobs.length) {
+        if (!jobs.length && !desktopDownloadsNotice.textContent) {
           const empty = document.createElement('p');
           empty.textContent = 'No downloads yet.';
           desktopDownloadsList.append(empty);
@@ -5953,15 +5963,28 @@
           const title = document.createElement('strong');
           title.textContent = job.title || job.bookId;
           const state = document.createElement('small');
-          state.textContent = job.error || job.status;
+          const jobStatus = String(job.status || '').toLowerCase();
+          const total = Math.max(0, Number(job.totalBytes) || 0);
+          const received = Math.max(0, Number(job.bytes) || 0);
+          state.textContent = jobStatus === 'failed' ? (job.error || 'Download failed')
+            : jobStatus === 'queued' ? 'Queued'
+              : jobStatus === 'finding-peers' ? 'Finding peers'
+                : jobStatus === 'retrying' ? 'Retrying'
+                  : jobStatus === 'downloading' ? (total > 0
+                    ? `${bytesLabel(received)} of ${bytesLabel(total)} · ${Math.min(100, Math.round(received / total * 100))}%`
+                    : `${bytesLabel(received)} downloaded`)
+                    : ['ready', 'seeding'].includes(jobStatus) ? 'Ready to read' : job.status;
           row.append(title, state);
-          if (Number(job.totalBytes) > 0 && !['ready', 'seeding'].includes(job.status)) {
+          if (total > 0 && ['queued', 'finding-peers', 'downloading', 'retrying'].includes(jobStatus)) {
             const progress = document.createElement('progress');
-            progress.max = Number(job.totalBytes);
-            progress.value = Math.min(progress.max, Math.max(0, Number(job.bytes) || 0));
+            progress.max = total;
+            progress.value = Math.min(total, received);
+            progress.setAttribute('aria-label', `Download progress for ${job.title || 'book'}`);
             row.append(progress);
           }
-          if (job.status === 'failed') {
+          const actions = document.createElement('div');
+          actions.className = 'desktop-download-job-actions';
+          if (jobStatus === 'failed') {
             const retry = document.createElement('button');
             retry.type = 'button';
             retry.textContent = 'Retry';
@@ -5972,8 +5995,21 @@
               catch (error) { state.textContent = error?.message || String(error); }
               await renderDesktopDownloads();
             });
-            row.append(retry);
+            actions.append(retry);
           }
+          if (['ready', 'seeding'].includes(jobStatus)) {
+            const read = document.createElement('button');
+            read.type = 'button';
+            read.textContent = 'Read';
+            read.setAttribute('aria-label', `Read ${job.title || 'book'}`);
+            read.addEventListener('click', async () => {
+              desktopDownloadsDialog.close();
+              await refreshDesktopDownloadStates();
+              await openBook(bookFromDesktopDownload(job));
+            });
+            actions.append(read);
+          }
+          if (actions.childElementCount) row.append(actions);
           desktopDownloadsList.append(row);
         }
       }
@@ -5985,7 +6021,9 @@
       }
 
       async function queueSearchDownload(book) {
+        desktopDownloadsNotice.textContent = `Adding ${book.title || 'book'} to Downloads…`;
         try {
+          await openDesktopDownloads();
           let resolved = book;
           let edition = BookMetadata.libgenTorrentMetadataForBook(resolved);
           if (!edition && isMd5(book.md5)) {
@@ -6008,10 +6046,12 @@
                 size: book.filesize, availability: 'open' }],
             } });
           }
+          desktopDownloadsNotice.textContent = '';
           await refreshDesktopDownloadStates();
-          await openDesktopDownloads();
+          await renderDesktopDownloads();
         } catch (error) {
-          status.textContent = error?.message || String(error);
+          desktopDownloadsNotice.textContent = error?.message || String(error);
+          status.textContent = desktopDownloadsNotice.textContent;
         }
       }
 
@@ -6385,7 +6425,7 @@
           copy = 'Bookstr will start downloading as soon as a peer responds.';
         } else if (/^Available\b/i.test(torrent)) {
           title = 'Available from the torrent library';
-          copy = 'Open the book to start downloading it.';
+          copy = isDesktopMode ? 'Add this book to Downloads to start it.' : 'Open the book to start downloading it.';
         }
         note.dataset.cacheStatus = cacheStatus;
         note.dataset.error = String(error?.message || error || '');
@@ -6398,6 +6438,14 @@
         description.className = 'read-file-state-copy';
         description.textContent = copy;
         note.append(heading, description);
+        if (isDesktopMode && /^Available\b/i.test(torrent)) {
+          const addDownload = document.createElement('button');
+          addDownload.type = 'button';
+          addDownload.textContent = 'Add to Downloads';
+          addDownload.setAttribute('aria-label', `Add ${book.title || 'book'} to downloads`);
+          addDownload.addEventListener('click', () => void queueSearchDownload(book));
+          note.append(addDownload);
+        }
         if (attempts.length) {
           const attemptsTitle = document.createElement('small');
           attemptsTitle.className = 'read-file-attempts-title';
@@ -7083,23 +7131,20 @@
 
       async function fetchDesktopTorrentCopy(book) {
         if (!isDesktopMode) return null;
-        if (!state.settings.autoDownloadTorrents) {
-          throw new Error('Automatic torrent downloads are disabled in Settings.');
-        }
         const localDownload = desktopDownloadForBook(book);
         const localStatus = String(localDownload?.status || '').toLowerCase();
-        const localMd5 = String(localDownload?.md5 || localDownload?.bookId || '').trim().toLowerCase();
-        const localTorrentBook = ['ready', 'seeding'].includes(localStatus) && isMd5(localMd5)
+        const localBookId = String(localDownload?.bookId || '').trim().toLowerCase();
+        const localTorrentBook = ['ready', 'seeding'].includes(localStatus) && localBookId
           ? {
               ...book,
               ...localDownload,
-              md5: localMd5,
+              md5: book.md5 || localBookId,
               libgenId: Number(localDownload.sourceNativeId || 0),
               extension: localDownload.extension || book.extension || book.format || '',
             }
           : null;
         if (localTorrentBook && desktopBridge?.library?.openReader) {
-          const reader = await desktopBridge.library.openReader(localMd5);
+          const reader = await desktopBridge.library.openReader(localBookId);
           if (reader?.token) {
             const response = await fetch(`app://bookstr/api/library-file/${reader.token}`);
             if (!response.ok) throw new Error(`Local library file read failed (${response.status}).`);
@@ -7108,6 +7153,9 @@
             Object.assign(book, localTorrentBook);
             return blob;
           }
+        }
+        if (!state.settings.autoDownloadTorrents) {
+          throw new Error('Automatic torrent downloads are disabled in Settings.');
         }
         let torrentBook = localTorrentBook || book;
         Object.assign(book, torrentBook);
