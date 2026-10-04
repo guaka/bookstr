@@ -48,6 +48,20 @@ test('acquisition downloads, verifies, imports, and registers a book', () => wit
   assert.equal(store.downloads()[0].status, 'ready');
 }));
 
+test('desktop queue can acquire an open trusted HTTPS file without a catalog hash', () => withManager(async ({ manager, store }) => {
+  const record = {
+    provider: 'gutenberg', recordId: 'g-open', title: 'Open Book',
+    acquisitions: [{ format: 'epub', url: 'https://example.test/open.epub', availability: 'open' }],
+  };
+  await assert.rejects(() => manager.acquire(record), /verified SHA-256/);
+  const result = await manager.acquire(record, { allowUnverifiedOpen: true });
+  assert.equal(result.sha256, BOOK_SHA256);
+  assert.equal(store.downloads()[0].status, 'ready');
+  await assert.rejects(() => manager.acquire({ ...record, recordId: 'bad-origin', acquisitions: [
+    { format: 'epub', url: 'https://outside.test/book.epub', availability: 'open' },
+  ] }, { allowUnverifiedOpen: true }), /all eligible acquisitions failed/);
+}));
+
 test('LibGen acquisition resolves the repository batch and imports only the selected book', () => withManager(async ({ manager, store, root }) => {
   const md5 = 'a'.repeat(32);
   const body = Buffer.from('%PDF-book bytes');

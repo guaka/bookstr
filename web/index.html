@@ -4199,6 +4199,7 @@
             license: item.license || item.rights || '',
             ...rights,
             readUrl: directReadUrl,
+            sourceFileUrl: item.read_url || item.readUrl || '',
             fallback: Boolean(directReadUrl)
           };
         }).sort((a, b) => Number(Boolean(b.readUrl)) - Number(Boolean(a.readUrl)));
@@ -5945,7 +5946,7 @@
               provider, recordId, title: book.title, authors: book.authors,
               languages: [book.language].flat().filter(Boolean), year: book.year, isbn: book.isbn,
               ...BookMetadata.normalizeRights(book),
-              acquisitions: [{ format: book.extension, url: book.readUrl, sha256: book.sha256,
+              acquisitions: [{ format: book.extension, url: book.sourceFileUrl || book.readUrl, sha256: book.sha256,
                 size: book.filesize, availability: 'open' }],
             } });
           }

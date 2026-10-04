@@ -244,6 +244,10 @@ test('search plus opens Downloads while the heart stays a separate action', asyn
         if (url.pathname === '/api/search') return new Response(JSON.stringify({ books: [{
           md5: 'a'.repeat(32), libgenId: 2412930, title: 'Download Fixture', authors: ['Fixture Author'], extension: 'pdf', readUrl: 'https://files.test/download-fixture.pdf',
         }] }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+        if (url.pathname === '/api/gutendex') return new Response(JSON.stringify({ results: [{
+          id: 999007, title: 'Download Fixture Gutenberg', authors: [{ name: 'Open Author' }],
+          languages: ['en'], formats: { 'application/epub+zip': 'https://www.gutenberg.org/ebooks/999007.epub' }, copyright: false,
+        }] }), { status: 200, headers: { 'Content-Type': 'application/json' } });
         if (url.pathname === '/api/opds') return new Response('<?xml version="1.0"?><feed xmlns="http://www.w3.org/2005/Atom"></feed>', { status: 200, headers: { 'Content-Type': 'application/atom+xml' } });
         return new Response(JSON.stringify(url.pathname === '/api/gutendex' ? { results: [] } : url.pathname === '/api/internet-archive/search' ? { response: { docs: [] } } : url.pathname === '/api/open-textbooks' ? { data: [] } : url.pathname === '/api/gdl' ? { books: [] } : []), { status: 200, headers: { 'Content-Type': 'application/json' } });
       };
@@ -259,8 +263,14 @@ test('search plus opens Downloads while the heart stays a separate action', asyn
     await expect(page.locator('#desktop-downloads-list')).toContainText('queued');
     expect(await app.evaluate(() => globalThis.queuedBooks)).toHaveLength(1);
     await page.getByRole('button', { name: 'Close downloads' }).click();
-    await page.getByRole('button', { name: 'Add to favorites' }).click();
+    await page.locator('#results [data-md5="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"]').click();
     expect(await app.evaluate(() => globalThis.queuedBooks)).toHaveLength(1);
+    await page.getByRole('button', { name: 'Add Download Fixture Gutenberg to downloads' }).click();
+    await expect(page.getByRole('dialog', { name: 'Downloads' })).toBeVisible();
+    const requests = await app.evaluate(() => globalThis.queuedBooks);
+    expect(requests).toHaveLength(2);
+    expect(requests[1].kind).toBe('provider');
+    expect(requests[1].record.acquisitions[0].url).toBe('https://www.gutenberg.org/ebooks/999007.epub');
   } finally { await app.close(); }
 });
 

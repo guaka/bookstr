@@ -105,7 +105,7 @@ class DownloadQueue {
           if (request.kind === 'libgen') {
             await this.acquisitionManager.acquireLibgen(request.record, { autoSeed: this.autoSeed, onProgress });
           } else {
-            await this.acquisitionManager.acquire(request.record, { onProgress });
+            await this.acquisitionManager.acquire(request.record, { onProgress, allowUnverifiedOpen: true });
           }
         } catch (error) {
           this.store.setDownload({ bookId, status: 'failed', source: request.kind, error: error.message || String(error) });
