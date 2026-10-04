@@ -6,8 +6,6 @@ const path = require('node:path');
 const { promisify } = require('node:util');
 const { execFile } = require('node:child_process');
 const { finished } = require('node:stream/promises');
-const PDFDocument = require('pdfkit');
-const { path7z } = require('7zip-bin-full');
 const { hashFile } = require('./library-import');
 
 const run = promisify(execFile);
@@ -21,7 +19,13 @@ const otherImageName = /\.(?:gif|webp|avif|bmp|tiff?)$/i;
 
 function archiveToolPath() {
   // Electron's executable dependencies live beside app.asar after packaging.
+  const { path7z } = require('7zip-bin-full');
   return path7z.replace(/app\.asar(?=[\\/])/, 'app.asar.unpacked');
+}
+
+function pdfDocument(...args) {
+  const PDFDocument = require('pdfkit');
+  return new PDFDocument(...args);
 }
 
 function comicPages(listing) {
@@ -62,7 +66,7 @@ async function renderComic(source, destination, sourceSha256, archiveTool) {
   });
   const pages = comicPages(stdout);
   const output = fs.createWriteStream(destination, { flags: 'wx' });
-  const document = new PDFDocument({
+  const document = pdfDocument({
     autoFirstPage: false, margin: 0,
     info: { Title: sourceSha256, CreationDate: new Date(0) },
   });
