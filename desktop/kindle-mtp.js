@@ -31,7 +31,14 @@ class MtpKindles {
   }
 
   async devices() {
-    const entries = await this.command('devices').catch(() => []);
+    let entries;
+    try {
+      entries = await this.command('devices');
+    } catch (error) {
+      const detail = String(error?.stderr || error?.code || 'adapter error').replace(/\s+/g, ' ').trim().slice(0, 200);
+      process.stderr.write(`Kindle MTP discovery failed: ${detail}\n`);
+      return [];
+    }
     return (Array.isArray(entries) ? entries : []).map(entry => ({
       id: `mtp:${this.platform}:${String(entry.id)}`,
       helperId: String(entry.id),

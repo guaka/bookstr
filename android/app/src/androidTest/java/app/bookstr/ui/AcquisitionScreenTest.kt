@@ -36,9 +36,10 @@ class AcquisitionScreenTest {
     @Test fun downloadsExposePauseResumeCancelAndVerifiedReadActions() {
         val book = CatalogBook(hash, "Fixture", "Bookstr", "", null, format = BookFormat.Pdf, libvaultMd5 = hash)
         val job = mutableStateOf(DownloadJob(book, TorrentEdition(hash, 1, "fiction", 100)))
-        var action = ""; var read = false
+        var action = ""; var read = false; var sent = false
         compose.setContent {
-            DownloadsSheet(listOf(job.value), {}, { a, id -> assertEquals(hash, id); action = a }, { read = true })
+            DownloadsSheet(listOf(job.value), {}, { a, id -> assertEquals(hash, id); action = a }, { read = true },
+                { sent = it.book.id == hash })
         }
         compose.onNodeWithTag("download.pause.$hash").performClick(); assertEquals("pause", action)
         compose.runOnIdle { job.value = job.value.copy(state = "paused") }
@@ -46,6 +47,7 @@ class AcquisitionScreenTest {
         compose.onNodeWithTag("download.cancel.$hash").performClick(); assertEquals("cancel", action)
         compose.runOnIdle { job.value = job.value.copy(state = "complete", size = 100, bytes = 100) }
         compose.onNodeWithTag("download.open.$hash").performClick(); assertTrue(read)
+        compose.onNodeWithTag("download.kindle.$hash").performClick(); assertTrue(sent)
     }
 
     @Test fun searchFacetsCombineAndUnknownAuthorsAndHeartsAreHidden() {

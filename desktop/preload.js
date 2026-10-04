@@ -296,8 +296,8 @@ const desktopBridge = {
   },
   kindle: {
     devices() { return ipcRenderer.invoke('bookstr-desktop-kindle-devices'); },
-    preview(id) { return ipcRenderer.invoke('bookstr-desktop-kindle-preview', id); },
-    transfer(id) { return ipcRenderer.invoke('bookstr-desktop-kindle-transfer', id); },
+    preview(id, bookId) { return ipcRenderer.invoke('bookstr-desktop-kindle-preview', id, bookId); },
+    transfer(id, bookId) { return ipcRenderer.invoke('bookstr-desktop-kindle-transfer', id, bookId); },
     onProgress(callback) {
       if (typeof callback !== 'function') return () => {};
       kindleProgressCallbacks.add(callback);

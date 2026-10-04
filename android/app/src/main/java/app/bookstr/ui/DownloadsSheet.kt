@@ -14,7 +14,8 @@ import app.bookstr.download.DownloadJob
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun DownloadsSheet(jobs: List<DownloadJob>, onDismiss: () -> Unit, onAction: (String, String) -> Unit, onOpen: (DownloadJob) -> Unit) {
+fun DownloadsSheet(jobs: List<DownloadJob>, onDismiss: () -> Unit, onAction: (String, String) -> Unit, onOpen: (DownloadJob) -> Unit,
+                   onSendToKindle: (DownloadJob) -> Unit = {}) {
     var language by rememberSaveable { mutableStateOf("") }
     var format by rememberSaveable { mutableStateOf("") }
     val languages = BookListFilters.languages(jobs.map { it.book.language })
@@ -33,7 +34,11 @@ fun DownloadsSheet(jobs: List<DownloadJob>, onDismiss: () -> Unit, onAction: (St
                     Text(job.error ?: job.state, style = MaterialTheme.typography.bodySmall)
                     if (job.size > 0) LinearProgressIndicator(progress = { (job.bytes.toFloat() / job.size).coerceIn(0f, 1f) }, modifier = Modifier.fillMaxWidth())
                     Row {
-                        if (job.state == "complete") TextButton(onClick = { onOpen(job) }, modifier = Modifier.testTag("download.open.${job.book.id}")) { Text("Read") }
+                        if (job.state == "complete") {
+                            TextButton(onClick = { onOpen(job) }, modifier = Modifier.testTag("download.open.${job.book.id}")) { Text("Read") }
+                            if (job.book.format.extension == "pdf") TextButton(onClick = { onSendToKindle(job) },
+                                modifier = Modifier.testTag("download.kindle.${job.book.id}")) { Text("Send to Kindle") }
+                        }
                         else {
                             val action = if (job.active) "pause" else "resume"
                             TextButton(onClick = { onAction(action, job.book.id) }, modifier = Modifier.testTag("download.$action.${job.book.id}")) { Text(if (job.active) "Pause" else "Resume") }

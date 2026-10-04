@@ -230,6 +230,7 @@ class LibraryScreenTest {
             year = "2026",
             blossomSha256 = "f".repeat(64),
         )
+        var sentToKindle: CatalogBook? = null
         composeRule.setContent {
             LibraryScreen(
                 books = listOf(book),
@@ -242,6 +243,8 @@ class LibraryScreenTest {
                 onOpenBook = {},
                 onOpenExternal = {},
                 publicationSize = { 3L * 1024 * 1024 },
+                canSendToKindle = { true },
+                onSendToKindle = { sentToKindle = it },
             )
         }
 
@@ -250,6 +253,8 @@ class LibraryScreenTest {
         composeRule.onNodeWithText("9781234567890").assertIsDisplayed()
         composeRule.onNodeWithText("73%").assertIsDisplayed()
         composeRule.onNodeWithText("3.0 MB").assertIsDisplayed()
+        composeRule.onNodeWithTag("library.kindle.screenshot-details").assertIsDisplayed().performClick()
+        assertEquals(book, sentToKindle)
     }
 
     @Test
