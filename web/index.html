@@ -2442,6 +2442,8 @@
       const homeBookSorts = Object.create(null);
       const homeLibraryFilter = { language: '', format: '' };
       const desktopDownloadByBook = new Map();
+      let desktopReadyEditions = [];
+      let desktopDownloadStateSignature = '';
       const desktopSeededBookIds = new Set();
       const desktopTransferRates = { download: 0, upload: 0 };
       const coverHoverLookups = new Map();
@@ -5398,12 +5400,7 @@
             if (!['failed', 'unavailable'].includes(String(download.status || '').toLowerCase())) return download;
           }
         }
-        const localEditions = [...new Set(desktopDownloadByBook.values())].filter(download => (
-          ['ready', 'seeding'].includes(String(download?.status || '').toLowerCase())
-          && isMd5(download?.md5 || download?.bookId)
-          && Number(download?.sourceNativeId || 0) > 0
-        ));
-        return BookMetadata.matchingTorrentCatalogRecord(book, localEditions) || exact;
+        return BookMetadata.matchingTorrentCatalogRecord(book, desktopReadyEditions) || exact;
       }
 
       function desktopDownloadIds(download) {
@@ -5558,12 +5555,24 @@
         if (summary && status.textContent !== summary) status.textContent = summary;
       }
 
+      function updateHomeDownloadRows() {
+        for (const row of homeReadingList.querySelectorAll('.book-table-row[data-download-book-id]')) {
+          if (!desktopDownloadByBook.has(row.dataset.downloadBookId)) continue;
+          const label = torrentStatusForBook({ md5: row.dataset.downloadBookId });
+          const cell = row.querySelector('.availability-primary');
+          if (!cell || !label) continue;
+          cell.textContent = label;
+          cell.className = `availability-primary${torrentStatusClass(label) ? ` status-with-dot ${torrentStatusClass(label)}` : ''}`;
+        }
+      }
+
       async function refreshDesktopDownloadStates() {
         if (!isDesktopMode || !desktopBridge?.library?.downloads) return;
         const [downloads, transfers] = await Promise.all([
           desktopBridge.library.downloads().catch(() => []),
           desktopBridge?.transfers?.status?.().catch(() => []) || [],
         ]);
+        const wasReady = desktopDownloadStatesReady;
         desktopDownloadStatesReady = true;
         desktopDownloadByBook.clear();
         for (const download of downloads || []) {
@@ -5571,6 +5580,11 @@
             desktopDownloadByBook.set(identity, download);
           }
         }
+        desktopReadyEditions = (downloads || []).filter(download => (
+          ['ready', 'seeding'].includes(String(download?.status || '').toLowerCase())
+          && isMd5(download?.md5 || download?.bookId)
+          && Number(download?.sourceNativeId || 0) > 0
+        ));
         rememberDownloadingBooks((downloads || []).filter(download => !download.queuedFromSearch));
         desktopSeededBookIds.clear();
         desktopTransferRates.download = 0;
@@ -5590,7 +5604,16 @@
         }
         updateDesktopDownloadSummary();
         updateReadTorrentStatus();
-        if (activeTab === 'home') renderHome();
+        const signature = JSON.stringify([
+          (downloads || []).map(download => [download.bookId, download.status, download.title, download.error]).sort((a, b) => String(a[0]).localeCompare(String(b[0]))),
+          [...desktopSeededBookIds].sort(),
+        ]);
+        const structureChanged = !wasReady || signature !== desktopDownloadStateSignature;
+        desktopDownloadStateSignature = signature;
+        if (activeTab === 'home') {
+          if (structureChanged) renderHome();
+          else updateHomeDownloadRows();
+        }
       }
 
       function renderBookTable(target, books, options = {}) {
@@ -5683,6 +5706,7 @@
           const row = document.createElement('article');
           row.className = 'book-table-row';
           row.setAttribute('role', 'row');
+          if (options.library && book.md5) row.dataset.downloadBookId = String(book.md5).toLowerCase();
           row.innerHTML = `
             <span class="result-cover-slot" role="cell"><img class="result-cover-placeholder" src="${escapeHtml(coverPlaceholder)}" alt="">${coverUrl ? `<img class="result-cover" src="${escapeHtml(coverUrl)}" alt="" loading="lazy">` : ''}</span>
             <span class="result-cell" role="cell">${canOpen ? `<a class="result-title ${titleAvailabilityClass}" data-action="open" href="#read=${encodeURIComponent(readRouteValue(book, readUrl))}">${escapeHtml(book.title)}</a>` : `<span class="result-title ${titleAvailabilityClass}">${escapeHtml(book.title)}</span>`}${titleDetails ? `<small>${titleDetails}</small>` : ''}</span>
@@ -6847,7 +6871,7 @@
       function renderHome() {
         const needle = homeQueryInput.value.trim().toLocaleLowerCase();
         const library = BookMetadata.mergeLibraryState(state.reading, state.favorites);
-        const enrichedLibrary = enrichedHomeBooks(library);
+        const enrichedLibrary = library;
         const languages = [...new Set(enrichedLibrary.map(resultLanguage).filter(Boolean))].sort();
         const formats = [...new Set(enrichedLibrary.map(resultFormat).filter(Boolean))].sort();
         homeLibraryFilter.language = configureHomeLibraryFilter(
@@ -9361,7 +9385,7 @@
         if (!isMd5(md5)) return;
         desktopDownloadByBook.set(md5, { ...desktopDownloadByBook.get(md5), ...progress, status: 'downloading' });
         const downloadingBook = bookFromDesktopDownload(desktopDownloadByBook.get(md5));
-        if (downloadingBook) addBookToLibrary(downloadingBook);
+        if (downloadingBook && !desktopDownloadByBook.get(md5).queuedFromSearch) addBookToLibrary(downloadingBook);
         if (activeReadingBook && desktopBookIds(activeReadingBook).includes(md5)) {
           updateReadTorrentStatus(activeReadingBook);
         }
@@ -9369,8 +9393,8 @@
         desktopDownloadStatusTimer = setTimeout(updateDesktopDownloadSummary, 180);
         clearTimeout(desktopDownloadRenderTimer);
         desktopDownloadRenderTimer = setTimeout(() => {
-          if (activeTab === 'home') renderHome();
-        if (activeTab === 'search' && !queryInput.value.trim()) renderSearchSources();
+          if (activeTab === 'home') updateHomeDownloadRows();
+          if (activeTab === 'search' && !queryInput.value.trim()) renderSearchSources();
         }, 200);
       });
 
