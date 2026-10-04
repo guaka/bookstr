@@ -16,6 +16,31 @@ interface KindleDocuments : AutoCloseable {
     override fun close() {}
 }
 
+internal fun <T> copyNewKindleFile(
+    create: () -> T,
+    write: (T) -> Unit,
+    verify: (T) -> Unit,
+    removeIncomplete: (T) -> Unit,
+) {
+    val created = create()
+    try {
+        write(created)
+        verify(created)
+    } catch (failure: Exception) {
+        try {
+            removeIncomplete(created)
+        } catch (cleanupFailure: Exception) {
+            val reported = IllegalStateException(
+                "${failure.message ?: "Kindle copy failed."} Incomplete Kindle file could not be removed.",
+                failure,
+            )
+            reported.addSuppressed(cleanupFailure)
+            throw reported
+        }
+        throw failure
+    }
+}
+
 fun sha256(file: File): String = file.inputStream().use { input -> digest(input) }
 
 fun digest(input: java.io.InputStream): String {

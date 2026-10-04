@@ -60,4 +60,72 @@ class KindleTransferTest {
             assertTrue(target.remote.isEmpty())
         } finally { root.deleteRecursively() }
     }
+
+    @Test fun failedNewCopyRemovesOnlyItsOwnIncompleteFile() {
+        val remote = mutableMapOf("existing.pdf" to "keep")
+        val failure = assertThrows(IllegalStateException::class.java) {
+            copyNewKindleFile(
+                create = { remote["new.pdf"] = "partial"; "new.pdf" },
+                write = { error("Kindle disconnected") },
+                verify = { error("Verification should not run") },
+                removeIncomplete = { remote.remove(it) },
+            )
+        }
+        assertTrue(failure.message!!.contains("disconnected"))
+        assertEquals(mapOf("existing.pdf" to "keep"), remote)
+    }
+
+    @Test fun failedVerificationCleansUpAndFailedCleanupIsReported() {
+        val remote = mutableMapOf<String, String>()
+        assertThrows(IllegalStateException::class.java) {
+            copyNewKindleFile(
+                create = { remote["new.pdf"] = "corrupt"; "new.pdf" },
+                write = { remote[it] = "bytes" },
+                verify = { error("Hash mismatch") },
+                removeIncomplete = { remote.remove(it) },
+            )
+        }
+        assertTrue(remote.isEmpty())
+        val failure = assertThrows(IllegalStateException::class.java) {
+            copyNewKindleFile(
+                create = { remote["new.pdf"] = "partial"; "new.pdf" },
+                write = { error("Copy failed") },
+                verify = {},
+                removeIncomplete = { error("Removal failed") },
+            )
+        }
+        assertTrue(failure.message!!.contains("Incomplete Kindle file could not be removed"))
+        assertEquals(1, failure.suppressed.size)
+        assertEquals("partial", remote["new.pdf"])
+    }
+
+    @Test fun successfulCopyNeverRemovesFileAndCreationFailureDoesNotCleanUp() {
+        val remote = mutableMapOf<String, String>()
+        var removals = 0
+        copyNewKindleFile(
+            create = { remote["new.pdf"] = ""; "new.pdf" },
+            write = { remote[it] = "bytes" },
+            verify = { assertEquals("bytes", remote[it]) },
+            removeIncomplete = { removals++ },
+        )
+        assertEquals(0, removals)
+        assertEquals("bytes", remote["new.pdf"])
+        assertThrows(IllegalStateException::class.java) {
+            copyNewKindleFile(
+                create = { error("Cannot create") },
+                write = { error("Should not write") },
+                verify = {},
+                removeIncomplete = { removals++ },
+            )
+        }
+        assertEquals(0, removals)
+    }
+
+    @Test fun usbPermissionRepliesMustMatchPendingDevice() {
+        assertTrue(matchesUsbPermissionReply(7, 7))
+        assertFalse(matchesUsbPermissionReply(7, 8))
+        assertFalse(matchesUsbPermissionReply(7, null))
+        assertFalse(matchesUsbPermissionReply(null, 7))
+        assertFalse(matchesUsbPermissionReply(null, null))
+    }
 }

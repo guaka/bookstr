@@ -44,11 +44,20 @@ class SafKindleDocuments(private val resolver: ContentResolver, private val tree
     override fun copy(book: KindleBook, name: String) {
         check(files().none { it.name == name }) { "A Kindle file already has this name." }
         val type = if (book.extension == "pdf") "application/pdf" else "text/plain"
-        val target = checkNotNull(DocumentsContract.createDocument(resolver, document, type, name)) { "Kindle cannot create a file." }
-        checkNotNull(resolver.openOutputStream(target, "w")) { "Kindle is disconnected." }.use { output ->
-            book.file.inputStream().use { it.copyTo(output) }
-        }
-        val remote = checkNotNull(resolver.openInputStream(target)) { "Kindle is disconnected." }.use(::digest)
-        check(remote == sha256(book.file)) { "Kindle copy verification failed." }
+        copyNewKindleFile(
+            create = { checkNotNull(DocumentsContract.createDocument(resolver, document, type, name)) { "Kindle cannot create a file." } },
+            write = { target ->
+                checkNotNull(resolver.openOutputStream(target, "w")) { "Kindle is disconnected." }.use { output ->
+                    book.file.inputStream().use { it.copyTo(output) }
+                }
+            },
+            verify = { target ->
+                val remote = checkNotNull(resolver.openInputStream(target)) { "Kindle is disconnected." }.use(::digest)
+                check(remote == sha256(book.file)) { "Kindle copy verification failed." }
+            },
+            removeIncomplete = { target ->
+                check(DocumentsContract.deleteDocument(resolver, target)) { "Kindle could not remove incomplete file." }
+            },
+        )
     }
 }
