@@ -639,11 +639,14 @@ test('Library opens FB2 and CBZ books through their format-specific readers', as
         body: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=', 'base64'),
       });
     });
-    await reader.locator('body').evaluate(url => window.loadComic({
-      format: 'cbz',
-      bookId: '4'.repeat(32),
-      pages: [{ name: '001.png', url }],
-    }), pageImageUrl);
+    await reader.locator('body').evaluate(async (_body, { url }) => {
+      const opened = await window.loadComic({
+        format: 'cbz',
+        bookId: '4'.repeat(32),
+        pages: [{ name: '001.png', url }],
+      });
+      if (!opened) throw new Error(`Direct comic page fixture failed: ${document.getElementById('message').textContent}; URL=${url}`);
+    }, { url: pageImageUrl });
     const openingProgress = reader.locator('#opening-progress');
     await expect(openingProgress).toBeVisible();
     await expect(reader.locator('#opening-label')).toHaveText('Rendering first page…');
