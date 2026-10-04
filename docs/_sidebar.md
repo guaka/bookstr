@@ -9,5 +9,6 @@
 - [Electron roadmap](ROADMAP.md)
 - [Libcat and direct torrent reading](libcat-reading.md)
 - [Sources](SOURCES.md)
+- [Electron catalog sources](ELECTRON_SOURCES.md)
 - [Migration](MIGRATION.md)
 - [OPDS](OPDS.md)

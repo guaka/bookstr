@@ -8090,6 +8090,12 @@
       }
 
       function searchSourceRegistry() {
+        if (isDesktopMode) {
+          return [{
+            id: 'libcat', name: 'Libcat', coverage: 'Your private book catalogs',
+            deliveries: ['Metadata', 'Torrent identifiers'], access: 'Private', search: searchLibcatSource,
+          }];
+        }
         const sources = [
           {
             id: 'all-books-party', name: 'all.books.party',
