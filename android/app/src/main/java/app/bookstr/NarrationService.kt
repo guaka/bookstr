@@ -460,9 +460,9 @@ class NarrationService : MediaBrowserServiceCompat(), TextToSpeech.OnInitListene
             return
         }
         if (neuralModel == null && engine != null) selectVoice(engine, speechLanguage)
-        // Neural voices are trained at their natural cadence. Slowing them down exaggerates
-        // vocoder grain and room noise, so keep synthesis at the model's native rate.
-        engine?.setSpeechRate(speechSpeedMultiplier())
+        // System TTS follows the user rate. Neural audio is synthesized at the model cadence
+        // and sped up later through MediaPlayer playback params.
+        if (neuralModel == null) engine?.setSpeechRate(speechSpeedMultiplier())
         engine?.setPitch(1.0f)
         synthesizeChunk(0)
     }

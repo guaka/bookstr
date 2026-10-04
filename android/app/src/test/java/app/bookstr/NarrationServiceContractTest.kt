@@ -71,6 +71,30 @@ class NarrationServiceContractTest {
     }
 
     @Test
+    fun neuralChunksShorterThanPhraseCountKeepPhraseTextWithoutSourceMapping() {
+        val speak = (1..40).joinToString(" ") { "word$it" }
+        val chunk = NarrationChunk(
+            id = "short",
+            text = "X",
+            speak = speak,
+            offset = 0,
+            pauseMillis = 240,
+            chapterIndex = 1,
+            isFinal = true,
+        )
+        val phrases = app.bookstr.speech.NeuralSpeech.phrases(chunk.speak)
+        assertTrue(phrases.size > 1)
+        assertTrue(chunk.text.length < phrases.size)
+
+        val expanded = prepareNeuralNarrationQueue(listOf(chunk), generation = 3)
+        assertEquals(phrases, expanded.map { it.speak })
+        assertEquals(240L, expanded.first().pauseMillis)
+        assertTrue(expanded.drop(1).all { it.pauseMillis == 0L })
+        assertEquals("synth-3-0", expanded.first().id)
+        assertTrue(expanded.last().isFinal)
+    }
+
+    @Test
     fun neuralChunksSplitIntoPlayablePhrasesWithMonotonicSourceOffsets() {
         val source = (1..60).joinToString(" ") { "word$it" }
         val next = "A new section begins."
