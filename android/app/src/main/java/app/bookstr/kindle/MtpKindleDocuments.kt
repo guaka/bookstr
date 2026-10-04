@@ -24,8 +24,8 @@ class MtpKindleDocuments(context: Context, private val usb: UsbDevice) : KindleD
     init {
         check(manager.hasPermission(usb)) { "Kindle USB permission is required." }
         val connection = checkNotNull(manager.openDevice(usb)) { "Kindle is disconnected." }
-        check(mtp.open(connection)) { "Kindle MTP connection failed." }
         try {
+            check(mtp.open(connection)) { "Kindle MTP connection failed." }
             val roots = checkNotNull(mtp.storageIds) { "Kindle storage is unavailable." }
             for (id in roots) {
                 val folder = findDocuments(id)
@@ -79,11 +79,22 @@ class MtpKindleDocuments(context: Context, private val usb: UsbDevice) : KindleD
             .setStorageId(storageId).setParent(documentsHandle).setName(name)
             .setFormat(if (book.extension == "txt") MtpConstants.FORMAT_TEXT else MtpConstants.FORMAT_UNDEFINED_DOCUMENT)
             .setCompressedSize(book.file.length()).build()
-        val created = checkNotNull(mtp.sendObjectInfo(info)) { "Kindle could not create a file." }
-        ParcelFileDescriptor.open(book.file, ParcelFileDescriptor.MODE_READ_ONLY).use { descriptor ->
-            check(mtp.sendObject(created.objectHandle, book.file.length(), descriptor)) { "Kindle copy failed." }
-        }
-        check(hashObject(created.objectHandle, book.file.length()) == sha256(book.file)) { "Kindle copy verification failed." }
+        copyNewKindleFile(
+            create = { checkNotNull(mtp.sendObjectInfo(info)) { "Kindle could not create a file." } },
+            write = { created ->
+                ParcelFileDescriptor.open(book.file, ParcelFileDescriptor.MODE_READ_ONLY).use { descriptor ->
+                    check(mtp.sendObject(created.objectHandle, book.file.length(), descriptor)) { "Kindle copy failed." }
+                }
+            },
+            verify = { created ->
+                check(hashObject(created.objectHandle, book.file.length()) == sha256(book.file)) {
+                    "Kindle copy verification failed."
+                }
+            },
+            removeIncomplete = { created ->
+                check(mtp.deleteObject(created.objectHandle)) { "Kindle could not remove incomplete file." }
+            },
+        )
     }
 
     override fun close() = mtp.close()

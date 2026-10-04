@@ -5,6 +5,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.hardware.usb.UsbDevice
 import android.hardware.usb.UsbManager
 import android.net.Uri
 import android.os.Build
@@ -31,6 +32,9 @@ import kotlinx.coroutines.withContext
 data class KindleRequest(val bookId: String?, val token: Long = System.nanoTime())
 private const val USB_PERMISSION_ACTION = "app.bookstr.KINDLE_USB_PERMISSION"
 
+internal fun matchesUsbPermissionReply(pendingDeviceId: Int?, replyDeviceId: Int?): Boolean =
+    pendingDeviceId != null && pendingDeviceId == replyDeviceId
+
 @Composable
 fun KindleTransferHost(app: BookstrApp, request: KindleRequest?, onRequestHandled: () -> Unit) {
     val context = LocalContext.current
@@ -39,6 +43,7 @@ fun KindleTransferHost(app: BookstrApp, request: KindleRequest?, onRequestHandle
     var devices by remember { mutableStateOf(connectedKindles(manager)) }
     var selectedBookId by remember { mutableStateOf<String?>(null) }
     var selectedDevice by remember { mutableStateOf<String?>(null) }
+    var pendingUsbDeviceId by remember { mutableStateOf<Int?>(null) }
     var open by remember { mutableStateOf(false) }
     var preview by remember { mutableStateOf<KindlePreview?>(null) }
     var message by remember { mutableStateOf<String?>(null) }
@@ -99,12 +104,20 @@ fun KindleTransferHost(app: BookstrApp, request: KindleRequest?, onRequestHandle
     }
 
     fun chooseUsb(key: String) {
+        if (busy || pendingUsbDeviceId != null) return
         val device = devices.find { it.deviceName == key } ?: return
         if (manager.hasPermission(device)) { choose(key); return }
         selectedDevice = key
+        pendingUsbDeviceId = device.deviceId
+        busy = true
         val intent = Intent(USB_PERMISSION_ACTION).setPackage(context.packageName)
         val permission = PendingIntent.getBroadcast(context, 0, intent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE)
-        manager.requestPermission(device, permission)
+        try { manager.requestPermission(device, permission) }
+        catch (failure: Exception) {
+            pendingUsbDeviceId = null
+            busy = false
+            message = failure.message ?: "Kindle USB permission failed."
+        }
     }
 
     DisposableEffect(context, manager) {
@@ -116,11 +129,21 @@ fun KindleTransferHost(app: BookstrApp, request: KindleRequest?, onRequestHandle
                         if (devices.isNotEmpty()) { selectedBookId = null; preview = null; message = null; open = true }
                     }
                     UsbManager.ACTION_USB_DEVICE_DETACHED -> {
+                        val detached = intent.usbDevice()
+                        if (matchesUsbPermissionReply(pendingUsbDeviceId, detached?.deviceId)) {
+                            pendingUsbDeviceId = null
+                            busy = false
+                        }
                         preview = null
                         message = "Kindle disconnected."
                     }
                     USB_PERMISSION_ACTION -> {
-                        if (intent.getBooleanExtra(UsbManager.EXTRA_PERMISSION_GRANTED, false)) selectedDevice?.let(::choose)
+                        val replied = intent.usbDevice()
+                        if (!matchesUsbPermissionReply(pendingUsbDeviceId, replied?.deviceId)) return
+                        pendingUsbDeviceId = null
+                        busy = false
+                        if (replied != null && intent.getBooleanExtra(UsbManager.EXTRA_PERMISSION_GRANTED, false) &&
+                            manager.hasPermission(replied)) choose(replied.deviceName)
                         else message = "Kindle USB permission was denied."
                     }
                 }
@@ -195,4 +218,11 @@ fun KindleTransferHost(app: BookstrApp, request: KindleRequest?, onRequestHandle
         },
         dismissButton = { TextButton(onClick = { open = false }, enabled = !busy) { Text("Done") } },
     )
+}
+
+private fun Intent.usbDevice(): UsbDevice? = if (Build.VERSION.SDK_INT >= 33) {
+    getParcelableExtra(UsbManager.EXTRA_DEVICE, UsbDevice::class.java)
+} else {
+    @Suppress("DEPRECATION")
+    getParcelableExtra(UsbManager.EXTRA_DEVICE)
 }
