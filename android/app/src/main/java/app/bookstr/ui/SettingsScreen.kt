@@ -1,8 +1,11 @@
 package app.bookstr.ui
 
+import android.graphics.Typeface
 import android.content.Intent
 import android.net.Uri
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -10,10 +13,17 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.wrapContentWidth
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.background
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -47,6 +57,8 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import app.bookstr.BuildConfig
 import app.bookstr.R
@@ -102,82 +114,68 @@ fun SettingsScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
-                .padding(start = 12.dp, top = 2.dp, end = 12.dp, bottom = 8.dp)
+                .wrapContentWidth(Alignment.CenterHorizontally)
+                .widthIn(max = 1100.dp)
+                .fillMaxWidth()
+                .padding(start = 20.dp, top = 12.dp, end = 20.dp, bottom = 20.dp)
                 .verticalScroll(rememberScrollState()),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             Box(
-                modifier = Modifier.fillMaxWidth().height(24.dp),
+                modifier = Modifier.fillMaxWidth().height(40.dp),
                 contentAlignment = Alignment.CenterStart,
             ) {
-                Text("Settings", style = MaterialTheme.typography.titleSmall)
+                Text("Settings", style = MaterialTheme.typography.headlineSmall)
             }
-            SettingsSectionTitle("Appearance")
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    ReaderTheme.entries.forEach { option ->
-                        FilterChip(
-                            selected = theme == option,
-                            onClick = { onThemeChange(option) },
-                            label = { Text(option.key.replaceFirstChar { it.uppercase() }) },
-                        )
-                    }
-                }
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    ReaderFont.entries.forEach { option ->
-                        FilterChip(
-                            selected = readerFont == option,
-                            onClick = { onReaderFontChange(option) },
-                            label = { Text(option.label) },
-                        )
-                    }
-                }
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    ReaderAlignment.entries.forEach { option ->
-                        FilterChip(
-                            selected = readerAlignment == option,
-                            onClick = { onReaderAlignmentChange(option) },
-                            label = { Text(option.label) },
-                        )
-                    }
-                }
-            }
+            ReaderAppearanceSection(
+                theme = theme,
+                readerFont = readerFont,
+                readerAlignment = readerAlignment,
+                onThemeChange = onThemeChange,
+                onReaderFontChange = onReaderFontChange,
+                onReaderAlignmentChange = onReaderAlignmentChange,
+            )
 
-            SettingsSectionTitle("Reading")
-            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+                shape = RoundedCornerShape(20.dp),
+            ) {
+              Column(modifier = Modifier.fillMaxWidth().padding(20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                SettingsSectionTitle("Reading")
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Text("Read over lock screen")
+                    Text("Keep screen awake while reading")
                     Switch(
                         checked = keepOnLockScreen,
                         onCheckedChange = onKeepOnLockScreenChange,
                     )
                 }
                 Text(
-                    "Shows the current EPUB or PDF above the active keyguard and remembers " +
-                        "the last book and position for the next launch.",
+                    "Keeps the display on for EPUB, PDF, FB2, and comics. Your last book and position remain saved.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.secondary,
                 )
+              }
             }
 
-            SpeechSettingsSection()
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+                shape = RoundedCornerShape(20.dp),
+            ) {
+                Column(modifier = Modifier.fillMaxWidth().padding(20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    SpeechSettingsSection()
+                }
+            }
 
-            SettingsSectionTitle("Nostr sync")
+            SettingsCard {
+              SettingsSectionTitle("Nostr sync")
 
-            when (authMode) {
+              when (authMode) {
                 NostrAuthMode.Amber -> {
                     Text("Connected via $signerLabel (NIP-55)")
                     if (npubDisplay.isNotEmpty()) {
@@ -218,7 +216,7 @@ fun SettingsScreen(
                 }
             }
 
-            if (authMode != NostrAuthMode.Amber) {
+              if (authMode != NostrAuthMode.Amber) {
                 if (!showNsec && authMode == NostrAuthMode.None) {
                     TextButton(onClick = { onShowNsecChange(true) }) {
                         Text("Use nsec instead (advanced)")
@@ -234,9 +232,11 @@ fun SettingsScreen(
                         singleLine = true,
                     )
                 }
+              }
             }
 
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            SettingsCard {
+             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 SettingsSectionTitle("Offline dictionaries")
                 Text(
                     "Download WikDict translation pairs or Kaikki monolingual definitions. " +
@@ -388,8 +388,10 @@ fun SettingsScreen(
                     }
                 }
                 dictionaryMessage?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
+             }
             }
 
+            SettingsCard {
             Button(
                 onClick = onSyncNow,
                 enabled = !syncing && authMode != NostrAuthMode.None,
@@ -408,7 +410,9 @@ fun SettingsScreen(
             if (syncMessage != null) {
                 Text(syncMessage)
             }
+            }
 
+            SettingsCard {
             SettingsSectionTitle("Relays")
             OutlinedTextField(
                 value = relays,
@@ -425,6 +429,7 @@ fun SettingsScreen(
                     },
                 ),
             )
+            }
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -477,14 +482,144 @@ fun SettingsScreen(
     }
 }
 
+internal fun readerFontPreviewFamily(font: ReaderFont): FontFamily =
+    FontFamily(Typeface.create(font.previewTypefaceName, Typeface.NORMAL))
+
+private val ReaderFont.previewTypefaceName: String
+    get() = when (this) {
+        ReaderFont.Arial -> "Arial"
+        ReaderFont.Georgia -> "Georgia"
+        ReaderFont.Palatino -> "Palatino"
+        ReaderFont.System -> "sans-serif"
+        ReaderFont.Roboto -> "Roboto"
+        ReaderFont.NotoSerif -> "Noto Serif"
+    }
+
 private fun formatPackSize(bytes: Long): String = "%.1f MB".format(bytes / 1_048_576.0)
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+internal fun ReaderAppearanceSection(
+    theme: ReaderTheme,
+    readerFont: ReaderFont,
+    readerAlignment: ReaderAlignment,
+    onThemeChange: (ReaderTheme) -> Unit,
+    onReaderFontChange: (ReaderFont) -> Unit,
+    onReaderAlignmentChange: (ReaderAlignment) -> Unit,
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+        shape = RoundedCornerShape(20.dp),
+    ) {
+        Column(
+            modifier = Modifier.fillMaxWidth().padding(20.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                SettingsSectionTitle("Appearance")
+                Text(
+                    "Choose a page style and preview your reading typography.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Page", style = MaterialTheme.typography.labelLarge)
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    ReaderTheme.entries.forEach { option ->
+                        FilterChip(
+                            selected = theme == option,
+                            onClick = { onThemeChange(option) },
+                            label = { Text(option.key.replaceFirstChar { it.uppercase() }) },
+                        )
+                    }
+                }
+            }
+
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Font", style = MaterialTheme.typography.labelLarge)
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    ReaderFont.entries.forEach { option ->
+                        FilterChip(
+                            selected = readerFont == option,
+                            onClick = { onReaderFontChange(option) },
+                            label = { Text(option.label, fontFamily = readerFontPreviewFamily(option)) },
+                        )
+                    }
+                }
+                Text(
+                    "The quick brown fox jumps over the lazy dog.\nA comfortable page starts with type that feels right.",
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(14.dp))
+                        .padding(16.dp)
+                        .testTag("settings.font-preview"),
+                    style = MaterialTheme.typography.bodyLarge,
+                    fontFamily = readerFontPreviewFamily(readerFont),
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+            }
+
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Paragraph alignment", style = MaterialTheme.typography.labelLarge)
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    ReaderAlignment.entries.forEach { option ->
+                        val selected = readerAlignment == option
+                        Card(
+                            onClick = { onReaderAlignmentChange(option) },
+                            modifier = Modifier.weight(1f).testTag("settings.alignment-${option.key}"),
+                            colors = CardDefaults.cardColors(
+                                containerColor = if (selected) MaterialTheme.colorScheme.secondaryContainer
+                                else MaterialTheme.colorScheme.surface,
+                            ),
+                            border = if (selected) BorderStroke(2.dp, MaterialTheme.colorScheme.primary)
+                            else BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                            shape = RoundedCornerShape(14.dp),
+                        ) {
+                            Column(
+                                modifier = Modifier.fillMaxWidth().padding(12.dp),
+                                verticalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                Text(option.label, style = MaterialTheme.typography.labelLarge)
+                                Text(
+                                    "Words find their rhythm on the page, making every chapter a little easier to settle into. A thoughtful line length and steady spacing help the reader follow each sentence, whether the edges align neatly or remain naturally uneven.",
+                                    modifier = Modifier.testTag("settings.alignment-preview-${option.key}"),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    textAlign = if (option == ReaderAlignment.Justified) TextAlign.Justify else TextAlign.Start,
+                                    maxLines = 3,
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SettingsCard(content: @Composable () -> Unit) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+        shape = RoundedCornerShape(20.dp),
+    ) {
+        Column(
+            modifier = Modifier.fillMaxWidth().padding(20.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            content()
+        }
+    }
+}
 
 @Composable
 private fun SettingsSectionTitle(title: String) {
     Text(
         text = title,
-        style = MaterialTheme.typography.titleMedium,
-        color = MaterialTheme.colorScheme.primary,
-        modifier = Modifier.padding(top = 4.dp),
+        style = MaterialTheme.typography.titleLarge,
+        color = MaterialTheme.colorScheme.onSurface,
     )
 }

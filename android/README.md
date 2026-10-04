@@ -11,6 +11,11 @@ sdkmanager 'platforms;android-35' 'build-tools;35.0.0' 'ndk;27.2.12479018' 'cmak
 ./gradlew --max-workers=2 connectedDebugAndroidTest createDebugAndroidTestCoverageReport
 ```
 
+For a combined JVM and emulator report, pull emulator coverage into
+`app/build/coverage/full.ec`, then run `./gradlew jacocoCombinedDebugReport`.
+The report is at
+`app/build/reports/jacoco/jacocoCombinedDebugReport/jacocoCombinedDebugReport.xml`.
+
 Run connected tests only on an emulator. Gradle's
 connected-test cleanup can uninstall the app and erase its local data, including
 downloaded books and reading progress. For a personal tablet, build the APK and
@@ -24,65 +29,65 @@ Android debug key; release APKs require the existing `BOOKSTR_KEYSTORE_*` and
 a certificate mismatch. Inspect the installed certificate and use the same key
 for `adb -s DEVICE install -r app/build/outputs/apk/...apk`.
 
+## Rebuild and update a personal Android device
+
+Run from `android/` on macOS (adjust the JDK, SDK and Boost paths elsewhere):
+
+```sh
+export JAVA_HOME=/opt/homebrew/opt/openjdk@17
+export BOOST_ROOT=/opt/homebrew/opt/boost
+export ANDROID_HOME="$HOME/Library/Android/sdk"
+./gradlew --max-workers=2 testDebugUnitTest assembleDebug
+APK=app/build/outputs/apk/debug/app-debug.apk
+BUILD_TOOLS="$(dirname "$(find "$ANDROID_HOME/build-tools" -mindepth 2 -maxdepth 2 -name apksigner | sort | tail -n 1)")"
+"$BUILD_TOOLS/aapt" dump badging "$APK" | head -n 2
+"$BUILD_TOOLS/apksigner" verify --print-certs "$APK"
+adb devices -l
+```
+
+Use the serial from `adb devices -l`, especially when an emulator is attached.
+Before installing, compare the APK signer with the installed app. If the app is
+already installed, find its base APK with `adb -s SERIAL shell pm path app.bookstr`,
+pull that path to a temporary file, and run `apksigner verify --print-certs` on it.
+The SHA-256 signer digests must match. A mismatch needs the original signing key;
+do not uninstall the app. Then update in place and verify the install date:
+
+```sh
+adb -s SERIAL shell dumpsys package app.bookstr | grep firstInstallTime
+adb -s SERIAL install -r "$APK"
+adb -s SERIAL shell dumpsys package app.bookstr | grep -E 'versionName|firstInstallTime|lastUpdateTime'
+```
+
+The first install time should remain unchanged. Keep UI tests on a disposable
+emulator. Search automatically requests the next page near the list end; newly
+queued downloads appear first, and completed rows open when tapped. In a reader,
+tap the bottom edge to reveal the four app destinations.
+Tap an author's name in the EPUB, PDF, or FB2 header to search for that author.
+
+### Update over Wi-Fi
+
+On the tablet, enable **Developer options → Wireless debugging**, then choose
+**Pair device with pairing code**. Keep that dialog open while running:
+
+```sh
+adb pair TABLET_IP:PAIRING_PORT
+# Enter the code shown on the tablet when prompted.
+adb mdns services
+adb connect TABLET_IP:CONNECT_PORT
+adb -s TABLET_IP:CONNECT_PORT shell getprop ro.serialno
+adb -s TABLET_IP:CONNECT_PORT install -r "$APK"
+```
+
+Use the `_adb-tls-connect._tcp` port from `adb mdns services` or the tablet's
+Wireless debugging screen for `CONNECT_PORT`; it differs from `PAIRING_PORT`.
+Compare the returned serial with the USB serial before installing. If pairing
+times out, reopen the pairing dialog for a fresh code and port. The same signer
+and first-install-time checks above apply over Wi-Fi. Avoid plain `adb tcpip`
+debugging on a shared network.
+
 NIP-44 test vectors are from <https://github.com/paulmillr/nip44> (`nip44.vectors.json`).
 Native instrumentation uses a tiny local HTTP seed fixture, not a public book or
 external peer. Signer tests use a fixture provider; test actual Huddle separately.
 
 See [the Android parity audit](../docs/ANDROID_PARITY.md) for remaining work and
 current download constraints.
-
-## Check, rebuild, and install on a connected device
-
-Run these commands from `bookstr/android`. On this Mac, Homebrew's default
-`java` can select Java 8 even when a newer JDK is installed, and
-`ANDROID_HOME` points to the parent of the SDK. Set the paths explicitly:
-
-```sh
-export JAVA_HOME=/opt/homebrew/opt/openjdk@17
-export ANDROID_SDK_ROOT="$HOME/Library/Android/sdk"
-export BOOST_ROOT=/opt/homebrew/opt/boost
-printf 'sdk.dir=%s\n' "$ANDROID_SDK_ROOT" > local.properties
-"$JAVA_HOME/bin/java" -version
-"$ANDROID_SDK_ROOT/platform-tools/adb" devices -l
-```
-
-Choose the serial shown as `device` (not `offline` or `unauthorized`) and
-replace `DEVICE_SERIAL` below. Check the installed and built versions before
-installing; Gradle writes the built version to `output-metadata.json`.
-
-```sh
-export DEVICE=DEVICE_SERIAL
-"$ANDROID_SDK_ROOT/platform-tools/adb" -s "$DEVICE" shell dumpsys package app.bookstr \
-  | grep -E 'versionCode=|versionName=|lastUpdateTime='
-./gradlew --max-workers=2 assembleDebug
-cat app/build/outputs/apk/debug/output-metadata.json
-```
-
-If Bookstr is already installed, compare its signing certificate with the APK.
-Use a temporary location outside the checkout for the pulled APK and remove
-that temporary copy after checking. The SHA-256 digests must match. This also
-works when the installed version came from a different build directory.
-
-```sh
-APK=app/build/outputs/apk/debug/app-debug.apk
-INSTALLED_APK=$("$ANDROID_SDK_ROOT/platform-tools/adb" -s "$DEVICE" shell pm path app.bookstr \
-  | sed -n 's/^package://p' | head -1 | tr -d '\r')
-"$ANDROID_SDK_ROOT/platform-tools/adb" -s "$DEVICE" pull "$INSTALLED_APK" /tmp/bookstr-installed.apk
-"$ANDROID_SDK_ROOT/build-tools/36.0.0/apksigner" verify --print-certs /tmp/bookstr-installed.apk \
-  | grep 'SHA-256 digest'
-"$ANDROID_SDK_ROOT/build-tools/36.0.0/apksigner" verify --print-certs "$APK" \
-  | grep 'SHA-256 digest'
-rm /tmp/bookstr-installed.apk
-```
-
-Skip the installed-certificate check if `pm path` reports no installed package.
-If the digests differ, stop and locate the keystore used for the installed app;
-do not uninstall it to make installation succeed. When they match, update in
-place and verify the installed version and launch:
-
-```sh
-"$ANDROID_SDK_ROOT/platform-tools/adb" -s "$DEVICE" install -r "$APK"
-"$ANDROID_SDK_ROOT/platform-tools/adb" -s "$DEVICE" shell dumpsys package app.bookstr \
-  | grep -E 'versionCode=|versionName=|lastUpdateTime='
-"$ANDROID_SDK_ROOT/platform-tools/adb" -s "$DEVICE" shell monkey -p app.bookstr 1
-```

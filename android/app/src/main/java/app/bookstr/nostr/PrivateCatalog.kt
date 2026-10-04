@@ -1,5 +1,6 @@
 package app.bookstr.nostr
 
+import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.withContext
@@ -58,10 +59,19 @@ object PrivateCatalogWire {
 class PrivateCatalogClient(private val http: OkHttpClient = OkHttpClient(), private val timeoutMs: Long = 45_000) {
     suspend fun request(payload: JSONObject, signer: NostrSigner, service: CatalogService): JSONObject = withContext(Dispatchers.IO) {
         require(service.relay.startsWith("wss://") && Regex("[0-9a-f]{64}").matches(service.pubkey))
+        val startedAt = System.nanoTime()
         val id = UUID.randomUUID().toString()
         val body = JSONObject(payload.toString()).put("request_id", id).put("version", 1)
-        // User approval is outside the relay timeout.
-        val wrapped = PrivateCatalogWire.wrap(body, service, signer, System.currentTimeMillis() / 1000)
+        // Bound signer approval too; a provider that never returns must not leave
+        // the result row in its opening state forever.
+        val wrapped = try {
+            withTimeout(timeoutMs) {
+                PrivateCatalogWire.wrap(body, service, signer, System.currentTimeMillis() / 1000)
+            }
+        } catch (e: kotlinx.coroutines.TimeoutCancellationException) {
+            Log.w(TAG, "${body.optString("type")} timed out while preparing signed request")
+            throw IllegalStateException("Catalog request timed out during signer approval", e)
+        }
         val channel = Channel<String>(64)
         val socket = http.newWebSocket(Request.Builder().url(service.relay).build(), object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) { channel.trySend("OPEN") }
@@ -72,7 +82,12 @@ class PrivateCatalogClient(private val http: OkHttpClient = OkHttpClient(), priv
             override fun onClosed(webSocket: WebSocket, code: Int, reason: String) { channel.close(IllegalStateException("Catalog connection closed")) }
         })
         try {
-            withTimeout(timeoutMs) {
+            val remainingTimeout = timeoutMs - (System.nanoTime() - startedAt) / 1_000_000
+            if (remainingTimeout <= 0) {
+                Log.w(TAG, "${body.optString("type")} timed out before relay request")
+                throw IllegalStateException("Catalog request timed out before relay request")
+            }
+            withTimeout(remainingTimeout) {
                 check(channel.receive() == "OPEN")
                 val filter = JSONObject().put("kinds", JSONArray().put(1059)).put("#p", JSONArray().put(signer.getPublicKey()))
                     .put("since", System.currentTimeMillis() / 1000 - 172800).put("limit", 0)
@@ -99,8 +114,12 @@ class PrivateCatalogClient(private val http: OkHttpClient = OkHttpClient(), priv
                 }
                 result
             }
+        } catch (e: kotlinx.coroutines.TimeoutCancellationException) {
+            Log.w(TAG, "${body.optString("type")} timed out waiting for relay response")
+            throw IllegalStateException("Catalog request timed out waiting for relay response", e)
         } finally {
             socket.send(JSONArray().put("CLOSE").put(id).toString()); socket.close(1000, "Done"); socket.cancel(); channel.cancel()
         }
     }
+    companion object { private const val TAG = "PrivateCatalog" }
 }

@@ -282,7 +282,8 @@ class Fb2ReaderActivity : ComponentActivity() {
                                 rights = rights,
                             )
                         }
-                    }, onBack = { closeReader() },
+                    }, onBack = { closeReader() }, onSelectTab = { tab -> openMainTab(tab) },
+                    onAuthorClick = { author -> searchReaderAuthor(author) },
                 )
             }
         }
@@ -326,7 +327,8 @@ class Fb2ReaderActivity : ComponentActivity() {
 
 @Composable
 private fun Fb2ReaderScreen(title: String, author: String?, year: String?, rights: BookRights, file: File,
-                            initialLocator: String?, onProgress: (Double, String) -> Unit, onBack: () -> Unit) {
+                            initialLocator: String?, onProgress: (Double, String) -> Unit, onBack: () -> Unit,
+                            onSelectTab: (Int) -> Unit, onAuthorClick: (String) -> Unit) {
     var document by remember { mutableStateOf<Fb2Document?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
     var showContents by remember { mutableStateOf(false) }
@@ -362,10 +364,11 @@ private fun Fb2ReaderScreen(title: String, author: String?, year: String?, right
             }
         }
     }
+    androidx.compose.foundation.layout.Box(Modifier.fillMaxSize()) {
     Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
         Row(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.primary), verticalAlignment = Alignment.CenterVertically) {
             Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", Modifier.padding(8.dp).clickable(onClick = onBack), tint = MaterialTheme.colorScheme.onPrimary)
-            Text(listOfNotNull(title, author, year).joinToString(" — "), Modifier.weight(1f).padding(4.dp), maxLines = 1, color = MaterialTheme.colorScheme.onPrimary, fontSize = 11.sp)
+            app.bookstr.ui.ReaderHeaderText(title, author, year, onAuthorClick, Modifier.weight(1f).padding(4.dp))
             RightsMarker(rights.status, rights.license, rights.licenseUrl, rights.source, Modifier.padding(horizontal = 4.dp))
             Icon(if (speaking) Icons.Filled.Stop else Icons.Filled.PlayArrow, if (speaking) "Stop reading aloud" else "Read aloud",
                 Modifier.padding(8.dp).clickable {
@@ -385,6 +388,8 @@ private fun Fb2ReaderScreen(title: String, author: String?, year: String?, right
                 }
             }
         }
+    }
+    app.bookstr.ui.ReaderBottomNavigation(onSelectTab, Modifier.align(Alignment.BottomCenter))
     }
     if (showContents && doc != null) AlertDialog(onDismissRequest = { showContents = false }, title = { Text("Contents") },
         text = { LazyColumn { itemsIndexed(doc.flatSections()) { index, section -> Text(section.title.ifBlank { "Section ${index + 1}" }, Modifier.fillMaxWidth().clickable {

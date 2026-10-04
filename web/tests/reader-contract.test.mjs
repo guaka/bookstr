@@ -43,6 +43,10 @@ test('comic reader supports bounded CBZ and CBR page extraction and navigation',
   assert.match(comicReader, /fast=Math\.abs\(deltaX\)\/elapsed>\.35/);
   assert.match(comicReader, /touchend.*finishGesture/);
   assert.match(comicReader, /now-lastFlipAt>300/);
+  assert.match(comicReader, /orientation: landscape.*min-width: 900px/);
+  assert.match(comicReader, /function facingPages\(\)/);
+  assert.match(comicReader, /function turn\(direction\)/);
+  assert.match(comicReader, /current\+1<pages\.length/);
   assert.doesNotMatch(comicReader, /setPassword/);
 });
 

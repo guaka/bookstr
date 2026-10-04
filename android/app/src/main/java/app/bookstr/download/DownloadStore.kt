@@ -48,12 +48,14 @@ class DownloadStore(private val directory: File) {
             if (job.active) job.copy(state = "queued", error = null) else job
         } }
     }
-    @Synchronized fun update(job: DownloadJob) {
+    @Synchronized fun update(job: DownloadJob, moveToTop: Boolean = false) {
         val current = mutable.value
         val index = current.indexOfFirst { it.book.id == job.book.id }
-        if (index >= 0 && current[index] == job) return
+        if (index >= 0 && current[index] == job && (!moveToTop || index == 0)) return
         val next = current.toMutableList().apply {
-            if (index < 0) add(job) else set(index, job)
+            if (index < 0) add(0, job)
+            else if (moveToTop) { removeAt(index); add(0, job) }
+            else set(index, job)
         }
         val temporary = File(directory, "jobs.tmp")
         temporary.outputStream().use { out -> out.write(JSONArray(next.map { it.json() }).toString().toByteArray()); out.fd.sync() }
@@ -67,7 +69,7 @@ class DownloadStore(private val directory: File) {
         require(book.id == edition.md5)
         val old = mutable.value.find { it.book.id == book.id }
         if (old?.active == true || old?.state == "complete") return
-        update(old?.copy(state = "queued", error = null) ?: DownloadJob(book, edition))
+        update(old?.copy(state = "queued", error = null) ?: DownloadJob(book, edition), moveToTop = true)
     }
     @Synchronized fun markPublicationDeleted(id: String) {
         val job = find(id) ?: return

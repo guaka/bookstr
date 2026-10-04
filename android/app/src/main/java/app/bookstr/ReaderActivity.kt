@@ -79,6 +79,9 @@ import app.bookstr.data.DictionaryDefinition
 import app.bookstr.nostr.AmberIntentSession
 import app.bookstr.ui.theme.BookstrThemeFromSettings
 import app.bookstr.ui.RightsMarker
+import app.bookstr.ui.ReaderBottomNavigation
+import app.bookstr.ui.ReaderHeaderText
+import app.bookstr.ui.NarrationIsland
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.json.JSONObject
@@ -87,6 +90,32 @@ import android.webkit.WebResourceResponse
 import java.time.LocalTime
 import java.time.format.DateTimeFormatter
 import java.util.Locale
+
+internal class NarrationRequestOwnership<T : Any> {
+    private val owners = mutableMapOf<String, MutableList<java.lang.ref.WeakReference<T>>>()
+
+    @Synchronized
+    fun register(bookId: String, owner: T) {
+        val stack = owners.getOrPut(bookId) { mutableListOf() }
+        stack.removeAll { it.get() == null }
+        stack += java.lang.ref.WeakReference(owner)
+    }
+
+    @Synchronized
+    fun unregister(bookId: String, owner: T) {
+        val stack = owners[bookId] ?: return
+        stack.removeAll { it.get() == null || it.get() === owner }
+        if (stack.isEmpty()) owners.remove(bookId)
+    }
+
+    @Synchronized
+    fun isOwner(bookId: String, candidate: T): Boolean {
+        val stack = owners[bookId] ?: return false
+        stack.removeAll { it.get() == null }
+        if (stack.isEmpty()) owners.remove(bookId)
+        return stack.lastOrNull()?.get() === candidate
+    }
+}
 
 class ReaderActivity : ComponentActivity() {
     private var webView: WebView? = null
@@ -122,6 +151,7 @@ class ReaderActivity : ComponentActivity() {
     private var referenceDecisionMade = false
     private var showProgressPrompt by mutableStateOf(false)
     private var isSpeaking by mutableStateOf(false)
+    private var narrationActive by mutableStateOf(false)
     private var speechMessage by mutableStateOf<String?>(null)
     private var readerTheme: ReaderTheme = ReaderTheme.Paper
     private var readerFont: ReaderFont = ReaderFont.Arial
@@ -129,7 +159,7 @@ class ReaderActivity : ComponentActivity() {
     private lateinit var amberSession: AmberIntentSession
     private val narrationReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
-            if (intent?.action == NarrationService.ACTION_EVENT) handleNarrationEvent(intent)
+            if (intent?.action == NarrationService.ACTION_EVENT && narrationRequestOwners.isOwner(bookId, this@ReaderActivity)) handleNarrationEvent(intent)
         }
     }
 
@@ -140,6 +170,8 @@ class ReaderActivity : ComponentActivity() {
             finish()
             return
         }
+        claimNarrationRequestOwnership()
+        NarrationService.stopIfDifferentBook(this, bookId)
         bookTitle = intent.getStringExtra(EXTRA_BOOK_TITLE) ?: "bookstr"
         bookAuthor = intent.getStringExtra(EXTRA_BOOK_AUTHOR)
         bookYear = intent.getStringExtra(EXTRA_BOOK_YEAR)
@@ -384,7 +416,12 @@ class ReaderActivity : ComponentActivity() {
                         isSpeaking = isSpeaking,
                         onBack = { closeReader() },
                         onSpeechClick = { toggleTextToSpeech() },
+                        onAuthorClick = { author -> searchReaderAuthor(author) },
                         modifier = Modifier.align(Alignment.TopCenter),
+                    )
+                    NarrationIsland(
+                        modifier = Modifier.align(Alignment.TopCenter)
+                            .padding(top = 32.dp, start = 12.dp, end = 12.dp).zIndex(4f),
                     )
                     speechMessage?.let { message ->
                         Text(
@@ -410,6 +447,10 @@ class ReaderActivity : ComponentActivity() {
                             .fillMaxWidth()
                             .height(5.dp)
                             .zIndex(2f),
+                    )
+                    ReaderBottomNavigation(
+                        onSelectTab = { tab -> openMainTab(tab) },
+                        modifier = Modifier.align(Alignment.BottomCenter).zIndex(3f),
                     )
                     if (showSections) {
                         AlertDialog(
@@ -634,13 +675,17 @@ class ReaderActivity : ComponentActivity() {
     }
 
     private fun closeReader() {
-        NarrationService.stop(this)
-        closingReader = true
-        finish()
+        if (narrationActive) openMainTab(0)
+        else {
+            closingReader = true
+            finish()
+        }
     }
 
     private fun handleNarrationEvent(intent: Intent) {
+        if (intent.getStringExtra(NarrationService.EXTRA_BOOK_ID) != bookId) return
         isSpeaking = intent.getBooleanExtra(NarrationService.EXTRA_IS_PLAYING, false)
+        narrationActive = intent.getBooleanExtra(NarrationService.EXTRA_SESSION_ACTIVE, false)
         speechMessage = intent.getStringExtra(NarrationService.EXTRA_MESSAGE)
 
         if (intent.getBooleanExtra(NarrationService.EXTRA_CLEAR_PROGRESS, false)) {
@@ -734,7 +779,16 @@ class ReaderActivity : ComponentActivity() {
 
     override fun onDestroy() {
         runCatching { unregisterReceiver(narrationReceiver) }
+        releaseNarrationRequestOwnership()
         super.onDestroy()
+    }
+
+    private fun claimNarrationRequestOwnership() {
+        narrationRequestOwners.register(bookId, this)
+    }
+
+    private fun releaseNarrationRequestOwnership() {
+        narrationRequestOwners.unregister(bookId, this)
     }
 
     override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
@@ -787,6 +841,7 @@ class ReaderActivity : ComponentActivity() {
     }
 
     companion object {
+        private val narrationRequestOwners = NarrationRequestOwnership<ReaderActivity>()
         private const val EXTRA_BOOK_ID = "book_id"
         private const val EXTRA_BOOK_TITLE = "book_title"
         private const val EXTRA_BOOK_AUTHOR = "book_author"
@@ -800,13 +855,20 @@ class ReaderActivity : ComponentActivity() {
         private const val EXTRA_HIGHLIGHT_CFI = "highlight_cfi"
         private const val EXTRA_THEME = "theme"
 
-        internal fun speechChunks(text: String): List<String> {
+        internal fun speechChunks(text: String, languageTag: String = "en"): List<String> {
             val engineLimit = (TextToSpeech.getMaxSpeechInputLength() - 256).coerceAtLeast(1_000)
             val hardLimit = minOf(engineLimit, 240)
             val softLimit = minOf(hardLimit, 180)
+            val locale = preferredSpeechLocale(languageTag)
             val chunks = mutableListOf<String>()
             text.split(Regex("\\n+")).map(String::trim).filter(String::isNotBlank).forEach { paragraph ->
                 val paragraphChunks = mutableListOf<String>()
+                val protectedPeriods = if (locale.language == "en") {
+                    Regex("""(?i)\b(?:Dr|Mr|Mrs|e\.g|U\.S)\.""").findAll(paragraph)
+                        .flatMap { match -> match.range.filter { paragraph[it] == '.' } }
+                        .toSet()
+                } else emptySet()
+                val sentenceEnds = sentenceEndPunctuation(paragraph, locale) - protectedPeriods
                 var cursor = 0
                 while (cursor < paragraph.length) {
                     val remaining = paragraph.length - cursor
@@ -814,7 +876,7 @@ class ReaderActivity : ComponentActivity() {
                         paragraphChunks += paragraph.substring(cursor).trim()
                         break
                     }
-                    val boundary = speechBoundary(paragraph, cursor, softLimit, hardLimit)
+                    val boundary = speechBoundary(paragraph, cursor, softLimit, hardLimit, sentenceEnds, protectedPeriods)
                     paragraph.substring(cursor, boundary).trim().takeIf(String::isNotBlank)?.let(paragraphChunks::add)
                     cursor = maxOf(boundary, cursor + 1)
                     while (cursor < paragraph.length && paragraph[cursor].isWhitespace()) cursor += 1
@@ -825,13 +887,40 @@ class ReaderActivity : ComponentActivity() {
             return chunks
         }
 
-        private fun speechBoundary(text: String, cursor: Int, softLimit: Int, hardLimit: Int): Int {
+        private fun sentenceEndPunctuation(text: String, locale: Locale): Set<Int> {
+            val iterator = com.ibm.icu.text.BreakIterator.getSentenceInstance(locale)
+            iterator.setText(text)
+            val ends = mutableSetOf<Int>()
+            iterator.first()
+            while (true) {
+                val boundary = iterator.next()
+                if (boundary == com.ibm.icu.text.BreakIterator.DONE) break
+                var end = boundary
+                while (end > 0 && text[end - 1].isWhitespace()) end -= 1
+                if (end > 0 && text[end - 1] in ".!?…") ends += end - 1
+            }
+            return ends
+        }
+
+        private fun speechBoundary(
+            text: String,
+            cursor: Int,
+            softLimit: Int,
+            hardLimit: Int,
+            sentenceEnds: Set<Int>,
+            protectedPeriods: Set<Int>,
+        ): Int {
             val hardEnd = minOf(cursor + hardLimit, text.length)
             if (hardEnd >= text.length) return text.length
             val softEnd = minOf(cursor + softLimit, hardEnd)
             val preferredStart = cursor + (softLimit * 0.55).toInt()
-            fun isPunctuationBoundary(index: Int): Boolean =
-                text[index] in ".!?…,;:—–" && (index + 1 >= text.length || text[index + 1].isWhitespace())
+            fun isPunctuationBoundary(index: Int): Boolean {
+                val character = text[index]
+                if (character in ".!?…") return index in sentenceEnds
+                return character in ",;:—–" && (index + 1 >= text.length || text[index + 1].isWhitespace())
+            }
+            fun isSafeWhitespaceBoundary(index: Int): Boolean =
+                text[index].isWhitespace() && index - 1 !in protectedPeriods
 
             for (index in softEnd downTo preferredStart) {
                 if (isPunctuationBoundary(index)) return index + 1
@@ -840,10 +929,10 @@ class ReaderActivity : ComponentActivity() {
                 if (isPunctuationBoundary(index)) return index + 1
             }
             for (index in softEnd downTo preferredStart) {
-                if (text[index].isWhitespace()) return index
+                if (isSafeWhitespaceBoundary(index)) return index
             }
             for (index in softEnd + 1 until hardEnd) {
-                if (text[index].isWhitespace()) return index
+                if (isSafeWhitespaceBoundary(index)) return index
             }
             return hardEnd
         }
@@ -906,6 +995,7 @@ private fun ReaderChrome(
     isSpeaking: Boolean,
     onBack: () -> Unit,
     onSpeechClick: () -> Unit,
+    onAuthorClick: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var clock by remember { mutableStateOf(LocalTime.now().format(TIME_FORMAT)) }
@@ -915,8 +1005,6 @@ private fun ReaderChrome(
             delay(30_000)
         }
     }
-    val detail = listOfNotNull(author?.takeIf(String::isNotBlank), year?.takeIf(String::isNotBlank))
-        .joinToString(" · ")
     Row(
         modifier = modifier
             .fillMaxWidth()
@@ -937,13 +1025,7 @@ private fun ReaderChrome(
                 modifier = Modifier.size(18.dp),
             )
         }
-        Text(
-            if (detail.isBlank()) title else "$title — $detail",
-            fontSize = 11.sp,
-            color = androidx.compose.material3.MaterialTheme.colorScheme.onPrimary,
-            maxLines = 1,
-            modifier = Modifier.weight(1f),
-        )
+        ReaderHeaderText(title, author, year, onAuthorClick, Modifier.weight(1f))
         RightsMarker(
             rightsStatus = rights.status,
             license = rights.license,

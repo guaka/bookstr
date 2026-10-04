@@ -198,6 +198,23 @@ final class ReaderAssetContractTests: XCTestCase {
         XCTAssertEqual(SpeechSpokenText.normalize(".'"), ".")
         XCTAssertEqual(SpeechSpokenText.normalize("‘Hello,’ she said."), "Hello, she said.")
         XCTAssertEqual(SpeechSpokenText.normalize("Don't wake O’Connor."), "Don't wake O’Connor.")
+        let localizedSource = "Dr. Smith saw Mr. Jones and Mrs. Brown on 9/10/2024. e.g. U.S. history changed in 2024!"
+        for locale in ["en", "nl", "pt-PT", "pt-BR"] {
+            let numericText = locale == "en" ? "There were 1,234.5 coins." : "There were 1.234,5 coins."
+            let localized = SpeechSpokenText.normalize(localizedSource + " " + numericText, languageTag: locale)
+            if locale == "en" {
+                XCTAssertTrue(localized.contains("doctor"))
+                XCTAssertTrue(localized.contains("mister"))
+                XCTAssertTrue(localized.contains("missus"))
+                XCTAssertTrue(localized.contains("for example"))
+                XCTAssertTrue(localized.contains("United States"))
+            } else {
+                XCTAssertTrue(localized.contains("Dr."), locale)
+                XCTAssertTrue(localized.contains("e.g."), locale)
+            }
+            XCTAssertTrue(localized.contains("!"), locale)
+            XCTAssertFalse(localized.contains(where: \.isNumber), locale)
+        }
         XCTAssertEqual(SpeechQueueChunk(text: "He left[1].", offset: 0, pauseSeconds: 0).speak, "He left.")
         XCTAssertEqual(
             SpeechQueueChunk(text: "100,000", offset: 0, pauseSeconds: 0, speak: "one hundred thousand").speak,

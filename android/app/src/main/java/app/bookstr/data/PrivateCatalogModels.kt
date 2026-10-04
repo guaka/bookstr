@@ -45,14 +45,24 @@ data class CatalogSearchPage(val books: List<BookSearchResult>, val nextOffset: 
             val books = (0 until records.length()).mapNotNull { index ->
                 val record = records.optJSONObject(index) ?: return@mapNotNull null
                 val md5 = record.optString("md5").lowercase()
-                if (!Regex("[0-9a-f]{32}").matches(md5)) return@mapNotNull null
-                val format = BookFormat.entries.find { it.extension == record.optString("extension").lowercase() }
+                val validMd5 = md5.takeIf { Regex("[0-9a-f]{32}").matches(it) }
+                val extension = record.optString("extension").trim().lowercase()
+                val format = when (extension) {
+                    "fb2.zip" -> BookFormat.Fb2
+                    else -> BookFormat.entries.find { it.extension == extension }
+                }
+                val nativeId = record.optString("id").takeUnless { it.isBlank() || it == "null" }
+                val id = validMd5 ?: nativeId?.let { "libcat:$it" } ?: return@mapNotNull null
                 fun text(key: String) = record.optString(key).takeUnless { it.isBlank() || it == "null" }
-                BookSearchResult(id = md5, source = "libcat", title = text("title") ?: "Untitled",
+                val collection = text("collection")?.lowercase()
+                val edition = validMd5?.let { hash -> runCatching { TorrentEdition.parse(record, hash) }.getOrNull() }
+                BookSearchResult(id = id, source = "libcat", title = text("title") ?: "Untitled",
                     author = text("authors") ?: text("author") ?: "Unknown author", year = text("year"),
                     publisher = text("publisher"), language = text("language"), format = format,
-                    libvaultMd5 = md5, rightsStatus = text("rights_status") ?: RIGHTS_UNKNOWN,
-                    license = text("license"), licenseUrl = text("license_url"), rightsSource = text("rights_source"))
+                    libvaultMd5 = validMd5, rightsStatus = text("rights_status") ?: RIGHTS_UNKNOWN,
+                    license = text("license"), licenseUrl = text("license_url"), rightsSource = text("rights_source"),
+                    torrentEdition = edition,
+                    unavailableReason = "Torrent unavailable".takeIf { validMd5 != null && collection == "zlib" && edition == null })
             }.distinctBy { it.id }
             return CatalogSearchPage(books, response.optInt("next_offset", -1).takeIf { it > offset })
         }

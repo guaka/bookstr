@@ -7,6 +7,8 @@ import app.bookstr.BookstrApp
 import app.bookstr.MainActivity
 import app.bookstr.data.*
 import app.bookstr.download.*
+import app.bookstr.nostr.NostrCrypto
+import app.bookstr.util.Bech32
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.*
 import org.junit.Test
@@ -32,16 +34,23 @@ class AcquisitionActionsTest {
     private lateinit var app: BookstrApp
     private lateinit var original: CatalogRepository
     private var resolutionError: Exception? = null
+    private var forceResolve = false
+    private var resolutionCalls = 0
     private val setup = object : ExternalResource() {
         override fun before() {
             app = ApplicationProvider.getApplicationContext()
             app.settingsRepository.disconnectNostr()
+            val secret = ByteArray(32) { 1 }
+            app.settingsRepository.connectNsec(Bech32.encode("nsec", secret), NostrCrypto.publicKeyHex(secret))
             app.settingsRepository.clearReaderSession()
             app.settingsRepository.catalogConnection = null
             original = app.catalogRepository
             val catalog = object : CatalogRepository(app, app.database.bookProgressDao(), app.settingsRepository) {
-                override suspend fun searchPage(query: String, offset: Int) = CatalogSearchPage(listOf(result), null)
+                override suspend fun searchPage(query: String, offset: Int) = CatalogSearchPage(
+                    listOf(if (forceResolve) result else result.copy(torrentEdition = TorrentEdition(id, 1, "fiction", content.size.toLong()))), null,
+                )
                 override suspend fun resolveEdition(book: CatalogBook): TorrentEdition {
+                    resolutionCalls++
                     resolutionError?.let { throw it }
                     return TorrentEdition(id, 1, "fiction", content.size.toLong())
                 }
@@ -71,6 +80,7 @@ class AcquisitionActionsTest {
     @Test fun oneTapStartsDownloadAndDeletionRemovesTheActualPublication() {
         search()
         compose.onNodeWithTag("search.open.$id").performClick()
+        assertEquals("Search metadata should avoid a second Libcat resolve request", 0, resolutionCalls)
         compose.onNodeWithTag("edition.download").assertDoesNotExist()
         compose.onNodeWithTag("downloads.sheet").assertIsDisplayed()
         compose.waitUntil(15000) { app.downloadStore.find(id)?.state == "complete" }
@@ -88,6 +98,7 @@ class AcquisitionActionsTest {
     }
 
     @Test fun failedResolutionShowsErrorAndAllowsAnotherTap() {
+        forceResolve = true
         resolutionError = IllegalStateException("Fixture resolution failed")
         search()
         compose.onNodeWithTag("search.open.$id").performClick()

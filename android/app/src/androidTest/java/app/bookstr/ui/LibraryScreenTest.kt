@@ -328,6 +328,28 @@ class LibraryScreenTest {
         composeRule.onNodeWithText("English EPUB").assertIsDisplayed()
     }
 
+    @Test fun libraryLanguageFilterShowsNamesAndLabelsUndAsUndefined() {
+        assertEquals("English", languageDisplayName("eng"))
+        val english = CatalogBook("en", "English title", "Author", "", null, language = "EN")
+        val undefined = english.copy(id = "und", title = "Unspecified title", language = "UND")
+        composeRule.setContent {
+            LibraryScreen(listOf(english, undefined), emptySet(), emptyList(), emptyMap(), false,
+                error = null, onRefresh = {}, onOpenBook = {}, onOpenExternal = {}, publicationSize = { 100L })
+        }
+
+        composeRule.onNodeWithTag("library.language").performClick()
+        composeRule.onNodeWithTag("library.language.en").assertExists()
+        composeRule.onNodeWithTag("library.language.und").assertExists()
+        composeRule.onNodeWithText("English").assertIsDisplayed()
+        composeRule.onNodeWithText("Undefined").assertIsDisplayed()
+        composeRule.onNodeWithText("EN").assertDoesNotExist()
+
+        composeRule.onNodeWithTag("library.language.und").performClick()
+        composeRule.onNodeWithTag("library.language").assertTextEquals("Undefined")
+        composeRule.onNodeWithText("Unspecified title").assertIsDisplayed()
+        composeRule.onNodeWithText("English title").assertDoesNotExist()
+    }
+
     @Test fun swipeLeftRequiresConfirmationAndCancelPreservesBook() {
         val book = CatalogBook("swipe", "Swipe book", "Author", "", null)
         var deleted = 0

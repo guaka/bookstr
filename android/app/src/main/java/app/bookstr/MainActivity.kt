@@ -1,6 +1,7 @@
 package app.bookstr
 
 import android.content.Intent
+import android.app.KeyguardManager
 import android.os.Bundle
 import android.util.Log
 import androidx.activity.ComponentActivity
@@ -31,11 +32,14 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import app.bookstr.data.CatalogBook
 import app.bookstr.data.BookSearchResult
+import app.bookstr.data.matchingDownloadedBook
 import app.bookstr.data.SharedFavoriteRef
 import app.bookstr.data.CatalogRepository
 import app.bookstr.data.BookFormat
@@ -46,6 +50,7 @@ import app.bookstr.nostr.ExternalSigner
 import app.bookstr.nostr.Nip55
 import app.bookstr.nostr.NostrCrypto
 import app.bookstr.ui.BookstrNavigationBar
+import app.bookstr.ui.NarrationIsland
 import app.bookstr.ui.LibraryScreen
 import app.bookstr.ui.SearchScreen
 import app.bookstr.ui.SignerSetupDialog
@@ -60,6 +65,9 @@ class MainActivity : ComponentActivity() {
     private var showDownloads by mutableStateOf(false)
     private lateinit var amberSession: AmberIntentSession
     private var requestedWord by mutableStateOf<String?>(null)
+    private var requestedTab by mutableStateOf<Int?>(null)
+    private var requestedTabKey by mutableStateOf(0)
+    private var requestedSearchQuery by mutableStateOf<String?>(null)
     private var wordRequestKey by mutableStateOf(0)
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -71,6 +79,8 @@ class MainActivity : ComponentActivity() {
         pendingInvitation = intent.dataString?.takeIf { it.startsWith("bookstr:") }
         showDownloads = intent.getBooleanExtra("open_downloads", false)
         requestedWord = intent.getStringExtra(EXTRA_OPEN_WORD)
+        requestedTab = intent.getIntExtra(EXTRA_SELECT_TAB, -1).takeIf { it in 0..3 }
+        requestedSearchQuery = intent.getStringExtra(EXTRA_SEARCH_QUERY)
 
         if (intent.getBooleanExtra(EXTRA_PIN_SHORTCUT, false)) {
             window.decorView.post { requestHomeShortcut() }
@@ -84,7 +94,13 @@ class MainActivity : ComponentActivity() {
         val vocabularyRepository = app.vocabularyRepository
         val dictionaryRepository = app.dictionaryRepository
 
-        if (savedInstanceState == null && pendingInvitation == null && !showDownloads) {
+        if (shouldRestoreReaderOnLaunch(
+                isLocked = getSystemService(KeyguardManager::class.java)?.isKeyguardLocked == true,
+                isFreshLaunch = savedInstanceState == null,
+                hasInvitation = pendingInvitation != null,
+                openingDownloads = showDownloads,
+                requestedTab = requestedTab,
+            )) {
             settings.readerSession()?.let { session ->
                 val publication = catalog.publicationFile(session.bookId, session.format)
                 if (publication.isFile) {
@@ -141,7 +157,8 @@ class MainActivity : ComponentActivity() {
             var readerFont by remember { mutableStateOf(settings.readerFont) }
             var readerAlignment by remember { mutableStateOf(settings.readerAlignment) }
             BookstrThemeFromSettings(readerTheme = theme) {
-                var selectedTab by remember { mutableStateOf(if (requestedWord.isNullOrBlank()) 0 else 1) }
+                var selectedTab by remember { mutableStateOf(requestedTab ?: if (requestedWord.isNullOrBlank()) 0 else 1) }
+                LaunchedEffect(requestedTab, requestedTabKey) { requestedTab?.let { selectedTab = it } }
                 var books by remember { mutableStateOf<List<CatalogBook>>(emptyList()) }
                 var favoriteIds by remember { mutableStateOf(emptySet<String>()) }
                 var externalFavorites by remember {
@@ -306,6 +323,7 @@ class MainActivity : ComponentActivity() {
                 fun openBook(book: CatalogBook) {
                     if (openingBookId != null) return
                     openingBookId = book.id
+                    NarrationService.stopIfDifferentBook(this@MainActivity, book.id)
                     scope.launch {
                         try {
                             catalog.ensureDownloaded(book)
@@ -406,6 +424,13 @@ class MainActivity : ComponentActivity() {
                         }
                     }
                 }
+                LaunchedEffect(requestedSearchQuery, requestedTabKey) {
+                    requestedSearchQuery?.takeIf(String::isNotBlank)?.let { author ->
+                        searchQuery = author
+                        selectedTab = 3
+                        runSearch()
+                    }
+                }
 
                 fun matchingSearchFavorite(result: BookSearchResult) = externalFavorites.firstOrNull { favorite ->
                     favorite.key == result.id ||
@@ -414,11 +439,7 @@ class MainActivity : ComponentActivity() {
                             favorite.author.orEmpty().equals(result.author, ignoreCase = true))
                 }
 
-                fun matchingSearchBook(result: BookSearchResult) = books.firstOrNull { book ->
-                    book.id == result.id ||
-                        (book.title.equals(result.title, ignoreCase = true) &&
-                            book.author.equals(result.author, ignoreCase = true))
-                }
+                fun matchingSearchBook(result: BookSearchResult) = matchingDownloadedBook(result, books)
 
                 fun isSearchFavorite(result: BookSearchResult): Boolean =
                     result.id in favoriteIds ||
@@ -586,6 +607,7 @@ class MainActivity : ComponentActivity() {
                                         error = "This book is no longer downloaded. Open it from Library first."
                                     } else {
                                         val book = books.firstOrNull { it.id == word.bookId }
+                                        NarrationService.stopIfDifferentBook(this@MainActivity, word.bookId)
                                         startActivity(if (isPdf) {
                                             val parts = word.cfi.split(':')
                                             PdfReaderActivity.intent(
@@ -799,7 +821,7 @@ class MainActivity : ComponentActivity() {
 
                             3 -> SearchScreen(
                                 query = searchQuery,
-                                hasMore = nextOffset != null && searchedQuery == searchQuery.trim(),
+                                nextOffset = nextOffset.takeIf { searchedQuery == searchQuery.trim() },
                                 onLoadMore = { runSearch(true) },
                                 onDownloads = { showDownloads = true },
                                 results = searchResults,
@@ -808,7 +830,8 @@ class MainActivity : ComponentActivity() {
                                 message = searchMessage,
                                 isFavorite = ::isSearchFavorite,
                                 readingProgress = { result ->
-                                    progress[result.id] ?: matchingSearchBook(result)?.let { progress[it.id] }
+                                    matchingSearchBook(result)?.takeIf { catalog.publicationFile(it.id, it.format).isFile }
+                                        ?.let { progress[it.id] }
                                 },
                                 onQueryChange = {
                                     searchQuery = it
@@ -819,12 +842,17 @@ class MainActivity : ComponentActivity() {
                                     }
                                 },
                                 onSearch = { runSearch() },
-                                onOpen = { result -> result.asCatalogBook()?.let { book ->
+                                onOpen = { result ->
+                                    val localBook = matchingSearchBook(result)?.takeIf {
+                                        catalog.publicationFile(it.id, it.format).isFile
+                                    }
+                                    if (localBook != null) openBook(localBook)
+                                    else result.asCatalogBook()?.let { book ->
                                     if (book.libvaultMd5 != null && !catalog.publicationFile(book.id, book.format).isFile) {
                                         openingBookId = book.id
                                         scope.launch {
                                             try {
-                                                val edition = catalog.resolveEdition(book)
+                                                val edition = result.torrentEdition ?: catalog.resolveEdition(book)
                                                 app.downloadStore.enqueue(book, edition)
                                                 DownloadService.dispatch(this@MainActivity)
                                                 showDownloads = true
@@ -881,6 +909,60 @@ class MainActivity : ComponentActivity() {
                                 },
                             )
                         }
+                        NarrationIsland(
+                            Modifier.align(Alignment.TopCenter).padding(12.dp),
+                            onOpenBook = { bookId, title, author ->
+                                val book = books.firstOrNull { it.id == bookId }
+                                if (book != null) {
+                                    openBook(book)
+                                } else {
+                                    val session = settings.readerSession()?.takeIf { it.bookId == bookId }
+                                    if (session != null && catalog.publicationFile(session.bookId, session.format).isFile) {
+                                        startActivity(
+                                            when (session.format) {
+                                                BookFormat.Cbr, BookFormat.Cbz -> ComicReaderActivity.intent(
+                                                    this@MainActivity, session.bookId, session.format, title,
+                                                )
+                                                BookFormat.Pdf -> PdfReaderActivity.intent(
+                                                    context = this@MainActivity,
+                                                    bookId = session.bookId,
+                                                    bookTitle = title,
+                                                    author = session.author ?: author.takeIf(String::isNotBlank),
+                                                    year = session.year,
+                                                    pageIndex = session.pageIndex,
+                                                    pageOffset = session.pageOffset,
+                                                )
+                                                BookFormat.Fb2 -> Fb2ReaderActivity.intent(
+                                                    context = this@MainActivity,
+                                                    bookId = session.bookId,
+                                                    bookTitle = title,
+                                                    author = session.author ?: author.takeIf(String::isNotBlank),
+                                                    year = session.year,
+                                                    locator = session.locator,
+                                                    rightsStatus = session.rightsStatus,
+                                                    license = session.license,
+                                                    licenseUrl = session.licenseUrl,
+                                                    rightsSource = session.rightsSource,
+                                                )
+                                                else -> ReaderActivity.intent(
+                                                    context = this@MainActivity,
+                                                    bookId = session.bookId,
+                                                    bookTitle = title,
+                                                    author = session.author ?: author.takeIf(String::isNotBlank),
+                                                    year = session.year,
+                                                    initialCfi = session.locator,
+                                                    theme = settings.theme,
+                                                    rightsStatus = session.rightsStatus,
+                                                    license = session.license,
+                                                    licenseUrl = session.licenseUrl,
+                                                    rightsSource = session.rightsSource,
+                                                )
+                                            },
+                                        )
+                                    }
+                                }
+                            },
+                        )
                     }
                 }
             }
@@ -902,6 +984,9 @@ class MainActivity : ComponentActivity() {
         pendingInvitation = intent.dataString?.takeIf { it.startsWith("bookstr:") }
         showDownloads = intent.getBooleanExtra("open_downloads", false)
         requestedWord = intent.getStringExtra(EXTRA_OPEN_WORD)
+        requestedTab = intent.getIntExtra(EXTRA_SELECT_TAB, -1).takeIf { it in 0..3 }
+        requestedSearchQuery = intent.getStringExtra(EXTRA_SEARCH_QUERY)
+        requestedTabKey += 1
         wordRequestKey += 1
     }
 
@@ -936,6 +1021,8 @@ class MainActivity : ComponentActivity() {
     companion object {
         const val EXTRA_PIN_SHORTCUT = "pin_shortcut"
         const val EXTRA_OPEN_WORD = "open_word"
+        const val EXTRA_SELECT_TAB = "select_tab"
+        const val EXTRA_SEARCH_QUERY = "search_query"
         private fun npubFromSettings(pubkeyHex: String?): String =
             pubkeyHex?.let { npubFromHex(it) }.orEmpty()
 
@@ -950,3 +1037,11 @@ class MainActivity : ComponentActivity() {
         }
     }
 }
+
+internal fun shouldRestoreReaderOnLaunch(
+    isLocked: Boolean,
+    isFreshLaunch: Boolean,
+    hasInvitation: Boolean,
+    openingDownloads: Boolean,
+    requestedTab: Int?,
+): Boolean = isLocked && isFreshLaunch && !hasInvitation && !openingDownloads && requestedTab == null

@@ -1,6 +1,7 @@
 package app.bookstr.ui
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.*
@@ -28,13 +29,14 @@ fun DownloadsSheet(jobs: List<DownloadJob>, onDismiss: () -> Unit, onAction: (St
             item { BookFilterBar("downloads", languages, formats, filters.language, filters.format,
                 { language = it }, { format = it }) }
             items(visible, key = { it.book.id }) { job ->
-                Column(Modifier.fillMaxWidth().padding(vertical = 8.dp).testTag("download.${job.book.id}")) {
+                Column(Modifier.fillMaxWidth().padding(vertical = 8.dp)
+                    .testTag("download.${job.book.id}")
+                    .clickable(enabled = job.state == "complete") { onOpen(job) }) {
                     Text(job.book.title)
                     Text(job.error ?: job.state, style = MaterialTheme.typography.bodySmall)
                     if (job.size > 0) LinearProgressIndicator(progress = { (job.bytes.toFloat() / job.size).coerceIn(0f, 1f) }, modifier = Modifier.fillMaxWidth())
                     Row {
-                        if (job.state == "complete") TextButton(onClick = { onOpen(job) }, modifier = Modifier.testTag("download.open.${job.book.id}")) { Text("Read") }
-                        else {
+                        if (job.state != "complete") {
                             val action = if (job.active) "pause" else "resume"
                             TextButton(onClick = { onAction(action, job.book.id) }, modifier = Modifier.testTag("download.$action.${job.book.id}")) { Text(if (job.active) "Pause" else "Resume") }
                             if (job.state != "cancelled") TextButton(onClick = { onAction("cancel", job.book.id) }, modifier = Modifier.testTag("download.cancel.${job.book.id}")) { Text("Cancel") }

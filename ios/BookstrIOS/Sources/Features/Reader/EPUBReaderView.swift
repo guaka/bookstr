@@ -397,7 +397,7 @@ final class EPUBReaderController: NSObject, ObservableObject, AVSpeechSynthesize
         exhausted: Bool = false
     ) {
         let preparedChunks = (chunks?.isEmpty == false ? chunks! : speechChunks(text).map {
-            (text: $0.text, offset: $0.offset, pauseSeconds: 0.035, speak: SpeechSpokenText.normalize($0.text))
+            (text: $0.text, offset: $0.offset, pauseSeconds: 0.035, speak: SpeechSpokenText.normalize($0.text, languageTag: playback.languageTag))
         }).map {
             SpeechQueueChunk(text: $0.text, offset: $0.offset, pauseSeconds: $0.pauseSeconds, speak: $0.speak)
         }
@@ -667,7 +667,7 @@ final class EPUBReaderController: NSObject, ObservableObject, AVSpeechSynthesize
                 text: trimmed,
                 offset: max(0, offset),
                 pauseSeconds: pauseSeconds,
-                speak: spoken.isEmpty ? SpeechSpokenText.normalize(trimmed) : spoken
+                speak: spoken.isEmpty ? SpeechSpokenText.normalize(trimmed, languageTag: playback.languageTag) : spoken
             ))
         }
         if !parsed.isEmpty {

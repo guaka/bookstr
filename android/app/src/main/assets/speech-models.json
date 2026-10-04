@@ -103,6 +103,115 @@
     ]
   },
   {
+    "id": "kokoro_pt_br",
+    "language": "pt-pt",
+    "label": "Kokoro · Português (Brasil)",
+    "repository": "csukuangfj/kokoro-multi-lang-v1_0",
+    "revision": "f7b96bb6bef5c5da4d3aa4f4e0498fbbf62dc78b",
+    "kind": "kokoro",
+    "model": "model.onnx",
+    "speaker": 42,
+    "engineLanguage": "pt-br",
+    "files": [
+      {
+        "path": "espeak-ng-data/ca_dict",
+        "bytes": 45566
+      },
+      {
+        "path": "espeak-ng-data/de_dict",
+        "bytes": 68276
+      },
+      {
+        "path": "espeak-ng-data/en_dict",
+        "bytes": 166944
+      },
+      {
+        "path": "espeak-ng-data/es_dict",
+        "bytes": 49252
+      },
+      {
+        "path": "espeak-ng-data/fr_dict",
+        "bytes": 63727
+      },
+      {
+        "path": "espeak-ng-data/intonations",
+        "bytes": 2040
+      },
+      {
+        "path": "espeak-ng-data/lang/gmw/de",
+        "bytes": 42
+      },
+      {
+        "path": "espeak-ng-data/lang/gmw/en",
+        "bytes": 140
+      },
+      {
+        "path": "espeak-ng-data/lang/gmw/en-US",
+        "bytes": 257
+      },
+      {
+        "path": "espeak-ng-data/lang/gmw/nl",
+        "bytes": 23
+      },
+      {
+        "path": "espeak-ng-data/lang/roa/ca",
+        "bytes": 25
+      },
+      {
+        "path": "espeak-ng-data/lang/roa/es",
+        "bytes": 63
+      },
+      {
+        "path": "espeak-ng-data/lang/roa/fr",
+        "bytes": 79
+      },
+      {
+        "path": "espeak-ng-data/lang/roa/pt",
+        "bytes": 95
+      },
+      {
+        "path": "espeak-ng-data/nl_dict",
+        "bytes": 65979
+      },
+      {
+        "path": "espeak-ng-data/phondata",
+        "bytes": 550424
+      },
+      {
+        "path": "espeak-ng-data/phondata-manifest",
+        "bytes": 21821
+      },
+      {
+        "path": "espeak-ng-data/phonindex",
+        "bytes": 39074
+      },
+      {
+        "path": "espeak-ng-data/phontab",
+        "bytes": 55796
+      },
+      {
+        "path": "espeak-ng-data/pt_dict",
+        "bytes": 67817
+      },
+      {
+        "path": "model.onnx",
+        "bytes": 325560556
+      },
+      {
+        "path": "voices.bin",
+        "bytes": 28200960
+      },
+      {
+        "path": "tokens.txt",
+        "bytes": 687
+      },
+      {
+        "path": "espeak-ng-data/lang/roa/pt-BR",
+        "bytes": 109
+      }
+    ]
+  },
+  {
     "id": "piper_pt_pt",
     "language": "pt-pt",
     "label": "Tugão · Português (Portugal)",

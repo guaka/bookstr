@@ -13,6 +13,8 @@ test('reader typography defaults unknown values to Arial and justified', () => {
   assert.equal(BookstrTypography.normalizeFont(' Georgia '), 'georgia');
   assert.equal(BookstrTypography.normalizeFont('palatino'), 'palatino');
   assert.equal(BookstrTypography.normalizeFont('system'), 'system');
+  assert.equal(BookstrTypography.normalizeFont('roboto'), 'roboto');
+  assert.equal(BookstrTypography.normalizeFont('noto-serif'), 'noto-serif');
   assert.equal(BookstrTypography.normalizeAlignment(null), 'justified');
   assert.equal(BookstrTypography.normalizeAlignment('JUSTIFIED'), 'justified');
   assert.equal(BookstrTypography.normalizeAlignment('left'), 'left');
@@ -49,6 +51,8 @@ test('reader typography CSS uses Arial and justify by default', () => {
     BookstrTypography.fontStack('system'),
     "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
   );
+  assert.equal(BookstrTypography.fontStack('roboto'), "Roboto, 'Arial', sans-serif");
+  assert.equal(BookstrTypography.fontStack('noto-serif'), "'Noto Serif', Georgia, 'Times New Roman', serif");
 });
 
 test('reader typography emits the system font and manual hyphenation for left alignment', () => {

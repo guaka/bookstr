@@ -3,6 +3,8 @@ package app.bookstr.ui
 import android.graphics.Bitmap
 import android.graphics.Color
 import android.view.ViewGroup
+import android.view.View
+import android.view.WindowManager
 import android.webkit.WebView
 import androidx.test.core.app.ActivityScenario
 import androidx.test.core.app.ApplicationProvider
@@ -22,11 +24,16 @@ import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 
 class ComicReaderActivityTest {
+    private fun findWebView(view: View): WebView? {
+        if (view is WebView) return view
+        if (view is ViewGroup) for (index in 0 until view.childCount) findWebView(view.getChildAt(index))?.let { return it }
+        return null
+    }
     private fun evaluate(scenario: ActivityScenario<ComicReaderActivity>, script: String): String {
         val value = AtomicReference<String>()
         val done = CountDownLatch(1)
         scenario.onActivity { activity ->
-            val web = activity.findViewById<ViewGroup>(android.R.id.content).getChildAt(0) as WebView
+            val web = findWebView(activity.findViewById(android.R.id.content)) ?: error("Comic WebView was not found")
             web.evaluateJavascript(script) { value.set(it); done.countDown() }
         }
         assertTrue("WebView evaluation completed", done.await(5, TimeUnit.SECONDS))
@@ -45,13 +52,13 @@ class ComicReaderActivityTest {
         }
         fail("Comic page $page did not load: $state")
     }
-    private fun writeFixture(target: File, paddingBytes: Long) {
+    private fun writeFixture(target: File, paddingBytes: Long, pageCount: Int = 2) {
         val image = Bitmap.createBitmap(16, 16, Bitmap.Config.ARGB_8888)
         image.eraseColor(Color.BLUE)
         val png = ByteArrayOutputStream().also { image.compress(Bitmap.CompressFormat.PNG, 100, it) }.toByteArray()
         image.recycle()
         ZipOutputStream(target.outputStream()).use { zip ->
-            for (name in listOf("page-02.png", "page-01.png")) {
+            for (name in (pageCount downTo 1).map { "page-%02d.png".format(it) }) {
                 zip.putNextEntry(ZipEntry(name)); zip.write(png); zip.closeEntry()
             }
             if (paddingBytes > 0) {
@@ -68,6 +75,53 @@ class ComicReaderActivityTest {
     }
     @Test fun streamedArchiveLoadsAndPersistsPageProgress() = exercise(0)
     @Test fun largeArchiveLoadsWithoutBase64CopiesInTheAppHeap() = exercise(48L * 1024 * 1024)
+
+    @Test fun comicReaderKeepsScreenAwakeOnlyWhenReadingSettingEnabled() {
+        val app = ApplicationProvider.getApplicationContext<BookstrApp>()
+        val previous = app.settingsRepository.keepReadingOnLockScreen
+        val target = app.catalogRepository.publicationFile("comic-awake-fixture", BookFormat.Cbz)
+        writeFixture(target, 0)
+        try {
+            for (enabled in listOf(true, false)) {
+                app.settingsRepository.keepReadingOnLockScreen = enabled
+                ActivityScenario.launch<ComicReaderActivity>(ComicReaderActivity.intent(app, "comic-awake-fixture", BookFormat.Cbz, "Awake")).use { scenario ->
+                    scenario.onActivity { activity ->
+                        val awake = activity.window.attributes.flags and WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON != 0
+                        assertEquals(enabled, awake)
+                    }
+                }
+            }
+        } finally {
+            app.settingsRepository.keepReadingOnLockScreen = previous
+            target.delete()
+        }
+    }
+
+    @Test fun wideLayoutShowsFacingPagesAndTurnsBySpread() {
+        val app = ApplicationProvider.getApplicationContext<BookstrApp>()
+        val bookId = "comic-spread-fixture"
+        val target = app.catalogRepository.publicationFile(bookId, BookFormat.Cbz)
+        writeFixture(target, 0, pageCount = 4)
+        try {
+            ActivityScenario.launch<ComicReaderActivity>(ComicReaderActivity.intent(app, bookId, BookFormat.Cbz, "Spreads")).use { scenario ->
+                val readyDeadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5)
+                while (System.nanoTime() < readyDeadline && evaluate(scenario,
+                        "document.querySelector('#stage img')!==null&&document.getElementById('count').textContent.endsWith('/ 4')") != "true") {
+                    Thread.sleep(50)
+                }
+                evaluate(scenario, "window.matchMedia=()=>({matches:true,addEventListener:()=>{}});show(1)")
+                val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5)
+                while (System.nanoTime() < deadline && evaluate(scenario,
+                        "document.querySelectorAll('#stage img').length===2&&document.getElementById('count').textContent.includes('2–3')") != "true") {
+                    Thread.sleep(50)
+                }
+                assertEquals("true", evaluate(scenario,
+                    "document.querySelectorAll('#stage img').length===2&&document.getElementById('count').textContent.includes('2–3')"))
+                evaluate(scenario, "turn(1)")
+                assertEquals("\"4 / 4\"", evaluate(scenario, "document.getElementById('count').textContent"))
+            }
+        } finally { target.delete() }
+    }
 
     private fun exercise(paddingBytes: Long) {
         val app = ApplicationProvider.getApplicationContext<BookstrApp>()

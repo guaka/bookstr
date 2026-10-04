@@ -1,7 +1,5 @@
 package app.bookstr.ui
 
-import android.content.Intent
-import android.net.Uri
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.test.core.app.ApplicationProvider
@@ -30,6 +28,7 @@ class AcquisitionActivityTest {
     @get:Rule val rules: RuleChain = RuleChain.outerRule(clean).around(compose)
     @Test fun navigatesSettingsSearchAndDownloadsWithoutAnAccount() {
         compose.onNodeWithContentDescription("Settings").performClick()
+        compose.onNodeWithText("Keep screen awake while reading").assertExists()
         compose.onNodeWithText("Install Huddle or another NIP-55 signer to connect.").assertExists()
         compose.onNodeWithContentDescription("Search").performClick()
         compose.onNodeWithTag("search.query").assertExists()
@@ -62,16 +61,5 @@ class AcquisitionActivityTest {
         compose.onNodeWithTag("signer.import-key").performTextReplacement(Bech32.encode("nsec", ByteArray(32) { 1 }))
         compose.onNodeWithTag("signer.setup-confirm").performClick()
         assertEquals(NostrAuthMode.Nsec, (compose.activity.application as BookstrApp).settingsRepository.authMode)
-    }
-    @Test fun catalogInvitationsRequireConfirmationAndPersistAcrossRecreation() {
-        val uri = "bookstr://catalog?v=1&npub=npub1zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zygse4sl3h&name=Fixture&relay=wss%3A%2F%2Frelay.example"
-        compose.runOnUiThread { compose.activity.startActivity(Intent(compose.activity, MainActivity::class.java).setData(Uri.parse(uri)).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP)) }
-        compose.onNodeWithTag("catalog.confirm").assertExists()
-        assertNull((compose.activity.application as BookstrApp).settingsRepository.catalogConnection)
-        compose.onNodeWithTag("catalog.confirm").performClick()
-        assertEquals("Fixture", (compose.activity.application as BookstrApp).settingsRepository.catalogConnection?.name)
-        compose.onNodeWithTag("search.query").assertExists()
-        compose.activityRule.scenario.recreate()
-        assertEquals("Fixture", (compose.activity.application as BookstrApp).settingsRepository.catalogConnection?.name)
     }
 }

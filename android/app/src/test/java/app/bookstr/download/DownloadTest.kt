@@ -48,7 +48,7 @@ class DownloadTest {
         val second = book.copy(id = "b".repeat(32))
         store.enqueue(book, edition)
         store.enqueue(second, edition.copy(md5 = second.id))
-        val order = listOf(book.id, second.id)
+        val order = listOf(second.id, book.id)
         for (state in listOf("finding-peers", "downloading", "paused", "complete")) {
             store.update(store.find(book.id)!!.copy(state = state, bytes = 10))
             assertEquals(order, store.jobs.value.map { it.book.id })
@@ -56,7 +56,7 @@ class DownloadTest {
         }
         store.markPublicationDeleted(book.id)
         store.enqueue(book, edition)
-        assertEquals(order, store.jobs.value.map { it.book.id })
+        assertEquals(listOf(book.id, second.id), store.jobs.value.map { it.book.id })
         val journal = File(root, "jobs.json")
         assertTrue(journal.setLastModified(100000L))
         store.update(store.find(book.id)!!)
