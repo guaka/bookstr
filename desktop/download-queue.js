@@ -101,7 +101,13 @@ class DownloadQueue {
       while (this.pending.length) {
         const { bookId, request } = this.pending.shift();
         try {
-          const onProgress = () => this.onUpdate();
+          let lastProgressNoticeAt = null;
+          const onProgress = () => {
+            const now = Date.now();
+            if (lastProgressNoticeAt !== null && now - lastProgressNoticeAt < 500) return;
+            lastProgressNoticeAt = now;
+            this.onUpdate();
+          };
           if (request.kind === 'libgen') {
             await this.acquisitionManager.acquireLibgen(request.record, { autoSeed: this.autoSeed, onProgress });
           } else {

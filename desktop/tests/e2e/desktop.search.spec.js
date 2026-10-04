@@ -262,6 +262,7 @@ test('search plus opens Downloads while the heart stays a separate action', asyn
     await expect(page.locator('#desktop-downloads-list')).toContainText('Download Fixture');
     await expect(page.locator('#desktop-downloads-list')).toContainText('queued');
     expect(await app.evaluate(() => globalThis.queuedBooks)).toHaveLength(1);
+    expect(await page.evaluate(() => state.favorites.some(book => book.md5 === 'a'.repeat(32)))).toBe(false);
     await page.getByRole('button', { name: 'Close downloads' }).click();
     await page.evaluate(() => {
       state.settings.useNip7 = true;
@@ -298,6 +299,40 @@ test('search plus opens Downloads while the heart stays a separate action', asyn
     }])));
     await page.reload();
     expect(await page.evaluate(() => state.favorites.some(book => book.md5 === 'b'.repeat(32)))).toBe(false);
+  } finally { await app.close(); }
+});
+
+test('download progress updates the library without replacing its rows', async () => {
+  const app = await electron.launch({ args: electronArgs() });
+  try {
+    const page = await app.firstWindow();
+    await expect(page).toHaveTitle('libstr');
+    await expect(page.locator('#build-time')).not.toBeEmpty();
+    await page.waitForTimeout(500);
+    const bookId = 'd'.repeat(32);
+    await page.evaluate(id => {
+      state.reading = [];
+      state.favorites = Array.from({ length: 80 }, (_, index) => ({
+        md5: index === 0 ? id : index.toString(16).padStart(32, '0'),
+        title: `Library fixture ${index}`,
+        authors: ['Fixture Author'],
+        extension: 'epub',
+      }));
+      renderHome();
+      window.progressFixtureRow = document.querySelector(`.book-table-row[data-download-book-id="${id}"]`);
+    }, bookId);
+    expect(await page.evaluate(() => Boolean(window.progressFixtureRow))).toBe(true);
+
+    await app.evaluate(({ BrowserWindow }) => {
+      const window = BrowserWindow.getAllWindows().find(item => !item.isDestroyed());
+      for (let index = 0; index < 100; index += 1) {
+        window.webContents.send('bookstr-desktop-acquisition-progress', {
+          bookId: 'd'.repeat(32), bytes: index * 1024, totalBytes: 102400,
+        });
+      }
+    });
+    await page.waitForTimeout(300);
+    expect(await page.evaluate(() => window.progressFixtureRow.isConnected)).toBe(true);
   } finally { await app.close(); }
 });
 
