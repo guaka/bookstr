@@ -623,16 +623,32 @@ test('Library opens FB2 and CBZ books through their format-specific readers', as
     await expect(reader.locator('body')).toHaveCSS('padding-left', '36px');
     await page.getByRole('button', { name: 'Home' }).click();
     await page.getByRole('link', { name: cbz.title }).click();
-    const openingProgress = page.locator('#read-comic-opening-progress');
-    await expect(openingProgress).toBeVisible();
-    await expect(openingProgress).not.toHaveAttribute('value', /.+/);
     reader = page.frameLocator('#reader-frame');
-    const readerProgress = reader.locator('#opening-progress');
-    await expect(readerProgress).toBeVisible();
-    await expect(readerProgress).toHaveAttribute('max', '16');
-    await expect(readerProgress).toHaveAttribute('value', /[1-9]/);
     await expect(reader.locator('#title')).toHaveText(cbz.title);
     await expect(reader.locator('#count')).toHaveText('1 / 16');
+    await expect(reader.locator('#stage img')).toBeVisible();
+
+    const pageImageUrl = 'https://files.test/comic-progress-page.png';
+    let releaseComicPage;
+    const comicPageResponse = new Promise(resolve => { releaseComicPage = resolve; });
+    await app.context().route(pageImageUrl, async route => {
+      await comicPageResponse;
+      await route.fulfill({
+        status: 200,
+        contentType: 'image/png',
+        body: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=', 'base64'),
+      });
+    });
+    await reader.locator('body').evaluate(url => window.loadComic({
+      format: 'cbz',
+      bookId: '4'.repeat(32),
+      pages: [{ name: '001.png', url }],
+    }), pageImageUrl);
+    const openingProgress = reader.locator('#opening-progress');
+    await expect(openingProgress).toBeVisible();
+    await expect(reader.locator('#opening-label')).toHaveText('Rendering first page…');
+    releaseComicPage();
+    await expect(openingProgress).toBeHidden();
     await expect(reader.locator('#stage img')).toBeVisible();
   } finally {
     await app.close();

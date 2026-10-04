@@ -7683,21 +7683,15 @@
         const readerLoad = await readerFrameLoader('comic', openGeneration, book.md5 || BookMetadata.bookIdentity(book));
         if (!readerLoad) return;
         if (openGeneration !== readerOpenGeneration || !revealReadableBook(book, openGeneration)) return;
-        const archiveURL = URL.createObjectURL(blob);
         status.textContent = `Opening ${book.title || 'comic'}…`;
-        let opened = false;
-        try {
-          opened = await readerLoad({
-            archiveURL,
-            format,
-            bookTitle: BookMetadata.resolveTitle(book),
-            initialPage: Number(book.pageIndex || book.page || 0) || 0,
-            bookId: book.md5 || BookMetadata.bookIdentity(book),
-            readUrl: readPath || book.readUrl || book.url || '',
-          });
-        } finally {
-          URL.revokeObjectURL(archiveURL);
-        }
+        const opened = await readerLoad({
+          archiveBlob: blob,
+          format,
+          bookTitle: BookMetadata.resolveTitle(book),
+          initialPage: Number(book.pageIndex || book.page || 0) || 0,
+          bookId: book.md5 || BookMetadata.bookIdentity(book),
+          readUrl: readPath || book.readUrl || book.url || '',
+        });
         if (opened && openGeneration === readerOpenGeneration) status.textContent = `Opened ${book.title || 'comic'}.`;
       }
 

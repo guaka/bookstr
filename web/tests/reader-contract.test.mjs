@@ -33,9 +33,8 @@ test('comic reader supports bounded CBZ and CBR page extraction and navigation',
 
 test('Bookstr routes CBZ and CBR files to the comic reader', () => {
   assert.match(app, /displayComic\(blob, book, readPath, openGeneration, format\)/);
-  assert.match(app, /const archiveURL = URL\.createObjectURL\(blob\)/);
-  assert.match(app, /archiveURL,\s*format,/);
-  assert.match(app, /URL\.revokeObjectURL\(archiveURL\)/);
+  assert.match(app, /archiveBlob: blob,/);
+  assert.match(comicReader, /options\.archiveBlob\.arrayBuffer\(\)/);
   assert.match(app, /id = 'read-comic-opening-progress'/);
   assert.match(app, /format === 'cbz' \|\| format === 'cbr'/);
   assert.match(app, /Only EPUB, PDF, FB2, CBZ, and CBR book files can be opened/);
