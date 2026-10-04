@@ -2016,6 +2016,15 @@
         <button id="desktop-kindle-transfer" type="button">Put missing books on Kindle</button>
       </aside>
 
+      <dialog id="desktop-kindle-selection" aria-labelledby="desktop-kindle-selection-title">
+        <h2 id="desktop-kindle-selection-title">Books for Kindle</h2>
+        <input id="desktop-kindle-filter" type="search" placeholder="Filter books" aria-label="Filter Kindle transfer books" />
+        <label><input id="desktop-kindle-select-visible" type="checkbox" /> Select visible books</label>
+        <div id="desktop-kindle-books" style="max-height:50vh;overflow:auto"></div>
+        <button id="desktop-kindle-selection-close" type="button">Cancel</button>
+        <button id="desktop-kindle-selection-send" type="button" disabled>Transfer selected books</button>
+      </dialog>
+
       <section id="home-tab" class="card" data-tab-panel="home">
         <form id="home-search-form" class="home-search" autocomplete="off">
           <input id="home-query-input" placeholder="Filter your library" aria-label="Filter currently reading and favorites" autofocus />
@@ -2349,6 +2358,7 @@
     <script src="jszip.min.js"></script>
     <script src="fb2-validation.js"></script>
     <script src="desktop-progress.js"></script>
+    <script src="desktop-kindle.js"></script>
     <script src="generated/nostr-constants-v1.js"></script>
     <script src="nostr-progress.js"></script>
     <script src="favorite-references.js"></script>
@@ -2473,6 +2483,13 @@
       const desktopKindleDevice = document.getElementById('desktop-kindle-device');
       const desktopKindleSummary = document.getElementById('desktop-kindle-summary');
       const desktopKindleTransfer = document.getElementById('desktop-kindle-transfer');
+      const kindleSelectionDialog = document.getElementById('desktop-kindle-selection');
+      const kindleSelectionList = document.getElementById('desktop-kindle-books');
+      const kindleSelectionFilter = document.getElementById('desktop-kindle-filter');
+      const kindleSelectVisible = document.getElementById('desktop-kindle-select-visible');
+      const kindleSelectionSend = document.getElementById('desktop-kindle-selection-send');
+      let kindleSelectionJobs = [];
+      const kindleSelectedBooks = new Set();
       let currentKindleId = '';
       let kindleTransferRunning = false;
       let kindleOfferRefreshing = false;
@@ -5748,15 +5765,18 @@
           row.querySelector('[data-action="queue-download-title"]')?.addEventListener('click', () => {
             void queueSearchDownload(book);
           });
-          if (isDesktopMode && options.library && isBookReadableNow(book) && ['pdf', 'txt', 'cbz', 'cbr'].includes(resultFormat(book))) {
-            const send = document.createElement('button');
-            send.type = 'button';
-            send.className = 'chip-btn';
-            send.textContent = 'Send to Kindle';
-            send.dataset.action = 'send-kindle';
-            send.setAttribute('aria-label', `Send ${book.title || 'book'} to Kindle`);
-            send.addEventListener('click', () => void sendLibraryBookToKindle(book, send));
-            row.querySelector('.row-actions').append(send);
+          if (isDesktopMode && options.library && isBookReadableNow(book)) {
+            const job = desktopDownloadForBook(book);
+            if (job && BookstrDesktopKindle.transferableDownloads([job]).length) {
+              const send = document.createElement('button');
+              send.type = 'button';
+              send.className = 'chip-btn';
+              send.textContent = 'Send to Kindle';
+              send.dataset.action = 'send-kindle';
+              send.setAttribute('aria-label', `Send ${book.title || 'book'} to Kindle`);
+              send.addEventListener('click', () => void sendLibraryBookToKindle(book, send));
+              row.querySelector('.row-actions').append(send);
+            }
           }
           row.querySelector('[data-action="delete-library"]')?.addEventListener('click', () => {
             void deleteLibraryBook(book);
@@ -5953,9 +5973,14 @@
       }
 
       async function sendLibraryBookToKindle(book, button) {
+        if (kindleTransferRunning) return;
+        kindleTransferRunning = true;
         button.disabled = true;
         try {
           const job = desktopDownloadForBook(book);
+          if (!job || !BookstrDesktopKindle.transferableDownloads([job]).length) {
+            throw new Error('This book cannot be sent to Kindle.');
+          }
           const devices = await desktopBridge.kindle.devices();
           if (!devices.length) throw new Error('No Kindle connected.');
           const deviceId = devices.some(device => device.id === currentKindleId) ? currentKindleId : devices[0].id;
@@ -5966,6 +5991,7 @@
         } catch (error) {
           status.textContent = error?.message || String(error);
         } finally {
+          kindleTransferRunning = false;
           button.disabled = false;
         }
       }
@@ -6122,15 +6148,9 @@
           desktopKindleDevice.replaceChildren(...devices.map(device => new Option(device.name, device.id)));
           desktopKindleDevice.value = currentKindleId;
           desktopKindleDevice.classList.toggle('hidden', devices.length < 2);
-          const preview = await desktopBridge.kindle.preview(currentKindleId);
-          desktopKindleSummary.textContent = `${preview.device.name}: ${preview.missing.length} missing · ${preview.alreadyPresent} already there · ${preview.skipped.length} skipped`;
-          desktopKindleTransfer.disabled = preview.missing.length === 0;
-          const selected = devices.findIndex(device => device.id === currentKindleId);
-          if (selected >= 0) {
-            const details = document.createElement('small');
-            details.textContent = `${preview.missing.length} missing · ${preview.alreadyPresent} already there`;
-            deviceKindleList.children[selected]?.querySelector('strong')?.after(details);
-          }
+          const jobs = BookstrDesktopKindle.transferableDownloads(await desktopBridge.library.downloads());
+          desktopKindleSummary.textContent = `${devices.find(device => device.id === currentKindleId).name} · ${jobs.length} downloaded books`;
+          desktopKindleTransfer.disabled = jobs.length === 0;
         } catch (error) {
           desktopKindleSummary.textContent = error?.message || String(error);
           desktopKindleTransfer.disabled = true;
@@ -6147,23 +6167,73 @@
         currentKindleId = desktopKindleDevice.value;
         void refreshKindleOffer();
       });
+      function renderKindleSelection() {
+        const query = kindleSelectionFilter.value.trim().toLowerCase();
+        const visible = kindleSelectionJobs.filter(job => `${job.title || ''} ${job.authors || ''}`.toLowerCase().includes(query));
+        kindleSelectionList.replaceChildren();
+        for (const job of visible) {
+          const label = document.createElement('label');
+          label.style.display = 'block';
+          const input = document.createElement('input');
+          input.type = 'checkbox';
+          input.dataset.bookId = job.bookId;
+          input.setAttribute('aria-label', `Transfer ${job.title || job.bookId}`);
+          input.checked = kindleSelectedBooks.has(job.bookId);
+          input.addEventListener('change', () => {
+            if (input.checked) kindleSelectedBooks.add(job.bookId);
+            else kindleSelectedBooks.delete(job.bookId);
+            renderKindleSelection();
+          });
+          label.append(input, document.createTextNode(` ${job.title || job.bookId}`));
+          kindleSelectionList.append(label);
+        }
+        kindleSelectVisible.checked = visible.length > 0 && visible.every(job => kindleSelectedBooks.has(job.bookId));
+        kindleSelectionSend.disabled = kindleSelectedBooks.size === 0;
+        kindleSelectionSend.textContent = `Transfer selected books (${kindleSelectedBooks.size})`;
+      }
+      kindleSelectionFilter.addEventListener('input', renderKindleSelection);
+      kindleSelectVisible.addEventListener('change', () => {
+        const query = kindleSelectionFilter.value.trim().toLowerCase();
+        for (const job of kindleSelectionJobs.filter(job => `${job.title || ''} ${job.authors || ''}`.toLowerCase().includes(query))) {
+          if (kindleSelectVisible.checked) kindleSelectedBooks.add(job.bookId);
+          else kindleSelectedBooks.delete(job.bookId);
+        }
+        renderKindleSelection();
+      });
+      document.getElementById('desktop-kindle-selection-close').addEventListener('click', () => kindleSelectionDialog.close());
       desktopKindleTransfer.addEventListener('click', async () => {
         if (!currentKindleId || kindleTransferRunning) return;
+        kindleSelectionJobs = BookstrDesktopKindle.transferableDownloads(await desktopBridge.library.downloads());
+        kindleSelectedBooks.clear();
+        kindleSelectionFilter.value = '';
+        renderKindleSelection();
+        kindleSelectionDialog.showModal();
+      });
+      kindleSelectionSend.addEventListener('click', async () => {
+        if (!currentKindleId || kindleTransferRunning) return;
+        const bookIds = [...kindleSelectedBooks];
+        if (!bookIds.length) return;
+        kindleSelectionDialog.close();
         kindleTransferRunning = true;
         desktopKindleTransfer.disabled = true;
         try {
-          const result = await desktopBridge.kindle.transfer(currentKindleId);
+          const result = await desktopBridge.kindle.transfer(currentKindleId, bookIds);
           desktopKindleSummary.textContent = `${result.transferred.length} copied · ${result.alreadyPresent} already there · ${result.skipped.length} skipped · ${result.errors.length} failed`;
         } catch (error) {
           desktopKindleSummary.textContent = error?.message || String(error);
         } finally {
           kindleTransferRunning = false;
-          void refreshKindleOffer();
+          // Leave the result visible; the next passive poll updates devices.
         }
       });
       desktopBridge?.kindle?.onProgress?.(progress => {
         if (progress.done) return;
-        desktopKindleSummary.textContent = `Copying ${progress.title || 'book'} · ${progress.completed} of ${progress.total}`;
+        desktopKindleSummary.textContent = BookstrDesktopKindle.progressText(progress);
+        if (progress.bookId) {
+          for (const row of desktopDownloadsList.querySelectorAll('[data-download-id]')) {
+            if (row.dataset.downloadId === progress.bookId) row.querySelector('small').textContent = BookstrDesktopKindle.progressText(progress);
+          }
+        }
       });
       if (isDesktopMode) {
         void refreshKindleOffer();

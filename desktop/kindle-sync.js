@@ -138,9 +138,14 @@ class KindleSync {
     const books = [];
     const skipped = [];
     const jobs = this.store.downloads();
-    if (bookId !== undefined && !jobs.some(job => job.bookId === bookId)) throw new Error('Downloaded book was not found.');
+    const selection = bookId === undefined ? null : new Set(Array.isArray(bookId) ? bookId : [bookId]);
+    if (selection && (!selection.size || selection.size > 2000
+      || [...selection].some(id => typeof id !== 'string' || !id || id.length > 256 || /[\u0000-\u001f]/.test(id)))) {
+      throw new Error('Invalid Kindle book selection.');
+    }
+    if (selection && [...selection].some(id => !jobs.some(job => job.bookId === id))) throw new Error('Downloaded book was not found.');
     for (const job of jobs) {
-      if (bookId !== undefined && job.bookId !== bookId) continue;
+      if (selection && !selection.has(job.bookId)) continue;
       if (bookId !== undefined && !['ready', 'seeding'].includes(job.status)) throw new Error('Book is not downloaded.');
       if (!['ready', 'seeding'].includes(job.status)) continue;
       // Some catalog records call a .cbz/.cbr title EPUB; the converter checks
@@ -159,7 +164,9 @@ class KindleSync {
         if (job.sha256 && job.sha256.toLowerCase() !== digest.sha256) throw new Error('Local checksum mismatch');
         if (extension === 'cbz' || extension === 'cbr') {
           if (!this.comicConverter) throw new Error('Comic PDF conversion is unavailable.');
-          const pdf = await this.comicConverter.convert(filePath, digest.sha256);
+          this.onProgress({ phase: 'converting', bookId: job.bookId, title: job.title });
+          const pdf = await this.comicConverter.convert(filePath, digest.sha256,
+            progress => this.onProgress({ ...progress, phase: 'converting', bookId: job.bookId, title: job.title }));
           books.push({ ...job, extension: 'pdf', path: pdf.path, sha256: pdf.sha256, size: pdf.size });
         } else {
           books.push({ ...job, extension, path: filePath, sha256: digest.sha256, size: digest.size });
@@ -168,7 +175,7 @@ class KindleSync {
         skipped.push({ title: job.title || job.bookId, reason: error.message || String(error) });
       }
     }
-    if (bookId !== undefined && skipped.length) throw new Error(skipped[0].reason);
+    if (selection?.size === 1 && skipped.length) throw new Error(skipped[0].reason);
     return { books, skipped };
   }
 
@@ -176,18 +183,22 @@ class KindleSync {
     const { transport, device } = await this.findDevice(id);
     const { books, skipped } = await this.localBooks(bookId);
     const sizes = new Set(books.map(book => book.size));
-    const existing = await transport.files(device, sizes);
-    const remoteHashes = new Set();
-    for (const file of existing) remoteHashes.add(await transport.hash(file, device));
-    const missing = [];
-    for (const book of books) {
-      if (remoteHashes.has(book.sha256)) continue;
-      missing.push(book);
-      remoteHashes.add(book.sha256);
-    }
-    return { device: { id: device.id, name: device.name, kind: device.kind },
-      missing: missing.map(book => ({ bookId: book.bookId, title: book.title || book.bookId, size: book.size })),
-      alreadyPresent: books.length - missing.length, skipped };
+    const inspect = async () => {
+      this.onProgress({ deviceId: id, phase: 'checking' });
+      const existing = await transport.files(device, sizes);
+      const remoteHashes = new Set();
+      for (const file of existing) remoteHashes.add(await transport.hash(file, device));
+      const missing = [];
+      for (const book of books) {
+        if (remoteHashes.has(book.sha256)) continue;
+        missing.push(book);
+        remoteHashes.add(book.sha256);
+      }
+      return { device: { id: device.id, name: device.name, kind: device.kind },
+        missing: missing.map(book => ({ bookId: book.bookId, title: book.title || book.bookId, size: book.size })),
+        alreadyPresent: books.length - missing.length, skipped };
+    };
+    return transport.withSession ? transport.withSession(device, inspect) : inspect();
   }
 
   async transfer(id, bookId) {
@@ -195,23 +206,27 @@ class KindleSync {
     this.syncing = true;
     try {
       const { transport, device } = await this.findDevice(id);
-      const plan = await this.preview(id, bookId);
-      const { books } = await this.localBooks(bookId);
-      const missingIds = new Set(plan.missing.map(book => book.bookId));
-      const transferred = [];
-      const errors = [];
-      for (const book of books) {
-        if (!missingIds.has(book.bookId)) continue;
-        this.onProgress({ deviceId: id, bookId: book.bookId, title: book.title, completed: transferred.length, total: missingIds.size });
-        try {
-          await transport.copy(device, book, safeFilename(book, book.sha256));
-          transferred.push(book.bookId);
-        } catch (error) {
-          errors.push({ bookId: book.bookId, title: book.title, error: error.message || String(error) });
+      const copyMissing = async () => {
+        const plan = await this.preview(id, bookId);
+        const { books } = await this.localBooks(bookId);
+        const missingIds = new Set(plan.missing.map(book => book.bookId));
+        transport.ensureSpace?.(books.filter(book => missingIds.has(book.bookId)).reduce((total, book) => total + book.size, 0));
+        const transferred = [];
+        const errors = [];
+        for (const book of books) {
+          if (!missingIds.has(book.bookId)) continue;
+          this.onProgress({ deviceId: id, phase: 'copying', bookId: book.bookId, title: book.title, completed: transferred.length, total: missingIds.size });
+          try {
+            await transport.copy(device, book, safeFilename(book, book.sha256));
+            transferred.push(book.bookId);
+          } catch (error) {
+            errors.push({ bookId: book.bookId, title: book.title, error: error.message || String(error) });
+          }
         }
-      }
-      this.onProgress({ deviceId: id, completed: transferred.length, total: missingIds.size, done: true });
-      return { transferred, alreadyPresent: plan.alreadyPresent, skipped: plan.skipped, errors };
+        this.onProgress({ deviceId: id, completed: transferred.length, total: missingIds.size, done: true });
+        return { transferred, alreadyPresent: plan.alreadyPresent, skipped: plan.skipped, errors };
+      };
+      return await (transport.withSession ? transport.withSession(device, copyMissing) : copyMissing());
     } finally { this.syncing = false; }
   }
 }
