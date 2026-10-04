@@ -17,6 +17,10 @@ test('comic reader supports bounded CBZ and CBR page extraction and navigation',
   assert.match(comicReader, /Previous page/);
   assert.match(comicReader, /Next page/);
   assert.match(comicReader, /bookstr-comic-progress/);
+  assert.match(comicReader, /id="opening-progress" aria-label="Comic opening progress"/);
+  assert.match(comicReader, /setOpeningProgress\('Extracting pages…',0,names\.length\)/);
+  assert.match(comicReader, /Extracting pages · \$\{processed\} of \$\{names\.length\}/);
+  assert.match(comicReader, /setOpeningProgress\('Rendering first page…'\)/);
   assert.match(comicReader, /split\('\/'\)\.includes\('\.\.'\)/);
   assert.match(comicReader, /overflow:auto;overscroll-behavior:contain;touch-action:pan-x pan-y/);
   assert.match(comicReader, /function layoutImage\(reset=false\)/);
@@ -29,6 +33,10 @@ test('comic reader supports bounded CBZ and CBR page extraction and navigation',
 
 test('Bookstr routes CBZ and CBR files to the comic reader', () => {
   assert.match(app, /displayComic\(blob, book, readPath, openGeneration, format\)/);
+  assert.match(app, /const archiveURL = URL\.createObjectURL\(blob\)/);
+  assert.match(app, /archiveURL,\s*format,/);
+  assert.match(app, /URL\.revokeObjectURL\(archiveURL\)/);
+  assert.match(app, /id = 'read-comic-opening-progress'/);
   assert.match(app, /format === 'cbz' \|\| format === 'cbr'/);
   assert.match(app, /Only EPUB, PDF, FB2, CBZ, and CBR book files can be opened/);
 });

@@ -49,9 +49,10 @@ function minimalFB2(title) {
     <FictionBook xmlns="http://www.gribuser.ru/xml/fictionbook/2.0"><description><title-info><book-title>${title}</book-title><author><first-name>Test</first-name><last-name>Author</last-name></author></title-info></description><body><section><title><p>${title}</p></title><p>Distinct FB2 contents.</p></section></body></FictionBook>`);
 }
 
-async function minimalCBZ() {
+async function minimalCBZ(pageCount = 1) {
   const zip = new JSZip();
-  zip.file('001.png', Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=', 'base64'));
+  const pixel = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=', 'base64');
+  for (let index = 1; index <= pageCount; index++) zip.file(`${String(index).padStart(3, '0')}.png`, pixel);
   return zip.generateAsync({ type: 'nodebuffer' });
 }
 
@@ -609,7 +610,10 @@ test('Library opens FB2 and CBZ books through their format-specific readers', as
     await app.context().route('https://lib.b.bfr.ee/api/books/**', route => route.fulfill({ status: 404, body: '{}' }));
     await app.context().route('https://lib.b.bfr.ee/api/nostr', route => route.fulfill({ status: 404, body: '{}' }));
     await app.context().route(fb2.readUrl, route => route.fulfill({ status: 200, contentType: 'application/xml', body: minimalFB2(fb2.title) }));
-    await app.context().route(cbz.readUrl, async route => route.fulfill({ status: 200, contentType: 'application/vnd.comicbook+zip', body: await minimalCBZ() }));
+    await app.context().route(cbz.readUrl, async route => {
+      await new Promise(resolve => setTimeout(resolve, 300));
+      await route.fulfill({ status: 200, contentType: 'application/vnd.comicbook+zip', body: await minimalCBZ(16) });
+    });
     await seedLibrary(page, [fb2, cbz]);
     await page.reload();
 
@@ -619,9 +623,16 @@ test('Library opens FB2 and CBZ books through their format-specific readers', as
     await expect(reader.locator('body')).toHaveCSS('padding-left', '36px');
     await page.getByRole('button', { name: 'Home' }).click();
     await page.getByRole('link', { name: cbz.title }).click();
+    const openingProgress = page.locator('#read-comic-opening-progress');
+    await expect(openingProgress).toBeVisible();
+    await expect(openingProgress).not.toHaveAttribute('value', /.+/);
     reader = page.frameLocator('#reader-frame');
+    const readerProgress = reader.locator('#opening-progress');
+    await expect(readerProgress).toBeVisible();
+    await expect(readerProgress).toHaveAttribute('max', '16');
+    await expect(readerProgress).toHaveAttribute('value', /[1-9]/);
     await expect(reader.locator('#title')).toHaveText(cbz.title);
-    await expect(reader.locator('#count')).toHaveText('1 / 1');
+    await expect(reader.locator('#count')).toHaveText('1 / 16');
     await expect(reader.locator('#stage img')).toBeVisible();
   } finally {
     await app.close();

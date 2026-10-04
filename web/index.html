@@ -408,6 +408,13 @@
         border-radius: 0.55rem;
         background: color-mix(in srgb, var(--badge-bg, #f3f4f6) 72%, transparent);
       }
+      #read-comic-opening-progress {
+        display: block;
+        width: min(100%, 18rem);
+        height: 0.55rem;
+        margin: 0.8rem 0 0;
+        accent-color: var(--reading-progress);
+      }
       .read-file-state-title { color: var(--page-text, #222); font-size: 0.84rem; font-weight: 750; }
       .read-file-state-copy { color: var(--muted-text, #666); font-size: 0.78rem; line-height: 1.4; }
       .read-file-attempts {
@@ -6318,6 +6325,12 @@
         note.id = 'read-metadata-fallback-status';
         note.setAttribute('role', 'status');
         details.append(note);
+        if (['cbz', 'cbr'].includes(String(book.extension || book.format || '').toLowerCase())) {
+          const progress = document.createElement('progress');
+          progress.id = 'read-comic-opening-progress';
+          progress.setAttribute('aria-label', 'Opening comic');
+          details.append(progress);
+        }
         panel.append(details);
         panel.hidden = false;
         panel.style.display = 'grid';
@@ -7667,19 +7680,25 @@
       }
 
       async function displayComic(blob, book, readPath, openGeneration, format) {
-        const base64 = await blobToBase64(blob);
-        if (openGeneration !== readerOpenGeneration) return;
         const readerLoad = await readerFrameLoader('comic', openGeneration, book.md5 || BookMetadata.bookIdentity(book));
         if (!readerLoad) return;
-        await readerLoad({
-          base64,
-          format,
-          bookTitle: BookMetadata.resolveTitle(book),
-          initialPage: Number(book.pageIndex || book.page || 0) || 0,
-          bookId: book.md5 || BookMetadata.bookIdentity(book),
-          readUrl: readPath || book.readUrl || book.url || '',
-        });
-        if (revealReadableBook(book, openGeneration)) status.textContent = `Opened ${book.title || 'comic'}.`;
+        if (openGeneration !== readerOpenGeneration || !revealReadableBook(book, openGeneration)) return;
+        const archiveURL = URL.createObjectURL(blob);
+        status.textContent = `Opening ${book.title || 'comic'}…`;
+        let opened = false;
+        try {
+          opened = await readerLoad({
+            archiveURL,
+            format,
+            bookTitle: BookMetadata.resolveTitle(book),
+            initialPage: Number(book.pageIndex || book.page || 0) || 0,
+            bookId: book.md5 || BookMetadata.bookIdentity(book),
+            readUrl: readPath || book.readUrl || book.url || '',
+          });
+        } finally {
+          URL.revokeObjectURL(archiveURL);
+        }
+        if (opened && openGeneration === readerOpenGeneration) status.textContent = `Opened ${book.title || 'comic'}.`;
       }
 
       function pdfDownloadFilename(book) {
