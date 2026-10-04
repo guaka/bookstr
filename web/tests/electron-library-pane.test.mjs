@@ -53,3 +53,20 @@ test('Downloads has a regular pane and library status is limited to its book cou
   assert.match(html, /homeLibraryCount\.textContent = isDesktopMode \? visibleCount/);
   assert.match(html, /desktopDownloadsSummary\.textContent = .*downloading.*seeding/);
 });
+
+
+test('Library deduplicates saved editions that resolve to one local file and orders completions', () => {
+  const jobs = [
+    { bookId: 'new', title: 'New', readable: true, completedAt: 30 },
+    { bookId: 'old', title: 'Old', readable: true, completedAt: 10 },
+    { bookId: 'missing', title: 'Missing', readable: false, completedAt: 40 },
+  ];
+  const c = loadFunction('desktopReadableLibrary', 'function renderHome', {
+    desktopDownloadByBook: new Map(jobs.map(job => [job.bookId, job])),
+    BookMetadata: { dedupeLibraryBooks: books => books },
+    bookFromDesktopDownload: job => ({ id: job.bookId, title: job.title }),
+    desktopDownloadForBook: book => jobs.find(job => job.bookId === (book.id === 'saved-edition' ? 'old' : book.id)),
+  });
+  const books = c.desktopReadableLibrary([{ id: 'saved-edition', title: 'Saved title' }, { id: 'missing', title: 'Missing' }]);
+  assert.deepEqual(Array.from(books, book => book.title), ['New', 'Saved title']);
+});

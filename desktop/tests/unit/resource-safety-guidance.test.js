@@ -14,6 +14,8 @@ test('repository guidance bounds Electron, Playwright, and native-test memory us
   assert.match(resourceGuidance, /inspect process RSS/i);
   assert.match(resourceGuidance, /70 GB/i);
   assert.match(resourceGuidance, /Cap the Node\.js heap/i);
+  assert.match(resourceGuidance, /must not read whole archives or decompress their contents/i);
+  assert.match(resourceGuidance, /bounded header and ZIP-directory reads, bounded\s+concurrency/i);
 });
 
 test('Electron unit commands bound concurrent processes and heap size', () => {

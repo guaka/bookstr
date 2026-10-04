@@ -6983,15 +6983,22 @@
         return select.value;
       }
 
+      function desktopReadableLibrary(savedBooks) {
+        const downloadedBooks = [...new Map([...desktopDownloadByBook.values()].map(job => [job.bookId, job])).values()]
+          .filter(job => job.readable === true).map(bookFromDesktopDownload).filter(Boolean);
+        const byFile = new Map();
+        for (const book of BookMetadata.dedupeLibraryBooks([...savedBooks, ...downloadedBooks])) {
+          const job = desktopDownloadForBook(book);
+          if (job?.readable === true && !byFile.has(job.bookId)) byFile.set(job.bookId, book);
+        }
+        return [...byFile.values()].sort((left, right) =>
+          Number(desktopDownloadForBook(right)?.completedAt || 0) - Number(desktopDownloadForBook(left)?.completedAt || 0));
+      }
+
       function renderHome() {
         const needle = homeQueryInput.value.trim().toLocaleLowerCase();
         const library = BookMetadata.mergeLibraryState(state.reading, state.favorites);
-        const completedDownloads = [...new Map([...desktopDownloadByBook.values()].map(job => [job.bookId, job])).values()]
-          .filter(job => job.readable === true).map(bookFromDesktopDownload).filter(Boolean);
-        const enrichedLibrary = isDesktopMode
-          ? BookMetadata.dedupeLibraryBooks([...library, ...completedDownloads]).filter(isBookReadableNow)
-            .sort((left, right) => Number(desktopDownloadForBook(right)?.completedAt || 0) - Number(desktopDownloadForBook(left)?.completedAt || 0))
-          : library;
+        const enrichedLibrary = isDesktopMode ? desktopReadableLibrary(library) : library;
         const languages = [...new Set(enrichedLibrary.map(resultLanguage).filter(Boolean))].sort();
         const formats = [...new Set(enrichedLibrary.map(resultFormat).filter(Boolean))].sort();
         homeLibraryFilter.language = configureHomeLibraryFilter(

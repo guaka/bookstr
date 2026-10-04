@@ -595,6 +595,8 @@
       const title = incomingHasRealTitle ? incomingTitle : existingTitle;
       const next = { ...existing };
       for (const [key, value] of Object.entries(book)) {
+        if (['extension', 'format'].includes(key) && existing.metadataProvenance?.extension === 'detected-local'
+          && book.metadataProvenance?.extension !== 'detected-local') continue;
         if (preserveLocalGutenbergField(existing, book, key)) continue;
         if (preserveCanonicalMd5(existing, book, key)) continue;
         if (value !== '' && value != null) next[key] = value;

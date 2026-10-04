@@ -39,6 +39,11 @@
   Prefer one focused test command at a time and report observed peak memory
   when available.
 
+- Library listing must not read whole archives or decompress their contents to
+  identify readable files. Use bounded header and ZIP-directory reads, bounded
+  concurrency, and a file-stat cache. Load book contents only when opening that
+  book.
+
 ## Device data safety
 
 - Run Android connected tests only on emulators. Gradle's

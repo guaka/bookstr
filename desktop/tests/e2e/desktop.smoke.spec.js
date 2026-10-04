@@ -50,6 +50,14 @@ function electronArgs() {
   return [path.join(__dirname, '../..'), `--user-data-dir=${userData}`];
 }
 
+async function setReadableDownloadFixture(electronApp, downloads) {
+  await electronApp.evaluate(({ ipcMain }, rows) => {
+    globalThis.readableDownloadFixture = rows;
+    ipcMain.removeHandler('bookstr-desktop-library-downloads');
+    ipcMain.handle('bookstr-desktop-library-downloads', () => globalThis.readableDownloadFixture);
+  }, downloads);
+}
+
 test('libstr desktop app opens with preload bridge', async () => {
   const electronApp = await electron.launch({
     args: electronArgs(),
@@ -380,7 +388,15 @@ test('desktop home filtering keeps the matching in-progress book visible', async
         { md5: '2'.repeat(32), title: 'Another Book', authors: 'Reader', extension: 'epub', progression: 0 },
       ]));
     });
+    await setReadableDownloadFixture(electronApp, [{
+      bookId: '1'.repeat(32), md5: '1'.repeat(32), title: 'Visible Reading Journey',
+      authors: ['Reader'], extension: 'epub', status: 'seeding', readable: true, completedAt: 1,
+    }]);
     await library.reload();
+    await library.evaluate(async () => {
+      await refreshDesktopDownloadStates();
+      renderHome();
+    });
     await expect(library.locator('#home-reading-list')).toContainText('Visible Reading Journey');
     await library.locator('#home-query-input').fill('journey');
     await expect(library.locator('#home-reading-list')).toContainText('Visible Reading Journey');
@@ -612,7 +628,15 @@ test('desktop favorites discover independent Open Library covers without LibVaul
         extension: 'epub',
       }]));
     }, md5);
+    await setReadableDownloadFixture(electronApp, [{
+      bookId: md5, md5, title: 'Covered Book', authors: ['Fixture Author'], year: '2024',
+      language: 'eng', extension: 'epub', status: 'seeding', readable: true, completedAt: 1,
+    }]);
     await library.reload();
+    await library.evaluate(async () => {
+      await refreshDesktopDownloadStates();
+      renderHome();
+    });
 
     const cover = library.locator('.result-cover').first();
     await expect(cover).toHaveAttribute('src', openLibraryCover, { timeout: 15_000 });

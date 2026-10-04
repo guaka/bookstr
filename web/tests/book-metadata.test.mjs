@@ -1760,3 +1760,19 @@ test('language labels resolve catalog codes to English names', () => {
   assert.equal(globalThis.BookMetadata.languageLabel('unknown'), '');
   assert.equal(globalThis.BookMetadata.languageLabel('Klingon language'), 'Klingon language');
 });
+
+
+test('deduplicated library metadata retains locally detected reader formats', () => {
+  const id = 'a'.repeat(32);
+  const [book] = globalThis.BookMetadata.dedupeLibraryBooks([
+    { md5: id, title: 'Comic', extension: 'cbz', format: 'cbz', metadataProvenance: { extension: 'detected-local' } },
+    { md5: id, title: 'Comic', extension: 'epub', format: 'epub' },
+  ]);
+  assert.equal(book.extension, 'cbz');
+  assert.equal(book.format, 'cbz');
+  const [updated] = globalThis.BookMetadata.dedupeLibraryBooks([
+    book, { md5: id, extension: 'cbr', format: 'cbr', metadataProvenance: { extension: 'detected-local' } },
+  ]);
+  assert.equal(updated.extension, 'cbr');
+  assert.equal(updated.format, 'cbr');
+});

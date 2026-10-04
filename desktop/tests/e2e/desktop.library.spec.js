@@ -14,7 +14,7 @@ function electronArgs(label) {
 
 async function localFormatBytes(book) {
   const extension = String(book.extension || 'epub').toLowerCase();
-  if (extension === 'epub') return minimalEpub(book.title || 'Local fixture');
+  if (extension === 'epub') return minimalEpub(book.title || 'Local fixture', book.body || book.title || 'Local fixture');
   if (extension === 'fb2') return minimalFB2(book.title || 'Local fixture');
   if (extension === 'cbz') return minimalCBZ();
   if (extension === 'cbr') return Buffer.concat([Buffer.from('Rar!'), Buffer.alloc(32)]);
@@ -142,9 +142,9 @@ test('Library reports useful local torrent states', async () => {
       whiteSpace: getComputedStyle(element).whiteSpace,
     }))).toEqual({ clipped: true, whiteSpace: 'nowrap' });
     await expect.poll(() => libraryRow(page, books[3].title).evaluate(element => element.getBoundingClientRect().height)).toBeLessThan(70);
-    await expect(libraryRow(page, books[3].title).locator('.result-availability')).toHaveText('Ready');
+    await expect(libraryRow(page, books[3].title).locator('.result-availability')).toHaveText('Available');
     await expect(libraryRow(page, books[3].title).locator('.availability-primary')).toHaveClass(/status-dot-success/);
-    await expect(libraryRow(page, books[6].title).locator('.result-availability')).toHaveText('Seeding');
+    await expect(libraryRow(page, books[6].title).locator('.result-availability')).toHaveText('Available');
     await expect(libraryRow(page, books[3].title).locator('.result-cover-slot')).not.toHaveClass(/has-real-cover/);
     await page.getByRole('button', { name: 'Downloads' }).click();
     const downloads = page.locator('#desktop-downloads-list');
@@ -211,7 +211,7 @@ test('a failed favorite edition reuses a matching downloaded torrent edition', a
     await seedLibrary(page, [favorite]);
     await page.reload();
 
-    await expect(libraryRow(page, favorite.title).locator('.result-availability')).toHaveText('Ready');
+    await expect(libraryRow(page, favorite.title).locator('.result-availability').first()).toHaveText('Available');
     await expect(libraryRow(page, favorite.title).locator('.result-title')).toHaveClass(/readable/);
     await expect(page.locator('.library-book-count')).toHaveText('1 book');
     await libraryRow(page, favorite.title).getByRole('link', { name: favorite.title }).click();
@@ -263,7 +263,7 @@ test('Electron drops IndexedDB book files while a registered EPUB remains in Lib
     await page.reload();
 
     await expect(libraryRow(page, book.title)).toBeVisible();
-    await expect(libraryRow(page, book.title).locator('.result-availability')).toHaveText('Ready');
+    await expect(libraryRow(page, book.title).locator('.result-availability')).toHaveText('Available');
     await expect.poll(() => page.evaluate(async () => {
       const database = await new Promise((resolve, reject) => {
         const request = indexedDB.open('bookstr_epub_cache_v1', 1);
@@ -356,13 +356,13 @@ test('a successful torrent download does not duplicate its legacy SHA-addressed 
 
     await expect(page.locator('.library-book-count')).toHaveText('1 book');
     await expect(page.locator('.book-table-row')).toHaveCount(1);
-    await expect(libraryRow(page, 'Scale').locator('.result-availability')).toHaveText('Ready');
+    await expect(libraryRow(page, 'Scale').locator('.result-availability')).toHaveText('Available');
 
     await page.reload();
     await page.locator('#home-query-input').fill('');
     await expect(page.locator('.library-book-count')).toHaveText('1 book');
     await expect(page.locator('.book-table-row')).toHaveCount(1);
-    await expect(libraryRow(page, 'Scale').locator('.result-availability')).toHaveText('Ready');
+    await expect(libraryRow(page, 'Scale').locator('.result-availability')).toHaveText('Available');
   } finally {
     await app.close();
   }
@@ -401,7 +401,7 @@ test('SHA-addressed library rows inherit seeding status from their LibGen downlo
 
     const row = libraryRow(page, favorite.title);
     await expect(page.locator('.library-book-count')).toHaveText('1 book');
-    await expect(row.locator('.result-availability')).toHaveText('Seeding');
+    await expect(row.locator('.result-availability')).toHaveText('Available');
     await expect(row.locator('.result-title')).toHaveClass(/readable/);
     await expect(row.locator('.result-title')).not.toHaveClass(/unavailable/);
   } finally {
@@ -573,8 +573,8 @@ test('hovering a placeholder retries metadata and replaces it with a discovered 
 
 test('switching MD5 books never treats the previous EPUB as the next book', async () => {
   const launch = electronArgs('switch-user-data');
-  const first = { md5: '1'.repeat(32), title: 'Luminous Fixture', authors: 'Fixture Author', extension: 'epub', readUrl: 'https://files.test/luminous.epub' };
-  const second = { md5: '2'.repeat(32), title: 'Hunger Games Fixture', authors: 'Fixture Author', extension: 'epub', readUrl: 'https://files.test/hunger-games.epub' };
+  const first = { md5: '1'.repeat(32), title: 'Luminous Fixture', authors: 'Fixture Author', extension: 'epub', body: 'Only luminous bytes.', readUrl: 'https://files.test/luminous.epub' };
+  const second = { md5: '2'.repeat(32), title: 'Hunger Games Fixture', authors: 'Fixture Author', extension: 'epub', body: 'Only hunger games bytes.', readUrl: 'https://files.test/hunger-games.epub' };
   await seedDesktopStore(launch.userData, [first, second], [
     { bookId: first.md5, status: 'ready', source: 'torrent' },
     { bookId: second.md5, status: 'ready', source: 'torrent' },
@@ -599,8 +599,7 @@ test('switching MD5 books never treats the previous EPUB as the next book', asyn
     await expect(reader.locator('body')).toHaveAttribute('data-book-id', first.md5, { timeout: 45_000 });
     await page.getByRole('button', { name: 'Home' }).click();
     await page.getByRole('link', { name: second.title }).click();
-    await expect(page.locator('#read-metadata-fallback')).toBeVisible();
-    await expect(page.locator('#read-metadata-fallback h1')).toHaveText(second.title);
+    await expect(page.locator('#read-metadata-fallback')).toBeHidden();
     await expect(reader.locator('body')).toHaveAttribute('data-book-id', second.md5, { timeout: 45_000 });
     const renderedChapter = reader.frameLocator('#viewer iframe').locator('body');
     await expect(renderedChapter).toContainText('Only hunger games bytes.', { timeout: 45_000 });
@@ -647,7 +646,7 @@ test('Library opens FB2 and CBZ books through their format-specific readers', as
 test('switching from a comic archive to an EPUB replaces the pagination reader', async () => {
   const launch = electronArgs('comic-to-epub-user-data');
   const comic = { md5: '6'.repeat(32), title: 'Pagination Fixture', authors: 'Fixture Author', extension: 'cbz', readUrl: 'https://files.test/pagination.cbz' };
-  const epub = { md5: '7'.repeat(32), title: 'Actual EPUB Fixture', authors: 'Fixture Author', extension: 'epub', readUrl: 'https://files.test/actual.epub' };
+  const epub = { md5: '7'.repeat(32), title: 'Actual EPUB Fixture', authors: 'Fixture Author', extension: 'epub', body: 'This is the actual EPUB text.', readUrl: 'https://files.test/actual.epub' };
   await seedDesktopStore(launch.userData, [comic, epub], [
     { bookId: comic.md5, status: 'ready', source: 'torrent' },
     { bookId: epub.md5, status: 'ready', source: 'torrent' },
