@@ -13,6 +13,22 @@ import WebKit
 #endif
 
 final class ReaderAssetContractTests: XCTestCase {
+    #if !SWIFT_PACKAGE
+    func testEPUBStartupRecoveryRetriesOnlyOneTransientFailure() {
+        var recovery = EPUBStartupRecovery()
+        XCTAssertFalse(recovery.shouldRetry(message: "EPUB file is corrupt", readerWasReady: false))
+        XCTAssertFalse(recovery.shouldRetry(message: "EPUB reader timed out while rendering", readerWasReady: true))
+        XCTAssertTrue(recovery.shouldRetry(message: "Could not open this book: EPUB reader timed out while fetching", readerWasReady: false))
+        XCTAssertFalse(recovery.shouldRetry(message: "EPUB reader process stopped", readerWasReady: false))
+
+        var terminated = EPUBStartupRecovery()
+        XCTAssertTrue(terminated.shouldRetry(message: "EPUB reader process stopped", readerWasReady: false))
+        XCTAssertEqual(EPUBStartupRecovery.locator(attempt: 0, requested: "requested", saved: "saved"), "requested")
+        XCTAssertEqual(EPUBStartupRecovery.locator(attempt: 1, requested: "requested", saved: "saved"), "saved")
+        XCTAssertEqual(EPUBStartupRecovery.locator(attempt: 1, requested: "requested", saved: ""), "requested")
+    }
+    #endif
+
     func testCBZComicInfoLanguageMetadataIsNormalized() throws {
         let fileURL = try comicFixture(named: "bookstr-test-comic", extension: "cbz")
 

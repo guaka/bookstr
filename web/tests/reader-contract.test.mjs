@@ -1,10 +1,29 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
+import vm from 'node:vm';
 
 const reader = await readFile(new URL('../reader.html', import.meta.url), 'utf8');
+const sharedReader = await readFile(new URL('../../shared/reader/reader.html', import.meta.url), 'utf8');
 const comicReader = await readFile(new URL('../comic-reader.html', import.meta.url), 'utf8');
 const app = await readFile(new URL('../index.html', import.meta.url), 'utf8');
+
+test('EPUB timeout identifies the active startup stage', async () => {
+  const source = sharedReader.slice(sharedReader.indexOf('function withTimeout('), sharedReader.indexOf('function waitForReaderViewport('));
+  const context = { setTimeout, clearTimeout, Promise, Error };
+  vm.runInNewContext(source, context);
+  let stage = 'fetching';
+  const stalled = new Promise(() => {});
+  stage = 'rendering';
+  await assert.rejects(
+    context.withTimeout(stalled, 1, () => `EPUB reader timed out while ${stage}`),
+    /EPUB reader timed out while rendering/,
+  );
+  assert.match(sharedReader, /reportReaderStartupStage\("fetching"\)/);
+  assert.match(sharedReader, /reportReaderStartupStage\("parsing"\)/);
+  assert.match(sharedReader, /reportReaderStartupStage\("rendering"\)/);
+  assert.match(sharedReader, /reportReaderStartupStage\("ready"\)/);
+});
 
 test('comic reader supports bounded CBZ and CBR page extraction and navigation', () => {
   assert.match(comicReader, /JSZip\.loadAsync/);
