@@ -2,6 +2,7 @@
 enum NostrConstantsV1 {
     static let progressKind = 30078
     static let favoritesKind = 30003
+    static let blossomAuthorizationKind = 24242
     static let favoritesDTag = "libvault-favorites"
     static let collectionIndexDTag = "bookstr-collections"
     static let progressPrefix = "app.bookstr.progress."

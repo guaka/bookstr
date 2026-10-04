@@ -7,7 +7,7 @@ const os = require('node:os');
 const path = require('node:path');
 const test = require('node:test');
 const { LibraryStore } = require('../../library-store');
-const { KindleSync, MountedKindles, safeFilename } = require('../../kindle-sync');
+const { KindleSync, MountedKindles, safeFilename, defaultRoots } = require('../../kindle-sync');
 const { MtpKindles } = require('../../kindle-mtp');
 
 function digest(bytes) { return crypto.createHash('sha256').update(bytes).digest('hex'); }
@@ -141,11 +141,153 @@ test('mounted Kindle refuses low space and never overwrites a destination', asyn
     const [device] = await lowSpace.devices();
     await assert.rejects(() => lowSpace.copy(device, book, 'book.pdf'), /out of space/);
     assert.deepEqual(await fs.readdir(documents), []);
+    const unavailableStats = new MountedKindles({ roots: [root], platform: 'darwin', statfs: async () => { throw new Error('statfs unavailable'); } });
+    await unavailableStats.copy(device, book, 'stats-unavailable.pdf');
+    assert.equal(await fs.readFile(path.join(documents, 'stats-unavailable.pdf'), 'utf8'), 'PDF bytes');
+    const originalUnlink = fs.unlink;
+    fs.unlink = async () => { throw new Error('temporary file already removed'); };
+    try { await unavailableStats.copy(device, book, 'unlink-fallback.pdf'); }
+    finally { fs.unlink = originalUnlink; }
     const transport = new MountedKindles({ roots: [root], platform: 'darwin' });
     await fs.writeFile(path.join(documents, 'book.pdf'), 'existing file');
     await assert.rejects(() => transport.copy(device, book, 'book.pdf'), /EEXIST/);
     assert.equal(await fs.readFile(path.join(documents, 'book.pdf'), 'utf8'), 'existing file');
     await assert.rejects(() => transport.copy(device, { ...book, sha256: digest('wrong') }, 'new.pdf'), /verification failed/);
-    assert.deepEqual(await fs.readdir(documents), ['book.pdf']);
+    const names = await fs.readdir(documents);
+    assert.deepEqual(names.filter(name => !name.endsWith('.part')).sort(), ['book.pdf', 'stats-unavailable.pdf', 'unlink-fallback.pdf']);
+    assert.equal(names.filter(name => name.endsWith('.part')).length, 1);
+  } finally { await fs.rm(root, { recursive: true, force: true }); }
+});
+
+test('mounted Kindle covers platform roots, volume labels, and bounded document walks', async () => {
+  assert.deepEqual(defaultRoots('darwin'), ['/Volumes']);
+  const username = os.userInfo().username;
+  assert.deepEqual(defaultRoots('linux'), [`/media/${username}`, `/run/media/${username}`, '/media', '/mnt']);
+  assert.deepEqual(defaultRoots('win32'), Array.from({ length: 23 }, (_, index) => `${String.fromCharCode(68 + index)}:\\`));
+  assert.deepEqual(defaultRoots('freebsd'), []);
+
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'bookstr-kindle-walk-'));
+  const documents = path.join(root, 'Kindle', 'documents');
+  await fs.mkdir(documents, { recursive: true });
+  await fs.writeFile(path.join(documents, 'book.PDF'), 'four');
+  await fs.writeFile(path.join(documents, 'ignored.epub'), 'four');
+  await fs.mkdir(path.join(documents, 'nested'));
+  await fs.writeFile(path.join(documents, 'nested', 'note.txt'), 'four');
+  await fs.symlink(path.join(documents, 'book.PDF'), path.join(documents, 'linked.pdf'));
+  let deepest = documents;
+  for (let index = 0; index < 9; index += 1) {
+    deepest = path.join(deepest, `level-${index}`);
+    await fs.mkdir(deepest);
+  }
+  await fs.writeFile(path.join(deepest, 'too-deep.pdf'), 'four');
+  try {
+    const mounted = new MountedKindles({ roots: [root, path.join(root, 'missing')], platform: 'darwin' });
+    const [device] = await mounted.devices();
+    assert.equal((await mounted.files(device, new Set([4]))).map(file => file.name).sort().join(','), 'book.PDF,note.txt');
+
+    const childProcess = require('node:child_process');
+    const util = require('node:util');
+    const originalExecFile = childProcess.execFile;
+    const originalCustom = Object.getOwnPropertyDescriptor(originalExecFile, util.promisify.custom);
+    const labels = ['Kindle Scribe', 'USB drive', 'failed'];
+    const stubExecFile = (...args) => {
+      const label = labels.shift();
+      if (label === 'failed') throw Object.assign(new Error('failed'), { code: 'EIO' });
+      return { stdout: label, stderr: '' };
+    };
+    stubExecFile[util.promisify.custom] = async (...args) => stubExecFile(...args);
+    childProcess.execFile = stubExecFile;
+    try {
+      const windows = new MountedKindles({ roots: ['D:\\'], platform: 'win32' });
+      assert.equal(await windows.isWindowsKindleVolume('D:\\'), true);
+      assert.equal(await windows.isWindowsKindleVolume('D:\\'), false);
+      assert.equal(await windows.isWindowsKindleVolume('D:\\'), false);
+      assert.deepEqual(await windows.devices(), []);
+    } finally {
+      childProcess.execFile = originalExecFile;
+      if (originalCustom) Object.defineProperty(originalExecFile, util.promisify.custom, originalCustom);
+    }
+  } finally { await fs.rm(root, { recursive: true, force: true }); }
+});
+
+test('comic transfer conversion and transfer copy failures are reported', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'bookstr-kindle-comic-'));
+  const source = path.join(root, 'comic.cbz');
+  const converted = path.join(root, 'comic.pdf');
+  await fs.writeFile(source, 'comic archive');
+  await fs.writeFile(converted, 'converted PDF');
+  const job = { bookId: 'comic', title: 'Comic.cbz', extension: 'epub', status: 'ready', sha256: digest('comic archive') };
+  const store = { downloads: () => [job] };
+  const transport = { devices: async () => [{ id: 'device', name: 'Kindle', kind: 'test' }],
+    files: async () => [], hash: async () => '',
+    copy: async () => { throw new Error('copy rejected'); } };
+  try {
+    const missingConverter = new KindleSync({ store, resolveFile: async () => ({ filePath: source }), transports: [transport] });
+    assert.match((await missingConverter.localBooks()).skipped[0].reason, /Comic PDF conversion is unavailable/);
+    await assert.rejects(() => missingConverter.localBooks('comic'), /Comic PDF conversion is unavailable/);
+
+    const sync = new KindleSync({ store, resolveFile: async () => ({ filePath: source }), transports: [transport],
+      comicConverter: { convert: async () => ({ path: converted, sha256: digest('converted PDF'), size: 13 }) } });
+    const local = await sync.localBooks();
+    assert.equal(local.books[0].extension, 'pdf');
+    assert.equal(local.books[0].path, converted);
+    const transfer = await sync.transfer('device');
+    assert.deepEqual(transfer.errors, [{ bookId: 'comic', title: 'Comic.cbz', error: 'copy rejected' }]);
+  } finally { await fs.rm(root, { recursive: true, force: true }); }
+});
+
+test('comic conversion checksum failures are skipped for all books and rejected for a selected book', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'bookstr-kindle-checksum-'));
+  const source = path.join(root, 'comic.cbr');
+  await fs.writeFile(source, 'comic archive');
+  const store = { downloads: () => [{ bookId: 'comic', title: 'Comic.cbr', extension: 'cbr', status: 'ready', sha256: digest('different') }] };
+  const sync = new KindleSync({ store, resolveFile: async () => ({ filePath: source }), transports: [],
+    comicConverter: { convert: async () => assert.fail('converter must not receive a mismatched archive') } });
+  try {
+    assert.match((await sync.localBooks()).skipped[0].reason, /checksum mismatch/);
+    await assert.rejects(() => sync.localBooks('comic'), /checksum mismatch/);
+  } finally { await fs.rm(root, { recursive: true, force: true }); }
+});
+
+test('Kindle transfer rejects overlapping work and normalizes non-Error copy failures', async () => {
+  const sync = new KindleSync({ store: { downloads: () => [] }, resolveFile: async () => ({}), transports: [] });
+  sync.syncing = true;
+  await assert.rejects(() => sync.transfer('device'), /already running/);
+
+  const store = { downloads: () => [{ bookId: 'pdf', title: 'PDF', extension: 'pdf', status: 'ready' }] };
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'bookstr-kindle-copy-error-'));
+  const source = path.join(root, 'book.pdf');
+  await fs.writeFile(source, 'book');
+  const transport = { devices: async () => [{ id: 'device', name: 'Kindle', kind: 'test' }], files: async () => [], hash: async () => '',
+    copy: async () => { throw {}; } };
+  try {
+    const syncWithCopyError = new KindleSync({ store, resolveFile: async () => ({ filePath: source }), transports: [transport] });
+    const result = await syncWithCopyError.transfer('device');
+    assert.deepEqual(result.errors, [{ bookId: 'pdf', title: 'PDF', error: '[object Object]' }]);
+  } finally { await fs.rm(root, { recursive: true, force: true }); }
+});
+
+test('Windows MTP copies through a temporary staged file and removes the staging directory', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'bookstr-mtp-win-'));
+  const helper = path.join(root, 'kindle-wpd.ps1');
+  const source = path.join(root, 'source.pdf');
+  const stagingRoot = path.join(root, 'staging');
+  await fs.writeFile(helper, 'fixture');
+  await fs.writeFile(source, 'new PDF');
+  let stagedPath;
+  let remote = Buffer.from('new PDF');
+  const runner = async (_executable, args) => {
+    const action = args[6];
+    if (action === 'put') { stagedPath = args[8]; assert.equal(await fs.readFile(stagedPath, 'utf8'), 'new PDF'); return { stdout: '{"id":"18"}' }; }
+    if (action === 'get') { await fs.writeFile(args[9], remote); return { stdout: '{"ok":true}' }; }
+    throw new Error(`unexpected action ${action}`);
+  };
+  try {
+    const transport = new MtpKindles({ platform: 'win32', resourcesPath: root, stagingRoot, runner });
+    const device = { helperId: '1-2' };
+    await transport.copy(device, { path: source, sha256: digest('new PDF') }, 'new.pdf');
+    await assert.rejects(() => fs.stat(stagedPath), { code: 'ENOENT' });
+    remote = Buffer.from('wrong bytes');
+    await assert.rejects(() => transport.copy(device, { path: source, sha256: digest('new PDF') }, 'bad.pdf'), /verification failed/);
   } finally { await fs.rm(root, { recursive: true, force: true }); }
 });

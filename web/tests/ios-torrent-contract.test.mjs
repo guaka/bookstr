@@ -151,10 +151,10 @@ test('library can delete local books after swipe confirmation', () => {
 });
 test('search and library share compact flexible book rows', () => {
   const chrome = read('ios/BookstrIOS/Sources/Shared/ScreenChrome.swift');
-  assert.match(chrome, /Text\(title\).font\(.subheadline.weight\(.semibold\)\)/);
+  assert.match(chrome, /Text\(title\).font\(.footnote.weight\(.semibold\)\)/);
   assert.match(chrome, /dynamicTypeSize.isAccessibilitySize/);
   assert.match(chrome, /AnyLayout\(VStackLayout/);
-  assert.match(chrome, /leading: 12, bottom: 9, trailing: 12/);
+  assert.match(chrome, /leading: 10, bottom: 5, trailing: 10/);
   for (const path of ['Search/SearchView.swift', 'Library/LibraryView.swift']) {
     const view = read('ios/BookstrIOS/Sources/Features/' + path);
     assert.match(view, /BookListDetails\(/);

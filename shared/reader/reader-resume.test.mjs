@@ -17,8 +17,11 @@ test('iOS keeps the system text selection menu instead of a custom reader toolba
   assert.doesNotMatch(reader, /id="selection-actions"/);
 });
 
-test('reader stage updates stay non-technical', () => {
-  assert.match(reader, /onReaderStage\("Opening book"\)/);
+test('reader reports structured startup stages to native hosts', () => {
+  assert.match(reader, /AndroidBridge.onReaderStage\(stage\)/);
+  for (const stage of ['fetching', 'decoding', 'parsing', 'rendering', 'ready']) {
+    assert.ok(reader.includes(`reportReaderStartupStage("${stage}")`));
+  }
   assert.doesNotMatch(reader, /Opening archive/);
   assert.doesNotMatch(reader, /Laying out pages/);
   assert.doesNotMatch(reader, /Decoding EPUB/);

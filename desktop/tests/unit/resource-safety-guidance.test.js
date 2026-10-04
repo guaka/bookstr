@@ -15,3 +15,11 @@ test('repository guidance bounds Electron, Playwright, and native-test memory us
   assert.match(resourceGuidance, /70 GB/i);
   assert.match(resourceGuidance, /Cap the Node\.js heap/i);
 });
+
+test('Electron unit commands bound concurrent processes and heap size', () => {
+  const { scripts } = JSON.parse(fs.readFileSync(path.join(__dirname, '../../package.json'), 'utf8'));
+  for (const command of ['test:unit', 'test:coverage']) {
+    assert.match(scripts[command], /--test-concurrency=1\b/);
+    assert.match(scripts[command], /--max-old-space-size=768\b/);
+  }
+});
