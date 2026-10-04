@@ -115,7 +115,10 @@ static void print_files(LIBMTP_mtpdevice_t *device, uint32_t storage_id, uint32_
 
 static int list_files(LIBMTP_mtpdevice_t *device) {
   documents_ref_t documents;
-  if (!find_documents(device, &documents)) return 1;
+  if (!find_documents(device, &documents)) {
+    fputs("Kindle Documents folder could not be read during preview.\n", stderr);
+    return 1;
+  }
   putchar('[');
   int printed = 0;
   print_files(device, documents.storage_id, documents.folder_id, 0, &printed);
