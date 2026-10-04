@@ -1,6 +1,7 @@
 package app.bookstr.nostr
 
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.delay
 import okhttp3.*
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
@@ -61,4 +62,25 @@ class PrivateCatalogClientTest {
     @Test fun closedSubscriptionIsActionable() = exercise("closed")
     @Test fun catalogFailureIsActionable() = exercise("error")
     @Test fun requestTimesOut() = exercise("timeout")
+    @Test fun signerPreparationIsBoundedBeforeOpeningRelay() = runBlocking {
+        val delegate = signer(3)
+        val slowSigner = object : NostrSigner {
+            override fun isConfigured() = true
+            override suspend fun getPublicKey() = delegate.getPublicKey()
+            override suspend fun nip44Encrypt(plaintext: String, pubkey: String): String {
+                delay(100)
+                return delegate.nip44Encrypt(plaintext, pubkey)
+            }
+            override suspend fun nip44Decrypt(ciphertext: String, pubkey: String) = delegate.nip44Decrypt(ciphertext, pubkey)
+            override suspend fun signEvent(unsigned: JSONObject) = delegate.signEvent(unsigned)
+        }
+        val error = runCatching {
+            PrivateCatalogClient(timeoutMs = 20).request(
+                JSONObject().put("type", "libcat.resolve"), slowSigner,
+                CatalogService("a".repeat(64), "wss://relay.example"),
+            )
+        }.exceptionOrNull()
+        assertTrue(error is IllegalStateException)
+        assertTrue(error?.message.orEmpty().contains("signer approval"))
+    }
 }

@@ -6,8 +6,8 @@ enum NeuralSpeechInput {
     /// English expands past that after a long sentence, so keep phrases short.
     static let kokoroCharacterLimit = 140
 
-    static func speakable(_ text: String) -> String? {
-        let spoken = SpeechSpokenText.normalize(text)
+    static func speakable(_ text: String, languageTag: String? = nil) -> String? {
+        let spoken = SpeechSpokenText.normalize(text, languageTag: languageTag)
         guard !spoken.isEmpty else { return nil }
         guard spoken.contains(where: { $0.isLetter || $0.isNumber }) else { return nil }
         return spoken

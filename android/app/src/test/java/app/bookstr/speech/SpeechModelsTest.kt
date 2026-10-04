@@ -89,11 +89,61 @@ class SpeechModelsTest {
         val text = "A short sentence. " + "longword ".repeat(70)
         val phrases = NeuralSpeech.phrases(text)
         assertTrue(phrases.all { it.length <= 140 })
+        assertTrue(phrases.first().length <= 70)
         assertEquals(text.trim(), phrases.joinToString(" "))
-        assertEquals(listOf("a".repeat(140), "a".repeat(60)), NeuralSpeech.phrases("a".repeat(200)))
+        assertEquals(listOf("a".repeat(70), "a".repeat(130)), NeuralSpeech.phrases("a".repeat(200)))
         assertEquals(emptyList<String>(), NeuralSpeech.phrases(" ... ! "))
         assertEquals(emptyList<String>(), NeuralSpeech.phrases(""))
         assertEquals(listOf("Hallo!"), NeuralSpeech.phrases(" Hallo! "))
+    }
+    @Test fun phraseWavsBecomePlayableIndependentlyAndStopOnCancellation() {
+        val directory = temporary.newFolder()
+        val text = "First phrase. " + "Second phrase. ".repeat(12)
+        val ready = mutableListOf<File>()
+        val readyPhrases = mutableListOf<String>()
+        var rendered = 0
+
+        NeuralSpeech.emitPhrases(
+            text = text,
+            directory = directory,
+            fileStem = "chunk",
+            cancelled = { ready.size == 1 },
+            render = {
+                rendered += 1
+                PhraseAudio(floatArrayOf(-0.5f, 0.25f), 22_050)
+            },
+            onPhraseReady = { _, phrase, file ->
+                ready += file
+                readyPhrases += phrase
+            },
+        )
+
+        assertEquals(1, rendered)
+        assertEquals(1, ready.size)
+        assertTrue(readyPhrases.single().length <= 140)
+        val wav = ready.single().readBytes()
+        assertEquals("RIFF", String(wav, 0, 4))
+        assertEquals("WAVE", String(wav, 8, 4))
+        assertEquals(4, wav.size - 44)
+        assertFalse(File(directory, "chunk-1.wav").exists())
+    }
+
+    @Test fun failedPhraseDeliveryRemovesItsIncompleteOutputFile() {
+        val directory = temporary.newFolder()
+        val file = File(directory, "chunk-0.wav")
+
+        assertTrue(runCatching {
+            NeuralSpeech.emitPhrases(
+                text = "One phrase.",
+                directory = directory,
+                fileStem = "chunk",
+                cancelled = { false },
+                render = { PhraseAudio(floatArrayOf(0.1f), 22_050) },
+                onPhraseReady = { _, _, _ -> error("consumer stopped") },
+            )
+        }.isFailure)
+
+        assertFalse(file.exists())
     }
     @Test fun normalizesDutchAliasesAndIncludesLibraryLanguages() {
         for (alias in listOf("nl", "nld", "dut", "Dutch", " Nederlands ", "nl_NL", "nl-BE")) assertEquals("nl", SpeechLanguages.tag(alias))

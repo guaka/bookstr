@@ -22,10 +22,13 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -77,6 +80,7 @@ fun SearchScreen(
     val filters = BookListFilters(language, format).sanitize(languages, formats)
     LaunchedEffect(filters) { language = filters.language; format = filters.format }
     val visible = readable.filter { filters.matches(it.language, it.format?.extension) }
+    val metadataOnly = results.filterNot(BookSearchResult::isReadable)
     val listState = rememberLazyListState()
     var requestedOffset by remember(query) { mutableStateOf<Int?>(null) }
     val nearEnd by remember(listState) {
@@ -115,43 +119,68 @@ fun SearchScreen(
             }
         }
         item {
-            OutlinedTextField(
-                value = query,
-                onValueChange = onQueryChange,
-                placeholder = { Text("Title, author, ISBN, publisher") },
-                singleLine = true,
-                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                keyboardActions = KeyboardActions(onSearch = {
-                    dismissKeyboard()
-                    onSearch()
-                }),
-                modifier = Modifier
-                    .fillMaxWidth().testTag("search.query"),
-                trailingIcon = {
-                    IconButton(
-                        modifier = Modifier.testTag("search.submit"),
-                        enabled = query.trim().length >= 2 && !searching,
-                        onClick = {
-                            dismissKeyboard()
-                            onSearch()
-                        },
-                    ) {
-                        if (searching) {
-                            CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
-                        } else {
-                            Icon(Icons.Default.Search, contentDescription = "Search books")
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                OutlinedTextField(
+                    value = query,
+                    onValueChange = onQueryChange,
+                    placeholder = { Text("Title, author, ISBN, publisher") },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                    keyboardActions = KeyboardActions(onSearch = {
+                        dismissKeyboard()
+                        onSearch()
+                    }),
+                    modifier = Modifier.weight(1f).testTag("search.query"),
+                    trailingIcon = {
+                        if (query.isNotEmpty()) {
+                            IconButton(
+                                modifier = Modifier.testTag("search.clear"),
+                                onClick = { onQueryChange("") },
+                            ) {
+                                Icon(Icons.Default.Close, contentDescription = "Clear search")
+                            }
                         }
+                    },
+                )
+                Button(
+                    modifier = Modifier.testTag("search.submit"),
+                    enabled = query.trim().length >= 2 && !searching,
+                    onClick = {
+                        dismissKeyboard()
+                        onSearch()
+                    },
+                ) {
+                    if (searching) {
+                        CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                    } else {
+                        Icon(Icons.Default.Search, contentDescription = null)
+                        Spacer(Modifier.width(6.dp))
+                        Text("Search")
                     }
-                },
-            )
-        }
-        item {
-            Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.CenterEnd) {
-                TextButton(onClick = { dismissKeyboard(); onDownloads() }, modifier = Modifier.testTag("search.downloads")) { Text("Downloads") }
+                }
             }
         }
-        item { BookFilterBar("search", languages, formats, filters.language, filters.format,
-            { dismissKeyboard(); language = it }, { dismissKeyboard(); format = it }) }
+        item {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(2.dp),
+            ) {
+                BookFilterBar("search", languages, formats, filters.language, filters.format,
+                    { dismissKeyboard(); language = it }, { dismissKeyboard(); format = it },
+                    modifier = Modifier.weight(1f))
+                IconButton(
+                    onClick = { dismissKeyboard(); onDownloads() },
+                    modifier = Modifier.testTag("search.downloads"),
+                ) {
+                    Icon(Icons.Default.Download, contentDescription = "Downloads")
+                }
+            }
+        }
         if (!message.isNullOrBlank()) {
             item {
                 Text(
@@ -176,7 +205,7 @@ fun SearchScreen(
                     .fillMaxWidth()
                     .testTag("search.open.${result.id}")
                     .combinedClickable(
-                        enabled = book != null && openingBookId == null,
+                        enabled = (book != null || bookProgress != null) && openingBookId == null,
                         onClick = { dismissKeyboard(); onOpen(result) },
                         onLongClick = {},
                     ),
@@ -239,7 +268,11 @@ fun SearchScreen(
                         }
                         if (openingBookId == result.id) {
                             Text(
-                                "Downloading and opening…",
+                                when {
+                                    result.libvaultMd5 != null && result.torrentEdition == null -> "Finding edition…"
+                                    result.libvaultMd5 != null -> "Starting download…"
+                                    else -> "Downloading and opening…"
+                                },
                                 style = MaterialTheme.typography.bodySmall,
                                 fontWeight = FontWeight.Medium,
                             )
@@ -260,6 +293,15 @@ fun SearchScreen(
                     }
                 }
             }
+        }
+        if (metadataOnly.isNotEmpty()) item {
+            Text(
+                text = "Metadata only · ${metadataOnly.size}",
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.secondary,
+                modifier = Modifier.fillMaxWidth().padding(start = 8.dp, top = 8.dp, bottom = 2.dp)
+                    .testTag("search.metadata-only.heading"),
+            )
         }
         if (searching && results.isNotEmpty()) item {
             CircularProgressIndicator(modifier = Modifier.padding(12.dp).testTag("search.loading-more"))

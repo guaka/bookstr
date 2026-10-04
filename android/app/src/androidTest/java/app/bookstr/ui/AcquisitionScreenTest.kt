@@ -31,15 +31,44 @@ class AcquisitionScreenTest {
         compose.onNodeWithTag("search.open.$hash").performClick()
         compose.waitUntil(5_000) { more }
         compose.onNodeWithTag("search.load-more").assertDoesNotExist()
-        compose.onNodeWithTag("search.downloads").performScrollTo().performClick()
+        compose.onNodeWithTag("search.downloads").performScrollTo().assertContentDescriptionEquals("Downloads")
+        compose.onNodeWithText("All languages").assertExists()
+        compose.onNodeWithText("All formats").assertExists()
+        val languageCenter = compose.onNodeWithTag("search.language").fetchSemanticsNode().boundsInRoot.center.y
+        val formatCenter = compose.onNodeWithTag("search.format").fetchSemanticsNode().boundsInRoot.center.y
+        val downloadsCenter = compose.onNodeWithTag("search.downloads").fetchSemanticsNode().boundsInRoot.center.y
+        assertEquals(languageCenter, formatCenter, 1f)
+        assertEquals(languageCenter, downloadsCenter, 1f)
+        compose.onNodeWithTag("search.downloads").performClick()
         assertTrue(searched && opened && more && downloads)
+    }
+    @Test fun searchHasClearControlAndProminentButtonOutsideTheField() {
+        val query = mutableStateOf("fixture query")
+        var searched = false
+        compose.setContent {
+            SearchScreen(query = query.value, results = emptyList(), searching = false, openingBookId = null,
+                message = null, isFavorite = { false }, readingProgress = { null }, onQueryChange = { query.value = it },
+                onSearch = { searched = true }, onOpen = {}, onToggleFavorite = {})
+        }
+        compose.onNodeWithTag("search.clear").assertExists()
+        val field = compose.onNodeWithTag("search.query").fetchSemanticsNode().boundsInRoot
+        val button = compose.onNodeWithTag("search.submit").fetchSemanticsNode().boundsInRoot
+        assertTrue(button.left >= field.right)
+        compose.onNodeWithTag("search.submit").assertIsEnabled().performClick()
+        assertTrue(searched)
+        compose.onNodeWithTag("search.clear").performClick()
+        compose.runOnIdle { assertEquals("", query.value) }
+        compose.onNodeWithTag("search.clear").assertDoesNotExist()
+        compose.onNodeWithTag("search.submit").assertIsNotEnabled()
     }
     @Test fun searchLoadsNextPageAtEndOnlyOncePerOffset() {
         val offset = mutableStateOf<Int?>(20)
         val searching = mutableStateOf(false)
         var loads = 0
         val results = (0 until 30).map { index ->
-            BookSearchResult("result-$index", "libcat", "Fixture $index", "Bookstr", format = BookFormat.Pdf)
+            val id = index.toString(16).padStart(32, '0')
+            BookSearchResult(id, "libcat", "Fixture $index", "Bookstr", format = BookFormat.Pdf,
+                libvaultMd5 = id)
         }
         compose.setContent {
             SearchScreen(query = "fixture", results = results, searching = searching.value,
@@ -48,7 +77,7 @@ class AcquisitionScreenTest {
                 nextOffset = offset.value, onLoadMore = { loads++; searching.value = true })
         }
         compose.runOnIdle { assertEquals(0, loads) }
-        compose.onNodeWithTag("search.results").performScrollToIndex(33)
+        compose.onNodeWithTag("search.results").performScrollToIndex(32)
         compose.waitUntil(5_000) { loads == 1 }
         compose.runOnIdle { searching.value = false }
         compose.waitForIdle()
@@ -56,26 +85,48 @@ class AcquisitionScreenTest {
         compose.waitUntil(5_000) { loads == 2 }
         compose.onNodeWithTag("search.load-more").assertDoesNotExist()
     }
-    @Test fun searchHidesKeyboardFocusWhenFilteringAndOmitsMetadataOnlyRows() {
+    @Test fun searchCountsMetadataOnlyAfterReadableResultsAndHidesKeyboardWhenFiltering() {
         val readable = BookSearchResult(hash, "libcat", "Readable", "Author", language = "en",
             format = BookFormat.Epub, libvaultMd5 = hash)
         val metadata = readable.copy(id = "metadata", title = "Metadata", format = null, libvaultMd5 = null)
+        val metadata2 = readable.copy(id = "metadata2", title = "Metadata 2", format = null, libvaultMd5 = null)
         val query = mutableStateOf("books")
         compose.setContent {
-            SearchScreen(query.value, results = listOf(readable, metadata), searching = false,
+            SearchScreen(query.value, results = listOf(readable, metadata, metadata2), searching = false,
                 openingBookId = null, message = null, isFavorite = { false }, readingProgress = { null },
                 onQueryChange = { query.value = it }, onSearch = {}, onOpen = {}, onToggleFavorite = {})
         }
+        compose.onNodeWithTag("search.metadata-only.heading").assertExists()
+        compose.onNodeWithTag("search.metadata-only.heading").assertTextContains("2", substring = true)
         compose.onNodeWithTag("search.open.metadata").assertDoesNotExist()
-        compose.onNodeWithText("English").assertExists()
+        compose.onNodeWithTag("search.open.metadata2").assertDoesNotExist()
+        val readableTop = compose.onNodeWithTag("search.open.$hash").fetchSemanticsNode().boundsInRoot.top
+        val metadataTop = compose.onNodeWithTag("search.metadata-only.heading").fetchSemanticsNode().boundsInRoot.top
+        assertTrue(readableTop < metadataTop)
+        compose.onNodeWithTag("search.open.$hash").assertTextContains("English", substring = true)
         compose.onNodeWithTag("search.query").performClick().assertIsFocused()
         compose.onNodeWithTag("search.language").performClick()
         compose.onNodeWithTag("search.language.en").performClick()
         compose.onNodeWithTag("search.query").assertIsNotFocused()
         compose.onNodeWithTag("search.query").performClick().performTextInput(" extra")
         compose.onNodeWithTag("search.query").assertIsFocused()
-        compose.onNodeWithText("Search", useUnmergedTree = true).performClick()
+        compose.onNodeWithTag("search.submit").performClick()
         compose.onNodeWithTag("search.query").assertIsNotFocused()
+    }
+    @Test fun unavailableZlibMetadataIsCountedWithoutShowingItsRow() {
+        val readable = BookSearchResult(hash, "libcat", "Readable", "Author", format = BookFormat.Epub, libvaultMd5 = hash)
+        val unavailable = readable.copy(id = "zlib-missing", title = "Matilda", author = "Roald Dahl",
+            unavailableReason = "Torrent unavailable")
+        var opened = false
+        compose.setContent {
+            SearchScreen("Dahl", results = listOf(unavailable, readable), searching = false, openingBookId = null,
+                message = null, isFavorite = { false }, readingProgress = { null }, onQueryChange = {},
+                onSearch = {}, onOpen = { opened = true }, onToggleFavorite = {})
+        }
+        compose.onNodeWithTag("search.metadata-only.heading").assertTextContains("1", substring = true)
+        compose.onNodeWithTag("search.open.zlib-missing").assertDoesNotExist()
+        compose.onNodeWithTag("search.open.$hash").performScrollTo().assertExists()
+        assertFalse(opened)
     }
     @Test fun downloadsExposePauseResumeCancelAndVerifiedReadActions() {
         val book = CatalogBook(hash, "Fixture", "Bookstr", "", null, format = BookFormat.Pdf, libvaultMd5 = hash)

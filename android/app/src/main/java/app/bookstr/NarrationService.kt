@@ -45,6 +45,25 @@ import org.json.JSONObject
  * Owns spoken-book playback independently from ReaderActivity. The media session makes narration
  * controllable from the lock screen, Bluetooth headsets, car controls, Assistant, and Android Auto.
  */
+internal object NarrationPreparationState {
+    fun isPreparing(isPlaying: Boolean, textMissing: Boolean, audioPlaying: Boolean): Boolean =
+        isPlaying && (textMissing || !audioPlaying)
+}
+
+internal object NarrationFailureFeedback {
+    fun message(voiceLabel: String?): String = if (voiceLabel.isNullOrBlank()) {
+        "Speech could not read this passage. Try another voice in Settings."
+    } else {
+        "$voiceLabel could not read this passage. Try another voice for this language in Settings."
+    }
+}
+
+internal object NarrationSpeed {
+    fun multiplier(rate: Float): Float =
+        rate.coerceIn(app.bookstr.speech.SpeechSettings.MINIMUM_RATE, app.bookstr.speech.SpeechSettings.MAXIMUM_RATE) /
+            app.bookstr.speech.SpeechSettings.DEFAULT_RATE
+}
+
 class NarrationService : MediaBrowserServiceCompat(), TextToSpeech.OnInitListener {
     private lateinit var mediaSession: MediaSessionCompat
     private lateinit var notificationManager: NotificationManager
@@ -57,6 +76,7 @@ class NarrationService : MediaBrowserServiceCompat(), TextToSpeech.OnInitListene
     private var sessionActive = false
     private var resumeAfterAudioFocus = false
     private var pendingPlay = false
+    private var pauseRequestedDuringTextRequest = false
     @Volatile private var generation = 0
     private val neuralExecutor = Executors.newSingleThreadExecutor()
     private val speechModels by lazy { app.bookstr.speech.SpeechModels(this) }
@@ -235,6 +255,8 @@ class NarrationService : MediaBrowserServiceCompat(), TextToSpeech.OnInitListene
         }
         when (intent?.action) {
             ACTION_SPEAK -> {
+                val stayPaused = pauseRequestedDuringTextRequest
+                pauseRequestedDuringTextRequest = false
                 generation += 1
                 resetAudioPipeline(cancelSynthesis = true)
                 sessionActive = true
@@ -247,7 +269,14 @@ class NarrationService : MediaBrowserServiceCompat(), TextToSpeech.OnInitListene
                 currentParagraph = ""
                 ensureForeground()
                 loadArtwork(bookCoverUrl)
-                playOrRequestText()
+                if (stayPaused) {
+                    isPlaying = false
+                    updatePlaybackState(PlaybackStateCompat.STATE_PAUSED)
+                    updateNotification()
+                    publishState()
+                } else {
+                    playOrRequestText()
+                }
                 notifyChildrenChanged(ROOT_ID)
             }
             ACTION_TOGGLE -> {
@@ -260,11 +289,24 @@ class NarrationService : MediaBrowserServiceCompat(), TextToSpeech.OnInitListene
                 if (isPlaying) pauseNarration() else playOrRequestText()
             }
             ACTION_STOP -> stopNarration(removeNotification = true)
+            ACTION_STOP_IF_DIFFERENT_BOOK -> {
+                if (NarrationSessionTransition.shouldStop(bookId, intent.getStringExtra(EXTRA_TARGET_BOOK_ID).orEmpty())) {
+                    stopNarration(removeNotification = true)
+                }
+            }
             ACTION_SYNC -> publishState(offset = currentRangeStart, length = currentMarkerLength())
             ACTION_PARAGRAPH -> {
                 currentParagraph = intent.getStringExtra(EXTRA_PARAGRAPH).orEmpty().take(600)
                 updateMetadata()
                 updateNotification()
+            }
+            ACTION_RATE -> {
+                val language = intent.getStringExtra(EXTRA_LANGUAGE).orEmpty().ifBlank { speechLanguage }
+                val rate = intent.getFloatExtra(EXTRA_RATE, speechSettings.rate(language))
+                    .coerceIn(app.bookstr.speech.SpeechSettings.MINIMUM_RATE, app.bookstr.speech.SpeechSettings.MAXIMUM_RATE)
+                speechSettings.setRate(language, rate)
+                if (language == speechLanguage) applyCurrentSpeechRate()
+                publishState()
             }
         }
         return Service.START_STICKY
@@ -296,8 +338,12 @@ class NarrationService : MediaBrowserServiceCompat(), TextToSpeech.OnInitListene
 
     private fun playOrRequestText() {
         if (speechText.isBlank() || resumeOffset >= speechText.length) {
+            // Keep the play request active while the reader supplies text so narration
+            // starts automatically when ACTION_SPEAK returns the requested payload.
+            isPlaying = true
+            pauseRequestedDuringTextRequest = false
             publishState(requestText = true)
-            updatePlaybackState(PlaybackStateCompat.STATE_PAUSED)
+            updatePlaybackState(PlaybackStateCompat.STATE_BUFFERING)
             updateNotification()
             return
         }
@@ -310,6 +356,7 @@ class NarrationService : MediaBrowserServiceCompat(), TextToSpeech.OnInitListene
         mediaPlayer?.let { player ->
             if (!player.isPlaying) {
                 player.start()
+                publishState()
                 mainHandler.removeCallbacks(progressTicker)
                 mainHandler.post(progressTicker)
             }
@@ -328,6 +375,7 @@ class NarrationService : MediaBrowserServiceCompat(), TextToSpeech.OnInitListene
         generation += 1
         val activeGeneration = generation
         resetAudioPipeline(cancelSynthesis = true)
+        neuralModel = selectedNeuralModel()
         val startOffset = offset.coerceIn(0, speechText.length)
         val chunkInputs = speechChunkInputs.takeIf { it.isNotEmpty() }?.map { it.text to it.pauseMillis }?.let { values ->
             if (values.any { it.first.isBlank() }) null else values
@@ -364,7 +412,7 @@ class NarrationService : MediaBrowserServiceCompat(), TextToSpeech.OnInitListene
                 chunks += NarrationChunk(
                     id = synthesisId(activeGeneration, chunks.size),
                     text = chunkText,
-                    speak = entry.speak.ifBlank { SpeechSpokenText.normalize(chunkText) },
+                    speak = entry.speak.ifBlank { SpeechSpokenText.normalize(chunkText, speechLanguage) },
                     offset = chunkOffset,
                     generation = activeGeneration,
                     isFinal = false,
@@ -385,14 +433,14 @@ class NarrationService : MediaBrowserServiceCompat(), TextToSpeech.OnInitListene
         if (speechQueue.isEmpty()) {
             val remaining = speechText.substring(startOffset)
             var searchFrom = startOffset
-            val chunkTexts = ReaderActivity.speechChunks(remaining)
+            val chunkTexts = ReaderActivity.speechChunks(remaining, speechLanguage)
             speechQueue = chunkTexts.mapIndexed { index, text ->
                 val chunkOffset = speechText.indexOf(text, searchFrom).takeIf { it >= 0 } ?: searchFrom
                 searchFrom = chunkOffset + text.length
                 NarrationChunk(
                     id = synthesisId(activeGeneration, index),
                     text = text,
-                    speak = SpeechSpokenText.normalize(text),
+                    speak = SpeechSpokenText.normalize(text, speechLanguage),
                     offset = chunkOffset,
                     generation = activeGeneration,
                     isFinal = index == chunkTexts.lastIndex,
@@ -403,16 +451,18 @@ class NarrationService : MediaBrowserServiceCompat(), TextToSpeech.OnInitListene
         } else {
             speechChunkInputs = emptyList()
         }
+        if (neuralModel != null) {
+            speechQueue = prepareNeuralNarrationQueue(speechQueue, activeGeneration)
+        }
         currentPlaybackIndex = speechQueue.indexOfFirst { it.offset + it.text.length > startOffset }.takeIf { it >= 0 } ?: 0
         if (speechQueue.isEmpty()) {
             finishNaturally()
             return
         }
-        neuralModel = selectedNeuralModel()
         if (neuralModel == null && engine != null) selectVoice(engine, speechLanguage)
         // Neural voices are trained at their natural cadence. Slowing them down exaggerates
         // vocoder grain and room noise, so keep synthesis at the model's native rate.
-        engine?.setSpeechRate(1.0f)
+        engine?.setSpeechRate(speechSpeedMultiplier())
         engine?.setPitch(1.0f)
         synthesizeChunk(0)
     }
@@ -425,19 +475,35 @@ class NarrationService : MediaBrowserServiceCompat(), TextToSpeech.OnInitListene
         val file = File(directory, "${chunk.id}.wav")
         audioFiles[index] = file
         synthesizingIndex = index
+        publishState()
         val model = neuralModel
         if (model != null) {
             val activeGeneration = generation
             neuralExecutor.execute {
-                val result = runCatching { neuralSpeech.synthesize(model, chunk.speak, file) { generation != activeGeneration } }
-                mainHandler.post {
-                    if (generation != activeGeneration) {
-                        file.delete()
-                    } else if (result.isSuccess) {
-                        onChunkSynthesized(activeGeneration, index)
-                    } else {
-                        onSpeechError(chunk.id, TextToSpeech.ERROR)
+                val result = runCatching {
+                    neuralSpeech.synthesizePhrases(
+                        model = model,
+                        text = chunk.speak,
+                        directory = directory,
+                        fileStem = chunk.id,
+                        cancelled = { generation != activeGeneration },
+                    ) { _, _, phraseFile ->
+                        mainHandler.post {
+                            if (generation != activeGeneration) {
+                                phraseFile.delete()
+                            } else {
+                                audioFiles[index] = phraseFile
+                                onChunkSynthesized(activeGeneration, index)
+                            }
+                        }
                     }
+                }
+                if (result.isFailure) mainHandler.post {
+                    if (generation == activeGeneration) {
+                        synthesizingIndex = -1
+                        audioFiles.remove(index)?.delete()
+                        onSpeechError(chunk.id, TextToSpeech.ERROR, result.exceptionOrNull())
+                    } else file.delete()
                 }
             }
             return
@@ -456,6 +522,7 @@ class NarrationService : MediaBrowserServiceCompat(), TextToSpeech.OnInitListene
         synthesizingIndex = -1
         readyAudio += index
         if (index == currentPlaybackIndex && mediaPlayer == null) playChunk(index)
+        publishState()
         synthesizeChunk(index + 1)
     }
 
@@ -471,7 +538,7 @@ class NarrationService : MediaBrowserServiceCompat(), TextToSpeech.OnInitListene
             val spoken = chunk.optString("spoken").trim()
             chunks += IncomingNarrationChunk(
                 text = text,
-                speak = spoken.ifBlank { SpeechSpokenText.normalize(text) },
+                speak = spoken.ifBlank { SpeechSpokenText.normalize(text, speechLanguage) },
                 pauseMillis = pause,
                 start = start,
             )
@@ -500,11 +567,15 @@ class NarrationService : MediaBrowserServiceCompat(), TextToSpeech.OnInitListene
             }
             player.prepare()
             mediaPlayer = player
+            if (neuralModel != null) applyNeuralPlaybackRate(player)
             currentRangeStart = chunk.offset
             resumeOffset = chunk.offset
             publishState(offset = chunk.offset, length = 1)
             if (isPlaying) {
                 player.start()
+                // Playback is audible now, including while the following chunk is synthesized.
+                // Send the transition immediately so the island drops its preparation spinner.
+                publishState(offset = chunk.offset, length = 1)
                 mainHandler.removeCallbacks(progressTicker)
                 mainHandler.post(progressTicker)
             }
@@ -632,6 +703,7 @@ class NarrationService : MediaBrowserServiceCompat(), TextToSpeech.OnInitListene
 
     private fun pauseNarration(abandonAudioFocus: Boolean = true) {
         if (!isPlaying && !pendingPlay) return
+        if (speechText.isBlank()) pauseRequestedDuringTextRequest = true
         pendingPlay = false
         isPlaying = false
         mediaPlayer?.takeIf { it.isPlaying }?.pause()
@@ -675,10 +747,10 @@ class NarrationService : MediaBrowserServiceCompat(), TextToSpeech.OnInitListene
         publishState(clearProgress = true, requestContinue = true)
     }
 
-    private fun onSpeechError(utteranceId: String?, errorCode: Int) {
+    private fun onSpeechError(utteranceId: String?, errorCode: Int, cause: Throwable? = null) {
         val parsed = parseSynthesisId(utteranceId)
         if (parsed != null && parsed.first != generation) return
-        Log.e(LOG_TAG, "Speech failed for $utteranceId with error code $errorCode")
+        Log.e(LOG_TAG, "Speech failed for $utteranceId with error code $errorCode", cause)
         generation += 1
         resetAudioPipeline(cancelSynthesis = true)
         isPlaying = false
@@ -686,7 +758,7 @@ class NarrationService : MediaBrowserServiceCompat(), TextToSpeech.OnInitListene
         updatePlaybackState(PlaybackStateCompat.STATE_ERROR)
         updateNotification()
         publishState(
-            message = "The selected speech voice could not read this text.",
+            message = NarrationFailureFeedback.message(neuralModel?.label),
             clearProgress = true,
         )
     }
@@ -920,11 +992,25 @@ class NarrationService : MediaBrowserServiceCompat(), TextToSpeech.OnInitListene
                 .putExtra(EXTRA_MESSAGE, message)
                 .putExtra(EXTRA_CLEAR_PROGRESS, clearProgress)
                 .putExtra(EXTRA_SESSION_ACTIVE, sessionActive)
+                .putExtra(EXTRA_IS_PREPARING, NarrationPreparationState.isPreparing(isPlaying, speechText.isBlank(), mediaPlayer?.isPlaying == true))
                 .putExtra(EXTRA_BOOK_ID, bookId)
                 .putExtra(EXTRA_BOOK_TITLE, bookTitle)
                 .putExtra(EXTRA_BOOK_AUTHOR, bookAuthor)
-                .putExtra(EXTRA_COVER_URL, bookCoverUrl),
+                .putExtra(EXTRA_COVER_URL, bookCoverUrl)
+                .putExtra(EXTRA_LANGUAGE, speechLanguage)
+                .putExtra(EXTRA_RATE, speechSettings.rate(speechLanguage)),
         )
+    }
+
+    private fun speechSpeedMultiplier(): Float = NarrationSpeed.multiplier(speechSettings.rate(speechLanguage))
+
+    private fun applyNeuralPlaybackRate(player: MediaPlayer) {
+        runCatching { player.playbackParams = player.playbackParams.setSpeed(speechSpeedMultiplier()) }
+    }
+
+    private fun applyCurrentSpeechRate() {
+        textToSpeech?.setSpeechRate(speechSpeedMultiplier())
+        if (neuralModel != null) mediaPlayer?.let(::applyNeuralPlaybackRate)
     }
 
     override fun onDestroy() {
@@ -953,26 +1039,31 @@ class NarrationService : MediaBrowserServiceCompat(), TextToSpeech.OnInitListene
         const val EXTRA_MESSAGE = "message"
         const val EXTRA_CLEAR_PROGRESS = "clear_progress"
         const val EXTRA_SESSION_ACTIVE = "session_active"
+        const val EXTRA_IS_PREPARING = "is_preparing"
         const val EXTRA_BOOK_ID = "book_id"
         const val EXTRA_BOOK_TITLE = "book_title"
         const val EXTRA_BOOK_AUTHOR = "book_author"
         const val EXTRA_COVER_URL = "cover_url"
+        const val EXTRA_LANGUAGE = "language"
+        const val EXTRA_RATE = "rate"
 
         private const val ACTION_SPEAK = "app.bookstr.action.NARRATION_SPEAK"
         private const val ACTION_TOGGLE = "app.bookstr.action.NARRATION_TOGGLE"
         private const val ACTION_STOP = "app.bookstr.action.NARRATION_STOP"
+        private const val ACTION_STOP_IF_DIFFERENT_BOOK = "app.bookstr.action.NARRATION_STOP_IF_DIFFERENT_BOOK"
         private const val ACTION_SYNC = "app.bookstr.action.NARRATION_SYNC"
         private const val ACTION_PARAGRAPH = "app.bookstr.action.NARRATION_PARAGRAPH"
+        private const val ACTION_RATE = "app.bookstr.action.NARRATION_RATE"
         private const val EXTRA_TEXT = "text"
-        private const val EXTRA_LANGUAGE = "language"
         private const val EXTRA_PARAGRAPH = "paragraph"
         private const val EXTRA_CHUNKS = "chunks"
+        private const val EXTRA_TARGET_BOOK_ID = "target_book_id"
         private const val CHANNEL_ID = "bookstr-narration"
         private const val NOTIFICATION_ID = 4107
         private const val SESSION_TAG = "BookstrNarration"
         private const val ROOT_ID = "bookstr-current-book"
         private const val LOG_TAG = "BookstrNarration"
-        private const val SENTENCE_PAUSE_MILLIS = 240L
+        private const val SENTENCE_PAUSE_MILLIS = 100L
         private const val PROGRESS_INTERVAL_MILLIS = 300L
         @Volatile private var running = false
 
@@ -1022,6 +1113,15 @@ class NarrationService : MediaBrowserServiceCompat(), TextToSpeech.OnInitListene
             context.startService(Intent(context, NarrationService::class.java).setAction(ACTION_STOP))
         }
 
+        fun stopIfDifferentBook(context: Context, targetBookId: String) {
+            if (!running) return
+            context.startService(
+                Intent(context, NarrationService::class.java)
+                    .setAction(ACTION_STOP_IF_DIFFERENT_BOOK)
+                    .putExtra(EXTRA_TARGET_BOOK_ID, targetBookId),
+            )
+        }
+
         /** Toggle the current session without changing its book metadata. */
         fun togglePlayback(context: Context) {
             context.startService(Intent(context, NarrationService::class.java).setAction(ACTION_TOGGLE))
@@ -1041,13 +1141,22 @@ class NarrationService : MediaBrowserServiceCompat(), TextToSpeech.OnInitListene
             )
         }
 
+        fun setSpeechRate(context: Context, language: String, rate: Float) {
+            context.startService(
+                Intent(context, NarrationService::class.java)
+                    .setAction(ACTION_RATE)
+                    .putExtra(EXTRA_LANGUAGE, language)
+                    .putExtra(EXTRA_RATE, rate),
+            )
+        }
+
         private fun startForeground(context: Context, intent: Intent) {
             ContextCompat.startForegroundService(context, intent)
         }
     }
 }
 
-private data class NarrationChunk(
+internal data class NarrationChunk(
     val id: String,
     val text: String,
     val speak: String,
@@ -1066,6 +1175,76 @@ private data class IncomingNarrationChunk(
 
 private data class SpeechMarker(val start: Int, val end: Int, val frame: Int)
 
+/** Split neural utterances into independently playable phrases with approximate source ranges. */
+internal fun splitNeuralNarrationChunks(
+    chunks: List<NarrationChunk>,
+): List<NarrationChunk> {
+    return chunks.flatMap { chunk ->
+        val phrases = app.bookstr.speech.NeuralSpeech.phrases(chunk.speak)
+        if (phrases.size <= 1) {
+            listOf(chunk.copy(speak = phrases.firstOrNull() ?: chunk.speak))
+        } else {
+            val source = chunk.text.trim()
+            if (source.length < phrases.size) {
+                phrases.mapIndexed { index, phrase ->
+                    chunk.copy(
+                        speak = phrase,
+                        pauseMillis = if (index == 0) chunk.pauseMillis else 0L,
+                    )
+                }
+            } else {
+                val totalWeight = phrases.sumOf { it.length.coerceAtLeast(1) }
+                var usedWeight = 0
+                var sourceStart = 0
+                phrases.mapIndexed { index, phrase ->
+                    usedWeight += phrase.length.coerceAtLeast(1)
+                    val remainingPhrases = phrases.size - index - 1
+                    val sourceEnd: Int
+                    var nextSourceStart: Int
+                    if (remainingPhrases == 0) {
+                        sourceEnd = source.length
+                        nextSourceStart = source.length
+                    } else {
+                        val minEnd = sourceStart + 1
+                        val maxEnd = source.length - remainingPhrases
+                        val target = (source.length * usedWeight.toDouble() / totalWeight).toInt()
+                            .coerceIn(minEnd, maxEnd)
+                        val whitespace = (minEnd..maxEnd).filter { source[it].isWhitespace() }
+                            .minByOrNull { kotlin.math.abs(it - target) }
+                        sourceEnd = (whitespace ?: target).coerceAtLeast(minEnd)
+                        nextSourceStart = sourceEnd
+                        while (nextSourceStart < source.length && source[nextSourceStart].isWhitespace()) {
+                            nextSourceStart += 1
+                        }
+                    }
+                    val result = chunk.copy(
+                        text = source.substring(sourceStart, sourceEnd).trim(),
+                        speak = phrase,
+                        offset = chunk.offset + sourceStart,
+                        pauseMillis = if (index == 0) chunk.pauseMillis else 0L,
+                    )
+                    sourceStart = nextSourceStart
+                    result
+                }
+            }
+        }
+    }
+}
+
+internal fun prepareNeuralNarrationQueue(
+    chunks: List<NarrationChunk>,
+    generation: Int,
+): List<NarrationChunk> {
+    val expanded = splitNeuralNarrationChunks(chunks)
+    return expanded.mapIndexed { index, chunk ->
+        chunk.copy(
+            id = "synth-$generation-$index",
+            generation = generation,
+            isFinal = index == expanded.lastIndex,
+        )
+    }
+}
+
 internal object NarrationPlaybackTiming {
     fun shouldComplete(
         completedGeneration: Int,
@@ -1083,7 +1262,10 @@ internal object NarrationPlaybackTiming {
     ): Boolean = scheduledGeneration == currentGeneration && scheduledIndex == currentIndex && !playerActive
 
     fun pauseMillis(requested: Long, neural: Boolean): Long =
-        if (!neural) requested.coerceAtLeast(0L)
-        else if (requested <= 100L) 0L
-        else (requested / 3L).coerceIn(0L, 220L)
+        if (!neural) requested.coerceIn(0L, 120L)
+        else (requested / 3L).coerceIn(0L, 120L)
+}
+
+internal object NarrationSessionTransition {
+    fun shouldStop(activeBookId: String, requestedBookId: String): Boolean = activeBookId != requestedBookId
 }

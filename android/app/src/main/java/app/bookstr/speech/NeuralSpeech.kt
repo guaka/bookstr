@@ -14,23 +14,7 @@ class NeuralSpeech(private val models: SpeechModels) {
     private var engine: OfflineTts? = null
 
     fun synthesize(model: SpeechModel, text: String, file: File, cancelled: () -> Boolean) {
-        check(models.installed(model)) { "Download this voice in Settings first" }
-        if (loaded != model.id) {
-            close()
-            val directory = models.directory(model)
-            val config = OfflineTtsModelConfig(numThreads = 4)
-            val tokens = File(directory, "tokens.txt").path
-            val data = models.pronunciationDirectory(model).path
-            val path = File(directory, model.model).path
-            if (model.kind == "kokoro") {
-                config.kokoro = OfflineTtsKokoroModelConfig(model = path, voices = File(directory, "voices.bin").path, tokens = tokens, dataDir = data, lang = model.engineLanguage.orEmpty())
-            } else {
-                config.vits = OfflineTtsVitsModelConfig(model = path, tokens = tokens, dataDir = data)
-            }
-            engine = OfflineTts(config = OfflineTtsConfig(model = config))
-            loaded = model.id
-        }
-        val synthesizer = checkNotNull(engine)
+        val synthesizer = synthesizer(model)
         // Bound each native call (Kokoro has a hard phoneme limit) and stream PCM to disk.
         RandomAccessFile(file, "rw").use { output ->
             output.setLength(0)
@@ -54,6 +38,50 @@ class NeuralSpeech(private val models: SpeechModels) {
         }
     }
 
+    /** Generate independently playable phrase WAVs as soon as each native render completes. */
+    fun synthesizePhrases(
+        model: SpeechModel,
+        text: String,
+        directory: File,
+        fileStem: String,
+        cancelled: () -> Boolean,
+        onPhraseReady: (index: Int, spokenPhrase: String, file: File) -> Unit,
+    ) {
+        val synthesizer = synthesizer(model)
+        emitPhrases(
+            text = text,
+            directory = directory,
+            fileStem = fileStem,
+            cancelled = cancelled,
+            render = { phrase ->
+                val audio = synthesizer.generate(phrase, model.speaker)
+                check(audio.samples.isNotEmpty()) { "Voice could not generate audio" }
+                PhraseAudio(audio.samples, synthesizer.sampleRate())
+            },
+            onPhraseReady = onPhraseReady,
+        )
+    }
+
+    private fun synthesizer(model: SpeechModel): OfflineTts {
+        check(models.installed(model)) { "Download this voice in Settings first" }
+        if (loaded != model.id) {
+            close()
+            val directory = models.directory(model)
+            val config = OfflineTtsModelConfig(numThreads = 4)
+            val tokens = File(directory, "tokens.txt").path
+            val data = models.pronunciationDirectory(model).path
+            val path = File(directory, model.model).path
+            if (model.kind == "kokoro") {
+                config.kokoro = OfflineTtsKokoroModelConfig(model = path, voices = File(directory, "voices.bin").path, tokens = tokens, dataDir = data, lang = model.engineLanguage.orEmpty())
+            } else {
+                config.vits = OfflineTtsVitsModelConfig(model = path, tokens = tokens, dataDir = data)
+            }
+            engine = OfflineTts(config = OfflineTtsConfig(model = config))
+            loaded = model.id
+        }
+        return checkNotNull(engine)
+    }
+
     fun close() { engine?.release(); engine = null; loaded = null }
 
     companion object {
@@ -61,13 +89,61 @@ class NeuralSpeech(private val models: SpeechModels) {
             val result = mutableListOf<String>()
             var remaining = text.trim()
             while (remaining.isNotEmpty()) {
-                val window = remaining.take(140)
-                val end = if (remaining.length > 140) window.indexOfLast { it.isWhitespace() || it in ".!?;:," }.takeIf { it >= 0 }?.plus(1) ?: 140 else remaining.length
+                // The next sentence is rendered on the same executor as the current one.
+                // A short first phrase lets playback resume before its longer tail is ready.
+                val limit = if (result.isEmpty()) 70 else 140
+                val window = remaining.take(limit)
+                val end = if (remaining.length > limit) window.indexOfLast { it.isWhitespace() || it in ".!?;:," }.takeIf { it >= 0 }?.plus(1) ?: limit else remaining.length
                 val phrase = remaining.take(end).trim()
                 if (phrase.any { it.isLetterOrDigit() }) result += phrase
                 remaining = remaining.drop(end).trimStart()
             }
             return result
+        }
+
+        internal fun emitPhrases(
+            text: String,
+            directory: File,
+            fileStem: String,
+            cancelled: () -> Boolean,
+            render: (String) -> PhraseAudio,
+            onPhraseReady: (index: Int, spokenPhrase: String, file: File) -> Unit,
+        ) {
+            directory.mkdirs()
+            for ((index, phrase) in phrases(text).withIndex()) {
+                if (cancelled()) return
+                val file = File(directory, "$fileStem-$index.wav")
+                try {
+                    val audio = render(phrase)
+                    if (cancelled()) {
+                        file.delete()
+                        return
+                    }
+                    PhraseWaveFile.write(file, audio.samples, audio.sampleRate)
+                    onPhraseReady(index, phrase, file)
+                } catch (failure: Throwable) {
+                    file.delete()
+                    throw failure
+                }
+            }
+        }
+    }
+}
+
+internal data class PhraseAudio(val samples: FloatArray, val sampleRate: Int)
+
+internal object PhraseWaveFile {
+    fun write(file: File, samples: FloatArray, sampleRate: Int) {
+        val pcm = java.nio.ByteBuffer.allocate(samples.size * 2).order(java.nio.ByteOrder.LITTLE_ENDIAN)
+        for (sample in samples) pcm.putShort((sample.coerceIn(-1f, 1f) * 32767).toInt().toShort())
+        val dataSize = pcm.position()
+        RandomAccessFile(file, "rw").use { output ->
+            output.setLength(0)
+            output.writeBytes("RIFF"); output.writeInt(Integer.reverseBytes(dataSize + 36)); output.writeBytes("WAVEfmt ")
+            output.writeInt(Integer.reverseBytes(16)); output.writeShort(256); output.writeShort(256)
+            output.writeInt(Integer.reverseBytes(sampleRate)); output.writeInt(Integer.reverseBytes(sampleRate * 2))
+            output.writeShort(512); output.writeShort(4096); output.writeBytes("data"); output.writeInt(Integer.reverseBytes(dataSize))
+            output.write(pcm.array())
         }
     }
 }
