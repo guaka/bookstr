@@ -133,6 +133,9 @@ class WebTorrentBridge {
     this.startPromise = null;
     this.webRTCEnabled = false;
     this.pendingTorrentAdds = 0;
+    // Serialize capacity checks so concurrent add/seed cannot oversubscribe
+    // while an eviction await yields the event loop.
+    this.capacityMutex = Promise.resolve();
   }
 
   async start() {
@@ -388,18 +391,26 @@ class WebTorrentBridge {
   }
 
   async #reserveCapacity(client) {
-    while (Array.isArray(client.torrents)
-      && client.torrents.length + this.pendingTorrentAdds >= MAX_ACTIVE_TORRENTS) {
-      // Completed swarms can be removed without deleting their on-disk data.
-      // Retire the oldest completed swarm so new work can proceed while
-      // keeping the total number of peer managers bounded.
-      const completed = client.torrents.find(torrent => torrent.done || Number(torrent.progress) >= 1);
-      if (!completed) {
-        throw new Error(`maximum active torrent count reached (${MAX_ACTIVE_TORRENTS}); retry after a transfer completes`);
+    let release;
+    const previous = this.capacityMutex;
+    this.capacityMutex = new Promise(resolve => { release = resolve; });
+    await previous;
+    try {
+      while (Array.isArray(client.torrents)
+        && client.torrents.length + this.pendingTorrentAdds >= MAX_ACTIVE_TORRENTS) {
+        // Completed swarms can be removed without deleting their on-disk data.
+        // Retire the oldest completed swarm so new work can proceed while
+        // keeping the total number of peer managers bounded.
+        const completed = client.torrents.find(torrent => torrent.done || Number(torrent.progress) >= 1);
+        if (!completed) {
+          throw new Error(`maximum active torrent count reached (${MAX_ACTIVE_TORRENTS}); retry after a transfer completes`);
+        }
+        await this.remove(completed);
       }
-      await this.remove(completed);
+      this.pendingTorrentAdds += 1;
+    } finally {
+      release();
     }
-    this.pendingTorrentAdds += 1;
   }
 
   #releaseCapacityReservation() {
