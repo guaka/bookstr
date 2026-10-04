@@ -79,7 +79,7 @@ class NarrationServiceContractTest {
             speak = speak,
             offset = 0,
             pauseMillis = 240,
-            chapterIndex = 1,
+            generation = 1,
             isFinal = true,
         )
         val phrases = app.bookstr.speech.NeuralSpeech.phrases(chunk.speak)
