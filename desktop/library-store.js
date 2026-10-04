@@ -94,7 +94,8 @@ CREATE TABLE IF NOT EXISTS downloads (
   source TEXT NOT NULL DEFAULT '',
   relative_path TEXT NOT NULL DEFAULT '',
   error TEXT NOT NULL DEFAULT '',
-  updated_at INTEGER NOT NULL DEFAULT (unixepoch())
+  updated_at INTEGER NOT NULL DEFAULT (unixepoch()),
+  completed_at INTEGER
 );
 CREATE TABLE IF NOT EXISTS library_files (
   book_id TEXT NOT NULL REFERENCES books(id) ON DELETE CASCADE,
@@ -143,6 +144,8 @@ class LibraryStore {
       try { this.db.exec(`ALTER TABLE books ADD COLUMN ${name} ${definition}`); } catch { /* already present */ }
     }
     try { this.db.exec("ALTER TABLE downloads ADD COLUMN request_json TEXT NOT NULL DEFAULT ''"); } catch { /* already present */ }
+    try { this.db.exec('ALTER TABLE downloads ADD COLUMN completed_at INTEGER'); } catch { /* already present */ }
+    this.db.exec("UPDATE downloads SET completed_at = updated_at WHERE completed_at IS NULL AND status IN ('ready', 'seeding')");
     this.readerTokens = new Map();
   }
 
@@ -215,11 +218,12 @@ class LibraryStore {
     const status = text(download.status) || 'queued';
     const relativePath = download.relativePath ? safeRelativePath(download.relativePath) : '';
     this.db.prepare(`
-      INSERT INTO downloads (book_id, status, bytes, total_bytes, source, relative_path, error)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO downloads (book_id, status, bytes, total_bytes, source, relative_path, error, completed_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, CASE WHEN ? IN ('ready', 'seeding') THEN unixepoch() ELSE NULL END)
       ON CONFLICT(book_id) DO UPDATE SET status=excluded.status, bytes=excluded.bytes, total_bytes=excluded.total_bytes,
-        source=excluded.source, relative_path=excluded.relative_path, error=excluded.error, updated_at=unixepoch()
-    `).run(bookId, status, Math.max(0, Number(download.bytes) || 0), Math.max(0, Number(download.totalBytes || download.total_bytes) || 0), text(download.source), relativePath, text(download.error));
+        source=excluded.source, relative_path=excluded.relative_path, error=excluded.error, updated_at=unixepoch(),
+        completed_at=CASE WHEN excluded.status IN ('ready', 'seeding') THEN COALESCE(downloads.completed_at, excluded.completed_at) WHEN excluded.status IN ('queued', 'finding-peers', 'downloading', 'retrying') THEN NULL ELSE downloads.completed_at END
+    `).run(bookId, status, Math.max(0, Number(download.bytes) || 0), Math.max(0, Number(download.totalBytes || download.total_bytes) || 0), text(download.source), relativePath, text(download.error), status);
     return this.downloads().find(item => item.bookId === bookId) || null;
   }
 
@@ -250,6 +254,7 @@ class LibraryStore {
         downloads.total_bytes AS totalBytes, downloads.source, downloads.error,
         downloads.request_json != '' AS queuedFromSearch,
         downloads.updated_at AS updatedAt, books.sha256, books.md5,
+        downloads.completed_at AS completedAt,
         books.title, books.authors, books.language, books.year, books.extension,
         books.isbn, books.source_native_id AS sourceNativeId
       FROM downloads

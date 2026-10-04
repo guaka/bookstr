@@ -12,12 +12,37 @@ function electronArgs(label) {
   return { args: [path.join(__dirname, '../..'), `--user-data-dir=${userData}`], userData };
 }
 
-function seedDesktopStore(userData, books, downloads = []) {
+async function localFormatBytes(book) {
+  const extension = String(book.extension || 'epub').toLowerCase();
+  if (extension === 'epub') return minimalEpub(book.title || 'Local fixture', book.body || book.title || 'Local fixture');
+  if (extension === 'fb2') return minimalFB2(book.title || 'Local fixture');
+  if (extension === 'cbz') return minimalCBZ();
+  if (extension === 'cbr') return Buffer.concat([Buffer.from('Rar!'), Buffer.alloc(32)]);
+  if (extension === 'pdf') return Buffer.from('%PDF-1.4\n% local fixture\n');
+  return Buffer.from(String(book.title || 'Local fixture'));
+}
+
+async function seedDesktopStore(userData, books, downloads = []) {
   const libraryRoot = path.join(userData, 'library');
   const store = new LibraryStore({ dbPath: path.join(libraryRoot, 'library.sqlite'), libraryRoot });
   try {
     for (const book of books) store.upsertBook({ id: book.md5, ...book });
-    for (const download of downloads) store.setDownload(download);
+    for (const download of downloads) {
+      const bookId = download.bookId || download.id;
+      const book = books.find(item => item.md5 === bookId || item.sha256 === bookId);
+      if (book && ['ready', 'seeding'].includes(download.status)) {
+        const extension = String(book.extension || 'epub').toLowerCase();
+        const relativePath = `books/${bookId}.${extension}`;
+        const absolutePath = path.join(libraryRoot, relativePath);
+        const bytes = await localFormatBytes(book);
+        await fs.promises.mkdir(path.dirname(absolutePath), { recursive: true });
+        await fs.promises.writeFile(absolutePath, bytes);
+        store.registerLibraryFile({ bookId, relativePath, sizeBytes: bytes.length });
+        store.setDownload({ ...download, relativePath });
+      } else {
+        store.setDownload(download);
+      }
+    }
   } finally {
     store.close();
   }
@@ -80,7 +105,7 @@ test('Library reports useful local torrent states', async () => {
     ['d'.repeat(32), 'Ready Book'],
     ['e'.repeat(32), 'Unavailable Book'],
   ].map(([md5, title]) => ({ md5, title, authors: 'Fixture Author', extension: 'epub' }));
-  books[0].authors = Array.from({ length: 80 }, (_, index) => `Fixture Author ${index + 1}`).join(', ');
+  books[3].authors = Array.from({ length: 80 }, (_, index) => `Fixture Author ${index + 1}`).join(', ');
   books.push({
     md5: 'f'.repeat(32),
     libgenId: 1234,
@@ -92,7 +117,7 @@ test('Library reports useful local torrent states', async () => {
   books.push({ md5: '1'.repeat(32), title: 'Seeding Book', authors: 'Fixture Author', extension: 'epub' });
   // Seed before Electron opens its long-lived SQLite connection. This also
   // catches startup hydration, which is the path used by a real library.
-  seedDesktopStore(launch.userData, books, [
+  await seedDesktopStore(launch.userData, books, [
     { bookId: books[1].md5, status: 'finding-peers', source: 'torrent' },
     { bookId: books[2].md5, status: 'downloading', bytes: -84, totalBytes: 100, source: 'torrent' },
     { bookId: books[3].md5, status: 'ready', bytes: 100, totalBytes: 100, source: 'torrent' },
@@ -105,55 +130,33 @@ test('Library reports useful local torrent states', async () => {
     await seedLibrary(page, books);
     await page.reload();
 
-    await expect(page.locator('.library-book-count')).toHaveText('7 books · 2 readable now · 2 downloading · 1 seeding · ↓ 0 B/s · ↑ 0 B/s');
-    await expect(libraryRow(page, books[0].title).locator('.result-availability')).toHaveText('—');
-    const compactAuthors = libraryRow(page, books[0].title).locator('.result-author');
-    await expect(compactAuthors).toHaveAttribute('title', books[0].authors);
-    await expect(compactAuthors).toHaveAttribute('aria-label', books[0].authors);
+    await expect(page.locator('.library-book-count')).toHaveText('2 books');
+    await expect(libraryRow(page, books[0].title)).toHaveCount(0);
+    await expect(libraryRow(page, books[4].title)).toHaveCount(0);
+    await expect(libraryRow(page, books[5].title)).toHaveCount(0);
+    const compactAuthors = libraryRow(page, books[3].title).locator('.result-author');
+    await expect(compactAuthors).toHaveAttribute('title', books[3].authors);
+    await expect(compactAuthors).toHaveAttribute('aria-label', books[3].authors);
     await expect.poll(() => compactAuthors.evaluate(element => ({
       clipped: element.scrollWidth > element.clientWidth,
       whiteSpace: getComputedStyle(element).whiteSpace,
     }))).toEqual({ clipped: true, whiteSpace: 'nowrap' });
-    await expect.poll(() => libraryRow(page, books[0].title).evaluate(element => element.getBoundingClientRect().height)).toBeLessThan(70);
-    await expect(libraryRow(page, books[1].title).locator('.result-availability')).toHaveText('Finding peers');
-    await expect(libraryRow(page, books[1].title).locator('.availability-primary')).toHaveClass(/status-dot-waiting/);
-    const downloading = libraryRow(page, books[2].title).locator('.result-availability');
-    await expect(downloading).toHaveText('Downloading 0%');
-    await expect(downloading.locator('.availability-progress')).toHaveText('0%');
-    await expect(downloading.locator('.availability-primary')).toHaveClass(/status-dot-downloading/);
-    await expect(libraryRow(page, books[3].title).locator('.result-availability')).toHaveText('Ready');
+    await expect.poll(() => libraryRow(page, books[3].title).evaluate(element => element.getBoundingClientRect().height)).toBeLessThan(70);
+    await expect(libraryRow(page, books[3].title).locator('.result-availability')).toHaveText('Available');
     await expect(libraryRow(page, books[3].title).locator('.availability-primary')).toHaveClass(/status-dot-success/);
-    await expect(libraryRow(page, books[4].title).locator('.result-availability')).toHaveText('Unavailable');
-    await expect(libraryRow(page, books[4].title).locator('.availability-primary')).toHaveClass(/status-dot-error/);
-    await expect(libraryRow(page, books[5].title).locator('.result-availability')).toHaveText('Available');
-    await expect(libraryRow(page, books[6].title).locator('.result-availability')).toHaveText('Seeding');
-    await expect(libraryRow(page, books[0].title).locator('.result-cover-slot')).not.toHaveClass(/has-real-cover/);
-    await page.evaluate(book => {
-      showReadMetadataFallback(book);
-      updateReadTorrentStatus(book);
-    }, books[2]);
-    await expect(page.locator('#read-metadata-fallback-torrent')).toHaveText('Downloading · 0%');
-    await expect(page.locator('#read-metadata-fallback-status')).toContainText('Downloading this book');
-    await expect(page.locator('#read-metadata-fallback-status')).toContainText('It will open automatically when the file is ready.');
-    await expect(page.locator('#read-metadata-fallback-status .read-file-state-meta')).toHaveCount(0);
-    await expect(page.locator('#read-metadata-fallback')).not.toContainText('Source URL');
-    await page.getByRole('button', { name: 'Home' }).click();
-    await page.getByRole('button', { name: 'Available', exact: true }).click();
-    await expect(page.locator('.book-table-row .result-title')).toHaveText([
-      books[6].title,
-      books[3].title,
-      books[2].title,
-      books[1].title,
-      books[5].title,
-      books[0].title,
-      books[4].title,
-    ]);
+    await expect(libraryRow(page, books[6].title).locator('.result-availability')).toHaveText('Available');
+    await expect(libraryRow(page, books[3].title).locator('.result-cover-slot')).not.toHaveClass(/has-real-cover/);
+    await page.getByRole('button', { name: 'Downloads' }).click();
+    const downloads = page.locator('#desktop-downloads-list');
+    await expect(downloads.locator(`[data-download-id="${books[1].md5}"]`)).toContainText('Finding peers');
+    await expect(downloads.locator(`[data-download-id="${books[2].md5}"]`)).toContainText('0 B of 100 B');
+    await expect(downloads.locator(`[data-download-id="${books[4].md5}"]`)).toContainText('fixture unavailable');
   } finally {
     await app.close();
   }
 });
 
-test('an active zero-percent torrent is automatically kept in the library', async () => {
+test('an active zero-percent torrent appears in Downloads and stays out of Library', async () => {
   const launch = electronArgs('active-download-library');
   const book = {
     md5: '7'.repeat(32),
@@ -163,19 +166,16 @@ test('an active zero-percent torrent is automatically kept in the library', asyn
     libgenId: 4321,
     sourceNativeId: '4321',
   };
-  seedDesktopStore(launch.userData, [book], [
-    { bookId: book.md5, status: 'downloading', bytes: 0, totalBytes: 100, source: 'torrent' },
+  await seedDesktopStore(launch.userData, [book], [
+    { bookId: book.md5, status: 'downloading', bytes: 0, totalBytes: 100, source: 'fixture' },
   ]);
   const app = await electron.launch({ args: launch.args });
   try {
     const page = await app.firstWindow();
-    await expect.poll(() => page.evaluate(() => JSON.parse(
-      localStorage.getItem('bookstr_nostr_favorites_v1') || '[]',
-    ).map(item => item.title))).toContain(book.title);
-    const row = libraryRow(page, book.title);
-    await expect(row.locator('.result-availability')).toHaveText('Downloading 0%');
-    await expect(row.locator('.favorite-status')).toHaveCount(0);
-    await expect(row.locator('.library-delete')).toBeVisible();
+    await expect(libraryRow(page, book.title)).toHaveCount(0);
+    await page.getByRole('button', { name: 'Downloads' }).click();
+    await expect(page.locator('#desktop-downloads-list')).toContainText(book.title);
+    await expect(page.locator('#desktop-downloads-list')).toContainText('0 B of 100 B');
   } finally {
     await app.close();
   }
@@ -211,9 +211,9 @@ test('a failed favorite edition reuses a matching downloaded torrent edition', a
     await seedLibrary(page, [favorite]);
     await page.reload();
 
-    await expect(libraryRow(page, favorite.title).locator('.result-availability')).toHaveText('Ready');
+    await expect(libraryRow(page, favorite.title).locator('.result-availability').first()).toHaveText('Available');
     await expect(libraryRow(page, favorite.title).locator('.result-title')).toHaveClass(/readable/);
-    await expect(page.locator('.library-book-count')).toContainText('1 readable now');
+    await expect(page.locator('.library-book-count')).toHaveText('1 book');
     await libraryRow(page, favorite.title).getByRole('link', { name: favorite.title }).click();
     await expect(page.locator('#reader-frame')).toBeVisible();
     await expect(page.locator('#reader-frame')).toHaveAttribute('src', /reader\.html/);
@@ -222,7 +222,7 @@ test('a failed favorite edition reuses a matching downloaded torrent edition', a
   }
 });
 
-test('Electron drops IndexedDB book files but keeps their Library entries torrent-available', async () => {
+test('Electron drops IndexedDB book files while a registered EPUB remains in Library', async () => {
   const launch = electronArgs('cache-phaseout-user-data');
   const book = {
     md5: '7'.repeat(32),
@@ -232,6 +232,9 @@ test('Electron drops IndexedDB book files but keeps their Library entries torren
     authors: 'Fixture Author',
     extension: 'epub',
   };
+  await seedDesktopStore(launch.userData, [book], [
+    { bookId: book.md5, status: 'ready', source: 'torrent' },
+  ]);
   const app = await electron.launch({ args: launch.args });
   try {
     const page = await app.firstWindow();
@@ -337,7 +340,7 @@ test('a successful torrent download does not duplicate its legacy SHA-addressed 
   const sha256 = 'b'.repeat(64);
   const downloaded = { md5, sha256, title: 'Scale', authors: 'Greg Egan', extension: 'epub', year: '2023' };
   const favorite = { md5: sha256, blossomSha256: sha256, title: 'Scale', authors: 'Egan, Greg', extension: 'epub', year: '2023' };
-  seedDesktopStore(launch.userData, [downloaded], [
+  await seedDesktopStore(launch.userData, [downloaded], [
     { bookId: md5, status: 'ready', bytes: 100, totalBytes: 100, source: 'torrent' },
   ]);
   const app = await electron.launch({ args: launch.args });
@@ -351,15 +354,15 @@ test('a successful torrent download does not duplicate its legacy SHA-addressed 
     await page.reload();
     await page.locator('#home-query-input').fill('');
 
-    await expect(page.locator('.library-book-count')).toHaveText('1 book · 1 readable now · 0 downloading · 0 seeding · ↓ 0 B/s · ↑ 0 B/s');
+    await expect(page.locator('.library-book-count')).toHaveText('1 book');
     await expect(page.locator('.book-table-row')).toHaveCount(1);
-    await expect(libraryRow(page, 'Scale').locator('.result-availability')).toHaveText('Ready');
+    await expect(libraryRow(page, 'Scale').locator('.result-availability')).toHaveText('Available');
 
     await page.reload();
     await page.locator('#home-query-input').fill('');
-    await expect(page.locator('.library-book-count')).toHaveText('1 book · 1 readable now · 0 downloading · 0 seeding · ↓ 0 B/s · ↑ 0 B/s');
+    await expect(page.locator('.library-book-count')).toHaveText('1 book');
     await expect(page.locator('.book-table-row')).toHaveCount(1);
-    await expect(libraryRow(page, 'Scale').locator('.result-availability')).toHaveText('Ready');
+    await expect(libraryRow(page, 'Scale').locator('.result-availability')).toHaveText('Available');
   } finally {
     await app.close();
   }
@@ -383,7 +386,7 @@ test('SHA-addressed library rows inherit seeding status from their LibGen downlo
     authors: stored.authors,
     extension: stored.extension,
   };
-  seedDesktopStore(launch.userData, [stored], [{
+  await seedDesktopStore(launch.userData, [stored], [{
     bookId: libvaultMd5,
     status: 'seeding',
     bytes: 100,
@@ -397,8 +400,8 @@ test('SHA-addressed library rows inherit seeding status from their LibGen downlo
     await page.reload();
 
     const row = libraryRow(page, favorite.title);
-    await expect(page.locator('.library-book-count')).toHaveText('1 book · 1 readable now · 0 downloading · 1 seeding · ↓ 0 B/s · ↑ 0 B/s');
-    await expect(row.locator('.result-availability')).toHaveText('Seeding');
+    await expect(page.locator('.library-book-count')).toHaveText('1 book');
+    await expect(row.locator('.result-availability')).toHaveText('Available');
     await expect(row.locator('.result-title')).toHaveClass(/readable/);
     await expect(row.locator('.result-title')).not.toHaveClass(/unavailable/);
   } finally {
@@ -406,7 +409,7 @@ test('SHA-addressed library rows inherit seeding status from their LibGen downlo
   }
 });
 
-test('SHA library records keep showing their resolved torrent download after navigation', async () => {
+test('SHA metadata for an active download stays in Downloads after navigation', async () => {
   const launch = electronArgs('sha-download-status-user-data');
   const libvaultMd5 = 'c'.repeat(32);
   const book = {
@@ -418,7 +421,7 @@ test('SHA library records keep showing their resolved torrent download after nav
     authors: 'Fixture Author',
     extension: 'epub',
   };
-  seedDesktopStore(launch.userData, [{
+  await seedDesktopStore(launch.userData, [{
     ...book,
     id: libvaultMd5,
     md5: libvaultMd5,
@@ -428,19 +431,21 @@ test('SHA library records keep showing their resolved torrent download after nav
     status: 'downloading',
     bytes: 37,
     totalBytes: 100,
-    source: 'torrent',
+    source: 'fixture',
   }]);
   const app = await electron.launch({ args: launch.args });
   try {
     const page = await app.firstWindow();
     await seedLibrary(page, [book]);
     await page.reload();
-    const row = libraryRow(page, book.title);
-    await expect(row.locator('.result-availability')).toHaveText('Downloading 37%');
-    await expect(row.locator('.availability-progress')).toHaveText('37%');
-    await page.getByRole('button', { name: 'Search, Command 3' }).click();
+    await expect(libraryRow(page, book.title)).toHaveCount(0);
+    await page.getByRole('button', { name: 'Downloads' }).click();
+    await expect(page.locator('#desktop-downloads-list')).toContainText(book.title);
+    await expect(page.locator('#desktop-downloads-list')).toContainText('37 B of 100 B');
     await page.getByRole('button', { name: 'Home, Command 1' }).click();
-    await expect(libraryRow(page, book.title).locator('.result-availability')).toHaveText('Downloading 37%');
+    await expect(libraryRow(page, book.title)).toHaveCount(0);
+    await page.getByRole('button', { name: 'Downloads' }).click();
+    await expect(page.locator('#desktop-downloads-list')).toContainText('37 B of 100 B');
   } finally {
     await app.close();
   }
@@ -525,6 +530,9 @@ test('hovering a placeholder retries metadata and replaces it with a discovered 
     authors: 'Coverless Fixture Author',
     extension: 'epub',
   };
+  await seedDesktopStore(launch.userData, [book], [
+    { bookId: book.md5, status: 'ready', source: 'torrent' },
+  ]);
   const app = await electron.launch({ args: launch.args });
   try {
     const page = await app.firstWindow();
@@ -565,11 +573,15 @@ test('hovering a placeholder retries metadata and replaces it with a discovered 
 
 test('switching MD5 books never treats the previous EPUB as the next book', async () => {
   const launch = electronArgs('switch-user-data');
+  const first = { md5: '1'.repeat(32), title: 'Luminous Fixture', authors: 'Fixture Author', extension: 'epub', body: 'Only luminous bytes.', readUrl: 'https://files.test/luminous.epub' };
+  const second = { md5: '2'.repeat(32), title: 'Hunger Games Fixture', authors: 'Fixture Author', extension: 'epub', body: 'Only hunger games bytes.', readUrl: 'https://files.test/hunger-games.epub' };
+  await seedDesktopStore(launch.userData, [first, second], [
+    { bookId: first.md5, status: 'ready', source: 'torrent' },
+    { bookId: second.md5, status: 'ready', source: 'torrent' },
+  ]);
   const app = await electron.launch({ args: launch.args });
   try {
     const page = await app.firstWindow();
-    const first = { md5: '1'.repeat(32), title: 'Luminous Fixture', extension: 'epub', readUrl: 'https://files.test/luminous.epub' };
-    const second = { md5: '2'.repeat(32), title: 'Hunger Games Fixture', extension: 'epub', readUrl: 'https://files.test/hunger-games.epub' };
     const firstBytes = await minimalEpub(first.title, 'Only luminous bytes.');
     const secondBytes = await minimalEpub(second.title, 'Only hunger games bytes.');
     await app.context().route('https://lib.b.bfr.ee/api/books/**', route => route.fulfill({ status: 404, body: '{}' }));
@@ -587,8 +599,7 @@ test('switching MD5 books never treats the previous EPUB as the next book', asyn
     await expect(reader.locator('body')).toHaveAttribute('data-book-id', first.md5, { timeout: 45_000 });
     await page.getByRole('button', { name: 'Home' }).click();
     await page.getByRole('link', { name: second.title }).click();
-    await expect(page.locator('#read-metadata-fallback')).toBeVisible();
-    await expect(page.locator('#read-metadata-fallback h1')).toHaveText(second.title);
+    await expect(page.locator('#read-metadata-fallback')).toBeHidden();
     await expect(reader.locator('body')).toHaveAttribute('data-book-id', second.md5, { timeout: 45_000 });
     const renderedChapter = reader.frameLocator('#viewer iframe').locator('body');
     await expect(renderedChapter).toContainText('Only hunger games bytes.', { timeout: 45_000 });
@@ -601,11 +612,15 @@ test('switching MD5 books never treats the previous EPUB as the next book', asyn
 
 test('Library opens FB2 and CBZ books through their format-specific readers', async () => {
   const launch = electronArgs('formats-user-data');
+  const fb2 = { md5: '3'.repeat(32), title: 'FB2 Fixture', authors: 'Fixture Author', extension: 'fb2', readUrl: 'https://files.test/book.fb2' };
+  const cbz = { md5: '4'.repeat(32), title: 'CBZ Fixture', authors: 'Fixture Author', extension: 'cbz', readUrl: 'https://files.test/book.cbz' };
+  await seedDesktopStore(launch.userData, [fb2, cbz], [
+    { bookId: fb2.md5, status: 'ready', source: 'torrent' },
+    { bookId: cbz.md5, status: 'ready', source: 'torrent' },
+  ]);
   const app = await electron.launch({ args: launch.args });
   try {
     const page = await app.firstWindow();
-    const fb2 = { md5: '3'.repeat(32), title: 'FB2 Fixture', extension: 'fb2', readUrl: 'https://files.test/book.fb2' };
-    const cbz = { md5: '4'.repeat(32), title: 'CBZ Fixture', extension: 'cbz', readUrl: 'https://files.test/book.cbz' };
     await app.context().route('https://lib.b.bfr.ee/api/books/**', route => route.fulfill({ status: 404, body: '{}' }));
     await app.context().route('https://lib.b.bfr.ee/api/nostr', route => route.fulfill({ status: 404, body: '{}' }));
     await app.context().route(fb2.readUrl, route => route.fulfill({ status: 200, contentType: 'application/xml', body: minimalFB2(fb2.title) }));
@@ -630,11 +645,15 @@ test('Library opens FB2 and CBZ books through their format-specific readers', as
 
 test('switching from a comic archive to an EPUB replaces the pagination reader', async () => {
   const launch = electronArgs('comic-to-epub-user-data');
+  const comic = { md5: '6'.repeat(32), title: 'Pagination Fixture', authors: 'Fixture Author', extension: 'cbz', readUrl: 'https://files.test/pagination.cbz' };
+  const epub = { md5: '7'.repeat(32), title: 'Actual EPUB Fixture', authors: 'Fixture Author', extension: 'epub', body: 'This is the actual EPUB text.', readUrl: 'https://files.test/actual.epub' };
+  await seedDesktopStore(launch.userData, [comic, epub], [
+    { bookId: comic.md5, status: 'ready', source: 'torrent' },
+    { bookId: epub.md5, status: 'ready', source: 'torrent' },
+  ]);
   const app = await electron.launch({ args: launch.args });
   try {
     const page = await app.firstWindow();
-    const comic = { md5: '6'.repeat(32), title: 'Pagination Fixture', extension: 'cbz', readUrl: 'https://files.test/pagination.cbz' };
-    const epub = { md5: '7'.repeat(32), title: 'Actual EPUB Fixture', extension: 'epub', readUrl: 'https://files.test/actual.epub' };
     await app.context().route('https://lib.b.bfr.ee/api/books/**', route => route.fulfill({ status: 404, body: '{}' }));
     await app.context().route('https://lib.b.bfr.ee/api/nostr', route => route.fulfill({ status: 404, body: '{}' }));
     await app.context().route(comic.readUrl, async route => route.fulfill({ status: 200, contentType: 'application/vnd.comicbook+zip', body: await minimalCBZ() }));
@@ -687,11 +706,15 @@ test('EPUB reader resolves and displays images embedded in the archive', async (
 
 test('a failed EPUB open hides the previous book reader instead of showing stale pagination', async () => {
   const launch = electronArgs('stale-reader-fallback-user-data');
+  const comic = { md5: '8'.repeat(32), title: 'Previous Comic Fixture', authors: 'Fixture Author', extension: 'cbz', readUrl: 'https://files.test/previous.cbz' };
+  const missing = { md5: '9'.repeat(32), title: 'Missing EPUB Fixture', authors: 'Fixture Author', extension: 'epub' };
+  await seedDesktopStore(launch.userData, [comic, missing], [
+    { bookId: comic.md5, status: 'ready', source: 'torrent' },
+    { bookId: missing.md5, status: 'failed', source: 'torrent', error: 'This book is not stored locally' },
+  ]);
   const app = await electron.launch({ args: launch.args });
   try {
     const page = await app.firstWindow();
-    const comic = { md5: '8'.repeat(32), title: 'Previous Comic Fixture', extension: 'cbz', readUrl: 'https://files.test/previous.cbz' };
-    const missing = { md5: '9'.repeat(32), title: 'Missing EPUB Fixture', extension: 'epub' };
     await app.context().route('https://lib.b.bfr.ee/api/books/**', route => route.fulfill({ status: 404, body: '{}' }));
     await app.context().route('https://lib.b.bfr.ee/api/nostr', route => route.fulfill({ status: 404, body: '{}' }));
     await app.context().route(comic.readUrl, async route => route.fulfill({ status: 200, contentType: 'application/vnd.comicbook+zip', body: await minimalCBZ() }));
@@ -702,66 +725,37 @@ test('a failed EPUB open hides the previous book reader instead of showing stale
     await page.getByRole('link', { name: comic.title }).click();
     await expect(page.frameLocator('#reader-frame').locator('#count')).toHaveText('1 / 1');
     await page.getByRole('button', { name: 'Home' }).click();
-    await page.getByRole('link', { name: missing.title }).click();
-
-    await expect(page.locator('#read-metadata-fallback')).toBeVisible();
-    await expect(page.locator('#read-metadata-fallback h1')).toHaveText(missing.title);
-    await expect(page.locator('#read-metadata-fallback-status')).toContainText('This book is not stored locally');
-    await expect(page.locator('#reader-frame')).toBeHidden();
+    await expect(libraryRow(page, missing.title)).toHaveCount(0);
+    await page.getByRole('button', { name: 'Downloads' }).click();
+    await expect(page.locator('#desktop-downloads-list')).toContainText(missing.title);
+    await expect(page.locator('#desktop-downloads-list')).toContainText('This book is not stored locally');
+    await expect(page.locator('#read-metadata-fallback')).toBeHidden();
   } finally {
     await app.close();
   }
 });
 
-test('metadata-only failures stay compact, scrollable, and tied to the requested book', async () => {
+test('unreadable metadata failures appear in Downloads instead of Library', async () => {
   const launch = electronArgs('fallback-user-data');
+  const book = {
+    md5: '5'.repeat(32),
+    title: 'A deliberately long title that must remain compact in a short Electron window instead of taking over the entire page',
+    authors: 'A very long fixture author name used to exercise the compact metadata layout',
+    extension: 'epub',
+  };
+  await seedDesktopStore(launch.userData, [book], [
+    { bookId: book.md5, status: 'failed', source: 'torrent', error: 'No readable copy is available' },
+  ]);
   const app = await electron.launch({ args: launch.args });
   try {
     const page = await app.firstWindow();
-    const book = {
-      md5: '5'.repeat(32),
-      title: 'A deliberately long title that must remain compact in a short Electron window instead of taking over the entire page',
-      authors: 'A very long fixture author name used to exercise the compact metadata layout',
-      extension: 'epub',
-    };
-    await app.context().route(`https://lib.b.bfr.ee/api/books/${book.md5}`, route => route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify({ ...book, id: 0, filesize_bytes: 0 }),
-    }));
-    await app.context().route('https://lib.b.bfr.ee/api/nostr', route => route.fulfill({ status: 404, body: '{}' }));
-    await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(520, 520));
     await seedLibrary(page, [book]);
     await page.reload();
-    await page.getByRole('link', { name: book.title }).click();
-
-    const panel = page.locator('#read-metadata-fallback');
-    await expect(panel).toBeVisible();
-    await expect(panel.locator('h1')).toHaveText(book.title);
-    await expect(panel.locator('.read-metadata-grid')).toBeVisible();
-    for (const label of ['Author', 'Format', 'MD5', 'Rights']) {
-      await expect(panel.locator('.read-metadata-grid dt', { hasText: label })).toBeVisible();
-    }
-    await expect(panel.locator('.metadata-digest')).toHaveText(book.md5);
-    const layout = await page.evaluate(() => {
-      const section = document.querySelector('#reader-section');
-      const panel = document.querySelector('#read-metadata-fallback');
-      const title = panel.querySelector('h1');
-      return {
-        overflowY: getComputedStyle(section).overflowY,
-        panelWidth: panel.getBoundingClientRect().width,
-        viewportWidth: innerWidth,
-        titleSize: parseFloat(getComputedStyle(title).fontSize),
-        headerButtonWidths: [...document.querySelectorAll('.app-header-right .header-tab')]
-          .filter(button => !button.classList.contains('hidden'))
-          .map(button => button.getBoundingClientRect().width),
-      };
-    });
-    expect(layout.overflowY).toBe('auto');
-    expect(layout.panelWidth).toBeLessThanOrEqual(layout.viewportWidth);
-    expect(layout.titleSize).toBeLessThanOrEqual(42);
-    expect(layout.headerButtonWidths.length).toBeGreaterThan(0);
-    expect(layout.headerButtonWidths.every(width => width >= 32)).toBe(true);
+    await expect(libraryRow(page, book.title)).toHaveCount(0);
+    await page.getByRole('button', { name: 'Downloads' }).click();
+    await expect(page.locator('#desktop-downloads-list')).toContainText(book.title);
+    await expect(page.locator('#desktop-downloads-list')).toContainText('No readable copy is available');
+    await expect(page.locator('#read-metadata-fallback')).toBeHidden();
   } finally {
     await app.close();
   }
@@ -769,23 +763,23 @@ test('metadata-only failures stay compact, scrollable, and tied to the requested
 
 test('book details author links open an author search', async () => {
   const launch = electronArgs('book-detail-author-link-user-data');
+  const book = {
+    md5: '4'.repeat(32),
+    title: 'The Singularity Is Nearer',
+    authors: 'Ray Kurzweil',
+    year: '2024',
+    extension: 'epub',
+  };
+  await seedDesktopStore(launch.userData, [book], [
+    { bookId: book.md5, status: 'ready', source: 'torrent' },
+  ]);
   const app = await electron.launch({ args: launch.args });
   try {
     const page = await app.firstWindow();
-    const book = {
-      md5: '4'.repeat(32),
-      title: 'The Singularity Is Nearer',
-      authors: 'Ray Kurzweil',
-      year: '2024',
-      extension: 'epub',
-    };
-    await app.context().route('https://lib.b.bfr.ee/api/books/**', route => route.fulfill({ status: 404, body: '{}' }));
     await app.context().route('https://lib.b.bfr.ee/api/search?**', route => route.fulfill({ status: 200, contentType: 'application/json', body: '{"books":[]}' }));
     await seedLibrary(page, [book]);
     await page.reload();
-    await page.getByRole('link', { name: book.title }).click();
-
-    await page.locator('#read-metadata-fallback').getByRole('link', { name: book.authors }).click();
+    await libraryRow(page, book.title).getByRole('link', { name: book.authors }).click();
     await expect(page.locator('#search-type')).toHaveValue('author');
     await expect(page.locator('#query-input')).toHaveValue(book.authors);
   } finally {

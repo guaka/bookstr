@@ -661,9 +661,9 @@ test('Home title links do not use the catalog-search workaround', () => {
 test('Home shows the deduplicated library book count inline after its heading', () => {
   assert.match(html, /homeLibraryHeading\?\.append\(homeLibraryCount\)/);
   assert.match(html, /\.library-book-count[\s\S]*?font-size: 0\.68rem/);
-  assert.match(html, /const visibleCount = matchingBooks\.length === library\.length/);
-  assert.match(html, /`\$\{library\.length\} \$\{library\.length === 1 \? 'book' : 'books'\}`/);
-  assert.match(html, /`\$\{matchingBooks\.length\} of \$\{library\.length\} books`/);
+  assert.match(html, /const visibleCount = matchingBooks\.length === enrichedLibrary\.length/);
+  assert.match(html, /`\$\{enrichedLibrary\.length\} \$\{enrichedLibrary\.length === 1 \? 'book' : 'books'\}`/);
+  assert.match(html, /`\$\{matchingBooks\.length\} of \$\{enrichedLibrary\.length\} books`/);
   assert.match(html, /const readableCount = matchingBooks\.filter\(isBookReadableNow\)\.length/);
   assert.match(html, /`\$\{visibleCount\} · \$\{readableCount\} readable now · \$\{downloadingCount\} downloading · \$\{seedingCount\} seeding\$\{transferRates\}`/);
 });
@@ -801,11 +801,11 @@ test('Home can delete a book locally and across synced clients', () => {
   assert.match(html, /if \(parsed\.deleted\)/);
 });
 
-test('Library membership replaces favorite hearts and active downloads join the library', () => {
+test('Library membership retains its explicit action and active downloads stay in Downloads', () => {
   assert.doesNotMatch(html, /id="reading-favorite-btn"/);
   assert.doesNotMatch(html, /class="favorite-status"/);
   assert.match(html, /data-action="add-library"/);
-  assert.match(html, /function rememberDownloadingBooks\(downloads\)/);
+  assert.doesNotMatch(html, /rememberDownloadingBooks/);
   assert.match(html, /activeStatuses = new Set\(\['queued', 'finding-peers', 'downloading', 'retrying'\]\)/);
   assert.match(html, /addBookToLibrary\(torrentBook\)/);
 });
@@ -850,7 +850,7 @@ test('Home offers result-driven language and format filters', () => {
   assert.match(html, /resultFormat\(book\) === homeLibraryFilter\.format/);
   assert.match(html, /value => value\.toUpperCase\(\)/);
   assert.match(html, /value => value\.toLowerCase\(\)/);
-  assert.match(html, /`\$\{matchingBooks\.length\} of \$\{library\.length\} books`/);
+  assert.match(html, /`\$\{matchingBooks\.length\} of \$\{enrichedLibrary\.length\} books`/);
 });
 
 test('Home filter choices are bookmarkable hash parameters', () => {
@@ -1173,7 +1173,7 @@ test('home search submit updates the route and triggers search pagination state'
 
 test('tabs persist selection in route hash transitions', () => {
   assert.match(html, /function activateTab\(tab, \{ updateHash = false \} = \{\}\) {/);
-  assert.match(html, /activeTab = \['home', 'search', 'reading', 'words', 'people', 'settings'\]\.includes\(tab\) \? tab : 'home';/);
+  assert.match(html, /activeTab = \['home', 'search', 'reading', 'words', 'people', 'settings', \.\.\.\(isDesktopMode \? \['downloads'\] : \[\]\)\]\.includes\(tab\) \? tab : 'home';/);
   assert.match(html, /setHashRoute\(routeValue \? `read=\$\{encodeURIComponent\(routeValue\)\}` : 'reading'\);/);
   assert.match(html, /setHashRoute\('words'\);/);
   assert.match(html, /setHashRoute\(isDesktopMode \? 'devices' : 'people'\);/);

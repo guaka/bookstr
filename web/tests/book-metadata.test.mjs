@@ -1751,3 +1751,28 @@ test('availabilitySourcesForBook returns unique source list for readUrl with que
     ['Gutenberg', 'Cached'],
   );
 });
+
+
+test('language labels resolve catalog codes to English names', () => {
+  for (const [code, name] of [['CAT', 'Catalan'], ['ca', 'Catalan'], ['EN', 'English'], ['eng', 'English'], ['FR', 'French'], ['fre', 'French'], ['pt_BR', 'Brazilian Portuguese'], ['english', 'English']]) {
+    assert.equal(globalThis.BookMetadata.languageLabel(code), name);
+  }
+  assert.equal(globalThis.BookMetadata.languageLabel('unknown'), '');
+  assert.equal(globalThis.BookMetadata.languageLabel('Klingon language'), 'Klingon language');
+});
+
+
+test('deduplicated library metadata retains locally detected reader formats', () => {
+  const id = 'a'.repeat(32);
+  const [book] = globalThis.BookMetadata.dedupeLibraryBooks([
+    { md5: id, title: 'Comic', extension: 'cbz', format: 'cbz', metadataProvenance: { extension: 'detected-local' } },
+    { md5: id, title: 'Comic', extension: 'epub', format: 'epub' },
+  ]);
+  assert.equal(book.extension, 'cbz');
+  assert.equal(book.format, 'cbz');
+  const [updated] = globalThis.BookMetadata.dedupeLibraryBooks([
+    book, { md5: id, extension: 'cbr', format: 'cbr', metadataProvenance: { extension: 'detected-local' } },
+  ]);
+  assert.equal(updated.extension, 'cbr');
+  assert.equal(updated.format, 'cbr');
+});

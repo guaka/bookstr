@@ -55,15 +55,28 @@ test('a slower previous Electron search cannot overwrite a newer query', async (
   }
 });
 
-test('a Libcat search result opens its book page', async () => {
+test('clicking a Libcat title queues it and opens Downloads', async () => {
   const app = await electron.launch({ args: electronArgs() });
   try {
     const page = await app.firstWindow();
     await page.waitForLoadState('domcontentloaded');
+    await app.evaluate(({ ipcMain }) => {
+      globalThis.queuedBooks = [];
+      ipcMain.removeHandler('bookstr-desktop-library-enqueue');
+      ipcMain.handle('bookstr-desktop-library-enqueue', (_event, request) => {
+        globalThis.queuedBooks.push(request);
+        return { bookId: request.record.md5, status: 'queued' };
+      });
+      ipcMain.removeHandler('bookstr-desktop-library-downloads');
+      ipcMain.handle('bookstr-desktop-library-downloads', () => globalThis.queuedBooks.map(request => ({
+        bookId: request.record.md5, md5: request.record.md5, title: request.record.title,
+        status: 'queued', queuedFromSearch: true, readable: false, completedAt: null,
+      })));
+    });
     await page.evaluate(() => {
       nip17FetchModule = Promise.resolve({ searchLibcat: async () => ({ books: [{
-        md5: 'c'.repeat(32), source: 'libvault', title: 'Clickable Libcat Result',
-        authors: ['Fixture Author'], language: 'en',
+        md5: 'c'.repeat(32), libgenId: 12345, source: 'libvault', title: 'Clickable Libcat Result',
+        authors: ['Fixture Author'], language: 'en', extension: 'pdf',
       }] }) });
     });
 
@@ -72,11 +85,10 @@ test('a Libcat search result opens its book page', async () => {
     await query.fill('clickable');
     await query.press('Enter');
     await page.getByRole('link', { name: 'Clickable Libcat Result', exact: true }).click();
-
-    await expect(page).toHaveURL(/#read=cccccccccccccccccccccccccccccccc$/);
-    await expect(page.locator('#read-metadata-fallback')).toBeVisible();
-    await expect(page.locator('#read-metadata-fallback h1')).toHaveText('Clickable Libcat Result');
-    await expect(page.locator('#read-metadata-fallback-status')).toContainText('This book is not stored locally');
+    await expect(page.locator('#downloads-tab')).toBeVisible();
+    await expect(page.locator('#desktop-downloads-list')).toContainText('Clickable Libcat Result');
+    await expect(page.locator('#desktop-downloads-list')).toContainText('Queued');
+    expect(await app.evaluate(() => globalThis.queuedBooks)).toHaveLength(1);
   } finally {
     await app.close();
   }
@@ -96,7 +108,8 @@ test('Libcat search plus opens Downloads while the heart stays a separate action
       });
       ipcMain.removeHandler('bookstr-desktop-library-downloads');
       ipcMain.handle('bookstr-desktop-library-downloads', () => globalThis.queuedBooks.map(request => ({
-        bookId: request.record.md5, title: request.record.title, status: 'queued', queuedFromSearch: true,
+        bookId: request.record.md5, md5: request.record.md5, title: request.record.title,
+        status: 'queued', queuedFromSearch: true, readable: false, completedAt: null,
       })));
       ipcMain.removeHandler('bookstr-desktop-kindle-devices');
       ipcMain.handle('bookstr-desktop-kindle-devices', () => []);
@@ -113,12 +126,12 @@ test('Libcat search plus opens Downloads while the heart stays a separate action
     await page.getByRole('textbox', { name: 'Book search query' }).press('Enter');
     await expect(page.locator('#results')).toContainText('Download Fixture');
     await page.getByRole('button', { name: 'Add Download Fixture to downloads' }).click();
-    await expect(page.getByRole('dialog', { name: 'Downloads' })).toBeVisible();
+    await expect(page.locator('#downloads-tab')).toBeVisible();
     await expect(page.locator('#desktop-downloads-list')).toContainText('Download Fixture');
     await expect(page.locator('#desktop-downloads-list')).toContainText('Queued');
     expect(await app.evaluate(() => globalThis.queuedBooks)).toHaveLength(1);
     expect(await page.evaluate(() => state.favorites.some(book => book.md5 === 'a'.repeat(32)))).toBe(false);
-    await page.getByRole('button', { name: 'Close downloads' }).click();
+    await page.getByRole('button', { name: 'Search, Command 3' }).click();
     await page.evaluate(() => {
       state.settings.useNip7 = true;
       state.nip7.pubkey = 'f'.repeat(64);
@@ -154,7 +167,7 @@ test('Libcat search plus opens Downloads while the heart stays a separate action
   } finally { await app.close(); }
 });
 
-test('download progress updates the library without replacing its rows', async () => {
+test('download progress appears in Downloads without adding a book to Library', async () => {
   const app = await electron.launch({ args: electronArgs() });
   try {
     const page = await app.firstWindow();
@@ -163,20 +176,29 @@ test('download progress updates the library without replacing its rows', async (
     await expect(page.locator('#build-time')).not.toBeEmpty();
     await page.waitForTimeout(500);
     const bookId = 'd'.repeat(32);
+    await app.evaluate(({ ipcMain }) => {
+      globalThis.progressDownload = {
+        bookId: 'd'.repeat(32), md5: 'd'.repeat(32), title: 'In-flight download',
+        authors: ['Fixture Author'], extension: 'epub', status: 'downloading',
+        bytes: 0, totalBytes: 102400, queuedFromSearch: true, readable: false, completedAt: null,
+      };
+      ipcMain.removeHandler('bookstr-desktop-library-downloads');
+      ipcMain.handle('bookstr-desktop-library-downloads', () => [globalThis.progressDownload]);
+    });
     await page.evaluate(id => {
       state.reading = [];
       state.favorites = Array.from({ length: 80 }, (_, index) => ({
-        md5: index === 0 ? id : index.toString(16).padStart(32, '0'),
+        md5: index.toString(16).padStart(32, '0'),
         title: `Library fixture ${index}`,
         authors: ['Fixture Author'],
         extension: 'epub',
       }));
       renderHome();
-      window.progressFixtureRow = document.querySelector(`.book-table-row[data-download-book-id="${id}"]`);
     }, bookId);
-    expect(await page.evaluate(() => Boolean(window.progressFixtureRow))).toBe(true);
+    await expect(page.locator(`#home-reading-list .book-table-row[data-download-book-id="${bookId}"]`)).toHaveCount(0);
 
     await app.evaluate(({ BrowserWindow }) => {
+      globalThis.progressDownload.bytes = 100 * 1024;
       const window = BrowserWindow.getAllWindows().find(item => !item.isDestroyed());
       for (let index = 0; index < 100; index += 1) {
         window.webContents.send('bookstr-desktop-acquisition-progress', {
@@ -185,7 +207,81 @@ test('download progress updates the library without replacing its rows', async (
       }
     });
     await page.waitForTimeout(300);
-    expect(await page.evaluate(() => window.progressFixtureRow.isConnected)).toBe(true);
+    await expect(page.locator(`#home-reading-list .book-table-row[data-download-book-id="${bookId}"]`)).toHaveCount(0);
+    await page.getByRole('button', { name: 'Downloads' }).click();
+    await expect(page.locator('#downloads-tab')).toBeVisible();
+    await expect(page.locator('#desktop-downloads-list')).toContainText('In-flight download');
+    await expect(page.locator('#desktop-downloads-list')).toContainText('100.0 KB of 100.0 KB');
+  } finally { await app.close(); }
+});
+
+test('a download completed while Downloads is open is visible until the next entry', async () => {
+  const app = await electron.launch({ args: electronArgs() });
+  try {
+    const page = await app.firstWindow();
+    await page.waitForLoadState('domcontentloaded');
+    await app.evaluate(({ ipcMain }) => {
+      globalThis.downloadRows = [{
+        bookId: 'c'.repeat(32), md5: 'c'.repeat(32), title: 'Finishing download',
+        status: 'downloading', queuedFromSearch: true, readable: false, completedAt: null,
+      }];
+      ipcMain.removeHandler('bookstr-desktop-library-downloads');
+      ipcMain.handle('bookstr-desktop-library-downloads', () => globalThis.downloadRows);
+    });
+    await page.getByRole('button', { name: 'Downloads' }).click();
+    await expect(page.locator('#desktop-downloads-list')).toContainText('Finishing download');
+    await app.evaluate(({ BrowserWindow }) => {
+      globalThis.downloadRows = [{
+        bookId: 'c'.repeat(32), md5: 'c'.repeat(32), title: 'Finishing download',
+        authors: ['Fixture Author'], extension: 'epub', status: 'ready',
+        queuedFromSearch: true, readable: true, completedAt: 123,
+      }];
+      const window = BrowserWindow.getAllWindows().find(item => !item.isDestroyed());
+      window.webContents.send('bookstr-desktop-downloads-changed');
+    });
+    await expect(page.locator('#desktop-downloads-list')).toContainText('Finishing download');
+    await expect(page.locator('#desktop-downloads-list')).toContainText('Ready to read');
+    await page.getByRole('button', { name: 'Home, Command 1' }).click();
+    await page.getByRole('button', { name: 'Downloads' }).click();
+    await expect(page.locator('#desktop-downloads-list')).not.toContainText('Finishing download');
+    await expect(page.locator('#desktop-downloads-list')).toContainText('No downloads yet.');
+  } finally { await app.close(); }
+});
+
+test('Library sorts readable desktop downloads by completion and filters with full language names', async () => {
+  const app = await electron.launch({ args: electronArgs() });
+  try {
+    const page = await app.firstWindow();
+    await page.waitForLoadState('domcontentloaded');
+    await app.evaluate(({ ipcMain }) => {
+      globalThis.libraryDownloadsFixture = [
+        { bookId: 'e'.repeat(32), md5: 'e'.repeat(32), title: 'Older French', authors: ['Fixture Author'], language: 'fr', extension: 'epub', status: 'ready', readable: true, completedAt: 10 },
+        { bookId: 'f'.repeat(32), md5: 'f'.repeat(32), title: 'Newest English', authors: ['Fixture Author'], language: 'en', extension: 'pdf', status: 'ready', readable: true, completedAt: 30 },
+        { bookId: '1'.repeat(32), md5: '1'.repeat(32), title: 'Middle English', authors: ['Fixture Author'], language: 'en', extension: 'fb2', status: 'ready', readable: true, completedAt: 20 },
+        { bookId: '2'.repeat(32), md5: '2'.repeat(32), title: 'Unreadable metadata', authors: ['Fixture Author'], language: 'en', extension: 'txt', status: 'ready', readable: false, completedAt: 40 },
+      ];
+      ipcMain.removeHandler('bookstr-desktop-library-downloads');
+      ipcMain.handle('bookstr-desktop-library-downloads', () => globalThis.libraryDownloadsFixture);
+    });
+    await page.evaluate(() => {
+      state.reading = [];
+      state.favorites = [];
+    });
+    await page.evaluate(async () => {
+      await refreshDesktopDownloadStates();
+      renderHome();
+    });
+    const titles = page.locator('#home-reading-list .book-table-row .result-title');
+    await expect(titles).toHaveCount(3);
+    await expect(titles.nth(0)).toHaveText('Newest English');
+    await expect(titles.nth(1)).toHaveText('Middle English');
+    await expect(titles.nth(2)).toHaveText('Older French');
+    const languageFilter = page.getByRole('combobox', { name: 'Filter library by language' });
+    await expect(languageFilter.locator('option')).toContainText(['All languages', 'English', 'French']);
+    await languageFilter.selectOption('en');
+    await expect(titles).toHaveCount(2);
+    await expect(page.locator('#home-reading-list')).toContainText('English');
+    await expect(page.locator('#home-reading-list')).not.toContainText('Older French');
   } finally { await app.close(); }
 });
 
@@ -230,8 +326,8 @@ test('a completed PDF download sends only its selected book to Kindle', async ()
       globalThis.singleKindleTransfer = null;
       ipcMain.removeHandler('bookstr-desktop-library-downloads');
       ipcMain.handle('bookstr-desktop-library-downloads', () => [
-        { bookId: 'pdf-1', title: 'Fixture PDF', extension: 'pdf', status: 'ready' },
-        { bookId: 'epub-1', title: 'Fixture EPUB', extension: 'epub', status: 'ready' },
+        { bookId: 'a'.repeat(32), md5: 'a'.repeat(32), title: 'Fixture PDF', authors: ['Fixture'], language: 'en', extension: 'pdf', status: 'ready', readable: true, completedAt: 100 },
+        { bookId: 'b'.repeat(32), md5: 'b'.repeat(32), title: 'Fixture EPUB', authors: ['Fixture'], language: 'en', extension: 'epub', status: 'ready', readable: true, completedAt: 90 },
       ]);
       ipcMain.removeHandler('bookstr-desktop-kindle-devices');
       ipcMain.handle('bookstr-desktop-kindle-devices', () => [{ id: 'mounted:fixture', name: 'Kindle', kind: 'mounted' }]);
@@ -247,13 +343,15 @@ test('a completed PDF download sends only its selected book to Kindle', async ()
       });
     });
     await page.reload();
-    await page.getByRole('button', { name: 'Search' }).click();
     await page.getByRole('button', { name: 'Downloads' }).click();
+    await expect(page.getByRole('button', { name: 'Send Fixture PDF to Kindle' })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Send Fixture EPUB to Kindle' })).toHaveCount(0);
+    await page.getByRole('button', { name: 'Home, Command 1' }).click();
     await expect(page.getByRole('button', { name: 'Send Fixture PDF to Kindle' })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Send Fixture EPUB to Kindle' })).toHaveCount(0);
     await page.getByRole('button', { name: 'Send Fixture PDF to Kindle' }).click();
     await expect.poll(() => app.evaluate(() => globalThis.singleKindleTransfer)).toEqual({
-      deviceId: 'mounted:fixture', bookId: 'pdf-1',
+      deviceId: 'mounted:fixture', bookId: 'a'.repeat(32),
     });
   } finally { await app.close(); }
 });

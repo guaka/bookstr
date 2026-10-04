@@ -126,11 +126,25 @@ static int list_files(LIBMTP_mtpdevice_t *device) {
   return 0;
 }
 
+static int report_transfer_progress(uint64_t sent, uint64_t total, const void *data) {
+  static int previous_percent = -1;
+  static const char *previous_action = NULL;
+  const char *action = data;
+  int percent = total ? (int)((double)sent * 100.0 / (double)total) : 0;
+  if (previous_action != action || percent < previous_percent || percent >= previous_percent + 10 || percent == 100) {
+    printf("{\"progress\":true,\"phase\":\"%s\",\"percent\":%d}\n", action, percent);
+    fflush(stdout);
+    previous_action = action;
+    previous_percent = percent;
+  }
+  return 0;
+}
+
 static int receive_file(LIBMTP_mtpdevice_t *device, const char *id, const char *destination) {
   char *end = NULL;
   unsigned long value = strtoul(id, &end, 10);
   if (!id[0] || !end || *end || value > UINT32_MAX) return 1;
-  if (LIBMTP_Get_File_To_File(device, (uint32_t)value, destination, NULL, NULL) != 0) return 1;
+  if (LIBMTP_Get_File_To_File(device, (uint32_t)value, destination, report_transfer_progress, "verifying") != 0) return 1;
   puts("{\"ok\":true}");
   return 0;
 }
@@ -155,10 +169,46 @@ static int send_file(LIBMTP_mtpdevice_t *device, const char *source, const char 
   file->parent_id = documents.folder_id;
   file->storage_id = documents.storage_id;
   file->filetype = LIBMTP_FILETYPE_UNKNOWN;
-  int result = LIBMTP_Send_File_From_File(device, source, file, NULL, NULL);
+  int result = LIBMTP_Send_File_From_File(device, source, file, report_transfer_progress, "copying");
   if (result == 0) printf("{\"id\":\"%" PRIu32 "\"}\n", file->item_id);
   LIBMTP_destroy_file_t(file);
   return result == 0 ? 0 : 1;
+}
+
+static int serve_session(LIBMTP_mtpdevice_t *device) {
+  documents_ref_t documents;
+  if (!find_documents(device, &documents)) return 1;
+  uint64_t free_bytes = 0;
+  for (LIBMTP_devicestorage_t *storage = device->storage; storage; storage = storage->next) {
+    if (storage->id == documents.storage_id) free_bytes = storage->FreeSpaceInBytes;
+  }
+  printf("{\"ready\":true,\"freeBytes\":%" PRIu64 "}\n", free_bytes);
+  fflush(stdout);
+  char line[65536];
+  while (fgets(line, sizeof(line), stdin)) {
+    size_t length = strlen(line);
+    if (!length || line[length - 1] != '\n') return 2;
+    line[length - 1] = '\0';
+    char *save = NULL;
+    char *action = strtok_r(line, "\t", &save);
+    char *first = strtok_r(NULL, "\t", &save);
+    char *second = strtok_r(NULL, "\t", &save);
+    char *extra = strtok_r(NULL, "\t", &save);
+    int result = 2;
+    LIBMTP_Clear_Errorstack(device);
+    if (action && !extra) {
+      if (!strcmp(action, "files") && !first) result = list_files(device);
+      else if (!strcmp(action, "get") && first && second) result = receive_file(device, first, second);
+      else if (!strcmp(action, "put") && first && second) result = send_file(device, first, second);
+    }
+    if (result || LIBMTP_Get_Errorstack(device)) {
+      LIBMTP_Dump_Errorstack(device);
+      LIBMTP_Clear_Errorstack(device);
+      puts("{\"error\":\"Kindle operation failed\"}");
+    } else puts("{\"complete\":true}");
+    fflush(stdout);
+  }
+  return 0;
 }
 
 int main(int argc, char **argv) {
@@ -168,7 +218,8 @@ int main(int argc, char **argv) {
   LIBMTP_mtpdevice_t *device = open_kindle(argv[2]);
   if (!device) { fputs("Kindle is disconnected or in use.\n", stderr); return 1; }
   int result = 2;
-  if (argc == 3 && strcmp(argv[1], "files") == 0) result = list_files(device);
+  if (argc == 3 && strcmp(argv[1], "session") == 0) result = serve_session(device);
+  else if (argc == 3 && strcmp(argv[1], "files") == 0) result = list_files(device);
   else if (argc == 5 && strcmp(argv[1], "get") == 0) result = receive_file(device, argv[3], argv[4]);
   else if (argc == 5 && strcmp(argv[1], "put") == 0) result = send_file(device, argv[3], argv[4]);
   LIBMTP_Release_Device(device);

@@ -82,6 +82,14 @@
       || (/^[\p{L}][\p{L} .'-]{1,40}$/u.test(first) ? first : '');
   }
 
+  function languageLabel(value) {
+    const language = normalizeLanguage(value);
+    if (!language) return '';
+    const names = new Intl.DisplayNames(['en'], { type: 'language' });
+    return /^[a-z]{2,3}(?:-[a-z0-9]{2,8})*$/.test(language)
+      ? names.of(language) : language.charAt(0).toUpperCase() + language.slice(1);
+  }
+
   function languageForBook(ref) {
     const source = ref && typeof ref === 'object' ? ref : {};
     const metadata = metadataObject(source.metadata);
@@ -587,6 +595,8 @@
       const title = incomingHasRealTitle ? incomingTitle : existingTitle;
       const next = { ...existing };
       for (const [key, value] of Object.entries(book)) {
+        if (['extension', 'format'].includes(key) && existing.metadataProvenance?.extension === 'detected-local'
+          && book.metadataProvenance?.extension !== 'detected-local') continue;
         if (preserveLocalGutenbergField(existing, book, key)) continue;
         if (preserveCanonicalMd5(existing, book, key)) continue;
         if (value !== '' && value != null) next[key] = value;
@@ -757,6 +767,7 @@
     resolveTitle,
     languageForBook,
     normalizeLanguage,
+    languageLabel,
     yearForBook,
     normalizeRights,
     preferredRights,
