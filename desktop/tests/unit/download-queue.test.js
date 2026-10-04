@@ -81,6 +81,34 @@ test('progress updates do not flood the renderer with queue notifications', asyn
   } finally { store.close(); await fs.rm(root, { recursive: true, force: true }); }
 });
 
+test('the first progress update is delivered when the system clock starts at zero', async t => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'bookstr-queue-'));
+  const store = new LibraryStore({ dbPath: path.join(root, 'library.sqlite'), libraryRoot: root });
+  const originalNow = Date.now;
+  t.after(() => { Date.now = originalNow; });
+  try {
+    let notifications = 0;
+    let reportProgress;
+    let finishAcquisition;
+    Date.now = () => 0;
+    const queue = new DownloadQueue({ store, onUpdate: () => { notifications += 1; }, acquisitionManager: {
+      async acquireLibgen(_record, { onProgress }) {
+        reportProgress = onProgress;
+        await new Promise(resolve => { finishAcquisition = resolve; });
+      },
+    } });
+    await queue.enqueue({ kind: 'libgen', record: book });
+    reportProgress();
+    assert.equal(notifications, 2);
+    finishAcquisition();
+    await tick();
+  } finally {
+    Date.now = originalNow;
+    store.close();
+    await fs.rm(root, { recursive: true, force: true });
+  }
+});
+
 test('queue rejects records without a supported edition or downloadable file', async () => {
   const queue = new DownloadQueue({ store: {}, acquisitionManager: {} });
   await assert.rejects(() => queue.prepare({ kind: 'libgen', record: { ...book, libgenId: 0 } }), /edition number/);
