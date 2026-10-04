@@ -22,6 +22,27 @@ final class LibraryReaderUITests: XCTestCase {
         add(attachment)
     }
 
+    func testEPUBTimeoutRecoversOnceWithFreshReader() {
+        app.terminate()
+        app.launchArguments = ["--ui-testing-library-fixtures", "--ui-testing-epub-timeout-once"]
+        app.launch()
+        _ = openEPUB()
+        XCTAssertFalse(app.buttons["reader-retry-epub"].exists)
+        XCTAssertTrue(app.webViews["epub-reader-webview"].exists)
+    }
+
+    func testEPUBTimeoutAfterAutomaticRetryOffersManualRetry() {
+        app.terminate()
+        app.launchArguments = ["--ui-testing-library-fixtures", "--ui-testing-epub-timeout-always"]
+        app.launch()
+        app.buttons["library-book-ui-test-alice-epub"].tap()
+        let retry = app.buttons["reader-retry-epub"]
+        XCTAssertTrue(retry.waitForExistence(timeout: 12))
+        retry.tap()
+        XCTAssertTrue(retry.waitForExistence(timeout: 12))
+        XCTAssertTrue(app.buttons["Back to Library"].exists)
+    }
+
     func testEPUBNavigationSearchAndPDFRenderingJourney() throws {
         let chapter = openEPUB()
         let initialY = chapter.frame.minY

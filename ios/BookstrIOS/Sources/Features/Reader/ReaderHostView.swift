@@ -33,6 +33,8 @@ struct ReaderHostView: View {
     @State private var searchQuery = ""
     @State private var speechControlsExpanded = false
     @State private var layoutOrientation: ReaderLayoutOrientation = .portrait
+    @State private var epubRecovery = EPUBStartupRecovery()
+    @State private var epubViewGeneration = 0
     @State private var chromeMetrics = ReaderChromeMetrics(
         width: 393, height: 852,
         safeTop: 59, safeLeading: 0, safeBottom: 34, safeTrailing: 0,
@@ -112,8 +114,14 @@ struct ReaderHostView: View {
                     .padding(.bottom, 5)
                 } else {
                     EPUBReaderView(book: book, fileURL: localURL, controller: epubController,
-                                   initialCFI: initialLocator, highlightCFI: highlightLocator,
-                                   highlightKind: highlightKind)
+                                   initialCFI: EPUBStartupRecovery.locator(
+                                       attempt: epubViewGeneration,
+                                       requested: initialLocator,
+                                       saved: container.progressRepository.get(bookId: book.id).cfi
+                                   ),
+                                   highlightCFI: highlightLocator, highlightKind: highlightKind,
+                                   startupAttempt: epubViewGeneration)
+                        .id(epubViewGeneration)
                         .padding(.top, metrics.contentTopInset)
                         .padding(.bottom, 5)
                 }
@@ -131,6 +139,8 @@ struct ReaderHostView: View {
             if activeFormat == .epub, let readerError = epubController.errorMessage {
                 VStack(spacing: 12) {
                     Text(readerError).foregroundStyle(.red).multilineTextAlignment(.center)
+                    Button("Try again", action: restartEPUBReader)
+                        .accessibilityIdentifier("reader-retry-epub")
                     Button("Back to Library", action: closeReader)
                 }
                 .padding(24)
@@ -311,6 +321,10 @@ struct ReaderHostView: View {
             toggleActiveSpeech()
         }
         .onChange(of: epubController.ready) { _, _ in startCarPlaySpeechIfReady() }
+        .onChange(of: epubController.errorMessage) { _, message in
+            guard let message, epubRecovery.shouldRetry(message: message, readerWasReady: epubController.ready) else { return }
+            restartEPUBReader()
+        }
         .onChange(of: fb2Controller.ready) { _, _ in startCarPlaySpeechIfReady() }
         .onChange(of: playback.carPlayStartToken) { _, _ in startCarPlaySpeechIfReady() }
         .onReceive(container.coverDiscovery.$cachedURLs) { _ in
@@ -823,6 +837,13 @@ struct ReaderHostView: View {
 
     private var readerByline: String {
         book.author
+    }
+
+    private func restartEPUBReader() {
+        epubController.ready = false
+        epubController.errorMessage = nil
+        epubController.loadingStage = "Retrying book"
+        epubViewGeneration += 1
     }
 
     private func openBook() async {
