@@ -262,6 +262,7 @@ test('search plus opens Downloads while the heart stays a separate action', asyn
     await expect(page.locator('#desktop-downloads-list')).toContainText('Download Fixture');
     await expect(page.locator('#desktop-downloads-list')).toContainText('queued');
     expect(await app.evaluate(() => globalThis.queuedBooks)).toHaveLength(1);
+    expect(await page.evaluate(() => state.favorites.some(book => book.md5 === 'a'.repeat(32)))).toBe(false);
     await page.getByRole('button', { name: 'Close downloads' }).click();
     await page.evaluate(() => {
       state.settings.useNip7 = true;
