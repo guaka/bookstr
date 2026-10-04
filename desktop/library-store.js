@@ -142,6 +142,7 @@ class LibraryStore {
     ]) {
       try { this.db.exec(`ALTER TABLE books ADD COLUMN ${name} ${definition}`); } catch { /* already present */ }
     }
+    try { this.db.exec("ALTER TABLE downloads ADD COLUMN request_json TEXT NOT NULL DEFAULT ''"); } catch { /* already present */ }
     this.readerTokens = new Map();
   }
 
@@ -222,10 +223,32 @@ class LibraryStore {
     return this.downloads().find(item => item.bookId === bookId) || null;
   }
 
+  saveDownloadRequest(bookId, request) {
+    const id = safeID(bookId);
+    const json = JSON.stringify(request);
+    if (json.length > 16 * 1024) throw new TypeError('download request is too large');
+    this.db.prepare('UPDATE downloads SET request_json = ? WHERE book_id = ?').run(json, id);
+    return this.downloadRequest(id);
+  }
+
+  downloadRequest(bookId) {
+    const row = this.db.prepare('SELECT request_json FROM downloads WHERE book_id = ?').get(safeID(bookId));
+    if (!row?.request_json) return null;
+    try { return JSON.parse(row.request_json); } catch { return null; }
+  }
+
+  resumableDownloads() {
+    return this.db.prepare("SELECT book_id AS bookId, status, request_json AS requestJson FROM downloads WHERE status IN ('queued', 'finding-peers', 'downloading', 'retrying') AND request_json != '' ORDER BY updated_at ASC").all().map(row => {
+      try { return { bookId: row.bookId, status: row.status, request: JSON.parse(row.requestJson) }; }
+      catch { return null; }
+    }).filter(Boolean);
+  }
+
   downloads() {
     return this.db.prepare(`
       SELECT downloads.book_id AS bookId, downloads.status, downloads.bytes,
         downloads.total_bytes AS totalBytes, downloads.source, downloads.error,
+        downloads.request_json != '' AS queuedFromSearch,
         downloads.updated_at AS updatedAt, books.sha256, books.md5,
         books.title, books.authors, books.language, books.year, books.extension,
         books.isbn, books.source_native_id AS sourceNativeId

@@ -217,3 +217,77 @@ test('a metadata-only Electron search result opens its book page', async () => {
     await app.close();
   }
 });
+
+test('search plus opens Downloads while the heart stays a separate action', async () => {
+  const app = await electron.launch({ args: electronArgs() });
+  try {
+    const page = await app.firstWindow();
+    await app.evaluate(({ ipcMain }) => {
+      globalThis.queuedBooks = [];
+      ipcMain.removeHandler('bookstr-desktop-library-enqueue');
+      ipcMain.handle('bookstr-desktop-library-enqueue', (_event, request) => {
+        globalThis.queuedBooks.push(request);
+        return { bookId: request.record.md5, status: 'queued' };
+      });
+      ipcMain.removeHandler('bookstr-desktop-library-downloads');
+      ipcMain.handle('bookstr-desktop-library-downloads', () => globalThis.queuedBooks.map(request => ({
+        bookId: request.record.md5, title: request.record.title, status: 'queued', queuedFromSearch: true,
+      })));
+      ipcMain.removeHandler('bookstr-desktop-kindle-devices');
+      ipcMain.handle('bookstr-desktop-kindle-devices', () => []);
+    });
+    await page.addInitScript(() => {
+      const originalFetch = window.fetch.bind(window);
+      window.fetch = async (input, init) => {
+        const url = new URL(typeof input === 'string' ? input : input?.url, location.href);
+        if (url.protocol !== 'app:' || url.hostname !== 'bookstr' || !url.pathname.startsWith('/api/')) return originalFetch(input, init);
+        if (url.pathname === '/api/search') return new Response(JSON.stringify({ books: [{
+          md5: 'a'.repeat(32), libgenId: 2412930, title: 'Download Fixture', authors: ['Fixture Author'], extension: 'pdf', readUrl: 'https://files.test/download-fixture.pdf',
+        }] }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+        if (url.pathname === '/api/opds') return new Response('<?xml version="1.0"?><feed xmlns="http://www.w3.org/2005/Atom"></feed>', { status: 200, headers: { 'Content-Type': 'application/atom+xml' } });
+        return new Response(JSON.stringify(url.pathname === '/api/gutendex' ? { results: [] } : url.pathname === '/api/internet-archive/search' ? { response: { docs: [] } } : url.pathname === '/api/open-textbooks' ? { data: [] } : url.pathname === '/api/gdl' ? { books: [] } : []), { status: 200, headers: { 'Content-Type': 'application/json' } });
+      };
+    });
+    await page.reload();
+    await page.getByRole('button', { name: 'Search' }).click();
+    await page.getByRole('textbox', { name: 'Book search query' }).fill('download fixture');
+    await page.getByRole('textbox', { name: 'Book search query' }).press('Enter');
+    await expect(page.locator('#results')).toContainText('Download Fixture');
+    await page.getByRole('button', { name: 'Add Download Fixture to downloads' }).click();
+    await expect(page.getByRole('dialog', { name: 'Downloads' })).toBeVisible();
+    await expect(page.locator('#desktop-downloads-list')).toContainText('Download Fixture');
+    await expect(page.locator('#desktop-downloads-list')).toContainText('queued');
+    expect(await app.evaluate(() => globalThis.queuedBooks)).toHaveLength(1);
+    await page.getByRole('button', { name: 'Close downloads' }).click();
+    await page.getByRole('button', { name: 'Add to favorites' }).click();
+    expect(await app.evaluate(() => globalThis.queuedBooks)).toHaveLength(1);
+  } finally { await app.close(); }
+});
+
+test('connected Kindle offers a preview and transfers only on click', async () => {
+  const app = await electron.launch({ args: electronArgs() });
+  try {
+    const page = await app.firstWindow();
+    await app.evaluate(({ ipcMain }) => {
+      globalThis.kindleTransferCalls = 0;
+      ipcMain.removeHandler('bookstr-desktop-kindle-devices');
+      ipcMain.handle('bookstr-desktop-kindle-devices', () => [{ id: 'mounted:fixture', name: 'Kindle', kind: 'mounted' }]);
+      ipcMain.removeHandler('bookstr-desktop-kindle-preview');
+      ipcMain.handle('bookstr-desktop-kindle-preview', () => ({
+        device: { id: 'mounted:fixture', name: 'Kindle', kind: 'mounted' },
+        missing: [{ bookId: 'pdf-1', title: 'Missing PDF', size: 100 }], alreadyPresent: 1, skipped: [],
+      }));
+      ipcMain.removeHandler('bookstr-desktop-kindle-transfer');
+      ipcMain.handle('bookstr-desktop-kindle-transfer', () => {
+        globalThis.kindleTransferCalls += 1;
+        return { transferred: ['pdf-1'], alreadyPresent: 1, skipped: [], errors: [] };
+      });
+    });
+    await page.reload();
+    await expect(page.locator('#desktop-kindle-offer')).toBeVisible();
+    await expect(page.locator('#desktop-kindle-summary')).toContainText('1 missing');
+    expect(await app.evaluate(() => globalThis.kindleTransferCalls)).toBe(0);
+    await page.getByRole('button', { name: 'Put missing books on Kindle' }).click();
+    await expect.poll(() => app.evaluate(() => globalThis.kindleTransferCalls)).toBe(1);
+  } finally { await app.close(); }
+});

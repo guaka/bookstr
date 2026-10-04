@@ -1969,6 +1969,16 @@
       .device-transfer-form { display: grid; grid-template-columns: minmax(12rem, 1fr) minmax(10rem, 1fr) auto; gap: 0.5rem; }
       .device-transfer-form input { min-width: 0; }
       .device-transfer-note { margin: 0; color: var(--muted); font-size: 0.82rem; }
+      .desktop-downloads-dialog { width: min(38rem, calc(100vw - 2rem)); max-height: 80vh; border: 1px solid var(--border, #b8b8b8); border-radius: .8rem; background: var(--page-bg, #fff); color: var(--page-text, #222); padding: 1rem; }
+      .desktop-downloads-dialog::backdrop { background: rgba(0, 0, 0, .45); }
+      .desktop-downloads-dialog header { display: flex; align-items: center; justify-content: space-between; }
+      .desktop-downloads-dialog header h2 { margin: 0 0 .5rem; }
+      .desktop-downloads-dialog header button { background: none; border: 0; color: inherit; font-size: 1.5rem; cursor: pointer; }
+      .desktop-download-job { padding: .65rem 0; border-top: 1px solid var(--border, #b8b8b8); display: grid; gap: .3rem; }
+      .desktop-download-job progress { width: 100%; }
+      .desktop-download-job small { color: var(--muted-text, #666); }
+      .desktop-kindle-offer { display: flex; align-items: center; gap: .6rem; padding: .55rem .7rem; background: var(--panel-bg, #eee); border-radius: .55rem; }
+      .desktop-kindle-offer.hidden { display: none; }
       @media (max-width: 700px) {
         .nip17-exchange-grid { grid-template-columns: 1fr; }
         .device-transfer-form { grid-template-columns: 1fr; }
@@ -1992,6 +2002,12 @@
           <button id="settings-btn" class="header-tab icon-btn" aria-label="Settings" aria-selected="false" aria-pressed="false" title="Settings"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15.25A3.25 3.25 0 1 0 12 8.75a3.25 3.25 0 0 0 0 6.5Z"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06-1.87 1.87-.06-.06A1.7 1.7 0 0 0 16 18.4a1.7 1.7 0 0 0-1 .6 1.7 1.7 0 0 0-.4 1.1V20h-2.65v-.09A1.7 1.7 0 0 0 10.9 18.4a1.7 1.7 0 0 0-1.87.34l-.06.06-1.87-1.87.06-.06A1.7 1.7 0 0 0 7.5 15a1.7 1.7 0 0 0-.6-1 1.7 1.7 0 0 0-1.1-.4H5.7v-2.65h.09A1.7 1.7 0 0 0 7.5 9.9a1.7 1.7 0 0 0-.34-1.87l-.06-.06L8.97 6.1l.06.06A1.7 1.7 0 0 0 10.9 6.5a1.7 1.7 0 0 0 1-.6 1.7 1.7 0 0 0 .4-1.1V4.7h2.65v.09A1.7 1.7 0 0 0 16 6.5a1.7 1.7 0 0 0 1.87-.34l.06-.06 1.87 1.87-.06.06A1.7 1.7 0 0 0 19.4 9.9a1.7 1.7 0 0 0 .6 1 1.7 1.7 0 0 0 1.1.4h.09v2.65h-.09A1.7 1.7 0 0 0 19.4 15Z"/></svg></button>
         </div>
       </header>
+
+      <aside id="desktop-kindle-offer" class="desktop-kindle-offer hidden" aria-live="polite">
+        <select id="desktop-kindle-device" aria-label="Connected Kindle" class="hidden"></select>
+        <span id="desktop-kindle-summary"></span>
+        <button id="desktop-kindle-transfer" type="button">Put missing books on Kindle</button>
+      </aside>
 
       <section id="home-tab" class="card" data-tab-panel="home">
         <form id="home-search-form" class="home-search" autocomplete="off">
@@ -2027,6 +2043,7 @@
 
       <section id="search-tab" class="card" data-tab-panel="search">
         <h2 class="search-title">Search books</h2>
+        <button id="desktop-downloads-button" type="button" class="chip-btn hidden" aria-label="Downloads" title="Downloads">↓</button>
         <p id="status" class="note" aria-live="polite"></p>
         <form id="search-form" class="row-3" autocomplete="off">
           <input id="query-input" placeholder="Search title, author, ISBN, publisher" aria-label="Book search query" />
@@ -2073,6 +2090,10 @@
           </div>
         </details>
       </section>
+      <dialog id="desktop-downloads-dialog" aria-label="Downloads" class="desktop-downloads-dialog">
+        <header><h2>Downloads</h2><button id="desktop-downloads-close" type="button" aria-label="Close downloads">×</button></header>
+        <div id="desktop-downloads-list" aria-live="polite"></div>
+      </dialog>
 
       <section id="reading-library-tab" class="card hidden" data-tab-panel="reading">
         <div class="library-columns">
@@ -2426,6 +2447,16 @@
       const searchType = document.getElementById('search-type');
       const searchForm = document.getElementById('search-form');
       const resultsEl = document.getElementById('results');
+      const desktopDownloadsButton = document.getElementById('desktop-downloads-button');
+      const desktopDownloadsDialog = document.getElementById('desktop-downloads-dialog');
+      const desktopDownloadsList = document.getElementById('desktop-downloads-list');
+      const desktopDownloadsClose = document.getElementById('desktop-downloads-close');
+      const desktopKindleOffer = document.getElementById('desktop-kindle-offer');
+      const desktopKindleDevice = document.getElementById('desktop-kindle-device');
+      const desktopKindleSummary = document.getElementById('desktop-kindle-summary');
+      const desktopKindleTransfer = document.getElementById('desktop-kindle-transfer');
+      let currentKindleId = '';
+      let kindleTransferRunning = false;
       const searchResultFilters = document.getElementById('search-result-filters');
       const searchResultCount = document.getElementById('search-result-count');
       const searchLanguageFilterWrap = document.getElementById('search-language-filter-wrap');
@@ -2483,6 +2514,7 @@
       let activeTab = 'home';
       const desktopBridge = window.bookstrDesktop || null;
       const isDesktopMode = window.location.protocol === 'app:' && Boolean(desktopBridge?.openReader);
+      desktopDownloadsButton.classList.toggle('hidden', !isDesktopMode);
       document.body.classList.toggle('desktop-mode', isDesktopMode);
       if (isDesktopMode) {
         document.title = 'libstr';
@@ -5512,7 +5544,7 @@
             desktopDownloadByBook.set(identity, download);
           }
         }
-        rememberDownloadingBooks(downloads);
+        rememberDownloadingBooks((downloads || []).filter(download => !download.queuedFromSearch));
         desktopSeededBookIds.clear();
         desktopTransferRates.download = 0;
         desktopTransferRates.upload = 0;
@@ -5618,6 +5650,8 @@
           const inLibrary = isLibraryBook(book);
           const statusMarkup = options.library
             ? `<button type="button" class="library-delete" data-action="delete-library" aria-label="Delete ${escapeHtml(book.title || 'book')} from library" title="Delete from library"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3m3 0-1 13H7L6 7m4 4v5m4-5v5"/></svg></button>`
+            : isDesktopMode && options.routeOnly
+              ? `<button type="button" class="chip-btn" data-action="queue-download" aria-label="Add ${escapeHtml(book.title || 'book')} to downloads" title="Download">+</button><button type="button" class="chip-btn" data-action="add-library" data-md5="${escapeHtml(book.md5)}" aria-label="${inLibrary ? 'Already in favorites' : 'Add to favorites'}" title="${inLibrary ? 'Already in favorites' : 'Add to favorites'}"${inLibrary ? ' disabled' : ''}>${inLibrary ? '♥' : '♡'}</button>`
             : `<button type="button" class="chip-btn" data-action="add-library" data-md5="${escapeHtml(book.md5)}" aria-label="${inLibrary ? 'Already in library' : 'Add to library'}" title="${inLibrary ? 'Already in library' : 'Add to library'}"${inLibrary ? ' disabled' : ''}>${inLibrary ? '✓' : '+'}</button>`;
           const row = document.createElement('article');
           row.className = 'book-table-row';
@@ -5647,6 +5681,9 @@
           });
           row.querySelector('[data-action="add-library"]')?.addEventListener('click', (event) => {
             addBookToLibrary(book, event.currentTarget);
+          });
+          row.querySelector('[data-action="queue-download"]')?.addEventListener('click', () => {
+            void queueSearchDownload(book);
           });
           row.querySelector('[data-action="delete-library"]')?.addEventListener('click', () => {
             void deleteLibraryBook(book);
@@ -5791,10 +5828,10 @@
         const exists = state.favorites.some(item => BookMetadata.sameLibraryBook(item, book));
         if (exists) {
           if (button) {
-            button.textContent = '✓';
+            button.textContent = isDesktopMode && button.closest('#results') ? '♥' : '✓';
             button.disabled = true;
-            button.setAttribute('aria-label', 'Already in library');
-            button.title = 'Already in library';
+            button.setAttribute('aria-label', isDesktopMode && button.closest('#results') ? 'Already in favorites' : 'Already in library');
+            button.title = button.getAttribute('aria-label');
           }
           return false;
         }
@@ -5814,10 +5851,10 @@
         state.favorites = sortByUpdatedAt(BookMetadata.dedupeLibraryBooks(state.favorites));
         localStorage.setItem(FAVORITES_KEY, JSON.stringify(state.favorites));
         if (button) {
-          button.textContent = '✓';
+          button.textContent = isDesktopMode && button.closest('#results') ? '♥' : '✓';
           button.disabled = true;
-          button.setAttribute('aria-label', 'Already in library');
-          button.title = 'Already in library';
+          button.setAttribute('aria-label', isDesktopMode && button.closest('#results') ? 'Already in favorites' : 'Already in library');
+          button.title = button.getAttribute('aria-label');
         }
         if (render) {
           renderFavorites();
@@ -5834,11 +5871,142 @@
           const md5 = btn.getAttribute('data-md5') || '';
           const inLibrary = state.favorites.some(item => String(item?.md5 || '') === md5)
             || state.reading.some(item => String(item?.md5 || '') === md5);
-          btn.textContent = inLibrary ? '✓' : '+';
+          btn.textContent = isDesktopMode ? (inLibrary ? '♥' : '♡') : (inLibrary ? '✓' : '+');
           btn.disabled = inLibrary;
-          btn.setAttribute('aria-label', inLibrary ? 'Already in library' : 'Add to library');
-          btn.title = inLibrary ? 'Already in library' : 'Add to library';
+          btn.setAttribute('aria-label', isDesktopMode ? (inLibrary ? 'Already in favorites' : 'Add to favorites') : (inLibrary ? 'Already in library' : 'Add to library'));
+          btn.title = btn.getAttribute('aria-label');
         }
+      }
+
+      async function renderDesktopDownloads() {
+        if (!isDesktopMode || !desktopBridge?.library?.downloads) return;
+        const jobs = await desktopBridge.library.downloads();
+        desktopDownloadsList.replaceChildren();
+        if (!jobs.length) {
+          const empty = document.createElement('p');
+          empty.textContent = 'No downloads yet.';
+          desktopDownloadsList.append(empty);
+        }
+        for (const job of jobs) {
+          const row = document.createElement('div');
+          row.className = 'desktop-download-job';
+          row.setAttribute('data-download-id', job.bookId);
+          const title = document.createElement('strong');
+          title.textContent = job.title || job.bookId;
+          const state = document.createElement('small');
+          state.textContent = job.error || job.status;
+          row.append(title, state);
+          if (Number(job.totalBytes) > 0 && !['ready', 'seeding'].includes(job.status)) {
+            const progress = document.createElement('progress');
+            progress.max = Number(job.totalBytes);
+            progress.value = Math.min(progress.max, Math.max(0, Number(job.bytes) || 0));
+            row.append(progress);
+          }
+          if (job.status === 'failed') {
+            const retry = document.createElement('button');
+            retry.type = 'button';
+            retry.textContent = 'Retry';
+            retry.setAttribute('aria-label', `Retry ${job.title || 'book'}`);
+            retry.addEventListener('click', async () => {
+              retry.disabled = true;
+              try { await desktopBridge.library.retryDownload(job.bookId); }
+              catch (error) { state.textContent = error?.message || String(error); }
+              await renderDesktopDownloads();
+            });
+            row.append(retry);
+          }
+          desktopDownloadsList.append(row);
+        }
+      }
+
+      async function openDesktopDownloads() {
+        if (!isDesktopMode) return;
+        if (!desktopDownloadsDialog.open) desktopDownloadsDialog.showModal();
+        await renderDesktopDownloads();
+      }
+
+      async function queueSearchDownload(book) {
+        try {
+          let resolved = book;
+          let edition = BookMetadata.libgenTorrentMetadataForBook(resolved);
+          if (!edition && isMd5(book.md5)) {
+            resolved = await resolvePrivateTorrentBook(book);
+            if (!resolved) throw new Error('No downloadable edition matched this book.');
+            edition = BookMetadata.libgenTorrentMetadataForBook(resolved);
+          }
+          if (edition) {
+            await desktopBridge.library.enqueue({ kind: 'libgen', record: {
+              ...resolved, md5: edition.md5, libgenId: edition.libgenId,
+            } });
+          } else {
+            const provider = String(book.source || '').toLowerCase();
+            const recordId = String(book.sourceNativeId || book.md5 || '').replace(/^[^:]+:/, '');
+            await desktopBridge.library.enqueue({ kind: 'provider', record: {
+              provider, recordId, title: book.title, authors: book.authors,
+              languages: [book.language].flat().filter(Boolean), year: book.year, isbn: book.isbn,
+              ...BookMetadata.normalizeRights(book),
+              acquisitions: [{ format: book.extension, url: book.readUrl, sha256: book.sha256,
+                size: book.filesize, availability: 'open' }],
+            } });
+          }
+          await refreshDesktopDownloadStates();
+          await openDesktopDownloads();
+        } catch (error) {
+          status.textContent = error?.message || String(error);
+        }
+      }
+
+      desktopDownloadsButton.addEventListener('click', () => void openDesktopDownloads());
+      desktopDownloadsClose.addEventListener('click', () => desktopDownloadsDialog.close());
+      desktopBridge?.library?.onDownloadsChanged?.(() => {
+        void refreshDesktopDownloadStates();
+        if (desktopDownloadsDialog.open) void renderDesktopDownloads();
+      });
+
+      async function refreshKindleOffer() {
+        if (!isDesktopMode || kindleTransferRunning || !desktopBridge?.kindle) return;
+        try {
+          const devices = await desktopBridge.kindle.devices();
+          desktopKindleOffer.classList.toggle('hidden', devices.length === 0);
+          if (!devices.length) { currentKindleId = ''; return; }
+          if (!devices.some(device => device.id === currentKindleId)) currentKindleId = devices[0].id;
+          desktopKindleDevice.replaceChildren(...devices.map(device => new Option(device.name, device.id)));
+          desktopKindleDevice.value = currentKindleId;
+          desktopKindleDevice.classList.toggle('hidden', devices.length < 2);
+          const preview = await desktopBridge.kindle.preview(currentKindleId);
+          desktopKindleSummary.textContent = `${preview.device.name}: ${preview.missing.length} missing · ${preview.alreadyPresent} already there · ${preview.skipped.length} skipped`;
+          desktopKindleTransfer.disabled = preview.missing.length === 0;
+        } catch (error) {
+          desktopKindleSummary.textContent = error?.message || String(error);
+          desktopKindleTransfer.disabled = true;
+        }
+      }
+
+      desktopKindleDevice.addEventListener('change', () => {
+        currentKindleId = desktopKindleDevice.value;
+        void refreshKindleOffer();
+      });
+      desktopKindleTransfer.addEventListener('click', async () => {
+        if (!currentKindleId || kindleTransferRunning) return;
+        kindleTransferRunning = true;
+        desktopKindleTransfer.disabled = true;
+        try {
+          const result = await desktopBridge.kindle.transfer(currentKindleId);
+          desktopKindleSummary.textContent = `${result.transferred.length} copied · ${result.alreadyPresent} already there · ${result.skipped.length} skipped · ${result.errors.length} failed`;
+        } catch (error) {
+          desktopKindleSummary.textContent = error?.message || String(error);
+        } finally {
+          kindleTransferRunning = false;
+          void refreshKindleOffer();
+        }
+      });
+      desktopBridge?.kindle?.onProgress?.(progress => {
+        if (progress.done) return;
+        desktopKindleSummary.textContent = `Copying ${progress.title || 'book'} · ${progress.completed} of ${progress.total}`;
+      });
+      if (isDesktopMode) {
+        void refreshKindleOffer();
+        window.setInterval(() => void refreshKindleOffer(), 10000);
       }
 
       function setHashRoute(route) {

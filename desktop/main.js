@@ -25,6 +25,9 @@ const { LibraryStore } = require('./library-store');
 const { LibraryImporter, hashFile, safeExtension } = require('./library-import');
 const { localBookCover, localBookMetadata, safeCoverID } = require('./library-cover');
 const { AcquisitionManager } = require('./acquisition-manager');
+const { DownloadQueue } = require('./download-queue');
+const { KindleSync, MountedKindles } = require('./kindle-sync');
+const { MtpKindles } = require('./kindle-mtp');
 const { ElectronDevicePairing } = require('./device-pairing');
 const { CatalogInvitations } = require('./catalog-invitations');
 const { nip19: catalogNip19 } = require('nostr-tools');
@@ -151,6 +154,8 @@ let libraryDataDir = '';
 let libraryStore = null;
 let libraryImporter = null;
 let acquisitionManager = null;
+let downloadQueue = null;
+let kindleSync = null;
 let devicePairing = null;
 
 function isRecord(value) {
@@ -205,6 +210,36 @@ function getAcquisitionManager() {
     });
   }
   return acquisitionManager;
+}
+
+function getDownloadQueue(autoSeed = true) {
+  if (!downloadQueue) downloadQueue = new DownloadQueue({
+    store: getLibraryStore(),
+    acquisitionManager: getAcquisitionManager(),
+    autoSeed,
+    onUpdate: () => {
+      if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('bookstr-desktop-downloads-changed');
+    },
+  });
+  return downloadQueue;
+}
+
+function getKindleSync() {
+  if (!kindleSync) kindleSync = new KindleSync({
+    store: getLibraryStore(),
+    resolveFile: resolveRegisteredLibraryFile,
+    transports: [
+      new MountedKindles(),
+      new MtpKindles({
+        resourcesPath: app.isPackaged ? process.resourcesPath : path.join(__dirname, 'native'),
+        stagingRoot: path.join(libraryDataDir, '.kindle-staging'),
+      }),
+    ],
+    onProgress: progress => {
+      if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('bookstr-desktop-kindle-progress', progress);
+    },
+  });
+  return kindleSync;
 }
 
 function getDevicePairing() {
@@ -1304,7 +1339,11 @@ function setupIpcHandlers() {
     return ingestTrustedDeviceRegistryEvent(event);
   });
   ipcMain.handle('bookstr-desktop-library-downloads', () => getLibraryStore().downloads());
-  ipcMain.handle('bookstr-desktop-library-set-download', (_event, download) => getLibraryStore().setDownload(download));
+  ipcMain.handle('bookstr-desktop-library-enqueue', (_event, request) => getDownloadQueue().enqueue(request));
+  ipcMain.handle('bookstr-desktop-library-retry-download', (_event, bookId) => getDownloadQueue().retry(bookId));
+  ipcMain.handle('bookstr-desktop-kindle-devices', () => getKindleSync().devices());
+  ipcMain.handle('bookstr-desktop-kindle-preview', (_event, id) => getKindleSync().preview(String(id || '')));
+  ipcMain.handle('bookstr-desktop-kindle-transfer', (_event, id) => getKindleSync().transfer(String(id || '')));
   ipcMain.handle('bookstr-desktop-library-linked-folders', () => getLibraryStore().linkedFolders());
   ipcMain.handle('bookstr-desktop-library-link-folder', (_event, folder) => getLibraryStore().linkFolder(folder));
   ipcMain.handle('bookstr-desktop-library-open-reader', (_event, bookId) => getLibraryStore().openReader(bookId));
@@ -1581,6 +1620,9 @@ async function bootstrap() {
   await catalogInvitations.start(process.argv, process.execPath, process.defaultApp, app.getAppPath());
   const preferences = await torrentPreferences();
   await getTorrentBridge().setLimits(preferences);
+  void getDownloadQueue(preferences.autoSeed).resume().catch(error => {
+    console.warn('Could not resume desktop downloads:', error);
+  });
   void getAcquisitionManager().resumeLibgenSeeds({ autoSeed: preferences.autoSeed }).catch(error => {
     console.warn('Could not resume LibGen torrent transfers:', error);
   });

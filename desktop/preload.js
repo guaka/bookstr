@@ -3,6 +3,8 @@ const { contextBridge, ipcRenderer } = require('electron');
 const readerOpenCallbacks = new Set();
 const progressCallbacks = new Set();
 const acquisitionProgressCallbacks = new Set();
+const downloadChangedCallbacks = new Set();
+const kindleProgressCallbacks = new Set();
 const settingsOpenCallbacks = new Set();
 const paneOpenCallbacks = new Set();
 const speechModelProgressCallbacks = new Set();
@@ -83,6 +85,18 @@ ipcRenderer.on('bookstr-desktop-acquisition-progress', (_event, payload) => {
     } catch {
       // ignore
     }
+  }
+});
+
+ipcRenderer.on('bookstr-desktop-downloads-changed', () => {
+  for (const callback of downloadChangedCallbacks) {
+    try { callback(); } catch { /* a closed view must not stop the queue */ }
+  }
+});
+
+ipcRenderer.on('bookstr-desktop-kindle-progress', (_event, progress) => {
+  for (const callback of kindleProgressCallbacks) {
+    try { callback(progress); } catch { /* detached view */ }
   }
 });
 
@@ -259,8 +273,16 @@ const desktopBridge = {
     downloads() {
       return ipcRenderer.invoke('bookstr-desktop-library-downloads');
     },
-    setDownload(download) {
-      return ipcRenderer.invoke('bookstr-desktop-library-set-download', download);
+    enqueue(request) {
+      return ipcRenderer.invoke('bookstr-desktop-library-enqueue', request);
+    },
+    retryDownload(bookId) {
+      return ipcRenderer.invoke('bookstr-desktop-library-retry-download', bookId);
+    },
+    onDownloadsChanged(callback) {
+      if (typeof callback !== 'function') return () => {};
+      downloadChangedCallbacks.add(callback);
+      return () => downloadChangedCallbacks.delete(callback);
     },
     linkedFolders() {
       return ipcRenderer.invoke('bookstr-desktop-library-linked-folders');
@@ -270,6 +292,16 @@ const desktopBridge = {
     },
     openReader(bookId) {
       return ipcRenderer.invoke('bookstr-desktop-library-open-reader', bookId);
+    },
+  },
+  kindle: {
+    devices() { return ipcRenderer.invoke('bookstr-desktop-kindle-devices'); },
+    preview(id) { return ipcRenderer.invoke('bookstr-desktop-kindle-preview', id); },
+    transfer(id) { return ipcRenderer.invoke('bookstr-desktop-kindle-transfer', id); },
+    onProgress(callback) {
+      if (typeof callback !== 'function') return () => {};
+      kindleProgressCallbacks.add(callback);
+      return () => kindleProgressCallbacks.delete(callback);
     },
   },
   devices: {
