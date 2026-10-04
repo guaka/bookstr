@@ -893,6 +893,23 @@ final class BookstrReaderWebView: WKWebView {
     }
 }
 
+struct EPUBStartupRecovery {
+    private(set) var automaticRetries = 0
+
+    static func locator(attempt: Int, requested: String?, saved: String) -> String? {
+        if attempt == 0 { return requested }
+        return saved.isEmpty ? requested : saved
+    }
+
+    mutating func shouldRetry(message: String, readerWasReady: Bool) -> Bool {
+        guard !readerWasReady, automaticRetries == 0,
+              message.contains("EPUB reader timed out") || message == "EPUB reader process stopped"
+        else { return false }
+        automaticRetries += 1
+        return true
+    }
+}
+
 struct EPUBReaderView: UIViewRepresentable {
     @EnvironmentObject private var container: AppContainer
     let book: CatalogBook
@@ -901,10 +918,12 @@ struct EPUBReaderView: UIViewRepresentable {
     let initialCFI: String?
     let highlightCFI: String?
     var highlightKind: ReaderHighlightKind? = nil
+    var startupAttempt = 0
 
     func makeCoordinator() -> Coordinator {
         Coordinator(container: container, book: book, fileURL: fileURL, controller: controller,
-                    initialCFI: initialCFI, highlightCFI: highlightCFI, highlightKind: highlightKind)
+                    initialCFI: initialCFI, highlightCFI: highlightCFI, highlightKind: highlightKind,
+                    startupAttempt: startupAttempt)
     }
 
     func makeUIView(context: Context) -> WKWebView {
@@ -980,6 +999,10 @@ struct EPUBReaderView: UIViewRepresentable {
         controller.apply(theme: container.settingsRepository.theme)
     }
 
+    static func dismantleUIView(_ webView: WKWebView, coordinator: Coordinator) {
+        coordinator.invalidate(webView)
+    }
+
     static let bridgeScript = """
     (() => {
       window.bookstrNativeSwipeNavigation = true;
@@ -1012,7 +1035,9 @@ struct EPUBReaderView: UIViewRepresentable {
         private let initialCFI: String?
         private let highlightCFI: String?
         private let highlightKind: ReaderHighlightKind?
+        private let startupAttempt: Int
         private let progressSync = ReaderProgressSyncDebouncer()
+        private var active = true
 
         private var resignObserver: NSObjectProtocol?
         private var orientationObserver: NSObjectProtocol?
@@ -1020,7 +1045,8 @@ struct EPUBReaderView: UIViewRepresentable {
         private var lockedSpeechLanguage: String?
 
         init(container: AppContainer, book: CatalogBook, fileURL: URL, controller: EPUBReaderController,
-             initialCFI: String?, highlightCFI: String?, highlightKind: ReaderHighlightKind?) {
+             initialCFI: String?, highlightCFI: String?, highlightKind: ReaderHighlightKind?,
+             startupAttempt: Int) {
             self.container = container
             self.book = book
             self.fileURL = fileURL
@@ -1028,6 +1054,7 @@ struct EPUBReaderView: UIViewRepresentable {
             self.initialCFI = initialCFI
             self.highlightCFI = highlightCFI
             self.highlightKind = highlightKind
+            self.startupAttempt = startupAttempt
             super.init()
             controller.checkpointHandler = { [weak self] in
                 self?.persistCurrentLocator()
@@ -1065,6 +1092,14 @@ struct EPUBReaderView: UIViewRepresentable {
             if let orientationObserver {
                 NotificationCenter.default.removeObserver(orientationObserver)
             }
+        }
+
+        func invalidate(_ webView: WKWebView) {
+            active = false
+            webView.stopLoading()
+            webView.navigationDelegate = nil
+            webView.configuration.userContentController.removeScriptMessageHandler(forName: "bookstrReader")
+            if controller.webView === webView { controller.webView = nil }
         }
 
         @objc func handleReaderTap(_ gesture: UITapGestureRecognizer) {
@@ -1124,6 +1159,16 @@ struct EPUBReaderView: UIViewRepresentable {
         }
 
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+            guard active else { return }
+            #if DEBUG
+            let arguments = ProcessInfo.processInfo.arguments
+            if arguments.contains("--ui-testing-library-fixtures") &&
+                (arguments.contains("--ui-testing-epub-timeout-always") ||
+                 (arguments.contains("--ui-testing-epub-timeout-once") && startupAttempt == 0)) {
+                controller.errorMessage = "Could not open this book: EPUB reader timed out while rendering"
+                return
+            }
+            #endif
             let progress = container.progressRepository.get(bookId: book.id)
             let requestedCFI = initialCFI?.isEmpty == false ? initialCFI! : progress.cfi
             controller.speechLocator = requestedCFI
@@ -1151,28 +1196,37 @@ struct EPUBReaderView: UIViewRepresentable {
                 "[typeof window.loadBookUrl, typeof window.ePub, typeof window.JSZip, " +
                     "typeof window.BookstrSpeech?.buildPlan].join('|')"
             ) {
-                [weak controller, weak webView] value, error in
+                [weak self, weak webView] value, error in
+                guard let self, self.active else { return }
                 if let error {
-                    controller?.errorMessage = "Could not initialize the EPUB reader: \(error.localizedDescription)"
+                    self.controller.errorMessage = "Could not initialize the EPUB reader: \(error.localizedDescription)"
                     return
                 }
                 guard value as? String == "function|function|function|function" else {
-                    controller?.errorMessage = "The EPUB reader resources did not load (\(value as? String ?? "unknown"))."
+                    self.controller.errorMessage = "The EPUB reader resources did not load (\(value as? String ?? "unknown"))."
                     return
                 }
-                webView?.evaluateJavaScript(loadScript) { [weak controller] _, error in
-                    guard let error else { return }
-                    controller?.errorMessage = "Could not start the EPUB reader: \(error.localizedDescription)"
+                webView?.evaluateJavaScript(loadScript) { [weak self] _, error in
+                    guard let self, self.active, let error else { return }
+                    self.controller.errorMessage = "Could not start the EPUB reader: \(error.localizedDescription)"
                 }
             }
         }
 
         func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+            guard active else { return }
             controller.errorMessage = error.localizedDescription
         }
 
         func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
+            guard active else { return }
             controller.errorMessage = error.localizedDescription
+        }
+
+        func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+            guard active else { return }
+            controller.ready = false
+            controller.errorMessage = "EPUB reader process stopped"
         }
 
         func webView(_ webView: WKWebView, start urlSchemeTask: WKURLSchemeTask) {
@@ -1239,7 +1293,7 @@ struct EPUBReaderView: UIViewRepresentable {
         }
 
         func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
-            guard message.name == "bookstrReader",
+            guard active, message.name == "bookstrReader",
                   let body = message.body as? [String: Any],
                   let method = body["method"] as? String
             else { return }
@@ -1250,8 +1304,7 @@ struct EPUBReaderView: UIViewRepresentable {
                 controller.errorMessage = nil
                 applySavedHighlightsForBook()
             case "onReaderStage":
-                // Keep a non-technical stage for diagnostics; the UI shows the book title.
-                controller.loadingStage = "Opening book"
+                controller.loadingStage = (value as? String) ?? "starting"
             case "onReaderError":
                 let detail = (value as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
                 controller.errorMessage = detail?.isEmpty == false
