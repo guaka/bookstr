@@ -56,10 +56,6 @@ class MtpSession {
       let value;
       try { value = JSON.parse(line); }
       catch { this.fail(new Error('Invalid Kindle response.')); return; }
-      if (value === null || typeof value !== 'object') {
-        this.fail(new Error('Invalid Kindle response.'));
-        return;
-      }
       if (value.progress === true) {
         this.onProgress({ phase: value.phase, percent: value.percent });
       } else if (value.error) {

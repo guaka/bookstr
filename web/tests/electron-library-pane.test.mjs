@@ -49,9 +49,12 @@ test('Electron metadata fallback routes to Downloads without building a details 
 
 test('Downloads has a regular pane and library status is limited to its book count', () => {
   assert.match(html, /<section id="downloads-tab"[^>]*data-tab-panel="downloads"/);
-  assert.doesNotMatch(html, /desktopDownloadsDialog|desktop-downloads-close|showModal\(/);
+  assert.doesNotMatch(html, /desktopDownloadsDialog|desktop-downloads-close/);
   assert.match(html, /homeLibraryCount\.textContent = isDesktopMode \? visibleCount/);
   assert.match(html, /desktopDownloadsSummary\.textContent = .*downloading.*seeding/);
+  assert.match(html, /sendLibraryBookToKindle/);
+  assert.match(html, /kindleSelectionDialog\.showModal\(\)/);
+  assert.doesNotMatch(html, /desktopDownloadsList[\s\S]{0,1200}Send to Kindle/);
 });
 
 

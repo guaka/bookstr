@@ -249,6 +249,39 @@ test('comic conversion checksum failures are skipped for all books and rejected 
   } finally { await fs.rm(root, { recursive: true, force: true }); }
 });
 
+test('selected Kindle book IDs are validated and transferred through withSession', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'bookstr-kindle-selection-'));
+  const source = path.join(root, 'book.pdf');
+  await fs.writeFile(source, 'selected PDF');
+  const store = { downloads: () => [
+    { bookId: 'keep', title: 'Keep', extension: 'pdf', status: 'ready', sha256: digest('selected PDF') },
+    { bookId: 'skip', title: 'Skip', extension: 'pdf', status: 'ready', sha256: digest('selected PDF') },
+  ] };
+  let sessionDepth = 0;
+  let maxDepth = 0;
+  const transport = {
+    devices: async () => [{ id: 'device', name: 'Kindle', kind: 'test' }],
+    files: async () => [],
+    hash: async () => '',
+    copied: [],
+    async withSession(_device, operation) {
+      sessionDepth += 1;
+      maxDepth = Math.max(maxDepth, sessionDepth);
+      try { return await operation(); } finally { sessionDepth -= 1; }
+    },
+    async copy(_device, book) { this.copied.push(book.bookId); },
+  };
+  try {
+    const sync = new KindleSync({ store, resolveFile: async () => ({ filePath: source }), transports: [transport] });
+    await assert.rejects(() => sync.localBooks(['']), /Invalid Kindle book selection/);
+    await assert.rejects(() => sync.localBooks(['missing']), /Downloaded book was not found/);
+    const result = await sync.transfer('device', ['keep']);
+    assert.deepEqual(result.transferred, ['keep']);
+    assert.deepEqual(transport.copied, ['keep']);
+    assert.equal(maxDepth, 2);
+  } finally { await fs.rm(root, { recursive: true, force: true }); }
+});
+
 test('Kindle transfer rejects overlapping work and normalizes non-Error copy failures', async () => {
   const sync = new KindleSync({ store: { downloads: () => [] }, resolveFile: async () => ({}), transports: [] });
   sync.syncing = true;

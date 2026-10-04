@@ -110,7 +110,9 @@
         ]
       }
     ],
-    "asarUnpack": ["node_modules/7zip-bin-full/**/*"],
+    "asarUnpack": [
+      "node_modules/7zip-bin-full/**/*"
+    ],
     "extraMetadata": {
       "main": "desktop/main.js"
     },
@@ -166,13 +168,13 @@
   },
   "dependencies": {
     "7zip-bin-full": "^26.3.1",
-    "nostr-tools": "^2.25.0",
-    "pdfkit": "^0.17.2",
-    "qrcode": "^1.5.4",
-    "webtorrent": "^3.0.21",
     "bmp-js": "^0.1.0",
+    "nostr-tools": "^2.25.0",
     "omggif": "^1.0.10",
-    "pngjs": "^7.0.0"
+    "pdfkit": "^0.17.2",
+    "pngjs": "^7.0.0",
+    "qrcode": "^1.5.4",
+    "webtorrent": "^3.0.21"
   },
   "optionalDependencies": {
     "@roamhq/wrtc": "^0.10.0"

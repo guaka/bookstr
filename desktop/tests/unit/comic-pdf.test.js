@@ -189,3 +189,50 @@ test('conversion removes temporary PDFs after extraction or image decoding fails
   await assert.rejects(oversized.converter.convert(oversized.source, 'f'.repeat(64)), /dimensions exceed conversion limits/);
   assert.deepEqual(await fs.readdir(oversized.converter.cacheRoot), []);
 });
+
+test('conversion expands one nested ZIP page and converts a legacy GIF page', async t => {
+  const { GifWriter } = require('omggif');
+  const gifBuffer = Buffer.alloc(256);
+  const writer = new GifWriter(gifBuffer, 1, 1, { palette: [0xff0000, 0x000000] });
+  writer.addFrame(0, 0, 1, 1, [0]);
+  const gif = gifBuffer.subarray(0, writer.end());
+
+  const root = await fs.mkdtemp(path.join(process.cwd(), '.comic-pdf-test-'));
+  t.after(() => fs.rm(root, { recursive: true, force: true }));
+  const nestedZip = path.join(root, 'nested-page.zip');
+  const { spawnSync } = require('node:child_process');
+  await fs.writeFile(path.join(root, 'nested.png'), png);
+  const zipped = spawnSync('zip', ['-q', '-j', nestedZip, path.join(root, 'nested.png')], { encoding: 'utf8' });
+  assert.equal(zipped.status, 0, zipped.stderr);
+  const zipBytes = await fs.readFile(nestedZip);
+
+  const source = path.join(root, 'comic.cbz');
+  await fs.writeFile(source, 'fixture archive');
+  const tool = path.join(root, 'archive-tool.js');
+  const outerListing = listing([
+    { Path: 'bundle.jpg', Size: String(zipBytes.length), Folder: '-' },
+    { Path: 'frame.gif', Size: String(gif.length), Folder: '-' },
+  ]);
+  const nestedListing = listing([{ Path: 'nested.png', Size: String(png.length), Folder: '-' }]);
+  await fs.writeFile(tool, `#!${node}\n` + [
+    "const args = process.argv.slice(2);",
+    "const archive = args[args.indexOf('--') + 1];",
+    "if (args[0] === 'l') {",
+    "  process.stdout.write(archive.endsWith('pages.zip')",
+    `    ? ${JSON.stringify(nestedListing)}`,
+    `    : ${JSON.stringify(outerListing)});`,
+    "} else {",
+    `  const files = ${JSON.stringify({
+      'bundle.jpg': zipBytes.toString('base64'),
+      'frame.gif': gif.toString('base64'),
+      'nested.png': png.toString('base64'),
+    })};`,
+    "  process.stdout.write(Buffer.from(files[args.at(-1)] ?? '', 'base64'));",
+    "}",
+  ].join('\n'));
+  await fs.chmod(tool, 0o755);
+  const converter = new ComicPdfConverter({ cacheRoot: path.join(root, 'cache'), archiveTool: tool });
+  const result = await converter.convert(source, '1'.repeat(64));
+  assert.ok(result.size > 0);
+  assert.equal((await fs.readFile(result.path)).subarray(0, 4).toString(), '%PDF');
+});
