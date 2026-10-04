@@ -27,7 +27,9 @@ class MtpKindles {
       ? ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', this.helper, action, ...args]
       : [action, ...args];
     const { stdout } = await this.runner(executable, argv, { timeout: 120000, windowsHide: true, maxBuffer: 16 * 1024 * 1024 });
-    return JSON.parse(stdout.trim() || 'null');
+    // libmtp prints device discovery messages on stdout before our JSON reply.
+    const response = stdout.trim().split(/\r?\n/).at(-1);
+    return JSON.parse(response || 'null');
   }
 
   async devices() {
