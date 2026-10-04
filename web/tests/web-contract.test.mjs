@@ -842,6 +842,9 @@ test('Home offers result-driven language and format filters', () => {
   assert.match(html, /id="home-format-filter"/);
   assert.match(html, /const languages = \[\.\.\.new Set\(enrichedLibrary\.map\(resultLanguage\)\.filter\(Boolean\)\)\]/);
   assert.match(html, /const formats = \[\.\.\.new Set\(enrichedLibrary\.map\(resultFormat\)\.filter\(Boolean\)\)\]/);
+  assert.match(html, /const matchesQuery = BookMetadata\.createBookFilterMatcher\(\s*needle,/);
+  assert.match(html, /&& matchesQuery\(book\)/);
+  assert.match(html, /homeQueryInput\.addEventListener\('input', \(\) => \{\s*clearTimeout\(homeLibraryFilterTimer\);\s*homeLibraryFilterTimer = setTimeout\(renderHome, 80\);/);
   assert.match(html, /const visible = values\.length > 1/);
   assert.match(html, /resultLanguage\(book\) === homeLibraryFilter\.language/);
   assert.match(html, /resultFormat\(book\) === homeLibraryFilter\.format/);

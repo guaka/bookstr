@@ -33,11 +33,22 @@ const {
   sortBooks,
   dedupeLibraryBooks,
   matchesBookFilter,
+  createBookFilterMatcher,
   sameLibraryBook,
   mergeLibraryState,
   enrichBookMetadata,
   isbnForBook,
 } = globalThis.BookMetadata;
+
+test('compiled book filter parses query terms once and preserves multi-term matching', () => {
+  let cacheChecks = 0;
+  const matches = createBookFilterMatcher('author cached yes', () => { cacheChecks += 1; return true; });
+  assert.equal(matches({ title: 'A Book', authors: 'A. Author' }), true);
+  assert.equal(matches({ title: 'Other', authors: 'A. Author' }), true);
+  assert.equal(matches({ title: 'A Book', authors: 'Someone Else' }), false);
+  assert.equal(cacheChecks, 3);
+  assert.equal(createBookFilterMatcher('   ')({ title: 'Anything' }), true);
+});
 
 test('normalizes portable torrent metadata and ignores empty descriptors', () => {
   assert.equal(torrentMetadataForBook({}), null);
