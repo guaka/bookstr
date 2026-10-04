@@ -72,8 +72,8 @@ test('MTP transport uses its packaged helper and verifies copied bytes', async (
   const calls = [];
   const runner = async (_executable, args) => {
     calls.push(args);
-    if (args[0] === 'devices') return { stdout: '[{"id":"1-2","name":"Kindle Scribe"}]' };
-    if (args[0] === 'files') return { stdout: '[{"id":"17","name":"old.pdf","size":10}]' };
+    if (args[0] === 'devices') return { stdout: 'Device 0 is a Kindle Scribe.\n[{"id":"1-2","name":"Kindle Scribe"}]\n' };
+    if (args[0] === 'files') return { stdout: 'Device 0 is a Kindle Scribe.\n[{"id":"17","name":"old.pdf","size":10}]\n' };
     if (args[0] === 'get') { await fs.writeFile(args[3], remote.get(args[2])); return { stdout: '{"ok":true}' }; }
     if (args[0] === 'put') { remote.set('18', await fs.readFile(args[2])); return { stdout: '{"id":"18"}' }; }
     throw new Error('unexpected command');
