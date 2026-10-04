@@ -1131,6 +1131,7 @@ test('Yochai Benkler search ranks an available edition first and opens the actua
 
   await page.goto('/#search=Yochai%20Benkler');
   await expect(page.locator('#search-result-count')).toHaveText('2 results');
+  await expect(page.locator('#status')).toContainText('2 result(s).');
   const rows = page.locator('#results .book-table-row');
   await expect(rows.first()).toContainText('Internet Archive');
   await expect(rows.first()).toContainText('epub');

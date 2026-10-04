@@ -7,6 +7,11 @@ import vm from 'node:vm';
 const require = createRequire(import.meta.url);
 const BookstrSpeech = require('../reader-speech.js');
 
+test('navigation detection tolerates partial DOM nodes without attribute access', () => {
+  assert.equal(BookstrSpeech.isNavigationSpeechBlock({ localName: 'p', parentElement: null }), false);
+  assert.equal(BookstrSpeech.isNavigationSpeechBlock({ localName: 'p', parentElement: { localName: 'nav' } }), true);
+});
+
 function assertPlanIntegrity(plan) {
   let previousEnd = 0;
   for (const chunk of plan.chunks) {

@@ -48,6 +48,7 @@ test('compiled book filter parses query terms once and preserves multi-term matc
   assert.equal(matches({ title: 'A Book', authors: 'Someone Else' }), false);
   assert.equal(cacheChecks, 3);
   assert.equal(createBookFilterMatcher('   ')({ title: 'Anything' }), true);
+  assert.equal(createBookFilterMatcher('cached no')({ title: 'Any book' }), true);
 });
 
 test('normalizes portable torrent metadata and ignores empty descriptors', () => {

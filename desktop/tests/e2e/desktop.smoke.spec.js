@@ -93,7 +93,7 @@ test('libstr desktop app opens with preload bridge', async () => {
     await expect(firstWindow.locator('.brand-mark')).toHaveAttribute('src', 'public/apple-touch-icon.png');
 
     const paneIconOrder = await firstWindow.locator('.app-header-right .header-tab').evaluateAll(buttons => (
-      buttons.slice(0, 4).map(button => button.id)
+      buttons.filter(button => button.id !== 'desktop-downloads-button').slice(0, 4).map(button => button.id)
     ));
     expect(paneIconOrder).toEqual([
       'home-tab-btn',
@@ -148,13 +148,13 @@ test('libstr desktop app opens with preload bridge', async () => {
     await expect(firstWindow.locator('#search-sources-table')).not.toContainText('LitRes');
     await expect(firstWindow.locator('#search-type option[value="content"]')).toHaveCount(0);
     const sourceToggles = firstWindow.locator('[data-action="toggle-search-source"]');
-    await expect(sourceToggles).toHaveCount(8);
+    await expect(sourceToggles).toHaveCount(1);
     await expect(sourceToggles.first()).toBeChecked();
     await sourceToggles.first().uncheck();
-    await expect(firstWindow.locator('tr[data-source="all-books-party"]')).toHaveClass(/source-disabled/);
+    await expect(firstWindow.locator('tr[data-source="libcat"]')).toHaveClass(/source-disabled/);
     await firstWindow.reload();
-    await expect(firstWindow.locator('tr[data-source="all-books-party"] [data-action="toggle-search-source"]')).not.toBeChecked();
-    await firstWindow.locator('tr[data-source="all-books-party"] [data-action="toggle-search-source"]').check();
+    await expect(firstWindow.locator('tr[data-source="libcat"] [data-action="toggle-search-source"]')).not.toBeChecked();
+    await firstWindow.locator('tr[data-source="libcat"] [data-action="toggle-search-source"]').check();
 
     await firstWindow.evaluate(() => {
       state.favorites = [{ md5: 'a', title: 'English book', language: 'en' }, { md5: 'b', title: 'Portuguese book', language: 'pt-PT' }];

@@ -58,6 +58,7 @@ test('theme image bounds use the outer viewport height for every theme', () => {
 test('opening a book includes non-linear front matter before the first display', async () => {
   const opening = { linear: false };
   const calls = [];
+  const stages = [];
   const rendition = {
     hooks: { content: { register() {} } }, on() {},
     themes: { fontSize() {} },
@@ -75,7 +76,7 @@ test('opening a book includes non-linear front matter before the first display',
     reportBookMetadata: noop, reportBookSections: noop, installContinuousShellWatch: noop,
     registerThemes: noop, restoredHighlights: () => ({ words: [], marks: [] }),
     rememberReaderHighlights: noop, activeReaderHighlights: { words: [], marks: [] },
-    reportLocation: noop,
+    reportLocation: noop, reportReaderStartupStage: stage => stages.push(stage),
   });
   // Use the real front-matter function in this reader context too.
   vm.runInContext(html.slice(start, end), context, { filename: path, lineOffset: html.slice(0, start).split('\n').length - 1 });
@@ -84,4 +85,5 @@ test('opening a book includes non-linear front matter before the first display',
   vm.runInContext(html.slice(openStart, openEnd), context, { filename: path, lineOffset: html.slice(0, openStart).split('\n').length - 1 });
   await context.openBook('fixture', '', 'paper', '', 'opening');
   assert.deepEqual(calls, [{ target: undefined, included: true }]);
+  assert.deepEqual(stages, ['parsing', 'rendering', 'ready']);
 });

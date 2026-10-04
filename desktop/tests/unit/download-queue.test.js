@@ -116,3 +116,55 @@ test('queue rejects records without a supported edition or downloadable file', a
     provider: 'gutenberg', recordId: 'x', acquisitions: [{ format: 'epub', url: 'file:///x.epub', availability: 'open' }],
   } }), /downloadable file/);
 });
+
+test('provider downloads preserve their source and allow trusted open files', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'bookstr-provider-queue-'));
+  const store = new LibraryStore({ dbPath: path.join(root, 'library.sqlite'), libraryRoot: root });
+  try {
+    const calls = [];
+    const record = { provider: 'gutenberg', recordId: '42', title: 'Open edition',
+      acquisitions: [{ format: 'epub', url: 'https://example.test/book.epub', availability: 'open' }] };
+    const queue = new DownloadQueue({ store, acquisitionManager: { async acquire(received, options) {
+      calls.push({ received, options });
+      options.onProgress();
+      store.setDownload({ bookId: 'gutenberg:42', status: 'ready' });
+    } } });
+    await queue.enqueue({ kind: 'provider', record });
+    await tick();
+    assert.equal(calls.length, 1);
+    assert.deepEqual(calls[0].received, record);
+    assert.equal(calls[0].options.allowUnverifiedOpen, true);
+    assert.equal(store.downloads()[0].status, 'ready');
+    assert.equal(store.downloadRequest('gutenberg:42').record.title, 'Open edition');
+    await assert.rejects(() => queue.retry('missing'), /without its source record/);
+  } finally { store.close(); await fs.rm(root, { recursive: true, force: true }); }
+});
+
+test('relaunch marks invalid saved jobs failed without starting an acquisition', async () => {
+  const states = [];
+  const queue = new DownloadQueue({ store: {
+    resumableDownloads: () => [
+      { bookId: 'b'.repeat(32), request: { kind: 'libgen', record: book } },
+      { bookId: 'broken', request: null },
+    ],
+    setDownload: update => states.push(update),
+  }, acquisitionManager: {} });
+  await queue.resume();
+  assert.equal(states.length, 2);
+  assert.ok(states.every(job => job.status === 'failed'));
+  assert.match(states[0].error, /identity changed/);
+  assert.match(states[1].error, /Invalid download request/);
+  assert.equal(queue.pending.length, 0);
+});
+
+test('queue validates construction and admission and deduplicates waiting jobs', async () => {
+  assert.throws(() => new DownloadQueue(), /required/);
+  assert.throws(() => new DownloadQueue({ store: {} }), /required/);
+  const queue = new DownloadQueue({ store: {}, acquisitionManager: {} });
+  for (const request of [null, [], 'book']) await assert.rejects(() => queue.prepare(request), /Invalid download request/);
+  await assert.rejects(() => queue.prepare({ kind: 'unknown' }), /Unsupported download request/);
+  queue.running = true;
+  queue.schedule(book.md5, { kind: 'libgen', record: book });
+  queue.schedule(book.md5, { kind: 'libgen', record: book });
+  assert.equal(queue.pending.length, 1);
+});

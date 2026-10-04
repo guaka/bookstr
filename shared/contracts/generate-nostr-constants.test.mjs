@@ -47,6 +47,7 @@ test('renders deterministic declarations for all three client languages', () => 
   assert.match(renderJavaScript(value), /BookstrNostrConstants/);
   assert.match(renderKotlin(value), /const val BLOSSOM_AUTHORIZATION_KIND = 24242/);
   assert.match(renderSwift(value), /static let collectionIndexDTag = "bookstr-collections"/);
+  assert.doesNotMatch(renderSwift(value), /blossom/i);
   assert.equal(renderJavaScript(value), renderJavaScript(value));
 });
 
