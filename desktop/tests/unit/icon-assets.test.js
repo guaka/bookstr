@@ -16,7 +16,7 @@ function pngHeader(relativePath) {
   };
 }
 
-test('platform icons keep their expected dimensions and desktop artwork stays in sync with Android', () => {
+test('platform icons retain their intended artwork variants', () => {
   const desktopIcon = pngHeader('desktop/assets/icon-macos.png');
   const webIcon = pngHeader('web/public/apple-touch-icon.png');
   const iosIcon = pngHeader('ios/BookstrIOS/Assets.xcassets/AppIcon.appiconset/AppIcon.png');
@@ -33,5 +33,6 @@ test('platform icons keep their expected dimensions and desktop artwork stays in
     { width: iosIcon.width, height: iosIcon.height, colorType: iosIcon.colorType },
     { width: 1024, height: 1024, colorType: 2 },
   );
+  assert.equal(iosIcon.contents.equals(webIcon.contents), false);
   assert.deepEqual(androidIcon.contents, desktopIcon.contents);
 });
