@@ -2477,6 +2477,8 @@
       const desktopKindleTransfer = document.getElementById('desktop-kindle-transfer');
       let currentKindleId = '';
       let kindleTransferRunning = false;
+      let kindleOfferRefreshing = false;
+      let kindleOfferQueued = false;
       const searchResultFilters = document.getElementById('search-result-filters');
       const searchResultCount = document.getElementById('search-result-count');
       const searchLanguageFilterWrap = document.getElementById('search-language-filter-wrap');
@@ -6087,6 +6089,8 @@
 
       async function refreshKindleOffer() {
         if (!isDesktopMode || kindleTransferRunning || !desktopBridge?.kindle) return;
+        if (kindleOfferRefreshing) { kindleOfferQueued = true; return; }
+        kindleOfferRefreshing = true;
         try {
           const devices = await desktopBridge.kindle.devices();
           deviceKindleList.replaceChildren();
@@ -6127,6 +6131,12 @@
         } catch (error) {
           desktopKindleSummary.textContent = error?.message || String(error);
           desktopKindleTransfer.disabled = true;
+        } finally {
+          kindleOfferRefreshing = false;
+          if (kindleOfferQueued) {
+            kindleOfferQueued = false;
+            void refreshKindleOffer();
+          }
         }
       }
 
