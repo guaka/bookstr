@@ -1997,7 +1997,7 @@
           <button id="home-tab-btn" class="header-tab" type="button" aria-label="Home, Command 1" aria-selected="true" title="Home · ⌘1"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4.5h4v15H4zM10 4.5h4v15h-4zM16 4.5h4v15h-4z"/><path d="M3 19.5h18M5.5 7.5h1M11.5 7.5h1M17.5 7.5h1"/></svg></button>
           <button id="reading-tab-btn" class="header-tab" type="button" aria-label="Reading, Command 2" aria-selected="false" title="Reading · ⌘2"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5.5c3.2-.8 5.9-.2 8 1.6v12c-2.1-1.8-4.8-2.4-8-1.6z"/><path d="M20 5.5c-3.2-.8-5.9-.2-8 1.6v12c2.1-1.8 4.8-2.4 8-1.6z"/></svg></button>
           <button id="search-tab-btn" class="header-tab" type="button" aria-label="Search, Command 3" aria-selected="false" title="Search · ⌘3"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m15.5 15.5 5 5"/></svg></button>
-          <button id="people-tab-btn" class="header-tab" type="button" aria-label="People, Command 4" aria-selected="false" title="People · ⌘4"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="3"/><circle cx="17" cy="10" r="2.5"/><path d="M3.5 20c.4-4 2.2-6 5.5-6s5.1 2 5.5 6M14 15c3.5-.6 5.5 1 6 5"/></svg></button>
+          <button id="people-tab-btn" class="header-tab" type="button" aria-label="People, Command 4" aria-selected="false" title="People · ⌘4"><svg class="social-nav-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="3"/><circle cx="17" cy="10" r="2.5"/><path d="M3.5 20c.4-4 2.2-6 5.5-6s5.1 2 5.5 6M14 15c3.5-.6 5.5 1 6 5"/></svg><svg class="device-nav-icon hidden" viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="2.5" width="14" height="19" rx="2"/><path d="M9 18.5h6"/></svg></button>
           <button id="words-tab-btn" class="header-tab words-tab-icon hidden" type="button" aria-label="Words, Command 5" aria-selected="false" title="Words · ⌘5">Aᵥ</button>
           <button id="settings-btn" class="header-tab icon-btn" aria-label="Settings" aria-selected="false" aria-pressed="false" title="Settings"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15.25A3.25 3.25 0 1 0 12 8.75a3.25 3.25 0 0 0 0 6.5Z"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06-1.87 1.87-.06-.06A1.7 1.7 0 0 0 16 18.4a1.7 1.7 0 0 0-1 .6 1.7 1.7 0 0 0-.4 1.1V20h-2.65v-.09A1.7 1.7 0 0 0 10.9 18.4a1.7 1.7 0 0 0-1.87.34l-.06.06-1.87-1.87.06-.06A1.7 1.7 0 0 0 7.5 15a1.7 1.7 0 0 0-.6-1 1.7 1.7 0 0 0-1.1-.4H5.7v-2.65h.09A1.7 1.7 0 0 0 7.5 9.9a1.7 1.7 0 0 0-.34-1.87l-.06-.06L8.97 6.1l.06.06A1.7 1.7 0 0 0 10.9 6.5a1.7 1.7 0 0 0 1-.6 1.7 1.7 0 0 0 .4-1.1V4.7h2.65v.09A1.7 1.7 0 0 0 16 6.5a1.7 1.7 0 0 0 1.87-.34l.06-.06 1.87 1.87-.06.06A1.7 1.7 0 0 0 19.4 9.9a1.7 1.7 0 0 0 .6 1 1.7 1.7 0 0 0 1.1.4h.09v2.65h-.09A1.7 1.7 0 0 0 19.4 15Z"/></svg></button>
         </div>
@@ -2098,9 +2098,9 @@
       <section id="reading-library-tab" class="card hidden" data-tab-panel="reading">
         <div class="library-columns">
           <div class="library-column">
-            <h3>Nostr favorites</h3>
+            <h3 id="favorites-heading">Nostr favorites</h3>
             <ul id="favorites-list" class="sublist"></ul>
-            <p class="meta-note">Click a title to open. Favorites sync through your Nostr signer.</p>
+            <p id="favorites-sync-note" class="meta-note">Click a title to open. Favorites sync through your Nostr signer.</p>
           </div>
           <div class="library-column">
             <h3>Reading library</h3>
@@ -2127,9 +2127,13 @@
       </section>
 
       <section id="people-tab" class="card hidden" data-tab-panel="people">
+        <section id="device-kindle-panel" class="device-transfer-panel hidden" aria-labelledby="device-kindle-title">
+          <h3 id="device-kindle-title">Kindles</h3>
+          <div id="device-kindle-list" class="device-transfer-devices" aria-live="polite"></div>
+        </section>
         <section id="device-transfer-panel" class="device-transfer-panel hidden" aria-labelledby="device-transfer-title">
           <div>
-            <h3 id="device-transfer-title">Devices &amp; transfers</h3>
+            <h3 id="device-transfer-title">Paired devices</h3>
             <p id="device-transfer-summary" class="device-transfer-summary" role="status">Checking this device…</p>
           </div>
           <div class="device-transfer-actions">
@@ -2490,6 +2494,8 @@
       const peopleTab = document.getElementById('people-tab');
       const peopleList = document.getElementById('people-list');
       const deviceTransferPanel = document.getElementById('device-transfer-panel');
+      const deviceKindlePanel = document.getElementById('device-kindle-panel');
+      const deviceKindleList = document.getElementById('device-kindle-list');
       const deviceTransferSummary = document.getElementById('device-transfer-summary');
       const deviceTransferDevices = document.getElementById('device-transfer-devices');
       const deviceTransferRefresh = document.getElementById('device-transfer-refresh');
@@ -2515,6 +2521,18 @@
       const desktopBridge = window.bookstrDesktop || null;
       const isDesktopMode = window.location.protocol === 'app:' && Boolean(desktopBridge?.openReader);
       desktopDownloadsButton.classList.toggle('hidden', !isDesktopMode);
+      if (isDesktopMode) {
+        peopleTabBtn.setAttribute('aria-label', 'Devices, Command 4');
+        peopleTabBtn.title = 'Devices · ⌘4';
+        peopleTabBtn.querySelector('.social-nav-icon').classList.add('hidden');
+        peopleTabBtn.querySelector('.device-nav-icon').classList.remove('hidden');
+        peopleList.classList.add('hidden');
+        deviceKindlePanel.classList.remove('hidden');
+        document.getElementById('favorites-heading').textContent = 'Favorites';
+        document.getElementById('favorites-sync-note').classList.add('hidden');
+        homeSyncRefresh.setAttribute('aria-label', 'Refresh reading and words');
+        homeSyncRefresh.title = 'Refresh reading and words';
+      }
       document.body.classList.toggle('desktop-mode', isDesktopMode);
       if (isDesktopMode) {
         document.title = 'libstr';
@@ -3161,6 +3179,7 @@
 
       let nostrPeopleSyncTask;
       async function syncNostrPeopleFromNip7() {
+        if (isDesktopMode) return false;
         const pubkey = state.nip7.pubkey;
         if (!state.settings.useNip7 || !pubkey) return false;
         if (nostrPeopleSyncTask) return nostrPeopleSyncTask;
@@ -3276,6 +3295,7 @@
       }
 
       async function syncFavoritesToNostr() {
+        if (isDesktopMode) return [];
         if (!nostrSigner?.signEvent || !nostrSigner?.nip44?.encrypt) {
           throw new Error(`${nostrSignerName} with NIP-44 support is required to sync favorites.`);
         }
@@ -3360,6 +3380,7 @@
       }
 
       async function syncFavoriteDeletionToNostr() {
+        if (isDesktopMode) return;
         const pubkey = state.nip7.pubkey || await nostrSigner?.getPublicKey?.();
         if (!pubkey || !nostrSigner?.signEvent || !nostrSigner?.nip44?.encrypt) {
           throw new Error(`Connect your ${nostrSignerName} to delete this book from Nostr favorites.`);
@@ -3382,6 +3403,7 @@
 
       let favoriteSyncTimer;
       function queueFavoriteSync() {
+        if (isDesktopMode) return;
         clearTimeout(favoriteSyncTimer);
         favoriteSyncTimer = setTimeout(() => {
           syncFavoritesToNostr().catch((error) => {
@@ -3899,7 +3921,7 @@
 
       function applyNostrSnapshot(snapshot, { render = true, authoritativeFavorites = false } = {}) {
         const next = { ...snapshot };
-        if (Array.isArray(next.favorites)) {
+        if (!isDesktopMode && Array.isArray(next.favorites)) {
           const normalizedFavorites = next.favorites
             .map(normalizeFavoriteFromRemote)
             .map(preserveFavoriteMetadata);
@@ -3912,7 +3934,7 @@
         if (Array.isArray(next.reading)) {
           state.reading = mergeReadingSnapshot(state.reading, next.reading).slice();
         }
-        state.favorites = BookMetadata.dedupeLibraryBooks([...state.favorites, ...state.reading]);
+        state.favorites = BookMetadata.dedupeLibraryBooks(isDesktopMode ? state.favorites : [...state.favorites, ...state.reading]);
         if (Array.isArray(next.words)) {
           const merged = new Map();
           [...state.words, ...next.words].map(normalizeVocabularyWord).filter(Boolean).forEach((word) => {
@@ -3987,7 +4009,7 @@
           }
           try {
             const [favorites, reading, words] = await Promise.all([
-              pullNostrFavorites(pubkey),
+              isDesktopMode ? Promise.resolve(null) : pullNostrFavorites(pubkey),
               pullNostrReading(pubkey),
               pullNostrWords(pubkey),
             ]);
@@ -4002,10 +4024,12 @@
               words: state.words,
             });
             if (document.activeElement !== null) {
-              status.textContent = 'Synced latest Nostr library data.';
+              status.textContent = isDesktopMode ? 'Synced reading and words.' : 'Synced latest Nostr library data.';
             }
             lastNostrSyncAt = Date.now();
-            setHomeSyncState('ready', `Synced · ${nostrSyncCounts(favorites, reading, words)}`);
+            setHomeSyncState('ready', isDesktopMode
+              ? `Synced · ${reading.length} reading · ${words.length} words`
+              : `Synced · ${nostrSyncCounts(favorites, reading, words)}`);
             return true;
           } catch (error) {
             if (cached) {
@@ -4014,7 +4038,7 @@
             } else {
               setHomeSyncState('failed', 'Sync failed · retry');
             }
-            status.textContent = `Nostr library sync failed: ${error?.message || error}`;
+            status.textContent = `${isDesktopMode ? 'Reading and words sync' : 'Nostr library sync'} failed: ${error?.message || error}`;
             return false;
           }
         })();
@@ -4974,7 +4998,7 @@
 
       async function deleteLibraryBook(book) {
         const title = book?.title || 'this book';
-        if (!window.confirm(`Delete ${title} from your library across apps?`)) return;
+        if (!window.confirm(isDesktopMode ? `Remove ${title} from your library?` : `Delete ${title} from your library across apps?`)) return;
         const wasFavorite = state.favorites.some(item => BookMetadata.sameLibraryBook(item, book));
         const wasReading = state.reading.some(item => BookMetadata.sameLibraryBook(item, book));
         state.favorites = state.favorites.filter(item => !BookMetadata.sameLibraryBook(item, book));
@@ -4989,15 +5013,17 @@
         renderFavorites();
         renderReading();
         renderHome();
-        status.textContent = `Removed ${title} locally; syncing deletion…`;
+        status.textContent = isDesktopMode ? `Removed ${title} from your library.` : `Removed ${title} locally; syncing deletion…`;
         try {
           const tasks = [];
-          if (wasFavorite) tasks.push(syncFavoriteDeletionToNostr());
+          if (wasFavorite && !isDesktopMode) tasks.push(syncFavoriteDeletionToNostr());
           if (wasReading) tasks.push(publishReadingDeletion(book));
           if (tasks.length) await Promise.all(tasks);
-          status.textContent = `Deleted ${title} from your library across apps.`;
+          if (!isDesktopMode) status.textContent = `Deleted ${title} from your library across apps.`;
         } catch (error) {
-          status.textContent = `Deleted ${title} locally; cross-app sync failed: ${error?.message || error}`;
+          status.textContent = isDesktopMode
+            ? `Removed ${title} locally; reading sync failed: ${error?.message || error}`
+            : `Deleted ${title} locally; cross-app sync failed: ${error?.message || error}`;
         }
       }
 
@@ -5215,7 +5241,7 @@
         favoritesList.innerHTML = '';
         if (!state.favorites.length) {
           const p = document.createElement('li');
-          p.textContent = 'No Nostr favorites yet.';
+          p.textContent = isDesktopMode ? 'No favorites yet.' : 'No Nostr favorites yet.';
           favoritesList.appendChild(p);
           return;
         }
@@ -5968,6 +5994,26 @@
         if (!isDesktopMode || kindleTransferRunning || !desktopBridge?.kindle) return;
         try {
           const devices = await desktopBridge.kindle.devices();
+          deviceKindleList.replaceChildren();
+          if (!devices.length) {
+            deviceKindleList.textContent = 'No Kindle connected.';
+          }
+          for (const device of devices) {
+            const row = document.createElement('div');
+            row.className = 'device-transfer-device';
+            const name = document.createElement('strong');
+            name.textContent = device.name;
+            const select = document.createElement('button');
+            select.type = 'button';
+            select.textContent = 'Select';
+            select.setAttribute('aria-label', `Select ${device.name}`);
+            select.addEventListener('click', () => {
+              currentKindleId = device.id;
+              void refreshKindleOffer();
+            });
+            row.append(name, select);
+            deviceKindleList.append(row);
+          }
           desktopKindleOffer.classList.toggle('hidden', devices.length === 0);
           if (!devices.length) { currentKindleId = ''; return; }
           if (!devices.some(device => device.id === currentKindleId)) currentKindleId = devices[0].id;
@@ -5977,6 +6023,12 @@
           const preview = await desktopBridge.kindle.preview(currentKindleId);
           desktopKindleSummary.textContent = `${preview.device.name}: ${preview.missing.length} missing · ${preview.alreadyPresent} already there · ${preview.skipped.length} skipped`;
           desktopKindleTransfer.disabled = preview.missing.length === 0;
+          const selected = devices.findIndex(device => device.id === currentKindleId);
+          if (selected >= 0) {
+            const details = document.createElement('small');
+            details.textContent = `${preview.missing.length} missing · ${preview.alreadyPresent} already there`;
+            deviceKindleList.children[selected]?.querySelector('strong')?.after(details);
+          }
         } catch (error) {
           desktopKindleSummary.textContent = error?.message || String(error);
           desktopKindleTransfer.disabled = true;
@@ -6678,10 +6730,10 @@
           renderReading();
           renderHome();
           const syncTasks = [];
-          if (refreshed.isFavorite) syncTasks.push(syncFavoritesToNostr());
+          if (refreshed.isFavorite && !isDesktopMode) syncTasks.push(syncFavoritesToNostr());
           if (refreshed.isReading) syncTasks.push(publishReadingMetadata(refreshed));
           if (syncTasks.length) await Promise.all(syncTasks);
-          status.textContent = `Updated ${refreshed.title || title} from Open Library and all.books across apps.`;
+          status.textContent = `Updated ${refreshed.title || title} from Open Library and all.books${isDesktopMode ? '.' : ' across apps.'}`;
         } catch (error) {
           status.textContent = `Could not refresh ${title}: ${error?.message || error}`;
         }
@@ -6860,9 +6912,11 @@
         if (activeTab === 'search' && !queryInput.value.trim()) renderSearchSources();
         if (activeTab === 'words') requestAnimationFrame(() => wordsFilter.focus());
         if (activeTab === 'people') {
-          renderPeople();
-          void refreshDeviceTransferPanel();
-          if (!state.followingLoaded) void syncNostrPeopleFromNip7();
+          if (isDesktopMode) void refreshDeviceTransferPanel();
+          else {
+            renderPeople();
+            if (!state.followingLoaded) void syncNostrPeopleFromNip7();
+          }
         }
         if (!updateHash) return;
         if (activeTab === 'home') {
@@ -6879,7 +6933,7 @@
         } else if (activeTab === 'words') {
           setHashRoute('words');
         } else if (activeTab === 'people') {
-          setHashRoute('people');
+          setHashRoute(isDesktopMode ? 'devices' : 'people');
         } else {
           setHashRoute('settings');
         }
@@ -8540,7 +8594,7 @@
             .sort((a, b) => Number(b.updatedAt || 0) - Number(a.updatedAt || 0))
             .slice();
         }
-        state.favorites = BookMetadata.dedupeLibraryBooks([...state.favorites, ...state.reading]);
+        state.favorites = BookMetadata.dedupeLibraryBooks(isDesktopMode ? state.favorites : [...state.favorites, ...state.reading]);
         localStorage.setItem(FAVORITES_KEY, JSON.stringify(state.favorites));
         if (Array.isArray(words)) {
           state.words = words.map(normalizeVocabularyWord).filter(Boolean).slice(0, 120);
@@ -8894,7 +8948,7 @@
             status.textContent = `Connected to ${nostrSignerName}.`;
           }
           if (!opts.skipSync) void syncNostrLibraryFromNip7();
-          void syncNostrPeopleFromNip7();
+          if (!isDesktopMode) void syncNostrPeopleFromNip7();
           return true;
         } catch (error) {
           if (opts.silent && previous && typeof previous.pubkey === 'string' && previous.pubkey) {
@@ -8988,7 +9042,7 @@
           activateTab('settings');
           return;
         }
-        if (route === 'people') {
+        if (route === 'people' || (route === 'devices' && isDesktopMode)) {
           activateTab('people');
           return;
         }

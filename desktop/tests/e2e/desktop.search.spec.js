@@ -263,14 +263,41 @@ test('search plus opens Downloads while the heart stays a separate action', asyn
     await expect(page.locator('#desktop-downloads-list')).toContainText('queued');
     expect(await app.evaluate(() => globalThis.queuedBooks)).toHaveLength(1);
     await page.getByRole('button', { name: 'Close downloads' }).click();
+    await page.evaluate(() => {
+      state.settings.useNip7 = true;
+      state.nip7.pubkey = 'f'.repeat(64);
+      window.favoriteSigningCalls = 0;
+      nostrSigner = {
+        signEvent: async () => { window.favoriteSigningCalls += 1; throw new Error('unexpected favorite publish'); },
+        nip44: { encrypt: async () => 'unexpected' },
+        getPublicKey: async () => 'f'.repeat(64),
+      };
+    });
     await page.locator('#results [data-md5="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"]').click();
     expect(await app.evaluate(() => globalThis.queuedBooks)).toHaveLength(1);
+    await page.waitForTimeout(350);
+    expect(await page.evaluate(() => window.favoriteSigningCalls)).toBe(0);
+    expect(await page.evaluate(() => state.favorites.some(book => book.md5 === 'a'.repeat(32)))).toBe(true);
+    const favoritePulls = await page.evaluate(async () => {
+      let pulls = 0;
+      pullNostrFavorites = async () => { pulls += 1; return []; };
+      pullNostrReading = async () => [];
+      pullNostrWords = async () => [];
+      await syncNostrLibraryFromNip7({ useCache: false });
+      return pulls;
+    });
+    expect(favoritePulls).toBe(0);
     await page.getByRole('button', { name: 'Add Download Fixture Gutenberg to downloads' }).click();
     await expect(page.getByRole('dialog', { name: 'Downloads' })).toBeVisible();
     const requests = await app.evaluate(() => globalThis.queuedBooks);
     expect(requests).toHaveLength(2);
     expect(requests[1].kind).toBe('provider');
     expect(requests[1].record.acquisitions[0].url).toBe('https://www.gutenberg.org/ebooks/999007.epub');
+    await page.evaluate(() => localStorage.setItem(READING_KEY, JSON.stringify([{
+      md5: 'b'.repeat(32), title: 'Reading only', authors: 'Fixture Author', updatedAt: Date.now(),
+    }])));
+    await page.reload();
+    expect(await page.evaluate(() => state.favorites.some(book => book.md5 === 'b'.repeat(32)))).toBe(false);
   } finally { await app.close(); }
 });
 
@@ -296,6 +323,10 @@ test('connected Kindle offers a preview and transfers only on click', async () =
     await page.reload();
     await expect(page.locator('#desktop-kindle-offer')).toBeVisible();
     await expect(page.locator('#desktop-kindle-summary')).toContainText('1 missing');
+    await page.getByRole('button', { name: 'Devices, Command 4' }).click();
+    await expect(page.locator('#device-kindle-panel')).toContainText('Kindle');
+    await expect(page.locator('#device-kindle-list')).toContainText('1 missing');
+    await expect(page.locator('#device-transfer-panel')).toBeVisible();
     expect(await app.evaluate(() => globalThis.kindleTransferCalls)).toBe(0);
     await page.getByRole('button', { name: 'Put missing books on Kindle' }).click();
     await expect.poll(() => app.evaluate(() => globalThis.kindleTransferCalls)).toBe(1);

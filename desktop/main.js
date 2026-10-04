@@ -77,7 +77,7 @@ const LIBRARY_PANES = [
   { label: 'Home', pane: 'home', accelerator: 'CmdOrCtrl+1' },
   { label: 'Reading', pane: 'reading', accelerator: 'CmdOrCtrl+2' },
   { label: 'Search', pane: 'search', accelerator: 'CmdOrCtrl+3' },
-  { label: 'People', pane: 'people', accelerator: 'CmdOrCtrl+4' },
+  { label: 'Devices', pane: 'people', accelerator: 'CmdOrCtrl+4' },
   { label: 'Words', pane: 'words', accelerator: 'CmdOrCtrl+5' },
 ];
 const DICTIONARY_PROXY_BASE_URL = process.env.NODE_ENV === 'test'
