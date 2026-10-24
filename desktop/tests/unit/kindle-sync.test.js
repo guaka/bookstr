@@ -226,11 +226,20 @@ test('comic transfer conversion and transfer copy failures are reported', async 
     assert.match((await missingConverter.localBooks()).skipped[0].reason, /Comic PDF conversion is unavailable/);
     await assert.rejects(() => missingConverter.localBooks('comic'), /Comic PDF conversion is unavailable/);
 
+    const conversionProgress = [];
     const sync = new KindleSync({ store, resolveFile: async () => ({ filePath: source }), transports: [transport],
-      comicConverter: { convert: async () => ({ path: converted, sha256: digest('converted PDF'), size: 13 }) } });
+      comicConverter: { convert: async (_filePath, _sha256, onProgress) => {
+        onProgress({ percent: 50 });
+        return { path: converted, sha256: digest('converted PDF'), size: 13 };
+      } },
+      onProgress: progress => conversionProgress.push(progress) });
     const local = await sync.localBooks();
     assert.equal(local.books[0].extension, 'pdf');
     assert.equal(local.books[0].path, converted);
+    assert.deepEqual(conversionProgress, [
+      { phase: 'converting', bookId: 'comic', title: 'Comic.cbz' },
+      { percent: 50, phase: 'converting', bookId: 'comic', title: 'Comic.cbz' },
+    ]);
     const transfer = await sync.transfer('device');
     assert.deepEqual(transfer.errors, [{ bookId: 'comic', title: 'Comic.cbz', error: 'copy rejected' }]);
   } finally { await fs.rm(root, { recursive: true, force: true }); }
@@ -269,6 +278,7 @@ test('selected Kindle book IDs are validated and transferred through withSession
       maxDepth = Math.max(maxDepth, sessionDepth);
       try { return await operation(); } finally { sessionDepth -= 1; }
     },
+    ensureSpace(bytes) { this.requiredSpace = bytes; },
     async copy(_device, book) { this.copied.push(book.bookId); },
   };
   try {
@@ -278,6 +288,7 @@ test('selected Kindle book IDs are validated and transferred through withSession
     const result = await sync.transfer('device', ['keep']);
     assert.deepEqual(result.transferred, ['keep']);
     assert.deepEqual(transport.copied, ['keep']);
+    assert.equal(transport.requiredSpace, Buffer.byteLength('selected PDF'));
     assert.equal(maxDepth, 2);
   } finally { await fs.rm(root, { recursive: true, force: true }); }
 });

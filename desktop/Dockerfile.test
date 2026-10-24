@@ -2,12 +2,13 @@ FROM mcr.microsoft.com/playwright:v1.62.1-noble
 
 WORKDIR /workspace/desktop
 
-COPY --chown=pwuser:pwuser desktop/package.json desktop/package-lock.json ./
+COPY --chown=pwuser:pwuser desktop/package.json desktop/pnpm-lock.yaml desktop/pnpm-workspace.yaml ./
+COPY --chown=pwuser:pwuser desktop/patches/ ./patches/
 RUN chown -R pwuser:pwuser /workspace
 
+RUN corepack enable
 USER pwuser
-RUN npm ci
-RUN node node_modules/electron/install.js
+RUN pnpm install --frozen-lockfile
 
 COPY --chown=pwuser:pwuser desktop/ ./
 COPY --chown=pwuser:pwuser shared/ ../shared/
@@ -16,4 +17,4 @@ COPY --chown=pwuser:pwuser web/ ../web/
 ENV CI=1
 
 ENTRYPOINT ["xvfb-run", "-a"]
-CMD ["npx", "playwright", "test"]
+CMD ["pnpm", "exec", "playwright", "test"]

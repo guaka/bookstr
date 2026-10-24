@@ -9,3 +9,7 @@
 **/node_modules/
 **/test-results/
 desktop/dist/
+
+desktop/.tmp/
+desktop/.electron-cache/
+desktop/.npm-cache/

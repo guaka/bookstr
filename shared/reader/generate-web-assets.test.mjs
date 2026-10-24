@@ -107,7 +107,7 @@ test('repository packaging consumes checked web assets', async () => {
   const workflow = await readFile(new URL('../../.github/workflows/ci.yml', import.meta.url), 'utf8');
   assert.equal(desktop.scripts['check:reader-assets'], 'node ../shared/reader/generate-web-assets.mjs --check');
   for (const command of ['pack', 'dist', 'dist:linux', 'dist:win', 'dist:mac', 'dist:all']) {
-    assert.equal(desktop.scripts[`pre${command}`], 'npm run check:reader-assets && npm run build:kindle-mtp');
+    assert.equal(desktop.scripts[`pre${command}`], 'pnpm run check:reader-assets && pnpm run build:kindle-mtp');
   }
   assert.ok(desktop.build.files.some((entry) => entry === '../web/**/*'
     || (entry?.from === '../web' && entry?.to === 'web' && entry.filter?.includes('**/*'))));

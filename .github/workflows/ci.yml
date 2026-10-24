@@ -184,20 +184,24 @@ jobs:
         working-directory: desktop
     steps:
       - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.34.8
+          package_json_file: desktop/package.json
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: npm
-          cache-dependency-path: desktop/package-lock.json
+          cache: pnpm
+          cache-dependency-path: desktop/pnpm-lock.yaml
       - name: Install desktop dependencies
-        run: npm ci
+        run: pnpm install --frozen-lockfile
       - name: Run Electron unit coverage
         id: electron_tests
         continue-on-error: true
         run: |
           started=$(date +%s)
           set +e
-          npm run test:coverage:ci | tee electron-tests.tap
+          pnpm run test:coverage:ci | tee electron-tests.tap
           status=${PIPESTATUS[0]}
           echo "duration_ms=$((($(date +%s) - started) * 1000))" >> "$GITHUB_OUTPUT"
           exit "$status"
@@ -209,7 +213,7 @@ jobs:
           path: desktop/electron-tests.tap
       - name: Install Electron test dependencies
         if: always()
-        run: npx playwright install-deps
+        run: pnpm exec playwright install-deps
       - name: Run Electron smoke and local WebTorrent tests
         id: electron_e2e
         if: always()
@@ -217,9 +221,9 @@ jobs:
         run: |
           started=$(date +%s)
           set +e
-          npm run test:e2e:torrent
+          pnpm run test:e2e:torrent
           torrent_status=$?
-          xvfb-run -a npx playwright test tests/e2e/desktop.smoke.spec.js tests/e2e/desktop.device-transfer.spec.js --reporter=json > electron-playwright.json
+          xvfb-run -a pnpm exec playwright test tests/e2e/desktop.smoke.spec.js tests/e2e/desktop.device-transfer.spec.js --reporter=json > electron-playwright.json
           status=$?
           if [ "$torrent_status" -ne 0 ]; then status="$torrent_status"; fi
           echo "duration_ms=$((($(date +%s) - started) * 1000))" >> "$GITHUB_OUTPUT"
