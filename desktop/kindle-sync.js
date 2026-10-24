@@ -322,8 +322,10 @@ class KindleSync {
             await transport.copy(device, book, safeFilename(book, book.sha256));
             transferred.push(book.bookId);
             this.rememberPresence(id, [book.bookId]);
+            this.onProgress({ deviceId: id, phase: 'copied', bookId: book.bookId, title: book.title, completed: transferred.length, total: missingIds.size });
           } catch (error) {
             errors.push({ bookId: book.bookId, title: book.title, error: error.message || String(error) });
+            this.onProgress({ deviceId: id, phase: 'failed', bookId: book.bookId, title: book.title, error: error.message || String(error), completed: transferred.length, total: missingIds.size });
           }
         }
         this.onProgress({ deviceId: id, completed: transferred.length, total: missingIds.size, done: true });
