@@ -195,6 +195,8 @@ jobs:
           cache-dependency-path: desktop/pnpm-lock.yaml
       - name: Install desktop dependencies
         run: pnpm install --frozen-lockfile
+      - name: Check desktop TypeScript
+        run: pnpm run typecheck
       - name: Run Electron unit coverage
         id: electron_tests
         continue-on-error: true

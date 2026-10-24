@@ -28,6 +28,13 @@ pnpm run test:e2e:smoke
 pnpm run test:e2e:reader
 ```
 
+TypeScript modules in `src/*.ts` compile to JavaScript in the matching paths
+under `desktop/`. Run `pnpm run build:typescript` to emit those files and
+`pnpm run typecheck` to check types without emitting. Both commands cap the
+Node.js heap at 512 MB; the TypeScript compiler also uses `GOMEMLIMIT=512MiB`
+and `GOMAXPROCS=2`. The compiler runs once per command and does not leave a
+watch process running.
+
 The test suite uses Playwright Electron mode to validate bootstrap, preload bridge,
 and reader read-aloud behavior.
 

@@ -1,4 +1,4 @@
-function appContentSecurityPolicy(nonce = '') {
+export function appContentSecurityPolicy(nonce = ''): string {
   const nonceSource = nonce ? ` 'nonce-${nonce}'` : '';
   return [
     "default-src 'self' app:;",
@@ -13,5 +13,3 @@ function appContentSecurityPolicy(nonce = '') {
     "object-src 'none';",
   ].join(' ');
 }
-
-module.exports = { appContentSecurityPolicy };

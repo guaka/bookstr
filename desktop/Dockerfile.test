@@ -17,4 +17,4 @@ COPY --chown=pwuser:pwuser web/ ../web/
 ENV CI=1
 
 ENTRYPOINT ["xvfb-run", "-a"]
-CMD ["pnpm", "exec", "playwright", "test"]
+CMD ["pnpm", "run", "test:e2e"]
