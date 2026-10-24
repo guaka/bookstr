@@ -209,7 +209,8 @@ test('Kindle presence IPC only forwards a normalized device ID', async () => {
   assert.deepEqual(ids, ['kindle', '']);
   const preload = fs.readFileSync(new URL('../../desktop/preload.js', import.meta.url), 'utf8');
   const method = preload.match(/presence\(id\) \{[^}]+\}/)[0];
-  const context = vm.createContext({ ipcRenderer: { invoke: (...args) => args } });
+  const ipcRenderer = { invoke: (...args) => args };
+  const context = vm.createContext({ ipcRenderer, electron_1: { ipcRenderer } });
   const bridge = vm.runInContext(`({ ${method} })`, context);
   assert.deepEqual(Array.from(bridge.presence('kindle')), ['bookstr-desktop-kindle-presence', 'kindle']);
 });
