@@ -52,10 +52,10 @@ test('queued desktop download is durable, deduplicated, and resumes after restar
   } finally { store.close(); await fs.rm(root, { recursive: true, force: true }); }
 });
 
-test('queue starts up to eight acquisitions promptly and refills a slot when one finishes', async () => {
+test('queue starts up to 100 acquisitions promptly and refills a slot when one finishes', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'bookstr-queue-parallel-'));
   const store = new LibraryStore({ dbPath: path.join(root, 'library.sqlite'), libraryRoot: root });
-  const books = Array.from({ length: 9 }, (_, index) => ({
+  const books = Array.from({ length: 101 }, (_, index) => ({
     ...book,
     md5: index.toString(16).padStart(32, '0'),
     libgenId: 2412930 + index,
@@ -68,13 +68,13 @@ test('queue starts up to eight acquisitions promptly and refills a slot when one
       return new Promise(resolve => releases.set(record.md5, resolve));
     } } });
     await Promise.all(books.map(record => queue.enqueue({ kind: 'libgen', record })));
-    await waitFor(() => started.length === 8);
-    assert.deepEqual(started, books.slice(0, 8).map(record => record.md5));
+    await waitFor(() => started.length === 100);
+    assert.deepEqual(started, books.slice(0, 100).map(record => record.md5));
 
     const drained = queue.drain();
     releases.get(books[0].md5)();
-    await waitFor(() => started.length === 9);
-    assert.equal(started[8], books[8].md5);
+    await waitFor(() => started.length === 101);
+    assert.equal(started[100], books[100].md5);
 
     for (const release of releases.values()) release();
     await drained;
@@ -255,8 +255,8 @@ test('queue validates construction, concurrency bounds, and request admission', 
   assert.throws(() => new DownloadQueue(), /required/);
   assert.throws(() => new DownloadQueue({ store: {} }), /required/);
   const queue = new DownloadQueue({ store: {}, acquisitionManager: {} });
-  assert.equal(queue.maxConcurrent, 8);
-  for (const maxConcurrent of [0, -1, 1.5, 9, Infinity]) {
+  assert.equal(queue.maxConcurrent, 100);
+  for (const maxConcurrent of [0, -1, 1.5, 101, Infinity]) {
     assert.throws(() => new DownloadQueue({ store: {}, acquisitionManager: {}, maxConcurrent }), /maxConcurrent/);
   }
   for (const request of [null, [], 'book']) await assert.rejects(() => queue.prepare(request), /Invalid download request/);

@@ -99,28 +99,28 @@ test('Electron retains ordinary torrent support when WebRTC is unavailable', asy
 test('torrent client bounds peer managers and retires a completed swarm before rejecting new work', async () => {
   const log = { adds: [] };
   const bridge = new WebTorrentBridge({ clientFactory: fakeClientFactory(log) });
-  for (let index = 0; index < 8; index += 1) await bridge.addPublic(`torrent-${index}`);
+  for (let index = 0; index < 100; index += 1) await bridge.addPublic(`torrent-${index}`);
   assert.equal(log.clientOptions.maxConns, 16);
-  assert.equal(log.adds.length, 8);
-  await assert.rejects(() => bridge.addPublic('torrent-over-cap'), /maximum active torrent count reached \(8\)/);
-  assert.equal(log.adds.length, 8);
+  assert.equal(log.adds.length, 100);
+  await assert.rejects(() => bridge.addPublic('torrent-over-cap'), /maximum active torrent count reached \(100\)/);
+  assert.equal(log.adds.length, 100);
   const oldest = bridge.client.torrents[0];
   oldest.done = true;
   await bridge.addPublic('torrent-after-seed-eviction');
   assert.equal(log.removed[0].torrent, oldest);
   assert.equal(log.removed[0].options, undefined);
-  assert.equal(bridge.client.torrents.length, 8);
-  assert.equal(log.adds.length, 9);
+  assert.equal(bridge.client.torrents.length, 100);
+  assert.equal(log.adds.length, 101);
   await bridge.stop();
 });
 
 test('simultaneous torrent requests share one bounded WebTorrent client', async () => {
   const log = { adds: [] };
   const bridge = new WebTorrentBridge({ clientFactory: fakeClientFactory(log) });
-  const results = await Promise.allSettled(Array.from({ length: 10 }, (_, index) => bridge.addPublic(`parallel-${index}`)));
+  const results = await Promise.allSettled(Array.from({ length: 102 }, (_, index) => bridge.addPublic(`parallel-${index}`)));
   assert.equal(log.clientsCreated, 1);
-  assert.equal(results.filter(result => result.status === 'fulfilled').length, 8);
-  assert.equal(bridge.client.torrents.length, 8);
+  assert.equal(results.filter(result => result.status === 'fulfilled').length, 100);
+  assert.equal(bridge.client.torrents.length, 100);
   await bridge.stop();
 });
 
@@ -148,18 +148,18 @@ test('concurrent reservation during slow eviction cannot exceed the active torre
       return client;
     },
   });
-  for (let index = 0; index < 7; index += 1) await bridge.addPublic(`active-${index}`);
+  for (let index = 0; index < 99; index += 1) await bridge.addPublic(`active-${index}`);
   await bridge.addPublic('completed-slot');
-  bridge.client.torrents[7].done = true;
+  bridge.client.torrents[99].done = true;
 
   const results = await Promise.allSettled([
     bridge.addPublic('concurrent-a'),
     bridge.addPublic('concurrent-b'),
   ]);
-  assert.equal(bridge.client.torrents.length, 8);
+  assert.equal(bridge.client.torrents.length, 100);
   assert.equal(results.filter(result => result.status === 'fulfilled').length, 1);
   assert.equal(results.filter(result => result.status === 'rejected').length, 1);
-  assert.match(results.find(result => result.status === 'rejected').reason.message, /maximum active torrent count reached \(8\)/);
+  assert.match(results.find(result => result.status === 'rejected').reason.message, /maximum active torrent count reached \(100\)/);
   assert.equal(log.removed.length, 1);
   await bridge.stop();
 });
@@ -201,15 +201,15 @@ test('concurrent seed and add reservations stay within the active torrent cap', 
       return client;
     },
   });
-  for (let index = 0; index < 7; index += 1) await bridge.addPublic(`held-${index}`);
+  for (let index = 0; index < 99; index += 1) await bridge.addPublic(`held-${index}`);
   await bridge.addPublic('completed-for-seed');
-  bridge.client.torrents[7].done = true;
+  bridge.client.torrents[99].done = true;
 
   const results = await Promise.allSettled([
     bridge.seedPublic('/tmp/concurrent-seed.epub', { sha256: 'e'.repeat(64) }),
     bridge.addPublic('concurrent-add'),
   ]);
-  assert.equal(bridge.client.torrents.length, 8);
+  assert.equal(bridge.client.torrents.length, 100);
   assert.equal(results.filter(result => result.status === 'fulfilled').length, 1);
   assert.equal(results.filter(result => result.status === 'rejected').length, 1);
   await bridge.stop();

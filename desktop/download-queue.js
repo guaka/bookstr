@@ -4,7 +4,7 @@ const ACTIVE = new Set(['queued', 'finding-peers', 'downloading', 'retrying']);
 const COMPLETE = new Set(['ready', 'seeding']);
 const MD5 = /^[a-f0-9]{32}$/;
 const FORMATS = new Set(['epub', 'pdf', 'fb2', 'cbz', 'cbr']);
-const MAX_CONCURRENT_ACQUISITIONS = 8;
+const MAX_CONCURRENT_ACQUISITIONS = 100;
 
 function libgenRequest(book) {
   const md5 = String(book?.md5 || '').trim().toLowerCase();
