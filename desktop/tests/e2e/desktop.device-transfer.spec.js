@@ -37,12 +37,14 @@ test('Library sends one manga to Kindle and shows progress, duplicates and error
     const window = await app.firstWindow();
     await app.evaluate(({ ipcMain }) => {
       const id = '3'.repeat(32);
-      for (const channel of ['bookstr-desktop-library-downloads', 'bookstr-desktop-kindle-devices', 'bookstr-desktop-kindle-transfer']) ipcMain.removeHandler(channel);
+      for (const channel of ['bookstr-desktop-library-downloads', 'bookstr-desktop-kindle-devices', 'bookstr-desktop-kindle-transfer', 'bookstr-desktop-kindle-presence']) ipcMain.removeHandler(channel);
       ipcMain.handle('bookstr-desktop-library-downloads', () => [{
         bookId: id, md5: id, title: 'Kindle Manga Fixture', authors: 'Fixture',
         extension: 'cbz', status: 'ready', readable: true, completedAt: 1,
       }]);
       ipcMain.handle('bookstr-desktop-kindle-devices', () => [{ id: 'fixture-kindle', name: 'Kindle', kind: 'mtp' }]);
+      globalThis.kindlePresenceFixture = [];
+      ipcMain.handle('bookstr-desktop-kindle-presence', () => ({ deviceId: 'fixture-kindle', bookIds: globalThis.kindlePresenceFixture }));
       globalThis.kindleCalls = [];
       ipcMain.handle('bookstr-desktop-kindle-transfer', (_event, deviceId, bookId) => {
         globalThis.kindleCalls.push({ deviceId, bookId });
@@ -66,11 +68,13 @@ test('Library sends one manga to Kindle and shows progress, duplicates and error
     });
     await expect(window.locator('#desktop-kindle-summary')).toHaveText('Converting · 1/20 pages');
     await expect(send).toHaveAttribute('title', 'Converting · 1/20 pages');
-    await app.evaluate(() => globalThis.finishKindle.resolve({ transferred: ['3'.repeat(32)], alreadyPresent: 0, errors: [] }));
-    await expect(send).toHaveText('Sent');
+    await app.evaluate(() => { globalThis.kindlePresenceFixture = ['3'.repeat(32)]; globalThis.finishKindle.resolve({ transferred: ['3'.repeat(32)], alreadyPresent: 0, errors: [] }); });
+    await expect(send).toHaveText('On Kindle');
     await expect(send).toBeEnabled();
     await expect(send).not.toHaveAttribute('aria-busy');
     await expect(window.locator('#desktop-kindle-summary')).toHaveText('Copied to Kindle');
+    await window.evaluate(async () => { await refreshDesktopDownloadStates(); renderHome(); await refreshKindleOffer(); });
+    await expect(send).toHaveText('On Kindle');
 
     await send.click();
     await expect(send).toBeDisabled();
@@ -89,5 +93,30 @@ test('Library sends one manga to Kindle and shows progress, duplicates and error
     expect(await app.evaluate(() => globalThis.kindleCalls)).toEqual(Array.from({ length: 3 }, () => ({
       deviceId: 'fixture-kindle', bookId: '3'.repeat(32),
     })));
+  } finally { await app.close(); }
+});
+
+
+test('Library marks other exported books from presence without a transfer or repeated checking on filter', async () => {
+  const app = await electron.launch({ args: electronArgs() });
+  try {
+    const window = await app.firstWindow();
+    await app.evaluate(({ ipcMain }) => {
+      for (const name of ['library-downloads', 'kindle-devices', 'kindle-presence', 'kindle-transfer']) ipcMain.removeHandler(`bookstr-desktop-${name}`);
+      ipcMain.handle('bookstr-desktop-library-downloads', () => [{ bookId: 'existing', title: 'Already exported comic', extension: 'cbz', status: 'ready', readable: true }]);
+      ipcMain.handle('bookstr-desktop-kindle-devices', () => [{ id: 'fixture', name: 'Kindle', kind: 'mtp' }]);
+      globalThis.presenceReads = 0;
+      ipcMain.handle('bookstr-desktop-kindle-presence', () => { globalThis.presenceReads++; return { deviceId: 'fixture', bookIds: ['existing'] }; });
+      ipcMain.handle('bookstr-desktop-kindle-transfer', () => { throw new Error('Presence must not transfer books'); });
+    });
+    await window.reload();
+    await window.getByRole('button', { name: 'Home, Command 1' }).click();
+    await window.evaluate(async () => { await refreshDesktopDownloadStates(); await refreshKindleOffer(); });
+    const button = window.locator('[data-action="send-kindle"][data-kindle-book-id="existing"]');
+    await expect(button).toHaveText('On Kindle');
+    const reads = await app.evaluate(() => globalThis.presenceReads);
+    for (const query of ['comic', 'Already', '']) await window.locator('#home-query-input').fill(query);
+    await expect(button).toHaveText('On Kindle');
+    expect(await app.evaluate(() => globalThis.presenceReads)).toBe(reads);
   } finally { await app.close(); }
 });
