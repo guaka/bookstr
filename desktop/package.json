@@ -48,7 +48,8 @@
     "pretest:e2e:smoke": "pnpm run build:typescript",
     "pretest:e2e:transfers": "pnpm run build:typescript",
     "pretest:e2e:reader": "pnpm run build:typescript",
-    "pretest:e2e:headed": "pnpm run build:typescript"
+    "pretest:e2e:headed": "pnpm run build:typescript",
+    "test:packaged": "node --max-old-space-size=512 --test --test-concurrency=1 tests/packaged/*.test.cjs"
   },
   "devDependencies": {
     "@playwright/test": "^1.62.1",
