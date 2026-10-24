@@ -32,8 +32,17 @@ test('Electron unit coverage and smoke results are published beside other client
   const deploy = await readWorkflow('deploy-web.yml');
 
   assert.match(workflow, /electron: \$\{\{ steps\.filter\.outputs\.electron \}\}/);
-  assert.match(workflow, /npm run test:coverage(?::ci)? \| tee electron-tests\.tap/);
-  assert.match(workflow, /xvfb-run -a npx playwright test tests\/e2e\/desktop\.smoke\.spec\.js/);
+  const electronJob = workflow.match(/^  electron:\n[\s\S]*$/m)?.[0];
+  assert.ok(electronJob, 'Electron job exists');
+  assert.match(electronJob, /uses: pnpm\/action-setup@v4/);
+  assert.match(electronJob, /version: 10\.34\.8/);
+  assert.match(electronJob, /package_json_file: desktop\/package\.json/);
+  assert.match(electronJob, /cache: pnpm/);
+  assert.ok(electronJob.indexOf('uses: pnpm/action-setup@v4') < electronJob.indexOf('uses: actions/setup-node@v4'));
+  assert.match(electronJob, /pnpm install --frozen-lockfile/);
+  assert.match(electronJob, /pnpm run test:coverage:ci \| tee electron-tests\.tap/);
+  assert.match(electronJob, /xvfb-run -a pnpm exec playwright test tests\/e2e\/desktop\.smoke\.spec\.js/);
+  assert.doesNotMatch(electronJob, /\bnpm\b|\bnpx\b/);
   assert.match(workflow, /bookstr-e2e-screenshots-web-\$\{\{ github\.run_id \}\}/);
   assert.match(workflow, /web\/test-results\/\*\*\/\*\.png/);
   assert.match(workflow, /bookstr-e2e-screenshots-electron-\$\{\{ github\.run_id \}\}/);

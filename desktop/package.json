@@ -13,21 +13,21 @@
   "scripts": {
     "check:reader-assets": "node ../shared/reader/generate-web-assets.mjs --check",
     "build:kindle-mtp": "node native/build-kindle-mtp.js",
-    "prepack": "npm run check:reader-assets && npm run build:kindle-mtp",
+    "prepack": "pnpm run check:reader-assets && pnpm run build:kindle-mtp",
     "start": "electron .",
     "pack": "electron-builder --dir",
-    "predist": "npm run check:reader-assets && npm run build:kindle-mtp",
+    "predist": "pnpm run check:reader-assets && pnpm run build:kindle-mtp",
     "dist": "electron-builder",
-    "predist:linux": "npm run check:reader-assets && npm run build:kindle-mtp",
+    "predist:linux": "pnpm run check:reader-assets && pnpm run build:kindle-mtp",
     "dist:linux": "electron-builder --linux",
-    "predist:win": "npm run check:reader-assets && npm run build:kindle-mtp",
+    "predist:win": "pnpm run check:reader-assets && pnpm run build:kindle-mtp",
     "dist:win": "electron-builder --win",
-    "predist:mac": "npm run check:reader-assets && npm run build:kindle-mtp",
+    "predist:mac": "pnpm run check:reader-assets && pnpm run build:kindle-mtp",
     "dist:mac": "electron-builder --mac",
-    "predist:all": "npm run check:reader-assets && npm run build:kindle-mtp",
-    "dist:all": "npm run dist:linux && npm run dist:win && npm run dist:mac",
-    "test": "npm run test:unit && npm run test:e2e",
-    "test:coverage:ci": "NODE_OPTIONS='--test-coverage-exclude=acquisition-manager.js --test-coverage-exclude=library-store.js --test-coverage-exclude=library-import.js --test-coverage-exclude=webtorrent-bridge.js --test-coverage-exclude=device-pairing.js --test-coverage-exclude=../web/vendor/nostr-tools.js --test-coverage-exclude=../web/jszip.min.js --test-coverage-exclude=../shared/catalog/acquisition.mjs --test-coverage-exclude=../shared/catalog/source-registry.mjs --test-coverage-exclude=../shared/contracts/device-pairing-v1.mjs --test-coverage-exclude=../shared/contracts/device-pairing-nip17.mjs --test-coverage-exclude=../shared/contracts/device-transfer-v1.mjs --test-coverage-exclude=../shared/rights/rights.mjs --test-coverage-exclude=../shared/torrent/metadata.mjs --test-coverage-exclude=tests/unit/acquisition-manager.test.js --test-coverage-exclude=tests/unit/device-pairing.test.js --test-coverage-exclude=tests/unit/library-import.test.js --test-coverage-exclude=tests/unit/library-store.test.js --test-coverage-exclude=tests/unit/webtorrent-bridge.test.js --test-coverage-exclude=../shared/catalog/acquisition.test.mjs --test-coverage-exclude=../shared/catalog/source-registry.test.mjs --test-coverage-exclude=../shared/contracts/device-pairing-v1.test.mjs --test-coverage-exclude=../shared/contracts/device-pairing-nip17.test.mjs --test-coverage-exclude=../shared/contracts/device-transfer-v1.test.mjs --test-coverage-exclude=../shared/torrent/metadata.test.mjs --test-coverage-exclude=../web/tests/book-rights-v2-contract.test.mjs --test-coverage-exclude=../web/tests/desktop-progress.test.mjs --test-coverage-exclude=../web/tests/device-pairing.test.mjs --test-coverage-exclude=../web/tests/reader-speech.test.mjs --test-coverage-exclude=../web/tests/reader-typography.test.mjs --test-coverage-exclude=../web/tests/speech-settings.test.mjs --test-coverage-exclude=../web/tests/webtorrent-transfer.test.mjs' npm run test:coverage",
+    "predist:all": "pnpm run check:reader-assets && pnpm run build:kindle-mtp",
+    "dist:all": "pnpm run dist:linux && pnpm run dist:win && pnpm run dist:mac",
+    "test": "pnpm run test:unit && pnpm run test:e2e",
+    "test:coverage:ci": "NODE_OPTIONS='--test-coverage-exclude=acquisition-manager.js --test-coverage-exclude=library-store.js --test-coverage-exclude=library-import.js --test-coverage-exclude=webtorrent-bridge.js --test-coverage-exclude=device-pairing.js --test-coverage-exclude=../web/vendor/nostr-tools.js --test-coverage-exclude=../web/jszip.min.js --test-coverage-exclude=../shared/catalog/acquisition.mjs --test-coverage-exclude=../shared/catalog/source-registry.mjs --test-coverage-exclude=../shared/contracts/device-pairing-v1.mjs --test-coverage-exclude=../shared/contracts/device-pairing-nip17.mjs --test-coverage-exclude=../shared/contracts/device-transfer-v1.mjs --test-coverage-exclude=../shared/rights/rights.mjs --test-coverage-exclude=../shared/torrent/metadata.mjs --test-coverage-exclude=tests/unit/acquisition-manager.test.js --test-coverage-exclude=tests/unit/device-pairing.test.js --test-coverage-exclude=tests/unit/library-import.test.js --test-coverage-exclude=tests/unit/library-store.test.js --test-coverage-exclude=tests/unit/webtorrent-bridge.test.js --test-coverage-exclude=../shared/catalog/acquisition.test.mjs --test-coverage-exclude=../shared/catalog/source-registry.test.mjs --test-coverage-exclude=../shared/contracts/device-pairing-v1.test.mjs --test-coverage-exclude=../shared/contracts/device-pairing-nip17.test.mjs --test-coverage-exclude=../shared/contracts/device-transfer-v1.test.mjs --test-coverage-exclude=../shared/torrent/metadata.test.mjs --test-coverage-exclude=../web/tests/book-rights-v2-contract.test.mjs --test-coverage-exclude=../web/tests/desktop-progress.test.mjs --test-coverage-exclude=../web/tests/device-pairing.test.mjs --test-coverage-exclude=../web/tests/reader-speech.test.mjs --test-coverage-exclude=../web/tests/reader-typography.test.mjs --test-coverage-exclude=../web/tests/speech-settings.test.mjs --test-coverage-exclude=../web/tests/webtorrent-transfer.test.mjs' pnpm run test:coverage",
     "test:unit": "node --max-old-space-size=768 --test-concurrency=1 --experimental-test-coverage --test-coverage-exclude='**/*.test.js' --test-coverage-exclude='**/*.test.mjs' --test tests/unit/*.test.js ../shared/catalog/acquisition.test.mjs ../shared/catalog/source-registry.test.mjs ../shared/contracts/device-pairing-v1.test.mjs ../shared/contracts/device-pairing-nip17.test.mjs ../shared/contracts/device-transfer-v1.test.mjs ../shared/torrent/metadata.test.mjs ../web/tests/book-rights-v2-contract.test.mjs ../web/tests/desktop-progress.test.mjs ../web/tests/reader-speech.test.mjs ../web/tests/reader-typography.test.mjs ../web/tests/speech-settings.test.mjs",
     "test:coverage": "node --max-old-space-size=768 --test-concurrency=1 --experimental-test-coverage --test-coverage-exclude='**/*.test.js' --test-coverage-exclude='**/*.test.mjs' --test --test-reporter=tap tests/unit/*.test.js ../shared/catalog/acquisition.test.mjs ../shared/catalog/source-registry.test.mjs ../shared/contracts/device-pairing-v1.test.mjs ../shared/contracts/device-pairing-nip17.test.mjs ../shared/contracts/device-transfer-v1.test.mjs ../shared/torrent/metadata.test.mjs ../web/tests/book-rights-v2-contract.test.mjs ../web/tests/desktop-progress.test.mjs ../web/tests/reader-speech.test.mjs ../web/tests/reader-typography.test.mjs ../web/tests/speech-settings.test.mjs",
     "test:e2e": "playwright test",
@@ -36,7 +36,8 @@
     "test:e2e:smoke": "playwright test tests/e2e/desktop.smoke.spec.js",
     "test:e2e:transfers": "playwright test tests/e2e/desktop.device-transfer.spec.js",
     "test:e2e:reader": "playwright test tests/e2e/desktop.reader.spec.js",
-    "test:e2e:headed": "playwright test --headed"
+    "test:e2e:headed": "playwright test --headed",
+    "postinstall": "node node_modules/electron/install.js"
   },
   "devDependencies": {
     "@playwright/test": "^1.62.1",
@@ -60,6 +61,7 @@
           "webtorrent-bridge.js",
           "device-pairing.js",
           "library-store.js",
+          "library-downloads.js",
           "library-import.js",
           "library-cover.js",
           "acquisition-manager.js",
@@ -180,5 +182,9 @@
   },
   "optionalDependencies": {
     "@roamhq/wrtc": "^0.10.0"
+  },
+  "packageManager": "pnpm@10.34.8",
+  "engines": {
+    "node": ">=22.12.0"
   }
 }

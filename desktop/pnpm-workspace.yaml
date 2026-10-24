@@ -1,0 +1,18 @@
+# Keep Electron packaging and native binary lookup compatible with npm's layout.
+nodeLinker: hoisted
+enablePrePostScripts: true
+childConcurrency: 1
+networkConcurrency: 4
+onlyBuiltDependencies:
+  - bufferutil
+  - electron-winstaller
+  - ip-set
+  # Its committed pnpm patch permits prebuilt downloads only.
+  - node-datachannel
+  - utf-8-validate
+  - utp-native
+ignoredBuiltDependencies:
+  - fsevents
+
+patchedDependencies:
+  node-datachannel@0.32.3: patches/node-datachannel@0.32.3.patch

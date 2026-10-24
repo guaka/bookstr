@@ -9,20 +9,23 @@ does not bundle Transmission or Iroh.
 
 ## Run locally
 
+Requires Node.js 22.12 or newer and pnpm 10.34.8 (pinned in `package.json`).
+The Electron package has its own lockfile and configuration in this directory.
+
 ```bash
 cd bookstr/desktop
-npm install
-npm start
+pnpm install
+pnpm start
 ```
 
 ## Test
 
 ```bash
 cd bookstr/desktop
-npm install
-npm run test
-npm run test:e2e:smoke
-npm run test:e2e:reader
+pnpm install
+pnpm run test
+pnpm run test:e2e:smoke
+pnpm run test:e2e:reader
 ```
 
 The test suite uses Playwright Electron mode to validate bootstrap, preload bridge,
@@ -32,7 +35,7 @@ To run the complete Electron end-to-end suite in the pinned Linux test container
 
 ```bash
 cd desktop
-npm run test:e2e:docker
+pnpm run test:e2e:docker
 ```
 
 The Docker command builds from the repository root, runs as Playwright's
@@ -40,11 +43,11 @@ unprivileged user under Xvfb, and removes the test container when it finishes.
 
 ## Package (CI/release)
 
-- `npm run dist` produces macOS `.dmg`, Windows `.exe`, and Linux `.AppImage/.deb`
+- `pnpm run dist` produces macOS `.dmg`, Windows `.exe`, and Linux `.AppImage/.deb`
   artifacts through `electron-builder`.
-- `npm run dist:linux`, `npm run dist:win`, and `npm run dist:mac` build a single
+- `pnpm run dist:linux`, `pnpm run dist:win`, and `pnpm run dist:mac` build a single
   platform target.
-- `npm run dist:all` produces all three desktop targets in sequence.
+- `pnpm run dist:all` produces all three desktop targets in sequence.
 
 ## Update behavior
 
@@ -53,6 +56,10 @@ unprivileged user under Xvfb, and removes the test container when it finishes.
   <https://github.com/guaka/bookstr/releases>
 
 ## Notes
+
+- pnpm installs the prebuilt `node-datachannel` binary using a committed patch.
+  If no prebuilt binary is available, installation fails instead of starting an
+  unbounded C++ WebRTC build. Native package scripts run one at a time.
 
 - Completed CBZ/CBR downloads with JPEG or PNG pages are converted to cached
   PDFs for Kindle transfer. Archives are limited to 256 MiB, 300 pages, 24 MiB
