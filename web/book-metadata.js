@@ -550,6 +550,11 @@
     const sourceId = String(book?.sourceNativeId || book?.source_native_id || '').trim();
     if (source === 'gutenberg' && /^\d+$/.test(sourceId)) return sourceId;
     const readUrl = String(book?.readUrl || book?.url || book?.sourceUrl || book?.source_url || '');
+    const candidate = readUrl.trim();
+    // URL() is expensive for ordinary relative paths and empty fields. Keep
+    // every scheme-shaped value on the original parser path so URL remains the
+    // authority for accepted hosts, casing, escaping, and URL normalization.
+    if (!/^[a-z][a-z\d+.-]*:/i.test(candidate)) return '';
     try {
       const url = new URL(readUrl);
       const trustedEndpoint = (url.protocol === 'app:' && url.hostname === 'bookstr')
@@ -579,8 +584,9 @@
 
   function dedupeLibraryBooks(books) {
     const merged = new Map();
+    const matchCache = libraryMatchCache();
     for (const book of books.filter(Boolean)) {
-      const matchingEntry = [...merged.entries()].find(([, candidate]) => sameLibraryBook(candidate, book));
+      const matchingEntry = [...merged.entries()].find(([, candidate]) => sameLibraryBook(candidate, book, matchCache));
       const identity = matchingEntry?.[0] || bookIdentity(book);
       const existing = merged.get(identity);
       if (!existing) {
@@ -683,47 +689,76 @@
     return next;
   }
 
-  function sameLibraryBook(left, right) {
-    const format = book => String(book?.extension || book?.format || '')
-      .trim().toLowerCase().replace(/^\./, '');
-    const leftFormat = format(left);
-    const rightFormat = format(right);
-    if (leftFormat && rightFormat && leftFormat !== rightFormat) return false;
-    const leftGutenbergId = gutenbergIdForBook(left);
-    const rightGutenbergId = gutenbergIdForBook(right);
-    if (leftGutenbergId && rightGutenbergId) return leftGutenbergId === rightGutenbergId;
-    const contentDigests = book => new Set([
+  function libraryMatchDescriptor(book) {
+    const digests = new Set([
       book?.sha256,
       book?.blossomSha256,
       book?.blossom_sha256,
       /^[a-f0-9]{64}$/i.test(String(book?.md5 || '').trim()) ? book.md5 : '',
-    ]
-      .map(value => String(value || '').trim().toLowerCase())
+    ].map(value => String(value || '').trim().toLowerCase())
       .filter(value => /^[a-f0-9]{64}$/.test(value)));
-    const leftDigests = contentDigests(left);
-    const rightDigests = contentDigests(right);
-    if (leftDigests.size && rightDigests.size && [...leftDigests].some(digest => rightDigests.has(digest))) return true;
-    const stableIds = book => new Set([book?.md5, book?.libvaultMd5, book?.id]
+    const ids = new Set([book?.md5, book?.libvaultMd5, book?.id]
       .map(value => String(value || '').trim().toLowerCase())
       .filter(Boolean));
-    const leftIds = stableIds(left);
-    const rightIds = stableIds(right);
+    const rawUrl = book?.readUrl || book?.url || book?.blossomUrl;
+    return {
+      format: String(book?.extension || book?.format || '').trim().toLowerCase().replace(/^\./, ''),
+      gutenbergId: gutenbergIdForBook(book),
+      digests,
+      ids,
+      blossom: String(book?.blossomSha256 || book?.blossom_sha256 || '').trim().toLowerCase(),
+      hasUrl: Boolean(rawUrl),
+      url: rawUrl ? normalizeReadUrl(rawUrl) : '',
+      isbn: isbnForBook(book),
+    };
+  }
+
+  function libraryMatchCache() {
+    const descriptors = new WeakMap();
+    return {
+      get(book) {
+        if (!book || typeof book !== 'object') return libraryMatchDescriptor(book);
+        let descriptor = descriptors.get(book);
+        if (!descriptor) {
+          descriptor = libraryMatchDescriptor(book);
+          descriptors.set(book, descriptor);
+        }
+        return descriptor;
+      },
+      invalidate(book) {
+        if (book && typeof book === 'object') descriptors.delete(book);
+      },
+    };
+  }
+
+  function sameLibraryBook(left, right, matchCache = null) {
+    const describe = matchCache ? book => matchCache.get(book) : libraryMatchDescriptor;
+    const leftMatch = describe(left);
+    const rightMatch = describe(right);
+    const leftFormat = leftMatch.format;
+    const rightFormat = rightMatch.format;
+    if (leftFormat && rightFormat && leftFormat !== rightFormat) return false;
+    const leftGutenbergId = leftMatch.gutenbergId;
+    const rightGutenbergId = rightMatch.gutenbergId;
+    if (leftGutenbergId && rightGutenbergId) return leftGutenbergId === rightGutenbergId;
+    const leftDigests = leftMatch.digests;
+    const rightDigests = rightMatch.digests;
+    if (leftDigests.size && rightDigests.size && [...leftDigests].some(digest => rightDigests.has(digest))) return true;
+    const leftIds = leftMatch.ids;
+    const rightIds = rightMatch.ids;
     if (leftIds.size && rightIds.size) return [...leftIds].some(id => rightIds.has(id));
-    const leftBlossom = String(left?.blossomSha256 || left?.blossom_sha256 || '').trim().toLowerCase();
-    const rightBlossom = String(right?.blossomSha256 || right?.blossom_sha256 || '').trim().toLowerCase();
+    const leftBlossom = leftMatch.blossom;
+    const rightBlossom = rightMatch.blossom;
     if (leftBlossom && rightBlossom) return leftBlossom === rightBlossom;
-    const leftUrl = left?.readUrl || left?.url || left?.blossomUrl;
-    const rightUrl = right?.readUrl || right?.url || right?.blossomUrl;
-    if (leftUrl && rightUrl && normalizeReadUrl(leftUrl) === normalizeReadUrl(rightUrl)) return true;
-    const leftIsbn = isbnForBook(left);
-    const rightIsbn = isbnForBook(right);
-    return Boolean(leftIsbn && rightIsbn && leftIsbn === rightIsbn);
+    if (leftMatch.hasUrl && rightMatch.hasUrl && leftMatch.url === rightMatch.url) return true;
+    return Boolean(leftMatch.isbn && rightMatch.isbn && leftMatch.isbn === rightMatch.isbn);
   }
 
   function mergeLibraryState(reading, favorites) {
     const merged = [];
+    const matchCache = libraryMatchCache();
     const add = (book, status) => {
-      let entry = merged.find(item => sameLibraryBook(item, book));
+      let entry = merged.find(item => sameLibraryBook(item, book, matchCache));
       if (!entry) {
         entry = { ...book, ...normalizeRights(book) };
         merged.push(entry);
@@ -741,6 +776,7 @@
         }
         Object.assign(entry, preferredRights(entry, book));
         entry.title = incomingHasRealTitle ? incomingTitle : existingTitle;
+        matchCache.invalidate(entry);
       }
       if (status === 'reading') {
         entry.isReading = true;
