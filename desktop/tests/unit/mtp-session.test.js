@@ -112,7 +112,92 @@ test('session rejects timed out replies and invalid ready handshakes', async () 
   await assert.rejects(() => badReady.command('files'), /Invalid Kindle session response/);
 });
 
-test('MTP withSession nests once, enforces free space, and closes afterward', async () => {
+test('session routes pipe and process errors to the pending command', async () => {
+  for (const [event, message] of [['stdin-error', 'pipe failed'], ['process-error', 'spawn failed']]) {
+    const session = new MtpSession({
+      helper: '/tmp/kindle-mtp',
+      deviceId: '1-2',
+      timeout: 2000,
+      spawnProcess: fakeSpawn((line, child) => {
+        if (line.startsWith('files')) {
+          queueMicrotask(() => {
+            if (event === 'stdin-error') child.stdin.emit('error', new Error(message));
+            else child.emit('error', new Error(message));
+          });
+        }
+      }),
+    });
+
+    await assert.rejects(() => session.command('files'), new RegExp(message));
+  }
+});
+
+test('session rejects synchronous helper spawn failures without leaving a pending handshake', async () => {
+  const session = new MtpSession({
+    helper: '/tmp/kindle-mtp',
+    deviceId: '1-2',
+    spawnProcess: () => { throw new Error('helper could not start'); },
+  });
+  await assert.rejects(() => session.command('files'), /helper could not start/);
+  assert.equal(session.pending, null);
+});
+
+test('session close timeout kills a helper that does not exit on stdin end', async () => {
+  const session = new MtpSession({
+    helper: '/tmp/kindle-mtp',
+    deviceId: '1-2',
+    timeout: 2000,
+    spawnProcess: fakeSpawn((line, child) => {
+      if (line === 'files\n') child.stdout.emit('data', Buffer.from('[]\n{"complete":true}\n'));
+    }),
+  });
+  await session.command('files');
+  const originalSetTimeout = global.setTimeout;
+  let killed = false;
+  try {
+    global.setTimeout = callback => {
+      callback();
+      return {};
+    };
+    const child = session.child;
+    const originalKill = child.kill;
+    child.kill = signal => { killed = true; originalKill(signal); };
+    await session.close();
+  } finally {
+    global.setTimeout = originalSetTimeout;
+  }
+  assert.equal(killed, true);
+});
+
+test('session accepts stderr diagnostics and ignores progress without a handler', async () => {
+  const session = new MtpSession({
+    helper: '/tmp/kindle-mtp',
+    deviceId: '1-2',
+    timeout: 2000,
+    spawnProcess: () => {
+      const child = new EventEmitter();
+      child.stdout = new EventEmitter();
+      child.stderr = new EventEmitter();
+      child.stdin = new EventEmitter();
+      child.stdin.write = line => {
+        if (line === 'files\n') queueMicrotask(() => child.stdout.emit('data', Buffer.from('{"progress":true,"phase":"checking"}\n[]\n{"complete":true}\n')));
+        return true;
+      };
+      child.stdin.end = () => child.emit('close', 0, null);
+      child.kill = () => child.emit('close', null, 'SIGTERM');
+      queueMicrotask(() => {
+        child.stderr.emit('data', Buffer.from('adapter diagnostic'));
+        child.stdout.emit('data', Buffer.from('{"ready":true,"freeBytes":1}\n'));
+      });
+      return child;
+    },
+  });
+
+  assert.deepEqual(await session.command('files'), []);
+  await session.close();
+});
+
+test('MTP withSession retains successful sessions, enforces free space, and closes on shutdown', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'bookstr-mtp-session-'));
   const helper = path.join(root, 'kindle-mtp');
   await fs.writeFile(helper, 'fixture');
@@ -135,13 +220,15 @@ test('MTP withSession nests once, enforces free space, and closes afterward', as
     });
     const device = { id: 'mtp:darwin:1-2', helperId: '1-2' };
     await transport.withSession(device, async () => {
-      await transport.withSession(device, async () => {
-        assert.equal(openCount, 1);
-        assert.throws(() => transport.ensureSpace(11), /enough free space/);
-        transport.ensureSpace(5);
-      });
+      assert.equal(openCount, 1);
+      assert.throws(() => transport.ensureSpace(11), /enough free space/);
+      transport.ensureSpace(5);
       assert.equal(closed, 0);
     });
+    assert.ok(transport.session);
+    await transport.withSession(device, async () => { assert.equal(openCount, 1); });
+    assert.equal(closed, 0);
+    await transport.close();
     assert.equal(transport.session, null);
     assert.equal(closed, 1);
 
@@ -159,13 +246,13 @@ test('MTP withSession nests once, enforces free space, and closes afterward', as
         close: async () => {},
       }),
     });
-    await active.withSession(device, async () => {
-      await assert.rejects(
-        () => active.withSession({ id: 'mtp:darwin:9-9', helperId: '9-9' }, async () => {}),
-        /different Kindle session/,
-      );
-      await assert.rejects(() => active.command('files', '9-9'), /Kindle device changed/);
-    });
+    await active.withSession(device, async () => {});
+    await assert.rejects(
+      () => active.withSession({ id: 'mtp:darwin:9-9', helperId: '9-9' }, async () => {}),
+      /different Kindle session/,
+    );
+    await assert.rejects(() => active.command('files', '9-9'), /Kindle device changed/);
+    await active.close();
   } finally {
     await fs.rm(root, { recursive: true, force: true });
   }

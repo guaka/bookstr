@@ -1648,6 +1648,21 @@ async function bootstrap() {
   });
 }
 
+let kindleShutdownStarted = false;
+let kindleShutdownComplete = false;
+app.on('before-quit', event => {
+  if (kindleShutdownComplete || !kindleSync) return;
+  event.preventDefault();
+  if (kindleShutdownStarted) return;
+  kindleShutdownStarted = true;
+  void kindleSync.close().catch(error => {
+    console.warn('Could not close the Kindle transport cleanly:', error);
+  }).finally(() => {
+    kindleShutdownComplete = true;
+    app.quit();
+  });
+});
+
 app.on('will-quit', () => {
   void torrentBridge?.stop();
   try { libraryStore?.close(); } catch { /* best effort during shutdown */ }
