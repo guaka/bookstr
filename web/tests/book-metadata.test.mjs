@@ -1805,3 +1805,8 @@ test('deduplicated library metadata retains locally detected reader formats', ()
   assert.equal(updated.extension, 'cbr');
   assert.equal(updated.format, 'cbr');
 });
+
+
+test('library matching tolerates malformed absolute URLs after its scheme fast path', () => {
+  assert.equal(globalThis.BookMetadata.sameLibraryBook({ readUrl: 'https://[' }, {}), false);
+});
