@@ -401,3 +401,18 @@ test('automatic seeding can stop completed torrents without interrupting downloa
   assert.deepEqual(await bridge.stopSeeding(), { stopped: 2 });
   assert.deepEqual(removed, [seeded, markedSeed]);
 });
+
+
+test('comics repository selects an MD5 with a format suffix without matching a different book', async () => {
+  const md5 = 'a'.repeat(32);
+  const wanted = { path: `2521000/${md5}.CBR`, length: 42, downloaded: 42, done: true, select() {} };
+  const torrent = { path: '/tmp/bookstr-comics', files: [
+    { path: `2521000/${md5}.cbr.exe` },
+    { path: `2521000/${'b'.repeat(32)}.cbr` },
+    wanted,
+  ] };
+  const bridge = new WebTorrentBridge({ clientFactory: async () => ({ torrents: [], add: () => torrent }) });
+  const result = await bridge.downloadSelected('comics-metadata', { fileName: md5 });
+  assert.equal(result.file, wanted);
+  assert.equal(result.filePath, `/tmp/bookstr-comics/2521000/${md5}.CBR`);
+});

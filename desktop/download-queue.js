@@ -22,6 +22,8 @@ function libgenRequest(book) {
     isbn: String(book.isbn || '').slice(0, 64),
     filesize_bytes: Number(book.filesize_bytes || book.filesize || 0),
     source: 'libvault',
+    collection: String(book.collection || '').toLowerCase(),
+    sourceUrl: String(book.sourceUrl || book.source_url || '').slice(0, 2048),
     rights_status: String(book.rights_status || book.rightsStatus || 'unknown'),
     license: String(book.license || ''),
     license_url: String(book.license_url || book.licenseUrl || ''),
@@ -75,7 +77,13 @@ class DownloadQueue {
   }
 
   async retry(bookId) {
-    const request = this.store.downloadRequest(bookId);
+    let request = this.store.downloadRequest(bookId);
+    if (!request) {
+      const book = this.store.getBook?.(bookId);
+      if (book?.source === 'libvault' && MD5.test(String(bookId))) {
+        request = { kind: 'libgen', record: { ...book, libgenId: book.source_native_id } };
+      }
+    }
     if (!request) throw new Error('Download cannot be retried without its source record.');
     return this.enqueue(request);
   }

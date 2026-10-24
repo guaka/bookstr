@@ -271,7 +271,11 @@ class WebTorrentBridge {
         });
       };
       await waitForMetadata();
-      const file = torrent.files.find(candidate => path.basename(String(candidate.path || candidate.name || '')).toLowerCase() === wantedName);
+      const file = torrent.files.find(candidate => {
+        const name = path.basename(String(candidate.path || candidate.name || '')).toLowerCase();
+        return name === wantedName || /^[a-f0-9]{32}$/.test(wantedName)
+          && name.replace(/\.(?:epub|pdf|fb2|cbz|cbr)$/, '') === wantedName;
+      });
       if (!file) throw new Error(`${wantedName} is absent from the repository torrent`);
       const limit = Number(maxBytes);
       if (Number.isFinite(limit) && limit > 0 && Number(file.length) > limit) {

@@ -4254,6 +4254,7 @@
             torrentFile: item.torrent_file || item.torrentFile || item.torrent?.torrentFile || '',
             torrentAnnounce: item.torrent_announce || item.torrentAnnounce || item.torrent?.announce || [],
             libgenId,
+            collection: String(item.collection || ''),
             source: item.source || source,
             sourceNativeId: item.source_native_id || item.sourceNativeId || '',
             sourceUrl: item.source_url || item.sourceUrl || '',

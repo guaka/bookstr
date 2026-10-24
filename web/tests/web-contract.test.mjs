@@ -1194,3 +1194,8 @@ test('reader never navigates its iframe to an untrusted book URL', () => {
   assert.doesNotMatch(html, /readerFrame\.src\s*=\s*readPath/);
   assert.match(html, /throw new Error\('Only EPUB, PDF, FB2, CBZ, and CBR book files can be opened\.'\)/);
 });
+
+
+test('catalog search normalization preserves the repository collection for desktop downloads', () => {
+  assert.match(html, /collection: String\(item.collection \|\| ''\)/);
+});

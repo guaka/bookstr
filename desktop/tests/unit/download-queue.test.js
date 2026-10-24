@@ -8,7 +8,7 @@ const test = require('node:test');
 const { LibraryStore } = require('../../library-store');
 const { DownloadQueue } = require('../../download-queue');
 
-const book = { md5: 'a'.repeat(32), libgenId: 2412930, title: 'Queued PDF', extension: 'pdf' };
+const book = { md5: 'a'.repeat(32), libgenId: 2412930, title: 'Queued PDF', extension: 'pdf', collection: 'fiction' };
 const tick = () => new Promise(resolve => setImmediate(resolve));
 
 async function waitFor(predicate) {
@@ -30,6 +30,7 @@ test('queued desktop download is durable, deduplicated, and resumes after restar
     assert.equal(initial.bookId, book.md5);
     assert.equal(initial.queuedFromSearch, 1);
     assert.equal(store.downloadRequest(book.md5).record.title, book.title);
+    assert.equal(store.downloadRequest(book.md5).record.collection, 'fiction');
     const duplicate = await first.enqueue({ kind: 'libgen', record: book });
     assert.equal(duplicate.bookId, book.md5);
     assert.equal(store.resumableDownloads().length, 1);
@@ -261,4 +262,22 @@ test('queue validates construction, concurrency bounds, and request admission', 
   }
   for (const request of [null, [], 'book']) await assert.rejects(() => queue.prepare(request), /Invalid download request/);
   await assert.rejects(() => queue.prepare({ kind: 'unknown' }), /Unsupported download request/);
+});
+
+
+test('retry rebuilds a legacy catalog request from saved metadata and rejects missing sources', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'bookstr-legacy-retry-'));
+  const store = new LibraryStore({ dbPath: path.join(root, 'library.sqlite'), libraryRoot: root });
+  try {
+    store.upsertBook({ ...book, id: book.md5, source: 'libvault', sourceNativeId: '2521871', extension: 'cbr' });
+    store.setDownload({ bookId: book.md5, status: 'failed', source: 'torrent' });
+    const called = [];
+    const queue = new DownloadQueue({ store, acquisitionManager: { async acquireLibgen(record) { called.push(record); } } });
+    await queue.retry(book.md5);
+    await queue.drain();
+    assert.equal(called[0].libgenId, 2521871);
+    assert.equal(called[0].extension, 'cbr');
+    assert.equal(store.downloadRequest(book.md5).kind, 'libgen');
+    await assert.rejects(() => queue.retry('missing'), /without its source record/);
+  } finally { store.close(); await fs.rm(root, { recursive: true, force: true }); }
 });
