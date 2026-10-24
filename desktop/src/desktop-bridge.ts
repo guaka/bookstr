@@ -107,6 +107,7 @@ export interface DesktopBridge {
   };
   kindle: {
     devices(): Promise<unknown>;
+    presence(id: string): Promise<unknown>;
     preview(id: string, bookId?: string): Promise<unknown>;
     transfer(id: string, bookId?: string): Promise<unknown>;
     onProgress(callback: DesktopCallback): Unsubscribe;

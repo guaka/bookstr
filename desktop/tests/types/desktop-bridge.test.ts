@@ -13,6 +13,7 @@ void bridge.library.acquireLibgen({ id: 'book' });
 void bridge.library.acquireLibgen({ id: 'book' }, { format: 'epub' });
 void bridge.kindle.preview('device');
 void bridge.kindle.preview('device', 'book');
+void bridge.kindle.presence('mtp:darwin:1-2');
 void bridge.kindle.transfer('device');
 void bridge.kindle.transfer('device', 'book');
 void bridge.library.linkFolder();

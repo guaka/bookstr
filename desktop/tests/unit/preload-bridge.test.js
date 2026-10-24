@@ -100,6 +100,7 @@ test('preload methods preserve their IPC channels, arguments, and optional defau
     ['library.linkFolder omitted argument', () => bridge.library.linkFolder(), 'bookstr-desktop-library-link-folder', undefined],
     ['library.openReader', () => bridge.library.openReader('id'), 'bookstr-desktop-library-open-reader', 'id'],
     ['kindle.devices', () => bridge.kindle.devices(), 'bookstr-desktop-kindle-devices'],
+    ['kindle.presence', () => bridge.kindle.presence('mtp:darwin:1-2'), 'bookstr-desktop-kindle-presence', 'mtp:darwin:1-2'],
     ['kindle.preview omitted bookId', () => bridge.kindle.preview('device'), 'bookstr-desktop-kindle-preview', 'device', undefined],
     ['kindle.transfer omitted bookId', () => bridge.kindle.transfer('device'), 'bookstr-desktop-kindle-transfer', 'device', undefined],
     ['devices.status', () => bridge.devices.status(), 'bookstr-desktop-device-status'],
