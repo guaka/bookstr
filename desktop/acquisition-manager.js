@@ -249,7 +249,17 @@ function libgenTorrentMetadataURL(libgenId, baseURL = '', collection = 'nonficti
 }
 
 class AcquisitionManager {
-  constructor({ store, importer, torrentBridge, fetchImpl = globalThis.fetch, stagingRoot, maxAttempts = 3, maxBytes = DEFAULT_MAX_ACQUISITION_BYTES, trustedOrigins = {}, seedResumeIntervalMs = 1500, sleep = ms => new Promise(resolve => setTimeout(resolve, ms)) } = {}) {
+  constructor({ store, importer, torrentBridge, fetchImpl = globalThis.fetch, stagingRoot, maxAttempts = 3, maxBytes = DEFAULT_MAX_ACQUISITION_BYTES, trustedOrigins = {}, seedResumeIntervalMs = 1500, sleep = (ms, signal) => new Promise(resolve => {
+    let timer;
+    const finish = () => {
+      clearTimeout(timer);
+      signal?.removeEventListener?.('abort', finish);
+      resolve();
+    };
+    timer = setTimeout(finish, ms);
+    signal?.addEventListener?.('abort', finish, { once: true });
+    if (signal?.aborted) finish();
+  }) } = {}) {
     if (!store || !importer || !stagingRoot) throw new TypeError('store, importer, and stagingRoot are required');
     if (typeof fetchImpl !== 'function') throw new TypeError('fetchImpl is required');
     this.store = store;
@@ -270,35 +280,41 @@ class AcquisitionManager {
     this.lifecycleControllers = new Set();
     this.closed = false;
     this.closePromise = null;
+    this.seedResumeController = null;
   }
 
   close() {
     if (this.closePromise) return this.closePromise;
     this.closed = true;
+    this.seedResumeController?.abort(new Error('acquisition manager is closing'));
     for (const controller of this.lifecycleControllers) controller.abort(new Error('acquisition manager is closing'));
     for (const throttle of this.progressThrottles) throttle.cancel();
     this.closePromise = (async () => {
       const jobs = [...this.libgenAcquisitionJobs.values()].map(job => job.promise);
-      await Promise.allSettled(jobs);
+      await Promise.allSettled([...jobs, this.resumeLibgenSeedsPromise].filter(Boolean));
     })();
     return this.closePromise;
   }
 
   resumeLibgenSeeds({ autoSeed = true } = {}) {
+    if (this.closed) return Promise.resolve({ seeded: 0, resumed: 0 });
     if (this.resumeLibgenSeedsPromise) return this.resumeLibgenSeedsPromise;
-    this.resumeLibgenSeedsPromise = this.#resumeLibgenSeeds({ autoSeed }).finally(() => {
+    this.seedResumeController = new AbortController();
+    this.resumeLibgenSeedsPromise = this.#resumeLibgenSeeds({ autoSeed, signal: this.seedResumeController.signal }).finally(() => {
       this.resumeLibgenSeedsPromise = null;
+      this.seedResumeController = null;
     });
     return this.resumeLibgenSeedsPromise;
   }
 
-  async #resumeLibgenSeeds({ autoSeed = true } = {}) {
+  async #resumeLibgenSeeds({ autoSeed = true, signal } = {}) {
     if (!this.torrentBridge?.downloadSelected) return { seeded: 0, resumed: 0 };
     const seedRoot = path.join(this.stagingRoot, 'libgen-seeds');
     let seeded = 0;
     let resumed = 0;
     let started = 0;
     for (const download of this.store.downloads()) {
+      if (this.closed || signal?.aborted) break;
       const status = String(download?.status).toLowerCase();
       if (String(download?.source).toLowerCase() !== 'torrent') continue;
       const md5 = String(download.bookId || '').trim().toLowerCase();
@@ -306,7 +322,8 @@ class AcquisitionManager {
       const libgenId = Number(book?.source_native_id || book?.sourceNativeId || 0);
       if (!/^[a-f0-9]{32}$/.test(md5) || !Number.isSafeInteger(libgenId) || libgenId <= 0) continue;
       if (['queued', 'finding-peers', 'downloading', 'retrying'].includes(status)) {
-        if (started > 0 && this.seedResumeIntervalMs > 0) await this.sleep(this.seedResumeIntervalMs);
+        if (started > 0 && this.seedResumeIntervalMs > 0) await this.sleep(this.seedResumeIntervalMs, signal);
+        if (this.closed || signal?.aborted) break;
         started += 1;
         resumed += 1;
         void this.acquireLibgen({
@@ -328,6 +345,7 @@ class AcquisitionManager {
       let seedFile = '';
       let stats = null;
       for (const candidate of seedCandidates) {
+        if (this.closed || signal?.aborted) break;
         const candidateStats = await fsp.stat(candidate).catch(() => null);
         if (candidateStats?.isFile() && candidateStats.size > 0) {
           seedFile = candidate;
@@ -336,11 +354,13 @@ class AcquisitionManager {
         }
       }
       if (!seedFile) {
+        if (this.closed || signal?.aborted) break;
         try {
           const registration = this.store.libraryFile?.(md5);
           if (registration?.relativePath) {
             const libraryFile = this.importer.resolveRelativePath(registration.relativePath);
             const libraryStats = await fsp.stat(libraryFile).catch(() => null);
+            if (this.closed || signal?.aborted) break;
             const expectedSize = Math.max(0, Number(download.totalBytes || download.bytes || registration.sizeBytes || 0));
             if (libraryStats?.isFile() && libraryStats.size > 0 && (!expectedSize || libraryStats.size === expectedSize)) {
               seedFile = seedCandidates[0];
@@ -364,19 +384,27 @@ class AcquisitionManager {
       }
       if (!stats?.isFile() || stats.size <= 0) continue;
       try {
-        if (started > 0 && this.seedResumeIntervalMs > 0) await this.sleep(this.seedResumeIntervalMs);
+        if (started > 0 && this.seedResumeIntervalMs > 0) await this.sleep(this.seedResumeIntervalMs, signal);
+        if (this.closed || signal?.aborted) break;
         started += 1;
         const metadataURL = libgenTorrentMetadataURL(libgenId, '', libgenCollection(book));
-        const response = await this.fetch(metadataURL, { redirect: 'error' });
+        const response = await this.fetch(metadataURL, { signal, redirect: 'error' });
+        if (this.closed || signal?.aborted) break;
         if (!response?.ok) continue;
         const metadata = Buffer.from(await response.arrayBuffer());
+        if (this.closed || signal?.aborted) break;
         if (!metadata.length || metadata.length > MAX_TORRENT_METADATA_BYTES || metadata[0] !== 0x64) continue;
         const selected = await this.torrentBridge.downloadSelected(metadata, {
           path: seedRoot,
           fileName: md5,
           bookId: md5,
+          signal,
           maxBytes: this.maxBytes,
         });
+        if (this.closed || signal?.aborted) {
+          await destroyTorrent(this.torrentBridge, selected.torrent);
+          break;
+        }
         selected.torrent.bookstrBookId = md5;
         selected.torrent.bookstrSeedingBookIds ||= new Set();
         selected.torrent.bookstrSeedingBookIds.add(md5);
@@ -473,10 +501,12 @@ class AcquisitionManager {
     this.progressThrottles.add(progressThrottle);
     try {
       const response = await this.fetch(metadataURL, { signal: lifecycleController.signal, redirect: 'error' });
+      if (this.closed || lifecycleController.signal.aborted) throw lifecycleController.signal.reason || new Error('acquisition manager is closing');
       if (!response?.ok) throw new Error(`torrent metadata returned HTTP ${response?.status || 0}`);
       const declaredLength = responseLength(response);
       if (declaredLength !== null && declaredLength > MAX_TORRENT_METADATA_BYTES) throw new Error('torrent metadata is too large');
       const metadata = Buffer.from(await response.arrayBuffer());
+      if (this.closed || lifecycleController.signal.aborted) throw lifecycleController.signal.reason || new Error('acquisition manager is closing');
       if (!metadata.length || metadata.length > MAX_TORRENT_METADATA_BYTES || metadata[0] !== 0x64) {
         throw new Error('torrent metadata is invalid');
       }
@@ -506,7 +536,9 @@ class AcquisitionManager {
       return { book: storedBook, source: 'torrent', sha256: imported.sha256, size: imported.size, extension: imported.extension };
     } catch (error) {
       progressThrottle.cancel();
-      this.store.setDownload({ bookId: md5, status: 'failed', source: 'torrent', error: error?.message || String(error) });
+      if (!this.closed) {
+        this.store.setDownload({ bookId: md5, status: 'failed', source: 'torrent', error: error?.message || String(error) });
+      }
       throw error;
     } finally {
       signal?.removeEventListener?.('abort', abortFromCaller);

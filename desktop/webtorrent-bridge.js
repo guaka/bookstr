@@ -256,6 +256,7 @@ class WebTorrentBridge {
     }
     const torrent = await this.addPublic(torrentId, { path: downloadPath, deselect: true, bookId });
     try {
+      if (signal?.aborted) throw new Error('torrent download aborted');
       const waitForMetadata = async () => {
         if (Array.isArray(torrent.files) && torrent.files.length) return;
         if (typeof torrent.once !== 'function') throw new Error('torrent did not expose metadata events');
@@ -268,6 +269,7 @@ class WebTorrentBridge {
           torrent.once('metadata', () => finish());
           torrent.once('error', finish);
           signal?.addEventListener?.('abort', abort, { once: true });
+          if (signal?.aborted) abort();
         });
       };
       await waitForMetadata();

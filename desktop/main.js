@@ -1660,7 +1660,10 @@ app.on('before-quit', event => {
     kindleSync ? kindleSync.close().catch(error => {
       console.warn('Could not close the Kindle transport cleanly:', error);
     }) : undefined,
-    acquisitionManager?.close(),
+    (async () => {
+      await downloadQueue?.close();
+      await acquisitionManager?.close();
+    })(),
   ]).finally(() => {
     shutdownComplete = true;
     app.quit();

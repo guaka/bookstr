@@ -59,6 +59,8 @@ test('closing acquisition manager cancels trailing progress and drains torrent j
     },
   };
   const importer = new LibraryImporter({ libraryRoot: path.join(root, 'library') });
+  let signalDownloadStarted;
+  const downloadStarted = new Promise(resolve => { signalDownloadStarted = resolve; });
   const manager = new AcquisitionManager({
     store,
     importer,
@@ -68,6 +70,7 @@ test('closing acquisition manager cancels trailing progress and drains torrent j
       downloadSelected(_metadata, { signal, onProgress }) {
         onProgress({ bytes: 1, totalBytes: 10 });
         onProgress({ bytes: 2, totalBytes: 10 });
+        signalDownloadStarted();
         return new Promise((_resolve, reject) => {
           const abort = () => reject(new Error('acquisition aborted'));
           if (signal.aborted) abort();
@@ -77,12 +80,12 @@ test('closing acquisition manager cancels trailing progress and drains torrent j
     },
   });
   const acquisition = manager.acquireLibgen({ md5: 'a'.repeat(32), id: 123, extension: 'epub' });
-  await new Promise(resolve => setImmediate(resolve));
+  await downloadStarted;
   await manager.close();
-  await assert.rejects(acquisition, /acquisition aborted/);
+  await assert.rejects(acquisition, /acquisition manager is closing|acquisition aborted/);
   storeClosed = true;
   await new Promise(resolve => setTimeout(resolve, 120));
-  assert.deepEqual(writes.map(write => write.status), ['finding-peers', 'downloading', 'failed']);
+  assert.deepEqual(writes.map(write => write.status), ['finding-peers', 'downloading']);
   await fsp.rm(root, { recursive: true, force: true });
 });
 
@@ -327,6 +330,45 @@ test('startup resumes eligible LibGen seeds gradually instead of all at once', (
 
   assert.deepEqual(await manager.resumeLibgenSeeds(), { seeded: 2, resumed: 0 });
   assert.deepEqual(waits, [1500]);
+}));
+
+test('manager shutdown cancels gradual seed resume before it reads or starts later jobs', () => withManager(async ({ manager, store }) => {
+  const records = [
+    { md5: '3'.repeat(32), libgenId: 2412930 },
+    { md5: '4'.repeat(32), libgenId: 2412931 },
+  ];
+  for (const record of records) {
+    store.upsertBook({ id: record.md5, md5: record.md5, title: 'Interrupted', extension: 'epub', sourceNativeId: String(record.libgenId) });
+    store.setDownload({ bookId: record.md5, status: 'queued', source: 'torrent' });
+  }
+  manager.fetch = async () => ({ ok: true, arrayBuffer: async () => Buffer.from('d4:test4:datae') });
+  let waitForSecond = () => {};
+  const secondWait = new Promise(resolve => { waitForSecond = resolve; });
+  manager.sleep = (_milliseconds, signal) => new Promise(resolve => {
+    const finish = () => { signal.removeEventListener('abort', finish); resolve(); };
+    signal.addEventListener('abort', finish, { once: true });
+    waitForSecond();
+  });
+  const started = [];
+  manager.torrentBridge = {
+    downloadSelected(_metadata, { signal }) {
+      started.push('active-transfer');
+      return new Promise((_resolve, reject) => {
+        const abort = () => reject(new Error('acquisition aborted'));
+        if (signal.aborted) abort();
+        else signal.addEventListener('abort', abort, { once: true });
+      });
+    },
+  };
+
+  const resume = manager.resumeLibgenSeeds();
+  await secondWait;
+  await manager.close();
+  await resume;
+  assert.deepEqual(started, []);
+  assert.equal(manager.libgenAcquisitionJobs.size, 0);
+  assert.equal(store.downloads().find(item => item.bookId === records[0].md5).status, 'finding-peers');
+  assert.equal(store.downloads().find(item => item.bookId === records[1].md5).status, 'queued');
 }));
 
 test('LibGen acquisition removes torrent data when automatic seeding is disabled', () => withManager(async ({ manager, root }) => {
