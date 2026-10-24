@@ -621,6 +621,35 @@ test('does not truncate libraries larger than fifty books', () => {
   assert.equal(dedupeLibraryBooks(books).length, 75);
 });
 
+test('ordinary library deduplication skips Gutenberg URL parsing and refreshes mutated merge identities', () => {
+  const OriginalURL = globalThis.URL;
+  let urlConstructions = 0;
+  globalThis.URL = class CountingURL extends OriginalURL {
+    constructor(...args) { urlConstructions++; super(...args); }
+  };
+  try {
+    const books = Array.from({ length: 60 }, (_, index) => ({
+      md5: index.toString(16).padStart(32, '0'),
+      title: `Ordinary book ${index}`,
+      extension: 'pdf',
+      readUrl: '',
+    }));
+    assert.equal(dedupeLibraryBooks(books).length, books.length);
+    assert.equal(urlConstructions, 0, 'non-Gutenberg records should not invoke URL parsing');
+
+    const merged = mergeLibraryState(
+      [{ title: 'Same book', readUrl: 'https://example.test/book.pdf' }],
+      [
+        { md5: 'a'.repeat(32), title: 'Same book', readUrl: 'https://example.test/book.pdf' },
+        { md5: 'a'.repeat(32), title: 'Same book', readUrl: 'https://example.test/other.pdf' },
+      ],
+    );
+    assert.equal(merged.length, 1, 'later comparisons must observe IDs added to a merged entry');
+  } finally {
+    globalThis.URL = OriginalURL;
+  }
+});
+
 test('does not merge different IDs merely because titles match', () => {
   const books = dedupeLibraryBooks([
     { md5: '1'.repeat(32), title: 'Little Brother', authors: 'Cory Doctorow' },
