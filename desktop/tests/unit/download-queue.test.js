@@ -11,6 +11,14 @@ const { DownloadQueue } = require('../../download-queue');
 const book = { md5: 'a'.repeat(32), libgenId: 2412930, title: 'Queued PDF', extension: 'pdf' };
 const tick = () => new Promise(resolve => setImmediate(resolve));
 
+async function waitFor(predicate) {
+  for (let attempt = 0; attempt < 50; attempt += 1) {
+    if (predicate()) return;
+    await tick();
+  }
+  assert.fail('Timed out waiting for queued acquisitions to start.');
+}
+
 test('queued desktop download is durable, deduplicated, and resumes after restart', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'bookstr-queue-'));
   const store = new LibraryStore({ dbPath: path.join(root, 'library.sqlite'), libraryRoot: root });
@@ -42,6 +50,85 @@ test('queued desktop download is durable, deduplicated, and resumes after restar
     await next.enqueue({ kind: 'libgen', record: book });
     assert.deepEqual(calls, [book.md5]);
   } finally { store.close(); await fs.rm(root, { recursive: true, force: true }); }
+});
+
+test('queue starts up to eight acquisitions promptly and refills a slot when one finishes', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'bookstr-queue-parallel-'));
+  const store = new LibraryStore({ dbPath: path.join(root, 'library.sqlite'), libraryRoot: root });
+  const books = Array.from({ length: 9 }, (_, index) => ({
+    ...book,
+    md5: index.toString(16).padStart(32, '0'),
+    libgenId: 2412930 + index,
+  }));
+  const started = [];
+  const releases = new Map();
+  try {
+    const queue = new DownloadQueue({ store, acquisitionManager: { acquireLibgen(record) {
+      started.push(record.md5);
+      return new Promise(resolve => releases.set(record.md5, resolve));
+    } } });
+    await Promise.all(books.map(record => queue.enqueue({ kind: 'libgen', record })));
+    await waitFor(() => started.length === 8);
+    assert.deepEqual(started, books.slice(0, 8).map(record => record.md5));
+
+    const drained = queue.drain();
+    releases.get(books[0].md5)();
+    await waitFor(() => started.length === 9);
+    assert.equal(started[8], books[8].md5);
+
+    for (const release of releases.values()) release();
+    await drained;
+    assert.equal(queue.activeJobs.size, 0);
+    assert.equal(queue.pending.length, 0);
+  } finally {
+    store.close();
+    await fs.rm(root, { recursive: true, force: true });
+  }
+});
+
+test('active and pending requests deduplicate; failures do not block later acquisitions', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'bookstr-queue-dedupe-'));
+  const store = new LibraryStore({ dbPath: path.join(root, 'library.sqlite'), libraryRoot: root });
+  const records = [0, 1, 2].map(index => ({
+    ...book,
+    md5: (index + 1).toString(16).padStart(32, '0'),
+    libgenId: 2412940 + index,
+  }));
+  const started = [];
+  let releaseFirst;
+  try {
+    const queue = new DownloadQueue({ store, maxConcurrent: 1, acquisitionManager: {
+      async acquireLibgen(record) {
+        started.push(record.md5);
+        if (record.md5 === records[0].md5) {
+          await new Promise(resolve => { releaseFirst = resolve; });
+          store.setDownload({ bookId: record.md5, status: 'ready' });
+        } else if (record.md5 === records[1].md5) {
+          throw new Error('source unavailable');
+        } else {
+          store.setDownload({ bookId: record.md5, status: 'ready' });
+        }
+      },
+    } });
+    await queue.enqueue({ kind: 'libgen', record: records[0] });
+    await waitFor(() => started.length === 1);
+    await queue.enqueue({ kind: 'libgen', record: records[1] });
+    queue.schedule(records[1].md5, { kind: 'libgen', record: records[1] });
+    await queue.enqueue({ kind: 'libgen', record: records[2] });
+    assert.equal(queue.pending.length, 2);
+
+    const drained = queue.drain();
+    releaseFirst();
+    await drained;
+    assert.deepEqual(started, records.map(record => record.md5));
+    assert.equal(store.downloads().find(item => item.bookId === records[1].md5).status, 'failed');
+    assert.equal(store.downloads().find(item => item.bookId === records[2].md5).status, 'ready');
+    assert.equal(queue.activeJobs.size, 0);
+    assert.equal(queue.pending.length, 0);
+  } finally {
+    store.close();
+    await fs.rm(root, { recursive: true, force: true });
+  }
 });
 
 test('failed desktop download keeps its request and can retry', async () => {
@@ -164,14 +251,14 @@ test('relaunch marks invalid saved jobs failed without starting an acquisition',
   assert.equal(queue.pending.length, 0);
 });
 
-test('queue validates construction and admission and deduplicates waiting jobs', async () => {
+test('queue validates construction, concurrency bounds, and request admission', async () => {
   assert.throws(() => new DownloadQueue(), /required/);
   assert.throws(() => new DownloadQueue({ store: {} }), /required/);
   const queue = new DownloadQueue({ store: {}, acquisitionManager: {} });
+  assert.equal(queue.maxConcurrent, 8);
+  for (const maxConcurrent of [0, -1, 1.5, 9, Infinity]) {
+    assert.throws(() => new DownloadQueue({ store: {}, acquisitionManager: {}, maxConcurrent }), /maxConcurrent/);
+  }
   for (const request of [null, [], 'book']) await assert.rejects(() => queue.prepare(request), /Invalid download request/);
   await assert.rejects(() => queue.prepare({ kind: 'unknown' }), /Unsupported download request/);
-  queue.running = true;
-  queue.schedule(book.md5, { kind: 'libgen', record: book });
-  queue.schedule(book.md5, { kind: 'libgen', record: book });
-  assert.equal(queue.pending.length, 1);
 });

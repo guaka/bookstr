@@ -4,6 +4,7 @@ const ACTIVE = new Set(['queued', 'finding-peers', 'downloading', 'retrying']);
 const COMPLETE = new Set(['ready', 'seeding']);
 const MD5 = /^[a-f0-9]{32}$/;
 const FORMATS = new Set(['epub', 'pdf', 'fb2', 'cbz', 'cbr']);
+const MAX_CONCURRENT_ACQUISITIONS = 8;
 
 function libgenRequest(book) {
   const md5 = String(book?.md5 || '').trim().toLowerCase();
@@ -29,14 +30,19 @@ function libgenRequest(book) {
 }
 
 class DownloadQueue {
-  constructor({ store, acquisitionManager, onUpdate = () => {}, autoSeed = true } = {}) {
+  constructor({ store, acquisitionManager, onUpdate = () => {}, autoSeed = true, maxConcurrent = MAX_CONCURRENT_ACQUISITIONS } = {}) {
     if (!store || !acquisitionManager) throw new TypeError('store and acquisitionManager are required');
+    if (!Number.isSafeInteger(maxConcurrent) || maxConcurrent < 1 || maxConcurrent > MAX_CONCURRENT_ACQUISITIONS) {
+      throw new RangeError(`maxConcurrent must be an integer from 1 to ${MAX_CONCURRENT_ACQUISITIONS}`);
+    }
     this.store = store;
     this.acquisitionManager = acquisitionManager;
     this.onUpdate = onUpdate;
     this.autoSeed = autoSeed;
+    this.maxConcurrent = maxConcurrent;
     this.pending = [];
-    this.running = false;
+    this.activeJobs = new Map();
+    this.drainPromise = null;
   }
 
   async prepare(request) {
@@ -89,38 +95,67 @@ class DownloadQueue {
   }
 
   schedule(bookId, request) {
-    if (this.pending.some(job => job.bookId === bookId)) return;
+    if (this.activeJobs.has(bookId) || this.pending.some(job => job.bookId === bookId)) return;
     this.pending.push({ bookId, request });
     void this.drain();
   }
 
   async drain() {
-    if (this.running) return;
-    this.running = true;
-    try {
-      while (this.pending.length) {
-        const { bookId, request } = this.pending.shift();
-        try {
-          let lastProgressNoticeAt = null;
-          const onProgress = () => {
-            const now = Date.now();
-            if (lastProgressNoticeAt !== null && now - lastProgressNoticeAt < 500) return;
-            lastProgressNoticeAt = now;
-            this.onUpdate();
-          };
-          if (request.kind === 'libgen') {
-            await this.acquisitionManager.acquireLibgen(request.record, { autoSeed: this.autoSeed, onProgress });
-          } else {
-            await this.acquisitionManager.acquire(request.record, { onProgress, allowUnverifiedOpen: true });
-          }
-        } catch (error) {
-          this.store.setDownload({ bookId, status: 'failed', source: request.kind, error: error.message || String(error) });
-        }
-        this.onUpdate();
-      }
-    } finally {
-      this.running = false;
+    if (this.drainPromise) {
+      this.startPending();
+      return this.drainPromise;
     }
+    const drainPromise = this.drainPending();
+    this.drainPromise = drainPromise;
+    try {
+      await drainPromise;
+    } finally {
+      if (this.drainPromise === drainPromise) this.drainPromise = null;
+    }
+    if (this.pending.length || this.activeJobs.size) return this.drain();
+  }
+
+  async drainPending() {
+    while (this.pending.length || this.activeJobs.size) {
+      this.startPending();
+      if (this.activeJobs.size) await Promise.race(this.activeJobs.values());
+    }
+  }
+
+  startPending() {
+    while (this.pending.length && this.activeJobs.size < this.maxConcurrent) {
+      const job = this.pending.shift();
+      const task = this.runJob(job).finally(() => {
+        this.activeJobs.delete(job.bookId);
+        this.notifyUpdate();
+      });
+      this.activeJobs.set(job.bookId, task);
+    }
+  }
+
+  async runJob({ bookId, request }) {
+    try {
+      let lastProgressNoticeAt = null;
+      const onProgress = () => {
+        const now = Date.now();
+        if (lastProgressNoticeAt !== null && now - lastProgressNoticeAt < 500) return;
+        lastProgressNoticeAt = now;
+        this.notifyUpdate();
+      };
+      if (request.kind === 'libgen') {
+        await this.acquisitionManager.acquireLibgen(request.record, { autoSeed: this.autoSeed, onProgress });
+      } else {
+        await this.acquisitionManager.acquire(request.record, { onProgress, allowUnverifiedOpen: true });
+      }
+    } catch (error) {
+      try {
+        this.store.setDownload({ bookId, status: 'failed', source: request.kind, error: error.message || String(error) });
+      } catch {}
+    }
+  }
+
+  notifyUpdate() {
+    try { this.onUpdate(); } catch {}
   }
 }
 
