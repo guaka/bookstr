@@ -8,6 +8,7 @@
 #include <string.h>
 #include <strings.h>
 #include <sys/stat.h>
+#include "kindle-usb.h"
 
 static void json_string(const char *value) {
   putchar('"');
@@ -26,7 +27,7 @@ static void device_id(char *target, size_t size, LIBMTP_raw_device_t *raw) {
 static LIBMTP_mtpdevice_t *open_kindle(const char *id) {
   LIBMTP_raw_device_t *raw = NULL;
   int count = 0;
-  if (LIBMTP_Detect_Raw_Devices(&raw, &count) != LIBMTP_ERROR_NONE) {
+  if (kindle_raw_devices(&raw, &count) != 0) {
     fputs("Kindle USB discovery failed while opening the device.\n", stderr);
     return NULL;
   }
@@ -74,7 +75,7 @@ static int find_documents(LIBMTP_mtpdevice_t *device, documents_ref_t *documents
 static int list_devices(void) {
   LIBMTP_raw_device_t *raw = NULL;
   int count = 0;
-  if (LIBMTP_Detect_Raw_Devices(&raw, &count) != LIBMTP_ERROR_NONE) {
+  if (kindle_raw_devices(&raw, &count) != 0) {
     fputs("Kindle USB discovery failed.\n", stderr);
     puts("[]");
     return 0;

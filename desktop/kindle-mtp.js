@@ -19,36 +19,51 @@ class MtpKindles {
     this.onProgress = onProgress;
     this.session = null;
     this.sessionDepth = 0;
+    this.operationChain = Promise.resolve();
+    this.closed = false;
+    this.discovery = null;
     this.helper = platform === 'win32'
       ? path.join(resourcesPath, 'kindle-wpd.ps1')
       : path.join(resourcesPath, 'kindle-mtp');
   }
 
   async withSession(device, operation) {
+    if (this.closed) throw new Error('Kindle transport is closed.');
     if (this.platform === 'win32') return operation();
-    if (this.session && this.session.deviceId !== device.helperId) throw new Error('A different Kindle session is active.');
-    if (!this.session) this.session = this.sessionFactory({ helper: this.helper, deviceId: device.helperId,
-      onProgress: progress => this.onProgress({ ...this.currentBook, ...progress, deviceId: device.id }) });
-    this.sessionDevice = device;
-    this.sessionDepth++;
-    try { return await operation(); }
-    finally {
-      if (--this.sessionDepth === 0) {
-        const session = this.session;
-        this.session = null;
-        this.sessionDevice = null;
-        await session.close();
+    const run = this.operationChain.then(async () => {
+      if (this.closed) throw new Error('Kindle transport is closed.');
+      if (this.session && this.session.deviceId !== device.helperId) throw new Error('A different Kindle session is active.');
+      if (!this.session) {
+        this.session = this.sessionFactory({ helper: this.helper, deviceId: device.helperId,
+          onProgress: progress => this.onProgress({ ...this.currentBook, ...progress, deviceId: device.id }) });
+        this.sessionDevice = device;
+        this.sessionFailed = false;
       }
-    }
+      this.sessionDepth++;
+      try { return await operation(); }
+      finally {
+        if (--this.sessionDepth === 0 && this.sessionFailed) {
+          const session = this.session;
+          this.session = null;
+          this.sessionDevice = null;
+          this.sessionFailed = false;
+          await session?.close().catch(() => {});
+        }
+      }
+    });
+    this.operationChain = run.catch(() => {});
+    return run;
   }
 
   async command(action, ...args) {
+    if (this.closed) throw new Error('Kindle transport is closed.');
     if (!this.stagingRoot) throw new Error('MTP staging directory is unavailable.');
     if (this.session && action !== 'devices') {
       if (args[0] !== this.session.deviceId) throw new Error('Kindle device changed.');
-      return this.session.command(action, ...args.slice(1));
+      try { return await this.session.command(action, ...args.slice(1)); }
+      catch (error) { this.sessionFailed = true; throw error; }
     }
-    try { await fsp.access(this.helper); } catch { return action === 'devices' ? [] : Promise.reject(new Error('Kindle MTP adapter is unavailable.')); }
+    try { await fsp.access(this.helper); } catch { throw new Error('Kindle MTP adapter is unavailable.'); }
     const executable = this.platform === 'win32' ? 'powershell.exe' : this.helper;
     const argv = this.platform === 'win32'
       ? ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', this.helper, action, ...args]
@@ -60,7 +75,14 @@ class MtpKindles {
   }
 
   async devices() {
-    if (this.sessionDevice) return [this.sessionDevice];
+    if (this.sessionDepth) return [this.sessionDevice];
+    if (!this.discovery) {
+      this.discovery = this.discover().finally(() => { this.discovery = null; });
+    }
+    return this.discovery;
+  }
+
+  async discover() {
     let entries;
     try {
       entries = await this.command('devices');
@@ -69,12 +91,22 @@ class MtpKindles {
       process.stderr.write(`Kindle MTP discovery failed: ${detail}\n`);
       return [];
     }
-    return (Array.isArray(entries) ? entries : []).map(entry => ({
+    if (!Array.isArray(entries)) return [];
+    const devices = entries.map(entry => ({
       id: `mtp:${this.platform}:${String(entry.id)}`,
       helperId: String(entry.id),
       name: String(entry.name || 'Kindle'),
       kind: 'mtp',
     }));
+    if (this.session && this.sessionDepth === 0 && !devices.some(device => device.helperId === this.session.deviceId)) {
+      const stale = this.session;
+      this.session = null;
+      this.sessionDevice = null;
+      await stale.close().catch(() => {});
+    } else if (this.session && this.sessionDepth === 0) {
+      this.sessionDevice = devices.find(device => device.helperId === this.session.deviceId);
+    }
+    return devices;
   }
 
   async files(device, allowedSizes) {
@@ -121,6 +153,18 @@ class MtpKindles {
     const copied = { id: String(result.id), deviceId: device.helperId };
     if (await this.hash(copied) !== book.sha256) throw new Error('Kindle copy verification failed.');
     if (this.session?.freeBytes !== null && this.session?.freeBytes !== undefined) this.session.freeBytes -= book.size;
+  }
+
+  async close() {
+    this.closed = true;
+    const session = this.session;
+    const closePromise = session?.close();
+    try { await Promise.race([this.operationChain, closePromise || Promise.resolve()]); }
+    finally {
+      this.session = null;
+      this.sessionDevice = null;
+    }
+    await closePromise;
   }
 }
 
