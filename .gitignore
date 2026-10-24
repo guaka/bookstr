@@ -57,3 +57,6 @@ android/.kotlin/
 /desktop/dictionary-proxy.js
 /desktop/desktop-bridge.js
 /desktop/*.js.map
+
+# Generated Electron build metadata
+desktop/build-info.json

@@ -132,6 +132,16 @@ test('session routes pipe and process errors to the pending command', async () =
   }
 });
 
+test('session rejects synchronous helper spawn failures without leaving a pending handshake', async () => {
+  const session = new MtpSession({
+    helper: '/tmp/kindle-mtp',
+    deviceId: '1-2',
+    spawnProcess: () => { throw new Error('helper could not start'); },
+  });
+  await assert.rejects(() => session.command('files'), /helper could not start/);
+  assert.equal(session.pending, null);
+});
+
 test('session close timeout kills a helper that does not exit on stdin end', async () => {
   const session = new MtpSession({
     helper: '/tmp/kindle-mtp',
@@ -187,7 +197,7 @@ test('session accepts stderr diagnostics and ignores progress without a handler'
   await session.close();
 });
 
-test('MTP withSession nests once, enforces free space, and closes afterward', async () => {
+test('MTP withSession retains successful sessions, enforces free space, and closes on shutdown', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'bookstr-mtp-session-'));
   const helper = path.join(root, 'kindle-mtp');
   await fs.writeFile(helper, 'fixture');
@@ -210,13 +220,15 @@ test('MTP withSession nests once, enforces free space, and closes afterward', as
     });
     const device = { id: 'mtp:darwin:1-2', helperId: '1-2' };
     await transport.withSession(device, async () => {
-      await transport.withSession(device, async () => {
-        assert.equal(openCount, 1);
-        assert.throws(() => transport.ensureSpace(11), /enough free space/);
-        transport.ensureSpace(5);
-      });
+      assert.equal(openCount, 1);
+      assert.throws(() => transport.ensureSpace(11), /enough free space/);
+      transport.ensureSpace(5);
       assert.equal(closed, 0);
     });
+    assert.ok(transport.session);
+    await transport.withSession(device, async () => { assert.equal(openCount, 1); });
+    assert.equal(closed, 0);
+    await transport.close();
     assert.equal(transport.session, null);
     assert.equal(closed, 1);
 
@@ -234,13 +246,13 @@ test('MTP withSession nests once, enforces free space, and closes afterward', as
         close: async () => {},
       }),
     });
-    await active.withSession(device, async () => {
-      await assert.rejects(
-        () => active.withSession({ id: 'mtp:darwin:9-9', helperId: '9-9' }, async () => {}),
-        /different Kindle session/,
-      );
-      await assert.rejects(() => active.command('files', '9-9'), /Kindle device changed/);
-    });
+    await active.withSession(device, async () => {});
+    await assert.rejects(
+      () => active.withSession({ id: 'mtp:darwin:9-9', helperId: '9-9' }, async () => {}),
+      /different Kindle session/,
+    );
+    await assert.rejects(() => active.command('files', '9-9'), /Kindle device changed/);
+    await active.close();
   } finally {
     await fs.rm(root, { recursive: true, force: true });
   }

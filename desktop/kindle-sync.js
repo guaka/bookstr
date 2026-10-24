@@ -119,6 +119,8 @@ class KindleSync {
     this.comicConverter = comicConverter;
     this.onProgress = onProgress;
     this.syncing = false;
+    this.operationChain = Promise.resolve();
+    this.closed = false;
   }
 
   async devices() {
@@ -180,7 +182,20 @@ class KindleSync {
   }
 
   async preview(id, bookId) {
-    const { transport, device } = await this.findDevice(id);
+    return this.serialize(() => this.previewOperation(id, bookId));
+  }
+
+  serialize(operation) {
+    const run = this.operationChain.then(() => {
+      if (this.closed) throw new Error('Kindle sync is closed.');
+      return operation();
+    });
+    this.operationChain = run.catch(() => {});
+    return run;
+  }
+
+  async previewOperation(id, bookId, knownDevice = null, sessionHeld = false) {
+    const { transport, device } = knownDevice || await this.findDevice(id);
     const { books, skipped } = await this.localBooks(bookId);
     const sizes = new Set(books.map(book => book.size));
     const inspect = async () => {
@@ -198,16 +213,16 @@ class KindleSync {
         missing: missing.map(book => ({ bookId: book.bookId, title: book.title || book.bookId, size: book.size })),
         alreadyPresent: books.length - missing.length, skipped };
     };
-    return transport.withSession ? transport.withSession(device, inspect) : inspect();
+    return !sessionHeld && transport.withSession ? transport.withSession(device, inspect) : inspect();
   }
 
   async transfer(id, bookId) {
-    if (this.syncing) throw new Error('A Kindle transfer is already running.');
-    this.syncing = true;
-    try {
+    return this.serialize(async () => {
+      this.syncing = true;
+      try {
       const { transport, device } = await this.findDevice(id);
       const copyMissing = async () => {
-        const plan = await this.preview(id, bookId);
+        const plan = await this.previewOperation(id, bookId, { transport, device }, Boolean(transport.withSession));
         const { books } = await this.localBooks(bookId);
         const missingIds = new Set(plan.missing.map(book => book.bookId));
         transport.ensureSpace?.(books.filter(book => missingIds.has(book.bookId)).reduce((total, book) => total + book.size, 0));
@@ -227,7 +242,17 @@ class KindleSync {
         return { transferred, alreadyPresent: plan.alreadyPresent, skipped: plan.skipped, errors };
       };
       return await (transport.withSession ? transport.withSession(device, copyMissing) : copyMissing());
-    } finally { this.syncing = false; }
+      } finally { this.syncing = false; }
+    });
+  }
+
+  async close() {
+    this.closed = true;
+    await Promise.allSettled(this.transports.map(transport => transport.close?.()));
+    let timer;
+    try {
+      await Promise.race([this.operationChain, new Promise(resolve => { timer = setTimeout(resolve, 1000); })]);
+    } finally { clearTimeout(timer); }
   }
 }
 
