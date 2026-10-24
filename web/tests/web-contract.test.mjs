@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { inflateSync } from 'node:zlib';
 
+await import('../book-metadata.js');
+
 const html = await readFile(new URL('../index.html', import.meta.url), 'utf8');
 const designTokens = await readFile(new URL('../design-tokens.css', import.meta.url), 'utf8');
 const desktopProgress = await readFile(new URL('../desktop-progress.js', import.meta.url), 'utf8');
@@ -356,7 +358,10 @@ test('the web client never turns Blossom response data into readable content', (
   assert.doesNotMatch(html, /\|\| blossom\.url/);
   assert.doesNotMatch(html, /book\?\.blossomUrl[\s\S]{0,80}bookCache/);
   assert.doesNotMatch(bookMetadata, /source\.blossomUrl/);
-  assert.doesNotMatch(bookMetadata, /book\?\.readUrl \|\| book\?\.url \|\| book\?\.blossomUrl/);
+  // Legacy URLs remain valid for identity comparisons, never reader selection.
+  const canonicalReadUrl = bookMetadata.match(/function canonicalReadUrl\([\s\S]*?\n  }/)[0];
+  assert.doesNotMatch(canonicalReadUrl, /blossomUrl/);
+  assert.equal(globalThis.BookMetadata.canonicalReadUrl({ blossomUrl: 'https://blossom.example/book.epub' }), '');
 });
 
 test('read links remain addressable when a book has no MD5', () => {
