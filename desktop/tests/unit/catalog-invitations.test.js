@@ -38,6 +38,13 @@ test('cold launch cancellation confirmation persistence and duplicate invitation
  assert.equal(await h.controller.receive('bookstr://wrong'),false);
 });
 
+test('receive returns false when decoding a valid invitation throws',async()=>{
+ const h=harness();
+ h.controller.decodeNPub=()=>{throw new Error('decode failed')};
+ assert.equal(await h.controller.receive(f.uri),false);
+ assert.equal(h.controller.pending.length,0);
+});
+
 test('OS events and startup argv queue valid invitations only',async()=>{
  const h=harness();h.app.isPackaged=false;let prevented=false;
  h.app.emit('open-url',{preventDefault(){prevented=true}},f.uri);

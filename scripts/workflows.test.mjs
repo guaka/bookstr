@@ -40,6 +40,8 @@ test('Electron unit coverage and smoke results are published beside other client
   assert.match(electronJob, /cache: pnpm/);
   assert.ok(electronJob.indexOf('uses: pnpm/action-setup@v4') < electronJob.indexOf('uses: actions/setup-node@v4'));
   assert.match(electronJob, /pnpm install --frozen-lockfile/);
+  assert.match(electronJob, /pnpm run typecheck/);
+  assert.ok(electronJob.indexOf('pnpm install --frozen-lockfile') < electronJob.indexOf('pnpm run typecheck'));
   assert.match(electronJob, /pnpm run test:coverage:ci \| tee electron-tests\.tap/);
   assert.match(electronJob, /xvfb-run -a pnpm exec playwright test tests\/e2e\/desktop\.smoke\.spec\.js/);
   assert.doesNotMatch(electronJob, /\bnpm\b|\bnpx\b/);

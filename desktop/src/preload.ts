@@ -1,21 +1,41 @@
-const { contextBridge, ipcRenderer } = require('electron');
+import { contextBridge, ipcRenderer } from 'electron';
+import type {
+  DesktopBridge,
+  DesktopPane,
+  DesktopProgress,
+  DesktopProgressInput,
+} from './desktop-bridge';
 
-const readerOpenCallbacks = new Set();
-const progressCallbacks = new Set();
-const acquisitionProgressCallbacks = new Set();
-const downloadChangedCallbacks = new Set();
-const kindleProgressCallbacks = new Set();
-const settingsOpenCallbacks = new Set();
-const paneOpenCallbacks = new Set();
-const speechModelProgressCallbacks = new Set();
-const ALLOWED_PANES = new Set(['reading', 'home', 'search', 'people', 'words']);
-const PANE_SHORTCUTS = new Map([
+type PayloadCallback = (payload: unknown) => void;
+
+const readerOpenCallbacks = new Set<PayloadCallback>();
+const progressCallbacks = new Set<PayloadCallback>();
+const acquisitionProgressCallbacks = new Set<PayloadCallback>();
+const downloadChangedCallbacks = new Set<() => void>();
+const kindleProgressCallbacks = new Set<PayloadCallback>();
+const settingsOpenCallbacks = new Set<() => void>();
+const paneOpenCallbacks = new Set<(pane: DesktopPane) => void>();
+const speechModelProgressCallbacks = new Set<PayloadCallback>();
+const ALLOWED_PANES = new Set<string>(['reading', 'home', 'search', 'people', 'words']);
+const PANE_SHORTCUTS = new Map<string, DesktopPane>([
   ['1', 'home'],
   ['2', 'reading'],
   ['3', 'search'],
   ['4', 'people'],
   ['5', 'words'],
 ]);
+
+interface UnknownRecord {
+  [key: string]: unknown;
+}
+
+function isRecord(value: unknown): value is UnknownRecord {
+  return value !== null && typeof value === 'object';
+}
+
+function isDesktopPane(value: unknown): value is DesktopPane {
+  return typeof value === 'string' && ALLOWED_PANES.has(value);
+}
 
 window.addEventListener('keydown', event => {
   if (event.defaultPrevented || event.altKey || event.shiftKey || (!event.metaKey && !event.ctrlKey)) return;
@@ -30,10 +50,8 @@ window.addEventListener('keydown', event => {
   ipcRenderer.send('bookstr-desktop-pane-shortcut', pane);
 });
 
-function normalizeProgressPayload(payload) {
-  if (!payload || typeof payload !== 'object') {
-    return null;
-  }
+function normalizeProgressPayload(payload: unknown): DesktopProgress | null {
+  if (!isRecord(payload)) return null;
   const progression = Number(payload.progression);
   const furthest = Number(payload.furthestProgression);
   return {
@@ -50,15 +68,15 @@ function normalizeProgressPayload(payload) {
     sourceUrl: String(payload.sourceUrl || ''),
     blossomUrl: String(payload.blossomUrl || ''),
     blossomSha256: String(payload.blossomSha256 || ''),
-	rights_status: String(payload.rights_status || payload.rightsStatus || 'unknown'),
-	license: String(payload.license || payload.rights || ''),
-	license_url: String(payload.license_url || payload.licenseUrl || ''),
-	rights_source: String(payload.rights_source || payload.rightsSource || ''),
+    rights_status: String(payload.rights_status || payload.rightsStatus || 'unknown'),
+    license: String(payload.license || payload.rights || ''),
+    license_url: String(payload.license_url || payload.licenseUrl || ''),
+    rights_source: String(payload.rights_source || payload.rightsSource || ''),
     furthestProgression: Number.isFinite(furthest) ? Math.max(0, Math.min(1, furthest)) : 0,
   };
 }
 
-ipcRenderer.on('bookstr-desktop-open-reader', (_event, payload) => {
+ipcRenderer.on('bookstr-desktop-open-reader', (_event, payload: unknown) => {
   for (const callback of readerOpenCallbacks) {
     try {
       callback(payload);
@@ -68,7 +86,7 @@ ipcRenderer.on('bookstr-desktop-open-reader', (_event, payload) => {
   }
 });
 
-ipcRenderer.on('bookstr-desktop-reader-progress', (_event, payload) => {
+ipcRenderer.on('bookstr-desktop-reader-progress', (_event, payload: unknown) => {
   for (const callback of progressCallbacks) {
     try {
       callback(payload);
@@ -78,7 +96,7 @@ ipcRenderer.on('bookstr-desktop-reader-progress', (_event, payload) => {
   }
 });
 
-ipcRenderer.on('bookstr-desktop-acquisition-progress', (_event, payload) => {
+ipcRenderer.on('bookstr-desktop-acquisition-progress', (_event, payload: unknown) => {
   for (const callback of acquisitionProgressCallbacks) {
     try {
       callback(payload);
@@ -94,9 +112,9 @@ ipcRenderer.on('bookstr-desktop-downloads-changed', () => {
   }
 });
 
-ipcRenderer.on('bookstr-desktop-kindle-progress', (_event, progress) => {
+ipcRenderer.on('bookstr-desktop-kindle-progress', (_event, progressPayload: unknown) => {
   for (const callback of kindleProgressCallbacks) {
-    try { callback(progress); } catch { /* detached view */ }
+    try { callback(progressPayload); } catch { /* detached view */ }
   }
 });
 
@@ -110,8 +128,8 @@ ipcRenderer.on('bookstr-desktop-open-settings', () => {
   }
 });
 
-ipcRenderer.on('bookstr-desktop-open-pane', (_event, pane) => {
-  if (!ALLOWED_PANES.has(pane)) return;
+ipcRenderer.on('bookstr-desktop-open-pane', (_event, pane: unknown) => {
+  if (!isDesktopPane(pane)) return;
   for (const callback of paneOpenCallbacks) {
     try {
       callback(pane);
@@ -121,17 +139,17 @@ ipcRenderer.on('bookstr-desktop-open-pane', (_event, pane) => {
   }
 });
 
-ipcRenderer.on('bookstr-desktop-speech-model-progress', (_event, progress) => {
+ipcRenderer.on('bookstr-desktop-speech-model-progress', (_event, progressPayload: unknown) => {
   for (const callback of speechModelProgressCallbacks) {
     try {
-      callback(progress);
+      callback(progressPayload);
     } catch {
       // ignore
     }
   }
 });
 
-const desktopSigner = {
+const desktopSigner: DesktopBridge['signer'] = {
   status() {
     return ipcRenderer.invoke('bookstr-desktop-signer-status');
   },
@@ -174,14 +192,14 @@ const desktopSigner = {
   },
 };
 
-const desktopBridge = {
+const desktopBridge: DesktopBridge = {
   catalog: { get: () => ipcRenderer.invoke('bookstr-desktop-catalog-current') },
   version: 1,
   signer: desktopSigner,
   openReader(payload) {
     return ipcRenderer
       .invoke('bookstr-desktop-open-reader', payload)
-      .then(result => Boolean(result && result.ok))
+      .then(result => Boolean(isRecord(result) && result.ok))
       .catch(() => false);
   },
   focusLibrary() {
@@ -217,16 +235,12 @@ const desktopBridge = {
     },
   },
   onProgress(callback) {
-    if (typeof callback !== 'function') {
-      return () => {};
-    }
+    if (typeof callback !== 'function') return () => {};
     progressCallbacks.add(callback);
     return () => progressCallbacks.delete(callback);
   },
   onOpenReader(callback) {
-    if (typeof callback !== 'function') {
-      return () => {};
-    }
+    if (typeof callback !== 'function') return () => {};
     readerOpenCallbacks.add(callback);
     return () => readerOpenCallbacks.delete(callback);
   },
@@ -240,7 +254,7 @@ const desktopBridge = {
     paneOpenCallbacks.add(callback);
     return () => paneOpenCallbacks.delete(callback);
   },
-  reportProgress(payload) {
+  reportProgress(payload: DesktopProgressInput) {
     const normalized = normalizeProgressPayload(payload);
     if (normalized?.md5) {
       ipcRenderer.send('bookstr-desktop-report-progress', normalized);
@@ -325,7 +339,7 @@ const desktopBridge = {
     },
   },
   transfers: {
-    setPreferences(preferences) {
+    setPreferences(preferences = {}) {
       return ipcRenderer.invoke('bookstr-desktop-transfer-preferences', preferences);
     },
     status() {

@@ -10,7 +10,8 @@ const readerHtml = await readFile(new URL('../reader.html', import.meta.url), 'u
 const pdfReaderHtml = await readFile(new URL('../pdf-reader.html', import.meta.url), 'utf8');
 const pdfReaderJs = await readFile(new URL('../pdf-reader.js', import.meta.url), 'utf8');
 const desktopMain = await readFile(new URL('../../desktop/main.js', import.meta.url), 'utf8');
-const desktopPreload = await readFile(new URL('../../desktop/preload.js', import.meta.url), 'utf8');
+const desktopPreload = await readFile(new URL('../../desktop/src/preload.ts', import.meta.url), 'utf8');
+const desktopPolicy = await readFile(new URL('../../desktop/src/security-policy.ts', import.meta.url), 'utf8');
 const desktopWebTorrent = await readFile(new URL('../../desktop/webtorrent-bridge.js', import.meta.url), 'utf8');
 const webtorrentDevBridge = await readFile(new URL('../webtorrent-dev-bridge.mjs', import.meta.url), 'utf8');
 const coverAssets = await readFile(new URL('../cover-assets.js', import.meta.url), 'utf8');
@@ -534,12 +535,12 @@ test('desktop main process enforces reader payloads and returns explicit open re
 });
 
 test('desktop preload exposes a deterministic openReader contract', () => {
-  assert.match(desktopPreload, /const desktopBridge = \{/);
+  assert.match(desktopPreload, /const desktopBridge: DesktopBridge = \{/);
   assert.match(desktopPreload, /openReader\(payload\) \{/);
   assert.match(desktopPreload, /ipcRenderer\s*\.invoke\('bookstr-desktop-open-reader', payload\)/);
-  assert.match(desktopPreload, /Boolean\(result && result\.ok\)/);
+  assert.match(desktopPreload, /Boolean\(isRecord\(result\) && result\.ok\)/);
   assert.match(desktopPreload, /focusLibrary\(\) \{/);
-  assert.match(desktopPreload, /const desktopSigner = \{/);
+  assert.match(desktopPreload, /const desktopSigner: DesktopBridge\['signer'\] = \{/);
   assert.match(desktopPreload, /getPublicKey\(\)/);
   assert.match(desktopPreload, /signEvent\(event\)/);
   assert.match(desktopPreload, /nip19: \{/);
@@ -899,7 +900,6 @@ test('desktop mode proxies dictionaries and anchors the footer without changing 
 });
 
 test('desktop content security policy permits secure Nostr relay sockets', async () => {
-  const desktopPolicy = await readFile(new URL('../../desktop/security-policy.js', import.meta.url), 'utf8');
   const desktopPackage = JSON.parse(await readFile(new URL('../../desktop/package.json', import.meta.url), 'utf8'));
   const desktopFiles = desktopPackage.build.files.flatMap(entry =>
     typeof entry === 'string' ? [entry] : entry.to === 'desktop' ? entry.filter || [] : []);
@@ -914,7 +914,7 @@ test('desktop pane shortcuts use the constrained preload callback', () => {
   assert.match(desktopMain, /pane: 'search', accelerator: 'CmdOrCtrl\+3'/);
   assert.match(desktopMain, /pane: 'people', accelerator: 'CmdOrCtrl\+4'/);
   assert.match(desktopMain, /pane: 'words', accelerator: 'CmdOrCtrl\+5'/);
-  assert.match(desktopPreload, /const ALLOWED_PANES = new Set\(\['reading', 'home', 'search', 'people', 'words'\]\)/);
+  assert.match(desktopPreload, /const ALLOWED_PANES = new Set<string>\(\['reading', 'home', 'search', 'people', 'words'\]\)/);
   assert.match(desktopPreload, /const PANE_SHORTCUTS = new Map/);
   assert.match(desktopPreload, /\['5', 'words'\]/);
   assert.match(html, /onOpenPane\?\.\(\(pane\) => activateTab\(pane, \{ updateHash: true \}\)\)/);
@@ -1068,7 +1068,7 @@ test('Electron settings expose default-on automatic torrent downloading and seed
   assert.match(html, /Automatic torrent downloads are disabled in Settings/);
   assert.match(html, /acquireLibgen\(torrentBook, \{[\s\S]*?autoSeed: state\.settings\.autoSeedTorrents/);
   assert.match(html, /downloadPublic\(\{[\s\S]*?autoSeed: state\.settings\.autoSeedTorrents/);
-  assert.match(desktopPreload, /setPreferences\(preferences\)[\s\S]*?bookstr-desktop-transfer-preferences/);
+  assert.match(desktopPreload, /setPreferences\(preferences = \{\}\)[\s\S]*?bookstr-desktop-transfer-preferences/);
   assert.match(desktopMain, /resumeLibgenSeeds\(\{ autoSeed: preferences\.autoSeed \}\)/);
   assert.match(desktopMain, /if \(!next\.autoSeed\) await getTorrentBridge\(\)\.stopSeeding\(\)/);
   assert.match(html, /body\.desktop-mode \.settings-tab \.settings-section h3 \{[\s\S]*?font-size: 0\.82rem/);

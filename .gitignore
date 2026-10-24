@@ -50,5 +50,13 @@ ios/TorrentEngine/TorrentEngine.xcframework/
 android/app/.cxx/
 android/.kotlin/
 
+# Electron JavaScript emitted from strict TypeScript sources
+/desktop/preload.js
+/desktop/security-policy.js
+/desktop/catalog-invitations.js
+/desktop/dictionary-proxy.js
+/desktop/desktop-bridge.js
+/desktop/*.js.map
+
 # Generated Electron build metadata
 desktop/build-info.json

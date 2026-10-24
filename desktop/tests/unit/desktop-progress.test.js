@@ -86,6 +86,7 @@ test('web progress profile trims aliases and rejects invalid progression', () =>
 test('sandboxed preload preserves its permissive transport shape before main validation', () => {
   const sent = [];
   const context = {
+    exports: {},
     window: { addEventListener() {} },
     require(name) {
       assert.equal(name, 'electron');
