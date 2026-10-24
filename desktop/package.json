@@ -46,6 +46,7 @@
   "build": {
     "appId": "app.bookstr.desktop",
     "productName": "libstr",
+    "beforePack": "./stamp-build.js",
     "icon": "assets/icon-macos.png",
     "files": [
       "package.json",
@@ -69,6 +70,7 @@
           "comic-pdf.js",
           "comic-image.js",
           "main.js",
+          "build-info.json",
           "preload.js",
           "security-policy.js",
           "speech-model-store.js",

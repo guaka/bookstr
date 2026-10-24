@@ -49,3 +49,6 @@ ios/TorrentEngine/TorrentEngine.xcframework/
 
 android/app/.cxx/
 android/.kotlin/
+
+# Generated Electron build metadata
+desktop/build-info.json
