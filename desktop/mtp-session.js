@@ -19,14 +19,18 @@ class MtpSession {
     this.buffer = '';
     this.decoder = new StringDecoder('utf8');
     this.freeBytes = null;
+    this.closed = false;
+    this.closePromise = null;
   }
 
   response(timeout = this.timeout) {
+    if (this.closed) throw new Error('Kindle session is closed.');
     if (this.pending) throw new Error('Overlapping Kindle operation.');
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
         this.pending = null;
         this.child?.kill('SIGTERM');
+        this.closed = true;
         reject(new Error('Kindle operation timed out.'));
       }, timeout);
       this.pending = {
@@ -37,6 +41,7 @@ class MtpSession {
   }
 
   fail(error) {
+    this.closed = true;
     this.pending?.reject(error);
     this.child?.kill('SIGTERM');
   }
@@ -60,7 +65,7 @@ class MtpSession {
         this.onProgress({ phase: value.phase, percent: value.percent });
       } else if (value.error) {
         this.value = null;
-        this.pending?.reject(new Error(String(value.error)));
+        this.fail(new Error(String(value.error)));
       } else if (value.complete === true) {
         this.pending?.resolve(this.value);
         this.value = null;
@@ -73,19 +78,21 @@ class MtpSession {
   }
 
   async start() {
+    if (this.closed) throw new Error('Kindle session is closed.');
     const ready = this.response();
     let child;
     try {
       child = this.child = this.spawnProcess(this.helper, ['session', this.deviceId], {
         stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true,
       });
-    } catch (error) { this.pending.reject(error); return ready; }
+    } catch (error) { this.pending?.reject(error); await ready.catch(() => {}); throw error; }
     child.stdout.on('data', bytes => this.receive(bytes));
     child.stderr.on('data', bytes => { this.stderr = (this.stderr + bytes.toString()).slice(-4096); });
     child.stdin.on('error', error => this.fail(error));
     child.on('error', error => this.fail(error));
     this.exited = new Promise(resolve => child.once('close', (code, signal) => {
       this.child = null;
+      this.closed = true;
       this.pending?.reject(new Error(`Kindle disconnected (${code ?? signal}). ${this.stderr}`.trim()));
       resolve();
     }));
@@ -99,6 +106,7 @@ class MtpSession {
 
   command(action, ...args) {
     const operation = this.chain.then(async () => {
+      if (this.closed) throw new Error('Kindle session is closed.');
       if (!['files', 'get', 'put'].includes(action)
           || (action === 'files' ? args.length !== 0 : args.length !== 2)
           || args.some(value => typeof value !== 'string' || !value || /[\t\r\n\0]/.test(value))) {
@@ -112,19 +120,37 @@ class MtpSession {
       const valid = action === 'files' ? Array.isArray(result)
         : action === 'get' ? result?.ok === true
           : typeof result?.id === 'string' && /^[1-9]\d{0,9}$/.test(result.id) && Number(result.id) <= 0xffffffff;
-      if (!valid) throw new Error('Invalid Kindle operation response.');
+      if (!valid) { this.fail(new Error('Invalid Kindle operation response.')); throw new Error('Invalid Kindle operation response.'); }
       return result;
     });
     this.chain = operation.catch(() => {});
     return operation;
   }
 
-  async close() {
-    if (!this.child) return;
+  close() {
+    if (this.closePromise) return this.closePromise;
+    this.closed = true;
+    if (!this.child) return Promise.resolve();
+    this.closePromise = this.closeChild();
+    return this.closePromise;
+  }
+
+  async closeChild() {
     const child = this.child;
-    const timer = setTimeout(() => child.kill('SIGTERM'), 5000);
+    let forceTimer;
+    let settleTimer;
     child.stdin.end();
-    try { await this.exited; } finally { clearTimeout(timer); }
+    try {
+      await Promise.race([this.exited, new Promise(resolve => {
+        forceTimer = setTimeout(() => {
+          child.kill('SIGTERM');
+          settleTimer = setTimeout(resolve, 1000);
+        }, 5000);
+      })]);
+    } finally {
+      clearTimeout(forceTimer);
+      clearTimeout(settleTimer);
+    }
   }
 }
 

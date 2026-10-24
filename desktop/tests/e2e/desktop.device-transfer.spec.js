@@ -30,3 +30,64 @@ test('Electron exposes private device discovery and guarded transfer controls', 
     await app.close();
   }
 });
+
+test('Library sends one manga to Kindle and shows progress, duplicates and errors in place', async () => {
+  const app = await electron.launch({ args: electronArgs() });
+  try {
+    const window = await app.firstWindow();
+    await app.evaluate(({ ipcMain }) => {
+      const id = '3'.repeat(32);
+      for (const channel of ['bookstr-desktop-library-downloads', 'bookstr-desktop-kindle-devices', 'bookstr-desktop-kindle-transfer']) ipcMain.removeHandler(channel);
+      ipcMain.handle('bookstr-desktop-library-downloads', () => [{
+        bookId: id, md5: id, title: 'Kindle Manga Fixture', authors: 'Fixture',
+        extension: 'cbz', status: 'ready', readable: true, completedAt: 1,
+      }]);
+      ipcMain.handle('bookstr-desktop-kindle-devices', () => [{ id: 'fixture-kindle', name: 'Kindle', kind: 'mtp' }]);
+      globalThis.kindleCalls = [];
+      ipcMain.handle('bookstr-desktop-kindle-transfer', (_event, deviceId, bookId) => {
+        globalThis.kindleCalls.push({ deviceId, bookId });
+        return new Promise((resolve, reject) => { globalThis.finishKindle = { resolve, reject }; });
+      });
+    });
+    await window.reload();
+    await window.getByRole('button', { name: 'Home, Command 1' }).click();
+    await window.evaluate(async () => { await refreshDesktopDownloadStates(); renderHome(); });
+    const send = window.getByRole('button', { name: 'Send Kindle Manga Fixture to Kindle', exact: true });
+    await expect(send).toBeVisible();
+    await send.click();
+    await expect(send).toHaveText('Sending…');
+    await expect(send).toHaveAttribute('aria-busy', 'true');
+    await expect(send).toBeDisabled();
+    await expect.poll(() => app.evaluate(() => globalThis.kindleCalls.length)).toBe(1);
+    await app.evaluate(({ BrowserWindow }) => {
+      BrowserWindow.getAllWindows()[0].webContents.send('bookstr-desktop-kindle-progress', {
+        phase: 'converting', bookId: '3'.repeat(32), page: 1, pages: 20,
+      });
+    });
+    await expect(window.locator('#desktop-kindle-summary')).toHaveText('Converting · 1/20 pages');
+    await expect(send).toHaveAttribute('title', 'Converting · 1/20 pages');
+    await app.evaluate(() => globalThis.finishKindle.resolve({ transferred: ['3'.repeat(32)], alreadyPresent: 0, errors: [] }));
+    await expect(send).toHaveText('Sent');
+    await expect(send).toBeEnabled();
+    await expect(send).not.toHaveAttribute('aria-busy');
+    await expect(window.locator('#desktop-kindle-summary')).toHaveText('Copied to Kindle');
+
+    await send.click();
+    await expect(send).toBeDisabled();
+    await expect.poll(() => app.evaluate(() => globalThis.kindleCalls.length)).toBe(2);
+    await app.evaluate(() => globalThis.finishKindle.resolve({ transferred: [], alreadyPresent: 1, errors: [] }));
+    await expect(send).toHaveText('On Kindle');
+    await expect(window.locator('#desktop-kindle-summary')).toHaveText('Already on Kindle');
+
+    await send.click();
+    await expect(send).toBeDisabled();
+    await expect.poll(() => app.evaluate(() => globalThis.kindleCalls.length)).toBe(3);
+    await app.evaluate(() => globalThis.finishKindle.reject(new Error('Kindle disconnected.')));
+    await expect(send).toHaveText('Retry');
+    await expect(send).toBeEnabled();
+    await expect(window.locator('#desktop-kindle-summary')).toContainText('Kindle disconnected.');
+    expect(await app.evaluate(() => globalThis.kindleCalls)).toEqual(Array.from({ length: 3 }, () => ({
+      deviceId: 'fixture-kindle', bookId: '3'.repeat(32),
+    })));
+  } finally { await app.close(); }
+});
