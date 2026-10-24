@@ -386,6 +386,27 @@ test('selected torrent download rejects an abort that arrives while addPublic is
   assert.equal(torrent.listenerCount('metadata'), 0);
 });
 
+test('selected torrent metadata wait catches abort during listener registration', async () => {
+  const bridge = new WebTorrentBridge({ clientFactory: async () => ({ torrents: [] }) });
+  const controller = new AbortController();
+  const torrent = new EventEmitter();
+  torrent.files = [];
+  const registerOnce = torrent.once.bind(torrent);
+  torrent.once = (event, listener) => {
+    registerOnce(event, listener);
+    if (event === 'metadata') controller.abort();
+    return torrent;
+  };
+  bridge.addPublic = async () => torrent;
+  let removed = 0;
+  bridge.remove = async received => { assert.equal(received, torrent); removed += 1; };
+
+  await assert.rejects(bridge.downloadSelected('metadata', {
+    fileName: 'a'.repeat(32), signal: controller.signal,
+  }), /torrent download aborted/);
+  assert.equal(removed, 1);
+});
+
 test('public download waits for completion', async () => {
   const log = { adds: [] };
   const bridge = new WebTorrentBridge({ clientFactory: async options => ({

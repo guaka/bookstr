@@ -371,6 +371,63 @@ test('manager shutdown cancels gradual seed resume before it reads or starts lat
   assert.equal(store.downloads().find(item => item.bookId === records[1].md5).status, 'queued');
 }));
 
+test('manager default seed delay clears its timer when shutdown aborts resume', () => withManager(async ({ manager, store }) => {
+  const records = [
+    { md5: '5'.repeat(32), libgenId: 2412930 },
+    { md5: '6'.repeat(32), libgenId: 2412931 },
+  ];
+  for (const record of records) {
+    store.upsertBook({ id: record.md5, md5: record.md5, title: 'Interrupted', extension: 'epub', sourceNativeId: String(record.libgenId) });
+    store.setDownload({ bookId: record.md5, status: 'queued', source: 'torrent' });
+  }
+  manager.fetch = async (_url, { signal }) => {
+    if (signal.aborted) throw signal.reason;
+    return { ok: true, arrayBuffer: async () => Buffer.from('d4:test4:datae') };
+  };
+  manager.torrentBridge = {
+    downloadSelected(_metadata, { signal }) {
+      return new Promise((_resolve, reject) => signal.addEventListener('abort', () => reject(signal.reason), { once: true }));
+    },
+  };
+
+  const resume = manager.resumeLibgenSeeds();
+  assert.ok(manager.libgenAcquisitionJobs.has(records[0].md5));
+  const startedAt = Date.now();
+  await manager.close();
+  await resume;
+  assert.ok(Date.now() - startedAt < 1000, 'shutdown should not wait for the 1.5 second seed delay');
+  assert.equal(manager.libgenAcquisitionJobs.size, 0);
+}));
+
+test('manager removes a seed returned after shutdown instead of retaining it', () => withManager(async ({ manager, store, root }) => {
+  const md5 = '7'.repeat(32);
+  const seedRoot = path.join(root, 'staging', 'libgen-seeds');
+  const seedFile = path.join(seedRoot, '2412000', md5);
+  await fsp.mkdir(path.dirname(seedFile), { recursive: true });
+  await fsp.writeFile(seedFile, 'seed bytes');
+  store.upsertBook({ id: md5, md5, title: 'Persistent Seed', extension: 'epub', sourceNativeId: '2412930' });
+  store.setDownload({ bookId: md5, status: 'ready', source: 'torrent', bytes: 10, totalBytes: 10 });
+  manager.fetch = async () => ({ ok: true, arrayBuffer: async () => Buffer.from('d4:test4:datae') });
+  let finishSelection;
+  const selected = new Promise(resolve => { finishSelection = resolve; });
+  let selectionStarted;
+  const startSelected = new Promise(resolve => { selectionStarted = resolve; });
+  let removed = 0;
+  const torrent = {};
+  manager.torrentBridge = {
+    downloadSelected: async () => { selectionStarted(); return selected; },
+    async remove(received) { assert.equal(received, torrent); removed += 1; },
+  };
+
+  const resume = manager.resumeLibgenSeeds();
+  await startSelected;
+  const closing = manager.close();
+  finishSelection({ filePath: seedFile, torrent });
+  await Promise.all([resume, closing]);
+  assert.equal(removed, 1);
+  assert.equal(torrent.bookstrSeedingBookIds, undefined);
+}));
+
 test('LibGen acquisition removes torrent data when automatic seeding is disabled', () => withManager(async ({ manager, root }) => {
   const md5 = 'd'.repeat(32);
   const body = Buffer.from('epub bytes');
