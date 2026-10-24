@@ -47,6 +47,45 @@ test('1000 torrent progress samples coalesce to at most 11 persistence/IPC updat
   assert.deepEqual(reported.at(-1), { bytes: 1000 });
 });
 
+test('closing acquisition manager cancels trailing progress and drains torrent jobs', async () => {
+  const root = await fsp.mkdtemp(path.join(__dirname, '.bookstr-acquisition-shutdown-'));
+  let storeClosed = false;
+  const writes = [];
+  const store = {
+    upsertBook(book) { return book; },
+    setDownload(download) {
+      if (storeClosed) throw new Error('database is not open');
+      writes.push(download);
+    },
+  };
+  const importer = new LibraryImporter({ libraryRoot: path.join(root, 'library') });
+  const manager = new AcquisitionManager({
+    store,
+    importer,
+    stagingRoot: path.join(root, 'staging'),
+    fetchImpl: async () => ({ ok: true, headers: new Headers({ 'content-length': '14' }), arrayBuffer: async () => Buffer.from('d4:test4:datae') }),
+    torrentBridge: {
+      downloadSelected(_metadata, { signal, onProgress }) {
+        onProgress({ bytes: 1, totalBytes: 10 });
+        onProgress({ bytes: 2, totalBytes: 10 });
+        return new Promise((_resolve, reject) => {
+          const abort = () => reject(new Error('acquisition aborted'));
+          if (signal.aborted) abort();
+          else signal.addEventListener('abort', abort, { once: true });
+        });
+      },
+    },
+  });
+  const acquisition = manager.acquireLibgen({ md5: 'a'.repeat(32), id: 123, extension: 'epub' });
+  await new Promise(resolve => setImmediate(resolve));
+  await manager.close();
+  await assert.rejects(acquisition, /acquisition aborted/);
+  storeClosed = true;
+  await new Promise(resolve => setTimeout(resolve, 120));
+  assert.deepEqual(writes.map(write => write.status), ['finding-peers', 'downloading', 'failed']);
+  await fsp.rm(root, { recursive: true, force: true });
+});
+
 async function withManager(fn) {
   const root = await fsp.mkdtemp(path.join(__dirname, '.bookstr-acquisition-'));
   const store = new LibraryStore({ dbPath: path.join(root, 'library.sqlite'), libraryRoot: path.join(root, 'library') });

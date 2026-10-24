@@ -266,6 +266,22 @@ class AcquisitionManager {
     this.sleep = sleep;
     this.resumeLibgenSeedsPromise = null;
     this.libgenAcquisitionJobs = new Map();
+    this.progressThrottles = new Set();
+    this.lifecycleControllers = new Set();
+    this.closed = false;
+    this.closePromise = null;
+  }
+
+  close() {
+    if (this.closePromise) return this.closePromise;
+    this.closed = true;
+    for (const controller of this.lifecycleControllers) controller.abort(new Error('acquisition manager is closing'));
+    for (const throttle of this.progressThrottles) throttle.cancel();
+    this.closePromise = (async () => {
+      const jobs = [...this.libgenAcquisitionJobs.values()].map(job => job.promise);
+      await Promise.allSettled(jobs);
+    })();
+    return this.closePromise;
   }
 
   resumeLibgenSeeds({ autoSeed = true } = {}) {
@@ -373,6 +389,7 @@ class AcquisitionManager {
   }
 
   async acquireLibgen(book, { signal, onProgress, autoSeed = true } = {}) {
+    if (this.closed) throw new Error('acquisition manager is closed');
     const md5 = String(book?.md5 || '').trim().toLowerCase();
     if (!/^[a-f0-9]{32}$/.test(md5)) throw new TypeError('LibGen torrent acquisition requires an MD5 record identifier');
     let job = this.libgenAcquisitionJobs.get(md5);
@@ -406,6 +423,7 @@ class AcquisitionManager {
   }
 
   async runLibgenAcquisition(book, { signal, onProgress, autoSeed = true } = {}) {
+    if (this.closed) throw new Error('acquisition manager is closed');
     if (!this.torrentBridge?.downloadSelected) throw new Error('torrent bridge is not configured');
     const md5 = String(book?.md5 || '').trim().toLowerCase();
     const libgenId = Number(book?.libgenId || book?.libgen_id || book?.id);
@@ -415,6 +433,11 @@ class AcquisitionManager {
     if (expectedSize && (!Number.isSafeInteger(expectedSize) || expectedSize < 0 || expectedSize > this.maxBytes)) {
       throw new Error('catalog file size is invalid or exceeds the maximum acquisition size');
     }
+    const lifecycleController = new AbortController();
+    this.lifecycleControllers.add(lifecycleController);
+    const abortFromCaller = () => lifecycleController.abort(signal?.reason);
+    if (signal?.aborted) abortFromCaller();
+    else signal?.addEventListener?.('abort', abortFromCaller, { once: true });
     const fields = {
       id: md5,
       md5,
@@ -447,8 +470,9 @@ class AcquisitionManager {
       this.store.setDownload({ bookId: md5, status: 'downloading', bytes: progress.bytes, totalBytes: progress.totalBytes, source: 'torrent' });
       onProgress?.({ bookId: md5, source: 'torrent', ...progress });
     });
+    this.progressThrottles.add(progressThrottle);
     try {
-      const response = await this.fetch(metadataURL, { signal, redirect: 'error' });
+      const response = await this.fetch(metadataURL, { signal: lifecycleController.signal, redirect: 'error' });
       if (!response?.ok) throw new Error(`torrent metadata returned HTTP ${response?.status || 0}`);
       const declaredLength = responseLength(response);
       if (declaredLength !== null && declaredLength > MAX_TORRENT_METADATA_BYTES) throw new Error('torrent metadata is too large');
@@ -460,7 +484,7 @@ class AcquisitionManager {
         path: stageDir,
         fileName: md5,
         bookId: md5,
-        signal,
+        signal: lifecycleController.signal,
         maxBytes: this.maxBytes,
         onProgress: progress => progressThrottle.report(progress),
       });
@@ -485,6 +509,10 @@ class AcquisitionManager {
       this.store.setDownload({ bookId: md5, status: 'failed', source: 'torrent', error: error?.message || String(error) });
       throw error;
     } finally {
+      signal?.removeEventListener?.('abort', abortFromCaller);
+      this.lifecycleControllers.delete(lifecycleController);
+      progressThrottle.cancel();
+      this.progressThrottles.delete(progressThrottle);
       if (!keepSeeding) {
         await destroyTorrent(this.torrentBridge, torrent);
         if (!autoSeed) await fsp.rm(stageDir, { recursive: true, force: true }).catch(() => {});

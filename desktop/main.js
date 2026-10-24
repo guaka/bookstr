@@ -1649,17 +1649,20 @@ async function bootstrap() {
   });
 }
 
-let kindleShutdownStarted = false;
-let kindleShutdownComplete = false;
+let shutdownStarted = false;
+let shutdownComplete = false;
 app.on('before-quit', event => {
-  if (kindleShutdownComplete || !kindleSync) return;
+  if (shutdownComplete) return;
   event.preventDefault();
-  if (kindleShutdownStarted) return;
-  kindleShutdownStarted = true;
-  void kindleSync.close().catch(error => {
-    console.warn('Could not close the Kindle transport cleanly:', error);
-  }).finally(() => {
-    kindleShutdownComplete = true;
+  if (shutdownStarted) return;
+  shutdownStarted = true;
+  void Promise.all([
+    kindleSync ? kindleSync.close().catch(error => {
+      console.warn('Could not close the Kindle transport cleanly:', error);
+    }) : undefined,
+    acquisitionManager?.close(),
+  ]).finally(() => {
+    shutdownComplete = true;
     app.quit();
   });
 });
