@@ -87,7 +87,16 @@ const DICTIONARY_PROXY_BASE_URL = process.env.NODE_ENV === 'test'
   ? process.env.BOOKSTR_DESKTOP_TEST_DICTIONARY_BASE_URL
   : undefined;
 
-function timestampVersion(now = new Date()) {
+// Packaged apps use immutable build metadata. Development uses the source date.
+let builtAt;
+try {
+  builtAt = new Date(require('./build-info.json').builtAt);
+  if (Number.isNaN(builtAt.getTime())) throw new Error('Invalid build timestamp');
+} catch {
+  builtAt = require('node:fs').statSync(path.join(WEB_ROOT, 'index.html')).mtime;
+}
+
+function timestampVersion(now = builtAt) {
   const part = value => String(value).padStart(2, '0');
   return `0.1-${now.getFullYear()}${part(now.getMonth() + 1)}${part(now.getDate())}-${part(now.getHours())}${part(now.getMinutes())}`;
 }
@@ -1591,6 +1600,7 @@ function setupProtocol(targetSession) {
     return new Response(body, {
       headers: {
         'Content-Type': mimeType(filePath),
+        'Last-Modified': builtAt.toUTCString(),
         'Content-Security-Policy': appContentSecurityPolicy(nonce),
       },
       status: 200,
