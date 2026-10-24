@@ -36,7 +36,7 @@ function bundleDependency(file) {
 }
 
 try {
-  const flags = run('pkg-config', ['--cflags', '--libs', 'libmtp']).trim().split(/\s+/).filter(Boolean);
+  const flags = run('pkg-config', ['--cflags', '--libs', 'libmtp', 'libusb-1.0']).trim().split(/\s+/).filter(Boolean);
   const compiler = process.platform === 'darwin' ? 'clang' : 'cc';
   run(compiler, ['-std=c11', '-D_DEFAULT_SOURCE', '-O2', '-Wall', '-Wextra',
     path.join(root, 'kindle-mtp.c'), '-o', output, ...flags]);

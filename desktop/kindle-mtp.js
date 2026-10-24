@@ -19,6 +19,7 @@ class MtpKindles {
     this.onProgress = onProgress;
     this.session = null;
     this.sessionDepth = 0;
+    this.discovery = null;
     this.helper = platform === 'win32'
       ? path.join(resourcesPath, 'kindle-wpd.ps1')
       : path.join(resourcesPath, 'kindle-mtp');
@@ -61,6 +62,13 @@ class MtpKindles {
 
   async devices() {
     if (this.sessionDevice) return [this.sessionDevice];
+    if (!this.discovery) {
+      this.discovery = this.discover().finally(() => { this.discovery = null; });
+    }
+    return this.discovery;
+  }
+
+  async discover() {
     let entries;
     try {
       entries = await this.command('devices');

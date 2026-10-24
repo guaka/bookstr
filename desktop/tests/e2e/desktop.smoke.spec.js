@@ -179,10 +179,14 @@ test('libstr desktop app opens with preload bridge', async () => {
     await expect(firstWindow.locator('#speech-language')).toBeVisible();
     await expect(firstWindow.locator('#speech-voice')).toContainText('Best installed voice');
     await expect(firstWindow.locator('#reader-padding')).toBeVisible();
-    await expect(firstWindow.locator('#speech-language')).toContainText('English');
-    await expect(firstWindow.locator('#speech-language')).toContainText('Portuguese');
-    await expect(firstWindow.locator('#speech-language')).toContainText('Spanish');
-    await expect(firstWindow.locator('#speech-language')).not.toContainText('German');
+    const languageNames = await firstWindow.evaluate(() => {
+      const names = new Intl.DisplayNames([navigator.language || 'en'], { type: 'language' });
+      return { en: names.of('en'), pt: names.of('pt'), es: names.of('es') };
+    });
+    await expect(firstWindow.locator('#speech-language option[value="en"]')).toHaveText(languageNames.en);
+    await expect(firstWindow.locator('#speech-language option[value="pt"]')).toHaveText(languageNames.pt);
+    await expect(firstWindow.locator('#speech-language option[value="es"]')).toHaveText(languageNames.es);
+    await expect(firstWindow.locator('#speech-language option[value="de"]')).toHaveCount(0);
     expect(await firstWindow.locator('#speech-language option').count()).toBe(3);
     const kokoroModel = firstWindow.locator('#speech-model-kokoro_en');
     const tugaoModel = firstWindow.locator('#speech-model-piper_pt_pt');

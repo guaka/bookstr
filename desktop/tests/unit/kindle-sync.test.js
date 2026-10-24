@@ -123,10 +123,53 @@ test('native MTP discovery lists Amazon USB ids without opening or scanning fold
   const source = await fs.readFile(path.join(__dirname, '../../native/kindle-mtp.c'), 'utf8');
   const body = source.match(/static int list_devices\(void\) \{([\s\S]*?)\n\}/)?.[1];
   assert.ok(body, 'native device-list function is present');
+  assert.match(body, /kindle_raw_devices\(&raw, &count\)/);
+  assert.doesNotMatch(source, /LIBMTP_Detect_Raw_Devices/);
   assert.match(body, /device_entry\.vendor_id != 0x1949/);
   assert.doesNotMatch(body, /LIBMTP_Open_Raw_Device_Uncached|LIBMTP_Get_Folder_List|documents_folder/);
   assert.match(source, /Kindle MTP open failed/);
   assert.match(source, /Kindle Documents folder could not be read during preview/);
+});
+
+test('refreshing Kindle devices never opens a preview or starts a transfer', async () => {
+  const source = await fs.readFile(path.join(__dirname, '../../../web/index.html'), 'utf8');
+  const body = source.split('async function refreshKindleOffer() {')[1]?.split("desktopKindleDevice.addEventListener('change'")[0];
+  assert.ok(body, 'Kindle device refresh handler is present');
+  assert.match(body, /await desktopBridge\.kindle\.devices\(\)/);
+  assert.doesNotMatch(body, /\.kindle\.(?:preview|transfer)\(/);
+});
+
+test('overlapping refreshes share discovery and a later refresh sees fresh devices', { timeout: 2000 }, async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'bookstr-mtp-refresh-'));
+  let release;
+  let calls = 0;
+  try {
+    await fs.writeFile(path.join(root, 'kindle-mtp'), 'fixture');
+    const transport = new MtpKindles({ platform: 'darwin', resourcesPath: root, stagingRoot: root,
+      runner: async () => {
+        calls++;
+        if (calls === 1) await new Promise(resolve => { release = resolve; });
+        return { stdout: calls === 1 ? '[{"id":"1-2","name":"Kindle"}]' : '[]' };
+      } });
+    const first = transport.devices();
+    const second = transport.devices();
+    while (!release) await new Promise(resolve => setImmediate(resolve));
+    assert.equal(calls, 1);
+    release();
+    assert.deepEqual(await first, await second);
+    assert.equal(calls, 1);
+    assert.deepEqual(await transport.devices(), []);
+    assert.equal(calls, 2);
+    transport.runner = async () => { calls++; throw new Error('disconnected'); };
+    const originalWrite = process.stderr.write;
+    process.stderr.write = () => true;
+    try { assert.deepEqual(await transport.devices(), []); }
+    finally { process.stderr.write = originalWrite; }
+    assert.equal(transport.discovery, null);
+    transport.runner = async () => { calls++; return { stdout: '[{"id":"1-3"}]' }; };
+    assert.equal((await transport.devices())[0].helperId, '1-3');
+    assert.equal(calls, 4);
+  } finally { await fs.rm(root, { recursive: true, force: true }); }
 });
 
 test('mounted Kindle refuses low space and never overwrites a destination', async () => {
@@ -226,11 +269,20 @@ test('comic transfer conversion and transfer copy failures are reported', async 
     assert.match((await missingConverter.localBooks()).skipped[0].reason, /Comic PDF conversion is unavailable/);
     await assert.rejects(() => missingConverter.localBooks('comic'), /Comic PDF conversion is unavailable/);
 
+    const conversionProgress = [];
     const sync = new KindleSync({ store, resolveFile: async () => ({ filePath: source }), transports: [transport],
-      comicConverter: { convert: async () => ({ path: converted, sha256: digest('converted PDF'), size: 13 }) } });
+      comicConverter: { convert: async (_filePath, _sha256, onProgress) => {
+        onProgress({ percent: 50 });
+        return { path: converted, sha256: digest('converted PDF'), size: 13 };
+      } },
+      onProgress: progress => conversionProgress.push(progress) });
     const local = await sync.localBooks();
     assert.equal(local.books[0].extension, 'pdf');
     assert.equal(local.books[0].path, converted);
+    assert.deepEqual(conversionProgress, [
+      { phase: 'converting', bookId: 'comic', title: 'Comic.cbz' },
+      { percent: 50, phase: 'converting', bookId: 'comic', title: 'Comic.cbz' },
+    ]);
     const transfer = await sync.transfer('device');
     assert.deepEqual(transfer.errors, [{ bookId: 'comic', title: 'Comic.cbz', error: 'copy rejected' }]);
   } finally { await fs.rm(root, { recursive: true, force: true }); }
@@ -269,6 +321,7 @@ test('selected Kindle book IDs are validated and transferred through withSession
       maxDepth = Math.max(maxDepth, sessionDepth);
       try { return await operation(); } finally { sessionDepth -= 1; }
     },
+    ensureSpace(bytes) { this.requiredSpace = bytes; },
     async copy(_device, book) { this.copied.push(book.bookId); },
   };
   try {
@@ -278,6 +331,7 @@ test('selected Kindle book IDs are validated and transferred through withSession
     const result = await sync.transfer('device', ['keep']);
     assert.deepEqual(result.transferred, ['keep']);
     assert.deepEqual(transport.copied, ['keep']);
+    assert.equal(transport.requiredSpace, Buffer.byteLength('selected PDF'));
     assert.equal(maxDepth, 2);
   } finally { await fs.rm(root, { recursive: true, force: true }); }
 });
