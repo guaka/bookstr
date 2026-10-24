@@ -15,4 +15,6 @@ ignoredBuiltDependencies:
   - fsevents
 
 patchedDependencies:
+  # Preserve hoisted transitive versions before accepting package overrides.
+  app-builder-lib@26.15.3: patches/app-builder-lib@26.15.3.patch
   node-datachannel@0.32.3: patches/node-datachannel@0.32.3.patch
