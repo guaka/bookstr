@@ -6149,7 +6149,7 @@
           }
           const actions = document.createElement('div');
           actions.className = 'desktop-download-job-actions';
-          if (jobStatus === 'failed') {
+          if (['failed', 'stopped'].includes(jobStatus)) {
             const retry = document.createElement('button');
             retry.type = 'button';
             retry.textContent = 'Retry';
@@ -6160,7 +6160,26 @@
               catch (error) { state.textContent = error?.message || String(error); }
               await renderDesktopDownloads();
             });
-            actions.append(retry);
+            const remove = document.createElement('button');
+            remove.type = 'button';
+            remove.className = 'icon-btn';
+            remove.setAttribute('aria-label', `Delete ${job.title || 'book'} from Downloads`);
+            remove.title = 'Delete download';
+            remove.innerHTML = '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7M14 10v7"/></svg>';
+            remove.addEventListener('click', async () => {
+              remove.disabled = true;
+              retry.disabled = true;
+              try {
+                await desktopBridge.library.removeDownload(job.bookId);
+                await refreshDesktopDownloadStates();
+                await renderDesktopDownloads();
+              } catch (error) {
+                state.textContent = error?.message || String(error);
+                remove.disabled = false;
+                retry.disabled = false;
+              }
+            });
+            actions.append(retry, remove);
           }
           if (['ready', 'seeding'].includes(jobStatus)) {
             const read = document.createElement('button');

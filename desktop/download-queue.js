@@ -80,6 +80,16 @@ class DownloadQueue {
     return this.store.downloads().find(item => item.bookId === prepared.bookId);
   }
 
+  remove(bookId) {
+    if (this.closed) throw new Error('download queue is closed');
+    if (this.activeJobs.has(bookId) || this.pending.some(job => job.bookId === bookId)) {
+      throw new Error('This download is still active.');
+    }
+    const removed = this.store.removeDownload(bookId);
+    if (removed) this.notifyUpdate();
+    return removed;
+  }
+
   async retry(bookId) {
     let request = this.store.downloadRequest(bookId);
     if (!request) {

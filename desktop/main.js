@@ -1359,6 +1359,7 @@ function setupIpcHandlers() {
     resolveRegisteredLibraryFile,
   ));
   ipcMain.handle('bookstr-desktop-library-enqueue', (_event, request) => getDownloadQueue().enqueue(request));
+  ipcMain.handle('bookstr-desktop-library-remove-download', (_event, bookId) => getDownloadQueue().remove(bookId));
   ipcMain.handle('bookstr-desktop-library-retry-download', (_event, bookId) => getDownloadQueue().retry(bookId));
   ipcMain.handle('bookstr-desktop-kindle-devices', () => getKindleSync().devices());
   ipcMain.handle('bookstr-desktop-kindle-presence', (_event, id) => getKindleSync().presence(String(id || '')));

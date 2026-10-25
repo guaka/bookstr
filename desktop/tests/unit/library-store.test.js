@@ -87,3 +87,26 @@ test('source health records cooldowns and clears them after success', () => with
   assert.equal(recovered.cooldownUntil, 0);
   assert.deepEqual(store.sourceHealthAll().map(item => item.sourceId), ['gutenberg:mirror-a']);
 }));
+
+test('deleting stopped downloads persists and preserves local books and files', () => withStore((store, root) => {
+  for (const status of ['failed', 'stopped', 'downloading', 'queued', 'ready', 'seeding']) {
+    store.upsertBook({ id: status, title: status });
+    store.setDownload({ bookId: status, status });
+    store.saveDownloadRequest(status, { kind: 'libgen', record: { md5: 'a'.repeat(32) } });
+  }
+  store.registerLibraryFile({ bookId: 'failed', relativePath: 'kept.pdf', size: 4 });
+  const file = path.join(root, 'files', 'kept.pdf');
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, 'keep');
+  assert.equal(store.removeDownload('failed'), true);
+  assert.equal(store.removeDownload('stopped'), true);
+  assert.equal(store.removeDownload('missing'), false);
+  assert.equal(store.downloadRequest('failed'), null);
+  assert.equal(store.getBook('failed').title, 'failed');
+  assert.equal(store.libraryFile('failed').relativePath, 'kept.pdf');
+  assert.equal(fs.readFileSync(file, 'utf8'), 'keep');
+  for (const status of ['downloading', 'queued', 'ready', 'seeding']) assert.throws(() => store.removeDownload(status), /Only failed or stopped/);
+  const reopened = new LibraryStore({ dbPath: path.join(root, 'library.sqlite'), libraryRoot: path.join(root, 'files') });
+  try { assert.equal(reopened.downloads().some(job => ['failed', 'stopped'].includes(job.bookId)), false); }
+  finally { reopened.close(); }
+}));

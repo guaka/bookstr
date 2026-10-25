@@ -99,6 +99,7 @@ export interface DesktopBridge {
     onAcquisitionProgress(callback: DesktopCallback): Unsubscribe;
     downloads(): Promise<unknown>;
     enqueue(request: DesktopOptions): Promise<unknown>;
+    removeDownload(bookId: string): Promise<boolean>;
     retryDownload(bookId: string): Promise<unknown>;
     onDownloadsChanged(callback: () => void): Unsubscribe;
     linkedFolders(): Promise<unknown>;
