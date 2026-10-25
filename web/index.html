@@ -2492,6 +2492,7 @@
       const desktopDownloadsPane = document.getElementById('downloads-tab');
       const desktopDownloadsSummary = document.getElementById('desktop-downloads-summary');
       let desktopHiddenCompletedIds = new Set();
+      let desktopDownloadsRenderGeneration = 0;
       let desktopDownloadEntryNeedsSnapshot = false;
       const desktopDownloadsList = document.getElementById('desktop-downloads-list');
       const desktopDownloadsNotice = document.getElementById('desktop-downloads-notice');
@@ -6108,7 +6109,9 @@
 
       async function renderDesktopDownloads() {
         if (!isDesktopMode || !desktopBridge?.library?.downloads) return;
+        const generation = ++desktopDownloadsRenderGeneration;
         const allJobs = await desktopBridge.library.downloads();
+        if (generation !== desktopDownloadsRenderGeneration) return;
         if (desktopDownloadEntryNeedsSnapshot) {
           desktopHiddenCompletedIds = new Set(allJobs.filter(job => ['ready', 'seeding'].includes(String(job.status).toLowerCase())).map(job => job.bookId));
           desktopDownloadEntryNeedsSnapshot = false;
@@ -6215,14 +6218,15 @@
             if (!resolved) throw new Error('No downloadable edition matched this book.');
             edition = BookMetadata.libgenTorrentMetadataForBook(resolved);
           }
+          let queuedDownload;
           if (edition) {
-            await desktopBridge.library.enqueue({ kind: 'libgen', record: {
+            queuedDownload = await desktopBridge.library.enqueue({ kind: 'libgen', record: {
               ...resolved, md5: edition.md5, libgenId: edition.libgenId,
             } });
           } else {
             const provider = String(book.source || '').toLowerCase();
             const recordId = String(book.sourceNativeId || book.md5 || '').replace(/^[^:]+:/, '');
-            await desktopBridge.library.enqueue({ kind: 'provider', record: {
+            queuedDownload = await desktopBridge.library.enqueue({ kind: 'provider', record: {
               provider, recordId, title: book.title, authors: book.authors,
               languages: [book.language].flat().filter(Boolean), year: book.year, isbn: book.isbn,
               ...BookMetadata.normalizeRights(book),
@@ -6230,6 +6234,7 @@
                 size: book.filesize, availability: 'open' }],
             } });
           }
+          if (queuedDownload?.bookId) desktopHiddenCompletedIds.delete(queuedDownload.bookId);
           desktopDownloadsNotice.textContent = '';
           await refreshDesktopDownloadStates();
           await renderDesktopDownloads();
