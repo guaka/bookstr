@@ -77,3 +77,35 @@ for (const action of ['title', 'plus']) {
     }
   });
 }
+
+test('a real-shaped Libcat record without a torrent edition remains in Downloads with retry and delete', async () => {
+  const output = path.join(__dirname, '../../test-results');
+  fs.mkdirSync(output, { recursive: true });
+  const profile = fs.mkdtempSync(path.join(output, 'catalog-unavailable-user-data-'));
+  const app = await electron.launch({ args: [path.join(__dirname, '../..'), `--user-data-dir=${profile}`] });
+  try {
+    const page = await app.firstWindow();
+    await expect(page.getByRole('button', { name: 'Search, Command 3' })).toBeVisible();
+    await page.evaluate(() => {
+      globalThis.catalogResolveAttempts = 0;
+      resolvePrivateTorrentBook = async () => {
+        globalThis.catalogResolveAttempts++;
+        throw new Error('No downloadable edition matched this book.');
+      };
+      queryInput.value = 'jujutsu 12';
+      activateTab('search');
+      renderResults(normalizeSearchBooks({ books: [{ md5: 'e14c173dc198a3524d3fe65e92572ac9',
+        title: 'Jujutsu Kaisen vol. 12', extension: 'epub', id: 0, collection: 'zlib' }] }, 'libvault'));
+    });
+    await page.locator('#results .result-title').filter({ hasText: 'Jujutsu Kaisen vol. 12' }).click();
+    const row = page.locator('[data-download-id="e14c173dc198a3524d3fe65e92572ac9"]');
+    await expect(row).toContainText('No downloadable edition matched this book.');
+    await expect(row.getByRole('button', { name: 'Retry Jujutsu Kaisen vol. 12', exact: true })).toBeVisible();
+    await row.getByRole('button', { name: 'Retry Jujutsu Kaisen vol. 12', exact: true }).click();
+    await expect.poll(() => page.evaluate(() => globalThis.catalogResolveAttempts)).toBe(2);
+    await expect(row).toContainText('No downloadable edition matched this book.');
+    expect(await page.evaluate(async () => (await bookstrDesktop.library.downloads()).find(row => row.bookId === 'e14c173dc198a3524d3fe65e92572ac9').status)).toBe('failed');
+    await row.getByRole('button', { name: 'Delete Jujutsu Kaisen vol. 12 from Downloads', exact: true }).click();
+    await expect(row).toHaveCount(0);
+  } finally { await app.close(); }
+});

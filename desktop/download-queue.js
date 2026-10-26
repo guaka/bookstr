@@ -6,11 +6,11 @@ const MD5 = /^[a-f0-9]{32}$/;
 const FORMATS = new Set(['epub', 'pdf', 'fb2', 'cbz', 'cbr']);
 const MAX_CONCURRENT_ACQUISITIONS = 100;
 
-function libgenRequest(book) {
+function libgenRequest(book, allowMissingEdition = false) {
   const md5 = String(book?.md5 || '').trim().toLowerCase();
-  const libgenId = Number(book?.libgenId || book?.libgen_id || book?.sourceNativeId);
+  const libgenId = allowMissingEdition ? 0 : Number(book?.libgenId || book?.libgen_id || book?.sourceNativeId || 0);
   const extension = String(book?.extension || book?.format || '').trim().toLowerCase();
-  if (!MD5.test(md5) || !Number.isSafeInteger(libgenId) || libgenId <= 0 || !FORMATS.has(extension)) {
+  if (!MD5.test(md5) || !Number.isSafeInteger(libgenId) || libgenId < 0 || (!allowMissingEdition && libgenId === 0) || !FORMATS.has(extension)) {
     throw new TypeError('A Libcat download requires an MD5, edition number, and supported format.');
   }
   return {
@@ -51,6 +51,11 @@ class DownloadQueue {
 
   async prepare(request) {
     if (!request || typeof request !== 'object' || Array.isArray(request)) throw new TypeError('Invalid download request.');
+    if (request.kind === 'catalog') {
+      const record = libgenRequest(request.record, true);
+      record.resolutionError = String(request.record.resolutionError || 'No downloadable edition is available for this catalog record.').slice(0, 1000);
+      return { bookId: record.md5, fields: { ...record, id: record.md5 }, request: { kind: 'catalog', record } };
+    }
     if (request.kind === 'libgen') {
       const record = libgenRequest(request.record);
       return { bookId: record.md5, fields: { ...record, id: record.md5 }, request: { kind: 'libgen', record } };
@@ -73,9 +78,11 @@ class DownloadQueue {
     const existing = this.store.downloads().find(item => item.bookId === prepared.bookId);
     if (existing && (ACTIVE.has(existing.status) || COMPLETE.has(existing.status))) return existing;
     this.store.upsertBook(prepared.fields);
-    this.store.setDownload({ bookId: prepared.bookId, status: 'queued', source: prepared.request.kind });
+    const unavailable = prepared.request.kind === 'catalog';
+    this.store.setDownload({ bookId: prepared.bookId, status: unavailable ? 'failed' : 'queued', source: prepared.request.kind,
+      error: unavailable ? prepared.request.record.resolutionError : '' });
     this.store.saveDownloadRequest(prepared.bookId, prepared.request);
-    this.schedule(prepared.bookId, prepared.request);
+    if (!unavailable) this.schedule(prepared.bookId, prepared.request);
     this.onUpdate();
     return this.store.downloads().find(item => item.bookId === prepared.bookId);
   }

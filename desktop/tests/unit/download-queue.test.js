@@ -332,3 +332,23 @@ test('queue deletes only inactive entries and notifies after removal', async () 
   await queue.close();
   assert.throws(() => queue.remove('failed'), /closed/);
 });
+
+test('unavailable catalog selections remain visible as durable, removable failures', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'bookstr-catalog-failed-'));
+  const store = new LibraryStore({ dbPath: path.join(root, 'library.sqlite'), libraryRoot: root });
+  try {
+    const queue = new DownloadQueue({ store, acquisitionManager: {} });
+    const record = { ...book, libgenId: 0, sourceNativeId: 'zlib-metadata', collection: 'zlib', resolutionError: 'No downloadable edition matched this book.' };
+    const failed = await queue.enqueue({ kind: 'catalog', record });
+    assert.equal(failed.status, 'failed');
+    assert.equal(failed.source, 'catalog');
+    assert.match(failed.error, /No downloadable edition/);
+    assert.equal(store.downloadRequest(book.md5).kind, 'catalog');
+    assert.equal(queue.activeJobs.size, 0);
+    assert.equal(store.resumableDownloads().length, 0);
+    assert.equal(queue.remove(book.md5), true);
+    const fallback = await queue.enqueue({ kind: 'catalog', record: { ...record, resolutionError: '' } });
+    assert.match(fallback.error, /No downloadable edition is available/);
+    await assert.rejects(() => queue.enqueue({ kind: 'catalog', record: { ...record, md5: 'invalid' } }), /requires an MD5/);
+  } finally { store.close(); await fs.rm(root, { recursive: true, force: true }); }
+});
