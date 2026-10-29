@@ -56,6 +56,7 @@ private data class IslandState(
     val bookId: String = "",
     val language: String = "en",
     val rate: Float = SpeechSettings.DEFAULT_RATE,
+    val message: String? = null,
 )
 
 /** App-wide compact playback controls. Mount once in MainActivity and over reader content. */
@@ -83,6 +84,7 @@ fun NarrationIsland(
                     language = intent.getStringExtra(NarrationService.EXTRA_LANGUAGE).orEmpty().ifBlank { "en" },
                     rate = intent.getFloatExtra(NarrationService.EXTRA_RATE, SpeechSettings.DEFAULT_RATE)
                         .coerceIn(SpeechSettings.MINIMUM_RATE, SpeechSettings.MAXIMUM_RATE),
+                    message = intent.getStringExtra(NarrationService.EXTRA_MESSAGE),
                 )
             }
         }
@@ -169,6 +171,14 @@ fun NarrationIsland(
                 IconButton(onClick = { NarrationService.stop(context) }, modifier = Modifier.testTag("narration.stop")) {
                     Icon(Icons.Default.Close, contentDescription = "Stop narration")
                 }
+              }
+              state.message?.takeIf(String::isNotBlank)?.let { message ->
+                  Text(
+                      message,
+                      color = MaterialTheme.colorScheme.error,
+                      style = MaterialTheme.typography.bodySmall,
+                      modifier = Modifier.testTag("narration.error"),
+                  )
               }
               Slider(
                   value = state.rate,

@@ -100,5 +100,18 @@ class NarrationIslandTest {
         compose.onNodeWithContentDescription("Pause narration").assertExists()
         compose.onNodeWithTag("narration.openBook").performClick()
         assertEquals(listOf("fixture-id", "Fixture book", "A. Author"), opened)
+        context.sendBroadcast(
+            Intent(NarrationService.ACTION_EVENT).setPackage(context.packageName)
+                .putExtra(NarrationService.EXTRA_SESSION_ACTIVE, true)
+                .putExtra(NarrationService.EXTRA_IS_PLAYING, false)
+                .putExtra(NarrationService.EXTRA_IS_PREPARING, false)
+                .putExtra(NarrationService.EXTRA_BOOK_TITLE, "Fixture book")
+                .putExtra(NarrationService.EXTRA_MESSAGE, "Voice could not read this passage."),
+        )
+        compose.waitUntil(5_000) {
+            compose.onAllNodesWithTag("narration.error").fetchSemanticsNodes().isNotEmpty()
+        }
+        compose.onNodeWithText("Voice could not read this passage.").assertExists()
+        compose.onNodeWithTag("narration.preparing").assertDoesNotExist()
     }
 }

@@ -294,7 +294,12 @@ class NarrationService : MediaBrowserServiceCompat(), TextToSpeech.OnInitListene
                     stopNarration(removeNotification = true)
                 }
             }
-            ACTION_SYNC -> publishState(offset = currentRangeStart, length = currentMarkerLength())
+            ACTION_SYNC -> publishState(
+                requestText = intent.getBooleanExtra(EXTRA_READER_READY, false) &&
+                    sessionActive && isPlaying && speechText.isBlank(),
+                offset = currentRangeStart,
+                length = currentMarkerLength(),
+            )
             ACTION_PARAGRAPH -> {
                 currentParagraph = intent.getStringExtra(EXTRA_PARAGRAPH).orEmpty().take(600)
                 updateMetadata()
@@ -1058,6 +1063,7 @@ class NarrationService : MediaBrowserServiceCompat(), TextToSpeech.OnInitListene
         private const val EXTRA_PARAGRAPH = "paragraph"
         private const val EXTRA_CHUNKS = "chunks"
         private const val EXTRA_TARGET_BOOK_ID = "target_book_id"
+        private const val EXTRA_READER_READY = "reader_ready"
         private const val CHANNEL_ID = "bookstr-narration"
         private const val NOTIFICATION_ID = 4107
         private const val SESSION_TAG = "BookstrNarration"
@@ -1127,9 +1133,13 @@ class NarrationService : MediaBrowserServiceCompat(), TextToSpeech.OnInitListene
             context.startService(Intent(context, NarrationService::class.java).setAction(ACTION_TOGGLE))
         }
 
-        fun sync(context: Context) {
+        fun sync(context: Context, requestTextIfPending: Boolean = false) {
             if (running) {
-                context.startService(Intent(context, NarrationService::class.java).setAction(ACTION_SYNC))
+                context.startService(
+                    Intent(context, NarrationService::class.java)
+                        .setAction(ACTION_SYNC)
+                        .putExtra(EXTRA_READER_READY, requestTextIfPending),
+                )
             }
         }
 

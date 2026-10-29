@@ -241,7 +241,7 @@ class ReaderActivity : ComponentActivity() {
                         onReaderReady = {
                             readerLoading = false
                             webView?.evaluateJavascript(speechRequestScript(notifyNative = false), null)
-                            NarrationService.sync(this@ReaderActivity)
+                            NarrationService.sync(this@ReaderActivity, requestTextIfPending = true)
                         },
                         onMetadata = { title, author, year, rightsStatement ->
                             title?.takeIf(String::isNotBlank)?.let { bookTitle = it }

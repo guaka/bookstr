@@ -18,6 +18,47 @@ import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 
 class NeuralNarrationServiceTest {
+    @Test fun readerReadySyncRepeatsAnUnansweredNarrationTextRequest() {
+        val app = ApplicationProvider.getApplicationContext<BookstrApp>()
+        val firstRequest = CountDownLatch(1)
+        val repeatedRequest = CountDownLatch(1)
+        val ordinarySync = CountDownLatch(1)
+        val finished = CountDownLatch(1)
+        val requestCount = AtomicInteger(0)
+        val receiver = object : BroadcastReceiver() {
+            override fun onReceive(context: Context, intent: Intent) {
+                if (intent.getStringExtra(NarrationService.EXTRA_BOOK_ID) == "reader-ready-test" &&
+                    intent.getBooleanExtra(NarrationService.EXTRA_REQUEST_TEXT, false)
+                ) {
+                    if (requestCount.incrementAndGet() == 1) firstRequest.countDown()
+                    else repeatedRequest.countDown()
+                } else if (intent.getStringExtra(NarrationService.EXTRA_BOOK_ID) == "reader-ready-test" &&
+                    intent.getBooleanExtra(NarrationService.EXTRA_SESSION_ACTIVE, false)
+                ) {
+                    ordinarySync.countDown()
+                } else if (intent.getStringExtra(NarrationService.EXTRA_BOOK_ID) == "reader-ready-test") {
+                    finished.countDown()
+                }
+            }
+        }
+        app.registerReceiver(receiver, IntentFilter(NarrationService.ACTION_EVENT), Context.RECEIVER_NOT_EXPORTED)
+        try {
+            ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+                scenario.onActivity { NarrationService.toggle(it, "reader-ready-test", "Portuguese fixture", null, null) }
+                assertTrue("First narration text request was not sent", firstRequest.await(10, TimeUnit.SECONDS))
+                scenario.onActivity { NarrationService.sync(it) }
+                assertTrue("Ordinary sync state was not sent", ordinarySync.await(10, TimeUnit.SECONDS))
+                assertEquals(1, requestCount.get())
+                scenario.onActivity { NarrationService.sync(it, requestTextIfPending = true) }
+                assertTrue("Reader-ready sync did not retry the text request", repeatedRequest.await(10, TimeUnit.SECONDS))
+                scenario.onActivity { NarrationService.stop(it) }
+                assertTrue("Narration did not stop", finished.await(10, TimeUnit.SECONDS))
+            }
+        } finally {
+            app.unregisterReceiver(receiver)
+        }
+    }
+
     @Test fun narrationRateActionPersistsAndPublishesTheSelectedLanguageRate() {
         val app = ApplicationProvider.getApplicationContext<BookstrApp>()
         val observed = CountDownLatch(1)
@@ -60,9 +101,11 @@ class NeuralNarrationServiceTest {
                     intent.getStringExtra(NarrationService.EXTRA_BOOK_ID) == "stop-if-different-test"
                 ) kept.countDown()
                 if (!intent.getBooleanExtra(NarrationService.EXTRA_SESSION_ACTIVE, true)) {
-                    stopEvents.incrementAndGet()
                     stopped.countDown()
-                    if (expectDifferentBookStop.get()) differentBookStopped.countDown()
+                    if (intent.getStringExtra(NarrationService.EXTRA_BOOK_ID) == "stop-if-different-test") {
+                        stopEvents.incrementAndGet()
+                        if (expectDifferentBookStop.get()) differentBookStopped.countDown()
+                    }
                 }
             }
         }
