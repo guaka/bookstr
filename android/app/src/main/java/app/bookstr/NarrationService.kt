@@ -830,12 +830,12 @@ class NarrationService : MediaBrowserServiceCompat(), TextToSpeech.OnInitListene
         val byline = if (bookAuthor.isBlank()) bookTitle else "$bookTitle — $bookAuthor"
         val builder = MediaMetadataCompat.Builder()
             .putString(MediaMetadataCompat.METADATA_KEY_MEDIA_ID, bookId)
-            .putString(MediaMetadataCompat.METADATA_KEY_TITLE, paragraphLines?.first ?: bookTitle)
-            .putString(MediaMetadataCompat.METADATA_KEY_ARTIST, paragraphLines?.second ?: bookAuthor)
-            .putString(MediaMetadataCompat.METADATA_KEY_ALBUM, if (paragraphLines == null) "Bookstr" else byline)
-            .putString(MediaMetadataCompat.METADATA_KEY_DISPLAY_TITLE, paragraphLines?.first ?: bookTitle)
-            .putString(MediaMetadataCompat.METADATA_KEY_DISPLAY_SUBTITLE, paragraphLines?.second ?: bookAuthor)
-            .putString(MediaMetadataCompat.METADATA_KEY_DISPLAY_DESCRIPTION, byline)
+            .putString(MediaMetadataCompat.METADATA_KEY_TITLE, bookTitle)
+            .putString(MediaMetadataCompat.METADATA_KEY_ARTIST, bookAuthor)
+            .putString(MediaMetadataCompat.METADATA_KEY_ALBUM, paragraphLines?.first ?: "Bookstr")
+            .putString(MediaMetadataCompat.METADATA_KEY_DISPLAY_TITLE, bookTitle)
+            .putString(MediaMetadataCompat.METADATA_KEY_DISPLAY_SUBTITLE, bookAuthor)
+            .putString(MediaMetadataCompat.METADATA_KEY_DISPLAY_DESCRIPTION, paragraphLines?.second ?: byline)
             // Platform media type 2 denotes an audiobook; MediaMetadataCompat does not expose it.
             .putLong("android.media.metadata.MEDIA_TYPE", 2L)
         artwork?.let {

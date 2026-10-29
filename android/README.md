@@ -64,6 +64,12 @@ queued downloads appear first, and completed rows open when tapped. In a reader,
 tap the bottom edge to reveal the four app destinations.
 Tap an author's name in the EPUB, PDF, or FB2 header to search for that author.
 
+While TTS is active, Android's media controls show the current book title and
+author on the lock screen. The current spoken paragraph is secondary metadata.
+Silent reading does not create a media session. On GrapheneOS, check
+**Settings → Sound & vibration → Media → Show media on lock screen** if the
+controls are absent even while TTS is playing.
+
 ### Update over Wi-Fi
 
 On the tablet, enable **Developer options → Wireless debugging**, then choose
