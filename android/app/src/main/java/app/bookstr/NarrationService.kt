@@ -332,7 +332,12 @@ class NarrationService : MediaBrowserServiceCompat(), TextToSpeech.OnInitListene
                     Log.w(LOG_TAG, "Ignored stale reader sync request.")
                     return Service.START_STICKY
                 }
-                publishState(offset = currentRangeStart, length = currentMarkerLength())
+                publishState(
+                    requestText = intent.getBooleanExtra(EXTRA_READER_READY, false) &&
+                        sessionActive && isPlaying && speechText.isBlank(),
+                    offset = currentRangeStart,
+                    length = currentMarkerLength(),
+                )
             }
             ACTION_REQUEST_READER_TEXT -> {
                 val requestedBookId = intent.getStringExtra(EXTRA_BOOK_ID).orEmpty()
@@ -961,12 +966,12 @@ class NarrationService : MediaBrowserServiceCompat(), TextToSpeech.OnInitListene
         val byline = if (bookAuthor.isBlank()) bookTitle else "$bookTitle — $bookAuthor"
         val builder = MediaMetadataCompat.Builder()
             .putString(MediaMetadataCompat.METADATA_KEY_MEDIA_ID, bookId)
-            .putString(MediaMetadataCompat.METADATA_KEY_TITLE, paragraphLines?.first ?: bookTitle)
-            .putString(MediaMetadataCompat.METADATA_KEY_ARTIST, paragraphLines?.second ?: bookAuthor)
-            .putString(MediaMetadataCompat.METADATA_KEY_ALBUM, if (paragraphLines == null) "Bookstr" else byline)
-            .putString(MediaMetadataCompat.METADATA_KEY_DISPLAY_TITLE, paragraphLines?.first ?: bookTitle)
-            .putString(MediaMetadataCompat.METADATA_KEY_DISPLAY_SUBTITLE, paragraphLines?.second ?: bookAuthor)
-            .putString(MediaMetadataCompat.METADATA_KEY_DISPLAY_DESCRIPTION, byline)
+            .putString(MediaMetadataCompat.METADATA_KEY_TITLE, bookTitle)
+            .putString(MediaMetadataCompat.METADATA_KEY_ARTIST, bookAuthor)
+            .putString(MediaMetadataCompat.METADATA_KEY_ALBUM, paragraphLines?.first ?: "Bookstr")
+            .putString(MediaMetadataCompat.METADATA_KEY_DISPLAY_TITLE, bookTitle)
+            .putString(MediaMetadataCompat.METADATA_KEY_DISPLAY_SUBTITLE, bookAuthor)
+            .putString(MediaMetadataCompat.METADATA_KEY_DISPLAY_DESCRIPTION, paragraphLines?.second ?: byline)
             // Platform media type 2 denotes an audiobook; MediaMetadataCompat does not expose it.
             .putLong("android.media.metadata.MEDIA_TYPE", 2L)
         artwork?.let {
@@ -1192,6 +1197,7 @@ class NarrationService : MediaBrowserServiceCompat(), TextToSpeech.OnInitListene
         private const val EXTRA_PARAGRAPH = "paragraph"
         private const val EXTRA_CHUNKS = "chunks"
         private const val EXTRA_TARGET_BOOK_ID = "target_book_id"
+        private const val EXTRA_READER_READY = "reader_ready"
         private const val CHANNEL_ID = "bookstr-narration"
         private const val NOTIFICATION_ID = 4107
         private const val SESSION_TAG = "BookstrNarration"
@@ -1264,11 +1270,12 @@ class NarrationService : MediaBrowserServiceCompat(), TextToSpeech.OnInitListene
             context.startService(Intent(context, NarrationService::class.java).setAction(ACTION_TOGGLE))
         }
 
-        fun sync(context: Context, requestToken: String? = null, readerBookId: String? = null) {
+        fun sync(context: Context, requestToken: String? = null, readerBookId: String? = null, requestTextIfPending: Boolean = false) {
             if (running) {
                 context.startService(
                     Intent(context, NarrationService::class.java)
                         .setAction(ACTION_SYNC)
+                        .putExtra(EXTRA_READER_READY, requestTextIfPending)
                         .putExtra(ReaderActivity.EXTRA_EXTERNAL_NARRATION_TOKEN, requestToken)
                         .putExtra(EXTRA_BOOK_ID, readerBookId),
                 )

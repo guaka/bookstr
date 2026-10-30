@@ -348,6 +348,7 @@ class ReaderActivity : ComponentActivity() {
                                     this@ReaderActivity,
                                     requestToken = narrationRequestToken,
                                     readerBookId = bookId,
+                                    requestTextIfPending = true,
                                 )
                             }
                         },
