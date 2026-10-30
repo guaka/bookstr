@@ -6,7 +6,7 @@ const fsp = require('node:fs/promises');
 const path = require('node:path');
 const { Readable } = require('node:stream');
 const test = require('node:test');
-const { AcquisitionManager, createProgressThrottle, extensionFor, libgenTorrentMetadataURL } = require('../../acquisition-manager');
+const { AcquisitionManager, createProgressThrottle, extensionFor, libgenTorrentMetadataURL, libgenCollection } = require('../../acquisition-manager');
 const { LibraryImporter } = require('../../library-import');
 const { LibraryStore } = require('../../library-store');
 
@@ -45,6 +45,48 @@ test('1000 torrent progress samples coalesce to at most 11 persistence/IPC updat
   throttle.flush();
   assert.equal(reported.length, 11);
   assert.deepEqual(reported.at(-1), { bytes: 1000 });
+});
+
+test('closing acquisition manager cancels trailing progress and drains torrent jobs', async () => {
+  const root = await fsp.mkdtemp(path.join(__dirname, '.bookstr-acquisition-shutdown-'));
+  let storeClosed = false;
+  const writes = [];
+  const store = {
+    upsertBook(book) { return book; },
+    setDownload(download) {
+      if (storeClosed) throw new Error('database is not open');
+      writes.push(download);
+    },
+  };
+  const importer = new LibraryImporter({ libraryRoot: path.join(root, 'library') });
+  let signalDownloadStarted;
+  const downloadStarted = new Promise(resolve => { signalDownloadStarted = resolve; });
+  const manager = new AcquisitionManager({
+    store,
+    importer,
+    stagingRoot: path.join(root, 'staging'),
+    fetchImpl: async () => ({ ok: true, headers: new Headers({ 'content-length': '14' }), arrayBuffer: async () => Buffer.from('d4:test4:datae') }),
+    torrentBridge: {
+      downloadSelected(_metadata, { signal, onProgress }) {
+        onProgress({ bytes: 1, totalBytes: 10 });
+        onProgress({ bytes: 2, totalBytes: 10 });
+        signalDownloadStarted();
+        return new Promise((_resolve, reject) => {
+          const abort = () => reject(new Error('acquisition aborted'));
+          if (signal.aborted) abort();
+          else signal.addEventListener('abort', abort, { once: true });
+        });
+      },
+    },
+  });
+  const acquisition = manager.acquireLibgen({ md5: 'a'.repeat(32), id: 123, extension: 'epub' });
+  await downloadStarted;
+  await manager.close();
+  await assert.rejects(acquisition, /acquisition manager is closing|acquisition aborted/);
+  storeClosed = true;
+  await new Promise(resolve => setTimeout(resolve, 120));
+  assert.deepEqual(writes.map(write => write.status), ['finding-peers', 'downloading']);
+  await fsp.rm(root, { recursive: true, force: true });
 });
 
 async function withManager(fn) {
@@ -290,6 +332,102 @@ test('startup resumes eligible LibGen seeds gradually instead of all at once', (
   assert.deepEqual(waits, [1500]);
 }));
 
+test('manager shutdown cancels gradual seed resume before it reads or starts later jobs', () => withManager(async ({ manager, store }) => {
+  const records = [
+    { md5: '3'.repeat(32), libgenId: 2412930 },
+    { md5: '4'.repeat(32), libgenId: 2412931 },
+  ];
+  for (const record of records) {
+    store.upsertBook({ id: record.md5, md5: record.md5, title: 'Interrupted', extension: 'epub', sourceNativeId: String(record.libgenId) });
+    store.setDownload({ bookId: record.md5, status: 'queued', source: 'torrent' });
+  }
+  manager.fetch = async () => ({ ok: true, arrayBuffer: async () => Buffer.from('d4:test4:datae') });
+  let waitForSecond = () => {};
+  const secondWait = new Promise(resolve => { waitForSecond = resolve; });
+  manager.sleep = (_milliseconds, signal) => new Promise(resolve => {
+    const finish = () => { signal.removeEventListener('abort', finish); resolve(); };
+    signal.addEventListener('abort', finish, { once: true });
+    waitForSecond();
+  });
+  const started = [];
+  manager.torrentBridge = {
+    downloadSelected(_metadata, { signal }) {
+      started.push('active-transfer');
+      return new Promise((_resolve, reject) => {
+        const abort = () => reject(new Error('acquisition aborted'));
+        if (signal.aborted) abort();
+        else signal.addEventListener('abort', abort, { once: true });
+      });
+    },
+  };
+
+  const resume = manager.resumeLibgenSeeds();
+  await secondWait;
+  await manager.close();
+  await resume;
+  assert.deepEqual(started, []);
+  assert.equal(manager.libgenAcquisitionJobs.size, 0);
+  assert.equal(store.downloads().find(item => item.bookId === records[0].md5).status, 'finding-peers');
+  assert.equal(store.downloads().find(item => item.bookId === records[1].md5).status, 'queued');
+}));
+
+test('manager default seed delay clears its timer when shutdown aborts resume', () => withManager(async ({ manager, store }) => {
+  const records = [
+    { md5: '5'.repeat(32), libgenId: 2412930 },
+    { md5: '6'.repeat(32), libgenId: 2412931 },
+  ];
+  for (const record of records) {
+    store.upsertBook({ id: record.md5, md5: record.md5, title: 'Interrupted', extension: 'epub', sourceNativeId: String(record.libgenId) });
+    store.setDownload({ bookId: record.md5, status: 'queued', source: 'torrent' });
+  }
+  manager.fetch = async (_url, { signal }) => {
+    if (signal.aborted) throw signal.reason;
+    return { ok: true, arrayBuffer: async () => Buffer.from('d4:test4:datae') };
+  };
+  manager.torrentBridge = {
+    downloadSelected(_metadata, { signal }) {
+      return new Promise((_resolve, reject) => signal.addEventListener('abort', () => reject(signal.reason), { once: true }));
+    },
+  };
+
+  const resume = manager.resumeLibgenSeeds();
+  assert.ok(manager.libgenAcquisitionJobs.has(records[0].md5));
+  const startedAt = Date.now();
+  await manager.close();
+  await resume;
+  assert.ok(Date.now() - startedAt < 1000, 'shutdown should not wait for the 1.5 second seed delay');
+  assert.equal(manager.libgenAcquisitionJobs.size, 0);
+}));
+
+test('manager removes a seed returned after shutdown instead of retaining it', () => withManager(async ({ manager, store, root }) => {
+  const md5 = '7'.repeat(32);
+  const seedRoot = path.join(root, 'staging', 'libgen-seeds');
+  const seedFile = path.join(seedRoot, '2412000', md5);
+  await fsp.mkdir(path.dirname(seedFile), { recursive: true });
+  await fsp.writeFile(seedFile, 'seed bytes');
+  store.upsertBook({ id: md5, md5, title: 'Persistent Seed', extension: 'epub', sourceNativeId: '2412930' });
+  store.setDownload({ bookId: md5, status: 'ready', source: 'torrent', bytes: 10, totalBytes: 10 });
+  manager.fetch = async () => ({ ok: true, arrayBuffer: async () => Buffer.from('d4:test4:datae') });
+  let finishSelection;
+  const selected = new Promise(resolve => { finishSelection = resolve; });
+  let selectionStarted;
+  const startSelected = new Promise(resolve => { selectionStarted = resolve; });
+  let removed = 0;
+  const torrent = {};
+  manager.torrentBridge = {
+    downloadSelected: async () => { selectionStarted(); return selected; },
+    async remove(received) { assert.equal(received, torrent); removed += 1; },
+  };
+
+  const resume = manager.resumeLibgenSeeds();
+  await startSelected;
+  const closing = manager.close();
+  finishSelection({ filePath: seedFile, torrent });
+  await Promise.all([resume, closing]);
+  assert.equal(removed, 1);
+  assert.equal(torrent.bookstrSeedingBookIds, undefined);
+}));
+
 test('LibGen acquisition removes torrent data when automatic seeding is disabled', () => withManager(async ({ manager, root }) => {
   const md5 = 'd'.repeat(32);
   const body = Buffer.from('epub bytes');
@@ -489,4 +627,35 @@ test('torrent acquisition destroys a completed torrent when its staged file fail
     acquisitions: [{ format: 'epub', torrent: 'https://example.test/book.torrent', availability: 'open', size: 10, sha256: BOOK_SHA256 }],
   }), /all eligible acquisitions failed/);
   assert.equal(destroyed, 1);
+}));
+
+
+test('LibGen collection routing preserves explicit collections and repairs legacy comic jobs', () => {
+  for (const collection of ['nonfiction', 'fiction', 'comics']) assert.equal(libgenCollection({ collection }), collection);
+  assert.equal(libgenCollection({ collection: 'nonfiction', extension: 'cbr' }), 'nonfiction');
+  assert.equal(libgenCollection({ extension: 'CBR' }), 'comics');
+  assert.equal(libgenCollection({ format: 'cbz' }), 'comics');
+  assert.equal(libgenCollection({ source_url: 'https://example.test/f_1000.torrent' }), 'fiction');
+  assert.equal(libgenCollection({ sourceUrl: 'https://example.test/c_1000.torrent' }), 'comics');
+  assert.equal(libgenCollection({ extension: 'pdf' }), 'nonfiction');
+  assert.equal(libgenCollection(), 'nonfiction');
+  assert.match(libgenTorrentMetadataURL(2521871, '', 'comics'), /libgen_li_comics\/c_2521000.torrent$/);
+  assert.match(libgenTorrentMetadataURL(2521871, '', 'fiction'), /libgen_rs_fic\/f_2521000.torrent$/);
+  assert.match(libgenTorrentMetadataURL(1), /r_000.torrent$/);
+  assert.equal(libgenTorrentMetadataURL(1, 'https://example.test/', 'unknown'), 'https://example.test/r_000.torrent');
+});
+
+test('a failed comic acquisition uses the comics repository and preserves shared partial downloads', () => withManager(async ({ manager, root }) => {
+  const partial = path.join(root, 'staging', 'libgen-seeds', 'other-batch', 'partial');
+  await fsp.mkdir(path.dirname(partial), { recursive: true });
+  await fsp.writeFile(partial, 'keep these bytes');
+  let requested;
+  manager.fetch = async url => {
+    requested = url;
+    return { ok: true, headers: new Headers(), arrayBuffer: async () => Buffer.from('d4:test4:datae') };
+  };
+  manager.torrentBridge = { async downloadSelected() { throw new Error('no peers yet'); } };
+  await assert.rejects(() => manager.acquireLibgen({ md5: 'a'.repeat(32), libgenId: 2521871, extension: 'cbr' }), /no peers yet/);
+  assert.match(requested, /libgen_li_comics\/c_2521000.torrent$/);
+  assert.equal(await fsp.readFile(partial, 'utf8'), 'keep these bytes');
 }));

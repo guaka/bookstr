@@ -8,12 +8,22 @@ import java.io.File
 
 class NarrationServiceContractTest {
     @Test
+    fun readerSpeechResponsesCarryTheActiveRequestToken() {
+        val reader = java.io.File("src/main/java/app/bookstr/ReaderActivity.kt").readText()
+        val speech = reader.substringAfter("private fun speakText(").substringBefore("private fun clearSpeechProgress")
+        assertTrue(speech.contains("ExternalNarrationRequestTokens.isCurrent(narrationRequestToken, bookId)"))
+        assertTrue(speech.contains("requestToken = narrationRequestToken"))
+    }
+
+    @Test
     fun duplicateReaderRequestsBelongToNewestReaderUntilItIsDestroyed() {
         val ownership = NarrationRequestOwnership<Any>()
         val olderReader = Any()
         val newerReader = Any()
 
         ownership.register("book", olderReader)
+        assertTrue(ownership.isOwner("book", olderReader))
+        assertFalse(ownership.isOwner("missing", olderReader))
         ownership.register("book", newerReader)
         assertFalse(ownership.isOwner("book", olderReader))
         assertTrue(ownership.isOwner("book", newerReader))
@@ -22,6 +32,8 @@ class NarrationServiceContractTest {
         assertTrue(ownership.isOwner("book", newerReader))
         ownership.unregister("book", newerReader)
         assertTrue(ownership.isOwner("book", olderReader))
+        ownership.unregister("book", olderReader)
+        assertFalse(ownership.isOwner("book", olderReader))
     }
 
     @Test
@@ -134,6 +146,24 @@ class NarrationServiceContractTest {
     }
 
     @Test
+    fun mediaBrowserPublishesDownloadedBooksAndForegroundReaderLaunchContract() {
+        val service = File("src/main/java/app/bookstr/NarrationService.kt").readText()
+        val reader = File("src/main/java/app/bookstr/ReaderActivity.kt").readText()
+
+        assertTrue(service.contains("BookstrMediaCatalog.isAllowedClient(clientPackageName, packagesForUid)"))
+        assertTrue(service.contains("BookstrMediaCatalog.ROOT_ID"))
+        assertTrue(service.contains("catalogRepository.downloadedBooks(emptyList())"))
+        assertTrue(service.contains("BookstrMediaCatalog.EXTRA_OPEN_READER"))
+        assertTrue(service.contains("PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE"))
+        assertTrue(service.contains("ExternalNarrationRequestTokens.consume("))
+        assertTrue(service.contains("if (mediaId == bookId && bookId.isNotBlank())"))
+        assertTrue(reader.contains("NarrationService.EXTRA_START_NARRATION"))
+        assertTrue(reader.contains("NarrationService.requestReaderPlayback("))
+        assertTrue(reader.contains("if (!startNarrationFromExternalRequest)"))
+        assertTrue(reader.contains("ReaderInitialLocation.resolve("))
+    }
+
+    @Test
     fun serviceSupportsExternalControlsAndWordLevelResume() {
         val source = File("src/main/java/app/bookstr/NarrationService.kt").readText()
 
@@ -169,11 +199,11 @@ class NarrationServiceContractTest {
         assertFalse(source.contains("Intent(this, MainActivity::class.java)"))
         assertTrue(source.contains("PendingIntent.getBroadcast"))
         assertTrue(source.contains("PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE"))
-        assertTrue(
-            Regex("PendingIntent\\.FLAG_UPDATE_CURRENT or PendingIntent\\.FLAG_IMMUTABLE")
-                .findAll(source)
-                .count() == 3,
-        )
+        val readerPendingIntent = source.substringAfter("private fun readerPendingIntent")
+            .substringBefore("private fun playOrRequestText")
+        assertTrue(readerPendingIntent.contains("PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE"))
+        assertTrue(readerPendingIntent.contains("externalNarrationToken = UUID.randomUUID().toString()"))
+        assertTrue(readerPendingIntent.contains("data = Uri.parse(\"bookstr://read/\${book.id}\")"))
         assertTrue(Regex("mediaButtonPendingIntent\\(").findAll(source).count() == 4)
         assertTrue(source.contains("Service.START_STICKY"))
         assertTrue(source.contains("abandonAudioFocusRequest"))

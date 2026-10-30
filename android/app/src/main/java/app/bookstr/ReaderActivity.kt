@@ -90,6 +90,8 @@ import android.webkit.WebResourceResponse
 import java.time.LocalTime
 import java.time.format.DateTimeFormatter
 import java.util.Locale
+import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
 
 internal class NarrationRequestOwnership<T : Any> {
     private val owners = mutableMapOf<String, MutableList<java.lang.ref.WeakReference<T>>>()
@@ -117,6 +119,52 @@ internal class NarrationRequestOwnership<T : Any> {
     }
 }
 
+/** One-use proof that an external narration request came from a launched reader PendingIntent. */
+internal object ExternalNarrationRequestTokens {
+    private val tokens = ConcurrentHashMap<String, String>()
+    private val consumed = ConcurrentHashMap.newKeySet<String>()
+    @Volatile private var currentToken: String? = null
+
+    @Synchronized
+    fun register(token: String?, bookId: String) {
+        if (!token.isNullOrBlank() && bookId.isNotBlank()) {
+            tokens[token] = bookId
+            consumed.remove(token)
+        }
+    }
+
+    @Synchronized
+    fun consume(token: String?, bookId: String): Boolean {
+        if (token.isNullOrBlank() || tokens[token] != bookId || !consumed.add(token)) return false
+        currentToken = token
+        return true
+    }
+
+    @Synchronized
+    fun activate(token: String?, bookId: String): Boolean {
+        if (token.isNullOrBlank() || tokens[token] != bookId) return false
+        currentToken = token
+        return true
+    }
+
+    fun isCurrent(token: String?, bookId: String): Boolean =
+        !token.isNullOrBlank() && currentToken == token && tokens[token] == bookId
+
+    @Synchronized
+    fun revoke(token: String?) {
+        if (!token.isNullOrBlank()) {
+            tokens.remove(token)
+            consumed.remove(token)
+            if (currentToken == token) currentToken = null
+        }
+    }
+}
+
+internal object ReaderInitialLocation {
+    fun resolve(externalNarration: Boolean, savedProgress: String?, requested: String?): String? =
+        if (externalNarration) savedProgress?.takeIf(String::isNotBlank) ?: requested else requested
+}
+
 class ReaderActivity : ComponentActivity() {
     private var webView: WebView? = null
     private var readerLoading by mutableStateOf(true)
@@ -135,6 +183,10 @@ class ReaderActivity : ComponentActivity() {
     private var longPressedText by mutableStateOf("")
     private var knownWords by mutableStateOf<List<String>>(emptyList())
     private var bookId: String = ""
+    private var startNarrationFromExternalRequest = false
+    private var externalNarrationRequestToken: String? = null
+    private var narrationRequestToken: String? = null
+    private var externalReaderProgressLoaded by mutableStateOf(true)
     private var bookTitle by mutableStateOf("")
     private var bookAuthor by mutableStateOf<String?>(null)
     private var bookYear by mutableStateOf<String?>(null)
@@ -170,8 +222,24 @@ class ReaderActivity : ComponentActivity() {
             finish()
             return
         }
+        startNarrationFromExternalRequest = intent.getBooleanExtra(
+            NarrationService.EXTRA_START_NARRATION,
+            false,
+        ) && savedInstanceState?.getBoolean(STATE_NARRATION_REQUEST_HANDLED) != true
+        externalNarrationRequestToken = if (startNarrationFromExternalRequest) {
+            intent.getStringExtra(EXTRA_EXTERNAL_NARRATION_TOKEN)
+        } else {
+            null
+        }
+        narrationRequestToken = externalNarrationRequestToken ?: UUID.randomUUID().toString()
+        ExternalNarrationRequestTokens.register(narrationRequestToken, bookId)
+        externalReaderProgressLoaded = !startNarrationFromExternalRequest
         claimNarrationRequestOwnership()
-        NarrationService.stopIfDifferentBook(this, bookId)
+        // A Books-tab launch is only a candidate until its WebView has loaded the EPUB and
+        // requested its text. Keep the current narration alive while that work is in flight.
+        if (!startNarrationFromExternalRequest) {
+            NarrationService.stopIfDifferentBook(this, bookId)
+        }
         bookTitle = intent.getStringExtra(EXTRA_BOOK_TITLE) ?: "bookstr"
         bookAuthor = intent.getStringExtra(EXTRA_BOOK_AUTHOR)
         bookYear = intent.getStringExtra(EXTRA_BOOK_YEAR)
@@ -214,8 +282,32 @@ class ReaderActivity : ComponentActivity() {
             ContextCompat.RECEIVER_NOT_EXPORTED,
         )
         lifecycleScope.launch {
-            app.catalogRepository.getProgress(bookId)?.let {
+            val savedProgress = app.catalogRepository.getProgress(bookId)
+            savedProgress?.let {
                 readerFurthestProgress = maxOf(it.progression, it.furthestProgression).toFloat()
+            }
+            if (startNarrationFromExternalRequest) {
+                initialCfi = ReaderInitialLocation.resolve(
+                    externalNarration = true,
+                    savedProgress = savedProgress?.cfi,
+                    requested = initialCfi,
+                )
+                lastCfi = initialCfi
+                if (!referenceJump) app.settingsRepository.saveReaderSession(
+                    ReaderSession(
+                        bookId,
+                        bookTitle,
+                        BookFormat.Epub,
+                        author = bookAuthor,
+                        year = bookYear,
+                        locator = lastCfi,
+                        rightsStatus = bookRights.status,
+                        license = bookRights.license,
+                        licenseUrl = bookRights.licenseUrl,
+                        rightsSource = bookRights.source,
+                    ),
+                )
+                externalReaderProgressLoaded = true
             }
             knownWords = app.vocabularyRepository.all()
                 .map { it.word.trim().lowercase() }
@@ -229,7 +321,7 @@ class ReaderActivity : ComponentActivity() {
         setContent {
             BookstrThemeFromSettings(readerTheme = readerTheme) {
                 Box(modifier = Modifier.fillMaxSize()) {
-                    ReaderWebView(
+                    if (externalReaderProgressLoaded) ReaderWebView(
                         onWebViewReady = { webView = it },
                         bookId = bookId,
                         initialCfi = initialCfi,
@@ -241,7 +333,24 @@ class ReaderActivity : ComponentActivity() {
                         onReaderReady = {
                             readerLoading = false
                             webView?.evaluateJavascript(speechRequestScript(notifyNative = false), null)
-                            NarrationService.sync(this@ReaderActivity, requestTextIfPending = true)
+                            if (startNarrationFromExternalRequest) {
+                                startNarrationFromExternalRequest = false
+                                NarrationService.requestReaderPlayback(
+                                    this@ReaderActivity,
+                                    bookId,
+                                    bookTitle,
+                                    bookAuthor,
+                                    bookCoverUrl,
+                                    narrationRequestToken,
+                                )
+                            } else {
+                                NarrationService.sync(
+                                    this@ReaderActivity,
+                                    requestToken = narrationRequestToken,
+                                    readerBookId = bookId,
+                                    requestTextIfPending = true,
+                                )
+                            }
                         },
                         onMetadata = { title, author, year, rightsStatement ->
                             title?.takeIf(String::isNotBlank)?.let { bookTitle = it }
@@ -638,6 +747,9 @@ class ReaderActivity : ComponentActivity() {
         }
         val app = application as BookstrApp
         applyLockScreenPolicy(app.settingsRepository.keepReadingOnLockScreen)
+        narrationRequestToken?.let { token ->
+            NarrationService.sync(this, requestToken = token, readerBookId = bookId)
+        }
     }
 
     override fun onPause() {
@@ -745,10 +857,12 @@ class ReaderActivity : ComponentActivity() {
             title = bookTitle,
             author = bookAuthor,
             coverUrl = bookCoverUrl,
+            requestToken = narrationRequestToken,
         )
     }
 
     private fun speakText(text: String, languageTag: String, chunks: String, exhausted: Boolean = false) {
+        if (!ExternalNarrationRequestTokens.isCurrent(narrationRequestToken, bookId)) return
         val cleanText = text.trim()
         if (cleanText.isBlank()) {
             isSpeaking = false
@@ -770,6 +884,7 @@ class ReaderActivity : ComponentActivity() {
             title = bookTitle,
             author = bookAuthor,
             coverUrl = bookCoverUrl,
+            requestToken = narrationRequestToken,
         )
     }
 
@@ -779,8 +894,17 @@ class ReaderActivity : ComponentActivity() {
 
     override fun onDestroy() {
         runCatching { unregisterReceiver(narrationReceiver) }
+        ExternalNarrationRequestTokens.revoke(narrationRequestToken)
         releaseNarrationRequestOwnership()
         super.onDestroy()
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        outState.putBoolean(
+            STATE_NARRATION_REQUEST_HANDLED,
+            !startNarrationFromExternalRequest,
+        )
+        super.onSaveInstanceState(outState)
     }
 
     private fun claimNarrationRequestOwnership() {
@@ -854,6 +978,7 @@ class ReaderActivity : ComponentActivity() {
         private const val EXTRA_INITIAL_CFI = "initial_cfi"
         private const val EXTRA_HIGHLIGHT_CFI = "highlight_cfi"
         private const val EXTRA_THEME = "theme"
+        internal const val EXTRA_EXTERNAL_NARRATION_TOKEN = "app.bookstr.extra.EXTERNAL_NARRATION_TOKEN"
 
         internal fun speechChunks(text: String, languageTag: String = "en"): List<String> {
             val engineLimit = (TextToSpeech.getMaxSpeechInputLength() - 256).coerceAtLeast(1_000)
@@ -968,6 +1093,8 @@ class ReaderActivity : ComponentActivity() {
             license: String? = null,
             licenseUrl: String? = null,
             rightsSource: String? = null,
+            startNarration: Boolean = false,
+            externalNarrationToken: String? = null,
         ): Intent =
             Intent(context, ReaderActivity::class.java).apply {
                 putExtra(EXTRA_BOOK_ID, bookId)
@@ -979,10 +1106,14 @@ class ReaderActivity : ComponentActivity() {
                 putExtra(EXTRA_LICENSE_URL, licenseUrl)
                 putExtra(EXTRA_RIGHTS_SOURCE, rightsSource)
                 putExtra(EXTRA_BOOK_COVER_URL, coverUrl)
+                putExtra(NarrationService.EXTRA_START_NARRATION, startNarration)
+                putExtra(EXTRA_EXTERNAL_NARRATION_TOKEN, externalNarrationToken)
                 putExtra(EXTRA_INITIAL_CFI, initialCfi)
                 putExtra(EXTRA_HIGHLIGHT_CFI, highlightCfi)
                 putExtra(EXTRA_THEME, theme.key)
             }
+
+        private const val STATE_NARRATION_REQUEST_HANDLED = "reader.externalNarrationHandled"
     }
 }
 

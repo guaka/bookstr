@@ -99,6 +99,7 @@ export interface DesktopBridge {
     onAcquisitionProgress(callback: DesktopCallback): Unsubscribe;
     downloads(): Promise<unknown>;
     enqueue(request: DesktopOptions): Promise<unknown>;
+    removeDownload(bookId: string): Promise<boolean>;
     retryDownload(bookId: string): Promise<unknown>;
     onDownloadsChanged(callback: () => void): Unsubscribe;
     linkedFolders(): Promise<unknown>;
@@ -107,6 +108,7 @@ export interface DesktopBridge {
   };
   kindle: {
     devices(): Promise<unknown>;
+    presence(id: string): Promise<unknown>;
     preview(id: string, bookId?: string): Promise<unknown>;
     transfer(id: string, bookId?: string): Promise<unknown>;
     onProgress(callback: DesktopCallback): Unsubscribe;

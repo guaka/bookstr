@@ -36,8 +36,16 @@ import android.support.v4.media.session.PlaybackStateCompat
 import java.net.URL
 import java.io.File
 import java.util.Collections
+import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -99,6 +107,7 @@ class NarrationService : MediaBrowserServiceCompat(), TextToSpeech.OnInitListene
     private val speechMarkers = ConcurrentHashMap<Int, MutableList<SpeechMarker>>()
     private val synthesisSampleRates = ConcurrentHashMap<Int, Int>()
     private val mainHandler = Handler(Looper.getMainLooper())
+    private val browserScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val artworkExecutor = Executors.newSingleThreadExecutor()
     private var artworkRequestUrl: String? = null
     private var artwork: Bitmap? = null
@@ -135,7 +144,10 @@ class NarrationService : MediaBrowserServiceCompat(), TextToSpeech.OnInitListene
         override fun onStop() = stopNarration(removeNotification = true)
         override fun onSkipToNext() = requestPage(1)
         override fun onSkipToPrevious() = requestPage(-1)
-        override fun onPlayFromMediaId(mediaId: String?, extras: Bundle?) = playOrRequestText()
+        override fun onPlayFromMediaId(mediaId: String?, extras: Bundle?) {
+            if (mediaId == bookId && bookId.isNotBlank()) playOrRequestText()
+            else publishState(message = "Open a downloaded EPUB from Radio Guaka to start reading aloud.")
+        }
         override fun onPlayFromSearch(query: String?, extras: Bundle?) = playOrRequestText()
     }
 
@@ -255,6 +267,12 @@ class NarrationService : MediaBrowserServiceCompat(), TextToSpeech.OnInitListene
         }
         when (intent?.action) {
             ACTION_SPEAK -> {
+                val requestToken = intent.getStringExtra(ReaderActivity.EXTRA_EXTERNAL_NARRATION_TOKEN)
+                val requestedBookId = intent.getStringExtra(EXTRA_BOOK_ID).orEmpty()
+                if (requestToken != null && !ExternalNarrationRequestTokens.isCurrent(requestToken, requestedBookId)) {
+                    Log.w(LOG_TAG, "Ignored stale reader speech response.")
+                    return Service.START_STICKY
+                }
                 val stayPaused = pauseRequestedDuringTextRequest
                 pauseRequestedDuringTextRequest = false
                 generation += 1
@@ -277,9 +295,15 @@ class NarrationService : MediaBrowserServiceCompat(), TextToSpeech.OnInitListene
                 } else {
                     playOrRequestText()
                 }
-                notifyChildrenChanged(ROOT_ID)
+                notifyChildrenChanged(BookstrMediaCatalog.ROOT_ID)
             }
             ACTION_TOGGLE -> {
+                val requestToken = intent.getStringExtra(ReaderActivity.EXTRA_EXTERNAL_NARRATION_TOKEN)
+                val requestedBookId = intent.getStringExtra(EXTRA_BOOK_ID).orEmpty()
+                if (requestToken != null && !ExternalNarrationRequestTokens.activate(requestToken, requestedBookId)) {
+                    Log.w(LOG_TAG, "Ignored stale reader playback toggle.")
+                    return Service.START_STICKY
+                }
                 if (intent.hasExtra(EXTRA_BOOK_ID) && intent.getStringExtra(EXTRA_BOOK_ID) != bookId) {
                     speechChunkInputs = emptyList()
                 }
@@ -294,12 +318,51 @@ class NarrationService : MediaBrowserServiceCompat(), TextToSpeech.OnInitListene
                     stopNarration(removeNotification = true)
                 }
             }
-            ACTION_SYNC -> publishState(
-                requestText = intent.getBooleanExtra(EXTRA_READER_READY, false) &&
-                    sessionActive && isPlaying && speechText.isBlank(),
-                offset = currentRangeStart,
-                length = currentMarkerLength(),
-            )
+            ACTION_SYNC -> {
+                val requestToken = intent.getStringExtra(ReaderActivity.EXTRA_EXTERNAL_NARRATION_TOKEN)
+                val readerBookId = intent.getStringExtra(EXTRA_BOOK_ID)
+                if (requestToken != null &&
+                    (readerBookId != bookId || !ExternalNarrationRequestTokens.activate(requestToken, readerBookId.orEmpty()))
+                ) {
+                    Log.w(LOG_TAG, "Ignored stale reader sync request.")
+                    return Service.START_STICKY
+                }
+                publishState(
+                    requestText = intent.getBooleanExtra(EXTRA_READER_READY, false) &&
+                        sessionActive && isPlaying && speechText.isBlank(),
+                    offset = currentRangeStart,
+                    length = currentMarkerLength(),
+                )
+            }
+            ACTION_REQUEST_READER_TEXT -> {
+                val requestedBookId = intent.getStringExtra(EXTRA_BOOK_ID).orEmpty()
+                if (
+                    BookstrMediaCatalog.isValidMediaId(requestedBookId) &&
+                    ExternalNarrationRequestTokens.consume(
+                        intent.getStringExtra(ReaderActivity.EXTRA_EXTERNAL_NARRATION_TOKEN),
+                        requestedBookId,
+                    )
+                ) {
+                    generation += 1
+                    resetAudioPipeline(cancelSynthesis = true)
+                    speechText = ""
+                    speechChunkInputs = emptyList()
+                    resumeOffset = 0
+                    currentRangeStart = 0
+                    currentParagraph = ""
+                    pauseRequestedDuringTextRequest = false
+                    sessionActive = true
+                    isPlaying = true
+                    readBookMetadata(intent)
+                    ensureForeground()
+                    loadArtwork(bookCoverUrl)
+                    updatePlaybackState(PlaybackStateCompat.STATE_BUFFERING)
+                    updateNotification()
+                    publishState(requestText = true)
+                } else {
+                    Log.w(LOG_TAG, "Ignored reader text request without an active reader.")
+                }
+            }
             ACTION_PARAGRAPH -> {
                 currentParagraph = intent.getStringExtra(EXTRA_PARAGRAPH).orEmpty().take(600)
                 updateMetadata()
@@ -321,23 +384,86 @@ class NarrationService : MediaBrowserServiceCompat(), TextToSpeech.OnInitListene
         clientPackageName: String,
         clientUid: Int,
         rootHints: Bundle?,
-    ): BrowserRoot = BrowserRoot(ROOT_ID, null)
+    ): BrowserRoot? {
+        val packagesForUid = packageManager.getPackagesForUid(clientUid)?.toSet().orEmpty()
+        if (!BookstrMediaCatalog.isAllowedClient(clientPackageName, packagesForUid)) return null
+        return BrowserRoot(BookstrMediaCatalog.ROOT_ID, null)
+    }
 
     override fun onLoadChildren(parentId: String, result: Result<MutableList<MediaBrowserCompat.MediaItem>>) {
-        if (parentId != ROOT_ID || bookId.isBlank()) {
+        if (parentId != BookstrMediaCatalog.ROOT_ID) {
             result.sendResult(mutableListOf())
             return
         }
-        val description = MediaDescriptionCompat.Builder()
-            .setMediaId(bookId)
-            .setTitle(bookTitle)
-            .setSubtitle(bookAuthor)
-            .setIconUri(bookCoverUrl?.let(Uri::parse))
-            .build()
-        result.sendResult(
-            mutableListOf(
-                MediaBrowserCompat.MediaItem(description, MediaBrowserCompat.MediaItem.FLAG_PLAYABLE),
-            ),
+        result.detach()
+        browserScope.launch {
+            val downloaded = try {
+                withContext(Dispatchers.IO) {
+                    val app = application as BookstrApp
+                    val books = app.catalogRepository.downloadedBooks(emptyList())
+                    val progress = app.catalogRepository.getProgressForBooks(books)
+                    BookstrMediaCatalog.entries(books) { book ->
+                        app.catalogRepository.publicationFile(book.id, book.format).isFile
+                    }.map { it to progress[it.book.id]?.cfi }
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                Log.w(LOG_TAG, "Could not load downloaded book catalog", error)
+                result.sendResult(null)
+                return@launch
+            }
+            val items = downloaded.map { (entry, locator) ->
+                val book = entry.book
+                val descriptionExtras = Bundle().apply {
+                    putString(BookstrMediaCatalog.EXTRA_FORMAT, book.format.extension)
+                    putBoolean(BookstrMediaCatalog.EXTRA_PLAYABLE, entry.playable)
+                    if (entry.playable) {
+                        putParcelable(
+                            BookstrMediaCatalog.EXTRA_OPEN_READER,
+                            readerPendingIntent(book, locator),
+                        )
+                    }
+                }
+                val description = MediaDescriptionCompat.Builder()
+                    .setMediaId(book.id)
+                    .setTitle(book.title)
+                    .setSubtitle(book.author)
+                    .setIconUri(book.coverUrl?.let(Uri::parse))
+                    .setExtras(descriptionExtras)
+                    .build()
+                val flags = if (entry.playable) MediaBrowserCompat.MediaItem.FLAG_PLAYABLE else 0
+                MediaBrowserCompat.MediaItem(description, flags)
+            }.toMutableList()
+            result.sendResult(items)
+        }
+    }
+
+    private fun readerPendingIntent(book: app.bookstr.data.CatalogBook, locator: String?): PendingIntent {
+        val intent = ReaderActivity.intent(
+            context = this,
+            bookId = book.id,
+            bookTitle = book.title,
+            author = book.author,
+            year = book.year,
+            initialCfi = locator,
+            theme = (application as BookstrApp).settingsRepository.theme,
+            coverUrl = book.coverUrl,
+            rightsStatus = book.rightsStatus,
+            license = book.license,
+            licenseUrl = book.licenseUrl,
+            rightsSource = book.rightsSource,
+            startNarration = true,
+            externalNarrationToken = UUID.randomUUID().toString(),
+        ).apply {
+            data = Uri.parse("bookstr://read/${book.id}")
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        return PendingIntent.getActivity(
+            this,
+            0,
+            intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
     }
 
@@ -1020,6 +1146,7 @@ class NarrationService : MediaBrowserServiceCompat(), TextToSpeech.OnInitListene
 
     override fun onDestroy() {
         running = false
+        browserScope.cancel()
         generation += 1
         neuralExecutor.execute { neuralSpeech.close() }
         neuralExecutor.shutdown()
@@ -1049,6 +1176,7 @@ class NarrationService : MediaBrowserServiceCompat(), TextToSpeech.OnInitListene
         const val EXTRA_BOOK_TITLE = "book_title"
         const val EXTRA_BOOK_AUTHOR = "book_author"
         const val EXTRA_COVER_URL = "cover_url"
+        const val EXTRA_START_NARRATION = "app.bookstr.extra.START_NARRATION"
         const val EXTRA_LANGUAGE = "language"
         const val EXTRA_RATE = "rate"
 
@@ -1059,6 +1187,7 @@ class NarrationService : MediaBrowserServiceCompat(), TextToSpeech.OnInitListene
         private const val ACTION_SYNC = "app.bookstr.action.NARRATION_SYNC"
         private const val ACTION_PARAGRAPH = "app.bookstr.action.NARRATION_PARAGRAPH"
         private const val ACTION_RATE = "app.bookstr.action.NARRATION_RATE"
+        private const val ACTION_REQUEST_READER_TEXT = "app.bookstr.action.REQUEST_READER_TEXT"
         private const val EXTRA_TEXT = "text"
         private const val EXTRA_PARAGRAPH = "paragraph"
         private const val EXTRA_CHUNKS = "chunks"
@@ -1067,7 +1196,6 @@ class NarrationService : MediaBrowserServiceCompat(), TextToSpeech.OnInitListene
         private const val CHANNEL_ID = "bookstr-narration"
         private const val NOTIFICATION_ID = 4107
         private const val SESSION_TAG = "BookstrNarration"
-        private const val ROOT_ID = "bookstr-current-book"
         private const val LOG_TAG = "BookstrNarration"
         private const val SENTENCE_PAUSE_MILLIS = 100L
         private const val PROGRESS_INTERVAL_MILLIS = 300L
@@ -1082,6 +1210,7 @@ class NarrationService : MediaBrowserServiceCompat(), TextToSpeech.OnInitListene
             title: String,
             author: String?,
             coverUrl: String?,
+            requestToken: String? = null,
         ) {
             startForeground(
                 context,
@@ -1093,7 +1222,8 @@ class NarrationService : MediaBrowserServiceCompat(), TextToSpeech.OnInitListene
                     .putExtra(EXTRA_BOOK_ID, bookId)
                     .putExtra(EXTRA_BOOK_TITLE, title)
                     .putExtra(EXTRA_BOOK_AUTHOR, author)
-                    .putExtra(EXTRA_COVER_URL, coverUrl),
+                    .putExtra(EXTRA_COVER_URL, coverUrl)
+                    .putExtra(ReaderActivity.EXTRA_EXTERNAL_NARRATION_TOKEN, requestToken),
             )
         }
 
@@ -1103,6 +1233,7 @@ class NarrationService : MediaBrowserServiceCompat(), TextToSpeech.OnInitListene
             title: String,
             author: String?,
             coverUrl: String?,
+            requestToken: String? = null,
         ) {
             startForeground(
                 context,
@@ -1111,7 +1242,8 @@ class NarrationService : MediaBrowserServiceCompat(), TextToSpeech.OnInitListene
                     .putExtra(EXTRA_BOOK_ID, bookId)
                     .putExtra(EXTRA_BOOK_TITLE, title)
                     .putExtra(EXTRA_BOOK_AUTHOR, author)
-                    .putExtra(EXTRA_COVER_URL, coverUrl),
+                    .putExtra(EXTRA_COVER_URL, coverUrl)
+                    .putExtra(ReaderActivity.EXTRA_EXTERNAL_NARRATION_TOKEN, requestToken),
             )
         }
 
@@ -1133,14 +1265,37 @@ class NarrationService : MediaBrowserServiceCompat(), TextToSpeech.OnInitListene
             context.startService(Intent(context, NarrationService::class.java).setAction(ACTION_TOGGLE))
         }
 
-        fun sync(context: Context, requestTextIfPending: Boolean = false) {
+        fun sync(context: Context, requestToken: String? = null, readerBookId: String? = null, requestTextIfPending: Boolean = false) {
             if (running) {
                 context.startService(
                     Intent(context, NarrationService::class.java)
                         .setAction(ACTION_SYNC)
-                        .putExtra(EXTRA_READER_READY, requestTextIfPending),
+                        .putExtra(EXTRA_READER_READY, requestTextIfPending)
+                        .putExtra(ReaderActivity.EXTRA_EXTERNAL_NARRATION_TOKEN, requestToken)
+                        .putExtra(EXTRA_BOOK_ID, readerBookId),
                 )
             }
+        }
+
+        /** Starts playback from a ReaderActivity already opened by a foreground UI PendingIntent. */
+        fun requestReaderPlayback(
+            context: Context,
+            bookId: String,
+            title: String,
+            author: String?,
+            coverUrl: String?,
+            requestToken: String?,
+        ) {
+            ContextCompat.startForegroundService(
+                context,
+                Intent(context, NarrationService::class.java)
+                    .setAction(ACTION_REQUEST_READER_TEXT)
+                    .putExtra(EXTRA_BOOK_ID, bookId)
+                    .putExtra(EXTRA_BOOK_TITLE, title)
+                    .putExtra(EXTRA_BOOK_AUTHOR, author)
+                    .putExtra(EXTRA_COVER_URL, coverUrl)
+                    .putExtra(ReaderActivity.EXTRA_EXTERNAL_NARRATION_TOKEN, requestToken),
+            )
         }
 
         fun updateParagraph(context: Context, paragraph: String) {

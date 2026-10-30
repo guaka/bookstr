@@ -64,6 +64,115 @@ test('Kindle preview hashes existing files and transfer copies only missing supp
   } finally { store.close(); await fs.rm(root, { recursive: true, force: true }); }
 });
 
+test('Kindle presence scans export names once, caches per device, expires, and clears on disconnect', async () => {
+  const bytes = Buffer.from('exported PDF');
+  const sha256 = digest(bytes);
+  const wrongSizeBytes = Buffer.from('other exported PDF');
+  const wrongSizeSha = digest(wrongSizeBytes);
+  const job = { bookId: 'book', title: 'Updated title', authors: 'Updated author', extension: 'pdf', status: 'ready', sha256 };
+  const wrongSizeJob = { bookId: 'wrong-size', title: 'Wrong size', authors: 'Writer', extension: 'pdf', status: 'ready', sha256: wrongSizeSha };
+  let connected = true;
+  let fileScans = 0;
+  let sessions = 0;
+  let now = 1_000;
+  const store = { downloads: () => [job, wrongSizeJob], libraryFile: id => id === 'book'
+    ? ({ sha256, sizeBytes: bytes.length }) : ({ sha256: wrongSizeSha, sizeBytes: wrongSizeBytes.length }) };
+  const transport = {
+    devices: async () => connected ? [{ id: 'device', name: 'Kindle', kind: 'test' }] : [],
+    files: async (_device, sizes) => {
+      fileScans++;
+      assert.deepEqual([...sizes].sort((a, b) => a - b), [bytes.length, wrongSizeBytes.length].sort((a, b) => a - b));
+      return [
+        { id: 'remote-1', name: `Old title - Old author - ${sha256.slice(0, 16)}.pdf`, size: bytes.length },
+        { id: 'remote-wrong-size', name: `A different exported title - ${sha256.slice(0, 16)}.pdf`, size: wrongSizeBytes.length },
+      ];
+    },
+    async withSession(_device, operation) { sessions++; return operation(); },
+  };
+  const sync = new KindleSync({ store, resolveFile: async () => assert.fail('presence must use stored metadata'),
+    transports: [transport], now: () => now, presenceTtlMs: 60_000 });
+  const first = await sync.presence('device');
+  assert.deepEqual(first, { deviceId: 'device', bookIds: ['book'] });
+  assert.deepEqual(await sync.presence('device'), first);
+  assert.equal(fileScans, 1);
+  assert.equal(sessions, 1);
+  now += 60_001;
+  await sync.presence('device');
+  assert.equal(fileScans, 2, 'expired cache should rescan the connected device');
+  connected = false;
+  assert.deepEqual(await sync.devices(), []);
+  await assert.rejects(() => sync.presence('device'), /disconnected/);
+  connected = true;
+  await sync.presence('device');
+  assert.equal(fileScans, 3, 'disconnect clears the cached inventory');
+});
+
+test('preview and successful transfers retain verified IDs but still perform the first metadata inventory', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'bookstr-kindle-presence-verified-'));
+  const source = path.join(root, 'book.pdf');
+  const bytes = Buffer.from('verified by preview');
+  await fs.writeFile(source, bytes);
+  const sha256 = digest(bytes);
+  const job = { bookId: 'verified', title: 'Verified', authors: 'Writer', extension: 'pdf', status: 'ready', sha256 };
+  const store = { downloads: () => [job], libraryFile: () => ({ sha256, sizeBytes: bytes.length }) };
+  let filesCalls = 0;
+  let transferFilesCalls = 0;
+  let copies = 0;
+  let hashes = 0;
+  const transport = {
+    devices: async () => [{ id: 'device', name: 'Kindle', kind: 'test' }],
+    files: async () => { filesCalls++; return [{ id: 'remote', name: 'renamed.pdf', size: bytes.length }]; },
+    hash: async () => { hashes++; return sha256; },
+    copy: async () => { copies++; },
+  };
+  try {
+    const sync = new KindleSync({ store, resolveFile: async () => ({ filePath: source }), transports: [transport] });
+    await sync.preview('device');
+    assert.deepEqual((await sync.presence('device')).bookIds, ['verified']);
+    assert.equal(filesCalls, 2, 'verified preview results must not suppress the first complete inventory');
+    assert.equal(hashes, 1);
+
+    const absentTransport = { ...transport, files: async () => { transferFilesCalls++; return []; }, hash: async () => '', copy: async () => { copies++; } };
+    const transferred = new KindleSync({ store, resolveFile: async () => ({ filePath: source }), transports: [absentTransport] });
+    assert.deepEqual((await transferred.transfer('device')).transferred, ['verified']);
+    assert.deepEqual((await transferred.presence('device')).bookIds, ['verified']);
+    assert.equal(copies, 1);
+    assert.equal(transferFilesCalls, 2, 'transfer planning and subsequent first presence call both list metadata');
+  } finally { await fs.rm(root, { recursive: true, force: true }); }
+});
+
+test('presence uses only existing cached comic PDFs and ignores uncached comics', async () => {
+  const comicSha = digest('comic archive');
+  const cachedSha = digest('cached PDF');
+  const jobs = [
+    { bookId: 'cached-comic', title: 'Cached.cbz', authors: 'Writer', extension: 'cbz', status: 'ready', sha256: comicSha },
+    { bookId: 'uncached-comic', title: 'Uncached.cbr', authors: 'Writer', extension: 'cbr', status: 'ready', sha256: digest('other archive') },
+  ];
+  const store = { downloads: () => jobs };
+  let cacheLookups = 0;
+  let scans = 0;
+  const comicConverter = {
+    cached: async sourceSha => {
+      cacheLookups++;
+      return sourceSha === comicSha ? { path: '/cache/comic.pdf', sha256: cachedSha, size: 10 } : null;
+    },
+    convert: async () => assert.fail('presence must never convert a comic'),
+  };
+  const transport = {
+    devices: async () => [{ id: 'device', name: 'Kindle', kind: 'test' }],
+    files: async (_device, sizes) => {
+      scans++;
+      assert.deepEqual([...sizes], [10]);
+      return [{ id: 'remote', name: safeFilename({ ...jobs[0], extension: 'pdf' }, cachedSha), size: 10 }];
+    },
+  };
+  const sync = new KindleSync({ store, resolveFile: async () => assert.fail('presence must not resolve comics'),
+    transports: [transport], comicConverter });
+  assert.deepEqual((await sync.presence('device')).bookIds, ['cached-comic']);
+  assert.equal(cacheLookups, 2);
+  assert.equal(scans, 1);
+});
+
 test('MTP transfer keeps its session when the first candidate is already present and copies the next', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'bookstr-kindle-mtp-persistent-'));
   const helper = path.join(root, 'kindle-mtp');
@@ -307,7 +416,7 @@ test('mounted Kindle covers platform roots, volume labels, and bounded document 
   } finally { await fs.rm(root, { recursive: true, force: true }); }
 });
 
-test('comic transfer conversion and transfer copy failures are reported', async () => {
+test('comic transfer conversion and transfer copy outcomes are reported', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'bookstr-kindle-comic-'));
   const source = path.join(root, 'comic.cbz');
   const converted = path.join(root, 'comic.pdf');
@@ -315,6 +424,7 @@ test('comic transfer conversion and transfer copy failures are reported', async 
   await fs.writeFile(converted, 'converted PDF');
   const job = { bookId: 'comic', title: 'Comic.cbz', extension: 'epub', status: 'ready', sha256: digest('comic archive') };
   const store = { downloads: () => [job] };
+  const transferProgress = [];
   const transport = { devices: async () => [{ id: 'device', name: 'Kindle', kind: 'test' }],
     files: async () => [], hash: async () => '',
     copy: async () => { throw new Error('copy rejected'); } };
@@ -329,7 +439,7 @@ test('comic transfer conversion and transfer copy failures are reported', async 
         onProgress({ percent: 50 });
         return { path: converted, sha256: digest('converted PDF'), size: 13 };
       } },
-      onProgress: progress => conversionProgress.push(progress) });
+      onProgress: progress => { conversionProgress.push(progress); transferProgress.push(progress); } });
     const local = await sync.localBooks();
     assert.equal(local.books[0].extension, 'pdf');
     assert.equal(local.books[0].path, converted);
@@ -339,6 +449,17 @@ test('comic transfer conversion and transfer copy failures are reported', async 
     ]);
     const transfer = await sync.transfer('device');
     assert.deepEqual(transfer.errors, [{ bookId: 'comic', title: 'Comic.cbz', error: 'copy rejected' }]);
+    assert.deepEqual(transferProgress.filter(progress => ['copying', 'failed'].includes(progress.phase)), [
+      { deviceId: 'device', phase: 'copying', bookId: 'comic', title: 'Comic.cbz', completed: 0, total: 1 },
+      { deviceId: 'device', phase: 'failed', bookId: 'comic', title: 'Comic.cbz', error: 'copy rejected', completed: 0, total: 1 },
+    ]);
+    transport.copy = async () => {};
+    const successfulTransfer = await sync.transfer('device');
+    assert.deepEqual(successfulTransfer.transferred, ['comic']);
+    assert.deepEqual(transferProgress.filter(progress => ['copying', 'copied'].includes(progress.phase)).slice(-2), [
+      { deviceId: 'device', phase: 'copying', bookId: 'comic', title: 'Comic.cbz', completed: 0, total: 1 },
+      { deviceId: 'device', phase: 'copied', bookId: 'comic', title: 'Comic.cbz', completed: 1, total: 1 },
+    ]);
   } finally { await fs.rm(root, { recursive: true, force: true }); }
 });
 
