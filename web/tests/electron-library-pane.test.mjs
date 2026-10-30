@@ -256,3 +256,28 @@ test('inactive download rows expose an accessible icon beside Retry', () => {
   assert.match(renderer, /actions\.append\(retry, remove\)/);
   assert.match(renderer, /desktopBridge\.library\.removeDownload\(job.bookId\)/);
 });
+
+test('an old Downloads snapshot cannot overwrite a newer render', async () => {
+  let resolveOld;
+  let requests = 0;
+  let renders = 0;
+  const context = vm.createContext({
+    isDesktopMode: true, desktopDownloadsRenderGeneration: 0,
+    desktopDownloadEntryNeedsSnapshot: false, desktopHiddenCompletedIds: new Set(),
+    desktopDownloadsNotice: { textContent: 'Loading' },
+    desktopDownloadsList: { replaceChildren() { renders++; } },
+    desktopBridge: { library: { downloads() {
+      if (++requests === 1) return new Promise(resolve => { resolveOld = resolve; });
+      return Promise.resolve([]);
+    } } },
+  });
+  const start = html.indexOf('      async function renderDesktopDownloads(');
+  const end = html.indexOf('      async function openDesktopDownloads(', start);
+  vm.runInContext(html.slice(start, end), context);
+  const old = context.renderDesktopDownloads();
+  await context.renderDesktopDownloads();
+  assert.equal(renders, 1);
+  resolveOld([]);
+  await old;
+  assert.equal(renders, 1);
+});
