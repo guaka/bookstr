@@ -6,6 +6,8 @@ import app.bookstr.nostr.BlossomAuth
 import app.bookstr.nostr.NostrSignerFactory
 import app.bookstr.util.Sha256
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -141,6 +143,8 @@ open class CatalogRepository(
     private val progressDao: BookProgressDao,
     private val settings: SettingsRepository,
 ) {
+    private val downloadedChanges = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
+    val downloadedBookChanges = downloadedChanges.asSharedFlow()
     private val client = OkHttpClient.Builder()
         .connectTimeout(30, TimeUnit.SECONDS)
         .readTimeout(120, TimeUnit.SECONDS)
@@ -162,9 +166,11 @@ open class CatalogRepository(
 
     suspend fun deletePublication(book: CatalogBook): Boolean = withContext(Dispatchers.IO) {
         val target = publicationFile(book.id, book.format)
+        val wasPresent = target.isFile
         val partial = File(target.parentFile, "${target.name}.part")
         val removedTarget = !target.exists() || target.delete()
         val removedPartial = !partial.exists() || partial.delete()
+        if (wasPresent && removedTarget) downloadedChanges.tryEmit(Unit)
         removedTarget && removedPartial
     }
 
@@ -466,6 +472,7 @@ open class CatalogRepository(
         )
         val merged = existing.filterNot { it.id == book.id } + updated
         saveDownloadedBookMetadata(merged)
+        downloadedChanges.tryEmit(Unit)
     }
 
     private fun loadDownloadedBookMetadata(): List<CatalogBook> {

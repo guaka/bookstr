@@ -16,6 +16,7 @@ import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.core.app.ActivityScenario
 import androidx.core.content.ContextCompat
 import app.bookstr.data.BookFormat
+import app.bookstr.data.CatalogBook
 import kotlinx.coroutines.runBlocking
 import org.json.JSONArray
 import org.json.JSONObject
@@ -50,6 +51,8 @@ class NarrationMediaBrowserTest {
         val booksDir = epubFile.parentFile ?: error("Book directory is unavailable")
         val pdfFile = File(booksDir, "$pdfId.pdf").apply { writeBytes("%PDF-1.7".toByteArray()) }
         val loaded = CountDownLatch(1)
+        val deletionObserved = CountDownLatch(1)
+        val downloadObserved = CountDownLatch(1)
         val connected = CountDownLatch(1)
         var result = emptyList<MediaBrowserCompat.MediaItem>()
         var browser: MediaBrowserCompat? = null
@@ -95,6 +98,8 @@ class NarrationMediaBrowserTest {
                             ) {
                                 result = children
                                 loaded.countDown()
+                                if (children.none { it.description.mediaId == pdfId }) deletionObserved.countDown()
+                                if (deletionObserved.count == 0L && children.any { it.description.mediaId == pdfId }) downloadObserved.countDown()
                             }
                         },
                     )
@@ -168,6 +173,12 @@ class NarrationMediaBrowserTest {
             assertFalse(pdf.isPlayable)
             assertFalse(pdf.description.extras?.getBoolean(BookstrMediaCatalog.EXTRA_PLAYABLE) == true)
             assertEquals(null, pdf.description.extras?.getParcelable<android.app.PendingIntent>(BookstrMediaCatalog.EXTRA_OPEN_READER))
+            val pdfBook = CatalogBook(pdfId, "A downloaded PDF", "Test author", "", null, format = BookFormat.Pdf)
+            assertTrue(runBlocking { app.catalogRepository.deletePublication(pdfBook) })
+            assertTrue("Subscriber did not receive the updated catalog", deletionObserved.await(10, TimeUnit.SECONDS))
+            pdfFile.writeBytes("%PDF-1.7".toByteArray())
+            runBlocking { app.catalogRepository.ensureDownloaded(pdfBook) }
+            assertTrue("Subscriber did not receive the restored download", downloadObserved.await(10, TimeUnit.SECONDS))
         } finally {
             instrumentation.runOnMainSync {
                 browser?.disconnect()

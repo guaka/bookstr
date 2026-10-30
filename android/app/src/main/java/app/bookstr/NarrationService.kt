@@ -174,6 +174,11 @@ class NarrationService : MediaBrowserServiceCompat(), TextToSpeech.OnInitListene
 
     override fun onCreate() {
         super.onCreate()
+        browserScope.launch {
+            (application as BookstrApp).catalogRepository.downloadedBookChanges.collect {
+                notifyChildrenChanged(BookstrMediaCatalog.ROOT_ID)
+            }
+        }
         running = true
         notificationManager = getSystemService(NotificationManager::class.java)
         audioManager = getSystemService(AudioManager::class.java)
