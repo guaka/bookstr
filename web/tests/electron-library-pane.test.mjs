@@ -5,6 +5,13 @@ import vm from 'node:vm';
 import '../book-metadata.js';
 import '../desktop-kindle.js';
 
+function element() {
+  return { dataset: {}, attributes: {}, children: [], classList: { remove() {} },
+    setAttribute(key, value) { this.attributes[key] = value; },
+    removeAttribute(key) { delete this.attributes[key]; },
+    append(...items) { this.children.push(...items); },
+    replaceChildren(...items) { this.children = items; } };
+}
 const html = fs.readFileSync(new URL('../index.html', import.meta.url), 'utf8');
 function kindleContext({ job = { status: 'ready', extension: 'cbz', bookId: 'comic' }, devices = [{ id: 'kindle' }], result = { transferred: ['comic'], alreadyPresent: 0, errors: [] }, failure } = {}) {
   const button = { dataset: { kindleBookId: 'comic' }, disabled: false, attributes: {}, setAttribute(key, value) { this.attributes[key] = value; }, removeAttribute(key) { delete this.attributes[key]; } };
@@ -13,6 +20,10 @@ function kindleContext({ job = { status: 'ready', extension: 'cbz', bookId: 'com
   const context = vm.createContext({
     kindleTransferRunning: false, kindleLibraryButton: null, kindleLibraryBookId: '', currentKindleId: 'kindle',
     kindleLibraryPresence: globalThis.BookstrDesktopKindle.createLibraryPresence(),
+    kindleTransferOverview: globalThis.BookstrDesktopKindle.createTransferOverview(),
+    kindleTransferPanel: element(), kindleTransferStatus: element(), kindleTransferCount: element(),
+    kindleTransferProgress: element(), kindleTransferDismiss: element(), kindleTransferItems: element(),
+    document: { createElement: element },
     kindlePresenceRequest: null, homeReadingList: { querySelectorAll: () => buttons },
     desktopKindleSummary: { textContent: '' }, desktopKindleOffer: { classList: { remove() {} } },
     desktopDownloadForBook: () => job, BookstrDesktopKindle: globalThis.BookstrDesktopKindle,
@@ -41,6 +52,9 @@ test('Library Kindle action shows busy state and reports success beside the libr
   assert.equal(button.disabled, false);
   assert.equal(button.attributes['aria-busy'], undefined);
   assert.equal(context.desktopKindleSummary.textContent, 'Copied to Kindle');
+  assert.equal(context.kindleTransferStatus.textContent, '1 copied · 0 already there · 0 skipped · 0 failed');
+  assert.equal(context.kindleTransferItems.children[0].children[0].textContent, 'Comic');
+  assert.equal(context.kindleTransferDismiss.disabled, false);
   assert.equal(context.kindleLibraryButton, null);
   assert.equal(context.kindleTransferRunning, false);
 });
@@ -74,7 +88,8 @@ test('Library Kindle action handles duplicates, errors, absent devices and unsup
 test('Kindle progress updates the Library action and ignores late completion events', () => {
   const button = {};
   const context = loadFunction('renderKindleProgress', 'desktopBridge?.kindle?.onProgress', {
-    kindleTransferRunning: true, kindleLibraryButton: button, desktopKindleSummary: { textContent: '' },
+    kindleTransferRunning: true, kindleLibraryButton: button,
+    kindleTransferOverview: { update() {} }, renderKindleTransferOverview() {}, desktopKindleSummary: { textContent: '' },
     BookstrDesktopKindle: globalThis.BookstrDesktopKindle,
   });
   context.renderKindleProgress({ phase: 'converting', page: 1, pages: 20 });
@@ -213,4 +228,20 @@ test('Kindle presence IPC only forwards a normalized device ID', async () => {
   const context = vm.createContext({ ipcRenderer, electron_1: { ipcRenderer } });
   const bridge = vm.runInContext(`({ ${method} })`, context);
   assert.deepEqual(Array.from(bridge.presence('kindle')), ['bookstr-desktop-kindle-presence', 'kindle']);
+});
+
+
+test('Kindle overview renders determinate progress and stays available after errors', () => {
+  const { context } = kindleContext();
+  context.kindleTransferOverview.start([{ bookId: 'comic', title: 'Comic' }]);
+  context.kindleTransferOverview.update({ phase: 'converting', bookId: 'comic', page: 3, pages: 10 });
+  context.renderKindleTransferOverview();
+  assert.equal(context.kindleTransferProgress.value, 30);
+  assert.equal(context.kindleTransferCount.textContent, '0 / 1 copied');
+  assert.equal(context.kindleTransferDismiss.disabled, true);
+  context.kindleTransferOverview.fail(new Error('Disconnected'));
+  context.renderKindleTransferOverview();
+  assert.equal(context.kindleTransferStatus.textContent, 'Disconnected');
+  assert.equal(context.kindleTransferProgress.hidden, true);
+  assert.equal(context.kindleTransferDismiss.disabled, false);
 });

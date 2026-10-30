@@ -416,7 +416,7 @@ test('mounted Kindle covers platform roots, volume labels, and bounded document 
   } finally { await fs.rm(root, { recursive: true, force: true }); }
 });
 
-test('comic transfer conversion and transfer copy failures are reported', async () => {
+test('comic transfer conversion and transfer copy outcomes are reported', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'bookstr-kindle-comic-'));
   const source = path.join(root, 'comic.cbz');
   const converted = path.join(root, 'comic.pdf');
@@ -424,6 +424,7 @@ test('comic transfer conversion and transfer copy failures are reported', async 
   await fs.writeFile(converted, 'converted PDF');
   const job = { bookId: 'comic', title: 'Comic.cbz', extension: 'epub', status: 'ready', sha256: digest('comic archive') };
   const store = { downloads: () => [job] };
+  const transferProgress = [];
   const transport = { devices: async () => [{ id: 'device', name: 'Kindle', kind: 'test' }],
     files: async () => [], hash: async () => '',
     copy: async () => { throw new Error('copy rejected'); } };
@@ -438,7 +439,7 @@ test('comic transfer conversion and transfer copy failures are reported', async 
         onProgress({ percent: 50 });
         return { path: converted, sha256: digest('converted PDF'), size: 13 };
       } },
-      onProgress: progress => conversionProgress.push(progress) });
+      onProgress: progress => { conversionProgress.push(progress); transferProgress.push(progress); } });
     const local = await sync.localBooks();
     assert.equal(local.books[0].extension, 'pdf');
     assert.equal(local.books[0].path, converted);
@@ -448,6 +449,17 @@ test('comic transfer conversion and transfer copy failures are reported', async 
     ]);
     const transfer = await sync.transfer('device');
     assert.deepEqual(transfer.errors, [{ bookId: 'comic', title: 'Comic.cbz', error: 'copy rejected' }]);
+    assert.deepEqual(transferProgress.filter(progress => ['copying', 'failed'].includes(progress.phase)), [
+      { deviceId: 'device', phase: 'copying', bookId: 'comic', title: 'Comic.cbz', completed: 0, total: 1 },
+      { deviceId: 'device', phase: 'failed', bookId: 'comic', title: 'Comic.cbz', error: 'copy rejected', completed: 0, total: 1 },
+    ]);
+    transport.copy = async () => {};
+    const successfulTransfer = await sync.transfer('device');
+    assert.deepEqual(successfulTransfer.transferred, ['comic']);
+    assert.deepEqual(transferProgress.filter(progress => ['copying', 'copied'].includes(progress.phase)).slice(-2), [
+      { deviceId: 'device', phase: 'copying', bookId: 'comic', title: 'Comic.cbz', completed: 0, total: 1 },
+      { deviceId: 'device', phase: 'copied', bookId: 'comic', title: 'Comic.cbz', completed: 1, total: 1 },
+    ]);
   } finally { await fs.rm(root, { recursive: true, force: true }); }
 });
 

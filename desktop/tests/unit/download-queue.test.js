@@ -169,6 +169,40 @@ test('progress updates do not flood the renderer with queue notifications', asyn
   } finally { store.close(); await fs.rm(root, { recursive: true, force: true }); }
 });
 
+test('queue shutdown preserves resumable states and suppresses later writes and notifications', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'bookstr-queue-shutdown-'));
+  const store = new LibraryStore({ dbPath: path.join(root, 'library.sqlite'), libraryRoot: root });
+  const records = [0, 1].map(index => ({ ...book, md5: (index + 1).toString(16).padStart(32, '0'), libgenId: 2413000 + index }));
+  let releaseFirst;
+  const started = [];
+  let notifications = 0;
+  try {
+    const queue = new DownloadQueue({ store, maxConcurrent: 1, onUpdate: () => { notifications += 1; }, acquisitionManager: {
+      acquireLibgen(record) {
+        started.push(record.md5);
+        if (record.md5 === records[0].md5) return new Promise((_resolve, reject) => { releaseFirst = () => reject(new Error('acquisition aborted')); });
+        return Promise.resolve();
+      },
+    } });
+    await queue.enqueue({ kind: 'libgen', record: records[0] });
+    await waitFor(() => started.length === 1);
+    store.setDownload({ bookId: records[0].md5, status: 'downloading', bytes: 3, totalBytes: 20 });
+    await queue.enqueue({ kind: 'libgen', record: records[1] });
+    assert.equal(queue.pending.length, 1);
+    const noticesAtClose = notifications;
+    await queue.close();
+    releaseFirst();
+    await Promise.all([...queue.activeJobs.values()]);
+    assert.deepEqual(started, [records[0].md5]);
+    assert.equal(store.downloads().find(item => item.bookId === records[0].md5).status, 'downloading');
+    assert.equal(store.downloads().find(item => item.bookId === records[1].md5).status, 'queued');
+    assert.equal(notifications, noticesAtClose);
+  } finally {
+    store.close();
+    await fs.rm(root, { recursive: true, force: true });
+  }
+});
+
 test('the first progress update is delivered when the system clock starts at zero', async t => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'bookstr-queue-'));
   const store = new LibraryStore({ dbPath: path.join(root, 'library.sqlite'), libraryRoot: root });

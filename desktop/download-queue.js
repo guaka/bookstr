@@ -45,6 +45,8 @@ class DownloadQueue {
     this.pending = [];
     this.activeJobs = new Map();
     this.drainPromise = null;
+    this.resumePromise = null;
+    this.closed = false;
   }
 
   async prepare(request) {
@@ -65,7 +67,9 @@ class DownloadQueue {
   }
 
   async enqueue(request) {
+    if (this.closed) throw new Error('download queue is closed');
     const prepared = await this.prepare(request);
+    if (this.closed) throw new Error('download queue is closed');
     const existing = this.store.downloads().find(item => item.bookId === prepared.bookId);
     if (existing && (ACTIVE.has(existing.status) || COMPLETE.has(existing.status))) return existing;
     this.store.upsertBook(prepared.fields);
@@ -88,21 +92,38 @@ class DownloadQueue {
     return this.enqueue(request);
   }
 
-  async resume() {
+  resume() {
+    if (this.closed) return Promise.resolve();
+    if (this.resumePromise) return this.resumePromise;
+    this.resumePromise = this.resumeJobs().finally(() => { this.resumePromise = null; });
+    return this.resumePromise;
+  }
+
+  async resumeJobs() {
     for (const job of this.store.resumableDownloads()) {
+      if (this.closed) break;
       try {
         const prepared = await this.prepare(job.request);
+        if (this.closed) break;
         if (prepared.bookId !== job.bookId) throw new Error('Saved download identity changed.');
         this.store.setDownload({ bookId: job.bookId, status: 'queued', source: job.request.kind });
         this.schedule(job.bookId, job.request);
       } catch (error) {
+        if (this.closed) break;
         this.store.setDownload({ bookId: job.bookId, status: 'failed', error: error.message });
       }
     }
-    this.onUpdate();
+    this.notifyUpdate();
+  }
+
+  async close() {
+    this.closed = true;
+    this.pending.length = 0;
+    await this.resumePromise;
   }
 
   schedule(bookId, request) {
+    if (this.closed) return;
     if (this.activeJobs.has(bookId) || this.pending.some(job => job.bookId === bookId)) return;
     this.pending.push({ bookId, request });
     void this.drain();
@@ -156,6 +177,7 @@ class DownloadQueue {
         await this.acquisitionManager.acquire(request.record, { onProgress, allowUnverifiedOpen: true });
       }
     } catch (error) {
+      if (this.closed) return;
       try {
         this.store.setDownload({ bookId, status: 'failed', source: request.kind, error: error.message || String(error) });
       } catch {}
@@ -163,6 +185,7 @@ class DownloadQueue {
   }
 
   notifyUpdate() {
+    if (this.closed) return;
     try { this.onUpdate(); } catch {}
   }
 }

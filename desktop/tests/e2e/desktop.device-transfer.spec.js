@@ -58,6 +58,9 @@ test('Library sends one manga to Kindle and shows progress, duplicates and error
     await expect(send).toBeVisible();
     await send.click();
     await expect(send).toHaveText('Sending…');
+    await expect(window.locator('#kindle-transfer-overview')).toBeVisible();
+    await expect(window.locator('#kindle-transfer-status')).toHaveText('Preparing Kindle transfer…');
+    await expect(window.locator('#kindle-transfer-dismiss')).toBeDisabled();
     await expect(send).toHaveAttribute('aria-busy', 'true');
     await expect(send).toBeDisabled();
     await expect.poll(() => app.evaluate(() => globalThis.kindleCalls.length)).toBe(1);
@@ -68,11 +71,19 @@ test('Library sends one manga to Kindle and shows progress, duplicates and error
     });
     await expect(window.locator('#desktop-kindle-summary')).toHaveText('Converting · 1/20 pages');
     await expect(send).toHaveAttribute('title', 'Converting · 1/20 pages');
+    await expect(window.locator('#kindle-transfer-status')).toHaveText('Converting · 1/20 pages');
+    await expect(window.locator('#kindle-transfer-progress')).toHaveJSProperty('value', 5);
+    await expect(window.locator('#kindle-transfer-count')).toHaveText('0 / 1 copied');
     await app.evaluate(() => { globalThis.kindlePresenceFixture = ['3'.repeat(32)]; globalThis.finishKindle.resolve({ transferred: ['3'.repeat(32)], alreadyPresent: 0, errors: [] }); });
     await expect(send).toHaveText('On Kindle');
     await expect(send).toBeEnabled();
     await expect(send).not.toHaveAttribute('aria-busy');
     await expect(window.locator('#desktop-kindle-summary')).toHaveText('Copied to Kindle');
+    await expect(window.locator('#kindle-transfer-status')).toHaveText('1 copied · 0 already there · 0 skipped · 0 failed');
+    await expect(window.locator('#kindle-transfer-items')).toContainText('Kindle Manga Fixture');
+    await expect(window.locator('#kindle-transfer-items')).toContainText('Copied');
+    await expect(window.locator('#kindle-transfer-progress')).toBeHidden();
+    await expect(window.locator('#kindle-transfer-dismiss')).toBeEnabled();
     await window.evaluate(async () => { await refreshDesktopDownloadStates(); renderHome(); await refreshKindleOffer(); });
     await expect(send).toHaveText('On Kindle');
 
@@ -90,6 +101,9 @@ test('Library sends one manga to Kindle and shows progress, duplicates and error
     await expect(send).toHaveText('Retry');
     await expect(send).toBeEnabled();
     await expect(window.locator('#desktop-kindle-summary')).toContainText('Kindle disconnected.');
+    await expect(window.locator('#kindle-transfer-status')).toContainText('Kindle disconnected.');
+    await window.getByRole('button', { name: 'Dismiss Kindle transfer status' }).click();
+    await expect(window.locator('#kindle-transfer-overview')).toBeHidden();
     expect(await app.evaluate(() => globalThis.kindleCalls)).toEqual(Array.from({ length: 3 }, () => ({
       deviceId: 'fixture-kindle', bookId: '3'.repeat(32),
     })));
@@ -118,5 +132,43 @@ test('Library marks other exported books from presence without a transfer or rep
     for (const query of ['comic', 'Already', '']) await window.locator('#home-query-input').fill(query);
     await expect(button).toHaveText('On Kindle');
     expect(await app.evaluate(() => globalThis.presenceReads)).toBe(reads);
+  } finally { await app.close(); }
+});
+
+test('Kindle bulk overview shows per-book results and keeps progress when navigating', async () => {
+  const app = await electron.launch({ args: electronArgs() });
+  try {
+    const window = await app.firstWindow();
+    await app.evaluate(({ ipcMain }) => {
+      for (const channel of ['bookstr-desktop-library-downloads', 'bookstr-desktop-kindle-devices', 'bookstr-desktop-kindle-presence', 'bookstr-desktop-kindle-transfer']) ipcMain.removeHandler(channel);
+      ipcMain.handle('bookstr-desktop-library-downloads', () => ['copied', 'existing', 'skipped', 'failed'].map(bookId => ({
+        bookId, title: `Book ${bookId}`, extension: 'pdf', status: 'ready', readable: true,
+      })));
+      ipcMain.handle('bookstr-desktop-kindle-devices', () => [{ id: 'fixture-kindle', name: 'Kindle', kind: 'mtp' }]);
+      ipcMain.handle('bookstr-desktop-kindle-presence', () => ({ bookIds: [] }));
+      ipcMain.handle('bookstr-desktop-kindle-transfer', () => new Promise(resolve => { globalThis.finishOverview = resolve; }));
+    });
+    await window.reload();
+    await window.evaluate(async () => { await refreshDesktopDownloadStates(); await refreshKindleOffer(); });
+    await window.locator('#desktop-kindle-transfer').click();
+    await window.locator('#desktop-kindle-select-visible').check();
+    await window.locator('#desktop-kindle-selection-send').click();
+    await expect(window.locator('#kindle-transfer-overview')).toBeVisible();
+    await expect(window.locator('#kindle-transfer-count')).toHaveText('0 / 4 copied');
+    await expect.poll(() => app.evaluate(() => typeof globalThis.finishOverview)).toBe('function');
+    await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].webContents.send('bookstr-desktop-kindle-progress', {
+      phase: 'copying', title: 'Book failed', bookId: 'failed', percent: 42, completed: 1, total: 2,
+    }));
+    await expect(window.locator('#kindle-transfer-count')).toHaveText('1 / 4 copied');
+    await expect(window.locator('#kindle-transfer-progress')).toHaveJSProperty('value', 42);
+    await window.getByRole('button', { name: 'Devices, Command 4' }).click();
+    await expect(window.locator('#kindle-transfer-overview')).toBeVisible();
+    await app.evaluate(() => globalThis.finishOverview({ transferred: ['copied'], alreadyPresent: 1,
+      skipped: [{ title: 'Book skipped', reason: 'Unreadable file' }], errors: [{ bookId: 'failed', error: 'Disconnected' }] }));
+    await expect(window.locator('#kindle-transfer-status')).toHaveText('1 copied · 1 already there · 1 skipped · 1 failed');
+    await expect(window.locator('[data-kindle-transfer-book-id="copied"]')).toContainText('Copied');
+    await expect(window.locator('[data-kindle-transfer-book-id="existing"]')).toContainText('Already on Kindle');
+    await expect(window.locator('[data-kindle-transfer-book-id="skipped"]')).toContainText('Skipped: Unreadable file');
+    await expect(window.locator('[data-kindle-transfer-book-id="failed"]')).toContainText('Failed: Disconnected');
   } finally { await app.close(); }
 });
