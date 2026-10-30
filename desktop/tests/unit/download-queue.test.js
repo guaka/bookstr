@@ -315,3 +315,20 @@ test('retry rebuilds a legacy catalog request from saved metadata and rejects mi
     await assert.rejects(() => queue.retry('missing'), /without its source record/);
   } finally { store.close(); await fs.rm(root, { recursive: true, force: true }); }
 });
+
+test('queue deletes only inactive entries and notifies after removal', async () => {
+  let notifications = 0;
+  const removed = [];
+  const queue = new DownloadQueue({ store: { removeDownload(id) { removed.push(id); return id !== 'missing'; } },
+    acquisitionManager: {}, onUpdate: () => { notifications++; } });
+  queue.activeJobs.set('active', Promise.resolve());
+  queue.pending.push({ bookId: 'pending' });
+  assert.throws(() => queue.remove('active'), /still active/);
+  assert.throws(() => queue.remove('pending'), /still active/);
+  assert.equal(queue.remove('failed'), true);
+  assert.equal(queue.remove('missing'), false);
+  assert.deepEqual(removed, ['failed', 'missing']);
+  assert.equal(notifications, 1);
+  await queue.close();
+  assert.throws(() => queue.remove('failed'), /closed/);
+});

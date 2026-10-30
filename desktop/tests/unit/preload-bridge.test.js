@@ -95,6 +95,7 @@ test('preload methods preserve their IPC channels, arguments, and optional defau
     ['library.acquireLibgen', () => bridge.library.acquireLibgen(record), 'bookstr-desktop-library-acquire-libgen', { book: record }],
     ['library.downloads', () => bridge.library.downloads(), 'bookstr-desktop-library-downloads'],
     ['library.enqueue', () => bridge.library.enqueue({ bookId: 'id' }), 'bookstr-desktop-library-enqueue', { bookId: 'id' }],
+    ['library.removeDownload', () => bridge.library.removeDownload('id'), 'bookstr-desktop-library-remove-download', 'id'],
     ['library.retryDownload', () => bridge.library.retryDownload('id'), 'bookstr-desktop-library-retry-download', 'id'],
     ['library.linkedFolders', () => bridge.library.linkedFolders(), 'bookstr-desktop-library-linked-folders'],
     ['library.linkFolder omitted argument', () => bridge.library.linkFolder(), 'bookstr-desktop-library-link-folder', undefined],

@@ -290,6 +290,9 @@ const desktopBridge: DesktopBridge = {
     enqueue(request) {
       return ipcRenderer.invoke('bookstr-desktop-library-enqueue', request);
     },
+    removeDownload(bookId) {
+      return ipcRenderer.invoke('bookstr-desktop-library-remove-download', bookId);
+    },
     retryDownload(bookId) {
       return ipcRenderer.invoke('bookstr-desktop-library-retry-download', bookId);
     },

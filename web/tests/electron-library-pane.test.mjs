@@ -245,3 +245,14 @@ test('Kindle overview renders determinate progress and stays available after err
   assert.equal(context.kindleTransferProgress.hidden, true);
   assert.equal(context.kindleTransferDismiss.disabled, false);
 });
+
+test('inactive download rows expose an accessible icon beside Retry', () => {
+  const start = html.indexOf('      async function renderDesktopDownloads(');
+  const end = html.indexOf('      async function openDesktopDownloads(', start);
+  const renderer = html.slice(start, end);
+  assert.match(renderer, /\['failed', 'stopped'\]\.includes\(jobStatus\)/);
+  assert.match(renderer, /remove\.setAttribute\('aria-label', `Delete \$\{job.title \|\| 'book'\} from Downloads`\)/);
+  assert.match(renderer, /remove\.innerHTML = '<svg[^\n]*aria-hidden="true"/);
+  assert.match(renderer, /actions\.append\(retry, remove\)/);
+  assert.match(renderer, /desktopBridge\.library\.removeDownload\(job.bookId\)/);
+});

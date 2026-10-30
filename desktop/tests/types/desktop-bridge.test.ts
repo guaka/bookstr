@@ -38,3 +38,8 @@ new CatalogInvitations({
   decodeNPub,
   getWindow: () => new BrowserWindow(),
 });
+
+const removedDownload: Promise<boolean> = bridge.library.removeDownload('book');
+void removedDownload;
+// @ts-expect-error Download deletion accepts only a book identifier.
+void bridge.library.removeDownload({ path: '/tmp/book' });
