@@ -41,6 +41,8 @@ test('Electron unit coverage and smoke results are published beside other client
   assert.ok(electronJob.indexOf('uses: pnpm/action-setup@v4') < electronJob.indexOf('uses: actions/setup-node@v4'));
   assert.match(electronJob, /pnpm install --frozen-lockfile/);
   assert.match(electronJob, /pnpm run typecheck/);
+  assert.match(electronJob, /name: Upload Electron Playwright report\n        if: always\(\)\n        uses: actions\/upload-artifact@v4/);
+  assert.match(electronJob, /path: desktop\/electron-playwright\.json/);
   assert.ok(electronJob.indexOf('pnpm install --frozen-lockfile') < electronJob.indexOf('pnpm run typecheck'));
   assert.match(electronJob, /pnpm run test:coverage:ci \| tee electron-tests\.tap/);
   assert.match(electronJob, /xvfb-run -a pnpm exec playwright test tests\/e2e\/desktop\.smoke\.spec\.js/);

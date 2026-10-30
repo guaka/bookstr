@@ -230,6 +230,13 @@ jobs:
           if [ "$torrent_status" -ne 0 ]; then status="$torrent_status"; fi
           echo "duration_ms=$((($(date +%s) - started) * 1000))" >> "$GITHUB_OUTPUT"
           exit "$status"
+      - name: Upload Electron Playwright report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bookstr-electron-playwright-${{ github.run_id }}
+          path: desktop/electron-playwright.json
+          if-no-files-found: warn
       - name: Record Electron test overview
         if: always()
         working-directory: .
