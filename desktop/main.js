@@ -1361,6 +1361,7 @@ function setupIpcHandlers() {
   ipcMain.handle('bookstr-desktop-library-enqueue', (_event, request) => getDownloadQueue().enqueue(request));
   ipcMain.handle('bookstr-desktop-library-retry-download', (_event, bookId) => getDownloadQueue().retry(bookId));
   ipcMain.handle('bookstr-desktop-kindle-devices', () => getKindleSync().devices());
+  ipcMain.handle('bookstr-desktop-kindle-presence', (_event, id) => getKindleSync().presence(String(id || '')));
   ipcMain.handle('bookstr-desktop-kindle-preview', (_event, id, bookId) => getKindleSync().preview(String(id || ''), bookId));
   ipcMain.handle('bookstr-desktop-kindle-transfer', (_event, id, bookId) => getKindleSync().transfer(String(id || ''), bookId));
   ipcMain.handle('bookstr-desktop-library-linked-folders', () => getLibraryStore().linkedFolders());

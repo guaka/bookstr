@@ -224,11 +224,28 @@ async function destroyTorrent(torrentBridge, torrent) {
   try { torrent.destroy?.(); } catch { /* best effort cleanup */ }
 }
 
-function libgenTorrentMetadataURL(libgenId, baseURL = LIBGEN_TORRENT_METADATA_BASE_URL) {
+function libgenCollection(book) {
+  const collection = String(book?.collection || '').toLowerCase();
+  if (['nonfiction', 'fiction', 'comics'].includes(collection)) return collection;
+  // Older saved jobs did not preserve the catalog collection.
+  const sourceURL = String(book?.source_url || book?.sourceUrl || '');
+  if (/\/f_\d+\.torrent$/.test(sourceURL)) return 'fiction';
+  if (/\/c_\d+\.torrent$/.test(sourceURL) || /^(cbz|cbr)$/i.test(book?.extension || book?.format || '')) return 'comics';
+  return 'nonfiction';
+}
+
+function libgenTorrentMetadataURL(libgenId, baseURL = '', collection = 'nonfiction') {
   const id = Number(libgenId);
   if (!Number.isSafeInteger(id) || id <= 0) throw new TypeError('LibGen ID must be a positive integer');
   const batch = Math.floor(id / 1000) * 1000;
-  return `${String(baseURL).replace(/\/$/, '')}/r_${batch}.torrent`;
+  const repositories = {
+    nonfiction: [LIBGEN_TORRENT_METADATA_BASE_URL, 'r_'],
+    fiction: ['https://annas-archive.gl/dyn/small_file/torrents/external/libgen_rs_fic', 'f_'],
+    comics: ['https://annas-archive.gl/dyn/small_file/torrents/external/libgen_li_comics', 'c_'],
+  };
+  const [repository, prefix] = repositories[collection] || repositories.nonfiction;
+  const batchName = prefix === 'r_' && batch === 0 ? '000' : String(batch);
+  return `${String(baseURL || repository).replace(/\/$/, '')}/${prefix}${batchName}.torrent`;
 }
 
 class AcquisitionManager {
@@ -290,7 +307,7 @@ class AcquisitionManager {
       const batch = Math.floor(libgenId / 1000) * 1000;
       const seedCandidates = [
         path.join(seedRoot, String(batch), md5),
-        path.join(seedRoot, `r_${batch}`, md5),
+        path.join(seedRoot, path.basename(libgenTorrentMetadataURL(libgenId, '', libgenCollection(book)), '.torrent'), md5),
       ];
       let seedFile = '';
       let stats = null;
@@ -333,7 +350,7 @@ class AcquisitionManager {
       try {
         if (started > 0 && this.seedResumeIntervalMs > 0) await this.sleep(this.seedResumeIntervalMs);
         started += 1;
-        const metadataURL = libgenTorrentMetadataURL(libgenId);
+        const metadataURL = libgenTorrentMetadataURL(libgenId, '', libgenCollection(book));
         const response = await this.fetch(metadataURL, { redirect: 'error' });
         if (!response?.ok) continue;
         const metadata = Buffer.from(await response.arrayBuffer());
@@ -393,7 +410,7 @@ class AcquisitionManager {
     const md5 = String(book?.md5 || '').trim().toLowerCase();
     const libgenId = Number(book?.libgenId || book?.libgen_id || book?.id);
     const extension = extensionFor(book?.extension || book?.format);
-    const metadataURL = libgenTorrentMetadataURL(libgenId);
+    const metadataURL = libgenTorrentMetadataURL(libgenId, '', libgenCollection(book));
     const expectedSize = Number(book?.filesize_bytes || book?.filesize || book?.size || 0);
     if (expectedSize && (!Number.isSafeInteger(expectedSize) || expectedSize < 0 || expectedSize > this.maxBytes)) {
       throw new Error('catalog file size is invalid or exceeds the maximum acquisition size');
@@ -470,7 +487,7 @@ class AcquisitionManager {
     } finally {
       if (!keepSeeding) {
         await destroyTorrent(this.torrentBridge, torrent);
-        await fsp.rm(stageDir, { recursive: true, force: true }).catch(() => {});
+        if (!autoSeed) await fsp.rm(stageDir, { recursive: true, force: true }).catch(() => {});
       }
     }
   }
@@ -610,5 +627,6 @@ module.exports = {
   safePath,
   createProgressThrottle,
   libgenTorrentMetadataURL,
+  libgenCollection,
   LIBGEN_TORRENT_METADATA_BASE_URL,
 };

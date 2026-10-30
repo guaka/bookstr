@@ -4,6 +4,7 @@ const ACTIVE = new Set(['queued', 'finding-peers', 'downloading', 'retrying']);
 const COMPLETE = new Set(['ready', 'seeding']);
 const MD5 = /^[a-f0-9]{32}$/;
 const FORMATS = new Set(['epub', 'pdf', 'fb2', 'cbz', 'cbr']);
+const MAX_CONCURRENT_ACQUISITIONS = 100;
 
 function libgenRequest(book) {
   const md5 = String(book?.md5 || '').trim().toLowerCase();
@@ -21,6 +22,8 @@ function libgenRequest(book) {
     isbn: String(book.isbn || '').slice(0, 64),
     filesize_bytes: Number(book.filesize_bytes || book.filesize || 0),
     source: 'libvault',
+    collection: String(book.collection || '').toLowerCase(),
+    sourceUrl: String(book.sourceUrl || book.source_url || '').slice(0, 2048),
     rights_status: String(book.rights_status || book.rightsStatus || 'unknown'),
     license: String(book.license || ''),
     license_url: String(book.license_url || book.licenseUrl || ''),
@@ -29,14 +32,19 @@ function libgenRequest(book) {
 }
 
 class DownloadQueue {
-  constructor({ store, acquisitionManager, onUpdate = () => {}, autoSeed = true } = {}) {
+  constructor({ store, acquisitionManager, onUpdate = () => {}, autoSeed = true, maxConcurrent = MAX_CONCURRENT_ACQUISITIONS } = {}) {
     if (!store || !acquisitionManager) throw new TypeError('store and acquisitionManager are required');
+    if (!Number.isSafeInteger(maxConcurrent) || maxConcurrent < 1 || maxConcurrent > MAX_CONCURRENT_ACQUISITIONS) {
+      throw new RangeError(`maxConcurrent must be an integer from 1 to ${MAX_CONCURRENT_ACQUISITIONS}`);
+    }
     this.store = store;
     this.acquisitionManager = acquisitionManager;
     this.onUpdate = onUpdate;
     this.autoSeed = autoSeed;
+    this.maxConcurrent = maxConcurrent;
     this.pending = [];
-    this.running = false;
+    this.activeJobs = new Map();
+    this.drainPromise = null;
   }
 
   async prepare(request) {
@@ -69,7 +77,13 @@ class DownloadQueue {
   }
 
   async retry(bookId) {
-    const request = this.store.downloadRequest(bookId);
+    let request = this.store.downloadRequest(bookId);
+    if (!request) {
+      const book = this.store.getBook?.(bookId);
+      if (book?.source === 'libvault' && MD5.test(String(bookId))) {
+        request = { kind: 'libgen', record: { ...book, libgenId: book.source_native_id } };
+      }
+    }
     if (!request) throw new Error('Download cannot be retried without its source record.');
     return this.enqueue(request);
   }
@@ -89,38 +103,67 @@ class DownloadQueue {
   }
 
   schedule(bookId, request) {
-    if (this.pending.some(job => job.bookId === bookId)) return;
+    if (this.activeJobs.has(bookId) || this.pending.some(job => job.bookId === bookId)) return;
     this.pending.push({ bookId, request });
     void this.drain();
   }
 
   async drain() {
-    if (this.running) return;
-    this.running = true;
-    try {
-      while (this.pending.length) {
-        const { bookId, request } = this.pending.shift();
-        try {
-          let lastProgressNoticeAt = null;
-          const onProgress = () => {
-            const now = Date.now();
-            if (lastProgressNoticeAt !== null && now - lastProgressNoticeAt < 500) return;
-            lastProgressNoticeAt = now;
-            this.onUpdate();
-          };
-          if (request.kind === 'libgen') {
-            await this.acquisitionManager.acquireLibgen(request.record, { autoSeed: this.autoSeed, onProgress });
-          } else {
-            await this.acquisitionManager.acquire(request.record, { onProgress, allowUnverifiedOpen: true });
-          }
-        } catch (error) {
-          this.store.setDownload({ bookId, status: 'failed', source: request.kind, error: error.message || String(error) });
-        }
-        this.onUpdate();
-      }
-    } finally {
-      this.running = false;
+    if (this.drainPromise) {
+      this.startPending();
+      return this.drainPromise;
     }
+    const drainPromise = this.drainPending();
+    this.drainPromise = drainPromise;
+    try {
+      await drainPromise;
+    } finally {
+      if (this.drainPromise === drainPromise) this.drainPromise = null;
+    }
+    if (this.pending.length || this.activeJobs.size) return this.drain();
+  }
+
+  async drainPending() {
+    while (this.pending.length || this.activeJobs.size) {
+      this.startPending();
+      if (this.activeJobs.size) await Promise.race(this.activeJobs.values());
+    }
+  }
+
+  startPending() {
+    while (this.pending.length && this.activeJobs.size < this.maxConcurrent) {
+      const job = this.pending.shift();
+      const task = this.runJob(job).finally(() => {
+        this.activeJobs.delete(job.bookId);
+        this.notifyUpdate();
+      });
+      this.activeJobs.set(job.bookId, task);
+    }
+  }
+
+  async runJob({ bookId, request }) {
+    try {
+      let lastProgressNoticeAt = null;
+      const onProgress = () => {
+        const now = Date.now();
+        if (lastProgressNoticeAt !== null && now - lastProgressNoticeAt < 500) return;
+        lastProgressNoticeAt = now;
+        this.notifyUpdate();
+      };
+      if (request.kind === 'libgen') {
+        await this.acquisitionManager.acquireLibgen(request.record, { autoSeed: this.autoSeed, onProgress });
+      } else {
+        await this.acquisitionManager.acquire(request.record, { onProgress, allowUnverifiedOpen: true });
+      }
+    } catch (error) {
+      try {
+        this.store.setDownload({ bookId, status: 'failed', source: request.kind, error: error.message || String(error) });
+      } catch {}
+    }
+  }
+
+  notifyUpdate() {
+    try { this.onUpdate(); } catch {}
   }
 }
 

@@ -6,7 +6,7 @@ const fsp = require('node:fs/promises');
 const path = require('node:path');
 const { Readable } = require('node:stream');
 const test = require('node:test');
-const { AcquisitionManager, createProgressThrottle, extensionFor, libgenTorrentMetadataURL } = require('../../acquisition-manager');
+const { AcquisitionManager, createProgressThrottle, extensionFor, libgenTorrentMetadataURL, libgenCollection } = require('../../acquisition-manager');
 const { LibraryImporter } = require('../../library-import');
 const { LibraryStore } = require('../../library-store');
 
@@ -489,4 +489,35 @@ test('torrent acquisition destroys a completed torrent when its staged file fail
     acquisitions: [{ format: 'epub', torrent: 'https://example.test/book.torrent', availability: 'open', size: 10, sha256: BOOK_SHA256 }],
   }), /all eligible acquisitions failed/);
   assert.equal(destroyed, 1);
+}));
+
+
+test('LibGen collection routing preserves explicit collections and repairs legacy comic jobs', () => {
+  for (const collection of ['nonfiction', 'fiction', 'comics']) assert.equal(libgenCollection({ collection }), collection);
+  assert.equal(libgenCollection({ collection: 'nonfiction', extension: 'cbr' }), 'nonfiction');
+  assert.equal(libgenCollection({ extension: 'CBR' }), 'comics');
+  assert.equal(libgenCollection({ format: 'cbz' }), 'comics');
+  assert.equal(libgenCollection({ source_url: 'https://example.test/f_1000.torrent' }), 'fiction');
+  assert.equal(libgenCollection({ sourceUrl: 'https://example.test/c_1000.torrent' }), 'comics');
+  assert.equal(libgenCollection({ extension: 'pdf' }), 'nonfiction');
+  assert.equal(libgenCollection(), 'nonfiction');
+  assert.match(libgenTorrentMetadataURL(2521871, '', 'comics'), /libgen_li_comics\/c_2521000.torrent$/);
+  assert.match(libgenTorrentMetadataURL(2521871, '', 'fiction'), /libgen_rs_fic\/f_2521000.torrent$/);
+  assert.match(libgenTorrentMetadataURL(1), /r_000.torrent$/);
+  assert.equal(libgenTorrentMetadataURL(1, 'https://example.test/', 'unknown'), 'https://example.test/r_000.torrent');
+});
+
+test('a failed comic acquisition uses the comics repository and preserves shared partial downloads', () => withManager(async ({ manager, root }) => {
+  const partial = path.join(root, 'staging', 'libgen-seeds', 'other-batch', 'partial');
+  await fsp.mkdir(path.dirname(partial), { recursive: true });
+  await fsp.writeFile(partial, 'keep these bytes');
+  let requested;
+  manager.fetch = async url => {
+    requested = url;
+    return { ok: true, headers: new Headers(), arrayBuffer: async () => Buffer.from('d4:test4:datae') };
+  };
+  manager.torrentBridge = { async downloadSelected() { throw new Error('no peers yet'); } };
+  await assert.rejects(() => manager.acquireLibgen({ md5: 'a'.repeat(32), libgenId: 2521871, extension: 'cbr' }), /no peers yet/);
+  assert.match(requested, /libgen_li_comics\/c_2521000.torrent$/);
+  assert.equal(await fsp.readFile(partial, 'utf8'), 'keep these bytes');
 }));

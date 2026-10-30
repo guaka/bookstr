@@ -14,7 +14,7 @@ const PUBLIC_ICE_SERVERS = Object.freeze([
 const DEFAULT_DOWNLOAD_LIMIT = 10 * 1000 * 1000;
 const PUBLIC_UPLOAD_LIMIT = 1000 * 1000;
 const MAX_TRANSFER_LIMIT = 1000 * 1000 * 1000;
-const MAX_ACTIVE_TORRENTS = 8;
+const MAX_ACTIVE_TORRENTS = 100;
 const MAX_CONNECTIONS_PER_TORRENT = 16;
 const PIECE_LENGTH = 256 * 1024;
 
@@ -271,7 +271,11 @@ class WebTorrentBridge {
         });
       };
       await waitForMetadata();
-      const file = torrent.files.find(candidate => path.basename(String(candidate.path || candidate.name || '')).toLowerCase() === wantedName);
+      const file = torrent.files.find(candidate => {
+        const name = path.basename(String(candidate.path || candidate.name || '')).toLowerCase();
+        return name === wantedName || /^[a-f0-9]{32}$/.test(wantedName)
+          && name.replace(/\.(?:epub|pdf|fb2|cbz|cbr)$/, '') === wantedName;
+      });
       if (!file) throw new Error(`${wantedName} is absent from the repository torrent`);
       const limit = Number(maxBytes);
       if (Number.isFinite(limit) && limit > 0 && Number(file.length) > limit) {

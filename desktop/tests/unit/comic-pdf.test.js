@@ -111,6 +111,16 @@ test('conversion writes and verifies a PDF, then reuses the verified cache entry
   assert.match(result.sha256, /^[a-f0-9]{64}$/);
   assert.equal((await fs.readFile(result.path)).subarray(0, 4).toString(), '%PDF');
   assert.deepEqual(await fs.readdir(path.join(root, 'cache')), [`${digest.toLowerCase()}.pdf`]);
+  const cached = await converter.cached(digest);
+  assert.deepEqual(cached, result);
+  assert.strictEqual(await converter.cached(digest), cached, 'unchanged cached PDF stats should reuse the verified digest');
+  assert.equal(await converter.cached('invalid'), null);
+  const target = path.join(root, 'cache', `${digest.toLowerCase()}.pdf`);
+  const future = new Date(Date.now() + 5_000);
+  await fs.utimes(target, future, future);
+  const refreshed = await converter.cached(digest);
+  assert.notStrictEqual(refreshed, cached, 'changed cache file stats should trigger a fresh digest');
+  assert.equal(refreshed.sha256, result.sha256);
   assert.deepEqual(await converter.convert(source, digest), result);
 });
 

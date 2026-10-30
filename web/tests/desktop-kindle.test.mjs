@@ -24,3 +24,32 @@ test('progress text includes phase title percent and page counts', () => {
   );
   assert.equal(progressText({ phase: 'verifying' }), 'Verifying');
 });
+
+
+test('per-device presence rejects stale scans and forgets disconnected devices', () => {
+  const { createLibraryPresence } = require('../desktop-kindle.js');
+  const state = createLibraryPresence();
+  assert.equal(state.has('kindle', 'book'), false);
+  assert.equal(state.failed('kindle', 'book'), false);
+  const old = state.begin('kindle');
+  state.mark('kindle', ['book']);
+  assert.equal(state.apply(old, []), false);
+  assert.equal(state.has('kindle', 'book'), true);
+  state.fail('kindle', 'book');
+  assert.equal(state.has('kindle', 'book'), false);
+  assert.equal(state.failed('kindle', 'book'), true);
+  const scan = state.begin('kindle');
+  assert.equal(state.apply(scan, ['book']), true);
+  assert.equal(state.failed('kindle', 'book'), false);
+  state.fail('kindle', 'book');
+  state.mark('kindle', ['book']);
+  assert.equal(state.failed('kindle', 'book'), false);
+  state.retain(['kindle']);
+  assert.equal(state.has('kindle', 'book'), true);
+  const disconnectedScan = state.begin('kindle');
+  state.retain([]);
+  state.begin('kindle');
+  assert.equal(state.apply(disconnectedScan, ['book']), false);
+  assert.equal(state.has('kindle', 'book'), false);
+  assert.equal(state.has('other', 'book'), false);
+});

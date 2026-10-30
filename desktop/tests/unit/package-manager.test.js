@@ -17,6 +17,9 @@ test('desktop pins pnpm and keeps installation and lifecycle hooks reproducible'
   assert.match(settings, /^networkConcurrency: 4$/m);
   assert.match(settings, /onlyBuiltDependencies:[\s\S]*- node-datachannel/);
   assert.match(settings, /patchedDependencies:/);
+  assert.match(settings, /app-builder-lib@26\.15\.3: patches\/app-builder-lib@26\.15\.3\.patch/);
+  const packagerPatch = fs.readFileSync(path.join(root, 'patches/app-builder-lib@26.15.3.patch'), 'utf8');
+  assert.match(packagerPatch, /^\+.*this\.cache\.searchForPackage\(parentPath, pkgName, requiredRange, skipDownwardSearch\)/m);
   const patch = fs.readFileSync(path.join(root, 'patches/node-datachannel@0.32.3.patch'), 'utf8');
   assert.match(patch, /^\+.*install.*prebuild-install -r napi/m);
   assert.doesNotMatch(patch, /^\+.*(?:cmake|npm run _prebuild)/m);
@@ -31,4 +34,49 @@ test('desktop package contains every local runtime module required by its main p
   for (const [, name] of main.matchAll(/require\('\.\/([a-z-]+)'\)/g)) {
     assert.ok(bundled.includes(`${name}.js`), `Missing packaged module: ${name}.js`);
   }
+});
+
+
+test('packaging preserves exact nested dependency versions before accepting overrides', async t => {
+  const os = require('node:os');
+  const { createRequire } = require('node:module');
+  const builderRequire = createRequire(require.resolve('electron-builder/package.json'));
+  const { PnpmNodeModulesCollector } = builderRequire('app-builder-lib/out/node-module-collector/pnpmNodeModulesCollector');
+  const fixture = fs.mkdtempSync(path.join(os.tmpdir(), 'bookstr-package-versions-'));
+  t.after(() => fs.rmSync(fixture, { recursive: true, force: true }));
+  const writePackage = (relative, name, version) => {
+    const directory = path.join(fixture, relative);
+    fs.mkdirSync(directory, { recursive: true });
+    fs.writeFileSync(path.join(directory, 'package.json'), JSON.stringify({ name, version }));
+    return directory;
+  };
+  writePackage('node_modules/bencode', 'bencode', '4.0.1');
+  const nested = writePackage('node_modules/k-rpc-socket/node_modules/bencode', 'bencode', '2.0.3');
+  const collector = new PnpmNodeModulesCollector(fixture, {});
+  collector.isHoisted = { value: Promise.resolve(true) };
+  const missingVirtualPath = path.join(fixture, 'node_modules/.pnpm/bencode@2.0.3/node_modules/bencode');
+  const resolved = await collector.locateFromDepOrRoot('bencode', missingVirtualPath, '2.0.3');
+  assert.equal(resolved.packageDir, nested);
+  assert.equal(resolved.packageJson.version, '2.0.3');
+  assert.equal((await collector.locateFromDepOrRoot('bencode', missingVirtualPath, '2.0.3')).packageDir, nested);
+  assert.equal((await collector.locateFromDepOrRoot('bencode', missingVirtualPath, '4.0.1')).packageJson.version, '4.0.1');
+  assert.equal((await collector.locateFromDepOrRoot('bencode', nested, '2.0.3')).packageJson.version, '2.0.3');
+  assert.equal((await collector.locateFromDepOrRoot('bencode', undefined, '2.0.3')).packageDir, nested);
+});
+
+test('packaging still accepts an installed override when no exact version exists', async t => {
+  const os = require('node:os');
+  const { createRequire } = require('node:module');
+  const builderRequire = createRequire(require.resolve('electron-builder/package.json'));
+  const { PnpmNodeModulesCollector } = builderRequire('app-builder-lib/out/node-module-collector/pnpmNodeModulesCollector');
+  const fixture = fs.mkdtempSync(path.join(os.tmpdir(), 'bookstr-package-override-'));
+  t.after(() => fs.rmSync(fixture, { recursive: true, force: true }));
+  const installed = path.join(fixture, 'node_modules/bencode');
+  fs.mkdirSync(installed, { recursive: true });
+  fs.writeFileSync(path.join(installed, 'package.json'), JSON.stringify({ name: 'bencode', version: '4.0.1' }));
+  const collector = new PnpmNodeModulesCollector(fixture, {});
+  collector.isHoisted = { value: Promise.resolve(true) };
+  const result = await collector.locateFromDepOrRoot('bencode', path.join(fixture, 'missing'), '2.0.3');
+  assert.equal(result.packageDir, installed);
+  assert.equal(result.packageJson.version, '4.0.1');
 });
