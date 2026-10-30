@@ -227,6 +227,15 @@ class LibraryStore {
     return this.downloads().find(item => item.bookId === bookId) || null;
   }
 
+  removeDownload(bookId) {
+    const id = safeID(bookId);
+    const job = this.db.prepare('SELECT status FROM downloads WHERE book_id = ?').get(id);
+    if (!job) return false;
+    if (!['failed', 'stopped'].includes(job.status)) throw new Error('Only failed or stopped downloads can be deleted.');
+    this.db.prepare('DELETE FROM downloads WHERE book_id = ?').run(id);
+    return true;
+  }
+
   saveDownloadRequest(bookId, request) {
     const id = safeID(bookId);
     const json = JSON.stringify(request);

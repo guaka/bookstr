@@ -1,0 +1,12 @@
+diff --git a/out/node-module-collector/pnpmNodeModulesCollector.js b/out/node-module-collector/pnpmNodeModulesCollector.js
+--- a/out/node-module-collector/pnpmNodeModulesCollector.js
++++ b/out/node-module-collector/pnpmNodeModulesCollector.js
+@@ -76,7 +76,7 @@
+         // land at `<root>/node_modules/A/node_modules/B` — downward BFS is needed to find them.
+         const skipDownwardSearch = !(await this.isHoisted.value);
+         const promise = (async () => {
+-            const fromDep = parentPath ? await this.cache.locatePackageVersion({ pkgName, parentDir: parentPath, requiredRange, skipDownwardSearch }) : null;
++            const fromDep = parentPath ? await this.cache.searchForPackage(parentPath, pkgName, requiredRange, skipDownwardSearch) : null;
+             if (fromDep) {
+                 return fromDep;
+             }

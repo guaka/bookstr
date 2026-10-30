@@ -129,7 +129,35 @@ class ComicPdfConverter {
     this.cacheRoot = cacheRoot;
     this.archiveTool = archiveTool;
     this.inFlight = new Map();
+    this.cachedFiles = new Map();
     this.queue = Promise.resolve();
+  }
+
+  async cached(sourceSha256) {
+    if (!/^[a-f0-9]{64}$/i.test(sourceSha256)) return null;
+    const key = sourceSha256.toLowerCase();
+    const target = path.join(this.cacheRoot, `${key}.pdf`);
+    const stat = await fsp.stat(target).catch(() => null);
+    if (!stat?.isFile() || stat.size <= 0) {
+      this.cachedFiles.delete(key);
+      return null;
+    }
+    const fingerprint = `${stat.dev}:${stat.ino}:${stat.size}:${stat.mtimeMs}:${stat.ctimeMs}`;
+    const cached = this.cachedFiles.get(key);
+    if (cached?.fingerprint === fingerprint) return cached.result;
+    const digest = await hashFile(target);
+    const result = { path: target, size: digest.size, sha256: digest.sha256 };
+    this.cachedFiles.set(key, { fingerprint, result });
+    return result;
+  }
+
+  async rememberCached(sourceSha256, target, digest) {
+    const stat = await fsp.stat(target);
+    const fingerprint = `${stat.dev}:${stat.ino}:${stat.size}:${stat.mtimeMs}:${stat.ctimeMs}`;
+    this.cachedFiles.set(sourceSha256, {
+      fingerprint,
+      result: { path: target, size: digest.size, sha256: digest.sha256 },
+    });
   }
 
   async convert(source, sourceSha256, onProgress) {
@@ -145,11 +173,8 @@ class ComicPdfConverter {
 
   async convertOnce(source, sourceSha256, onProgress) {
     const target = path.join(this.cacheRoot, `${sourceSha256}.pdf`);
-    const existing = await fsp.stat(target).catch(() => null);
-    if (existing?.isFile() && existing.size > 0) {
-      const digest = await hashFile(target);
-      return { path: target, size: digest.size, sha256: digest.sha256 };
-    }
+    const existing = await this.cached(sourceSha256);
+    if (existing) return existing;
     const stat = await fsp.stat(source);
     if (!stat.isFile() || stat.size > MAX_ARCHIVE_BYTES) throw new Error('Comic archive exceeds conversion limits.');
     await fsp.mkdir(this.cacheRoot, { recursive: true });
@@ -158,6 +183,7 @@ class ComicPdfConverter {
       await renderComic(source, temporary, sourceSha256, this.archiveTool, onProgress);
       await fsp.rename(temporary, target);
       const digest = await hashFile(target);
+      await this.rememberCached(sourceSha256, target, digest);
       return { path: target, size: digest.size, sha256: digest.sha256 };
     } finally {
       await fsp.rm(temporary, { force: true }).catch(() => {});

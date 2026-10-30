@@ -5,12 +5,26 @@ import vm from 'node:vm';
 import '../book-metadata.js';
 import '../desktop-kindle.js';
 
+function element() {
+  return { dataset: {}, attributes: {}, children: [], classList: { remove() {} },
+    setAttribute(key, value) { this.attributes[key] = value; },
+    removeAttribute(key) { delete this.attributes[key]; },
+    append(...items) { this.children.push(...items); },
+    replaceChildren(...items) { this.children = items; } };
+}
 const html = fs.readFileSync(new URL('../index.html', import.meta.url), 'utf8');
 function kindleContext({ job = { status: 'ready', extension: 'cbz', bookId: 'comic' }, devices = [{ id: 'kindle' }], result = { transferred: ['comic'], alreadyPresent: 0, errors: [] }, failure } = {}) {
-  const button = { disabled: false, attributes: {}, setAttribute(key, value) { this.attributes[key] = value; }, removeAttribute(key) { delete this.attributes[key]; } };
+  const button = { dataset: { kindleBookId: 'comic' }, disabled: false, attributes: {}, setAttribute(key, value) { this.attributes[key] = value; }, removeAttribute(key) { delete this.attributes[key]; } };
   const calls = [];
+  const buttons = [button];
   const context = vm.createContext({
-    kindleTransferRunning: false, kindleLibraryButton: null, currentKindleId: 'kindle',
+    kindleTransferRunning: false, kindleLibraryButton: null, kindleLibraryBookId: '', currentKindleId: 'kindle',
+    kindleLibraryPresence: globalThis.BookstrDesktopKindle.createLibraryPresence(),
+    kindleTransferOverview: globalThis.BookstrDesktopKindle.createTransferOverview(),
+    kindleTransferPanel: element(), kindleTransferStatus: element(), kindleTransferCount: element(),
+    kindleTransferProgress: element(), kindleTransferDismiss: element(), kindleTransferItems: element(),
+    document: { createElement: element },
+    kindlePresenceRequest: null, homeReadingList: { querySelectorAll: () => buttons },
     desktopKindleSummary: { textContent: '' }, desktopKindleOffer: { classList: { remove() {} } },
     desktopDownloadForBook: () => job, BookstrDesktopKindle: globalThis.BookstrDesktopKindle,
     desktopBridge: { kindle: { devices: async () => devices, transfer: async (...args) => {
@@ -19,10 +33,10 @@ function kindleContext({ job = { status: 'ready', extension: 'cbz', bookId: 'com
       return result;
     } } },
   });
-  const start = html.indexOf('      async function sendLibraryBookToKindle(');
+  const start = html.indexOf('      function updateKindleLibraryButton(');
   const end = html.indexOf('      async function renderDesktopDownloads(', start);
   vm.runInContext(html.slice(start, end), context);
-  return { context, button, calls };
+  return { context, button, calls, buttons };
 }
 
 test('Library Kindle action shows busy state and reports success beside the library', async () => {
@@ -34,10 +48,13 @@ test('Library Kindle action shows busy state and reports success beside the libr
   assert.equal(context.kindleLibraryButton, button);
   await pending;
   assert.deepEqual(calls, [['kindle', 'comic']]);
-  assert.equal(button.textContent, 'Sent');
+  assert.equal(button.textContent, 'On Kindle');
   assert.equal(button.disabled, false);
   assert.equal(button.attributes['aria-busy'], undefined);
   assert.equal(context.desktopKindleSummary.textContent, 'Copied to Kindle');
+  assert.equal(context.kindleTransferStatus.textContent, '1 copied · 0 already there · 0 skipped · 0 failed');
+  assert.equal(context.kindleTransferItems.children[0].children[0].textContent, 'Comic');
+  assert.equal(context.kindleTransferDismiss.disabled, false);
   assert.equal(context.kindleLibraryButton, null);
   assert.equal(context.kindleTransferRunning, false);
 });
@@ -71,7 +88,8 @@ test('Library Kindle action handles duplicates, errors, absent devices and unsup
 test('Kindle progress updates the Library action and ignores late completion events', () => {
   const button = {};
   const context = loadFunction('renderKindleProgress', 'desktopBridge?.kindle?.onProgress', {
-    kindleTransferRunning: true, kindleLibraryButton: button, desktopKindleSummary: { textContent: '' },
+    kindleTransferRunning: true, kindleLibraryButton: button,
+    kindleTransferOverview: { update() {} }, renderKindleTransferOverview() {}, desktopKindleSummary: { textContent: '' },
     BookstrDesktopKindle: globalThis.BookstrDesktopKindle,
   });
   context.renderKindleProgress({ phase: 'converting', page: 1, pages: 20 });
@@ -152,4 +170,127 @@ test('Library deduplicates saved editions that resolve to one local file and ord
   });
   const books = c.desktopReadableLibrary([{ id: 'saved-edition', title: 'Saved title' }, { id: 'missing', title: 'Missing' }]);
   assert.deepEqual(Array.from(books, book => book.title), ['New', 'Saved title']);
+});
+
+
+test('Kindle presence survives row replacement, filtering, device polling and late snapshots', async () => {
+  const { context, button, buttons } = kindleContext();
+  const stale = context.kindleLibraryPresence.begin('kindle');
+  await context.sendLibraryBookToKindle({ title: 'Comic' }, button);
+  assert.equal(context.kindleLibraryPresence.apply(stale, []), false);
+  const replacement = { ...button, dataset: { ...button.dataset }, attributes: {} };
+  buttons.splice(0, 1, replacement);
+  context.refreshKindleLibraryButtons();
+  assert.equal(replacement.textContent, 'On Kindle');
+  context.currentKindleId = 'different';
+  context.refreshKindleLibraryButtons();
+  assert.equal(replacement.textContent, 'Send to Kindle');
+  context.currentKindleId = 'kindle';
+  context.refreshKindleLibraryButtons();
+  assert.equal(replacement.textContent, 'On Kindle');
+});
+
+test('presence lookup is optional, coalesced and never lets an old device update the current rows', async () => {
+  const { context, button } = kindleContext();
+  await context.refreshKindlePresence();
+  let resolve;
+  let calls = 0;
+  context.desktopBridge.kindle.presence = () => { calls++; return new Promise(done => { resolve = done; }); };
+  const pending = context.refreshKindlePresence();
+  await context.refreshKindlePresence();
+  assert.equal(calls, 1);
+  resolve({ bookIds: ['comic'] });
+  await pending;
+  assert.equal(button.textContent, 'On Kindle');
+  const oldDevice = context.refreshKindlePresence();
+  context.currentKindleId = 'different';
+  resolve({ bookIds: [] });
+  await oldDevice;
+  context.desktopBridge.kindle.presence = async () => { throw new Error('Disconnected'); };
+  await context.refreshKindlePresence();
+  context.currentKindleId = '';
+  await context.refreshKindlePresence();
+});
+
+
+test('Kindle presence IPC only forwards a normalized device ID', async () => {
+  const main = fs.readFileSync(new URL('../../desktop/main.js', import.meta.url), 'utf8');
+  const source = main.split('\n').find(line => line.includes("ipcMain.handle('bookstr-desktop-kindle-presence'"));
+  let handler;
+  const ids = [];
+  vm.runInNewContext(source, { ipcMain: { handle(name, callback) { assert.equal(name, 'bookstr-desktop-kindle-presence'); handler = callback; } }, getKindleSync: () => ({ presence: id => { ids.push(id); return Promise.resolve({ bookIds: [] }); } }) });
+  await handler({}, 'kindle');
+  await handler({}, undefined);
+  assert.deepEqual(ids, ['kindle', '']);
+  const preload = fs.readFileSync(new URL('../../desktop/preload.js', import.meta.url), 'utf8');
+  const method = preload.match(/presence\(id\) \{[^}]+\}/)[0];
+  const ipcRenderer = { invoke: (...args) => args };
+  const context = vm.createContext({ ipcRenderer, electron_1: { ipcRenderer } });
+  const bridge = vm.runInContext(`({ ${method} })`, context);
+  assert.deepEqual(Array.from(bridge.presence('kindle')), ['bookstr-desktop-kindle-presence', 'kindle']);
+});
+
+
+test('Kindle overview renders determinate progress and stays available after errors', () => {
+  const { context } = kindleContext();
+  context.kindleTransferOverview.start([{ bookId: 'comic', title: 'Comic' }]);
+  context.kindleTransferOverview.update({ phase: 'converting', bookId: 'comic', page: 3, pages: 10 });
+  context.renderKindleTransferOverview();
+  assert.equal(context.kindleTransferProgress.value, 30);
+  assert.equal(context.kindleTransferCount.textContent, '0 / 1 copied');
+  assert.equal(context.kindleTransferDismiss.disabled, true);
+  context.kindleTransferOverview.fail(new Error('Disconnected'));
+  context.renderKindleTransferOverview();
+  assert.equal(context.kindleTransferStatus.textContent, 'Disconnected');
+  assert.equal(context.kindleTransferProgress.hidden, true);
+  assert.equal(context.kindleTransferDismiss.disabled, false);
+});
+
+test('inactive download rows expose an accessible icon beside Retry', () => {
+  const start = html.indexOf('      async function renderDesktopDownloads(');
+  const end = html.indexOf('      async function openDesktopDownloads(', start);
+  const renderer = html.slice(start, end);
+  assert.match(renderer, /\['failed', 'stopped'\]\.includes\(jobStatus\)/);
+  assert.match(renderer, /remove\.setAttribute\('aria-label', `Delete \$\{job.title \|\| 'book'\} from Downloads`\)/);
+  assert.match(renderer, /remove\.innerHTML = '<svg[^\n]*aria-hidden="true"/);
+  assert.match(renderer, /actions\.append\(retry, remove\)/);
+  assert.match(renderer, /desktopBridge\.library\.removeDownload\(job.bookId\)/);
+});
+
+test('an old Downloads snapshot cannot overwrite a newer render', async () => {
+  let resolveOld;
+  let requests = 0;
+  let renders = 0;
+  const context = vm.createContext({
+    isDesktopMode: true, desktopDownloadsRenderGeneration: 0,
+    desktopDownloadEntryNeedsSnapshot: false, desktopHiddenCompletedIds: new Set(),
+    desktopDownloadsNotice: { textContent: 'Loading' },
+    desktopDownloadsList: { replaceChildren() { renders++; } },
+    desktopBridge: { library: { downloads() {
+      if (++requests === 1) return new Promise(resolve => { resolveOld = resolve; });
+      return Promise.resolve([]);
+    } } },
+  });
+  const start = html.indexOf('      async function renderDesktopDownloads(');
+  const end = html.indexOf('      async function openDesktopDownloads(', start);
+  vm.runInContext(html.slice(start, end), context);
+  const old = context.renderDesktopDownloads();
+  await context.renderDesktopDownloads();
+  assert.equal(renders, 1);
+  resolveOld([]);
+  await old;
+  assert.equal(renders, 1);
+});
+
+test('Library Kindle actions are hidden until a device is connected', () => {
+  const { context, button } = kindleContext();
+  context.currentKindleId = '';
+  context.updateKindleLibraryButton(button);
+  assert.equal(button.hidden, true);
+  context.currentKindleId = 'kindle';
+  context.updateKindleLibraryButton(button);
+  assert.equal(button.hidden, false);
+  context.currentKindleId = '';
+  context.refreshKindleLibraryButtons();
+  assert.equal(button.hidden, true);
 });

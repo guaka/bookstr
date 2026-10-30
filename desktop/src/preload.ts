@@ -290,6 +290,9 @@ const desktopBridge: DesktopBridge = {
     enqueue(request) {
       return ipcRenderer.invoke('bookstr-desktop-library-enqueue', request);
     },
+    removeDownload(bookId) {
+      return ipcRenderer.invoke('bookstr-desktop-library-remove-download', bookId);
+    },
     retryDownload(bookId) {
       return ipcRenderer.invoke('bookstr-desktop-library-retry-download', bookId);
     },
@@ -310,6 +313,7 @@ const desktopBridge: DesktopBridge = {
   },
   kindle: {
     devices() { return ipcRenderer.invoke('bookstr-desktop-kindle-devices'); },
+    presence(id) { return ipcRenderer.invoke('bookstr-desktop-kindle-presence', id); },
     preview(id, bookId) { return ipcRenderer.invoke('bookstr-desktop-kindle-preview', id, bookId); },
     transfer(id, bookId) { return ipcRenderer.invoke('bookstr-desktop-kindle-transfer', id, bookId); },
     onProgress(callback) {

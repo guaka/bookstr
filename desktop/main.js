@@ -1359,8 +1359,10 @@ function setupIpcHandlers() {
     resolveRegisteredLibraryFile,
   ));
   ipcMain.handle('bookstr-desktop-library-enqueue', (_event, request) => getDownloadQueue().enqueue(request));
+  ipcMain.handle('bookstr-desktop-library-remove-download', (_event, bookId) => getDownloadQueue().remove(bookId));
   ipcMain.handle('bookstr-desktop-library-retry-download', (_event, bookId) => getDownloadQueue().retry(bookId));
   ipcMain.handle('bookstr-desktop-kindle-devices', () => getKindleSync().devices());
+  ipcMain.handle('bookstr-desktop-kindle-presence', (_event, id) => getKindleSync().presence(String(id || '')));
   ipcMain.handle('bookstr-desktop-kindle-preview', (_event, id, bookId) => getKindleSync().preview(String(id || ''), bookId));
   ipcMain.handle('bookstr-desktop-kindle-transfer', (_event, id, bookId) => getKindleSync().transfer(String(id || ''), bookId));
   ipcMain.handle('bookstr-desktop-library-linked-folders', () => getLibraryStore().linkedFolders());
@@ -1648,17 +1650,23 @@ async function bootstrap() {
   });
 }
 
-let kindleShutdownStarted = false;
-let kindleShutdownComplete = false;
+let shutdownStarted = false;
+let shutdownComplete = false;
 app.on('before-quit', event => {
-  if (kindleShutdownComplete || !kindleSync) return;
+  if (shutdownComplete) return;
   event.preventDefault();
-  if (kindleShutdownStarted) return;
-  kindleShutdownStarted = true;
-  void kindleSync.close().catch(error => {
-    console.warn('Could not close the Kindle transport cleanly:', error);
-  }).finally(() => {
-    kindleShutdownComplete = true;
+  if (shutdownStarted) return;
+  shutdownStarted = true;
+  void Promise.all([
+    kindleSync ? kindleSync.close().catch(error => {
+      console.warn('Could not close the Kindle transport cleanly:', error);
+    }) : undefined,
+    (async () => {
+      await downloadQueue?.close();
+      await acquisitionManager?.close();
+    })(),
+  ]).finally(() => {
+    shutdownComplete = true;
     app.quit();
   });
 });

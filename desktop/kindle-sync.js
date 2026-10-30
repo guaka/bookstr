@@ -111,13 +111,16 @@ class MountedKindles {
 
 class KindleSync {
   constructor({ store, resolveFile, transports = [new MountedKindles()], comicConverter = null,
-    onProgress = () => {} } = {}) {
+    onProgress = () => {}, now = Date.now, presenceTtlMs = 60_000 } = {}) {
     if (!store || !resolveFile) throw new TypeError('store and resolveFile are required');
     this.store = store;
     this.resolveFile = resolveFile;
     this.transports = transports;
     this.comicConverter = comicConverter;
     this.onProgress = onProgress;
+    this.now = now;
+    this.presenceTtlMs = presenceTtlMs;
+    this.presenceByDevice = new Map();
     this.syncing = false;
     this.operationChain = Promise.resolve();
     this.closed = false;
@@ -125,7 +128,12 @@ class KindleSync {
 
   async devices() {
     const groups = await Promise.all(this.transports.map(transport => transport.devices()));
-    return groups.flat().map(({ id, name, kind }) => ({ id, name, kind }));
+    const devices = groups.flat().map(({ id, name, kind }) => ({ id, name, kind }));
+    const connected = new Set(devices.map(device => device.id));
+    for (const deviceId of this.presenceByDevice.keys()) {
+      if (!connected.has(deviceId)) this.presenceByDevice.delete(deviceId);
+    }
+    return devices;
   }
 
   async findDevice(id) {
@@ -133,7 +141,85 @@ class KindleSync {
       const device = (await transport.devices()).find(item => item.id === id);
       if (device) return { transport, device };
     }
+    this.presenceByDevice.delete(id);
     throw new Error('Kindle is disconnected.');
+  }
+
+  rememberPresence(deviceId, bookIds, replace = false, scanned = false) {
+    const current = this.presenceByDevice.get(deviceId);
+    const ids = replace || !current || current.expiresAt <= this.now()
+      ? new Set() : new Set(current.bookIds);
+    for (const bookId of bookIds) ids.add(bookId);
+    this.presenceByDevice.set(deviceId, {
+      bookIds: ids,
+      expiresAt: this.now() + this.presenceTtlMs,
+      scanned: scanned || (!replace && current?.scanned === true),
+    });
+  }
+
+  async presenceBooks() {
+    const books = [];
+    for (const job of this.store.downloads()) {
+      if (!['ready', 'seeding'].includes(job.status)) continue;
+      const declaredExtension = String(job.extension || '').toLowerCase();
+      const titleExtension = path.extname(String(job.title || '')).slice(1).toLowerCase();
+      const extension = declaredExtension === 'epub' && ['cbz', 'cbr'].includes(titleExtension)
+        ? titleExtension : declaredExtension;
+      if (FORMATS.has(extension)) {
+        const file = this.store.libraryFile?.(job.bookId);
+        const sha256 = String(job.sha256 || file?.sha256 || '').toLowerCase();
+        const size = Number(file?.sizeBytes || job.totalBytes || job.bytes);
+        if (/^[a-f0-9]{64}$/.test(sha256) && Number.isSafeInteger(size) && size > 0) {
+          books.push({ bookId: job.bookId, title: job.title, authors: job.authors, extension, sha256, size });
+        }
+        continue;
+      }
+      if (!['cbz', 'cbr'].includes(extension) || !this.comicConverter?.cached) continue;
+      const sourceSha256 = String(job.sha256 || '').toLowerCase();
+      if (!/^[a-f0-9]{64}$/.test(sourceSha256)) continue;
+      const cachedPdf = await this.comicConverter.cached(sourceSha256);
+      if (cachedPdf && Number.isSafeInteger(cachedPdf.size) && cachedPdf.size > 0
+        && /^[a-f0-9]{64}$/i.test(cachedPdf.sha256)) {
+        books.push({ bookId: job.bookId, title: job.title, authors: job.authors, extension: 'pdf',
+          sha256: cachedPdf.sha256.toLowerCase(), size: cachedPdf.size });
+      }
+    }
+    return books;
+  }
+
+  async presence(id) {
+    return this.serialize(async () => {
+      const cached = this.presenceByDevice.get(id);
+      if (cached && cached.expiresAt > this.now() && cached.scanned) {
+        return { deviceId: id, bookIds: [...cached.bookIds] };
+      }
+      const { transport, device } = await this.findDevice(id);
+      const books = await this.presenceBooks();
+      const expected = new Map();
+      for (const book of books) {
+        const name = `${book.sha256.slice(0, 16)}.${book.extension}`.toLowerCase();
+        const key = `${book.size}:${name}`;
+        const ids = expected.get(key) || [];
+        ids.push(book.bookId);
+        expected.set(key, ids);
+      }
+      const sizes = new Set(books.map(book => book.size));
+      const inspect = async () => {
+        const files = await transport.files(device, sizes);
+        const present = new Set();
+        for (const file of files) {
+          if (!sizes.has(Number(file.size))) continue;
+          const suffix = / - ([a-f0-9]{16})\.(pdf|txt)$/i.exec(String(file.name));
+          if (!suffix) continue;
+          const key = `${Number(file.size)}:${suffix[1].toLowerCase()}.${suffix[2].toLowerCase()}`;
+          for (const bookId of expected.get(key) || []) present.add(bookId);
+        }
+        return present;
+      };
+      const present = await (transport.withSession ? transport.withSession(device, inspect) : inspect());
+      this.rememberPresence(id, present, false, true);
+      return { deviceId: id, bookIds: [...this.presenceByDevice.get(id).bookIds] };
+    });
   }
 
   async localBooks(bookId) {
@@ -203,6 +289,7 @@ class KindleSync {
       const existing = await transport.files(device, sizes);
       const remoteHashes = new Set();
       for (const file of existing) remoteHashes.add(await transport.hash(file, device));
+      this.rememberPresence(id, books.filter(book => remoteHashes.has(book.sha256)).map(book => book.bookId));
       const missing = [];
       for (const book of books) {
         if (remoteHashes.has(book.sha256)) continue;
@@ -234,8 +321,11 @@ class KindleSync {
           try {
             await transport.copy(device, book, safeFilename(book, book.sha256));
             transferred.push(book.bookId);
+            this.rememberPresence(id, [book.bookId]);
+            this.onProgress({ deviceId: id, phase: 'copied', bookId: book.bookId, title: book.title, completed: transferred.length, total: missingIds.size });
           } catch (error) {
             errors.push({ bookId: book.bookId, title: book.title, error: error.message || String(error) });
+            this.onProgress({ deviceId: id, phase: 'failed', bookId: book.bookId, title: book.title, error: error.message || String(error), completed: transferred.length, total: missingIds.size });
           }
         }
         this.onProgress({ deviceId: id, completed: transferred.length, total: missingIds.size, done: true });
