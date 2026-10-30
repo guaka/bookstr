@@ -281,3 +281,16 @@ test('an old Downloads snapshot cannot overwrite a newer render', async () => {
   await old;
   assert.equal(renders, 1);
 });
+
+test('Library Kindle actions are hidden until a device is connected', () => {
+  const { context, button } = kindleContext();
+  context.currentKindleId = '';
+  context.updateKindleLibraryButton(button);
+  assert.equal(button.hidden, true);
+  context.currentKindleId = 'kindle';
+  context.updateKindleLibraryButton(button);
+  assert.equal(button.hidden, false);
+  context.currentKindleId = '';
+  context.refreshKindleLibraryButtons();
+  assert.equal(button.hidden, true);
+});

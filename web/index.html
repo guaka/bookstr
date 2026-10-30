@@ -1985,6 +1985,7 @@
       .result-title[data-action="queue-download-title"]:hover { text-decoration: underline; }
       .desktop-kindle-offer { display: flex; align-items: center; gap: .6rem; padding: .55rem .7rem; background: var(--panel-bg, #eee); border-radius: .55rem; }
       .desktop-kindle-offer.hidden { display: none; }
+      [data-action="send-kindle"][hidden] { display: none; }
       .kindle-transfer-heading { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
       #kindle-transfer-overview progress { width: 100%; }
       #kindle-transfer-items { max-height: 12rem; overflow: auto; padding-left: 1.2rem; }
@@ -6005,6 +6006,7 @@
 
       function updateKindleLibraryButton(button) {
         const bookId = button.dataset.kindleBookId;
+        button.hidden = !currentKindleId;
         const sending = kindleTransferRunning && kindleLibraryBookId === bookId;
         button.textContent = sending ? 'Sending…' : kindleLibraryPresence.has(currentKindleId, bookId) ? 'On Kindle' : kindleLibraryPresence.failed(currentKindleId, bookId) ? 'Retry' : 'Send to Kindle';
         button.disabled = sending;
@@ -6159,7 +6161,10 @@
             retry.setAttribute('aria-label', `Retry ${job.title || 'book'}`);
             retry.addEventListener('click', async () => {
               retry.disabled = true;
-              try { await desktopBridge.library.retryDownload(job.bookId); }
+              try {
+                if (job.source === 'catalog') await queueSearchDownload(bookFromDesktopDownload(job));
+                else await desktopBridge.library.retryDownload(job.bookId);
+              }
               catch (error) { state.textContent = error?.message || String(error); }
               await renderDesktopDownloads();
             });
@@ -6209,11 +6214,13 @@
 
       async function queueSearchDownload(book) {
         desktopDownloadsNotice.textContent = `Adding ${book.title || 'book'} to Downloads…`;
+        let resolvingCatalog = false;
         try {
           await openDesktopDownloads();
           let resolved = book;
           let edition = BookMetadata.libgenTorrentMetadataForBook(resolved);
           if (!edition && isMd5(book.md5)) {
+            resolvingCatalog = true;
             resolved = await resolvePrivateTorrentBook(book);
             if (!resolved) throw new Error('No downloadable edition matched this book.');
             edition = BookMetadata.libgenTorrentMetadataForBook(resolved);
@@ -6239,6 +6246,15 @@
           await refreshDesktopDownloadStates();
           await renderDesktopDownloads();
         } catch (error) {
+          if (resolvingCatalog) {
+            try {
+              await desktopBridge.library.enqueue({ kind: 'catalog', record: {
+                ...book, resolutionError: error?.message || String(error),
+              } });
+              await refreshDesktopDownloadStates();
+              await renderDesktopDownloads();
+            } catch { /* Keep the original lookup error visible if admission also fails. */ }
+          }
           desktopDownloadsNotice.textContent = error?.message || String(error);
           status.textContent = desktopDownloadsNotice.textContent;
         }
