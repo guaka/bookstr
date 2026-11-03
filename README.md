@@ -42,7 +42,9 @@ Your library and reading state stay local. Optional Nostr sync carries favorites
 2. If prompted, allow your browser or file manager to install apps from this source.
 3. Open the downloaded file and choose **Install**.
 
-The early-access APK is distributed through GitHub Releases and does not update automatically.
+The early-access APK is distributed through GitHub Releases. Add
+`https://github.com/guaka/bookstr` to [Obtainium](https://obtainium.imranr.dev/)
+to receive APK updates.
 
 Reading never requires Nostr. Bookstr prefers external signers so private keys can stay outside the app; see [NOSTR.md](./NOSTR.md) for the event formats and privacy model.
 

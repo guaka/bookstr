@@ -4,9 +4,9 @@
 
 - Make repository changes on a dedicated branch and deliver them through a pull
   request. Do not push commits directly to the default branch.
-- GitHub Actions is disabled in this private repository's settings because the
-  owner does not want to use an Actions budget. Do not re-enable Actions or
-  trigger billed workflows without an explicit request. Old red checks failed
+- GitHub Actions is enabled. Android CI and automatic signed APK releases are
+  authorized; do not enable other disabled workflows or expand billed automation
+  without an explicit request. Old red checks failed
   before their jobs started because of billing; they say nothing about the code.
 
 ## Local CI for pull requests
@@ -64,6 +64,10 @@
 
 ## Testing and coverage
 
+- Gradually increase coverage with each pull request: add a small, meaningful
+  test for an existing uncovered behavior in the affected area alongside the
+  required tests for changed code. Never lower coverage thresholds; raise the
+  relevant shared baseline when a measured improvement supports it.
 - All new and changed executable lines must be covered by automated tests.
 - Every added or changed source file must ship with unit, integration, or contract
   tests in the same change (or an explicit update to an existing suite that

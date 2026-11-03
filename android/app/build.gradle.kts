@@ -68,8 +68,8 @@ android {
         minSdk = 27
         ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64") }
         targetSdk = 35
-        versionCode = timestampVersionCode
-        versionName = "0.0.3-$versionTimestamp"
+        versionCode = providers.gradleProperty("bookstr.versionCode").orNull?.toInt() ?: timestampVersionCode
+        versionName = providers.gradleProperty("bookstr.versionName").orNull ?: "0.0.3-$versionTimestamp"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "BUILD_DATE", "\"$buildDate\"")
     }
