@@ -1,5 +1,40 @@
 # Android build and validation
 
+Android CI builds a debug APK for pull requests and pushes to `main` that change
+Android code or bundled reader assets. Open the matching run under
+[Actions → Android CI](https://github.com/guaka/bookstr/actions/workflows/android.yml)
+and download `bookstr-android-debug-<commit>` from **Artifacts**. APKs are retained
+for 14 days and uploaded after unit tests and the build pass, before emulator
+tests run. These use the runner's debug signing key, so they cannot replace an
+installed APK signed with a different key.
+
+After all Android checks pass on `main`, CI publishes a signed APK to
+[GitHub Releases](https://github.com/guaka/bookstr/releases/latest). In Obtainium,
+add `https://github.com/guaka/bookstr` as the app source. Each release gets a new
+`v0.0.3-ci.<run number>` tag and an increasing Android version code (1,000,000,000
+plus the workflow run number). Releases are marked latest and are not
+prereleases, so Obtainium's default GitHub settings can discover them.
+Rerunning an already published workflow does not replace its release.
+
+Configure these encrypted repository secrets before enabling release publishing:
+
+- `BOOKSTR_KEYSTORE_BASE64`: base64 encoding of the existing release keystore.
+- `BOOKSTR_KEYSTORE_PASSWORD`: keystore password.
+- `BOOKSTR_KEY_ALIAS`: alias of the existing signing key.
+- `BOOKSTR_KEY_PASSWORD`: signing key password.
+
+Keep the original keystore backed up outside the repository, for example at
+`~/.config/bookstr/android-release.jks`, with passwords in macOS Keychain.
+Use the same key as the existing release to preserve in-place updates. CI fails
+if a signing secret is missing; it never substitutes a generated debug key.
+CI also checks the signing certificate against the published APK's SHA-256
+digest before publishing. The original published APK uses this machine's
+existing Android debug key; preserve that specific key for compatible updates.
+The release command disables Gradle configuration caching because the existing
+release-signing validation hook cannot be serialized into that cache.
+Local release builds intended to update a CI installation must also supply
+`-Pbookstr.versionCode=<higher code>` and `-Pbookstr.versionName=<new version>`.
+
 Requires JDK 17+, Android SDK 35, NDK 27.2.12479018, CMake 3.22.1 and Boost
 headers. On macOS, install Boost with Homebrew and export
 `BOOST_ROOT=/opt/homebrew/opt/boost`. On Linux, install `libboost-dev`.

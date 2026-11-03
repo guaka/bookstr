@@ -6,18 +6,32 @@ on:
     paths:
       - 'android/**'
       - 'shared/reader/**'
+      - 'web/reader-speech.js'
+      - 'web/reader-typography.js'
+      - 'web/reader-chrome.js'
+      - 'web/comic-reader.html'
+      - 'web/vendor/libarchive.js'
+      - 'web/vendor/libarchive.wasm'
       - 'shared/coverage/**'
       - 'scripts/coverage-ratchet.mjs'
       - 'scripts/test-overview.mjs'
       - '.github/workflows/android.yml'
+      - 'scripts/workflows.test.mjs'
   pull_request:
     paths:
       - 'android/**'
       - 'shared/reader/**'
+      - 'web/reader-speech.js'
+      - 'web/reader-typography.js'
+      - 'web/reader-chrome.js'
+      - 'web/comic-reader.html'
+      - 'web/vendor/libarchive.js'
+      - 'web/vendor/libarchive.wasm'
       - 'shared/coverage/**'
       - 'scripts/coverage-ratchet.mjs'
       - 'scripts/test-overview.mjs'
       - '.github/workflows/android.yml'
+      - 'scripts/workflows.test.mjs'
   workflow_dispatch:
 
 permissions:
@@ -60,6 +74,15 @@ jobs:
           status=$?
           echo "duration_ms=$((($(date +%s) - started) * 1000))" >> "$GITHUB_OUTPUT"
           exit "$status"
+      - name: Upload debug APK
+        if: steps.android_build.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: bookstr-android-debug-${{ github.sha }}
+          path: android/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0
       - name: Upload unit test coverage
         if: always()
         uses: actions/upload-artifact@v4
@@ -134,3 +157,71 @@ jobs:
       - name: Fail unsuccessful Android checks
         if: always() && (steps.android_build.outcome != 'success' || steps.ui_tests.outcome != 'success')
         run: exit 1
+
+  release:
+    name: Publish Android APK
+    needs: android
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: write
+    env:
+      BOOKSTR_KEYSTORE_FILE: ${{ runner.temp }}/bookstr-release.jks
+      BOOKSTR_KEYSTORE_PASSWORD: ${{ secrets.BOOKSTR_KEYSTORE_PASSWORD }}
+      BOOKSTR_KEY_ALIAS: ${{ secrets.BOOKSTR_KEY_ALIAS }}
+      BOOKSTR_KEY_PASSWORD: ${{ secrets.BOOKSTR_KEY_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Restore release signing key
+        env:
+          BOOKSTR_KEYSTORE_BASE64: ${{ secrets.BOOKSTR_KEYSTORE_BASE64 }}
+        run: |
+          for variable in BOOKSTR_KEYSTORE_BASE64 BOOKSTR_KEYSTORE_PASSWORD BOOKSTR_KEY_ALIAS BOOKSTR_KEY_PASSWORD; do
+            if [ -z "${!variable}" ]; then
+              echo "Missing repository secret: $variable" >&2
+              exit 1
+            fi
+          done
+          umask 077
+          printf '%s' "$BOOKSTR_KEYSTORE_BASE64" | base64 --decode > "$BOOKSTR_KEYSTORE_FILE"
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: gradle
+      - uses: android-actions/setup-android@v3
+      - name: Install release build dependencies
+        run: |
+          sdkmanager "platforms;android-35" "build-tools;35.0.0" "ndk;27.2.12479018" "cmake;3.22.1"
+          sudo apt-get update && sudo apt-get install -y libboost-dev
+      - name: Build signed release APK
+        env:
+          RUN_NUMBER: ${{ github.run_number }}
+        run: |
+          version="0.0.3-ci.$RUN_NUMBER"
+          # CI versions must exceed the existing timestamp-in-minutes version codes.
+          code=$((1000000000 + RUN_NUMBER))
+          cd android
+          ./gradlew --no-daemon --no-configuration-cache --max-workers=2 assembleRelease "-Pbookstr.versionCode=$code" "-Pbookstr.versionName=$version"
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose app/build/outputs/apk/release/app-release.apk
+          certificate=$("$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --print-certs app/build/outputs/apk/release/app-release.apk | sed -n 's/^Signer #1 certificate SHA-256 digest: //p')
+          test "$certificate" = c82e5af7122119c338db0af37cbf9efca1b6a0880e7b409f5537169fa6ffc477
+          cp app/build/outputs/apk/release/app-release.apk "bookstr-$version.apk"
+      - name: Publish Obtainium release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_NUMBER: ${{ github.run_number }}
+        run: |
+          version="0.0.3-ci.$RUN_NUMBER"
+          tag="v$version"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            echo "Release $tag already exists."
+            exit 0
+          fi
+          gh release create "$tag" "android/bookstr-$version.apk" \
+            --target "$GITHUB_SHA" --title "Bookstr Android $version" --latest \
+            --notes "Automatic Android build from $GITHUB_SHA. Add https://github.com/$GITHUB_REPOSITORY to Obtainium to receive updates."
+      - name: Remove release signing key
+        if: always()
+        run: rm -f "$BOOKSTR_KEYSTORE_FILE"
