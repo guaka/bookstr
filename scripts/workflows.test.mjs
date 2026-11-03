@@ -235,6 +235,16 @@ test('signed Android releases only run after checks on trusted main builds', asy
   assert.match(release, /rm -f "\$BOOKSTR_KEYSTORE_FILE"/);
 });
 
+test('Android setup only requests SDK packages still available from Google', async () => {
+  const workflow = await readWorkflow('android.yml');
+  const setups = [...workflow.matchAll(/uses: android-actions\/setup-android@v3\n([\s\S]*?)(?=      - )/g)];
+  assert.equal(setups.length, 2);
+  for (const setup of setups) {
+    assert.match(setup[1], /with:\n          packages: platform-tools/);
+    assert.doesNotMatch(setup[1], /packages:.*\btools platform-tools\b/);
+  }
+});
+
 test('Obtainium releases use unique increasing versions and latest APK assets', async () => {
   const workflow = await readWorkflow('android.yml');
   const gradle = await readFile(new URL('../android/app/build.gradle.kts', import.meta.url), 'utf8');

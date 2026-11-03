@@ -60,6 +60,8 @@ jobs:
           java-version: '21'
           cache: gradle
       - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
       - name: Install SDK packages
         run: sdkmanager "platforms;android-35" "build-tools;35.0.0" "system-images;android-30;google_apis;x86_64" "ndk;27.2.12479018" "cmake;3.22.1"
       - name: Install torrent build headers
@@ -191,6 +193,8 @@ jobs:
           java-version: '21'
           cache: gradle
       - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
       - name: Install release build dependencies
         run: |
           sdkmanager "platforms;android-35" "build-tools;35.0.0" "ndk;27.2.12479018" "cmake;3.22.1"
