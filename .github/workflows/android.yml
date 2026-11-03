@@ -167,7 +167,7 @@ jobs:
     permissions:
       contents: write
     env:
-      BOOKSTR_KEYSTORE_FILE: ${{ runner.temp }}/bookstr-release.jks
+      BOOKSTR_KEYSTORE_FILE: ${{ github.workspace }}/bookstr-release.jks
       BOOKSTR_KEYSTORE_PASSWORD: ${{ secrets.BOOKSTR_KEYSTORE_PASSWORD }}
       BOOKSTR_KEY_ALIAS: ${{ secrets.BOOKSTR_KEY_ALIAS }}
       BOOKSTR_KEY_PASSWORD: ${{ secrets.BOOKSTR_KEY_PASSWORD }}

@@ -220,6 +220,9 @@ test('signed Android releases only run after checks on trusted main builds', asy
   assert.match(release, /needs: android/);
   assert.match(release, /if: github\.ref == 'refs\/heads\/main' && \(github\.event_name == 'push' \|\| github\.event_name == 'workflow_dispatch'\)/);
   assert.match(release, /permissions:\n      contents: write/);
+  const jobEnvironment = release.match(/    env:\n([\s\S]*?)(?=    steps:)/)[1];
+  assert.match(jobEnvironment, /BOOKSTR_KEYSTORE_FILE: \$\{\{ github\.workspace \}\}\/bookstr-release\.jks/);
+  assert.doesNotMatch(jobEnvironment, /\$\{\{\s*runner\./);
   for (const secret of ['BOOKSTR_KEYSTORE_BASE64', 'BOOKSTR_KEYSTORE_PASSWORD', 'BOOKSTR_KEY_ALIAS', 'BOOKSTR_KEY_PASSWORD']) {
     assert.ok(release.includes(`secrets.${secret}`));
   }
