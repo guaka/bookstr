@@ -132,7 +132,6 @@ class NarrationMediaBrowserTest {
                 epub.description.extras?.getParcelable<PendingIntent>(BookstrMediaCatalog.EXTRA_OPEN_READER),
             )
             assertEquals(context.packageName, openReader.creatorPackage)
-            assertTrue("Reader launch PendingIntent must be immutable", openReader.isImmutable)
 
             // Exercise the cross-app contract from a foreground tap, not only the serialized
             // MediaDescription. The reader owns the decision to request narration after load.
@@ -146,17 +145,19 @@ class NarrationMediaBrowserTest {
             readerMonitor = instrumentation.addMonitor(ReaderActivity::class.java.name, null, false)
             ActivityScenario.launch<MainActivity>(Intent(context, MainActivity::class.java)).use { foreground ->
                 foreground.onActivity { activity ->
+                    val fillInIntent = Intent().putExtra("bookstr.test.mutable-extra", true)
                     if (android.os.Build.VERSION.SDK_INT >= 34) {
                         val options = ActivityOptions.makeBasic()
                             .setPendingIntentBackgroundActivityStartMode(ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOWED)
                             .toBundle()
-                        openReader.send(activity, 0, null, null, null, null, options)
+                        openReader.send(activity, 0, fillInIntent, null, null, null, options)
                     } else {
-                        openReader.send(activity, 0, null)
+                        openReader.send(activity, 0, fillInIntent)
                     }
                 }
                 openedReader = instrumentation.waitForMonitorWithTimeout(checkNotNull(readerMonitor), 10_000)
                 assertNotNull("Reader PendingIntent did not open the Bookstr reader", openedReader)
+                assertFalse("Reader launch PendingIntent must ignore fill-in extras", openedReader!!.intent.hasExtra("bookstr.test.mutable-extra"))
                 assertTrue(
                     "External reader launch must opt into narration after EPUB readiness",
                     openedReader!!.intent.getBooleanExtra(NarrationService.EXTRA_START_NARRATION, false),
