@@ -173,7 +173,7 @@ class NarrationMediaBrowserTest {
             assertFalse(pdf.isPlayable)
             assertFalse(pdf.description.extras?.getBoolean(BookstrMediaCatalog.EXTRA_PLAYABLE) == true)
             assertEquals(null, pdf.description.extras?.getParcelable<android.app.PendingIntent>(BookstrMediaCatalog.EXTRA_OPEN_READER))
-            val pdfBook = CatalogBook(pdfId, "A downloaded PDF", "Test author", "", null, format = BookFormat.Pdf)
+            val pdfBook = CatalogBook(pdfId, "A downloaded PDF", "Test author", "https://fixture.invalid/$pdfId.pdf", null, format = BookFormat.Pdf)
             assertTrue(runBlocking { app.catalogRepository.deletePublication(pdfBook) })
             assertTrue("Subscriber did not receive the updated catalog", deletionObserved.await(10, TimeUnit.SECONDS))
             pdfFile.writeBytes("%PDF-1.7".toByteArray())

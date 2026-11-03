@@ -184,12 +184,13 @@ class AcquisitionScreenTest {
         store.enqueue(first, TorrentEdition(first.id, 1, "fiction", 100))
         store.enqueue(second, TorrentEdition(second.id, 2, "fiction", 100))
         assertEquals(listOf(second.id, first.id), store.jobs.value.map { it.book.id })
+        store.update(store.find(hash)!!.copy(size = 100, state = "downloading"))
         compose.setContent {
             val jobs = store.jobs.collectAsState()
             DownloadsSheet(jobs.value, {}, { _, _ -> }, {})
         }
         val before = compose.onNodeWithTag("download.$hash").fetchSemanticsNode().boundsInRoot.top
-        compose.runOnIdle { store.update(store.find(hash)!!.copy(bytes = 50, size = 100, state = "downloading")) }
+        compose.runOnIdle { store.update(store.find(hash)!!.copy(bytes = 50)) }
         val after = compose.onNodeWithTag("download.$hash").fetchSemanticsNode().boundsInRoot.top
         assertEquals(before, after)
         assertTrue(after > compose.onNodeWithTag("download.${second.id}").fetchSemanticsNode().boundsInRoot.top)
