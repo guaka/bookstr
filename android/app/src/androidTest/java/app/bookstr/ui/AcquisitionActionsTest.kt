@@ -77,6 +77,12 @@ class AcquisitionActionsTest {
         compose.waitUntil(5000) { compose.onAllNodesWithTag("search.open.$id").fetchSemanticsNodes().isNotEmpty() }
     }
 
+    private fun pressSystemBack() {
+        val automation = androidx.test.platform.app.InstrumentationRegistry.getInstrumentation().uiAutomation
+        assertTrue(automation.performGlobalAction(android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_BACK))
+        compose.waitUntil(5000) { compose.activity.hasWindowFocus() }
+    }
+
     @Test fun oneTapStartsDownloadAndDeletionRemovesTheActualPublication() {
         search()
         compose.onNodeWithTag("search.open.$id").performClick()
@@ -85,10 +91,10 @@ class AcquisitionActionsTest {
         compose.onNodeWithTag("downloads.sheet").assertIsDisplayed()
         compose.waitUntil(15000) { app.downloadStore.find(id)?.state == "complete" }
         assertTrue(app.catalogRepository.publicationFile(id, BookFormat.Pdf).isFile)
-        androidx.test.espresso.Espresso.pressBack()
+        pressSystemBack()
         compose.onNodeWithTag("search.open.$id").performClick()
         compose.waitUntil(5000) { app.settingsRepository.readerSession()?.bookId == id }
-        androidx.test.espresso.Espresso.pressBack()
+        pressSystemBack()
         compose.onNodeWithContentDescription("Library").performClick()
         compose.onNodeWithTag("library.swipe.$id").performTouchInput { swipeLeft() }
         compose.onNodeWithTag("library.delete.confirm").performClick()
