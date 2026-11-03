@@ -245,6 +245,16 @@ test('Android setup only requests SDK packages still available from Google', asy
   }
 });
 
+test('Android jobs expose installed host Boost headers to NDK CMake builds', async () => {
+  const workflow = await readWorkflow('android.yml');
+  const cmake = await readFile(new URL('../android/app/src/main/cpp/CMakeLists.txt', import.meta.url), 'utf8');
+  assert.match(workflow, /^env:\n  BOOST_ROOT: \$\{\{ github\.workspace \}\}\/\.ci-boost$/m);
+  assert.equal([...workflow.matchAll(/apt-get install -y libboost-dev/g)].length, 2);
+  assert.equal([...workflow.matchAll(/mkdir -p "\$BOOST_ROOT\/include"/g)].length, 2);
+  assert.equal([...workflow.matchAll(/cp -R \/usr\/include\/boost "\$BOOST_ROOT\/include\/"/g)].length, 2);
+  assert.match(cmake, /set\(Boost_INCLUDE_DIR "\$ENV\{BOOST_ROOT\}\/include" CACHE PATH "Boost headers"\)/);
+});
+
 test('Obtainium releases use unique increasing versions and latest APK assets', async () => {
   const workflow = await readWorkflow('android.yml');
   const gradle = await readFile(new URL('../android/app/build.gradle.kts', import.meta.url), 'utf8');
