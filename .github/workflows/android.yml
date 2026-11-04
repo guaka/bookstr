@@ -47,18 +47,17 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  android:
-    name: Android
+  unit-tests:
+    name: Unit tests and coverage
     runs-on: ubuntu-latest
-    timeout-minutes: 60
-    defaults:
-      run:
-        working-directory: android
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version-file: .nvmrc
+      - name: Test instrumentation result parser
+        run: node --test --experimental-test-coverage --test-coverage-lines=100 --test-coverage-branches=100 --test-coverage-functions=100 android/scripts/instrumentation-results.test.mjs
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -67,70 +66,124 @@ jobs:
       - uses: android-actions/setup-android@v3
         with:
           packages: platform-tools
-      - name: Install SDK packages
-        run: sdkmanager "platforms;android-35" "build-tools;35.0.0" "system-images;android-30;google_apis;x86_64" "ndk;27.2.12479018" "cmake;3.22.1"
-      - name: Install torrent build headers
+      - name: Install Android build tools
+        run: sdkmanager "platforms;android-35" "build-tools;35.0.0" "ndk;27.2.12479018" "cmake;3.22.1"
+      - name: Install isolated torrent build headers
         run: |
           sudo apt-get update && sudo apt-get install -y libboost-dev
           mkdir -p "$BOOST_ROOT/include"
           cp -R /usr/include/boost "$BOOST_ROOT/include/"
-      - name: Unit tests, coverage, and debug APK
-        id: android_build
+      - name: Unit tests and JaCoCo
+        id: unit_tests
         continue-on-error: true
+        working-directory: android
         run: |
           started=$(date +%s)
           set +e
-          ./gradlew --no-daemon --continue testDebugUnitTest jacocoDebugUnitTestReport assembleDebug
+          ./gradlew --no-daemon --max-workers=2 testDebugUnitTest jacocoDebugUnitTestReport
           status=$?
           echo "duration_ms=$((($(date +%s) - started) * 1000))" >> "$GITHUB_OUTPUT"
           exit "$status"
-      - name: Upload debug APK
-        if: steps.android_build.outcome == 'success'
-        uses: actions/upload-artifact@v4
-        with:
-          name: bookstr-android-debug-${{ github.sha }}
-          path: android/app/build/outputs/apk/debug/*.apk
-          if-no-files-found: error
-          retention-days: 14
-          compression-level: 0
-      - name: Upload unit test coverage
+      - name: Record Android unit test overview
+        if: always() && hashFiles('android/app/build/test-results/testDebugUnitTest/TEST-*.xml') != ''
+        env:
+          TEST_STATUS: ${{ steps.unit_tests.outcome == 'success' && 'passing' || 'failing' }}
+          TEST_DURATION_MS: ${{ steps.unit_tests.outputs.duration_ms }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          mkdir -p test-overview
+          coverage_xml="$(find android/app/build/reports/jacoco -name '*.xml' -print -quit 2>/dev/null || true)"
+          KNOWN_TESTS=$(grep -R -h -E '^[[:space:]]*@Test' android/app/src/test --include='*.kt' | wc -l | tr -d ' ')
+          node scripts/test-overview.mjs record --id android --suite Android --status "$TEST_STATUS" --results-format junit --results android/app/build/test-results/testDebugUnitTest --coverage-format jacoco --coverage "$coverage_xml" --known-tests "$KNOWN_TESTS" --duration-ms "$TEST_DURATION_MS" --output test-overview/android.json --recorded "$(date -u +%FT%TZ)" --run-url "$RUN_URL" --commit "$GITHUB_SHA"
+      - name: Enforce Android coverage baseline
+        if: always() && steps.unit_tests.outcome == 'success'
+        run: node scripts/coverage-ratchet.mjs --suite android --report test-overview/android.json
+      - name: Upload unit coverage
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: bookstr-android-unit-coverage-${{ github.sha }}
           path: android/app/build/reports/jacoco/
-      - name: Record Android test overview
-        if: always()
-        working-directory: .
-        env:
-          TEST_STATUS: ${{ steps.android_build.outcome == 'success' && 'passing' || 'failing' }}
-          TEST_DURATION_MS: ${{ steps.android_build.outputs.duration_ms }}
-          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-        run: |
-          coverage_xml="$(find android/app/build/reports/jacoco -name '*.xml' -print -quit 2>/dev/null || true)"
-          KNOWN_TESTS=$(grep -R -h -E '^[[:space:]]*@Test' android/app/src/test --include='*.kt' | wc -l | tr -d ' ')
-          node scripts/test-overview.mjs record --id android --suite Android --status "$TEST_STATUS" --results-format junit --results android/app/build/test-results/testDebugUnitTest --coverage-format jacoco --coverage "$coverage_xml" --known-tests "$KNOWN_TESTS" --duration-ms "$TEST_DURATION_MS" --output test-overview/android.json --recorded "$(date -u +%FT%TZ)" --run-url "$RUN_URL" --commit "$GITHUB_SHA"
-      - name: Enforce Android coverage baseline
-        if: always()
-        working-directory: .
-        run: node scripts/coverage-ratchet.mjs --suite android --report test-overview/android.json
-      - name: Upload Android test overview
-        if: always()
+          if-no-files-found: ignore
+          retention-days: 14
+      - name: Upload unit test overview
+        if: always() && hashFiles('test-overview/android.json') != ''
         uses: actions/upload-artifact@v4
         with:
           name: bookstr-test-overview-android-${{ github.run_id }}
           path: test-overview/android.json
+          if-no-files-found: error
+          retention-days: 14
+      - name: Fail unsuccessful Android unit checks
+        if: always() && steps.unit_tests.outcome != 'success'
+        run: exit 1
+
+  package-apks:
+    name: Build debug app and test APKs
+    needs: unit-tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: gradle
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+      - name: Install Android build tools
+        run: sdkmanager "platforms;android-35" "build-tools;35.0.0" "ndk;27.2.12479018" "cmake;3.22.1"
+      - name: Install isolated torrent build headers
+        run: |
+          sudo apt-get update && sudo apt-get install -y libboost-dev
+          mkdir -p "$BOOST_ROOT/include"
+          cp -R /usr/include/boost "$BOOST_ROOT/include/"
+      - name: Build debug app and instrumentation APKs
+        working-directory: android
+        run: ./gradlew --no-daemon --max-workers=2 assembleDebug assembleDebugAndroidTest
+      - name: Stage prebuilt APKs
+        run: |
+          mkdir -p android/prebuilt-apks
+          cp android/app/build/outputs/apk/debug/app-debug.apk android/prebuilt-apks/app-debug.apk
+          cp android/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk android/prebuilt-apks/app-debug-androidTest.apk
+      - name: Upload prebuilt APKs
+        uses: actions/upload-artifact@v4
+        with:
+          name: bookstr-android-apks-${{ github.sha }}
+          path: android/prebuilt-apks/*.apk
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0
+
+  emulator-tests:
+    name: Emulator UI tests
+    needs: package-apks
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+      - name: Download prebuilt APKs
+        uses: actions/download-artifact@v4
+        with:
+          name: bookstr-android-apks-${{ github.sha }}
+          path: android/prebuilt-apks
       - name: Enable KVM
-        working-directory: .
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
       - name: Start Android UI timer
         id: ui_timer
-        working-directory: .
         run: echo "started=$(date +%s)" >> "$GITHUB_OUTPUT"
-      - name: Compose UI tests
+      - name: Run UI tests against prebuilt APKs
         id: ui_tests
         continue-on-error: true
         uses: reactivecircus/android-emulator-runner@v2
@@ -138,39 +191,57 @@ jobs:
           api-level: 30
           arch: x86_64
           target: google_apis
+          profile: pixel_2
           disk-size: 2048M
-          script: ./android/scripts/run-connected-e2e.sh
+          emulator-options: -no-window -no-audio -no-boot-anim -gpu swiftshader_indirect -memory 2048 -cores 2
+          script: |
+            adb shell settings put global window_animation_scale 0
+            adb shell settings put global transition_animation_scale 0
+            adb shell settings put global animator_duration_scale 0
+            ./android/scripts/run-connected-e2e.sh --prebuilt android/prebuilt-apks/app-debug.apk android/prebuilt-apks/app-debug-androidTest.apk
       - name: Record Android UI test overview
-        if: always()
+        if: always() && hashFiles('android/e2e-results/instrumentation.started') != ''
         working-directory: .
         env:
           TEST_STATUS: ${{ steps.ui_tests.outcome == 'success' && 'passing' || 'failing' }}
           TEST_STARTED: ${{ steps.ui_timer.outputs.started }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
+          mkdir -p test-overview
           TEST_DURATION_MS=$((($(date +%s) - TEST_STARTED) * 1000))
           KNOWN_TESTS=$(grep -R -h -E '^[[:space:]]*@Test' android/app/src/androidTest --include='*.kt' | wc -l | tr -d ' ')
-          node scripts/test-overview.mjs record --id android-ui --suite "Android e2e" --status "$TEST_STATUS" --results-format junit --results android/app/build/outputs/androidTest-results --known-tests "$KNOWN_TESTS" --duration-ms "$TEST_DURATION_MS" --output test-overview/android-ui.json --recorded "$(date -u +%FT%TZ)" --run-url "$RUN_URL" --commit "$GITHUB_SHA"
+          node scripts/test-overview.mjs record --id android-ui --suite "Android e2e" --status "$TEST_STATUS" --results-format junit --results android/e2e-results --known-tests "$KNOWN_TESTS" --duration-ms "$TEST_DURATION_MS" --output test-overview/android-ui.json --recorded "$(date -u +%FT%TZ)" --run-url "$RUN_URL" --commit "$GITHUB_SHA"
       - name: Upload Android UI test overview
-        if: always()
+        if: always() && hashFiles('android/e2e-results/instrumentation.started') != ''
         uses: actions/upload-artifact@v4
         with:
           name: bookstr-test-overview-android-ui-${{ github.run_id }}
           path: test-overview/android-ui.json
+          if-no-files-found: error
+          retention-days: 14
       - name: Upload Android e2e screenshots
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: bookstr-e2e-screenshots-android-${{ github.run_id }}
           path: android/e2e-screenshots/**/*.png
+          if-no-files-found: warn
+          retention-days: 14
+      - name: Upload Android UI results
+        if: always() && hashFiles('android/e2e-results/instrumentation.started') != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: bookstr-android-ui-results-${{ github.run_id }}-${{ github.run_attempt }}
+          path: android/e2e-results/
           if-no-files-found: error
-      - name: Fail unsuccessful Android checks
-        if: always() && (steps.android_build.outcome != 'success' || steps.ui_tests.outcome != 'success')
+          retention-days: 14
+      - name: Fail unsuccessful Android UI checks
+        if: always() && steps.ui_tests.outcome != 'success'
         run: exit 1
 
   release:
     name: Publish Android APK
-    needs: android
+    needs: [unit-tests, package-apks, emulator-tests]
     if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
     runs-on: ubuntu-latest
     timeout-minutes: 45
@@ -214,7 +285,6 @@ jobs:
           RUN_NUMBER: ${{ github.run_number }}
         run: |
           version="0.0.3-ci.$RUN_NUMBER"
-          # CI versions must exceed the existing timestamp-in-minutes version codes.
           code=$((1000000000 + RUN_NUMBER))
           cd android
           ./gradlew --no-daemon --no-configuration-cache --max-workers=2 assembleRelease "-Pbookstr.versionCode=$code" "-Pbookstr.versionName=$version"
