@@ -37,6 +37,31 @@ final class VocabularyRepositoryTests: XCTestCase {
         }
     }
 
+    func testReloadResolvesDuplicateSyncIDsToLatestRecordAndSortsVisibleWords() {
+        let directory = "bookstr-vocabulary-dedupe-\(UUID().uuidString)"
+        let store = JSONFileStore(subdirectory: directory)
+        let root = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent(directory)
+        defer { try? FileManager.default.removeItem(at: root) }
+        func word(_ key: String, _ term: String, _ lastSeenAt: Int64, deleted: Bool = false,
+                  syncId: String = "shared-sync-id") -> VocabularyWord {
+            VocabularyWord(key: key, word: term, language: "en", syncId: syncId,
+                           bookId: "book", bookTitle: "Book", cfi: "", contextSentence: "",
+                           partOfSpeech: "", definitions: [], translation: nil, sourceUrl: "",
+                           lookupCount: 1, firstSeenAt: 1, lastSeenAt: lastSeenAt, deleted: deleted)
+        }
+        store.save("vocabulary_words.json", value: [
+            word("en:first", "first", 10),
+            word("en:latest", "latest", 30),
+            word("en:hidden", "hidden", 40, deleted: true, syncId: "hidden-sync-id"),
+        ])
+
+        let repository = VocabularyRepository(fileStore: JSONFileStore(subdirectory: directory))
+
+        XCTAssertEqual(repository.word(syncId: "shared-sync-id")?.key, "en:latest")
+        XCTAssertEqual(repository.all().map(\.key), ["en:latest", "en:first"])
+    }
+
     private func vocabularyFixtureURL() -> URL {
         URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()

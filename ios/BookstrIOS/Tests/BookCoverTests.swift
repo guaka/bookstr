@@ -1,7 +1,12 @@
 import XCTest
 import PDFKit
+import ImageIO
 #if canImport(UIKit)
 import UIKit
+#endif
+#if canImport(AppKit) && SWIFT_PACKAGE
+import AppKit
+import SwiftUI
 #endif
 #if SWIFT_PACKAGE
 @testable import BookstrLogic
@@ -34,6 +39,137 @@ final class BookCoverTests: XCTestCase {
         XCTAssertEqual(BookCoverView.resolvedURL(remote, cached: cached, preferDiscovered: false)?.absoluteString, remote)
         XCTAssertEqual(BookCoverView.resolvedURL(remote, cached: nil, preferDiscovered: true)?.absoluteString, remote)
     }
+
+#if canImport(AppKit) && SWIFT_PACKAGE
+    @MainActor
+    func testPlaceholderCoverRendersInsideItsThumbnailFrame() async throws {
+        let bitmap = try snapshot(makeRenderer(BookCoverView(urlString: nil, title: "Placeholder")))
+
+        XCTAssertEqual(bitmap.pixelsWide, 42)
+        XCTAssertEqual(bitmap.pixelsHigh, 62)
+        let background = try XCTUnwrap(bitmap.colorAt(x: 10, y: 30)?.usingColorSpace(.sRGB))
+        var contrastingPixels = 0
+        for y in 1..<61 {
+            for x in 1..<41 {
+                guard let color = bitmap.colorAt(x: x, y: y)?.usingColorSpace(.sRGB) else { continue }
+                let distance = abs(background.redComponent - color.redComponent)
+                    + abs(background.greenComponent - color.greenComponent)
+                    + abs(background.blueComponent - color.blueComponent)
+                    + abs(background.alphaComponent - color.alphaComponent)
+                if distance > 0.2 { contrastingPixels += 1 }
+            }
+        }
+        XCTAssertGreaterThan(contrastingPixels, 8, "Placeholder should render its book glyph and outline over the background")
+    }
+
+    @MainActor
+    func testLocalCoverRendersDecodedThumbnailAndReusesCachedImage() async throws {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("cover-render-\(UUID().uuidString).png")
+        defer { try? FileManager.default.removeItem(at: url) }
+        let fixture = try solidPNG()
+        assertRedPNG(fixture)
+        try fixture.write(to: url)
+
+        let first = try XCTUnwrap(BookCoverView.thumbnailImage(at: url))
+        let second = try XCTUnwrap(BookCoverView.thumbnailImage(at: url))
+        XCTAssertTrue(first === second)
+
+        let renderer = makeRenderer(BookCoverView(urlString: url.absoluteString))
+        let deadline = Date().addingTimeInterval(3)
+        var bitmap = try snapshot(renderer)
+        var center = bitmap.colorAt(x: 21, y: 31)?.usingColorSpace(.sRGB)
+        while !isRed(center), Date() < deadline {
+            try await Task.sleep(for: .milliseconds(50))
+            bitmap = try snapshot(renderer)
+            center = bitmap.colorAt(x: 21, y: 31)?.usingColorSpace(.sRGB)
+        }
+        XCTAssertTrue(isRed(center), "Local cover should render its decoded image")
+    }
+
+    func testLocalThumbnailRejectsMissingAndNonImageFiles() throws {
+        let missing = FileManager.default.temporaryDirectory
+            .appendingPathComponent("missing-cover-\(UUID().uuidString).png")
+        let invalid = FileManager.default.temporaryDirectory
+            .appendingPathComponent("invalid-cover-\(UUID().uuidString).png")
+        defer { try? FileManager.default.removeItem(at: invalid) }
+        try Data("not an image".utf8).write(to: invalid)
+
+        XCTAssertNil(BookCoverView.thumbnailImage(at: missing))
+        XCTAssertNil(BookCoverView.thumbnailImage(at: invalid))
+    }
+
+    @MainActor
+    func testRemoteCoverRendersImageFromURLProtocolFixture() async throws {
+        CoverFixtureURLProtocol.responseData = try solidPNG()
+        XCTAssertTrue(URLProtocol.registerClass(CoverFixtureURLProtocol.self))
+        defer { URLProtocol.unregisterClass(CoverFixtureURLProtocol.self) }
+
+        let renderer = makeRenderer(BookCoverView(urlString: "https://covers.test/fixture.png"))
+        let deadline = Date().addingTimeInterval(3)
+        var center: NSColor?
+        repeat {
+            try await Task.sleep(for: .milliseconds(50))
+            let bitmap = try snapshot(renderer)
+            center = bitmap.colorAt(x: 21, y: 31)?.usingColorSpace(.sRGB)
+        } while !isRed(center) && Date() < deadline
+
+        let color = try XCTUnwrap(center)
+        XCTAssertTrue(isRed(color), "Remote cover should render the red HTTP fixture, got \(color)")
+        XCTAssertGreaterThan(CoverFixtureURLProtocol.requestCount, 0)
+    }
+
+    @MainActor
+    private func makeRenderer(_ cover: BookCoverView) -> ImageRenderer<AnyView> {
+        let renderer = ImageRenderer(content: AnyView(cover.frame(width: 42, height: 62)))
+        renderer.proposedSize = ProposedViewSize(width: 42, height: 62)
+        renderer.scale = 1
+        return renderer
+    }
+
+    @MainActor
+    private func snapshot(_ renderer: ImageRenderer<AnyView>) throws -> NSBitmapImageRep {
+        return NSBitmapImageRep(cgImage: try XCTUnwrap(renderer.cgImage))
+    }
+
+    @MainActor
+    private func isRed(_ color: NSColor?) -> Bool {
+        guard let color = color?.usingColorSpace(.sRGB) else { return false }
+        return color.redComponent > 0.8 && color.greenComponent < 0.2 && color.blueComponent < 0.2
+    }
+
+    @MainActor
+    private func solidPNG() throws -> Data {
+        let colorSpace = try XCTUnwrap(CGColorSpace(name: CGColorSpace.sRGB))
+        var pixels = [UInt8](repeating: 0, count: 8 * 8 * 4)
+        let context = try XCTUnwrap(pixels.withUnsafeMutableBytes { bytes in
+            CGContext(data: bytes.baseAddress, width: 8, height: 8, bitsPerComponent: 8,
+                      bytesPerRow: 8 * 4, space: colorSpace,
+                      bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.byteOrder32Big.rawValue)
+        })
+        context.setFillColor(CGColor(srgbRed: 1, green: 0, blue: 0, alpha: 1))
+        context.fill(CGRect(x: 0, y: 0, width: 8, height: 8))
+        let image = try XCTUnwrap(context.makeImage())
+        return try XCTUnwrap(NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:]))
+    }
+
+    @MainActor
+    private func assertRedPNG(_ data: Data, file: StaticString = #filePath, line: UInt = #line) {
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil),
+              let image = CGImageSourceCreateImageAtIndex(source, 0, nil) else {
+            XCTFail("PNG fixture must decode", file: file, line: line)
+            return
+        }
+        let bitmap = NSBitmapImageRep(cgImage: image)
+        guard let pixel = bitmap.colorAt(x: 4, y: 4)?.usingColorSpace(.sRGB) else {
+            XCTFail("PNG fixture must have a readable sRGB pixel", file: file, line: line)
+            return
+        }
+        XCTAssertGreaterThan(pixel.redComponent, 0.8, file: file, line: line)
+        XCTAssertLessThan(pixel.greenComponent, 0.2, file: file, line: line)
+        XCTAssertLessThan(pixel.blueComponent, 0.2, file: file, line: line)
+    }
+#endif
 
 #if canImport(UIKit) && !SWIFT_PACKAGE
     @MainActor
@@ -494,3 +630,27 @@ final class BookCoverTests: XCTestCase {
         withUnsafeBytes(of: value.littleEndian) { Data($0) }
     }
 }
+
+#if canImport(AppKit) && SWIFT_PACKAGE
+private final class CoverFixtureURLProtocol: URLProtocol {
+    static var responseData = Data()
+    static var requestCount = 0
+
+    override class func canInit(with request: URLRequest) -> Bool {
+        request.url?.host == "covers.test"
+    }
+
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+
+    override func startLoading() {
+        Self.requestCount += 1
+        let response = HTTPURLResponse(url: request.url!, statusCode: 200,
+                                       httpVersion: "HTTP/1.1", headerFields: ["Content-Type": "image/png"])!
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: Self.responseData)
+        client?.urlProtocolDidFinishLoading(self)
+    }
+
+    override func stopLoading() {}
+}
+#endif

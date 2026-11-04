@@ -6,6 +6,34 @@ import XCTest
 #endif
 
 final class SpeechLanguageSettingsTests: XCTestCase {
+    func testCanonicalizationMergesRatesWithoutReplacingAnExplicitBaseVoice() {
+        let merged = SpeechLanguageSettings.canonicalizeSettingsKeys([
+            "pt": SpeechLanguageSetting(voiceIdentifier: "base-voice"),
+            "pt-br": SpeechLanguageSetting(voiceIdentifier: "regional-voice", rate: 0.4),
+        ])
+        XCTAssertEqual(merged, ["pt": SpeechLanguageSetting(voiceIdentifier: "base-voice", rate: 0.4)])
+
+        let rateOnly = SpeechLanguageSettings.canonicalizeSettingsKeys([
+            "pt": SpeechLanguageSetting(voiceIdentifier: ""),
+            "pt-br": SpeechLanguageSetting(voiceIdentifier: "", rate: 0.45),
+        ])
+        XCTAssertEqual(rateOnly, ["pt": SpeechLanguageSetting(voiceIdentifier: "", rate: 0.45)])
+
+        let regionalVoice = SpeechLanguageSettings.canonicalizeSettingsKeys([
+            "pt": SpeechLanguageSetting(voiceIdentifier: ""),
+            "pt-br": SpeechLanguageSetting(voiceIdentifier: "regional-voice", rate: 0.5),
+        ])
+        XCTAssertEqual(regionalVoice["pt"]?.voiceIdentifier, "regional-voice")
+        XCTAssertEqual(regionalVoice["pt"]?.rate, 0.5)
+    }
+
+    func testLanguageDisplayNamesIncludeAutomaticAndUnknownCodes() {
+        XCTAssertEqual(SpeechLanguageSettings.displayName(for: SpeechLanguageSettings.automaticLanguage), "Auto")
+        XCTAssertEqual(SpeechLanguageSettings.displayName(for: "zzzz"), "ZZZZ")
+        XCTAssertEqual(SpeechLanguageSettings.playbackLanguage(override: "auto", bookLanguage: nil), "en")
+        XCTAssertEqual(SpeechLanguageSettings.baseLanguage("---"), "en")
+    }
+
     func testDutchVoiceIsAvailableAndResolvesForBookLanguages() throws {
         XCTAssertTrue(SpeechLanguageSettings.languagesForBookCodes([]).contains("nl"))
         XCTAssertEqual(SpeechEngineID.dutchDii.label, "Dii · Nederlands")

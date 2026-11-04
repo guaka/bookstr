@@ -1481,9 +1481,291 @@ final class FavoritesParserTests: XCTestCase {
         XCTAssertTrue(PublicationUtilities.isStructurallyValidPublication(fileURL: valid, format: .fb2))
     }
 
+    func testFB2CoverUsesTheReferencedBinaryAndRejectsBrokenPayloads() throws {
+        let image = Data([
+            0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52,
+            0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x06, 0x00, 0x00, 0x00, 0x1F, 0x15, 0xC4,
+            0x89, 0x00, 0x00, 0x00, 0x0A, 0x49, 0x44, 0x41, 0x54, 0x78, 0x9C, 0x63, 0x00, 0x01, 0x00, 0x00,
+            0x05, 0x00, 0x01, 0x0D, 0x0A, 0x2D, 0xB4, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4E, 0x44, 0xAE,
+            0x42, 0x60, 0x82,
+        ])
+        let xml = """
+            <FictionBook xmlns:l="http://www.w3.org/1999/xlink">
+              <description><title-info><coverpage><image l:href="#jacket"/></coverpage></title-info></description>
+              <binary id="other">bm90IGFuIGltYWdl</binary>
+              <binary id="jacket">\(image.base64EncodedString())</binary>
+              <body><section><p>Text</p></section></body>
+            </FictionBook>
+            """
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".fb2")
+        defer { try? FileManager.default.removeItem(at: url) }
+        try Data(xml.utf8).write(to: url)
+
+        let cover = try XCTUnwrap(PublicationUtilities.fb2Cover(fileURL: url))
+        XCTAssertEqual(cover.data, image)
+        XCTAssertEqual(cover.pathExtension, "png")
+
+        let broken = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".fb2")
+        defer { try? FileManager.default.removeItem(at: broken) }
+        try Data(xml.replacingOccurrences(of: image.base64EncodedString(), with: "%%%invalid%%%").utf8).write(to: broken)
+        XCTAssertNil(PublicationUtilities.fb2Cover(fileURL: broken))
+    }
+
+    func testPublicationIdentityCandidatesAreNormalizedAndUnique() {
+        let book = CatalogBook(
+            id: "  Book-ABC  ", title: "Title", author: "Author", epubUrl: "book.epub",
+            coverUrl: nil, sourceUrl: nil, isbn: nil,
+            libvaultMd5: " BOOK-abc ", format: .epub, year: nil
+        )
+
+        XCTAssertEqual(PublicationUtilities.publicationIdentityCandidates(for: book), ["book-abc"])
+    }
+
+    func testExternalFavoriteConversionRequiresWebURLAndUsesFallbackAuthor() {
+        let valid = ExternalFavorite(
+            key: "remote-book", title: "Remote title", author: nil, year: "2024",
+            url: "HTTPS://example.test/book.pdf", isbn: "9780123456789", libvaultMd5: nil,
+            format: nil
+        )
+        let book = PublicationUtilities.fromExternalFavorite(valid)
+        XCTAssertEqual(book?.id, "remote-book")
+        XCTAssertEqual(book?.author, "Unknown")
+        XCTAssertEqual(book?.format, .pdf)
+        XCTAssertEqual(book?.epubUrl, "HTTPS://example.test/book.pdf")
+
+        for invalidURL in [nil, "file:///tmp/book.epub", "javascript:alert(1)"] {
+            let favorite = ExternalFavorite(
+                key: "invalid", title: "Invalid", author: "Author", year: nil,
+                url: invalidURL, isbn: nil, libvaultMd5: nil, format: "epub"
+            )
+            XCTAssertNil(PublicationUtilities.fromExternalFavorite(favorite), "\(invalidURL ?? "nil")")
+        }
+    }
+
+    func testFavoriteCoverTagsRoundTripOnlyRemoteCoverURLs() {
+        let remote = "https://covers.example/book.jpg"
+        let tags = FavoritesParser.compactItemTags(
+            refs: [SharedFavoriteRef(bookstrId: "book-1", title: "Book", coverUrl: remote)],
+            fallbackAddedAt: 10
+        )
+        XCTAssertEqual(tags.last?[9], remote)
+        XCTAssertEqual(FavoritesParser.parseSharedFavoriteTags(tags as [Any]).first?.coverUrl, remote)
+
+        let local = FavoritesParser.compactItemTags(
+            refs: [SharedFavoriteRef(bookstrId: "book-2", coverUrl: "file:///tmp/book.jpg")],
+            fallbackAddedAt: 10
+        )
+        XCTAssertEqual(local.last?[9], "")
+        XCTAssertNil(FavoritesParser.parseSharedFavoriteTags(local as [Any]).first?.coverUrl)
+        XCTAssertNil(FavoritesParser.remoteCoverURL("https:///missing-host.jpg"))
+        XCTAssertNil(FavoritesParser.remoteCoverURL(nil))
+    }
+
+    func testExternalFavoriteFallbackTitleUsesNormalizedISBNAndDropsUnsafeCover() {
+        let ref = SharedFavoriteRef(isbn: "978-0-123456-78-9", coverUrl: "file:///tmp/book.jpg")
+        let result = FavoritesParser.matchSharedFavorites(refs: [ref], books: [])
+
+        XCTAssertEqual(result.external.first?.title, "ISBN 9780123456789")
+        XCTAssertNil(result.external.first?.coverUrl)
+    }
+
+    func testComicInfoLanguageUsesTheFirstValidNormalizedValue() {
+        let xml = """
+            <ComicInfo>
+              <LanguageISO>invalid!</LanguageISO>
+              <LanguageISO> PT_br </LanguageISO>
+              <LanguageISO>en-US</LanguageISO>
+            </ComicInfo>
+            """
+
+        XCTAssertEqual(PublicationUtilities.parseComicInfoLanguage(Data(xml.utf8)), "pt-br")
+    }
+
+    func testCBZComicMetadataReadsNestedComicInfoAndRejectsUnsupportedFormats() throws {
+        let comicInfo = #"<ComicInfo><LanguageISO>fr-CA</LanguageISO></ComicInfo>"#
+        let archive = try makeStoredZip([
+            ("chapter/ComicInfo.xml", comicInfo),
+            ("chapter/001.jpg", "image bytes"),
+        ])
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".cbz")
+        defer { try? FileManager.default.removeItem(at: url) }
+        try archive.write(to: url)
+
+        XCTAssertEqual(PublicationUtilities.comicMetadata(fileURL: url, format: .cbz)?.language, "fr-ca")
+        XCTAssertNil(PublicationUtilities.comicMetadata(fileURL: url, format: .epub))
+    }
+
+    func testCBZComicMetadataRejectsEncryptedComicInfoEntry() throws {
+        var archive = try makeStoredZip([
+            ("ComicInfo.xml", #"<ComicInfo><LanguageISO>en</LanguageISO></ComicInfo>"#),
+        ])
+        let signature = Data([0x50, 0x4b, 0x01, 0x02])
+        let centralDirectory = try XCTUnwrap(archive.range(of: signature)?.lowerBound)
+        archive[centralDirectory + 8] = 0x01 // encryption flag in the central-directory header
+
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".cbz")
+        defer { try? FileManager.default.removeItem(at: url) }
+        try archive.write(to: url)
+
+        XCTAssertNil(PublicationUtilities.comicMetadata(fileURL: url, format: .cbz))
+    }
 
 
 
+
+
+    func testFavoriteModelsExposeRightsIdentityAndEmptyDefaults() {
+        let favorite = ExternalFavorite(
+            key: "external-1", title: "Title", author: nil, year: nil, url: nil,
+            isbn: nil, libvaultMd5: nil, format: nil,
+            rightsStatus: RightsStatus.openLicense.rawValue,
+            license: "CC BY 4.0", licenseUrl: "https://creativecommons.org/licenses/by/4.0/"
+        )
+        XCTAssertEqual(favorite.id, "external-1")
+        XCTAssertEqual(favorite.rights.status, .openLicense)
+        XCTAssertEqual(favorite.rights.license, "CC BY 4.0")
+
+        let empty = SharedFavorites()
+        XCTAssertTrue(empty.bookIds.isEmpty)
+        XCTAssertTrue(empty.external.isEmpty)
+    }
+
+    func testCompactFavoriteTagsUseURLOnlyFallbackAndSkipEmptyIdentity() {
+        XCTAssertEqual(
+            FavoritesParser.compactItemTags(
+                refs: [SharedFavoriteRef(url: "https://example.test/book.epub")],
+                fallbackAddedAt: 12
+            ),
+            [["book", "url", "https://example.test/book.epub", "12"]]
+        )
+        XCTAssertTrue(FavoritesParser.compactItemTags(
+            refs: [SharedFavoriteRef(url: "")], fallbackAddedAt: 12
+        ).isEmpty)
+    }
+
+    func testEPUBCoverResolutionNormalizesParentDirectoryComponents() throws {
+        let image = Data([
+            0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52,
+            0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x06, 0x00, 0x00, 0x00, 0x1F, 0x15, 0xC4,
+            0x89, 0x00, 0x00, 0x00, 0x0A, 0x49, 0x44, 0x41, 0x54, 0x78, 0x9C, 0x63, 0x00, 0x01, 0x00, 0x00,
+            0x05, 0x00, 0x01, 0x0D, 0x0A, 0x2D, 0xB4, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4E, 0x44, 0xAE,
+            0x42, 0x60, 0x82,
+        ])
+        let opf = #"<package><metadata/><manifest><item id="cover" href="cover.xhtml" media-type="application/xhtml+xml" properties="cover-image"/></manifest></package>"#
+        let wrapper = #"<html><body><img src="../../images/jacket.png"/></body></html>"#
+        let archive = try makeStoredZipData([
+            ("META-INF/container.xml", Data(#"<container><rootfile full-path="OEBPS/package/content.opf"/></container>"#.utf8)),
+            ("OEBPS/package/content.opf", Data(opf.utf8)),
+            ("OEBPS/package/cover.xhtml", Data(wrapper.utf8)),
+            ("images/jacket.png", image),
+        ])
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".epub")
+        defer { try? FileManager.default.removeItem(at: url) }
+        try archive.write(to: url)
+
+        XCTAssertEqual(PublicationUtilities.epubCover(fileURL: url)?.data, image)
+    }
+
+    func testEPUBCoverSkipsNonRasterWrapperReferencesAndFindsLaterImage() throws {
+        let image = Data([
+            0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52,
+            0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x06, 0x00, 0x00, 0x00, 0x1F, 0x15, 0xC4,
+            0x89, 0x00, 0x00, 0x00, 0x0A, 0x49, 0x44, 0x41, 0x54, 0x78, 0x9C, 0x63, 0x00, 0x01, 0x00, 0x00,
+            0x05, 0x00, 0x01, 0x0D, 0x0A, 0x2D, 0xB4, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4E, 0x44, 0xAE,
+            0x42, 0x60, 0x82,
+        ])
+        let opf = #"<package><metadata/><manifest><item id="cover" href="cover.xhtml" media-type="application/xhtml+xml" properties="cover-image"/></manifest></package>"#
+        let wrapper = #"<html><body><img src="cover.svg"/><img src="jacket.png"/></body></html>"#
+        let archive = try makeStoredZipData([
+            ("META-INF/container.xml", Data(#"<container><rootfile full-path="content.opf"/></container>"#.utf8)),
+            ("content.opf", Data(opf.utf8)),
+            ("cover.xhtml", Data(wrapper.utf8)),
+            ("jacket.png", image),
+        ])
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".epub")
+        defer { try? FileManager.default.removeItem(at: url) }
+        try archive.write(to: url)
+
+        XCTAssertEqual(PublicationUtilities.epubCover(fileURL: url)?.data, image)
+    }
+
+    func testEPUBCoverReadsDeflatedContainerMetadata() throws {
+        let container = Data(#"<container><rootfile full-path="content.opf"/></container>"#.utf8)
+        // Raw DEFLATE of the container above; remaining ZIP entries are stored.
+        let compressed = try XCTUnwrap(Data(base64Encoded: "s0nOzytJzMxLLbKzKcrPL0nLzElVSCvNydEtSCzJsFUCSafmlejlF6Qp6dvZ6COUAwA="))
+        let image = Data([
+            0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52,
+            0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x06, 0x00, 0x00, 0x00, 0x1F, 0x15, 0xC4,
+            0x89, 0x00, 0x00, 0x00, 0x0A, 0x49, 0x44, 0x41, 0x54, 0x78, 0x9C, 0x63, 0x00, 0x01, 0x00, 0x00,
+            0x05, 0x00, 0x01, 0x0D, 0x0A, 0x2D, 0xB4, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4E, 0x44, 0xAE,
+            0x42, 0x60, 0x82,
+        ])
+        let opf = #"<package><manifest><item id="cover" href="jacket.png" media-type="image/png" properties="cover-image"/></manifest></package>"#
+        var archive = try makeStoredZipData([
+            ("META-INF/container.xml", compressed),
+            ("content.opf", Data(opf.utf8)),
+            ("jacket.png", image),
+        ])
+        let central = try XCTUnwrap(archive.range(of: Data([0x50, 0x4b, 0x01, 0x02]))?.lowerBound)
+        archive[8] = 8
+        archive[central + 10] = 8
+        for (offset, value) in [(14, crc32(container)), (22, UInt32(container.count)),
+                                (central + 16, crc32(container)), (central + 24, UInt32(container.count))] {
+            var bytes = Data()
+            appendLE(value, to: &bytes)
+            archive.replaceSubrange(offset..<(offset + 4), with: bytes)
+        }
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".epub")
+        defer { try? FileManager.default.removeItem(at: url) }
+        try archive.write(to: url)
+
+        XCTAssertEqual(PublicationUtilities.epubCover(fileURL: url)?.data, image)
+    }
+
+    func testEPUBCoverRejectsCorruptDeflatePayload() throws {
+        let opf = #"<package><metadata/><manifest><item id="cover" href="cover.jpg" media-type="image/jpeg" properties="cover-image"/></manifest></package>"#
+        var archive = try makeStoredZipData([
+            ("META-INF/container.xml", Data(#"<container><rootfile full-path="content.opf"/></container>"#.utf8)),
+            ("content.opf", Data(opf.utf8)),
+            ("cover.jpg", Data("not a deflate stream".utf8)),
+        ])
+        let local = try XCTUnwrap(archive.range(of: Data([0x50, 0x4b, 0x03, 0x04]))?.lowerBound)
+        let central = try XCTUnwrap(archive.range(of: Data([0x50, 0x4b, 0x01, 0x02]))?.lowerBound)
+        archive[local + 8] = 8
+        archive[central + 10] = 8
+
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".epub")
+        defer { try? FileManager.default.removeItem(at: url) }
+        try archive.write(to: url)
+
+        XCTAssertNil(PublicationUtilities.epubCover(fileURL: url))
+    }
+
+    func testEPUBCoverSkipsStoredEntryWithMismatchedSizes() throws {
+        let opf = #"<package><metadata/><manifest><item id="cover" href="cover.jpg" media-type="image/jpeg" properties="cover-image"/></manifest></package>"#
+        var archive = try makeStoredZipData([
+            ("META-INF/container.xml", Data(#"<container><rootfile full-path="content.opf"/></container>"#.utf8)),
+            ("content.opf", Data(opf.utf8)),
+            ("cover.jpg", Data("not a real image".utf8)),
+        ])
+        let central = try XCTUnwrap(archive.range(of: Data([0x50, 0x4b, 0x01, 0x02]))?.lowerBound)
+        archive[central + 24] &+= 1 // advertise a larger uncompressed payload
+
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".epub")
+        defer { try? FileManager.default.removeItem(at: url) }
+        try archive.write(to: url)
+
+        XCTAssertNil(PublicationUtilities.epubCover(fileURL: url))
+    }
+
+    func testFavoriteURLMatchingRejectsMalformedURLComponents() {
+        let book = CatalogBook(
+            id: "book", title: "Book", author: "Author", epubUrl: "https://example.test/book.epub",
+            coverUrl: nil, sourceUrl: nil, isbn: nil, libvaultMd5: nil, format: .epub, year: nil
+        )
+
+        XCTAssertFalse(FavoritesParser.matches(SharedFavoriteRef(url: "http://[::1"), book: book))
+    }
 
     func testSerializesFavoriteMetadataForOfflineClients() {
         let md5 = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
@@ -1885,6 +2167,40 @@ final class FavoritesParserTests: XCTestCase {
         for (name, contents) in entries {
             let nameData = Data(name.utf8)
             let body = Data(contents.utf8)
+            let crc = crc32(body)
+            let offset = UInt32(archive.count)
+            appendLE(UInt32(0x04034b50), to: &archive)
+            appendLE(UInt16(20), to: &archive); appendLE(UInt16(0), to: &archive)
+            appendLE(UInt16(0), to: &archive); appendLE(UInt16(0), to: &archive); appendLE(UInt16(0), to: &archive)
+            appendLE(crc, to: &archive); appendLE(UInt32(body.count), to: &archive); appendLE(UInt32(body.count), to: &archive)
+            appendLE(UInt16(nameData.count), to: &archive); appendLE(UInt16(0), to: &archive)
+            archive.append(nameData); archive.append(body)
+
+            appendLE(UInt32(0x02014b50), to: &directory)
+            appendLE(UInt16(20), to: &directory); appendLE(UInt16(20), to: &directory)
+            appendLE(UInt16(0), to: &directory); appendLE(UInt16(0), to: &directory)
+            appendLE(UInt16(0), to: &directory); appendLE(UInt16(0), to: &directory)
+            appendLE(crc, to: &directory); appendLE(UInt32(body.count), to: &directory); appendLE(UInt32(body.count), to: &directory)
+            appendLE(UInt16(nameData.count), to: &directory); appendLE(UInt16(0), to: &directory); appendLE(UInt16(0), to: &directory)
+            appendLE(UInt16(0), to: &directory); appendLE(UInt16(0), to: &directory); appendLE(UInt32(0), to: &directory)
+            appendLE(offset, to: &directory); directory.append(nameData)
+            count += 1
+        }
+        let directoryOffset = UInt32(archive.count)
+        archive.append(directory)
+        appendLE(UInt32(0x06054b50), to: &archive)
+        appendLE(UInt16(0), to: &archive); appendLE(UInt16(0), to: &archive)
+        appendLE(count, to: &archive); appendLE(count, to: &archive)
+        appendLE(UInt32(directory.count), to: &archive); appendLE(directoryOffset, to: &archive); appendLE(UInt16(0), to: &archive)
+        return archive
+    }
+
+    private func makeStoredZipData(_ entries: [(String, Data)]) throws -> Data {
+        var archive = Data()
+        var directory = Data()
+        var count: UInt16 = 0
+        for (name, body) in entries {
+            let nameData = Data(name.utf8)
             let crc = crc32(body)
             let offset = UInt32(archive.count)
             appendLE(UInt32(0x04034b50), to: &archive)
