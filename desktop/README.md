@@ -9,7 +9,7 @@ does not bundle Transmission or Iroh.
 
 ## Run locally
 
-Requires Node.js 22.12 or newer and pnpm 10.34.8 (pinned in `package.json`).
+Requires Node.js 26.13 or newer and pnpm 10.34.8 (pinned in `package.json`).
 The Electron package has its own lockfile and configuration in this directory.
 
 ```bash

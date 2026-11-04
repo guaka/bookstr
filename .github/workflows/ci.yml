@@ -40,12 +40,14 @@ jobs:
               - 'docs/CLIENT_CAPABILITIES.md'
               - 'scripts/**'
               - '.github/workflows/ci.yml'
+              - '.nvmrc'
             electron:
               - 'desktop/**'
               - 'web/**'
               - 'shared/**'
               - 'scripts/test-overview.mjs'
               - '.github/workflows/ci.yml'
+              - '.nvmrc'
             workflows:
               - '.github/workflows/**'
               - 'scripts/workflows.test.mjs'
@@ -73,7 +75,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version-file: .nvmrc
       - name: Test workflow contracts
         run: node --test scripts/workflows.test.mjs
 
@@ -88,7 +90,7 @@ jobs:
         run: test -f web/index.html
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version-file: .nvmrc
       - name: Run static web tests
         id: web_tests
         continue-on-error: true
@@ -190,7 +192,7 @@ jobs:
           package_json_file: desktop/package.json
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version-file: .nvmrc
           cache: pnpm
           cache-dependency-path: desktop/pnpm-lock.yaml
       - name: Install desktop dependencies
