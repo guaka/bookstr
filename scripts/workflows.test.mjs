@@ -128,6 +128,41 @@ test('CodeQL workflow is disabled', async () => {
   assert.equal(workflows.includes('codeql.yml'), false);
 });
 
+test('Android APK builds have separate sequential steps on the same runner', async () => {
+  const workflow = await readWorkflow('android.yml');
+  const packaging = workflow.match(/^  package-apks:\n([\s\S]*?)(?=^  emulator-tests:)/m)[1];
+  assert.match(packaging, /^    name: Build debug app and test APKs$/m);
+  const builds = [...packaging.matchAll(/      - name: (Build[^\n]+)\n        working-directory: android\n        run: (.+)/g)];
+  assert.deepEqual(builds.map(match => [match[1], match[2]]), [
+    ['Build debug app APK', './gradlew --no-daemon --max-workers=2 assembleDebug -Pbookstr.abis=x86_64 -Pbookstr.cxxCompilerLauncher=ccache'],
+    ['Build instrumentation test APK', './gradlew --no-daemon --max-workers=2 assembleDebugAndroidTest -Pbookstr.abis=x86_64 -Pbookstr.cxxCompilerLauncher=ccache'],
+  ]);
+  assert.ok(packaging.indexOf('name: Stage prebuilt APKs') > builds[1].index);
+  assert.match(packaging, /name: Upload prebuilt APKs[\s\S]*?compression-level: 0/);
+});
+
+test('Android CI caches Gradle and native compilation while preserving universal releases', async () => {
+  const workflow = await readWorkflow('android.yml');
+  assert.equal((workflow.match(/uses: gradle\/actions\/setup-gradle@v4/g) || []).length, 3);
+  assert.doesNotMatch(workflow, /cache: gradle/);
+  assert.match(workflow, /node --test --test-concurrency=1 android\/scripts\/build-configuration\.test\.mjs/);
+  assert.match(workflow, /CCACHE_COMPILERCHECK: content/);
+  assert.match(workflow, /CCACHE_MAXSIZE: 1G/);
+  for (const [job, variant] of [['package-apks', 'debug-x86_64'], ['release', 'release-universal']]) {
+    const source = workflow.slice(workflow.indexOf(`  ${job}:`)).split(/\n  [a-z-]+:\n/)[0];
+    assert.match(source, /apt-get install -y libboost-dev ccache/);
+    assert.match(source, /name: Restore native compiler cache\n        uses: actions\/cache@v4/);
+    assert.match(source, /path: \$\{\{ env\.CCACHE_DIR \}\}/);
+    assert.ok(source.includes(`-android-ccache-${variant}-v1-`));
+    assert.match(source, /hashFiles\('android\/gradle\/wrapper\/gradle-wrapper\.properties', 'android\/app\/build\.gradle\.kts', 'android\/app\/src\/main\/cpp\/CMakeLists\.txt'\)/);
+    assert.match(source, /ccache --zero-stats/);
+    assert.match(source, /name: Report native cache statistics\n        if: always\(\)\n        run: ccache --show-stats/);
+  }
+  const release = workflow.slice(workflow.indexOf('  release:'));
+  assert.match(release, /assembleRelease -Pbookstr.cxxCompilerLauncher=ccache/);
+  assert.doesNotMatch(release, /-Pbookstr\.abis/);
+});
+
 test('Android CI has four ordered jobs and the emulator consumes prebuilt APKs', async () => {
   const workflow = await readWorkflow('android.yml');
   const ignore = await readFile(new URL('../.gitignore', import.meta.url), 'utf8');
@@ -148,7 +183,7 @@ test('Android CI has four ordered jobs and the emulator consumes prebuilt APKs',
   ]);
   assert.match(workflow, /testDebugUnitTest jacocoDebugUnitTestReport/);
   assert.match(workflow, /node --test --experimental-test-coverage --test-coverage-lines=100 --test-coverage-branches=100 --test-coverage-functions=100 android\/scripts\/instrumentation-results\.test\.mjs/);
-  assert.match(workflow, /assembleDebug assembleDebugAndroidTest/);
+  assert.match(workflow, /run: \.\/gradlew --no-daemon --max-workers=2 assembleDebug -Pbookstr.abis=x86_64 -Pbookstr.cxxCompilerLauncher=ccache\n/);
   assert.match(workflow, /needs: unit-tests/);
   assert.match(workflow, /needs: package-apks/);
   assert.match(workflow, /needs: \[unit-tests, package-apks, emulator-tests\]/);
@@ -408,7 +443,7 @@ test('Obtainium releases use unique increasing versions and latest APK assets', 
   assert.equal([...release.matchAll(/version="0\.0\.3-ci\.\$RUN_NUMBER"/g)].length, 1);
   assert.match(publisher, /version="0\.0\.3-ci\.\$RUN_NUMBER"/);
   assert.match(release, /code=\$\(\(1000000000 \+ RUN_NUMBER\)\)/);
-  assert.match(release, /assembleRelease "-Pbookstr\.versionCode=\$code" "-Pbookstr\.versionName=\$version"/);
+  assert.match(release, /assembleRelease -Pbookstr.cxxCompilerLauncher=ccache "-Pbookstr\.versionCode=\$code" "-Pbookstr\.versionName=\$version"/);
   assert.match(release, /--no-configuration-cache --max-workers=2 assembleRelease/);
   assert.match(release, /run: bash android\/scripts\/publish-obtainium-release\.sh/);
   assert.match(workflow, /name: Test Android release publisher\n        run: node --test android\/scripts\/publish-obtainium-release\.test\.mjs/);

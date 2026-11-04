@@ -66,7 +66,18 @@ android {
     defaultConfig {
         applicationId = "app.bookstr"
         minSdk = 27
-        ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64") }
+        ndk {
+            abiFilters += providers.gradleProperty("bookstr.abis")
+                .map { it.split(",") }
+                .getOrElse(listOf("arm64-v8a", "armeabi-v7a", "x86_64"))
+        }
+        externalNativeBuild {
+            cmake {
+                providers.gradleProperty("bookstr.cxxCompilerLauncher").orNull?.let {
+                    arguments += "-DCMAKE_CXX_COMPILER_LAUNCHER=$it"
+                }
+            }
+        }
         targetSdk = 35
         versionCode = providers.gradleProperty("bookstr.versionCode").orNull?.toInt() ?: timestampVersionCode
         versionName = providers.gradleProperty("bookstr.versionName").orNull ?: "0.0.3-$versionTimestamp"
