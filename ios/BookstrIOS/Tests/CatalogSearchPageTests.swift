@@ -67,4 +67,21 @@ final class CatalogSearchPageTests: XCTestCase {
         }
     }
 
+    func testSearchFavoriteMatcherUsesIdentityThenURLThenCaseInsensitiveMetadata() {
+        let result = BookSearchResult(id: "result", source: "catalog", title: "The Book", author: "A Writer",
+                                      year: nil, publisher: nil, language: nil, format: .epub,
+                                      downloadUrl: "https://example.test/book.epub", coverUrl: nil,
+                                      rating: 0, editionCount: 1)
+        func favorite(key: String, title: String = "Other", author: String? = nil, url: String? = nil) -> ExternalFavorite {
+            ExternalFavorite(key: key, title: title, author: author, year: nil, url: url, isbn: nil,
+                             libvaultMd5: nil, format: nil)
+        }
+
+        XCTAssertTrue(SearchFavoriteMatcher.matches(result, favorite: favorite(key: "result")))
+        XCTAssertTrue(SearchFavoriteMatcher.matches(result, favorite: favorite(key: "other", url: result.downloadUrl)))
+        XCTAssertTrue(SearchFavoriteMatcher.matches(result, favorite: favorite(key: "other", title: "the book", author: "a writer")))
+        XCTAssertFalse(SearchFavoriteMatcher.matches(result, favorite: favorite(key: "other", title: "The Book", author: "Different")))
+        XCTAssertFalse(SearchFavoriteMatcher.matches(result, favorite: favorite(key: "other", title: "The Book", author: nil)))
+    }
+
 }

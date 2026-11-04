@@ -6,6 +6,16 @@ import XCTest
 #endif
 
 final class BookListFacetFiltersTests: XCTestCase {
+    func testActiveStateTracksEitherFacetAndClearsWithStaleSelections() {
+        XCTAssertFalse(BookListFacetFilters().isActive)
+        XCTAssertTrue(BookListFacetFilters(language: "en").isActive)
+        XCTAssertTrue(BookListFacetFilters(format: "epub").isActive)
+        var filters = BookListFacetFilters(language: "en", format: "epub")
+        XCTAssertTrue(filters.isActive)
+        filters.sanitize(languages: [], formats: [])
+        XCTAssertFalse(filters.isActive)
+    }
+
     func testNormalizationTrimsAndLowercasesLanguageAndFormat() {
         XCTAssertEqual(BookListFacetFilters.normalizedLanguage("  PT-pt "), "pt")
         XCTAssertEqual(BookListFacetFilters.normalizedLanguage("pt-BR"), "pt")

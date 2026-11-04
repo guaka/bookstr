@@ -294,6 +294,8 @@ final class SettingsRepositoryCoverageTests: XCTestCase {
         repo.keepReadingOnLockScreen = false
         XCTAssertFalse(repo.keepReadingOnLockScreen)
         XCTAssertEqual(repo.wordSort, "recent")
+        XCTAssertEqual(repo.dictionarySource, "en")
+        XCTAssertEqual(repo.dictionaryTarget, "pt")
         repo.wordSort = "alphabetical"
         repo.dictionarySource = "pt"
         repo.dictionaryTarget = "en"
@@ -311,6 +313,12 @@ final class SettingsRepositoryCoverageTests: XCTestCase {
         repo.pubkeyHex = "abcdef"
         repo.nip46BunkerURL = "https://example.test"
         XCTAssertFalse(repo.hasNip46SessionCredentials)
+        repo.nip46BunkerURL = "bunker://example"
+        XCTAssertFalse(repo.hasNip46SessionCredentials, "a valid bunker URL without a client secret is not a session")
+        repo.nip46ClientSecret = "secret"
+        XCTAssertTrue(repo.hasNip46SessionCredentials)
+        repo.nip46BunkerURL = "https://example.test"
+        XCTAssertFalse(repo.hasNip46SessionCredentials, "a client secret with a non-bunker URL is not a session")
 
         repo.signerPackage = "  package  "
         repo.nsec = "  nsec-value  "

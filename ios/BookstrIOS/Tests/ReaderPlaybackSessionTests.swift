@@ -76,6 +76,41 @@ final class ReaderPlaybackSessionTests: XCTestCase {
         XCTAssertEqual(left.activationZoneHeight, 73)
     }
 
+    func testLandscapeChromeWithoutIslandUsesLargerInsetAndFallbackMinimums() {
+        let metrics = ReaderChromeMetrics(
+            width: 667, height: 375,
+            safeTop: 10, safeLeading: 4, safeBottom: 2, safeTrailing: 8,
+            orientation: .landscapeLeft
+        )
+
+        XCTAssertEqual(metrics.dynamicIslandEdge, .none)
+        XCTAssertEqual(metrics.headerHeight, 54)
+        XCTAssertEqual(metrics.horizontalControlInset, 14)
+        XCTAssertEqual(metrics.islandControlsTopInset, 10)
+        XCTAssertEqual(metrics.bottomCornerRadius, 20)
+        XCTAssertEqual(metrics.progressHeight, 18)
+        XCTAssertEqual(metrics.activationZoneHeight, 58)
+        XCTAssertEqual(metrics.controlsTopInset, 10)
+        let negativeInset = ReaderChromeMetrics(
+            width: 667, height: 375,
+            safeTop: -10, safeLeading: 0, safeBottom: 0, safeTrailing: 0,
+            orientation: .landscapeLeft
+        )
+        XCTAssertEqual(negativeInset.controlsTopInset, 0)
+    }
+
+    @MainActor
+    func testCancelKeepsVisibleChromeUntilExplicitlyHidden() async throws {
+        let visibility = ReaderChromeVisibilityController(dismissalDelay: .milliseconds(20))
+        visibility.reveal()
+        XCTAssertTrue(visibility.isButtonIslandVisible)
+        visibility.cancel()
+        try await Task.sleep(for: .milliseconds(60))
+        XCTAssertTrue(visibility.isButtonIslandVisible)
+        visibility.hide()
+        XCTAssertFalse(visibility.isButtonIslandVisible)
+    }
+
     func testPausedSpeechExpiresAtFiveMinutes() {
         let pausedAt = Date(timeIntervalSince1970: 1_000)
         XCTAssertFalse(ReaderSpeechPausePolicy.shouldExpire(

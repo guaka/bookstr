@@ -127,9 +127,9 @@ enum PublicationUtilities {
     private static func coverImageHref(inXHTML data: Data) -> String? {
         let source = String(decoding: data, as: UTF8.self)
         let pattern = #"(?:src|xlink:href)\s*=\s*["']([^"']+)["']"#
-        guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else {
-            return nil
-        }
+        // This fixed pattern is a source-code invariant; invalid syntax would
+        // be a programming error rather than malformed publication input.
+        let regex = try! NSRegularExpression(pattern: pattern, options: [.caseInsensitive])
         let range = NSRange(source.startIndex..<source.endIndex, in: source)
         for match in regex.matches(in: source, options: [], range: range) {
             guard match.numberOfRanges > 1,
@@ -916,7 +916,4 @@ enum PublicationUtilities {
         return false
     }
 
-    private static func isMD5(_ value: String) -> Bool {
-        value.count == 32 && value.allSatisfy(\.isHexDigit)
-    }
 }
