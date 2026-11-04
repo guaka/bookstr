@@ -28,6 +28,11 @@
 
 ## Local resource safety
 
+- Never open Electron or Playwright test windows on the user's desktop. Run
+  Electron UI tests through the repository scripts, which use Docker on macOS
+  and Windows and a fresh Xvfb display on Linux. Keep browser tests headless.
+  Do not bypass isolation with direct Playwright or Electron commands.
+
 - Run at most one Electron or Playwright instance and one Playwright worker at
   a time. Do not overlap Electron end-to-end suites, native builds, or native
   dependency installation.
