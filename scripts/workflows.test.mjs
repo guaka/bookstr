@@ -163,11 +163,13 @@ test('Android CI has four ordered jobs and the emulator consumes prebuilt APKs',
   assert.match(e2eRunner, /install -r "\$test_apk"/);
   assert.match(e2eRunner, /shell am instrument -w -r app\.bookstr\.test\/androidx\.test\.runner\.AndroidJUnitRunner/);
   assert.match(e2eRunner, /rm -f "\$results_dir\/instrumentation\.log"/);
-  assert.match(ignore, /^android\/e2e-results\/$/m);
-  assert.match(ignore, /^android\/e2e-screenshots\/$/m);
+  assert.match(ignore, /^\/android\/e2e-results\/$/m);
+  assert.match(ignore, /^\/android\/e2e-screenshots\/$/m);
   assert.match(e2eRunner, /instrumentation-results\.mjs/);
   assert.match(e2eRunner, /instrumentation\.started/);
   assert.match(emulatorJob, /hashFiles\('android\/e2e-results\/instrumentation\.started'\) != ''/);
+  assert.match(workflow, /name: Record Android unit test overview\n        if: always\(\) && hashFiles\('android\/app\/build\/test-results\/testDebugUnitTest\/TEST-\*\.xml'\) != ''/);
+  assert.match(emulatorJob, /name: Upload Android UI results[\s\S]*?path: android\/e2e-results\//);
   assert.match(e2eRunner, /\$adb_path" pull "\$device_screenshot_dir\/\." "\$host_screenshot_dir"/);
   assert.match(e2eRunner, /Android e2e tests produced no screenshots/);
   assert.match(screenshotRule, /screencap -p \/sdcard\/e2e-screenshots\/\$testName\.png/);
@@ -437,7 +439,7 @@ test('Node.js runtime pin is shared by local development and every workflow', as
   const setupNodeSteps = workflows.flatMap((workflow) =>
     [...workflow.matchAll(/- uses: actions\/setup-node@v4([\s\S]*?)(?=\n      - uses:|\n      - name:|$)/g)].map((match) => match[1]),
   );
-  assert.equal(setupNodeSteps.length, 6);
+  assert.equal(setupNodeSteps.length, 7);
   for (const step of setupNodeSteps) {
     assert.match(step, /node-version-file: \.nvmrc/);
     assert.doesNotMatch(step, /node-version:\s*\d/);
