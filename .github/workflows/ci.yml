@@ -50,6 +50,7 @@ jobs:
               - '.nvmrc'
             workflows:
               - '.github/workflows/**'
+              - '.github/required-checks.json'
               - 'scripts/workflows.test.mjs'
 
   repository-hygiene:

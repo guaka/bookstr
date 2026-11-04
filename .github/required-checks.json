@@ -1,0 +1,17 @@
+{
+  "strict_required_status_checks_policy": true,
+  "do_not_enforce_on_create": false,
+  "required_status_checks": [
+    { "context": "Detect web changes", "integration_id": 15368 },
+    { "context": "Repository hygiene", "integration_id": 15368 },
+    { "context": "Workflow contracts", "integration_id": 15368 },
+    { "context": "Static web", "integration_id": 15368 },
+    { "context": "Electron", "integration_id": 15368 },
+    { "context": "Route Android checks", "integration_id": 15368 },
+    { "context": "Unit tests and coverage", "integration_id": 15368 },
+    { "context": "Build debug app and test APKs", "integration_id": 15368 },
+    { "context": "Emulator UI tests", "integration_id": 15368 },
+    { "context": "Route iOS checks", "integration_id": 15368 },
+    { "context": "iOS", "integration_id": 15368 }
+  ]
+}

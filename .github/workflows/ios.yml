@@ -12,14 +12,6 @@ on:
       - '.github/workflows/ios.yml'
       - '.nvmrc'
   pull_request:
-    paths:
-      - 'ios/**'
-      - 'shared/reader/**'
-      - 'shared/coverage/**'
-      - 'scripts/coverage-ratchet.mjs'
-      - 'scripts/test-overview.mjs'
-      - '.github/workflows/ios.yml'
-      - '.nvmrc'
   workflow_dispatch:
 
 permissions:
@@ -30,8 +22,34 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  changes:
+    name: Route iOS checks
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      ios: ${{ github.event_name != 'pull_request' || steps.filter.outputs.ios == 'true' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@0e4a8c6effa4802afeda77dc8d303f8176d7dfad
+        id: filter
+        if: github.event_name == 'pull_request'
+        with:
+          filters: |
+            ios:
+              - 'ios/**'
+              - 'shared/reader/**'
+              - 'shared/coverage/**'
+              - 'scripts/coverage-ratchet.mjs'
+              - 'scripts/test-overview.mjs'
+              - '.github/workflows/ios.yml'
+              - '.nvmrc'
+
   ios:
     name: iOS
+    needs: changes
+    if: needs.changes.outputs.ios == 'true'
     runs-on: macos-26
     timeout-minutes: 45
     steps:

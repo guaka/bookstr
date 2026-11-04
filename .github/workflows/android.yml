@@ -19,21 +19,6 @@ on:
       - 'scripts/workflows.test.mjs'
       - '.nvmrc'
   pull_request:
-    paths:
-      - 'android/**'
-      - 'shared/reader/**'
-      - 'web/reader-speech.js'
-      - 'web/reader-typography.js'
-      - 'web/reader-chrome.js'
-      - 'web/comic-reader.html'
-      - 'web/vendor/libarchive.js'
-      - 'web/vendor/libarchive.wasm'
-      - 'shared/coverage/**'
-      - 'scripts/coverage-ratchet.mjs'
-      - 'scripts/test-overview.mjs'
-      - '.github/workflows/android.yml'
-      - 'scripts/workflows.test.mjs'
-      - '.nvmrc'
   workflow_dispatch:
 
 env:
@@ -47,8 +32,42 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  changes:
+    name: Route Android checks
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      android: ${{ (github.event_name != 'pull_request' || steps.filter.outputs.android == 'true') && 'true' || 'false' }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Filter Android paths
+        id: filter
+        if: github.event_name == 'pull_request'
+        uses: dorny/paths-filter@0e4a8c6effa4802afeda77dc8d303f8176d7dfad
+        with:
+          filters: |
+            android:
+              - 'android/**'
+              - 'shared/reader/**'
+              - 'web/reader-speech.js'
+              - 'web/reader-typography.js'
+              - 'web/reader-chrome.js'
+              - 'web/comic-reader.html'
+              - 'web/vendor/libarchive.js'
+              - 'web/vendor/libarchive.wasm'
+              - 'shared/coverage/**'
+              - 'scripts/coverage-ratchet.mjs'
+              - 'scripts/test-overview.mjs'
+              - '.github/workflows/android.yml'
+              - 'scripts/workflows.test.mjs'
+              - '.nvmrc'
+
   unit-tests:
     name: Unit tests and coverage
+    needs: changes
+    if: needs.changes.outputs.android == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:

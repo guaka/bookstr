@@ -143,7 +143,7 @@ test('Android CI has four ordered jobs and the emulator consumes prebuilt APKs',
   );
 
   assert.match(properties, /^org\.gradle\.configuration-cache=true$/m);
-  assert.deepEqual([...workflow.matchAll(/^  ([a-z-]+):\n    name:/gm)].map((match) => match[1]), [
+  assert.deepEqual([...workflow.matchAll(/^  ([a-z-]+):\n    name:/gm)].map((match) => match[1]).filter((name) => name !== 'changes'), [
     'unit-tests', 'package-apks', 'emulator-tests', 'release',
   ]);
   assert.match(workflow, /testDebugUnitTest jacocoDebugUnitTestReport/);
@@ -264,7 +264,7 @@ exit "\${MOCK_PARSER_STATUS:-0}"
 test('Android CI rebuilds APKs for Android and bundled reader changes', async () => {
   const workflow = await readWorkflow('android.yml');
   const push = workflow.match(/^  push:\n([\s\S]*?)(?=^  pull_request:)/m)[1];
-  const pullRequest = workflow.match(/^  pull_request:\n([\s\S]*?)(?=^  workflow_dispatch:)/m)[1];
+  const pullRequest = workflow.match(/^  changes:\n([\s\S]*?)(?=^  unit-tests:)/m)[1];
 
   assert.match(push, /branches: \[main\]/);
   for (const trigger of [push, pullRequest]) {
@@ -277,6 +277,47 @@ test('Android CI rebuilds APKs for Android and bundled reader changes', async ()
       assert.ok(trigger.includes(`- '${path}'`), `${path} triggers an APK build`);
     }
   }
+});
+
+test('required native checks are always reported and route only relevant PR paths', async () => {
+  for (const [file, platform, job] of [['android.yml', 'android', 'unit-tests'], ['ios.yml', 'ios', 'ios']]) {
+    const workflow = await readWorkflow(file);
+    const push = workflow.match(/^  push:\n([\s\S]*?)(?=^  pull_request:)/m)[1];
+    const routing = workflow.match(/^  changes:\n([\s\S]*?)(?=^  (?:unit-tests|ios):)/m)[1];
+    assert.match(workflow, /  pull_request:\n  workflow_dispatch:/);
+    assert.doesNotMatch(workflow, /pull_request:\n    paths:/);
+    assert.match(routing, /runs-on: ubuntu-latest/);
+    assert.match(routing, /permissions:\n      contents: read\n      pull-requests: read/);
+    assert.match(routing, /dorny\/paths-filter@0e4a8c6effa4802afeda77dc8d303f8176d7dfad/);
+    assert.match(routing, /if: github\.event_name == 'pull_request'/);
+    assert.ok(routing.includes(`github.event_name != 'pull_request' || steps.filter.outputs.${platform} == 'true'`));
+    const paths = (text) => [...text.matchAll(/- '([^']+)'/g)].map((match) => match[1]);
+    assert.deepEqual(paths(routing), paths(push));
+    const native = workflow.slice(workflow.indexOf(`  ${job}:\n`));
+    assert.match(native, /needs: changes/);
+    assert.ok(native.includes(`if: needs.changes.outputs.${platform} == 'true'`));
+  }
+});
+
+test('main protection names real workflow jobs and requires trusted up-to-date checks', async () => {
+  const policy = JSON.parse(await readFile(new URL('../.github/required-checks.json', import.meta.url), 'utf8'));
+  assert.equal(policy.strict_required_status_checks_policy, true);
+  assert.equal(policy.do_not_enforce_on_create, false);
+  const workflows = await Promise.all(['ci.yml', 'android.yml', 'ios.yml'].map(readWorkflow));
+  const jobNames = workflows.flatMap((workflow) => [...workflow.matchAll(/^    name: (.+)$/gm)].map((match) => match[1]));
+  const required = policy.required_status_checks.map((check) => check.context);
+  assert.equal(required.length, 11);
+  assert.equal(new Set(required).size, 11);
+  for (const check of policy.required_status_checks) {
+    assert.equal(check.integration_id, 15368);
+    assert.equal(jobNames.filter((name) => name === check.context).length, 1, `${check.context} names exactly one job`);
+  }
+  for (const context of ['Detect web changes', 'Route Android checks', 'Route iOS checks', 'Emulator UI tests', 'iOS']) {
+    assert.ok(required.includes(context), `${context} cannot fail while descendants are skipped`);
+  }
+  assert.doesNotMatch(required.join('\n'), /Publish Android APK/);
+  assert.match(workflows[0], /- '\.github\/required-checks\.json'/);
+  assert.match(await readFile(new URL('../AGENTS.md', import.meta.url), 'utf8'), /Keep required workflow job names aligned with `\.github\/required-checks\.json`/);
 });
 
 test('Android CI uploads both APKs with bounded retention before emulator tests', async () => {
