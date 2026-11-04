@@ -6,6 +6,101 @@ import XCTest
 #endif
 
 final class ProgressRepositoryTests: XCTestCase {
+    func testJSONFileStorePersistsValuesAndFallsBackForMissingOrMalformedFiles() throws {
+        let subdirectory = "bookstr-test-json-store-\(UUID().uuidString)"
+        defer { removeApplicationSupportDirectory(subdirectory) }
+        let store = JSONFileStore(subdirectory: subdirectory)
+        store.save("value.json", value: ["answer": 42])
+
+        let reloaded = JSONFileStore(subdirectory: subdirectory)
+        XCTAssertEqual(reloaded.load("value.json", as: [String: Int].self, fallback: [:]), ["answer": 42])
+        XCTAssertEqual(reloaded.load("missing.json", as: [String: Int].self, fallback: ["fallback": 1]), ["fallback": 1])
+        try Data("not json".utf8).write(to: applicationSupportDirectory(subdirectory).appendingPathComponent("broken.json"))
+        XCTAssertEqual(reloaded.load("broken.json", as: [String: Int].self, fallback: ["invalid": 2]), ["invalid": 2])
+
+        struct UnencodableValue: Encodable {
+            func encode(to encoder: Encoder) throws { throw EncodingError.invalidValue(self, .init(codingPath: [], debugDescription: "intentional test failure")) }
+        }
+        reloaded.save("unencodable.json", value: UnencodableValue())
+        XCTAssertEqual(reloaded.load("unencodable.json", as: [String: Int].self, fallback: ["encode": 3]), ["encode": 3])
+    }
+
+    func testJSONFileStoreDiscoversPublicationAndCoverFiles() throws {
+        let subdirectory = "bookstr-test-file-discovery-\(UUID().uuidString)"
+        defer { removeApplicationSupportDirectory(subdirectory) }
+        let store = JSONFileStore(subdirectory: subdirectory)
+        XCTAssertTrue(store.publicationFiles().isEmpty, "missing books directory should produce an empty listing")
+        XCTAssertTrue(store.cachedCoverURLs().isEmpty, "missing covers directory should produce an empty cache")
+        XCTAssertTrue(store.discoveredCoverURLs().isEmpty, "missing discovered-covers directory should produce an empty map")
+        store.ensureBooksDirectory()
+        store.ensureCoversDirectory()
+        let book = store.bookFileURL(bookId: "local-book", format: .epub)
+        let cover = store.coverFileURL(bookId: "local-book", ext: "png")
+        let alternateCover = store.coverFileURL(bookId: "UPPER-BOOK", ext: "webp")
+        try Data("book".utf8).write(to: book)
+        try Data("cover".utf8).write(to: cover)
+        try Data("alternate".utf8).write(to: alternateCover)
+        try Data("hidden".utf8).write(to: book.deletingLastPathComponent().appendingPathComponent(".hidden"))
+
+        XCTAssertEqual(store.publicationFiles(), [book])
+        XCTAssertEqual(store.cachedCoverURLs()["local-book"], cover)
+        XCTAssertEqual(store.cachedCoverURLs()["upper-book"], alternateCover)
+        let caseVariantCover = store.coverFileURL(bookId: "upper-book", ext: "jpeg")
+        try Data("case variant".utf8).write(to: caseVariantCover)
+        XCTAssertTrue([alternateCover, caseVariantCover].contains(store.cachedCoverURLs()["upper-book"]),
+                      "case-insensitive duplicate basenames should collapse to one cached URL")
+        XCTAssertEqual(store.discoveredCoverFileURL(key: "query").lastPathComponent, "query.jpg")
+        try Data("jpg".utf8).write(to: store.discoveredCoverFileURL(key: "query"))
+        try Data("png".utf8).write(to: store.discoveredCoverFileURL(key: "ignored").deletingPathExtension().appendingPathExtension("png"))
+        XCTAssertEqual(store.discoveredCoverURLs().mapValues(\.lastPathComponent), ["query": "query.jpg"])
+    }
+
+    func testReaderProgressRecorderPersistsProgressAndResolvedSessionMetadata() throws {
+        let subdirectory = "bookstr-test-recorder-\(UUID().uuidString)"
+        defer { removeApplicationSupportDirectory(subdirectory) }
+        let progress = ProgressRepository(fileStore: JSONFileStore(subdirectory: subdirectory))
+        let defaultsName = "bookstr-test-recorder-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: defaultsName)!
+        defer { defaults.removePersistentDomain(forName: defaultsName) }
+        let settings = SettingsRepository(defaults: defaults)
+        let book = CatalogBook(id: "comic", title: "Panel", author: "Artist", epubUrl: "", coverUrl: nil,
+                               sourceUrl: nil, isbn: nil, libvaultMd5: nil, format: .cbz, year: "2024",
+                               rightsStatus: "public_domain", license: "CC0", licenseUrl: nil, rightsSource: "catalog")
+
+        ReaderProgressRecorder.record(book: book, format: .cbz, progression: 0.5, locator: "comic:4:80",
+                                      progressRepository: progress, settingsRepository: settings)
+
+        XCTAssertEqual(progress.get(bookId: "comic").cfi, "comic:4:80")
+        let session = try XCTUnwrap(settings.readerSession())
+        XCTAssertEqual(session.pageIndex, 4)
+        XCTAssertEqual(session.author, "Artist")
+        XCTAssertEqual(session.rightsStatus, "public_domain")
+        XCTAssertEqual(session.license, "CC0")
+        let overridden = ReaderProgressRecorder.session(
+            book: book, format: .pdf, locator: "page:9", pageIndex: 2,
+            rights: BookRights(status: .openLicense, license: "CC BY 4.0", licenseURL: "https://example.test/license", source: "override")
+        )
+        XCTAssertEqual(overridden.pageIndex, 2)
+        XCTAssertEqual(overridden.rightsStatus, RightsStatus.openLicense.rawValue)
+        XCTAssertEqual(overridden.licenseUrl, "https://example.test/license")
+        XCTAssertEqual(overridden.rightsSource, "override")
+        XCTAssertEqual(ReaderProgressRecorder.resolvedPageIndex(for: .pdf, locator: "page:12"), 12)
+        XCTAssertEqual(ReaderProgressRecorder.resolvedPageIndex(for: .pdf, locator: "invalid"), 0)
+        XCTAssertEqual(ReaderProgressRecorder.resolvedPageIndex(for: .cbr, locator: "comic:-3"), 0)
+        XCTAssertEqual(ReaderProgressRecorder.resolvedPageIndex(for: .epub, locator: "epubcfi(/6/2)"), 0)
+        XCTAssertEqual(ReaderProgressRecorder.resolvedPageIndex(for: .cbz, locator: nil), 0)
+
+    }
+
+    private func applicationSupportDirectory(_ subdirectory: String) -> URL {
+        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+            .appendingPathComponent(subdirectory, isDirectory: true)
+    }
+
+    private func removeApplicationSupportDirectory(_ subdirectory: String) {
+        try? FileManager.default.removeItem(at: applicationSupportDirectory(subdirectory))
+    }
+
     func testSaveAndGetProgress() {
         let store = JSONFileStore(subdirectory: "bookstr-test-\(UUID().uuidString)")
         let repo = ProgressRepository(fileStore: store)
