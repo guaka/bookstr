@@ -25,6 +25,34 @@ class SpeechSettingsActivityTest {
         compose.onNodeWithTag("speech-language").performScrollTo().performClick()
         compose.onNodeWithTag("speech-language-option-nl").performClick()
     }
+    @Test fun italianKokoroDownloadPersistsThroughRecreationAndCanBeRemoved() =
+        kokoroDownloadPersistsThroughRecreationAndCanBeRemoved("kokoro_it", "it", "Italiano")
+
+    @Test fun portugalKokoroDownloadPersistsThroughRecreationAndCanBeRemoved() =
+        kokoroDownloadPersistsThroughRecreationAndCanBeRemoved("kokoro_pt_pt", "pt-pt", "Portuguese")
+
+    private fun kokoroDownloadPersistsThroughRecreationAndCanBeRemoved(id: String, language: String, alias: String) {
+        val store = SpeechModels(app)
+        val model = store.models.single { it.id == id }
+        store.remove(model)
+        val settings = SpeechSettings(app.getSharedPreferences("bookstr_settings", Context.MODE_PRIVATE))
+        settings.setVoice(language, "")
+        compose.onNodeWithContentDescription("Settings").performClick()
+        compose.onNodeWithTag("speech-language").performScrollTo().performClick()
+        compose.onNodeWithTag("speech-language-option-$language").performScrollTo().performClick()
+        compose.onNodeWithTag("speech-model-kokoro_en").assertDoesNotExist()
+        compose.onNodeWithTag("speech-model-$id").performScrollTo().performClick()
+        compose.waitUntil(300_000) { store.installed(model) && settings.voice(alias) == model.id }
+        compose.onNodeWithTag("speech-voice").performScrollTo().assertTextContains(model.label, substring = true)
+        compose.activityRule.scenario.recreate()
+        compose.onNodeWithContentDescription("Settings").performClick()
+        compose.onNodeWithTag("speech-language").performScrollTo().performClick()
+        compose.onNodeWithTag("speech-language-option-$language").performScrollTo().performClick()
+        compose.onNodeWithTag("speech-voice").performScrollTo().assertTextContains(model.label, substring = true)
+        compose.onNodeWithTag("speech-model-$id").performScrollTo().performClick()
+        compose.runOnIdle { assertFalse(store.installed(model)); assertEquals("", settings.voice(language)) }
+    }
+
     @Test fun realVoiceDownloadPersistsThroughRecreationAndCanBeRemoved() {
         val store = SpeechModels(app)
         val model = store.models.first { it.language == "nl" }

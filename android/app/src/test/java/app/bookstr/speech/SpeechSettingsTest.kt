@@ -23,6 +23,18 @@ class SpeechSettingsTest {
         assertEquals("", restored.voice("Dutch")); assertEquals("kokoro_en", restored.voice("English"))
     }
 
+    @Test fun persistsItalianVoiceAndRateAcrossAliasesWithoutChangingEnglish() {
+        val prefs = RuntimeEnvironment.getApplication().getSharedPreferences("speech-italian-test", Context.MODE_PRIVATE)
+        val settings = SpeechSettings(prefs)
+        settings.setVoice("Italiano", "kokoro_it")
+        settings.setRate("ita", 0.55f)
+        settings.setVoice("en", "kokoro_en")
+        val restored = SpeechSettings(prefs)
+        assertEquals("kokoro_it", restored.voice("it-IT"))
+        assertEquals(0.55f, restored.rate("Italian"), 0.0001f)
+        assertEquals("kokoro_en", restored.voice("en"))
+    }
+
     @Test fun storesClampedReadingRatePerLanguageAcrossRepositoryRecreation() {
         val prefs = RuntimeEnvironment.getApplication().getSharedPreferences("speech-rate-test", Context.MODE_PRIVATE)
         val settings = SpeechSettings(prefs)
