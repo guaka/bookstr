@@ -14,6 +14,8 @@ test('repository guidance bounds Electron, Playwright, and native-test memory us
   assert.match(resourceGuidance, /inspect process RSS/i);
   assert.match(resourceGuidance, /70 GB/i);
   assert.match(resourceGuidance, /Cap the Node\.js heap/i);
+  assert.match(resourceGuidance, /Never open Electron or Playwright test windows on the user's desktop/i);
+  assert.match(resourceGuidance, /Do not bypass isolation with direct Playwright or Electron commands/i);
   assert.match(resourceGuidance, /must not read whole archives or decompress their contents/i);
   assert.match(resourceGuidance, /bounded header and ZIP-directory reads, bounded\s+concurrency/i);
 });
