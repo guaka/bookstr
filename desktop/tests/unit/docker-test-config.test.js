@@ -16,11 +16,12 @@ test('Electron Docker tests use the pinned Playwright image and an unprivileged 
   assert.match(dockerfile, new RegExp(`^FROM node:${nodeVersion.replaceAll('.', '\\.')}\\-bookworm-slim AS node-runtime$`, 'm'));
   assert.match(dockerfile, /^FROM mcr\.microsoft\.com\/playwright:v1\.62\.1-noble$/m);
   assert.match(dockerfile, /^COPY --from=node-runtime \/usr\/local\/bin\/node \/usr\/bin\/node$/m);
-  assert.match(dockerfile, /apt-get install -y --no-install-recommends libatomic1/);
+  assert.match(dockerfile, /apt-get install -y --no-install-recommends build-essential libatomic1 python3/);
   assert.match(dockerfile, /^COPY --chown=pwuser:pwuser desktop\/package\.json desktop\/pnpm-lock\.yaml desktop\/pnpm-workspace\.yaml \.\/$/m);
   assert.match(dockerfile, /^COPY --chown=pwuser:pwuser desktop\/patches\/ \.\/patches\/$/m);
   assert.match(dockerfile, /^RUN chown -R pwuser:pwuser \/workspace$/m);
   assert.match(dockerfile, /^RUN npm install --global pnpm@10\.34\.8$/m);
+  assert.match(dockerfile, /^ENV MAKEFLAGS=-j2$/m);
   assert.match(dockerfile, /^USER pwuser$/m);
   assert.ok(dockerfile.indexOf('RUN npm install --global pnpm@10.34.8') < dockerfile.indexOf('USER pwuser'));
   assert.doesNotMatch(dockerfile, /corepack/);
