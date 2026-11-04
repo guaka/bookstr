@@ -7,6 +7,6 @@
     <path fill="#C74B32" d="M256 130c-30-20-61-31-92-34v46c32 3 63 15 92 36 29-21 60-33 92-36V96c-31 3-62 14-92 34Z"/>
     <path fill="none" stroke="#2F5D50" stroke-linecap="round" stroke-width="14" d="M256 132v61"/>
   </g>
-  <text x="338" y="214" fill="#1C1916" font-family="Iowan Old Style, Palatino Linotype, Book Antiqua, Georgia, serif" font-size="174" font-weight="700" letter-spacing="-8">bookstr</text>
+  <text x="338" y="214" textLength="560" lengthAdjust="spacingAndGlyphs" fill="#1C1916" font-family="Iowan Old Style, Palatino Linotype, Book Antiqua, Georgia, serif" font-size="174" font-weight="700" letter-spacing="-8">bookstr</text>
   <circle cx="927" cy="204" r="10" fill="#C74B32"/>
 </svg>

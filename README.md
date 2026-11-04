@@ -1,9 +1,9 @@
 <p align="center">
-  <img src="./brand/bookstr-logo.svg" width="490" alt="Bookstr" />
-</p>
-
-<p align="center">
-  <img src="./web/public/favicon.svg" width="72" alt="Bookstr icon" />
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="./brand/bookstr-logo-dark.svg" />
+    <source media="(prefers-color-scheme: light)" srcset="./brand/bookstr-logo.svg" />
+    <img src="./brand/bookstr-logo.svg" width="420" alt="Bookstr" />
+  </picture>
 </p>
 
 **A calm, open-source EPUB, PDF, and FictionBook 2 (FB2) reader for the web, desktop, Android, and iOS.**

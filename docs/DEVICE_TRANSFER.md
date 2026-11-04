@@ -63,7 +63,8 @@ rate-limited by default.
 
 ## Explicit boundaries
 
-- WebTorrent is the only peer-transfer implementation in the first release.
+- WebTorrent handles the device-to-device transfer flow described here; native
+  Android and iOS clients also use libtorrent for catalog downloads.
 - Transmission, Iroh, Tor, and custom public torrent event kinds are deferred.
 - Public Nostr events never contain book bytes or a private-library inventory.
 - HTTPS and Blossom remain source adapters for records that do not have a
