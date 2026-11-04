@@ -266,6 +266,22 @@ class NarrationService : MediaBrowserServiceCompat(), TextToSpeech.OnInitListene
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        val foregroundRequest = intent?.getBooleanExtra(EXTRA_FOREGROUND_START, false) == true
+        if (foregroundRequest) {
+            // Acknowledge every startForegroundService call before rejecting stale reader
+            // tokens or handling a queued stop/restart. Notification updates alone do not
+            // satisfy Android's foreground-start deadline.
+            startForeground(NOTIFICATION_ID, buildNotification())
+            foregroundStarted = true
+        }
+        return try {
+            handleCommand(intent)
+        } finally {
+            if (foregroundRequest && !sessionActive) stopNarration(removeNotification = true, startId = startId)
+        }
+    }
+
+    private fun handleCommand(intent: Intent?): Int {
         if (intent?.action == Intent.ACTION_MEDIA_BUTTON) {
             MediaButtonReceiver.handleIntent(mediaSession, intent)
             return Service.START_STICKY
@@ -899,7 +915,7 @@ class NarrationService : MediaBrowserServiceCompat(), TextToSpeech.OnInitListene
         )
     }
 
-    private fun stopNarration(removeNotification: Boolean) {
+    private fun stopNarration(removeNotification: Boolean, startId: Int? = null) {
         generation += 1
         sessionActive = false
         pendingPlay = false
@@ -915,7 +931,7 @@ class NarrationService : MediaBrowserServiceCompat(), TextToSpeech.OnInitListene
         if (removeNotification) {
             foregroundStarted = false
             stopForeground(STOP_FOREGROUND_REMOVE)
-            stopSelf()
+            if (startId == null) stopSelf() else stopSelf(startId)
         } else {
             updateNotification()
         }
@@ -1198,6 +1214,7 @@ class NarrationService : MediaBrowserServiceCompat(), TextToSpeech.OnInitListene
         private const val EXTRA_CHUNKS = "chunks"
         private const val EXTRA_TARGET_BOOK_ID = "target_book_id"
         private const val EXTRA_READER_READY = "reader_ready"
+        private const val EXTRA_FOREGROUND_START = "app.bookstr.extra.FOREGROUND_START"
         private const val CHANNEL_ID = "bookstr-narration"
         private const val NOTIFICATION_ID = 4107
         private const val SESSION_TAG = "BookstrNarration"
@@ -1291,7 +1308,7 @@ class NarrationService : MediaBrowserServiceCompat(), TextToSpeech.OnInitListene
             coverUrl: String?,
             requestToken: String?,
         ) {
-            ContextCompat.startForegroundService(
+            startForeground(
                 context,
                 Intent(context, NarrationService::class.java)
                     .setAction(ACTION_REQUEST_READER_TEXT)
@@ -1321,7 +1338,7 @@ class NarrationService : MediaBrowserServiceCompat(), TextToSpeech.OnInitListene
         }
 
         private fun startForeground(context: Context, intent: Intent) {
-            ContextCompat.startForegroundService(context, intent)
+            ContextCompat.startForegroundService(context, intent.putExtra(EXTRA_FOREGROUND_START, true))
         }
     }
 }

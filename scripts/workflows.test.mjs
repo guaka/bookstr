@@ -400,45 +400,25 @@ test('Android jobs expose installed host Boost headers to NDK CMake builds', asy
 test('Obtainium releases use unique increasing versions and latest APK assets', async () => {
   const workflow = await readWorkflow('android.yml');
   const gradle = await readFile(new URL('../android/app/build.gradle.kts', import.meta.url), 'utf8');
+  const publisher = await readFile(new URL('../android/scripts/publish-obtainium-release.sh', import.meta.url), 'utf8');
   const release = workflow.match(/^  release:\n[\s\S]*$/m)[0];
 
   assert.match(gradle, /versionCode = providers\.gradleProperty\("bookstr\.versionCode"\)\.orNull\?\.toInt\(\) \?: timestampVersionCode/);
   assert.match(gradle, /versionName = providers\.gradleProperty\("bookstr\.versionName"\)\.orNull \?: "0\.0\.3-\$versionTimestamp"/);
-  assert.equal([...release.matchAll(/version="0\.0\.3-ci\.\$RUN_NUMBER"/g)].length, 2);
+  assert.equal([...release.matchAll(/version="0\.0\.3-ci\.\$RUN_NUMBER"/g)].length, 1);
+  assert.match(publisher, /version="0\.0\.3-ci\.\$RUN_NUMBER"/);
   assert.match(release, /code=\$\(\(1000000000 \+ RUN_NUMBER\)\)/);
   assert.match(release, /assembleRelease "-Pbookstr\.versionCode=\$code" "-Pbookstr\.versionName=\$version"/);
   assert.match(release, /--no-configuration-cache --max-workers=2 assembleRelease/);
-  assert.match(release, /tag="v\$version"/);
-  assert.match(release, /if gh release view "\$tag" >\/dev\/null 2>&1; then[\s\S]*?exit 0/);
-  assert.match(release, /gh release create "\$tag" "android\/bookstr-\$version\.apk"/);
-  assert.match(release, /--target "\$GITHUB_SHA"/);
-  assert.match(release, /--latest/);
-  assert.doesNotMatch(release, /--prerelease|--draft|assembleDebug/);
-});
-
-test('Obtainium publishing creates a latest release once and preserves existing releases', async () => {
-  const workflow = await readWorkflow('android.yml');
-  const script = workflow.match(/      - name: Publish Obtainium release\n[\s\S]*?        run: \|\n([\s\S]*?)(?=      - name:)/)[1]
-    .replace(/^          /gm, '');
-  const mock = `gh() {
-    if [ "$1 $2" = "release view" ]; then return "$RELEASE_EXISTS_STATUS"; fi
-    printf '%s\\n' "$@"
-  }\n`;
-  for (const exists of [false, true]) {
-    const result = spawnSync('bash', ['-e', '-o', 'pipefail', '-c', mock + script], {
-      encoding: 'utf8',
-      env: { ...process.env, RUN_NUMBER: '42', GITHUB_SHA: 'abc123', GITHUB_REPOSITORY: 'guaka/bookstr', RELEASE_EXISTS_STATUS: exists ? '0' : '1' },
-    });
-    assert.equal(result.status, 0, result.stderr);
-    if (exists) {
-      assert.equal(result.stdout.trim(), 'Release v0.0.3-ci.42 already exists.');
-    } else {
-      assert.match(result.stdout, /create\nv0\.0\.3-ci\.42\nandroid\/bookstr-0\.0\.3-ci\.42\.apk/);
-      assert.match(result.stdout, /--target\nabc123/);
-      assert.match(result.stdout, /--latest/);
-      assert.match(result.stdout, /https:\/\/github.com\/guaka\/bookstr to Obtainium/);
-    }
-  }
+  assert.match(release, /run: bash android\/scripts\/publish-obtainium-release\.sh/);
+  assert.match(workflow, /name: Test Android release publisher\n        run: node --test android\/scripts\/publish-obtainium-release\.test\.mjs/);
+  assert.match(publisher, /gh release create "\$tag" "\$apk"/);
+  assert.match(publisher, /gh release upload "\$tag" "\$apk"/);
+  assert.match(publisher, /--target "\$GITHUB_SHA"/);
+  assert.match(publisher, /--latest/);
+  assert.match(publisher, /size > 0/);
+  assert.match(publisher, /does not contain a nonempty/);
+  assert.doesNotMatch(publisher, /--prerelease|--draft|assembleDebug/);
 });
 
 test('release signing fails before writing a keystore when any secret is missing', async () => {

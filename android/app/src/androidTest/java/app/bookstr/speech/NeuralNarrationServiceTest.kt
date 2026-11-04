@@ -18,6 +18,77 @@ import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 
 class NeuralNarrationServiceTest {
+    @Test fun validForegroundStartQueuedAfterARejectedRequestKeepsItsSession() {
+        val app = ApplicationProvider.getApplicationContext<BookstrApp>()
+        app.settingsRepository.clearReaderSession()
+        app.stopService(Intent(app, NarrationService::class.java))
+        val started = CountDownLatch(1)
+        val receiver = object : BroadcastReceiver() {
+            override fun onReceive(context: Context, intent: Intent) {
+                if (intent.getStringExtra(NarrationService.EXTRA_BOOK_ID) == "queued-valid-reader" &&
+                    intent.getBooleanExtra(NarrationService.EXTRA_SESSION_ACTIVE, false)
+                ) started.countDown()
+            }
+        }
+        app.registerReceiver(receiver, IntentFilter(NarrationService.ACTION_EVENT), Context.RECEIVER_NOT_EXPORTED)
+        try {
+            ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+                scenario.onActivity {
+                    NarrationService.speak(it, "Stale response", "en", bookId = "rejected-reader", title = "Rejected", author = null, coverUrl = null, requestToken = "revoked-reader-token")
+                    NarrationService.toggle(it, "queued-valid-reader", "Queued valid reader", null, null)
+                }
+                assertTrue("Rejecting an older request stopped the newer session", started.await(10, TimeUnit.SECONDS))
+                Thread.sleep(12_000)
+                val notifications = app.getSystemService(android.app.NotificationManager::class.java).activeNotifications
+                assertTrue(notifications.any { it.notification.extras.getCharSequence(android.app.Notification.EXTRA_TITLE) == "Queued valid reader" })
+            }
+        } finally {
+            app.unregisterReceiver(receiver)
+            app.stopService(Intent(app, NarrationService::class.java))
+        }
+    }
+
+    @Test fun stickyRestartWithoutAnIntentDoesNotRequireANarrationSession() {
+        val service = NarrationService()
+        try {
+            assertEquals(android.app.Service.START_STICKY, service.onStartCommand(null, 0, 1))
+        } finally {
+            for (name in listOf("neuralExecutor", "artworkExecutor")) {
+                val executor = NarrationService::class.java.getDeclaredField(name).apply { isAccessible = true }.get(service) as java.util.concurrent.ExecutorService
+                executor.shutdownNow()
+            }
+        }
+    }
+
+    @Test fun rejectedForegroundReaderRequestStopsWithoutCrashingAfterAndroidsDeadline() {
+        val app = ApplicationProvider.getApplicationContext<BookstrApp>()
+        app.settingsRepository.clearReaderSession()
+        app.stopService(Intent(app, NarrationService::class.java))
+        val stopped = CountDownLatch(1)
+        val receiver = object : BroadcastReceiver() {
+            override fun onReceive(context: Context, intent: Intent) {
+                if (!intent.getBooleanExtra(NarrationService.EXTRA_SESSION_ACTIVE, true)) stopped.countDown()
+            }
+        }
+        app.registerReceiver(receiver, IntentFilter(NarrationService.ACTION_EVENT), Context.RECEIVER_NOT_EXPORTED)
+        try {
+            ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+                scenario.onActivity {
+                    NarrationService.speak(it, "Stale response", "en", bookId = "rejected-reader", title = "Rejected reader", author = null, coverUrl = null, requestToken = "revoked-reader-token")
+                }
+                assertTrue("Rejected foreground request did not stop its idle service", stopped.await(10, TimeUnit.SECONDS))
+                // The platform posts a delayed process-killing error when a foreground
+                // launch is rejected without first acknowledging startForegroundService.
+                Thread.sleep(12_000)
+                val notifications = app.getSystemService(android.app.NotificationManager::class.java).activeNotifications
+                assertFalse(notifications.any { it.id == 4107 })
+            }
+        } finally {
+            app.unregisterReceiver(receiver)
+            app.stopService(Intent(app, NarrationService::class.java))
+        }
+    }
+
     @Test fun readerReadySyncRepeatsAnUnansweredNarrationTextRequest() {
         val app = ApplicationProvider.getApplicationContext<BookstrApp>()
         val firstRequest = CountDownLatch(1)

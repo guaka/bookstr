@@ -54,6 +54,36 @@ test('comic reader supports bounded CBZ and CBR page extraction and navigation',
   assert.doesNotMatch(comicReader, /setPassword/);
 });
 
+test('comic reader restores its opening message with legacy DOM child APIs', () => {
+  class LegacyNode {
+    constructor(name) { this.name = name; this.parentNode = null; this.children = []; this._textContent = ''; }
+    set textContent(value) { this._textContent = value; this.children.forEach(child => { child.parentNode = null; }); this.children = []; }
+    get textContent() { return this._textContent; }
+    appendChild(child) {
+      if (child.parentNode) child.parentNode.children = child.parentNode.children.filter(item => item !== child);
+      child.parentNode = this; this.children.push(child); return child;
+    }
+  }
+  const reset = comicReader.match(/function resetComicMessage\(\)\{[^}]*\}/)?.[0];
+  assert.ok(reset);
+  const message = new LegacyNode('message');
+  const stage = new LegacyNode('stage');
+  const openingLabel = new LegacyNode('opening-label');
+  const openingProgress = new LegacyNode('opening-progress');
+  message.appendChild(new LegacyNode('old-error'));
+  vm.runInNewContext(`${reset}; resetComicMessage()`, { message, stage, openingLabel, openingProgress });
+  assert.deepEqual(message.children.map(node => node.name), ['opening-label', 'opening-progress']);
+  assert.equal(message.parentNode, stage);
+  assert.deepEqual(stage.children, [message]);
+  assert.equal('replaceChildren' in message, false);
+  assert.equal('append' in message, false);
+  assert.equal('isConnected' in message, false);
+  assert.doesNotMatch(comicReader, /\.replaceAll\(|\.append\(|\.replaceChildren\(|\.isConnected/);
+  vm.runInNewContext(`${reset}; resetComicMessage()`, { message, stage, openingLabel, openingProgress });
+  assert.deepEqual(stage.children, [message]);
+  assert.deepEqual(message.children, [openingLabel, openingProgress]);
+});
+
 test('Bookstr routes CBZ and CBR files to the comic reader', () => {
   assert.match(app, /displayComic\(blob, book, readPath, openGeneration, format\)/);
   assert.match(app, /archiveBlob: blob,/);
@@ -143,4 +173,12 @@ test('reader keyboard handlers and zoom UI are present', () => {
   assert.match(reader, /window.setReaderTypography/);
   assert.match(reader, /window\.prevPage/);
   assert.match(reader, /window\.nextPage/);
+});
+
+test('comic archive paths normalize all Windows separators without replaceAll', () => {
+  const source = comicReader.match(/function imageName\(name\)\{[^\n]*\}/)?.[0];
+  assert.ok(source);
+  const imageName = vm.runInNewContext(`${source}; String.prototype.replaceAll = undefined; imageName`);
+  for (const name of ['folder\\nested\\page.JPG', 'chapter/page.png', 'page.webp']) assert.equal(imageName(name), true, name);
+  for (const name of ['', 'folder\\', 'folder\\..\\page.jpg', '__MACOSX\\page.png', 'thumbs\\page.jpg', 'cover.txt']) assert.equal(imageName(name), false, name);
 });

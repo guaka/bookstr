@@ -54,6 +54,62 @@ class NarrationVoicePreferenceTest {
             assertEquals(engine.dutch, engine.selected)
         } finally { controller.destroy() }
     }
+    @Test fun foregroundStartsAreAcknowledgedBeforeStaleReaderValidationAndOnlyIdleSessionsStop() {
+        val application = org.robolectric.Shadows.shadowOf(org.robolectric.RuntimeEnvironment.getApplication())
+        val controller = Robolectric.buildService(NarrationService::class.java).create()
+        val service = controller.get()
+        val shadow = org.robolectric.Shadows.shadowOf(service)
+        fun deliver() {
+            val intent = application.nextStartedService
+            assertTrue(intent.getBooleanExtra("app.bookstr.extra.FOREGROUND_START", false))
+            service.onStartCommand(intent, 0, 1)
+        }
+        try {
+            NarrationService.toggle(service, "active", "Active book", null, null)
+            deliver()
+            val notification = shadow.lastForegroundNotification
+            assertNotNull(notification)
+            NarrationService.speak(service, "Stale", "en", bookId = "old", title = "Old book", author = null, coverUrl = null, requestToken = "revoked")
+            deliver()
+            assertNotSame("A new foreground request must call startForeground again", notification, shadow.lastForegroundNotification)
+            assertFalse(shadow.isForegroundStopped)
+            assertFalse(shadow.isStoppedBySelf)
+        } finally { controller.destroy() }
+
+        for (action in listOf("speak", "toggle", "reader")) {
+            val idleController = Robolectric.buildService(NarrationService::class.java).create()
+            val idle = idleController.get()
+            val idleShadow = org.robolectric.Shadows.shadowOf(idle)
+            try {
+                when (action) {
+                    "speak" -> NarrationService.speak(idle, "Stale", "en", bookId = "old", title = "Old", author = null, coverUrl = null, requestToken = "revoked")
+                    "toggle" -> NarrationService.toggle(idle, "old", "Old", null, null, requestToken = "revoked")
+                    else -> NarrationService.requestReaderPlayback(idle, "11111111111111111111111111111111", "Old", null, null, "revoked")
+                }
+                val intent = application.nextStartedService
+                assertTrue(intent.getBooleanExtra("app.bookstr.extra.FOREGROUND_START", false))
+                idle.onStartCommand(intent, 0, 1)
+                assertEquals(4107, idleShadow.lastForegroundNotificationId)
+                assertTrue(idleShadow.isForegroundStopped)
+                assertTrue(idleShadow.isStoppedBySelf)
+                assertEquals(1, idleShadow.stopSelfId)
+            } finally { idleController.destroy() }
+        }
+    }
+
+    @Test fun ordinaryAndNullServiceStartsDoNotCreateForegroundNotifications() {
+        val controller = Robolectric.buildService(NarrationService::class.java).create()
+        val service = controller.get()
+        try {
+            assertEquals(android.app.Service.START_STICKY, service.onStartCommand(null, 0, 1))
+            NarrationService.setSpeechRate(service, "en", 0.55f)
+            val intent = org.robolectric.Shadows.shadowOf(org.robolectric.RuntimeEnvironment.getApplication()).nextStartedService
+            assertFalse(intent.hasExtra("app.bookstr.extra.FOREGROUND_START"))
+            service.onStartCommand(intent, 0, 2)
+            assertNull(org.robolectric.Shadows.shadowOf(service).lastForegroundNotification)
+        } finally { controller.destroy() }
+    }
+
     @Test fun selectedDeviceVoiceOverridesTheEngineDefaultAndMissingVoiceFallsBack() {
         val controller = Robolectric.buildService(NarrationService::class.java).create()
         val service = controller.get()

@@ -77,6 +77,8 @@ jobs:
           node-version-file: .nvmrc
       - name: Test instrumentation result parser
         run: node --test --experimental-test-coverage --test-coverage-lines=100 --test-coverage-branches=100 --test-coverage-functions=100 android/scripts/instrumentation-results.test.mjs
+      - name: Test Android release publisher
+        run: node --test android/scripts/publish-obtainium-release.test.mjs
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -321,16 +323,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           RUN_NUMBER: ${{ github.run_number }}
-        run: |
-          version="0.0.3-ci.$RUN_NUMBER"
-          tag="v$version"
-          if gh release view "$tag" >/dev/null 2>&1; then
-            echo "Release $tag already exists."
-            exit 0
-          fi
-          gh release create "$tag" "android/bookstr-$version.apk" \
-            --target "$GITHUB_SHA" --title "Bookstr Android $version" --latest \
-            --notes "Automatic Android build from $GITHUB_SHA. Add https://github.com/$GITHUB_REPOSITORY to Obtainium to receive updates."
+        run: bash android/scripts/publish-obtainium-release.sh
       - name: Remove release signing key
         if: always()
         run: rm -f "$BOOKSTR_KEYSTORE_FILE"
