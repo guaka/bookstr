@@ -4,6 +4,9 @@
 
 - Make repository changes on a dedicated branch and deliver them through a pull
   request. Do not push commits directly to the default branch.
+- Keep required workflow job names aligned with `.github/required-checks.json`.
+  Conditional native checks must report skipped jobs on unrelated pull requests;
+  do not hide required checks behind workflow-level pull-request path filters.
 - GitHub Actions is enabled. Android CI and automatic signed APK releases are
   authorized; do not enable other disabled workflows or expand billed automation
   without an explicit request. Old red checks failed
