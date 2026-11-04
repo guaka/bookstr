@@ -1,0 +1,16 @@
+--- a/lib/server/parse-udp.js
++++ b/lib/server/parse-udp.js
+@@ -1,4 +1,3 @@
+-import ipLib from 'ip'
+ import common from '../common.js'
+ import { equal } from 'uint8-util'
+ 
+@@ -30,7 +29,7 @@
+ 
+     const ip = msg.readUInt32BE(84) // optional
+     params.ip = ip
+-      ? ipLib.toString(ip)
++      ? msg.subarray(84, 88).join('.')
+       : rinfo.address
+ 
+     params.key = msg.readUInt32BE(88) // Optional: unique random key from client
