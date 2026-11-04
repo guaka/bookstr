@@ -7,7 +7,7 @@ import test from 'node:test';
 
 const helper = new URL('./publish-obtainium-release.sh', import.meta.url);
 
-async function runPublisher({ exists = '0', size = 'missing', uploadFail = '0', uploadEmpty = '0', createEmpty = '0', createFail = '0', verifyFail = '0', removeApk = false, missingEnv = '' } = {}) {
+async function runPublisher({ exists = '0', size = 'missing', uploadFail = '0', uploadEmpty = '0', createEmpty = '0', createMissing = '0', createFail = '0', verifyFail = '0', removeApk = false, emptyApk = false, missingEnv = '' } = {}) {
   const directory = await mkdtemp(path.join(os.tmpdir(), 'bookstr-release-'));
   const apkDirectory = path.join(directory, 'android');
   const binDirectory = path.join(directory, 'bin');
@@ -37,7 +37,9 @@ elif [[ "$1 $2" == "release create" ]]; then
   [[ "$CREATE_FAIL" == 0 ]] || exit 1
   read -r current_exists _ < "$GH_STATE"
   [[ "$current_exists" == 0 ]] || exit 1
-  if [[ "$CREATE_EMPTY" == 1 ]]; then
+  if [[ "$CREATE_MISSING" == 1 ]]; then
+    printf '1 missing\\n' > "$GH_STATE"
+  elif [[ "$CREATE_EMPTY" == 1 ]]; then
     printf '1 0\\n' > "$GH_STATE"
   else
     printf '1 %s\\n' "$(wc -c < "$4" | tr -d ' ')" > "$GH_STATE"
@@ -57,6 +59,7 @@ fi
 `);
   await chmod(ghPath, 0o755);
   if (removeApk) await unlink(apkPath);
+  if (emptyApk) await writeFile(apkPath, '');
 
   const env = {
     ...process.env,
@@ -71,6 +74,7 @@ fi
     UPLOAD_FAIL: uploadFail,
     UPLOAD_EMPTY: uploadEmpty,
     CREATE_EMPTY: createEmpty,
+    CREATE_MISSING: createMissing,
     CREATE_FAIL: createFail,
     VERIFY_FAIL: verifyFail,
   };
@@ -136,6 +140,12 @@ test('fails if a newly created release has an empty expected asset', async () =>
   assert.match(result.stderr, /does not contain a nonempty/);
 });
 
+test('fails if the release exists after creation but has no expected APK', async () => {
+  const result = await runPublisher({ createMissing: '1' });
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /does not contain a nonempty/);
+});
+
 test('requires the version and release identity environment', async () => {
   for (const variable of ['RUN_NUMBER', 'GITHUB_SHA', 'GITHUB_REPOSITORY']) {
     const result = await runPublisher({ missingEnv: variable });
@@ -146,10 +156,12 @@ test('requires the version and release identity environment', async () => {
 });
 
 test('refuses to publish a missing or empty local APK', async () => {
-  const result = await runPublisher({ removeApk: true });
-  assert.notEqual(result.status, 0);
-  assert.match(result.stderr, /Release APK is missing or empty/);
-  assert.equal(result.log, '');
+  for (const options of [{ removeApk: true }, { emptyApk: true }]) {
+    const result = await runPublisher(options);
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /Release APK is missing or empty/);
+    assert.equal(result.log, '');
+  }
 });
 
 test('does not claim success when the release cannot be verified', async () => {
