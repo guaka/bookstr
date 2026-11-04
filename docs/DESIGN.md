@@ -20,9 +20,9 @@ make it bookish without turning it into a generic book icon.
 
 Assets:
 
-- [`brand/bookstr-mark.svg`](brand/bookstr-mark.svg) — standalone mark for app
+- [`brand/bookstr-mark.svg`](https://github.com/guaka/bookstr/blob/main/brand/bookstr-mark.svg) — standalone mark for app
   icons, favicons, social avatars, compact headers, and stickers
-- [`brand/bookstr-logo.svg`](brand/bookstr-logo.svg) — horizontal mark and
+- [`brand/bookstr-logo.svg`](https://github.com/guaka/bookstr/blob/main/brand/bookstr-logo.svg) — horizontal mark and
   lowercase wordmark for wider placements
 
 Keep the mark upright and preserve its colors and proportions. Do not add
