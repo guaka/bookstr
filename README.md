@@ -72,7 +72,7 @@ The Android project supports API 27 and newer. See the [Android build guide](./a
 cd android
 ./gradlew testDebugUnitTest
 ./gradlew assembleDebug
-./gradlew connectedDebugAndroidTest # requires a device or emulator
+./gradlew connectedDebugAndroidTest # requires an emulator; never run on a personal device
 ```
 
 ### iOS
