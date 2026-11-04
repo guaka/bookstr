@@ -2670,6 +2670,27 @@
       const dictionaryInstall = document.getElementById('dictionary-install');
       const dictionaryStatus = document.getElementById('dictionary-status');
       const dictionaryPacks = document.getElementById('dictionary-packs');
+
+      function createSerializedPreferenceWriter(write) {
+        let queued = Promise.resolve();
+        return preferences => {
+          const snapshot = { ...preferences };
+          const nextWrite = queued.catch(() => {}).then(() => write(snapshot));
+          queued = nextWrite;
+          return nextWrite;
+        };
+      }
+
+      const desktopTransferPreferenceWriter = createSerializedPreferenceWriter(
+        preferences => desktopBridge?.transfers?.setPreferences?.(preferences),
+      );
+
+      function syncDesktopTransferPreferences(preferences) {
+        void desktopTransferPreferenceWriter(preferences).catch(error => {
+          console.warn('Could not save desktop transfer preferences:', error);
+        });
+      }
+
       const state = {
         favorites: [],
         reading: [],
@@ -9086,7 +9107,7 @@
         renderWords();
         updateNip7Status();
         if (isDesktopMode) {
-          void desktopBridge?.transfers?.setPreferences?.({
+          syncDesktopTransferPreferences({
             autoDownload: state.settings.autoDownloadTorrents,
             autoSeed: state.settings.autoSeedTorrents,
             downloadLimit: state.settings.torrentDownloadLimit,
@@ -9634,7 +9655,7 @@
       readerPaddingInput.addEventListener('input', applySettingsFromUI);
       torrentAutoDownloadInput.addEventListener('change', () => {
         applySettingsFromUI();
-        void desktopBridge?.transfers?.setPreferences?.({
+        syncDesktopTransferPreferences({
           autoDownload: state.settings.autoDownloadTorrents,
           autoSeed: state.settings.autoSeedTorrents,
           downloadLimit: state.settings.torrentDownloadLimit,
@@ -9643,7 +9664,7 @@
       });
       torrentAutoSeedInput.addEventListener('change', () => {
         applySettingsFromUI();
-        void desktopBridge?.transfers?.setPreferences?.({
+        syncDesktopTransferPreferences({
           autoDownload: state.settings.autoDownloadTorrents,
           autoSeed: state.settings.autoSeedTorrents,
           downloadLimit: state.settings.torrentDownloadLimit,
@@ -9652,14 +9673,14 @@
       });
       torrentDownloadLimitInput.addEventListener('change', () => {
         applySettingsFromUI();
-        void desktopBridge?.transfers?.setPreferences?.({
+        syncDesktopTransferPreferences({
           downloadLimit: state.settings.torrentDownloadLimit,
           uploadLimit: state.settings.torrentUploadLimit,
         });
       });
       torrentUploadLimitInput.addEventListener('change', () => {
         applySettingsFromUI();
-        void desktopBridge?.transfers?.setPreferences?.({
+        syncDesktopTransferPreferences({
           downloadLimit: state.settings.torrentDownloadLimit,
           uploadLimit: state.settings.torrentUploadLimit,
         });

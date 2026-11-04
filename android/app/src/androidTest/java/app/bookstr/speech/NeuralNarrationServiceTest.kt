@@ -49,13 +49,15 @@ class NeuralNarrationServiceTest {
     }
 
     @Test fun stickyRestartWithoutAnIntentDoesNotRequireANarrationSession() {
-        val service = NarrationService()
-        try {
-            assertEquals(android.app.Service.START_STICKY, service.onStartCommand(null, 0, 1))
-        } finally {
-            for (name in listOf("neuralExecutor", "artworkExecutor")) {
-                val executor = NarrationService::class.java.getDeclaredField(name).apply { isAccessible = true }.get(service) as java.util.concurrent.ExecutorService
-                executor.shutdownNow()
+        androidx.test.platform.app.InstrumentationRegistry.getInstrumentation().runOnMainSync {
+            val service = NarrationService()
+            try {
+                assertEquals(android.app.Service.START_STICKY, service.onStartCommand(null, 0, 1))
+            } finally {
+                for (name in listOf("neuralExecutor", "artworkExecutor")) {
+                    val executor = NarrationService::class.java.getDeclaredField(name).apply { isAccessible = true }.get(service) as java.util.concurrent.ExecutorService
+                    executor.shutdownNow()
+                }
             }
         }
     }
