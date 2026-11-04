@@ -2,11 +2,12 @@
 
 Settings → Text-to-speech saves a voice independently for each language. The list
 includes English, Portuguese (Portugal), French, German, Spanish, Catalan, Dutch,
-and languages found in downloaded books. Installing a voice selects it for that
-language. Removing the selected voice restores System default.
+Italian, and languages found in downloaded books. Installing a voice selects it
+for that language. Removing the selected voice restores System default.
 
-The downloadable voices match the iOS catalog: Kokoro English; Portuguese Tugão,
-Miro and Dii; French, German and Spanish Miro; Catalan UPC Ona. Dutch adds
+The downloadable voices include Kokoro English, Italian (Sara), Brazilian
+Portuguese and European Portuguese (logus2k); Portuguese Tugão, Miro and Dii;
+French, German and Spanish Miro; Catalan UPC Ona. Dutch adds
 [Dii (Netherlands)](https://huggingface.co/csukuangfj/vits-piper-nl_NL-dii-high).
 Device TTS voices remain selectable; network-dependent voices are marked Online.
 
@@ -23,6 +24,15 @@ Neural synthesis runs on a serial executor, using bounded phrases and disk-backe
 PCM audio. It feeds the existing narration media session, including lock-screen
 controls, progress, pause/resume, and requests to continue into the next section.
 
+The European Portuguese Kokoro voice uses the logus2k fine-tuned acoustic model
+and matching speaker table from the immutable
+[ONNX conversion](https://github.com/buchwandler/kokoro-onnx-models/releases/tag/model-files-portuguese-eu-pt-v1.0-r3).
+Bookstr uses its existing eSpeak European Portuguese text frontend. This differs
+from the upstream Python TugaPhone frontend, so pronunciation and number
+normalization can differ from upstream samples. Catalog files may specify an
+explicit artifact URL when the model, speaker table and pronunciation data come
+from different pinned sources.
+
 Local verification:
 
 - JVM tests: `android/gradlew -p android testDebugUnitTest`
@@ -30,7 +40,9 @@ Local verification:
 - Native voice generation: `app.bookstr.speech.NeuralSpeechTest`
 - Playback integration: `app.bookstr.speech.NeuralNarrationServiceTest`
 
-The native test downloads Dutch and Kokoro by default; pass instrumentation
-argument `speechModelIds` with comma-separated catalog IDs to exercise more
-voices. Run on an emulator: the activity test downloads and removes its Dutch
-voice fixture. GitHub CI is unavailable; local results are authoritative.
+The native test downloads Dutch plus English, Italian and European Portuguese
+Kokoro by default; pass instrumentation argument `speechModelIds` with
+comma-separated catalog IDs to exercise more voices. Run on an emulator: the
+activity test downloads and removes its Dutch
+and Kokoro voice fixtures. GitHub Actions runs Android unit, build and emulator
+checks for pull requests.

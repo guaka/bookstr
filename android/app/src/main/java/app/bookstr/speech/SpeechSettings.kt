@@ -25,10 +25,11 @@ class SpeechSettings(private val preferences: SharedPreferences) {
 }
 
 object SpeechLanguages {
-    val seeded = listOf("en", "pt-pt", "fr", "de", "es", "ca", "nl")
+    val seeded = listOf("en", "pt-pt", "fr", "de", "es", "ca", "nl", "it")
     private val aliases = mapOf(
         "eng" to "en", "english" to "en", "por" to "pt", "portuguese" to "pt",
         "fra" to "fr", "fre" to "fr", "french" to "fr", "deu" to "de", "ger" to "de", "german" to "de",
+        "ita" to "it", "italian" to "it", "italiano" to "it",
         "spa" to "es", "spanish" to "es", "cat" to "ca", "catalan" to "ca",
         "nld" to "nl", "dut" to "nl", "dutch" to "nl", "nederlands" to "nl",
     )

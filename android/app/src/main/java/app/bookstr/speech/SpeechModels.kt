@@ -11,7 +11,7 @@ import org.json.JSONArray
 import java.io.File
 import java.util.concurrent.TimeUnit
 
-data class SpeechModelFile(val path: String, val bytes: Long)
+data class SpeechModelFile(val path: String, val bytes: Long, val url: String? = null)
 data class SpeechModel(
     val id: String, val language: String, val label: String, val repository: String,
     val revision: String, val kind: String, val model: String, val files: List<SpeechModelFile>,
@@ -60,7 +60,7 @@ class SpeechModels(
                     progress((downloaded.toDouble() / model.bytes).toFloat())
                     continue
                 }
-                val request = Request.Builder().url("$baseURL/${model.repository}/resolve/${model.revision}/${file.path}").build()
+                val request = Request.Builder().url(file.url ?: "$baseURL/${model.repository}/resolve/${model.revision}/${file.path}").build()
                 client.newCall(request).execute().use { response ->
                     check(response.isSuccessful) { "Voice download failed (HTTP ${response.code})" }
                     val body = checkNotNull(response.body) { "Empty voice download" }
@@ -96,7 +96,7 @@ class SpeechModels(
                 val files = item.getJSONArray("files")
                 SpeechModel(item.getString("id"), item.getString("language"), item.getString("label"), item.getString("repository"),
                     item.getString("revision"), item.getString("kind"), item.getString("model"),
-                    (0 until files.length()).map { files.getJSONObject(it).let { file -> SpeechModelFile(file.getString("path"), file.getLong("bytes")) } },
+                    (0 until files.length()).map { files.getJSONObject(it).let { file -> SpeechModelFile(file.getString("path"), file.getLong("bytes"), file.optString("url").takeIf(String::isNotBlank)) } },
                     item.optInt("speaker", 0), item.optString("engineLanguage").takeIf(String::isNotBlank))
             }
         }

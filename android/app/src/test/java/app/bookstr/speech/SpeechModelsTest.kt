@@ -14,15 +14,36 @@ import org.junit.rules.TemporaryFolder
 class SpeechModelsTest {
     @get:Rule val temporary = TemporaryFolder()
     private val fixture = SpeechModel("test", "nl", "Dutch", "test/repo", "123", "vits", "voice.onnx", listOf(SpeechModelFile("voice.onnx", 4), SpeechModelFile("data/tokens", 2)))
-    @Test fun catalogMatchesIOSAndIncludesPinnedDutchVoice() {
+    @Test fun catalogIncludesPinnedVoicesAndCompletePronunciationData() {
         val models = SpeechModels.parse(File("src/main/assets/speech-models.json").readText())
-        assertEquals(10, models.size)
-        assertEquals(setOf("en", "pt-pt", "fr", "de", "es", "ca", "nl"), models.map { it.language }.toSet())
+        assertEquals(12, models.size)
+        assertEquals(setOf("en", "pt-pt", "fr", "de", "es", "ca", "nl", "it"), models.map { it.language }.toSet())
         val brazilian = models.single { it.id == "kokoro_pt_br" }
         assertEquals(42, brazilian.speaker)
         assertEquals("pt-br", brazilian.engineLanguage)
         assertEquals("csukuangfj/kokoro-multi-lang-v1_0", brazilian.repository)
         assertTrue(brazilian.files.any { it.path == "espeak-ng-data/lang/roa/pt-BR" && it.bytes == 109L })
+        val italian = models.single { it.id == "kokoro_it" }
+        assertEquals("Kokoro · Italiano", italian.label)
+        assertEquals("it", italian.language)
+        assertEquals("kokoro", italian.kind)
+        assertEquals(35, italian.speaker) // if_sara in the pinned multilingual voice pack.
+        assertEquals("it", italian.engineLanguage)
+        assertEquals(brazilian.repository, italian.repository)
+        assertEquals(brazilian.revision, italian.revision)
+        assertEquals(brazilian.files.filterNot { it.path.endsWith("/pt-BR") }, italian.files)
+        val portugal = models.single { it.id == "kokoro_pt_pt" }
+        assertEquals("pt-pt", portugal.language)
+        assertEquals("Kokoro · Português (Portugal)", portugal.label)
+        assertEquals("logus2k/kokoro_tts_eu_pt", portugal.repository)
+        assertEquals("kokoro", portugal.kind)
+        assertEquals(0, portugal.speaker)
+        assertEquals("pt", portugal.engineLanguage)
+        assertTrue(portugal.files.all { it.url?.startsWith("https://") == true })
+        assertEquals(325510089L, portugal.files.single { it.path == "model.onnx" }.bytes)
+        assertEquals(522240L, portugal.files.single { it.path == "voices.bin" }.bytes)
+        assertTrue(portugal.files.single { it.path == "model.onnx" }.url!!.endsWith("/kokoro-portuguese-eu-pt-v1.0.onnx"))
+        assertTrue(portugal.files.single { it.path == "voices.bin" }.url!!.endsWith("/voices-portuguese-eu-pt-v1.0.raw.bin"))
         val ios = File("../../ios/BookstrIOS/Sources/Data/SpeechModelStore.swift").readText()
         models.forEach { model ->
             assertTrue(model.revision.matches(Regex("[a-f0-9]{40}")))
@@ -31,7 +52,9 @@ class SpeechModelsTest {
             assertTrue(model.files.any { it.path == model.model })
             assertTrue(model.files.any { it.path == "espeak-ng-data/lang/gmw/nl" })
             assertTrue(model.files.any { it.path == "espeak-ng-data/lang/gmw/en-US" })
-            if (model.language != "nl") assertTrue(ios.contains(model.revision))
+            assertTrue(model.files.any { it.path == "espeak-ng-data/it_dict" && it.bytes == 152889L })
+            assertTrue(model.files.any { it.path == "espeak-ng-data/lang/roa/it" && it.bytes == 109L })
+            if (model.id != "kokoro_pt_pt" && model.language != "nl") assertTrue(ios.contains(model.revision))
         }
     }
     @Test fun completeInstallIsValidatedAndRemovable() = runBlocking {
@@ -45,6 +68,23 @@ class SpeechModelsTest {
             assertEquals("/test/repo/resolve/123/voice.onnx", server.takeRequest().path)
             assertEquals("ab", File(store.directory(fixture), "data/tokens").readText())
             store.remove(fixture); assertFalse(store.installed(fixture)); store.remove(fixture)
+        }
+    }
+    @Test fun installsExplicitArtifactURLsUnderTheirLocalFileNames() = runBlocking {
+        MockWebServer().use { server ->
+            val json = """[{"id":"release","language":"pt-pt","label":"Portugal","repository":"upstream/repo","revision":"pin","kind":"kokoro","model":"model.onnx","files":[{"path":"model.onnx","bytes":4,"url":"${server.url("/release/acoustic.onnx")}"},{"path":"voices.bin","bytes":2,"url":""}]}]"""
+            val model = SpeechModels.parse(json).single()
+            assertEquals(server.url("/release/acoustic.onnx").toString(), model.files.first().url)
+            assertNull(model.files.last().url)
+            assertEquals(0, model.speaker)
+            assertNull(model.engineLanguage)
+            server.enqueue(MockResponse().setBody("1234")); server.enqueue(MockResponse().setBody("ab"))
+            val store = SpeechModels(temporary.newFolder(), listOf(model), baseURL = server.url("/").toString().trimEnd('/'))
+            store.install(model) {}
+            assertTrue(store.installed(model))
+            assertEquals("/release/acoustic.onnx", server.takeRequest().path)
+            assertEquals("/upstream/repo/resolve/pin/voices.bin", server.takeRequest().path)
+            assertEquals("1234", File(store.directory(model), "model.onnx").readText())
         }
     }
     @Test fun failedAndTruncatedDownloadsPreserveInstalledVoiceAndCleanStaging() = runBlocking {
@@ -84,6 +124,13 @@ class SpeechModelsTest {
             store.remove(model)
             assertEquals("nl", File(data, "lang/gmw/nl").readText())
         }
+    }
+    @Test fun repairsStaleSharedPronunciationData() {
+        val model = fixture.copy(files = listOf(SpeechModelFile("espeak-ng-data/lang/roa/it", 2)))
+        val store = SpeechModels(temporary.newFolder(), listOf(model))
+        File(store.directory(model), model.files.single().path).apply { parentFile!!.mkdirs(); writeText("it") }
+        File(store.root, model.files.single().path).apply { parentFile!!.mkdirs(); writeText("stale") }
+        assertEquals("it", File(store.pronunciationDirectory(model), "lang/roa/it").readText())
     }
     @Test fun phrasesStayBoundedWithoutLosingWords() {
         val text = "A short sentence. " + "longword ".repeat(70)
@@ -147,6 +194,9 @@ class SpeechModelsTest {
     }
     @Test fun normalizesDutchAliasesAndIncludesLibraryLanguages() {
         for (alias in listOf("nl", "nld", "dut", "Dutch", " Nederlands ", "nl_NL", "nl-BE")) assertEquals("nl", SpeechLanguages.tag(alias))
+        for (alias in listOf("it", "ita", "Italian", " Italiano ", "it_IT", "it-CH")) assertEquals("it", SpeechLanguages.tag(alias))
+        assertTrue("it" in SpeechLanguages.seeded)
+        assertTrue("it" in SpeechLanguages.available(emptyList()))
         assertEquals("en", SpeechLanguages.tag(" "))
         assertEquals("pt-br", SpeechLanguages.tag("pt_BR"))
         assertEquals("pt-pt", SpeechLanguages.tag("Portuguese"))

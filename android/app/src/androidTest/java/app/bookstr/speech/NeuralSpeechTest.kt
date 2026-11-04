@@ -24,7 +24,7 @@ class NeuralSpeechTest {
     @Test fun downloadedNeuralVoicesGeneratePlayablePcm() = runBlocking {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val store = SpeechModels(context)
-        val ids = InstrumentationRegistry.getArguments().getString("speechModelIds", "piper_nl_nl_dii,kokoro_en").split(',')
+        val ids = InstrumentationRegistry.getArguments().getString("speechModelIds", "piper_nl_nl_dii,kokoro_en,kokoro_it,kokoro_pt_pt").split(',')
         val neural = NeuralSpeech(store)
         val file = File(context.cacheDir, "speech-regression.wav")
         try {
@@ -33,6 +33,7 @@ class NeuralSpeechTest {
                 if (!store.installed(model)) store.install(model) {}
                 assertTrue(store.installed(model))
                 neural.synthesize(model, when (model.language) {
+                    "it" -> "Ciao, oggi leggiamo un libro italiano insieme. È una bella giornata."
                     "nl" -> "Hallo, dit is een Nederlands boek. Vandaag lezen we samen."
                     "pt-pt" -> "Hoje estamos a ler um livro juntos."
                     "fr" -> "Aujourd’hui nous lisons un livre ensemble."
