@@ -27,7 +27,7 @@ class SpeechModelsTest {
         assertEquals("Kokoro · Italiano", italian.label)
         assertEquals("it", italian.language)
         assertEquals("kokoro", italian.kind)
-        assertEquals(35, italian.speaker) // if_sara in the pinned 53-speaker voice pack.
+        assertEquals(35, italian.speaker) // if_sara in the pinned multilingual voice pack.
         assertEquals("it", italian.engineLanguage)
         assertEquals(brazilian.repository, italian.repository)
         assertEquals(brazilian.revision, italian.revision)
