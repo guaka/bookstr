@@ -237,7 +237,8 @@ test('libstr desktop app opens with preload bridge', async () => {
     await expect(firstWindow.locator('#torrent-upload-limit')).toHaveValue('1000000');
     await firstWindow.locator('#torrent-auto-download').uncheck();
     await firstWindow.locator('#torrent-auto-seed').uncheck();
-    await expect.poll(() => firstWindow.evaluate(() => window.bookstrDesktop.transfers.setPreferences())).toEqual({
+    // null reads preferences; the default {} would write a stale snapshot while polling.
+    await expect.poll(() => firstWindow.evaluate(() => window.bookstrDesktop.transfers.setPreferences(null))).toEqual({
       autoDownload: false,
       autoSeed: false,
       downloadLimit: 10000000,
@@ -245,7 +246,7 @@ test('libstr desktop app opens with preload bridge', async () => {
     });
     await firstWindow.locator('#torrent-auto-download').check();
     await firstWindow.locator('#torrent-auto-seed').check();
-    await expect.poll(() => firstWindow.evaluate(() => window.bookstrDesktop.transfers.setPreferences())).toEqual({
+    await expect.poll(() => firstWindow.evaluate(() => window.bookstrDesktop.transfers.setPreferences(null))).toEqual({
       autoDownload: true,
       autoSeed: true,
       downloadLimit: 10000000,
@@ -253,7 +254,7 @@ test('libstr desktop app opens with preload bridge', async () => {
     });
     await firstWindow.locator('#torrent-download-limit').selectOption('5000000');
     await firstWindow.locator('#torrent-upload-limit').selectOption('500000');
-    await expect.poll(() => firstWindow.evaluate(() => window.bookstrDesktop.transfers.setPreferences())).toMatchObject({
+    await expect.poll(() => firstWindow.evaluate(() => window.bookstrDesktop.transfers.setPreferences(null))).toMatchObject({
       downloadLimit: 5000000,
       uploadLimit: 500000,
     });

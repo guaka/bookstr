@@ -111,6 +111,7 @@ test('preload methods preserve their IPC channels, arguments, and optional defau
     ['devices.openEnvelope', () => bridge.devices.openEnvelope(record), 'bookstr-desktop-device-open-envelope', record],
     ['devices.setRegistryEvent', () => bridge.devices.setRegistryEvent(record), 'bookstr-desktop-device-set-registry-event', record],
     ['transfers.setPreferences default', () => bridge.transfers.setPreferences(), 'bookstr-desktop-transfer-preferences', {}],
+    ['transfers.setPreferences read only', () => bridge.transfers.setPreferences(null), 'bookstr-desktop-transfer-preferences', null],
     ['transfers.status', () => bridge.transfers.status(), 'bookstr-desktop-transfer-status'],
     ['transfers.seedPublic', () => bridge.transfers.seedPublic('id'), 'bookstr-desktop-transfer-seed-public', { bookId: 'id' }],
     ['transfers.addPublic', () => bridge.transfers.addPublic(record), 'bookstr-desktop-transfer-add-public', record],
