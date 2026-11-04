@@ -22,18 +22,33 @@ class SpeechSettingsViewModelTest {
     @Test fun installsForOtherLanguagesGuardsBusyStateAndResetsOnlySelectedVoice() {
         val root = File(app.cacheDir, "speech-vm-test").apply { deleteRecursively(); mkdirs() }
         val model = model()
-        val repository = SpeechModels(root, listOf(model))
-        File(repository.directory(model).apply { mkdirs() }, "voice").writeText("test")
+        val entered = java.util.concurrent.CountDownLatch(1)
+        val release = java.util.concurrent.CountDownLatch(1)
+        val client = okhttp3.OkHttpClient.Builder().addInterceptor { chain ->
+            entered.countDown()
+            check(release.await(10, java.util.concurrent.TimeUnit.SECONDS)) { "Download was not released" }
+            okhttp3.Response.Builder().request(chain.request()).protocol(okhttp3.Protocol.HTTP_1_1)
+                .code(200).message("OK").body(okhttp3.ResponseBody.create(null, "test")).build()
+        }.build()
+        val repository = SpeechModels(root, listOf(model), client)
         lateinit var vm: SpeechSettingsViewModel
         val owner = ViewModelStore()
         try {
             main {
                 vm = SpeechSettingsViewModel(app, repository); owner.put("speech", vm)
                 vm.selectLanguage("en"); vm.selectVoice("system-test")
-                vm.install(model); vm.install(model); vm.remove(model)
+                vm.install(model)
             }
+            assertTrue(entered.await(10, java.util.concurrent.TimeUnit.SECONDS))
+            main {
+                vm.install(model); vm.remove(model)
+                assertEquals(model.id, vm.busy)
+                assertFalse(repository.installed(model))
+            }
+            release.countDown()
             await { vm.busy == null }
             main {
+                assertNull(vm.error)
                 assertEquals("system-test", vm.voice); assertEquals(model.id, vm.settings.voice("nl"))
                 vm.selectLanguage("nl"); assertEquals(model.id, vm.voice)
                 vm.remove(model); assertEquals("", vm.voice)
@@ -41,7 +56,7 @@ class SpeechSettingsViewModelTest {
                 assertEquals("another-voice", vm.voice)
                 vm.settings.setVoice("en", "")
             }
-        } finally { main { owner.clear() }; root.deleteRecursively() }
+        } finally { release.countDown(); main { owner.clear() }; root.deleteRecursively() }
     }
     @Test fun clearingDuringAnActiveDownloadCancelsWithoutInstallingOrShowingAnError() {
         val root = File(app.cacheDir, "speech-vm-cancel").apply { deleteRecursively(); mkdirs() }
