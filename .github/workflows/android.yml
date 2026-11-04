@@ -106,6 +106,7 @@ jobs:
           path: android/app/build/reports/jacoco/
           if-no-files-found: ignore
           retention-days: 14
+          overwrite: true
       - name: Upload unit test overview
         if: always() && hashFiles('test-overview/android.json') != ''
         uses: actions/upload-artifact@v4
@@ -114,6 +115,7 @@ jobs:
           path: test-overview/android.json
           if-no-files-found: error
           retention-days: 14
+          overwrite: true
       - name: Fail unsuccessful Android unit checks
         if: always() && steps.unit_tests.outcome != 'success'
         run: exit 1
@@ -155,6 +157,7 @@ jobs:
           path: android/prebuilt-apks/*.apk
           if-no-files-found: error
           retention-days: 14
+          overwrite: true
           compression-level: 0
 
   emulator-tests:
@@ -219,6 +222,7 @@ jobs:
           path: test-overview/android-ui.json
           if-no-files-found: error
           retention-days: 14
+          overwrite: true
       - name: Upload Android e2e screenshots
         if: always()
         uses: actions/upload-artifact@v4
@@ -227,6 +231,7 @@ jobs:
           path: android/e2e-screenshots/**/*.png
           if-no-files-found: warn
           retention-days: 14
+          overwrite: true
       - name: Upload Android UI results
         if: always() && hashFiles('android/e2e-results/instrumentation.started') != ''
         uses: actions/upload-artifact@v4
@@ -235,6 +240,7 @@ jobs:
           path: android/e2e-results/
           if-no-files-found: error
           retention-days: 14
+          overwrite: true
       - name: Fail unsuccessful Android UI checks
         if: always() && steps.ui_tests.outcome != 'success'
         run: exit 1

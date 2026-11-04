@@ -170,6 +170,9 @@ test('Android CI has four ordered jobs and the emulator consumes prebuilt APKs',
   assert.match(emulatorJob, /hashFiles\('android\/e2e-results\/instrumentation\.started'\) != ''/);
   assert.match(workflow, /name: Record Android unit test overview\n        if: always\(\) && hashFiles\('android\/app\/build\/test-results\/testDebugUnitTest\/TEST-\*\.xml'\) != ''/);
   assert.match(emulatorJob, /name: Upload Android UI results[\s\S]*?path: android\/e2e-results\//);
+  const uploads = [...workflow.matchAll(/uses: actions\/upload-artifact@v4\n([\s\S]*?)(?=\n      - |\n  [a-z-]+:|$)/g)];
+  assert.equal(uploads.length, 6);
+  for (const upload of uploads) assert.match(upload[1], /overwrite: true/);
   assert.match(e2eRunner, /\$adb_path" pull "\$device_screenshot_dir\/\." "\$host_screenshot_dir"/);
   assert.match(e2eRunner, /Android e2e tests produced no screenshots/);
   assert.match(screenshotRule, /screencap -p \/sdcard\/e2e-screenshots\/\$testName\.png/);
