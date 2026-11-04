@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
-import { readFile, readdir } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import test from 'node:test';
 import { spawnSync } from 'node:child_process';
 
@@ -127,8 +128,9 @@ test('CodeQL workflow is disabled', async () => {
   assert.equal(workflows.includes('codeql.yml'), false);
 });
 
-test('Android CI shares one cached Gradle invocation across unit build tasks', async () => {
+test('Android CI has four ordered jobs and the emulator consumes prebuilt APKs', async () => {
   const workflow = await readWorkflow('android.yml');
+  const ignore = await readFile(new URL('../.gitignore', import.meta.url), 'utf8');
   const properties = await readFile(new URL('../android/gradle.properties', import.meta.url), 'utf8');
   const e2eRunner = await readFile(new URL('../android/scripts/run-connected-e2e.sh', import.meta.url), 'utf8');
   const screenshotRule = await readFile(
@@ -141,24 +143,122 @@ test('Android CI shares one cached Gradle invocation across unit build tasks', a
   );
 
   assert.match(properties, /^org\.gradle\.configuration-cache=true$/m);
-  assert.match(
-    workflow,
-    /\.\/gradlew --no-daemon --continue testDebugUnitTest jacocoDebugUnitTestReport assembleDebug/,
-  );
-  assert.equal([...workflow.matchAll(/testDebugUnitTest/g)].length, 2);
-  assert.equal([...workflow.matchAll(/jacocoDebugUnitTestReport/g)].length, 1);
-  assert.equal([...workflow.matchAll(/assembleDebug/g)].length, 1);
-  assert.match(workflow, /steps\.android_build\.outcome == 'success'/);
-  assert.doesNotMatch(workflow, /steps\.(unit_tests|unit_coverage|assemble)\./);
-  assert.match(workflow, /script: \.\/android\/scripts\/run-connected-e2e\.sh/);
-  assert.match(workflow, /disk-size: 2048M/);
-  assert.match(e2eRunner, /\.\/gradlew --no-daemon connectedDebugAndroidTest/);
-  assert.match(e2eRunner, /adb pull "\$device_screenshot_dir\/\." "\$host_screenshot_dir"/);
+  assert.deepEqual([...workflow.matchAll(/^  ([a-z-]+):\n    name:/gm)].map((match) => match[1]), [
+    'unit-tests', 'package-apks', 'emulator-tests', 'release',
+  ]);
+  assert.match(workflow, /testDebugUnitTest jacocoDebugUnitTestReport/);
+  assert.match(workflow, /node --test --experimental-test-coverage --test-coverage-lines=100 --test-coverage-branches=100 --test-coverage-functions=100 android\/scripts\/instrumentation-results\.test\.mjs/);
+  assert.match(workflow, /assembleDebug assembleDebugAndroidTest/);
+  assert.match(workflow, /needs: unit-tests/);
+  assert.match(workflow, /needs: package-apks/);
+  assert.match(workflow, /needs: \[unit-tests, package-apks, emulator-tests\]/);
+  const emulatorJob = workflow.match(/^  emulator-tests:\n([\s\S]*?)(?=^  release:)/m)[1];
+  assert.match(emulatorJob, /script: \|\n[\s\S]*\.\/android\/scripts\/run-connected-e2e\.sh --prebuilt android\/prebuilt-apks\/app-debug\.apk android\/prebuilt-apks\/app-debug-androidTest\.apk/);
+  assert.match(workflow, /profile: pixel_2/);
+  assert.match(workflow, /-memory 2048 -cores 2/);
+  assert.match(workflow, /window_animation_scale 0/);
+  assert.doesNotMatch(emulatorJob, /connectedDebugAndroidTest|assembleDebugAndroidTest|gradlew/);
+  assert.match(e2eRunner, /require-emulator\.sh/);
+  assert.match(e2eRunner, /install -r "\$app_apk"/);
+  assert.match(e2eRunner, /install -r "\$test_apk"/);
+  assert.match(e2eRunner, /shell am instrument -w -r app\.bookstr\.test\/androidx\.test\.runner\.AndroidJUnitRunner/);
+  assert.match(e2eRunner, /rm -f "\$results_dir\/instrumentation\.log"/);
+  assert.match(ignore, /^\/android\/e2e-results\/$/m);
+  assert.match(ignore, /^\/android\/e2e-screenshots\/$/m);
+  assert.match(e2eRunner, /instrumentation-results\.mjs/);
+  assert.match(e2eRunner, /instrumentation\.started/);
+  assert.match(emulatorJob, /hashFiles\('android\/e2e-results\/instrumentation\.started'\) != ''/);
+  assert.match(workflow, /name: Record Android unit test overview\n        if: always\(\) && hashFiles\('android\/app\/build\/test-results\/testDebugUnitTest\/TEST-\*\.xml'\) != ''/);
+  assert.match(emulatorJob, /name: Upload Android UI results[\s\S]*?path: android\/e2e-results\//);
+  const uploads = [...workflow.matchAll(/uses: actions\/upload-artifact@v4\n([\s\S]*?)(?=\n      - |\n  [a-z-]+:|$)/g)];
+  assert.equal(uploads.length, 6);
+  for (const upload of uploads) assert.match(upload[1], /overwrite: true/);
+  assert.match(e2eRunner, /\$adb_path" pull "\$device_screenshot_dir\/\." "\$host_screenshot_dir"/);
   assert.match(e2eRunner, /Android e2e tests produced no screenshots/);
   assert.match(screenshotRule, /screencap -p \/sdcard\/e2e-screenshots\/\$testName\.png/);
   assert.match(libraryTests, /RuleChain\.outerRule\(composeRule\)\.around\(screenshots\)/);
   assert.match(workflow, /bookstr-e2e-screenshots-android-\$\{\{ github\.run_id \}\}/);
-  assert.match(workflow, /bookstr-e2e-screenshots-android-[\s\S]*if-no-files-found: error/);
+});
+
+test('prebuilt Android runner checks emulator safety before installs and preserves test failures', async () => {
+  const root = await mkdtemp(join(process.cwd(), '.tmp-prebuilt-runner-'));
+  const bin = join(root, 'bin');
+  const sdk = join(root, 'sdk');
+  const apkDir = join(root, 'apks');
+  await mkdir(join(bin), { recursive: true });
+  await mkdir(join(sdk, 'platform-tools'), { recursive: true });
+  await mkdir(apkDir);
+  const app = join(apkDir, 'app.apk');
+  const instrumentation = join(apkDir, 'test.apk');
+  await writeFile(app, 'apk');
+  await writeFile(instrumentation, 'apk');
+  const adbLog = join(root, 'adb.log');
+  const adbStub = `#!/usr/bin/env bash
+printf '%s\\n' "$*" >> "$MOCK_ADB_LOG"
+if [[ "$1" == devices ]]; then echo 'List of devices attached'; printf '%s\\n' "\${MOCK_DEVICE_OUTPUT:-emulator-5554 device product:emu}"; exit 0; fi
+if [[ "$1" == pull ]]; then mkdir -p "$3"; touch "$3/shot.png"; exit 0; fi
+if [[ "$1" == install ]]; then exit "\${MOCK_INSTALL_STATUS:-0}"; fi
+if [[ "$1" == shell && "$2" == am ]]; then echo 'INSTRUMENTATION_STATUS_CODE: 0'; echo 'INSTRUMENTATION_CODE: -1'; exit "\${MOCK_ADB_STATUS:-0}"; fi
+exit 0
+`;
+  await writeFile(join(sdk, 'platform-tools', 'adb'), adbStub);
+  await writeFile(join(bin, 'adb'), adbStub);
+  await writeFile(join(bin, 'node'), `#!/usr/bin/env bash
+exit "\${MOCK_PARSER_STATUS:-0}"
+`);
+  await import('node:fs/promises').then(({ chmod }) => Promise.all([
+    chmod(join(sdk, 'platform-tools', 'adb'), 0o755), chmod(join(bin, 'adb'), 0o755), chmod(join(bin, 'node'), 0o755),
+  ]));
+  const runner = new URL('../android/scripts/run-connected-e2e.sh', import.meta.url).pathname;
+  try {
+    for (const [adbStatus, parserStatus, installStatus, deviceOutput, usePathAdb, expected] of [
+      [0, 0, 0, 'emulator-5554 device product:emu', false, 0],
+      [0, 1, 0, 'emulator-5554 device product:emu', false, 1],
+      [7, 0, 0, 'emulator-5554 device product:emu', false, 1],
+      [0, 0, 5, 'emulator-5554 device product:emu', false, 1],
+      [0, 0, 0, 'emulator-5554 device product:emu', true, 0],
+      [0, 0, 0, 'personal-phone device product:phone', false, 1],
+    ]) {
+      await rm(adbLog, { force: true });
+      const environment = {
+        ...process.env,
+        PATH: `${bin}:${process.env.PATH}`,
+        ANDROID_HOME: sdk,
+        MOCK_ADB_LOG: adbLog,
+        MOCK_ADB_STATUS: String(adbStatus),
+        MOCK_PARSER_STATUS: String(parserStatus),
+        MOCK_INSTALL_STATUS: String(installStatus),
+        MOCK_DEVICE_OUTPUT: deviceOutput,
+      };
+      if (usePathAdb) delete environment.ANDROID_HOME;
+      const result = spawnSync('bash', [runner, '--prebuilt', app, instrumentation], {
+        cwd: root,
+        encoding: 'utf8',
+        env: environment,
+      });
+      assert.equal(result.status, expected, result.stderr);
+      const commands = (await readFile(adbLog, 'utf8')).trim().split('\n');
+      assert.match(commands[0], /^devices -l$/);
+      if (deviceOutput.startsWith('emulator-')) {
+        if (installStatus === 0) {
+          assert.ok(commands.indexOf(`install -r ${app}`) > 0);
+          assert.ok(commands.indexOf(`install -r ${instrumentation}`) > 0);
+          assert.ok(commands.some((command) => command.startsWith('shell am instrument -w -r ')));
+        } else {
+          assert.ok(commands.indexOf(`install -r ${app}`) > 0);
+          assert.equal(commands.some((command) => command.startsWith('shell am instrument ')), false);
+          assert.equal(result.stdout.includes('INSTRUMENTATION_STATUS_CODE'), false);
+          assert.equal(await import('node:fs/promises').then(({ access }) => access(join(root, 'android/e2e-results/instrumentation.started')).then(() => true, () => false)), false);
+        }
+        assert.ok(commands.some((command) => command.startsWith('pull /sdcard/e2e-screenshots/. ')));
+      } else {
+        assert.equal(commands.some((command) => command.startsWith('install ')), false);
+        assert.match(result.stderr, /is not an emulator/);
+      }
+    }
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
 });
 
 test('Android CI rebuilds APKs for Android and bundled reader changes', async () => {
@@ -179,19 +279,20 @@ test('Android CI rebuilds APKs for Android and bundled reader changes', async ()
   }
 });
 
-test('Android CI uploads the built APK before emulator tests with bounded retention', async () => {
+test('Android CI uploads both APKs with bounded retention before emulator tests', async () => {
   const workflow = await readWorkflow('android.yml');
-  const upload = workflow.match(/      - name: Upload debug APK\n([\s\S]*?)(?=      - name:)/)[1];
+  const upload = workflow.match(/      - name: Upload prebuilt APKs\n([\s\S]*?)(?=\n  emulator-tests:)/)[1];
 
-  assert.match(upload, /if: steps\.android_build\.outcome == 'success'/);
   assert.match(upload, /uses: actions\/upload-artifact@v4/);
-  assert.match(upload, /name: bookstr-android-debug-\$\{\{ github\.sha \}\}/);
-  assert.match(upload, /path: android\/app\/build\/outputs\/apk\/debug\/\*\.apk/);
+  assert.match(upload, /name: bookstr-android-apks-\$\{\{ github\.sha \}\}/);
+  assert.match(upload, /path: android\/prebuilt-apks\/\*\.apk/);
+  const staging = workflow.match(/      - name: Stage prebuilt APKs\n        run: \|\n([\s\S]*?)(?=      - name: Upload prebuilt APKs)/)[1];
+  assert.match(staging, /app\/build\/outputs\/apk\/debug\/app-debug\.apk android\/prebuilt-apks\/app-debug\.apk/);
+  assert.match(staging, /app\/build\/outputs\/apk\/androidTest\/debug\/app-debug-androidTest\.apk android\/prebuilt-apks\/app-debug-androidTest\.apk/);
   assert.match(upload, /if-no-files-found: error/);
   assert.match(upload, /retention-days: 14/);
   assert.match(upload, /compression-level: 0/);
-  assert.ok(workflow.indexOf('exit "$status"') < workflow.indexOf('name: Upload debug APK'));
-  assert.ok(workflow.indexOf('name: Upload debug APK') < workflow.indexOf('name: Compose UI tests'));
+  assert.ok(workflow.indexOf('name: Upload prebuilt APKs') < workflow.indexOf('name: Run UI tests against prebuilt APKs'));
   assert.match(workflow, /permissions:\n  contents: read/);
 });
 
@@ -200,10 +301,10 @@ test('Android build documentation describes the CI artifact and signing constrai
   const readme = await readFile(new URL('../README.md', import.meta.url), 'utf8');
 
   assert.match(documentation, /actions\/workflows\/android\.yml/);
-  assert.match(documentation, /bookstr-android-debug-<commit>/);
+  assert.match(documentation, /bookstr-android-apks-<commit>/);
   assert.match(documentation, /14 days/);
   assert.match(documentation, /runner's debug signing key/);
-  assert.match(documentation, /before emulator\ntests run/);
+  assert.match(documentation, /installs these exact APKs/);
   assert.match(documentation, /In Obtainium,/);
   assert.match(readme, /https:\/\/github.com\/guaka\/bookstr` to \[Obtainium\]/);
   assert.match(documentation, /https:\/\/github.com\/guaka\/bookstr/);
@@ -217,7 +318,7 @@ test('signed Android releases only run after checks on trusted main builds', asy
   const workflow = await readWorkflow('android.yml');
   const release = workflow.match(/^  release:\n[\s\S]*$/m)[0];
 
-  assert.match(release, /needs: android/);
+  assert.match(release, /needs: \[unit-tests, package-apks, emulator-tests\]/);
   assert.match(release, /if: github\.ref == 'refs\/heads\/main' && \(github\.event_name == 'push' \|\| github\.event_name == 'workflow_dispatch'\)/);
   assert.match(release, /permissions:\n      contents: write/);
   const jobEnvironment = release.match(/    env:\n([\s\S]*?)(?=    steps:)/)[1];
@@ -238,7 +339,7 @@ test('signed Android releases only run after checks on trusted main builds', asy
 test('Android setup only requests SDK packages still available from Google', async () => {
   const workflow = await readWorkflow('android.yml');
   const setups = [...workflow.matchAll(/uses: android-actions\/setup-android@v3\n([\s\S]*?)(?=      - )/g)];
-  assert.equal(setups.length, 2);
+  assert.equal(setups.length, 4);
   for (const setup of setups) {
     assert.match(setup[1], /with:\n          packages: platform-tools/);
     assert.doesNotMatch(setup[1], /packages:.*\btools platform-tools\b/);
@@ -249,9 +350,9 @@ test('Android jobs expose installed host Boost headers to NDK CMake builds', asy
   const workflow = await readWorkflow('android.yml');
   const cmake = await readFile(new URL('../android/app/src/main/cpp/CMakeLists.txt', import.meta.url), 'utf8');
   assert.match(workflow, /^env:\n  BOOST_ROOT: \$\{\{ github\.workspace \}\}\/\.ci-boost$/m);
-  assert.equal([...workflow.matchAll(/apt-get install -y libboost-dev/g)].length, 2);
-  assert.equal([...workflow.matchAll(/mkdir -p "\$BOOST_ROOT\/include"/g)].length, 2);
-  assert.equal([...workflow.matchAll(/cp -R \/usr\/include\/boost "\$BOOST_ROOT\/include\/"/g)].length, 2);
+  assert.equal([...workflow.matchAll(/apt-get install -y libboost-dev/g)].length, 3);
+  assert.equal([...workflow.matchAll(/mkdir -p "\$BOOST_ROOT\/include"/g)].length, 3);
+  assert.equal([...workflow.matchAll(/cp -R \/usr\/include\/boost "\$BOOST_ROOT\/include\/"/g)].length, 3);
   assert.match(cmake, /set\(Boost_INCLUDE_DIR "\$ENV\{BOOST_ROOT\}\/include" CACHE PATH "Boost headers"\)/);
 });
 
@@ -341,7 +442,7 @@ test('Node.js runtime pin is shared by local development and every workflow', as
   const setupNodeSteps = workflows.flatMap((workflow) =>
     [...workflow.matchAll(/- uses: actions\/setup-node@v4([\s\S]*?)(?=\n      - uses:|\n      - name:|$)/g)].map((match) => match[1]),
   );
-  assert.equal(setupNodeSteps.length, 6);
+  assert.equal(setupNodeSteps.length, 7);
   for (const step of setupNodeSteps) {
     assert.match(step, /node-version-file: \.nvmrc/);
     assert.doesNotMatch(step, /node-version:\s*\d/);
