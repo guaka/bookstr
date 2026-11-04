@@ -52,6 +52,8 @@ Reading never requires Nostr. Bookstr prefers external signers so private keys c
 
 The web, desktop, Android, and iOS clients share formats, fixtures, and reader behavior while retaining native shells. See the [client architecture](./docs/CLIENT_ARCHITECTURE.md) and [capability matrix](./docs/CLIENT_CAPABILITIES.md).
 
+Use Node.js 26.13.0 with `nvm use` at the repository root.
+
 ### Web
 
 ```bash

@@ -6,19 +6,24 @@ const path = require('node:path');
 const desktopRoot = path.join(__dirname, '../..');
 const repositoryRoot = path.join(desktopRoot, '..');
 const dockerfile = fs.readFileSync(path.join(desktopRoot, 'Dockerfile.test'), 'utf8');
+const nodeVersion = fs.readFileSync(path.join(repositoryRoot, '.nvmrc'), 'utf8').trim();
 const dockerignore = fs.readFileSync(path.join(repositoryRoot, '.dockerignore'), 'utf8');
 const packageJson = JSON.parse(fs.readFileSync(path.join(desktopRoot, 'package.json'), 'utf8'));
 const readme = fs.readFileSync(path.join(desktopRoot, 'README.md'), 'utf8');
 const playwrightConfig = fs.readFileSync(path.join(desktopRoot, 'playwright.config.js'), 'utf8');
 
 test('Electron Docker tests use the pinned Playwright image and an unprivileged Xvfb runtime', () => {
+  assert.match(dockerfile, new RegExp(`^FROM node:${nodeVersion.replaceAll('.', '\\.')}\\-bookworm-slim AS node-runtime$`, 'm'));
   assert.match(dockerfile, /^FROM mcr\.microsoft\.com\/playwright:v1\.62\.1-noble$/m);
+  assert.match(dockerfile, /^COPY --from=node-runtime \/usr\/local\/bin\/node \/usr\/bin\/node$/m);
+  assert.match(dockerfile, /apt-get install -y --no-install-recommends libatomic1/);
   assert.match(dockerfile, /^COPY --chown=pwuser:pwuser desktop\/package\.json desktop\/pnpm-lock\.yaml desktop\/pnpm-workspace\.yaml \.\/$/m);
   assert.match(dockerfile, /^COPY --chown=pwuser:pwuser desktop\/patches\/ \.\/patches\/$/m);
   assert.match(dockerfile, /^RUN chown -R pwuser:pwuser \/workspace$/m);
-  assert.match(dockerfile, /^RUN corepack enable$/m);
+  assert.match(dockerfile, /^RUN npm install --global pnpm@10\.34\.8$/m);
   assert.match(dockerfile, /^USER pwuser$/m);
-  assert.ok(dockerfile.indexOf('RUN corepack enable') < dockerfile.indexOf('USER pwuser'));
+  assert.ok(dockerfile.indexOf('RUN npm install --global pnpm@10.34.8') < dockerfile.indexOf('USER pwuser'));
+  assert.doesNotMatch(dockerfile, /corepack/);
   assert.match(dockerfile, /^RUN pnpm install --frozen-lockfile$/m);
   assert.equal(packageJson.scripts.postinstall, 'node node_modules/electron/install.js');
   assert.match(dockerfile, /desktop\/pnpm-lock\.yaml desktop\/pnpm-workspace\.yaml/);

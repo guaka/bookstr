@@ -8,7 +8,7 @@ const settings = fs.readFileSync(path.join(root, 'pnpm-workspace.yaml'), 'utf8')
 
 test('desktop pins pnpm and keeps installation and lifecycle hooks reproducible', () => {
   assert.equal(manifest.packageManager, 'pnpm@10.34.8');
-  assert.equal(manifest.engines.node, '>=22.12.0');
+  assert.equal(manifest.engines.node, '>=26.13.0');
   assert.ok(fs.existsSync(path.join(root, 'pnpm-lock.yaml')));
   assert.equal(fs.existsSync(path.join(root, 'package-lock.json')), false);
   assert.match(settings, /^nodeLinker: hoisted$/m);

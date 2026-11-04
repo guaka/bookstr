@@ -1,4 +1,12 @@
+FROM node:26.13.0-bookworm-slim AS node-runtime
+
 FROM mcr.microsoft.com/playwright:v1.62.1-noble
+
+# Keep Playwright's browser dependencies while using the repository's Node 26 runtime.
+COPY --from=node-runtime /usr/local/bin/node /usr/bin/node
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends libatomic1 \
+  && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /workspace/desktop
 
@@ -6,7 +14,7 @@ COPY --chown=pwuser:pwuser desktop/package.json desktop/pnpm-lock.yaml desktop/p
 COPY --chown=pwuser:pwuser desktop/patches/ ./patches/
 RUN chown -R pwuser:pwuser /workspace
 
-RUN corepack enable
+RUN npm install --global pnpm@10.34.8
 USER pwuser
 RUN pnpm install --frozen-lockfile
 

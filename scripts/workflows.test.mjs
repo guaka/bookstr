@@ -331,3 +331,34 @@ test('Pages deploys once after CI and does not cancel an active deploy', async (
     1,
   );
 });
+
+test('Node.js runtime pin is shared by local development and every workflow', async () => {
+  const pin = await readFile(new URL('../.nvmrc', import.meta.url), 'utf8');
+  assert.equal(pin, '26.13.0\n');
+
+  const workflowNames = ['ci.yml', 'android.yml', 'ios.yml', 'deploy-web.yml'];
+  const workflows = await Promise.all(workflowNames.map(readWorkflow));
+  const setupNodeSteps = workflows.flatMap((workflow) =>
+    [...workflow.matchAll(/- uses: actions\/setup-node@v4([\s\S]*?)(?=\n      - uses:|\n      - name:|$)/g)].map((match) => match[1]),
+  );
+  assert.equal(setupNodeSteps.length, 6);
+  for (const step of setupNodeSteps) {
+    assert.match(step, /node-version-file: \.nvmrc/);
+    assert.doesNotMatch(step, /node-version:\s*\d/);
+  }
+
+  const ci = workflows[0];
+  assert.match(ci, /web:[\s\S]*?- '\.nvmrc'/);
+  assert.match(ci, /electron:[\s\S]*?- '\.nvmrc'/);
+  for (const name of ['android.yml', 'ios.yml']) {
+    const workflow = await readWorkflow(name);
+    assert.equal((workflow.match(/- '\.nvmrc'/g) ?? []).length, 2);
+  }
+
+  const rootReadme = await readFile(new URL('../README.md', import.meta.url), 'utf8');
+  const desktopReadme = await readFile(new URL('../desktop/README.md', import.meta.url), 'utf8');
+  const desktopManifest = JSON.parse(await readFile(new URL('../desktop/package.json', import.meta.url), 'utf8'));
+  assert.match(rootReadme, /Node\.js 26\.13\.0 with `nvm use`/);
+  assert.match(desktopReadme, /Node\.js 26\.13 or newer/);
+  assert.equal(desktopManifest.engines.node, '>=26.13.0');
+});
