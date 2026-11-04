@@ -4,10 +4,26 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
+overrides:
+  bittorrent-tracker>ip: '-'
+  minimatch: 11.0.4
+
 patchedDependencies:
+  '@electron/asar@3.4.1':
+    hash: 3d0d8aa9b0f7980ee2b0f8ff74b9aa7c025fc2e0e2b678a0d9e8e60cf606d000
+    path: patches/@electron-asar@3.4.1.patch
   app-builder-lib@26.15.3:
     hash: a6c2498c509f82be79c8f2b4ba532ceb0c553680e2596ac7696d8688d0409546
     path: patches/app-builder-lib@26.15.3.patch
+  bittorrent-tracker@11.2.3:
+    hash: b24b91dbfa332e91fa39d94d6db373202dbe7eb19a62ca80c65fe7a87a661555
+    path: patches/bittorrent-tracker@11.2.3.patch
+  dir-compare@4.2.0:
+    hash: 2bc56e08f656d994e9b93ebfecc50f376fb3fec12c1d25979f1a4d950e8ea7ac
+    path: patches/dir-compare@4.2.0.patch
+  glob@7.2.3:
+    hash: a6c6a38800b227e2a42c4d128b7d5e6fc54bac0b043af699c71e6f8f3812e826
+    path: patches/glob@7.2.3.patch
   node-datachannel@0.32.3:
     hash: 6eb6e2a24179fac88b38e5ef55c2f328d9d68530d5f87163766dace8fb399d12
     path: patches/node-datachannel@0.32.3.patch
@@ -113,6 +129,9 @@ packages:
   '@isaacs/fs-minipass@4.0.1':
     resolution: {integrity: sha512-wgm9Ehl2jpeqP3zw/7mo3kRHFp5MEDhqAdwy1fTGkHAwnkGOVsgpvQhL8B5n1qlb01jV3n/bI0ZfZp5lWA1k4w==}
     engines: {node: '>=18.0.0'}
+
+  '@isaacs/nonrecursive-glob-match@1.0.3':
+    resolution: {integrity: sha512-SI7kyKHq4XXDRozw+r9GlRZkia1ZkFrpLW98r2IC2Bpr8YkFGE3fvjzmxCG0x78A++69HmDNrDvSMYBZmHGpKA==}
 
   '@malept/cross-spawn-promise@2.0.0':
     resolution: {integrity: sha512-1DpKU0Z5ThltBwjNySMC14g0CkbyhCaz9FkhxqNsZI6uAPJXFS8cMXlBKo26FJ8ZuW6S9GCMcR9IO5k2X5/9Fg==}
@@ -441,9 +460,6 @@ packages:
       react-native-b4a:
         optional: true
 
-  balanced-match@1.0.2:
-    resolution: {integrity: sha512-3oSeUO0TMV67hN1AmbXsK4yaqU7tjiHlbxRDZOpH0KW9+CeX4bRAaX0Anxt0tx2MrpRpWwQaPwIlISEJhYU5Pw==}
-
   balanced-match@4.0.4:
     resolution: {integrity: sha512-BLrgEcRTwX2o6gGxGOCNyMvGSp35YofuYzw9h1IMTRmKqttAZZVU67bdb9Pr2vUHA8+j3i2tJfjO6C6+4myGTA==}
     engines: {node: 18 || 20 || >=22}
@@ -562,12 +578,6 @@ packages:
   boolean@3.2.0:
     resolution: {integrity: sha512-d0II/GO9uf9lfUHH2BQsjxzRJZBdsjgsBiW4BvhWk/3qoKwQFjIDVN19PfX8F2D/r9PCMTtLWjYVCFrpeYUzsw==}
     deprecated: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
-
-  brace-expansion@1.1.21:
-    resolution: {integrity: sha512-9zeA+KLZNNzglF2TPKRQEDyx6Yby7daAkuy8MiPzpXPsYDWi/DRM8jmwUDxokQjYqBpv5DgPiwD4h4ZZSy1Ujw==}
-
-  brace-expansion@2.1.7:
-    resolution: {integrity: sha512-uZbew1NqdmPDTMJ8ah1y+b+9QEJrfkXFk3RcTQw3X0jW/xRUvFKsg1CfQdSYGdTbXZWExtU3J3ccxtnfw1Fi0g==}
 
   brace-expansion@5.0.12:
     resolution: {integrity: sha512-YovQ3rzhaLMIrDjNDMkNS01tea93qhEhG5xy8f6+R0l+dw3Ki+5sCoIoI942iuLZTHWogWktgwVDhU09iNEimQ==}
@@ -693,9 +703,6 @@ packages:
   compare-version@0.1.2:
     resolution: {integrity: sha512-pJDh5/4wrEnXX/VWRZvruAGHkzKdr46z11OlTPN+VrATlWWhSKewNCJ1futCO5C7eJB3nPMFZA1LeYtcFboZ2A==}
     engines: {node: '>=0.10.0'}
-
-  concat-map@0.0.1:
-    resolution: {integrity: sha512-/Srv4dswyQNBfohGpz9o6Yb3Gz3SrUDqBH5rTuhGR7ahtlbYKnVxw2bCFMRljaA7EXHaXZ8wsHdodFvbkhKmqg==}
 
   core-util-is@1.0.3:
     resolution: {integrity: sha512-ZQBvi1DcpJ4GDqanjucZ2Hj3wEO5pZDS89BWbkcrvdxksJorwUDDZamX9ldFkp9aw2lmBDLgkObEA4DWNJ9FYQ==}
@@ -1120,9 +1127,6 @@ packages:
     resolution: {integrity: sha512-EkKzllMFYKMHOoeNxM8v10IJM2n9K6L3ruaQx4A/5RrkOInV8cjp9IwkVU0/cpzwwkq1zGNudrAdCjSR97Rf5w==}
     engines: {node: '>=18'}
 
-  ip@2.0.1:
-    resolution: {integrity: sha512-lJUL9imLTNi1ZfXT+DU6rBBdbiKGBuay9B6xGSPVjUeQwaH1RIGqef8RZkUtHioLmSNpPR5M4HVKJGm1j8FWVQ==}
-
   ipaddr.js@2.0.1:
     resolution: {integrity: sha512-1qTgH9NG+IIJ4yfKs2e6Pp1bZg8wbDbKHT21HrLIeYBTRLgMYKnMTPAuI3Lcs61nfx5h1xlXnbJtH1kX5/d/ng==}
     engines: {node: '>= 10'}
@@ -1307,20 +1311,9 @@ packages:
     resolution: {integrity: sha512-z0yWI+4FDrrweS8Zmt4Ej5HdJmky15+L2e6Wgn3+iK5fWzb6T3fhNFq2+MeTRb064c6Wr4N/wv0DzQTjNzHNGQ==}
     engines: {node: '>=10'}
 
-  minimatch@10.2.6:
-    resolution: {integrity: sha512-vpLQEs+VLCr1nU0BXS07maYoFwlDAH0gngQuuttxIwutDFEMHq2blX+8vpgxDdK3J1PwjCJiep77OitTZ4Ll1A==}
-    engines: {node: 18 || 20 || >=22}
-
-  minimatch@3.1.5:
-    resolution: {integrity: sha512-VgjWUsnnT6n+NUk6eZq77zeFdpW2LWDzP6zFGrCbHXiYNul5Dzqk2HHQ5uFH2DNW5Xbp8+jVzaeNt94ssEEl4w==}
-
-  minimatch@5.1.9:
-    resolution: {integrity: sha512-7o1wEA2RyMP7Iu7GNba9vc0RWWGACJOCZBJX2GJWip0ikV+wcOsgVuY9uE8CPiyQhkGFSlhuSkZPavN7u1c2Fw==}
-    engines: {node: '>=10'}
-
-  minimatch@9.0.9:
-    resolution: {integrity: sha512-OBwBN9AL4dqmETlpS2zasx+vTeWclWzkblfZk7KTA5j3jeOONz/tRCnZomUyvNg83wL5Zv9Ss6HMJXAgL8R2Yg==}
-    engines: {node: '>=16 || 14 >=14.17'}
+  minimatch@11.0.4:
+    resolution: {integrity: sha512-/UJ1dEoVQTjPNDh6SGlUo+ueLMmoHTas4q+8yaAR/5t6nLAIiBDJtoYUh20IYleix7ehiQkgczb84PE3uzHkxg==}
+    engines: {node: 20 || >=22}
 
   minimist@1.2.8:
     resolution: {integrity: sha512-2yyAR8qBkN3YuheJanUpWC5U3bb5osDywNB8RzDVlDwDHbocAJveqqj1u8+SVD7jkWT4yvsHCpWqqWqAxb0zCA==}
@@ -2033,11 +2026,11 @@ snapshots:
 
   '@electron-internal/extract-zip@1.0.5': {}
 
-  '@electron/asar@3.4.1':
+  '@electron/asar@3.4.1(patch_hash=3d0d8aa9b0f7980ee2b0f8ff74b9aa7c025fc2e0e2b678a0d9e8e60cf606d000)':
     dependencies:
       commander: 5.1.0
-      glob: 7.2.3
-      minimatch: 3.1.5
+      glob: 7.2.3(patch_hash=a6c6a38800b227e2a42c4d128b7d5e6fc54bac0b043af699c71e6f8f3812e826)
+      minimatch: 11.0.4
 
   '@electron/fuses@1.8.0':
     dependencies:
@@ -2104,12 +2097,12 @@ snapshots:
 
   '@electron/universal@2.0.3':
     dependencies:
-      '@electron/asar': 3.4.1
+      '@electron/asar': 3.4.1(patch_hash=3d0d8aa9b0f7980ee2b0f8ff74b9aa7c025fc2e0e2b678a0d9e8e60cf606d000)
       '@malept/cross-spawn-promise': 2.0.0
       debug: 4.4.3
-      dir-compare: 4.2.0
+      dir-compare: 4.2.0(patch_hash=2bc56e08f656d994e9b93ebfecc50f376fb3fec12c1d25979f1a4d950e8ea7ac)
       fs-extra: 11.4.0
-      minimatch: 9.0.9
+      minimatch: 11.0.4
       plist: 3.1.0
     transitivePeerDependencies:
       - supports-color
@@ -2128,6 +2121,8 @@ snapshots:
   '@isaacs/fs-minipass@4.0.1':
     dependencies:
       minipass: 7.1.3
+
+  '@isaacs/nonrecursive-glob-match@1.0.3': {}
 
   '@malept/cross-spawn-promise@2.0.0':
     dependencies:
@@ -2392,7 +2387,7 @@ snapshots:
 
   app-builder-lib@26.15.3(patch_hash=a6c2498c509f82be79c8f2b4ba532ceb0c553680e2596ac7696d8688d0409546)(dmg-builder@26.15.3)(electron-builder-squirrel-windows@26.15.3):
     dependencies:
-      '@electron/asar': 3.4.1
+      '@electron/asar': 3.4.1(patch_hash=3d0d8aa9b0f7980ee2b0f8ff74b9aa7c025fc2e0e2b678a0d9e8e60cf606d000)
       '@electron/fuses': 1.8.0
       '@electron/get': 3.1.0
       '@electron/notarize': 2.5.0
@@ -2424,7 +2419,7 @@ snapshots:
       js-yaml: 4.3.2
       json5: 2.2.3
       lazy-val: 1.0.5
-      minimatch: 10.2.6
+      minimatch: 11.0.4
       pkijs: 3.4.0
       plist: 3.1.0
       proper-lockfile: 4.1.2
@@ -2457,8 +2452,6 @@ snapshots:
   aws4@1.13.2: {}
 
   b4a@1.8.1: {}
-
-  balanced-match@1.0.2: {}
 
   balanced-match@4.0.4: {}
 
@@ -2560,7 +2553,7 @@ snapshots:
       - react-native-b4a
       - supports-color
 
-  bittorrent-tracker@11.2.3:
+  bittorrent-tracker@11.2.3(patch_hash=b24b91dbfa332e91fa39d94d6db373202dbe7eb19a62ca80c65fe7a87a661555):
     dependencies:
       '@thaunknown/simple-peer': 10.1.2
       '@thaunknown/simple-websocket': 9.1.5(bufferutil@4.1.0)(utf-8-validate@6.0.6)
@@ -2570,7 +2563,6 @@ snapshots:
       compact2string: 1.4.1
       cross-fetch-ponyfill: 1.0.3
       debug: 4.4.3
-      ip: 2.0.1
       lru: 3.1.0
       minimist: 1.2.8
       once: 1.4.0
@@ -2605,15 +2597,6 @@ snapshots:
 
   boolean@3.2.0:
     optional: true
-
-  brace-expansion@1.1.21:
-    dependencies:
-      balanced-match: 1.0.2
-      concat-map: 0.0.1
-
-  brace-expansion@2.1.7:
-    dependencies:
-      balanced-match: 1.0.2
 
   brace-expansion@5.0.12:
     dependencies:
@@ -2762,8 +2745,6 @@ snapshots:
 
   compare-version@0.1.2: {}
 
-  concat-map@0.0.1: {}
-
   core-util-is@1.0.3: {}
 
   cpus@1.0.3: {}
@@ -2844,9 +2825,9 @@ snapshots:
 
   dijkstrajs@1.0.3: {}
 
-  dir-compare@4.2.0:
+  dir-compare@4.2.0(patch_hash=2bc56e08f656d994e9b93ebfecc50f376fb3fec12c1d25979f1a4d950e8ea7ac):
     dependencies:
-      minimatch: 3.1.5
+      minimatch: 11.0.4
       p-limit: 3.1.0
 
   dmg-builder@26.15.3(electron-builder-squirrel-windows@26.15.3):
@@ -2925,7 +2906,7 @@ snapshots:
 
   electron-winstaller@5.4.0:
     dependencies:
-      '@electron/asar': 3.4.1
+      '@electron/asar': 3.4.1(patch_hash=3d0d8aa9b0f7980ee2b0f8ff74b9aa7c025fc2e0e2b678a0d9e8e60cf606d000)
       debug: 4.4.3
       fs-extra: 7.0.1
       lodash: 4.18.1
@@ -3025,7 +3006,7 @@ snapshots:
 
   filelist@1.0.6:
     dependencies:
-      minimatch: 5.1.9
+      minimatch: 11.0.4
 
   filename-reserved-regex@3.0.0: {}
 
@@ -3169,12 +3150,12 @@ snapshots:
 
   github-from-package@0.0.0: {}
 
-  glob@7.2.3:
+  glob@7.2.3(patch_hash=a6c6a38800b227e2a42c4d128b7d5e6fc54bac0b043af699c71e6f8f3812e826):
     dependencies:
       fs.realpath: 1.0.0
       inflight: 1.0.6
       inherits: 2.0.4
-      minimatch: 3.1.5
+      minimatch: 11.0.4
       once: 1.4.0
       path-is-absolute: 1.0.1
 
@@ -3278,8 +3259,6 @@ snapshots:
   ip-set@3.0.0:
     dependencies:
       ip-address: 10.7.5
-
-  ip@2.0.1: {}
 
   ipaddr.js@2.0.1: {}
 
@@ -3439,21 +3418,10 @@ snapshots:
 
   mimic-response@3.1.0: {}
 
-  minimatch@10.2.6:
+  minimatch@11.0.4:
     dependencies:
+      '@isaacs/nonrecursive-glob-match': 1.0.3
       brace-expansion: 5.0.12
-
-  minimatch@3.1.5:
-    dependencies:
-      brace-expansion: 1.1.21
-
-  minimatch@5.1.9:
-    dependencies:
-      brace-expansion: 2.1.7
-
-  minimatch@9.0.9:
-    dependencies:
-      brace-expansion: 2.1.7
 
   minimist@1.2.8: {}
 
@@ -3793,7 +3761,7 @@ snapshots:
 
   rimraf@2.6.3:
     dependencies:
-      glob: 7.2.3
+      glob: 7.2.3(patch_hash=a6c6a38800b227e2a42c4d128b7d5e6fc54bac0b043af699c71e6f8f3812e826)
 
   roarr@2.15.4:
     dependencies:
@@ -4010,7 +3978,7 @@ snapshots:
     dependencies:
       bittorrent-dht: 11.0.12
       bittorrent-lsd: 2.0.3
-      bittorrent-tracker: 11.2.3
+      bittorrent-tracker: 11.2.3(patch_hash=b24b91dbfa332e91fa39d94d6db373202dbe7eb19a62ca80c65fe7a87a661555)
       debug: 4.4.3
       run-parallel: 1.2.0
     transitivePeerDependencies:

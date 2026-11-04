@@ -5,7 +5,7 @@ FROM mcr.microsoft.com/playwright:v1.62.1-noble
 # Keep Playwright's browser dependencies while using the repository's Node 26 runtime.
 COPY --from=node-runtime /usr/local/bin/node /usr/bin/node
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends libatomic1 \
+  && apt-get install -y --no-install-recommends build-essential libatomic1 python3 \
   && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /workspace/desktop
@@ -15,6 +15,7 @@ COPY --chown=pwuser:pwuser desktop/patches/ ./patches/
 RUN chown -R pwuser:pwuser /workspace
 
 RUN npm install --global pnpm@10.34.8
+ENV MAKEFLAGS=-j2
 USER pwuser
 RUN pnpm install --frozen-lockfile
 

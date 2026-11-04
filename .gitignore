@@ -5,6 +5,7 @@ android/.gradle/
 android/build/
 android/app/build/
 /android/e2e-screenshots/
+/android/e2e-results/
 android/local.properties
 *.apk
 *.iml

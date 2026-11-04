@@ -1,12 +1,16 @@
 # Android build and validation
 
-Android CI builds a debug APK for pull requests and pushes to `main` that change
-Android code or bundled reader assets. Open the matching run under
+Android CI runs as four jobs: JVM unit tests with JaCoCo and the shared coverage
+baseline, APK packaging, emulator UI tests, and signed release publishing.
+Pull requests and pushes to `main` that change Android code or bundled reader
+assets build a debug APK. Open the matching run under
 [Actions → Android CI](https://github.com/guaka/bookstr/actions/workflows/android.yml)
-and download `bookstr-android-debug-<commit>` from **Artifacts**. APKs are retained
-for 14 days and uploaded after unit tests and the build pass, before emulator
-tests run. These use the runner's debug signing key, so they cannot replace an
-installed APK signed with a different key.
+and download `bookstr-android-apks-<commit>` from **Artifacts**. It contains the
+debug app and instrumentation APK, retained for 14 days. The emulator job
+installs these exact APKs and runs the instrumentation runner without invoking
+Gradle or compiling native code. These use the runner's debug signing key, so
+they cannot replace an installed APK signed with a different key. Unit coverage,
+test overviews, and emulator screenshots are published as separate artifacts.
 
 After all Android checks pass on `main`, CI publishes a signed APK to
 [GitHub Releases](https://github.com/guaka/bookstr/releases/latest). In Obtainium,

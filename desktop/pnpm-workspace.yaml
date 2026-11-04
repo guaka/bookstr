@@ -15,6 +15,15 @@ ignoredBuiltDependencies:
   - fsevents
 
 patchedDependencies:
+  glob@7.2.3: patches/glob@7.2.3.patch
+  dir-compare@4.2.0: patches/dir-compare@4.2.0.patch
+  '@electron/asar@3.4.1': patches/@electron-asar@3.4.1.patch
+  bittorrent-tracker@11.2.3: patches/bittorrent-tracker@11.2.3.patch
   # Preserve hoisted transitive versions before accepting package overrides.
   app-builder-lib@26.15.3: patches/app-builder-lib@26.15.3.patch
   node-datachannel@0.32.3: patches/node-datachannel@0.32.3.patch
+
+# Remove the unused general IP utility; decode UDP IPv4 bytes in the tracker patch.
+overrides:
+  "bittorrent-tracker>ip": "-"
+  minimatch: 11.0.4
