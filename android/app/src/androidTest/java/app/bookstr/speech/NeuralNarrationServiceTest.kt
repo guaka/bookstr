@@ -75,6 +75,8 @@ class NeuralNarrationServiceTest {
             ActivityScenario.launch(MainActivity::class.java).use { scenario ->
                 scenario.onActivity {
                     NarrationService.speak(it, "Stale response", "en", bookId = "rejected-reader", title = "Rejected reader", author = null, coverUrl = null, requestToken = "revoked-reader-token")
+                    NarrationService.toggle(it, "rejected-reader", "Rejected reader", null, null, requestToken = "revoked-reader-token")
+                    NarrationService.requestReaderPlayback(it, "11111111111111111111111111111111", "Rejected reader", null, null, "revoked-reader-token")
                 }
                 assertTrue("Rejected foreground request did not stop its idle service", stopped.await(10, TimeUnit.SECONDS))
                 // The platform posts a delayed process-killing error when a foreground
