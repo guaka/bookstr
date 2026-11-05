@@ -120,6 +120,14 @@ jobs:
       - name: Enforce Android coverage baseline
         if: always() && steps.unit_tests.outcome == 'success'
         run: node scripts/coverage-ratchet.mjs --suite android --report test-overview/android.json
+      - name: Upload failed JVM test reports
+        if: always() && steps.unit_tests.outcome == 'failure' && hashFiles('android/app/build/test-results/testDebugUnitTest/TEST-*.xml') != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: bookstr-android-unit-failures-${{ github.run_id }}-${{ github.run_attempt }}
+          path: android/app/build/test-results/testDebugUnitTest/TEST-*.xml
+          retention-days: 7
+          overwrite: true
       - name: Upload unit coverage
         if: always()
         uses: actions/upload-artifact@v4
