@@ -206,7 +206,7 @@ test('Android CI has four ordered jobs and the emulator consumes prebuilt APKs',
   assert.match(workflow, /name: Record Android unit test overview\n        if: always\(\) && hashFiles\('android\/app\/build\/test-results\/testDebugUnitTest\/TEST-\*\.xml'\) != ''/);
   assert.match(emulatorJob, /name: Upload Android UI results[\s\S]*?path: android\/e2e-results\//);
   const uploads = [...workflow.matchAll(/uses: actions\/upload-artifact@v4\n([\s\S]*?)(?=\n      - |\n  [a-z-]+:|$)/g)];
-  assert.equal(uploads.length, 6);
+  assert.equal(uploads.length, 7);
   for (const upload of uploads) assert.match(upload[1], /overwrite: true/);
   assert.match(e2eRunner, /\$adb_path" pull "\$device_screenshot_dir\/\." "\$host_screenshot_dir"/);
   assert.match(e2eRunner, /Android e2e tests produced no screenshots/);
@@ -544,4 +544,14 @@ test('Node.js runtime pin is shared by local development and every workflow', as
   assert.match(rootReadme, /Node\.js 26\.13\.0 with `nvm use`/);
   assert.match(desktopReadme, /Node\.js 26\.13 or newer/);
   assert.equal(desktopManifest.engines.node, '>=26.13.0');
+});
+
+test('failed Android unit runs retain their JUnit exception reports per attempt', async () => {
+  const workflow = await readWorkflow('android.yml');
+  const reportPath = 'android/app/build/test-results/testDebugUnitTest/TEST-*.xml';
+  const upload = workflow.split('      - name: Upload failed JVM test reports\n')[1].split('      - ')[0];
+  assert.ok(upload.includes(`if: always() && steps.unit_tests.outcome == 'failure' && hashFiles('${reportPath}') != ''`));
+  assert.ok(upload.includes('uses: actions/upload-artifact@v4'));
+  assert.ok(upload.includes('name: bookstr-android-unit-failures-${{ github.run_id }}-${{ github.run_attempt }}'));
+  assert.ok(upload.includes(`path: ${reportPath}`));
 });
