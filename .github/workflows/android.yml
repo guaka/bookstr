@@ -93,11 +93,6 @@ jobs:
           packages: platform-tools
       - name: Install Android build tools
         run: sdkmanager "platforms;android-35" "build-tools;35.0.0" "ndk;27.2.12479018" "cmake;3.22.1"
-      - name: Install isolated torrent build headers
-        run: |
-          sudo apt-get update && sudo apt-get install -y libboost-dev
-          mkdir -p "$BOOST_ROOT/include"
-          cp -R /usr/include/boost "$BOOST_ROOT/include/"
       - name: Test Android build configuration
         run: node --test --test-concurrency=1 android/scripts/build-configuration.test.mjs
       - name: Unit tests and JaCoCo
@@ -107,7 +102,7 @@ jobs:
         run: |
           started=$(date +%s)
           set +e
-          ./gradlew --no-daemon --max-workers=2 testDebugUnitTest jacocoDebugUnitTestReport
+          ./gradlew --daemon --max-workers=2 '-Dorg.gradle.jvmargs=-Xmx1536m -Dfile.encoding=UTF-8' testDebugUnitTest jacocoDebugUnitTestReport
           status=$?
           echo "duration_ms=$((($(date +%s) - started) * 1000))" >> "$GITHUB_OUTPUT"
           exit "$status"
