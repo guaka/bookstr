@@ -165,7 +165,7 @@ fi
 
 if [[ -z "${VERSION_NAME}" ]]; then
   echo "Could not resolve versionName from APK/manifests; using fallback timestamp." >&2
-  VERSION_NAME="0.0.3-$(date '+%Y%m%d-%H%M')"
+  VERSION_NAME="0.1-$(date -u '+%Y%m%d-%H%M')"
 fi
 
 mkdir -p "${OUTPUT_DIR}"

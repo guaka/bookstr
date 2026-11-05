@@ -1,5 +1,6 @@
 import java.time.Instant
 import java.time.ZoneId
+import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
 
 import org.gradle.testing.jacoco.tasks.JacocoReport
@@ -46,7 +47,8 @@ val newestSourceChange = (
 val sourceChangeTime = Instant.ofEpochMilli(newestSourceChange)
     .atZone(ZoneId.systemDefault())
 val buildDate = sourceChangeTime.format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"))
-val versionTimestamp = sourceChangeTime.format(DateTimeFormatter.ofPattern("yyyyMMdd-HHmm"))
+val versionTimestamp = sourceChangeTime.withZoneSameInstant(ZoneOffset.UTC)
+    .format(DateTimeFormatter.ofPattern("yyyyMMdd-HHmm"))
 val timestampVersionCode = (sourceChangeTime.toEpochSecond() / 60).toInt()
 
 // Release-signing secrets stay outside the repository. Set these environment variables before
@@ -80,7 +82,7 @@ android {
         }
         targetSdk = 35
         versionCode = providers.gradleProperty("bookstr.versionCode").orNull?.toInt() ?: timestampVersionCode
-        versionName = providers.gradleProperty("bookstr.versionName").orNull ?: "0.0.3-$versionTimestamp"
+        versionName = providers.gradleProperty("bookstr.versionName").orNull ?: "0.1-$versionTimestamp"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "BUILD_DATE", "\"$buildDate\"")
     }
