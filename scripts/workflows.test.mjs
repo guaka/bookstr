@@ -479,7 +479,7 @@ test('Obtainium releases use unique increasing versions and latest APK assets', 
   assert.match(publisher, /latest_option=--latest=false/);
   assert.match(publisher, /size > 0/);
   assert.match(publisher, /does not contain a nonempty/);
-  assert.doesNotMatch(publisher, /--prerelease|--draft|assembleDebug/);
+  assert.doesNotMatch(publisher, /--prerelease|--draft(?![=]false\b)|assembleDebug/);
 });
 
 test('release signing fails before writing a keystore when any secret is missing', async () => {

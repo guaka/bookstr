@@ -345,7 +345,7 @@ jobs:
           # The workflow run's creation time is stable if GitHub reruns an attempt.
           export RUN_STARTED_AT="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID" --jq .created_at)"
           gh api --paginate "repos/$GITHUB_REPOSITORY/releases?per_page=100" \
-            --jq '[.[] | select(.draft == false and .prerelease == false) | {tag_name, body}]' \
+            --jq '[.[] | {tag_name, body}]' \
             | jq -s 'add // []' > "$RUNNER_TEMP/android-releases.json"
           version="$(node --input-type=module -e '
             import { readFileSync } from "node:fs";

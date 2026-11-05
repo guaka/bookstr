@@ -7,7 +7,7 @@ import test from 'node:test';
 
 const helper = new URL('./publish-obtainium-release.sh', import.meta.url);
 
-async function runPublisher({ exists = '0', size = 'missing', uploadFail = '0', uploadEmpty = '0', createEmpty = '0', createMissing = '0', createFail = '0', verifyFail = '0', removeApk = false, emptyApk = false, missingEnv = '', releaseVersion = '0.1-20261105-1932', runNumber = '42', releases = '[]' } = {}) {
+async function runPublisher({ exists = '0', releaseState = 'published', editFail = '0', size = 'missing', uploadFail = '0', uploadEmpty = '0', createEmpty = '0', createMissing = '0', createFail = '0', verifyFail = '0', removeApk = false, emptyApk = false, missingEnv = '', releaseVersion = '0.1-20261105-1932', runNumber = '42', releases = '[]' } = {}) {
   const directory = await mkdtemp(path.join(os.tmpdir(), 'bookstr-release-'));
   const apkDirectory = path.join(directory, 'android');
   const binDirectory = path.join(directory, 'bin');
@@ -27,6 +27,10 @@ printf '%s\\n' "$*" >> "$GH_LOG"
 if [[ "$1" == "api" ]]; then
   printf '%s\\n' "$GH_RELEASES"
 elif [[ "$1 $2" == "release view" ]]; then
+  if [[ "$*" == *"--json isDraft,body"* ]]; then
+    printf '%s\\n' "$RELEASE_STATE"
+    exit 0
+  fi
   view_count=$(($(cat "$GH_VIEW_COUNT") + 1))
   printf '%s\\n' "$view_count" > "$GH_VIEW_COUNT"
   [[ "$VERIFY_FAIL" == 0 || "$view_count" == 1 ]] || exit 1
@@ -46,6 +50,8 @@ elif [[ "$1 $2" == "release create" ]]; then
   else
     printf '1 %s\\n' "$(wc -c < "$4" | tr -d ' ')" > "$GH_STATE"
   fi
+elif [[ "$1 $2" == "release edit" ]]; then
+  [[ "$EDIT_FAIL" == 0 ]]
 elif [[ "$1 $2" == "release upload" ]]; then
   [[ "$UPLOAD_FAIL" == 0 ]] || exit 1
   read -r current_exists _ < "$GH_STATE"
@@ -67,6 +73,8 @@ fi
     ...process.env,
     PATH: `${binDirectory}:${process.env.PATH}`,
     GH_LOG: logFile,
+    RELEASE_STATE: releaseState,
+    EDIT_FAIL: editFail,
     GH_STATE: stateFile,
     GH_VIEW_COUNT: viewCountFile,
     EXPECTED_ASSET: path.basename(apkPath),
@@ -190,4 +198,23 @@ test('propagates release creation failures', async () => {
   const result = await runPublisher({ createFail: '1' });
   assert.notEqual(result.status, 0);
   assert.match(result.log, /release create/);
+});
+
+test('publishes an interrupted draft only after its own APK is complete', async () => {
+  const draft = { exists: '1', releaseState: 'draft\nBookstr Android workflow run ID: 90042' };
+  const repaired = await runPublisher(draft);
+  assert.equal(repaired.status, 0, repaired.stderr);
+  assert.match(repaired.log, /release upload[^\n]*[\s\S]+release edit [^\n]*--draft=false --latest$/m);
+  const older = await runPublisher({ ...draft, size: '2048', releases: '[{"tag_name":"v0.0.3-ci.43"}]' });
+  assert.equal(older.status, 0, older.stderr);
+  assert.match(older.log, /release edit [^\n]*--latest=false/);
+  assert.doesNotMatch(older.log, /release upload/);
+  const incomplete = await runPublisher({ ...draft, uploadEmpty: '1' });
+  assert.notEqual(incomplete.status, 0);
+  assert.doesNotMatch(incomplete.log, /release edit/);
+  const failed = await runPublisher({ ...draft, editFail: '1' });
+  assert.notEqual(failed.status, 0);
+  const foreign = await runPublisher({ ...draft, releaseState: 'draft\nBookstr Android workflow run ID: 900420' });
+  assert.notEqual(foreign.status, 0);
+  assert.doesNotMatch(foreign.log, /release (upload|edit)/);
 });
