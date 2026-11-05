@@ -19,13 +19,15 @@ for (const configuration of cases) {
     const directory = mkdtempSync(join(tmpdir(), 'bookstr-build-configuration-'));
     try {
       const init = join(directory, 'inspect.gradle');
-      writeFileSync(init, `allprojects {
-  afterEvaluate { project ->
+      writeFileSync(init, `gradle.projectsEvaluated {
+  allprojects { project ->
     if (project.plugins.hasPlugin('com.android.application')) {
       def config = project.extensions.getByName('android').defaultConfig
+      def coverage = project.tasks.getByName('testDebugUnitTest').extensions.getByType(org.gradle.testing.jacoco.plugins.JacocoTaskExtension)
       println('BOOKSTR_BUILD_CONFIGURATION=' + groovy.json.JsonOutput.toJson([
         abis: config.ndk.abiFilters.sort(),
         cmake: config.externalNativeBuild.cmake.arguments,
+        coverage: [includeNoLocationClasses: coverage.includeNoLocationClasses, excludes: coverage.excludes],
         versionCode: config.versionCode,
         versionName: config.versionName
       ]))
@@ -43,8 +45,9 @@ for (const configuration of cases) {
       const line = result.stdout.split('\n').find(value => value.startsWith('BOOKSTR_BUILD_CONFIGURATION='));
       assert.ok(line, 'Gradle reported the actual Android build configuration');
       const actual = JSON.parse(line.slice('BOOKSTR_BUILD_CONFIGURATION='.length));
-      assert.deepEqual({ abis: actual.abis, cmake: actual.cmake }, {
+      assert.deepEqual({ abis: actual.abis, cmake: actual.cmake, coverage: actual.coverage }, {
         abis: configuration.abis, cmake: configuration.cmake,
+        coverage: { includeNoLocationClasses: true, excludes: ['jdk.internal.*'] },
       });
       if (configuration.versionCode !== undefined) assert.equal(actual.versionCode, configuration.versionCode);
       else assert.ok(Number.isSafeInteger(actual.versionCode) && actual.versionCode > 0);
