@@ -11,6 +11,8 @@ import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.Assert.*
 import org.junit.Test
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 
 class PrivateCatalogClientTest {
     private fun signer(n: Int) = EphemeralSigner(ByteArray(32).also { it[31] = n.toByte() })
@@ -22,7 +24,25 @@ class PrivateCatalogClientTest {
         val server = MockWebServer(); server.useHttps(serverCerts.sslSocketFactory(), false)
         val user = signer(1); val catalog = signer(2)
         var request = ""
+        var relaySocket: WebSocket? = null
+        val relayTerminated = CountDownLatch(1)
         server.enqueue(MockResponse().withWebSocketUpgrade(object : WebSocketListener() {
+            override fun onOpen(socket: WebSocket, response: Response) {
+                relaySocket = socket
+            }
+
+            override fun onClosing(socket: WebSocket, code: Int, reason: String) {
+                socket.close(code, reason)
+            }
+
+            override fun onClosed(socket: WebSocket, code: Int, reason: String) {
+                relayTerminated.countDown()
+            }
+
+            override fun onFailure(socket: WebSocket, t: Throwable, response: Response?) {
+                relayTerminated.countDown()
+            }
+
             override fun onMessage(socket: WebSocket, text: String) {
                 val frame = JSONArray(text)
                 when (frame.getString(0)) {
@@ -50,12 +70,23 @@ class PrivateCatalogClientTest {
             val payload = JSONObject().put("type", "libcat.search").put("query", "fixture")
             if (mode == "success") assertEquals(0, client.request(payload, user, service).getJSONArray("books").length())
             else {
-                var failed = false
-                try { client.request(payload, user, service) } catch (_: Exception) { failed = true }
-                assertTrue(mode, failed)
+                val failure = runCatching { client.request(payload, user, service) }.exceptionOrNull()
+                assertNotNull(mode, failure)
+                if (mode == "rejected") assertEquals("Relay rejected catalog request", failure?.message)
             }
             assertTrue(request.isNotBlank())
-        } finally { server.close(); http.dispatcher.executorService.shutdown(); http.connectionPool.evictAll() }
+        } finally {
+            try {
+                relaySocket?.close(1000, "Done")
+                if (relaySocket != null) {
+                    assertTrue("Relay websocket did not terminate", relayTerminated.await(5, TimeUnit.SECONDS))
+                }
+            } finally {
+                server.close()
+                http.dispatcher.executorService.shutdown()
+                http.connectionPool.evictAll()
+            }
+        }
     }
     @Test fun successfulRequestIgnoresUnrelatedEvents() = exercise("success")
     @Test fun relayRejectionIsActionable() = exercise("rejected")
