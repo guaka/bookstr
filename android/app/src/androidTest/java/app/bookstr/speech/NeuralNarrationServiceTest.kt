@@ -18,6 +18,45 @@ import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 
 class NeuralNarrationServiceTest {
+    @Test fun ordinaryStopQueuedBeforeForegroundStartKeepsTheNewSession() {
+        val app = ApplicationProvider.getApplicationContext<BookstrApp>()
+        app.settingsRepository.clearReaderSession()
+        app.stopService(Intent(app, NarrationService::class.java))
+        val idle = CountDownLatch(1)
+        val started = CountDownLatch(1)
+        val receiver = object : BroadcastReceiver() {
+            override fun onReceive(context: Context, intent: Intent) {
+                if (!intent.getBooleanExtra(NarrationService.EXTRA_SESSION_ACTIVE, true) &&
+                    intent.getFloatExtra(NarrationService.EXTRA_RATE, 0f) == 0.82f
+                ) idle.countDown()
+                if (intent.getStringExtra(NarrationService.EXTRA_BOOK_ID) == "stop-start-race" &&
+                    intent.getBooleanExtra(NarrationService.EXTRA_SESSION_ACTIVE, false)
+                ) started.countDown()
+            }
+        }
+        app.registerReceiver(receiver, IntentFilter(NarrationService.ACTION_EVENT), Context.RECEIVER_NOT_EXPORTED)
+        try {
+            ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+                scenario.onActivity { NarrationService.setSpeechRate(it, "en", 0.82f) }
+                assertTrue("Idle narration service did not start", idle.await(10, TimeUnit.SECONDS))
+                // Queue both commands before the main thread can deliver either one.
+                // Android has already required foreground for the newer start when
+                // the older stop runs, so an unconditional stopSelf kills the process.
+                scenario.onActivity {
+                    NarrationService.stop(it)
+                    NarrationService.toggle(it, "stop-start-race", "Stop then start", null, null)
+                }
+                assertTrue("An older stop discarded the newer narration request", started.await(10, TimeUnit.SECONDS))
+                Thread.sleep(12_000)
+                val notifications = app.getSystemService(android.app.NotificationManager::class.java).activeNotifications
+                assertTrue(notifications.any { it.notification.extras.getCharSequence(android.app.Notification.EXTRA_TITLE) == "Stop then start" })
+            }
+        } finally {
+            app.unregisterReceiver(receiver)
+            app.stopService(Intent(app, NarrationService::class.java))
+        }
+    }
+
     @Test fun validForegroundStartQueuedAfterARejectedRequestKeepsItsSession() {
         val app = ApplicationProvider.getApplicationContext<BookstrApp>()
         app.settingsRepository.clearReaderSession()
@@ -212,11 +251,15 @@ class NeuralNarrationServiceTest {
         val app = ApplicationProvider.getApplicationContext<BookstrApp>()
         app.settingsRepository.clearReaderSession()
         val requested = CountDownLatch(1)
+        val stopped = CountDownLatch(1)
         val suppliedWhilePaused = CountDownLatch(1)
         val playing = AtomicBoolean(false)
         val remainedPaused = AtomicBoolean(false)
         val receiver = object : BroadcastReceiver() {
             override fun onReceive(context: Context, intent: Intent) {
+                if (intent.getStringExtra(NarrationService.EXTRA_BOOK_ID) == "autoplay-test" &&
+                    !intent.getBooleanExtra(NarrationService.EXTRA_SESSION_ACTIVE, true)
+                ) stopped.countDown()
                 if (intent.getBooleanExtra(NarrationService.EXTRA_REQUEST_TEXT, false)) {
                     playing.set(intent.getBooleanExtra(NarrationService.EXTRA_IS_PLAYING, false))
                     requested.countDown()
@@ -246,6 +289,7 @@ class NeuralNarrationServiceTest {
                 assertTrue("Pause during text request was ignored", suppliedWhilePaused.await(10, TimeUnit.SECONDS))
                 assertTrue(remainedPaused.get())
                 scenario.onActivity { NarrationService.stop(it) }
+                assertTrue("Autoplay session did not stop", stopped.await(10, TimeUnit.SECONDS))
             }
         } finally {
             app.unregisterReceiver(receiver)

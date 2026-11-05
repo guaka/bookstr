@@ -80,6 +80,7 @@ class NarrationService : MediaBrowserServiceCompat(), TextToSpeech.OnInitListene
     private var textToSpeech: TextToSpeech? = null
     private var textToSpeechReady = false
     private var foregroundStarted = false
+    private var latestStartId = 0
     private var isPlaying = false
     private var sessionActive = false
     private var resumeAfterAudioFocus = false
@@ -266,6 +267,7 @@ class NarrationService : MediaBrowserServiceCompat(), TextToSpeech.OnInitListene
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        latestStartId = startId
         val foregroundRequest = intent?.getBooleanExtra(EXTRA_FOREGROUND_START, false) == true
         if (foregroundRequest) {
             // Acknowledge every startForegroundService call before rejecting stale reader
@@ -915,7 +917,7 @@ class NarrationService : MediaBrowserServiceCompat(), TextToSpeech.OnInitListene
         )
     }
 
-    private fun stopNarration(removeNotification: Boolean, startId: Int? = null) {
+    private fun stopNarration(removeNotification: Boolean, startId: Int = latestStartId) {
         generation += 1
         sessionActive = false
         pendingPlay = false
@@ -931,7 +933,9 @@ class NarrationService : MediaBrowserServiceCompat(), TextToSpeech.OnInitListene
         if (removeNotification) {
             foregroundStarted = false
             stopForeground(STOP_FOREGROUND_REMOVE)
-            if (startId == null) stopSelf() else stopSelf(startId)
+            // A newer foreground start may already be queued in Android, even
+            // though its onStartCommand has not reached this process yet.
+            stopSelf(startId)
         } else {
             updateNotification()
         }

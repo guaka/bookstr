@@ -97,6 +97,31 @@ class NarrationVoicePreferenceTest {
         }
     }
 
+    @Test fun ordinaryStopsAndMediaStopsRetainTheirStartId() {
+        for (action in listOf("NARRATION_STOP", "NARRATION_STOP_IF_DIFFERENT_BOOK")) {
+            val controller = Robolectric.buildService(NarrationService::class.java).create()
+            val service = controller.get()
+            try {
+                service.onStartCommand(android.content.Intent().setAction("app.bookstr.action.NARRATION_TOGGLE")
+                    .putExtra("book_id", "active"), 0, 41)
+                service.onStartCommand(android.content.Intent().setAction("app.bookstr.action.$action")
+                    .putExtra("target_book_id", "another"), 0, 42)
+                assertEquals("An older stop must not cancel a newer queued foreground start", 42,
+                    org.robolectric.Shadows.shadowOf(service).stopSelfId)
+            } finally { controller.destroy() }
+        }
+        val controller = Robolectric.buildService(NarrationService::class.java).create()
+        val service = controller.get()
+        try {
+            service.onStartCommand(android.content.Intent().setAction("app.bookstr.action.NARRATION_RATE")
+                .putExtra("language", "en").putExtra("rate", 0.8f), 0, 43)
+            val callback = NarrationService::class.java.getDeclaredField("mediaSessionCallback")
+                .apply { isAccessible = true }.get(service) as android.support.v4.media.session.MediaSessionCompat.Callback
+            callback.onStop()
+            assertEquals(43, org.robolectric.Shadows.shadowOf(service).stopSelfId)
+        } finally { controller.destroy() }
+    }
+
     @Test fun ordinaryAndNullServiceStartsDoNotCreateForegroundNotifications() {
         val controller = Robolectric.buildService(NarrationService::class.java).create()
         val service = controller.get()
