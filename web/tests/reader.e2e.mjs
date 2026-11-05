@@ -419,7 +419,7 @@ test('a LibVault PDF without format metadata is sniffed and gets a useful fallba
     body: minimalPdf('Metadata-free PDF'),
   }));
 
-  await page.goto(`/#read=${md5}`);
+  await page.goto(`/#read=${md5}`, { waitUntil: 'domcontentloaded' });
 
   const pdfReader = page.frameLocator('#reader-frame');
   await expect(pdfReader.locator('.pdf-page canvas')).toHaveAttribute('data-rendered', 'true');
