@@ -15,10 +15,16 @@ test overviews, and emulator screenshots are published as separate artifacts.
 After all Android checks pass on `main`, CI publishes a signed APK to
 [GitHub Releases](https://github.com/guaka/bookstr/releases/latest). In Obtainium,
 add `https://github.com/guaka/bookstr` as the app source. Each release gets a new
-`v0.0.3-ci.<run number>` tag and an increasing Android version code (1,000,000,000
-plus the workflow run number). Releases are marked latest and are not
-prereleases, so Obtainium's default GitHub settings can discover them.
-Rerunning an already published workflow does not replace its release.
+`0.1-YYYYMMDD-HHMM` version name and matching `v<version name>` tag. The timestamp
+uses the workflow run creation time in UTC, so retries keep the same
+version. If a different run already owns that minute's tag, the later run gets a
+deterministic `-r<run number>` suffix. CI serializes releases while it allocates
+tags, preventing same-minute runs from overwriting one another. Each release
+also has a monotonically increasing Android version code (1,000,000,000 plus
+the workflow run number). A retry that is older than the latest published
+Android run cannot mark its release latest. Releases are not prereleases, so
+Obtainium's default GitHub settings can discover them. Rerunning an already
+published workflow does not replace its release or APK.
 
 Configure these encrypted repository secrets before enabling release publishing:
 
