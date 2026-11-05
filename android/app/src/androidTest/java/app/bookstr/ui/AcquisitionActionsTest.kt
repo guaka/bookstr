@@ -1,5 +1,6 @@
 package app.bookstr.ui
 
+import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.test.core.app.ApplicationProvider
@@ -91,7 +92,10 @@ class AcquisitionActionsTest {
         compose.onNodeWithTag("downloads.sheet").assertIsDisplayed()
         compose.waitUntil(15000) { app.downloadStore.find(id)?.state == "complete" }
         assertTrue(app.catalogRepository.publicationFile(id, BookFormat.Pdf).isFile)
-        pressSystemBack()
+        val dismissSheet = hasAnyAncestor(hasTestTag("downloads.sheet")) and
+            SemanticsMatcher.keyIsDefined(SemanticsActions.Dismiss)
+        compose.onNode(dismissSheet, useUnmergedTree = true).performSemanticsAction(SemanticsActions.Dismiss)
+        compose.waitUntil(5000) { compose.onAllNodesWithTag("downloads.sheet").fetchSemanticsNodes().isEmpty() }
         compose.onNodeWithTag("search.open.$id").performClick()
         compose.waitUntil(5000) { app.settingsRepository.readerSession()?.bookId == id }
         pressSystemBack()
