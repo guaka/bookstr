@@ -426,9 +426,15 @@ test('Android jobs expose installed host Boost headers to NDK CMake builds', asy
   const workflow = await readWorkflow('android.yml');
   const cmake = await readFile(new URL('../android/app/src/main/cpp/CMakeLists.txt', import.meta.url), 'utf8');
   assert.match(workflow, /^env:\n  BOOST_ROOT: \$\{\{ github\.workspace \}\}\/\.ci-boost$/m);
-  assert.equal([...workflow.matchAll(/apt-get install -y libboost-dev/g)].length, 3);
-  assert.equal([...workflow.matchAll(/mkdir -p "\$BOOST_ROOT\/include"/g)].length, 3);
-  assert.equal([...workflow.matchAll(/cp -R \/usr\/include\/boost "\$BOOST_ROOT\/include\/"/g)].length, 3);
+  const unit = workflow.split('  unit-tests:\n')[1].split('  package-apks:\n')[0];
+  assert.doesNotMatch(unit, /libboost-dev|\$BOOST_ROOT/);
+  assert.match(unit, /--daemon --max-workers=2 '-Dorg.gradle.jvmargs=-Xmx1536m -Dfile.encoding=UTF-8' testDebugUnitTest jacocoDebugUnitTestReport/);
+  for (const job of ['package-apks', 'release']) {
+    const source = workflow.split(`  ${job}:\n`)[1].split(/\n  [a-z-]+:\n/)[0];
+    assert.match(source, /apt-get install -y libboost-dev/);
+    assert.match(source, /mkdir -p "\$BOOST_ROOT\/include"/);
+    assert.match(source, /cp -R \/usr\/include\/boost "\$BOOST_ROOT\/include\/"/);
+  }
   assert.match(cmake, /set\(Boost_INCLUDE_DIR "\$ENV\{BOOST_ROOT\}\/include" CACHE PATH "Boost headers"\)/);
 });
 
