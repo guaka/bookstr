@@ -19,11 +19,14 @@ for (const configuration of cases) {
     const directory = mkdtempSync(join(tmpdir(), 'bookstr-build-configuration-'));
     try {
       const init = join(directory, 'inspect.gradle');
-      writeFileSync(init, `allprojects {
-  afterEvaluate { project ->
+      writeFileSync(init, `gradle.projectsEvaluated {
+  rootProject.allprojects { project ->
     if (project.plugins.hasPlugin('com.android.application')) {
       def config = project.extensions.getByName('android').defaultConfig
+      def coverage = project.tasks.named('testDebugUnitTest').get().extensions.getByType(org.gradle.testing.jacoco.plugins.JacocoTaskExtension)
       println('BOOKSTR_BUILD_CONFIGURATION=' + groovy.json.JsonOutput.toJson([
+        includeNoLocationClasses: coverage.includeNoLocationClasses,
+        coverageExcludes: coverage.excludes,
         abis: config.ndk.abiFilters.sort(),
         cmake: config.externalNativeBuild.cmake.arguments,
         versionCode: config.versionCode,
@@ -46,6 +49,8 @@ for (const configuration of cases) {
       assert.deepEqual({ abis: actual.abis, cmake: actual.cmake }, {
         abis: configuration.abis, cmake: configuration.cmake,
       });
+      assert.equal(actual.includeNoLocationClasses, true, 'Robolectric sandbox classes contribute coverage');
+      assert.deepEqual(actual.coverageExcludes, ['jdk.internal.*'], 'only JDK internals are excluded from instrumentation');
       if (configuration.versionCode !== undefined) assert.equal(actual.versionCode, configuration.versionCode);
       else assert.ok(Number.isSafeInteger(actual.versionCode) && actual.versionCode > 0);
       if (configuration.versionName) assert.equal(actual.versionName, configuration.versionName);

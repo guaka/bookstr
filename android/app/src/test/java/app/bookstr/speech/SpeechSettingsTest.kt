@@ -12,6 +12,27 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(application = Application::class, sdk = [35])
 class SpeechSettingsTest {
+    @Test fun normalizesLanguageAliasesRegionsAndBlankInput() {
+        assertEquals("en", SpeechLanguages.tag("  English "))
+        assertEquals("pt-br", SpeechLanguages.tag("Portuguese-BR"))
+        assertEquals("pt-pt", SpeechLanguages.tag("por"))
+        assertEquals("fr", SpeechLanguages.tag("FRA_ca"))
+        assertEquals("de", SpeechLanguages.tag("German-DE"))
+        assertEquals("it", SpeechLanguages.tag("Italiano-IT"))
+        assertEquals("es", SpeechLanguages.tag("spa"))
+        assertEquals("ca", SpeechLanguages.tag("CAT"))
+        assertEquals("nl", SpeechLanguages.tag("Nederlands"))
+        assertEquals("en", SpeechLanguages.tag("  "))
+        assertFalse(SpeechLanguages.name("en").isBlank())
+    }
+
+    @Test fun availableLanguagesNormalizesAndDeduplicatesSeedAndDeviceCodes() {
+        val available = SpeechLanguages.available(listOf("EN-us", "pt_BR", " Dutch ", "", "fr"))
+        assertEquals(available.size, available.toSet().size)
+        assertTrue(available.containsAll(listOf("en", "pt-br", "pt-pt", "nl", "fr", "ca", "de", "es", "it")))
+        assertFalse(available.contains(""))
+    }
+
     @Test fun storesSeparateLanguageChoicesAcrossRepositoryRecreation() {
         val prefs = RuntimeEnvironment.getApplication().getSharedPreferences("speech-test", Context.MODE_PRIVATE)
         val settings = SpeechSettings(prefs)
