@@ -384,7 +384,10 @@ test('Android build documentation describes the CI artifact and signing constrai
   assert.match(documentation, /In Obtainium,/);
   assert.match(readme, /https:\/\/github.com\/guaka\/bookstr` to \[Obtainium\]/);
   assert.match(documentation, /https:\/\/github.com\/guaka\/bookstr/);
-  assert.match(documentation, /v0\.0\.3-ci\.<run number>/);
+  assert.match(documentation, /`0\.1-YYYYMMDD-HHMM` version name/);
+  assert.match(documentation, /workflow run creation time in UTC/);
+  assert.match(documentation, /`-r<run number>` suffix/);
+  assert.match(documentation, /1,000,000,000 plus[\s\S]*workflow run number/);
   for (const secret of ['BOOKSTR_KEYSTORE_BASE64', 'BOOKSTR_KEYSTORE_PASSWORD', 'BOOKSTR_KEY_ALIAS', 'BOOKSTR_KEY_PASSWORD']) {
     assert.ok(documentation.includes(secret));
   }
@@ -397,6 +400,7 @@ test('signed Android releases only run after checks on trusted main builds', asy
   assert.match(release, /needs: \[unit-tests, package-apks, emulator-tests\]/);
   assert.match(release, /if: github\.ref == 'refs\/heads\/main' && \(github\.event_name == 'push' \|\| github\.event_name == 'workflow_dispatch'\)/);
   assert.match(release, /permissions:\n      contents: write/);
+  assert.match(release, /permissions:\n      contents: write\n      actions: read/);
   const jobEnvironment = release.match(/    env:\n([\s\S]*?)(?=    steps:)/)[1];
   assert.match(jobEnvironment, /BOOKSTR_KEYSTORE_FILE: \$\{\{ github\.workspace \}\}\/bookstr-release\.jks/);
   assert.doesNotMatch(jobEnvironment, /\$\{\{\s*runner\./);
@@ -435,22 +439,38 @@ test('Android jobs expose installed host Boost headers to NDK CMake builds', asy
 test('Obtainium releases use unique increasing versions and latest APK assets', async () => {
   const workflow = await readWorkflow('android.yml');
   const gradle = await readFile(new URL('../android/app/build.gradle.kts', import.meta.url), 'utf8');
+  const resolver = await readFile(new URL('../android/scripts/android-release-version.mjs', import.meta.url), 'utf8');
   const publisher = await readFile(new URL('../android/scripts/publish-obtainium-release.sh', import.meta.url), 'utf8');
+  const localReleaseHelper = await readFile(new URL('./release-android-apk.sh', import.meta.url), 'utf8');
   const release = workflow.match(/^  release:\n[\s\S]*$/m)[0];
 
   assert.match(gradle, /versionCode = providers\.gradleProperty\("bookstr\.versionCode"\)\.orNull\?\.toInt\(\) \?: timestampVersionCode/);
-  assert.match(gradle, /versionName = providers\.gradleProperty\("bookstr\.versionName"\)\.orNull \?: "0\.0\.3-\$versionTimestamp"/);
-  assert.equal([...release.matchAll(/version="0\.0\.3-ci\.\$RUN_NUMBER"/g)].length, 1);
-  assert.match(publisher, /version="0\.0\.3-ci\.\$RUN_NUMBER"/);
+  assert.match(gradle, /versionName = providers\.gradleProperty\("bookstr\.versionName"\)\.orNull \?: "0\.1-\$versionTimestamp"/);
+  assert.match(gradle, /withZoneSameInstant\(ZoneOffset\.UTC\)/);
+  assert.match(release, /actions\/runs\/\$RUN_ID" --jq \.created_at/);
+  assert.doesNotMatch(release, /github\.run_started_at/);
+  assert.match(release, /resolveAndroidReleaseVersion/);
+  assert.match(release, /RELEASE_VERSION: \$\{\{ steps\.release_version\.outputs\.version \}\}/);
+  assert.match(release, /RELEASE_VERSION:\?Release version resolution failed/);
+  assert.match(release, /version="\$RELEASE_VERSION"/);
+  assert.match(resolver, /-r\$\{number\}/);
+  assert.match(resolver, /workflow run ID/);
+  assert.match(publisher, /version="\$RELEASE_VERSION"/);
+  assert.match(publisher, /latestPublishedAndroidRunNumber/);
+  assert.match(publisher, /gh api --paginate "repos\/\$GITHUB_REPOSITORY\/releases\?per_page=100"/);
+  assert.doesNotMatch(publisher, /gh release list/);
+  assert.match(localReleaseHelper, /VERSION_NAME="0\.1-\$\(date -u '\+%Y%m%d-%H%M'\)"/);
   assert.match(release, /code=\$\(\(1000000000 \+ RUN_NUMBER\)\)/);
   assert.match(release, /assembleRelease -Pbookstr.cxxCompilerLauncher=ccache "-Pbookstr\.versionCode=\$code" "-Pbookstr\.versionName=\$version"/);
   assert.match(release, /--no-configuration-cache --max-workers=2 assembleRelease/);
   assert.match(release, /run: bash android\/scripts\/publish-obtainium-release\.sh/);
   assert.match(workflow, /name: Test Android release publisher\n        run: node --test android\/scripts\/publish-obtainium-release\.test\.mjs/);
+  assert.match(workflow, /Test Android release version resolver\n        run: node --test --experimental-test-coverage --test-coverage-lines=100 --test-coverage-branches=100 --test-coverage-functions=100 android\/scripts\/android-release-version\.test\.mjs/);
   assert.match(publisher, /gh release create "\$tag" "\$apk"/);
   assert.match(publisher, /gh release upload "\$tag" "\$apk"/);
   assert.match(publisher, /--target "\$GITHUB_SHA"/);
-  assert.match(publisher, /--latest/);
+  assert.match(publisher, /latest_option=--latest/);
+  assert.match(publisher, /latest_option=--latest=false/);
   assert.match(publisher, /size > 0/);
   assert.match(publisher, /does not contain a nonempty/);
   assert.doesNotMatch(publisher, /--prerelease|--draft|assembleDebug/);

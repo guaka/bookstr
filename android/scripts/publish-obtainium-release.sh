@@ -2,10 +2,14 @@
 set -euo pipefail
 
 : "${RUN_NUMBER:?RUN_NUMBER is required}"
+: "${RUN_ID:?RUN_ID is required}"
+: "${RELEASE_VERSION:?RELEASE_VERSION is required}"
 : "${GITHUB_SHA:?GITHUB_SHA is required}"
 : "${GITHUB_REPOSITORY:?GITHUB_REPOSITORY is required}"
 
-version="0.0.3-ci.$RUN_NUMBER"
+script_directory="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+version="$RELEASE_VERSION"
+version_code=$((1000000000 + RUN_NUMBER))
 tag="v$version"
 apk="android/bookstr-$version.apk"
 asset_name="bookstr-$version.apk"
@@ -38,9 +42,27 @@ if assets="$(release_assets 2>/dev/null)"; then
     gh release upload "$tag" "$apk"
   fi
 else
+  latest_android_run_number="$(
+    gh api --paginate "repos/$GITHUB_REPOSITORY/releases?per_page=100" \
+      --jq '[.[] | select(.draft == false and .prerelease == false) | {tagName: .tag_name, body}]' \
+      | jq -s 'add // []' \
+      | node --input-type=module -e '
+        import { readFileSync } from "node:fs";
+        const { latestPublishedAndroidRunNumber } = await import(process.argv[1]);
+        process.stdout.write(String(latestPublishedAndroidRunNumber(JSON.parse(readFileSync(0, "utf8")))));
+      ' "$script_directory/android-release-version.mjs"
+  )"
+  if (( RUN_NUMBER > latest_android_run_number )); then
+    latest_option=--latest
+  else
+    latest_option=--latest=false
+  fi
   gh release create "$tag" "$apk" \
-    --target "$GITHUB_SHA" --title "Bookstr Android $version" --latest \
-    --notes "Automatic Android build from $GITHUB_SHA. Add https://github.com/$GITHUB_REPOSITORY to Obtainium to receive updates."
+    --target "$GITHUB_SHA" --title "Bookstr Android $version" "$latest_option" \
+    --notes "Automatic Android build from $GITHUB_SHA. Add https://github.com/$GITHUB_REPOSITORY to Obtainium to receive updates.
+Bookstr Android workflow run ID: $RUN_ID
+Bookstr Android run number: $RUN_NUMBER
+Bookstr Android version code: $version_code"
 fi
 
 if ! assets="$(release_assets)"; then

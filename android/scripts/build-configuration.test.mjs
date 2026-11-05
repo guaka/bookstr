@@ -11,6 +11,7 @@ const cases = [
   { name: 'release and local builds retain every supported ABI without a compiler launcher', properties: [], abis: ['arm64-v8a', 'armeabi-v7a', 'x86_64'], cmake: [] },
   { name: 'CI builds only the emulator ABI and enables the requested compiler cache', properties: ['-Pbookstr.abis=x86_64', '-Pbookstr.cxxCompilerLauncher=ccache'], abis: ['x86_64'], cmake: ['-DCMAKE_CXX_COMPILER_LAUNCHER=ccache'] },
   { name: 'local ARM emulator builds can select one ABI without installing ccache', properties: ['-Pbookstr.abis=arm64-v8a'], abis: ['arm64-v8a'], cmake: [] },
+  { name: 'release version properties override the UTC default without changing versionCode', properties: ['-Pbookstr.versionCode=1000000042', '-Pbookstr.versionName=0.1-20261105-1932'], abis: ['arm64-v8a', 'armeabi-v7a', 'x86_64'], cmake: [], versionCode: 1000000042, versionName: '0.1-20261105-1932' },
 ];
 
 for (const configuration of cases) {
@@ -24,7 +25,9 @@ for (const configuration of cases) {
       def config = project.extensions.getByName('android').defaultConfig
       println('BOOKSTR_BUILD_CONFIGURATION=' + groovy.json.JsonOutput.toJson([
         abis: config.ndk.abiFilters.sort(),
-        cmake: config.externalNativeBuild.cmake.arguments
+        cmake: config.externalNativeBuild.cmake.arguments,
+        versionCode: config.versionCode,
+        versionName: config.versionName
       ]))
     }
   }
@@ -38,9 +41,14 @@ for (const configuration of cases) {
       assert.equal(result.status, 0, `${result.error || ''}\n${result.stdout}\n${result.stderr}`);
       const line = result.stdout.split('\n').find(value => value.startsWith('BOOKSTR_BUILD_CONFIGURATION='));
       assert.ok(line, 'Gradle reported the actual Android build configuration');
-      assert.deepEqual(JSON.parse(line.slice('BOOKSTR_BUILD_CONFIGURATION='.length)), {
+      const actual = JSON.parse(line.slice('BOOKSTR_BUILD_CONFIGURATION='.length));
+      assert.deepEqual({ abis: actual.abis, cmake: actual.cmake }, {
         abis: configuration.abis, cmake: configuration.cmake,
       });
+      if (configuration.versionCode !== undefined) assert.equal(actual.versionCode, configuration.versionCode);
+      else assert.ok(Number.isSafeInteger(actual.versionCode) && actual.versionCode > 0);
+      if (configuration.versionName) assert.equal(actual.versionName, configuration.versionName);
+      else assert.match(actual.versionName, /^0\.1-\d{8}-\d{4}$/);
     } finally {
       rmSync(directory, { recursive: true, force: true });
     }

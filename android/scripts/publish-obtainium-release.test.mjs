@@ -7,14 +7,14 @@ import test from 'node:test';
 
 const helper = new URL('./publish-obtainium-release.sh', import.meta.url);
 
-async function runPublisher({ exists = '0', size = 'missing', uploadFail = '0', uploadEmpty = '0', createEmpty = '0', createMissing = '0', createFail = '0', verifyFail = '0', removeApk = false, emptyApk = false, missingEnv = '' } = {}) {
+async function runPublisher({ exists = '0', size = 'missing', uploadFail = '0', uploadEmpty = '0', createEmpty = '0', createMissing = '0', createFail = '0', verifyFail = '0', removeApk = false, emptyApk = false, missingEnv = '', releaseVersion = '0.1-20261105-1932', runNumber = '42', releases = '[]' } = {}) {
   const directory = await mkdtemp(path.join(os.tmpdir(), 'bookstr-release-'));
   const apkDirectory = path.join(directory, 'android');
   const binDirectory = path.join(directory, 'bin');
   const stateFile = path.join(directory, 'release-state');
   const viewCountFile = path.join(directory, 'view-count');
   const logFile = path.join(directory, 'gh.log');
-  const apkPath = path.join(apkDirectory, 'bookstr-0.0.3-ci.42.apk');
+  const apkPath = path.join(apkDirectory, `bookstr-${releaseVersion}.apk`);
   const ghPath = path.join(binDirectory, 'gh');
 
   await Promise.all([mkdir(apkDirectory), mkdir(binDirectory)]);
@@ -24,7 +24,9 @@ async function runPublisher({ exists = '0', size = 'missing', uploadFail = '0', 
   await writeFile(ghPath, `#!/usr/bin/env bash
 set -euo pipefail
 printf '%s\\n' "$*" >> "$GH_LOG"
-if [[ "$1 $2" == "release view" ]]; then
+if [[ "$1" == "api" ]]; then
+  printf '%s\\n' "$GH_RELEASES"
+elif [[ "$1 $2" == "release view" ]]; then
   view_count=$(($(cat "$GH_VIEW_COUNT") + 1))
   printf '%s\\n' "$view_count" > "$GH_VIEW_COUNT"
   [[ "$VERIFY_FAIL" == 0 || "$view_count" == 1 ]] || exit 1
@@ -68,9 +70,12 @@ fi
     GH_STATE: stateFile,
     GH_VIEW_COUNT: viewCountFile,
     EXPECTED_ASSET: path.basename(apkPath),
-    RUN_NUMBER: '42',
+    RELEASE_VERSION: releaseVersion,
+    RUN_NUMBER: runNumber,
+    RUN_ID: '90042',
     GITHUB_SHA: 'abc123',
     GITHUB_REPOSITORY: 'guaka/bookstr',
+    GH_RELEASES: releases,
     UPLOAD_FAIL: uploadFail,
     UPLOAD_EMPTY: uploadEmpty,
     CREATE_EMPTY: createEmpty,
@@ -93,10 +98,21 @@ fi
 test('creates a release with its signed APK and verifies the asset', async () => {
   const result = await runPublisher();
   assert.equal(result.status, 0, result.stderr);
-  assert.match(result.log, /^release create v0\.0\.3-ci\.42 android\/bookstr-0\.0\.3-ci\.42\.apk/m);
+  assert.match(result.log, /^release create v0\.1-20261105-1932 android\/bookstr-0\.1-20261105-1932\.apk/m);
   assert.match(result.log, /--latest/);
-  assert.match(result.stdout, /Verified bookstr-0\.0\.3-ci\.42\.apk on release v0\.0\.3-ci\.42/);
+  assert.match(result.log, /Bookstr Android workflow run ID: 90042/);
+  assert.match(result.log, /Bookstr Android version code: 1000000042/);
+  assert.match(result.stdout, /Verified bookstr-0\.1-20261105-1932\.apk on release v0\.1-20261105-1932/);
   assert.match(result.state, /^1 16$/m);
+});
+
+test('older retries create their release without marking it latest', async () => {
+  const result = await runPublisher({ releases: JSON.stringify([
+    { tagName: 'v0.1-20261105-1940', body: 'Bookstr Android run number: 43', draft: false, prerelease: false },
+  ]) });
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.log, /--latest=false/);
+  assert.doesNotMatch(result.log, /--latest(?: |\\n|$)/);
 });
 
 test('preserves an existing nonempty APK without creating or replacing assets', async () => {
@@ -109,15 +125,15 @@ test('preserves an existing nonempty APK without creating or replacing assets', 
 test('uploads the expected APK to an existing release when it is missing', async () => {
   const result = await runPublisher({ exists: '1' });
   assert.equal(result.status, 0, result.stderr);
-  assert.match(result.log, /^release upload v0\.0\.3-ci\.42 android\/bookstr-0\.0\.3-ci\.42\.apk$/m);
-  assert.match(result.stdout, /Verified bookstr-0\.0\.3-ci\.42\.apk/);
+  assert.match(result.log, /^release upload v0\.1-20261105-1932 android\/bookstr-0\.1-20261105-1932\.apk$/m);
+  assert.match(result.stdout, /Verified bookstr-0\.1-20261105-1932\.apk/);
   assert.match(result.state, /^1 16$/m);
 });
 
 test('replaces an empty expected asset and verifies the replacement', async () => {
   const result = await runPublisher({ exists: '1', size: '0' });
   assert.equal(result.status, 0, result.stderr);
-  assert.match(result.log, /^release upload v0\.0\.3-ci\.42 android\/bookstr-0\.0\.3-ci\.42\.apk --clobber$/m);
+  assert.match(result.log, /^release upload v0\.1-20261105-1932 android\/bookstr-0\.1-20261105-1932\.apk --clobber$/m);
   assert.match(result.state, /^1 16$/m);
 });
 
@@ -147,7 +163,7 @@ test('fails if the release exists after creation but has no expected APK', async
 });
 
 test('requires the version and release identity environment', async () => {
-  for (const variable of ['RUN_NUMBER', 'GITHUB_SHA', 'GITHUB_REPOSITORY']) {
+  for (const variable of ['RUN_NUMBER', 'RUN_ID', 'RELEASE_VERSION', 'GITHUB_SHA', 'GITHUB_REPOSITORY']) {
     const result = await runPublisher({ missingEnv: variable });
     assert.notEqual(result.status, 0);
     assert.match(result.stderr, new RegExp(`${variable} is required`));

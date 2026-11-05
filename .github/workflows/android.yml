@@ -83,6 +83,8 @@ jobs:
         run: node --test --experimental-test-coverage --test-coverage-lines=100 --test-coverage-branches=100 --test-coverage-functions=100 android/scripts/instrumentation-results.test.mjs
       - name: Test Android release publisher
         run: node --test android/scripts/publish-obtainium-release.test.mjs
+      - name: Test Android release version resolver
+        run: node --test --experimental-test-coverage --test-coverage-lines=100 --test-coverage-branches=100 --test-coverage-functions=100 android/scripts/android-release-version.test.mjs
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -295,6 +297,7 @@ jobs:
     timeout-minutes: 45
     permissions:
       contents: write
+      actions: read
     env:
       BOOKSTR_KEYSTORE_FILE: ${{ github.workspace }}/bookstr-release.jks
       BOOKSTR_KEYSTORE_PASSWORD: ${{ secrets.BOOKSTR_KEYSTORE_PASSWORD }}
@@ -337,11 +340,37 @@ jobs:
             ${{ runner.os }}-android-ccache-release-universal-v1-${{ hashFiles('android/gradle/wrapper/gradle-wrapper.properties', 'android/app/build.gradle.kts', 'android/app/src/main/cpp/CMakeLists.txt') }}-
       - name: Reset native cache statistics
         run: ccache --zero-stats
+      - name: Resolve release version
+        id: release_version
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_NUMBER: ${{ github.run_number }}
+          RUN_ID: ${{ github.run_id }}
+        run: |
+          # The workflow run's creation time is stable if GitHub reruns an attempt.
+          export RUN_STARTED_AT="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID" --jq .created_at)"
+          gh api --paginate "repos/$GITHUB_REPOSITORY/releases?per_page=100" \
+            --jq '[.[] | select(.draft == false and .prerelease == false) | {tag_name, body}]' \
+            | jq -s 'add // []' > "$RUNNER_TEMP/android-releases.json"
+          version="$(node --input-type=module -e '
+            import { readFileSync } from "node:fs";
+            import { resolveAndroidReleaseVersion } from "./android/scripts/android-release-version.mjs";
+            const releases = JSON.parse(readFileSync(0, "utf8"));
+            process.stdout.write(resolveAndroidReleaseVersion({
+              runStartedAt: process.env.RUN_STARTED_AT,
+              runNumber: process.env.RUN_NUMBER,
+              runId: process.env.RUN_ID,
+              releases,
+            }));
+          ' < "$RUNNER_TEMP/android-releases.json")"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
       - name: Build signed release APK
         env:
           RUN_NUMBER: ${{ github.run_number }}
+          RELEASE_VERSION: ${{ steps.release_version.outputs.version }}
         run: |
-          version="0.0.3-ci.$RUN_NUMBER"
+          : "${RELEASE_VERSION:?Release version resolution failed}"
+          version="$RELEASE_VERSION"
           code=$((1000000000 + RUN_NUMBER))
           cd android
           ./gradlew --no-daemon --no-configuration-cache --max-workers=2 assembleRelease -Pbookstr.cxxCompilerLauncher=ccache "-Pbookstr.versionCode=$code" "-Pbookstr.versionName=$version"
@@ -356,6 +385,8 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           RUN_NUMBER: ${{ github.run_number }}
+          RUN_ID: ${{ github.run_id }}
+          RELEASE_VERSION: ${{ steps.release_version.outputs.version }}
         run: bash android/scripts/publish-obtainium-release.sh
       - name: Remove release signing key
         if: always()
