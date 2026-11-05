@@ -27,7 +27,7 @@ class NeuralNarrationServiceTest {
         val receiver = object : BroadcastReceiver() {
             override fun onReceive(context: Context, intent: Intent) {
                 if (!intent.getBooleanExtra(NarrationService.EXTRA_SESSION_ACTIVE, true) &&
-                    intent.getFloatExtra(NarrationService.EXTRA_RATE, 0f) == 0.82f
+                    intent.getFloatExtra(NarrationService.EXTRA_RATE, 0f) == SpeechSettings.MAXIMUM_RATE
                 ) idle.countDown()
                 if (intent.getStringExtra(NarrationService.EXTRA_BOOK_ID) == "stop-start-race" &&
                     intent.getBooleanExtra(NarrationService.EXTRA_SESSION_ACTIVE, false)
