@@ -34,7 +34,8 @@ for (const configuration of cases) {
 }
 `);
       const result = spawnSync(process.platform === 'win32' ? 'gradlew.bat' : './gradlew', [
-        '--no-daemon', '--no-configuration-cache', '--max-workers=2',
+        process.env.GITHUB_ACTIONS === 'true' ? '--daemon' : '--no-daemon',
+        '--no-configuration-cache', '--max-workers=2',
         '-Dorg.gradle.jvmargs=-Xmx1536m -Dfile.encoding=UTF-8',
         '--init-script', init, 'help', ...configuration.properties,
       ], { cwd: androidDirectory, encoding: 'utf8', timeout: 300_000, maxBuffer: 4 * 1024 * 1024 });
