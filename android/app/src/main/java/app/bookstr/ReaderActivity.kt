@@ -1349,7 +1349,7 @@ private fun ReaderWebView(
                         )
                         view.evaluateJavascript(
                             "setReaderTheme($themeJs); " +
-                                "setReaderTypography($fontJs, $alignmentJs); " +
+                                "setReaderTypography($fontJs, $alignmentJs, 0); " +
                                 "setKnownWords($knownWordsJs); " +
                                 "loadBookUrl($bookUrlJs, $cfiJs, $themeJs, $highlightCfiJs, $bookIdJs);",
                             null,
