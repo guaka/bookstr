@@ -23,6 +23,7 @@ for (const configuration of cases) {
     if (project.plugins.hasPlugin('com.android.application')) {
       def config = project.extensions.getByName('android').defaultConfig
       println('BOOKSTR_BUILD_CONFIGURATION=' + groovy.json.JsonOutput.toJson([
+        compressNativeLibraries: project.android.packaging.jniLibs.useLegacyPackaging,
         abis: config.ndk.abiFilters.sort(),
         cmake: config.externalNativeBuild.cmake.arguments
       ]))
@@ -40,6 +41,7 @@ for (const configuration of cases) {
       const line = result.stdout.split('\n').find(value => value.startsWith('BOOKSTR_BUILD_CONFIGURATION='));
       assert.ok(line, 'Gradle reported the actual Android build configuration');
       assert.deepEqual(JSON.parse(line.slice('BOOKSTR_BUILD_CONFIGURATION='.length)), {
+        compressNativeLibraries: true,
         abis: configuration.abis, cmake: configuration.cmake,
       });
     } finally {
