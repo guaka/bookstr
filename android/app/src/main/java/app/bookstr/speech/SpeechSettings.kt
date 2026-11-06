@@ -15,6 +15,12 @@ class SpeechSettings(private val preferences: SharedPreferences) {
         preferences.edit().putString("speech_voice_${SpeechLanguages.tag(language)}", voice).apply()
     }
 
+    fun bookLanguage(bookId: String): String? = preferences.getString("speech_book_language_$bookId", null)
+    fun setBookLanguage(bookId: String, language: String?) {
+        preferences.edit().putString("speech_book_language_$bookId", language?.takeIf(String::isNotBlank)?.let(SpeechLanguages::tag)).apply()
+    }
+    fun resolvedLanguage(bookId: String, automatic: String): String = bookLanguage(bookId) ?: automatic.ifBlank { "en" }
+
     private fun rateKey(language: String) = "speech_rate_${SpeechLanguages.tag(language)}"
 
     companion object {
