@@ -1,11 +1,18 @@
-'use strict';
-
-const assert = require('node:assert/strict');
-const test = require('node:test');
-const { GifWriter } = require('omggif');
-const bmp = require('bmp-js');
-const { PNG } = require('pngjs');
-const { legacyImagePng } = require('../../comic-image');
+const assert: typeof import('node:assert/strict') = require('node:assert/strict');
+const test = require('node:test') as typeof import('node:test');
+const { GifWriter } = require('omggif') as {
+  GifWriter: new (buffer: Buffer, width: number, height: number, options: { palette: number[] }) => {
+    addFrame(x: number, y: number, width: number, height: number, indexedPixels: number[]): void;
+    end(): number;
+  };
+};
+const bmp = require('bmp-js') as {
+  encode(image: { data: Buffer; width: number; height: number }): { data: Buffer };
+};
+const { PNG } = require('pngjs') as {
+  PNG: { sync: { read(buffer: Buffer): { width: number; height: number } } };
+};
+const { legacyImagePng } = require('../../comic-image') as typeof import('../../src/comic-image');
 
 function tinyGif() {
   const buffer = Buffer.alloc(256);

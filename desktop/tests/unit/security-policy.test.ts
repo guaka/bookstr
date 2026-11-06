@@ -1,7 +1,7 @@
-const test = require('node:test');
-const assert = require('node:assert/strict');
+const test = require('node:test') as typeof import('node:test');
+const assert: typeof import('node:assert/strict') = require('node:assert/strict');
 
-const { appContentSecurityPolicy } = require('../../security-policy');
+const { appContentSecurityPolicy } = require('../../security-policy') as typeof import('../../src/security-policy');
 
 test('desktop CSP permits secure Nostr relay WebSockets', () => {
   const policy = appContentSecurityPolicy();
