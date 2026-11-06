@@ -1,11 +1,23 @@
-const path = require('node:path');
-const http = require('node:http');
-const fs = require('node:fs');
-const { _electron: electron } = require('@playwright/test');
-const { test, expect } = require('@playwright/test');
-const { getPublicKey, verifyEvent } = require('nostr-tools/pure');
+import * as path from 'node:path';
+import * as http from 'node:http';
+import * as fs from 'node:fs';
+import type { ElectronApplication } from '@playwright/test';
+import { _electron as electron, expect, test } from '@playwright/test';
+const { getPublicKey, verifyEvent } = require('nostr-tools/pure') as typeof import('nostr-tools/pure', { with: { 'resolution-mode': 'import' } });
 
-const initSqlJs = require('../../../web/vendor/sql-wasm.js');
+import initSqlJs from '../../../web/vendor/sql-wasm.js';
+import type { PublicSpeechModel } from '../../src/speech-model-store';
+
+type SignedEvent = Parameters<typeof verifyEvent>[0];
+declare global {
+  var readableDownloadFixture: Record<string, unknown>[];
+  var state: { favorites: Record<string, unknown>[]; reading: Record<string, unknown>[] };
+  function refreshSpeechVoiceMenus(): void;
+  function refreshSpeechModels(models?: PublicSpeechModel[]): Promise<void>;
+  function refreshDesktopDownloadStates(): Promise<void>;
+  function renderHome(): void;
+  interface Window { nostr?: unknown }
+}
 
 async function dictionaryFixture() {
   const SQL = await initSqlJs({
@@ -19,7 +31,7 @@ async function dictionaryFixture() {
   return bytes;
 }
 
-async function dictionaryServer(bytes) {
+async function dictionaryServer(bytes: Buffer) {
   const server = http.createServer((request, response) => {
     if (request.url !== '/pt-en.sqlite3') {
       response.writeHead(404).end('Not found');
@@ -31,15 +43,15 @@ async function dictionaryServer(bytes) {
     });
     response.end(bytes);
   });
-  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
-  const address = server.address();
+  await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
+  const address = server.address() as import('node:net').AddressInfo;
   return {
     baseUrl: `http://127.0.0.1:${address.port}`,
-    close: () => new Promise((resolve, reject) => server.close(error => error ? reject(error) : resolve())),
+    close: () => new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve())),
   };
 }
 
-function shortcut(number) {
+function shortcut(number: number) {
   return `${process.platform === 'darwin' ? 'Meta' : 'Control'}+${number}`;
 }
 
@@ -50,7 +62,7 @@ function electronArgs() {
   return [path.join(__dirname, '../..'), `--user-data-dir=${userData}`];
 }
 
-async function setReadableDownloadFixture(electronApp, downloads) {
+async function setReadableDownloadFixture(electronApp: ElectronApplication, downloads: Record<string, unknown>[]) {
   await electronApp.evaluate(({ ipcMain }, rows) => {
     globalThis.readableDownloadFixture = rows;
     ipcMain.removeHandler('bookstr-desktop-library-downloads');
@@ -97,7 +109,7 @@ test('libstr desktop app opens with preload bridge', async () => {
     expect(bridge.hasSpeechModels).toBe(true);
     expect(bridge.hasBrowserNip07).toBe(false);
     expect(await firstWindow.locator('a.app-header-left').count()).toBe(0);
-    await expect.poll(() => firstWindow.locator('.brand-mark').evaluate(image => image.complete && image.naturalWidth > 0)).toBe(true);
+    await expect.poll(() => firstWindow.locator('.brand-mark').evaluate(image => (image as HTMLImageElement).complete && (image as HTMLImageElement).naturalWidth > 0)).toBe(true);
     await expect(firstWindow.locator('.brand-mark')).toHaveAttribute('src', 'public/apple-touch-icon.png');
 
     const paneIconOrder = await firstWindow.locator('.app-header-right .header-tab').evaluateAll(buttons => (
@@ -111,11 +123,11 @@ test('libstr desktop app opens with preload bridge', async () => {
     ]);
 
     const toolbarGeometry = await firstWindow.evaluate(() => {
-      const header = document.querySelector('.app-header');
-      const navigation = document.querySelector('.app-header-right');
-      const button = document.querySelector('.app-header-right .header-tab');
-      const icon = button.querySelector('svg:not(.hidden)');
-      const brand = document.querySelector('.brand-mark');
+      const header = document.querySelector<HTMLElement>('.app-header')!;
+      const navigation = document.querySelector<HTMLElement>('.app-header-right')!;
+      const button = document.querySelector<HTMLElement>('.app-header-right .header-tab')!;
+      const icon = button.querySelector<SVGElement>('svg:not(.hidden)')!;
+      const brand = document.querySelector<HTMLElement>('.brand-mark')!;
       const headerRect = header.getBoundingClientRect();
       const navigationRect = navigation.getBoundingClientRect();
       return {
@@ -181,7 +193,7 @@ test('libstr desktop app opens with preload bridge', async () => {
     await expect(firstWindow.locator('#reader-padding')).toBeVisible();
     const languageNames = await firstWindow.evaluate(() => {
       const names = new Intl.DisplayNames([navigator.language || 'en'], { type: 'language' });
-      return { en: names.of('en'), pt: names.of('pt'), es: names.of('es') };
+      return { en: names.of('en')!, pt: names.of('pt')!, es: names.of('es')! };
     });
     await expect(firstWindow.locator('#speech-language option[value="en"]')).toHaveText(languageNames.en);
     await expect(firstWindow.locator('#speech-language option[value="pt"]')).toHaveText(languageNames.pt);
@@ -217,15 +229,15 @@ test('libstr desktop app opens with preload bridge', async () => {
     await firstWindow.locator('#reader-font').selectOption('arial');
     await firstWindow.locator('#reader-alignment').selectOption('justified');
     await firstWindow.locator('#reader-font-size').evaluate(input => {
-      input.value = '125';
+      (input as HTMLInputElement).value = '125';
       input.dispatchEvent(new Event('input', { bubbles: true }));
     });
     await firstWindow.locator('#reader-padding').evaluate(input => {
-      input.value = '40';
+      (input as HTMLInputElement).value = '40';
       input.dispatchEvent(new Event('input', { bubbles: true }));
     });
     await firstWindow.locator('#speech-rate').evaluate(input => {
-      input.value = '1.10';
+      (input as HTMLInputElement).value = '1.10';
       input.dispatchEvent(new Event('input', { bubbles: true }));
     });
     await expect(firstWindow.locator('#reader-font-size-value')).toHaveText('125%');
@@ -238,7 +250,7 @@ test('libstr desktop app opens with preload bridge', async () => {
     await firstWindow.locator('#torrent-auto-download').uncheck();
     await firstWindow.locator('#torrent-auto-seed').uncheck();
     // null reads preferences; the default {} would write a stale snapshot while polling.
-    await expect.poll(() => firstWindow.evaluate(() => window.bookstrDesktop.transfers.setPreferences(null))).toEqual({
+    await expect.poll(() => firstWindow.evaluate(() => window.bookstrDesktop!.transfers.setPreferences(null))).toEqual({
       autoDownload: false,
       autoSeed: false,
       downloadLimit: 10000000,
@@ -246,7 +258,7 @@ test('libstr desktop app opens with preload bridge', async () => {
     });
     await firstWindow.locator('#torrent-auto-download').check();
     await firstWindow.locator('#torrent-auto-seed').check();
-    await expect.poll(() => firstWindow.evaluate(() => window.bookstrDesktop.transfers.setPreferences(null))).toEqual({
+    await expect.poll(() => firstWindow.evaluate(() => window.bookstrDesktop!.transfers.setPreferences(null))).toEqual({
       autoDownload: true,
       autoSeed: true,
       downloadLimit: 10000000,
@@ -254,11 +266,11 @@ test('libstr desktop app opens with preload bridge', async () => {
     });
     await firstWindow.locator('#torrent-download-limit').selectOption('5000000');
     await firstWindow.locator('#torrent-upload-limit').selectOption('500000');
-    await expect.poll(() => firstWindow.evaluate(() => window.bookstrDesktop.transfers.setPreferences(null))).toMatchObject({
+    await expect.poll(() => firstWindow.evaluate(() => window.bookstrDesktop!.transfers.setPreferences(null))).toMatchObject({
       downloadLimit: 5000000,
       uploadLimit: 500000,
     });
-    expect(await firstWindow.evaluate(() => JSON.parse(localStorage.getItem('bookstr_reader_settings_v1')))).toMatchObject({
+    expect(await firstWindow.evaluate(() => JSON.parse(localStorage.getItem('bookstr_reader_settings_v1')!))).toMatchObject({
       autoDownloadTorrents: true,
       autoSeedTorrents: true,
       torrentDownloadLimit: 5000000,
@@ -319,13 +331,13 @@ test('libstr desktop app opens with preload bridge', async () => {
     await expect(firstWindow.getByRole('button', { name: 'Connect with QR code' })).toBeHidden();
 
     const localSigner = await firstWindow.evaluate(async () => ({
-      pubkey: await window.bookstrDesktop.signer.getPublicKey(),
-      signed: await window.bookstrDesktop.signer.signEvent({
+      pubkey: await window.bookstrDesktop!.signer.getPublicKey(),
+      signed: await window.bookstrDesktop!.signer.signEvent({
         kind: 30078,
         created_at: 1_700_000_000,
         tags: [['d', 'local-nsec-test']],
         content: 'signed locally',
-      }),
+      }) as SignedEvent,
     }));
     const expectedPubkey = getPublicKey(Uint8Array.from(Buffer.from('1'.repeat(64), 'hex')));
     expect(localSigner.pubkey).toBe(expectedPubkey);
@@ -364,7 +376,7 @@ test('desktop pane shortcuts work from controls and the single reader window', a
     await library.keyboard.press(shortcut(5));
     await expect(library.locator('#words-tab')).toBeVisible();
 
-    await library.evaluate(() => { void window.bookstrDesktop.openReader({
+    await library.evaluate(() => { void window.bookstrDesktop!.openReader({
       kind: 'pdf',
       base64: btoa('%PDF-1.4\n' + 'reader shortcut fixture'.repeat(8)),
       readUrl: 'https://files.test/shortcut.pdf',
@@ -420,17 +432,18 @@ test('desktop bridge round-trips normalized reading progress to the library', as
   try {
     const library = await electronApp.firstWindow();
     const progress = await library.evaluate(() => new Promise((resolve) => {
-      const unsubscribe = window.bookstrDesktop.onProgress((payload) => {
+      const unsubscribe = window.bookstrDesktop!.onProgress((payload) => {
         unsubscribe();
         resolve(payload);
       });
-      window.bookstrDesktop.reportProgress({
+      const report = {
         md5: ' AABB ',
         progression: 2,
         furthestProgression: -1,
         extension: 'PDF',
         language: 'pt-BR',
-      });
+      };
+      window.bookstrDesktop!.reportProgress(report);
     }));
     expect(progress).toMatchObject({
       md5: 'aabb',
@@ -449,7 +462,7 @@ test('embedded reader progress is persisted locally across library reloads', asy
 
   try {
     const library = await electronApp.firstWindow();
-    await library.locator('#reader-frame').evaluate(frame => { frame.src = 'reader.html?progress-test=1'; });
+    await library.locator('#reader-frame').evaluate(frame => { (frame as HTMLIFrameElement).src = 'reader.html?progress-test=1'; });
     const reader = library.frameLocator('#reader-frame');
     await expect(reader.locator('#viewer')).toBeAttached();
     await reader.locator('body').evaluate(() => {
@@ -464,7 +477,7 @@ test('embedded reader progress is persisted locally across library reloads', asy
       }, location.origin);
     });
     await expect.poll(() => library.evaluate(() => {
-      const books = JSON.parse(localStorage.getItem('bookstr_reading_library_v1') || '[]');
+      const books = JSON.parse(localStorage.getItem('bookstr_reading_library_v1') || '[]') as (Record<string, unknown> & { md5: string })[];
       return books.find(book => book.md5 === 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa') || null;
     })).toMatchObject({
       progression: 0.42,
@@ -474,7 +487,7 @@ test('embedded reader progress is persisted locally across library reloads', asy
 
     await library.reload();
     const restored = await library.evaluate(() => {
-      const books = JSON.parse(localStorage.getItem('bookstr_reading_library_v1') || '[]');
+      const books = JSON.parse(localStorage.getItem('bookstr_reading_library_v1') || '[]') as (Record<string, unknown> & { md5: string })[];
       return books.find(book => book.md5 === 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa') || null;
     });
     expect(restored).toMatchObject({ progression: 0.42, furthestProgression: 0.67 });
@@ -514,7 +527,7 @@ test('desktop downloads dictionaries through its same-origin proxy', async () =>
     await expect(library.locator('#dictionary-packs')).toContainText('Portuguese → English');
 
     const stored = await library.evaluate(async () => {
-      const database = await new Promise((resolve, reject) => {
+      const database = await new Promise<IDBDatabase>((resolve, reject) => {
         const request = indexedDB.open('bookstr_dictionaries_v1', 1);
         request.onerror = () => reject(request.error);
         request.onsuccess = () => resolve(request.result);
@@ -565,8 +578,8 @@ test('desktop footer stays in the viewport bottom-right without covering content
     await expect(library.locator('body')).toHaveClass(/desktop-mode/);
     const assertFooterPosition = async () => {
       const geometry = await library.evaluate(() => {
-        const footer = document.querySelector('.footer');
-        const wrap = document.querySelector('.wrap');
+        const footer = document.querySelector<HTMLElement>('.footer')!;
+        const wrap = document.querySelector<HTMLElement>('.wrap')!;
         const rect = footer.getBoundingClientRect();
         return {
           position: getComputedStyle(footer).position,
@@ -645,7 +658,7 @@ test('desktop favorites discover independent Open Library covers without LibVaul
 
     const cover = library.locator('.result-cover').first();
     await expect(cover).toHaveAttribute('src', openLibraryCover, { timeout: 15_000 });
-    await expect.poll(() => cover.evaluate(image => image.complete && image.naturalWidth > 0)).toBe(true);
+    await expect.poll(() => cover.evaluate(image => (image as HTMLImageElement).complete && (image as HTMLImageElement).naturalWidth > 0)).toBe(true);
     expect(libVaultMetadataRequests).toBe(0);
   } finally {
     await electronApp.close();

@@ -1,10 +1,10 @@
-const test = require('node:test');
-const assert = require('node:assert/strict');
+const test = require('node:test') as typeof import('node:test');
+const assert: typeof import('node:assert/strict') = require('node:assert/strict');
 
 const {
   dictionaryPairFromPath,
   proxyDictionaryRequest,
-} = require('../../dictionary-proxy');
+} = require('../../dictionary-proxy') as typeof import('../../src/dictionary-proxy');
 
 test('dictionary paths only accept distinct supported language pairs', () => {
   assert.equal(dictionaryPairFromPath('/api/dictionaries/pt-en.sqlite3'), 'pt-en');
@@ -28,7 +28,7 @@ test('dictionary proxy rejects unsupported methods and invalid pairs', async () 
   const methodResponse = await proxyDictionaryRequest(
     new Request('app://bookstr/api/dictionaries/pt-en.sqlite3', { method: 'POST' }),
     fetchImpl,
-  );
+  ) as Response;
   assert.equal(methodResponse.status, 405);
   assert.equal(methodResponse.headers.get('allow'), 'GET, HEAD');
   assert.equal(await methodResponse.text(), 'Method not allowed');
@@ -36,13 +36,13 @@ test('dictionary proxy rejects unsupported methods and invalid pairs', async () 
   const pairResponse = await proxyDictionaryRequest(
     new Request('app://bookstr/api/dictionaries/en-en.sqlite3'),
     fetchImpl,
-  );
+  ) as Response;
   assert.equal(pairResponse.status, 400);
   assert.equal(await pairResponse.text(), 'Invalid dictionary pair');
 });
 
 test('dictionary proxy forwards successful and upstream error responses', async () => {
-  const calls = [];
+  const calls: Array<{ url: string; options: { method: string } }> = [];
   const success = await proxyDictionaryRequest(
     new Request('app://bookstr/api/dictionaries/pt-en.sqlite3'),
     async (url, options) => {
@@ -56,7 +56,7 @@ test('dictionary proxy forwards successful and upstream error responses', async 
       });
     },
     'https://dictionary.test/files',
-  );
+  ) as Response;
   assert.deepEqual(calls, [{
     url: 'https://dictionary.test/files/pt-en.sqlite3',
     options: { method: 'GET' },
@@ -70,7 +70,7 @@ test('dictionary proxy forwards successful and upstream error responses', async 
   const missing = await proxyDictionaryRequest(
     new Request('app://bookstr/api/dictionaries/pt-en.sqlite3'),
     async () => new Response('Not found', { status: 404 }),
-  );
+  ) as Response;
   assert.equal(missing.status, 404);
   assert.equal(missing.headers.get('content-type'), 'text/plain;charset=UTF-8');
   assert.equal(await missing.text(), 'Not found');
@@ -83,14 +83,14 @@ test('dictionary proxy supports HEAD and converts network errors to 502', async 
       assert.equal(options.method, 'HEAD');
       return new Response(null, { status: 200 });
     },
-  );
+  ) as Response;
   assert.equal(head.status, 200);
   assert.equal(await head.text(), '');
 
   const unavailable = await proxyDictionaryRequest(
     new Request('app://bookstr/api/dictionaries/pt-en.sqlite3'),
     async () => { throw new Error('offline'); },
-  );
+  ) as Response;
   assert.equal(unavailable.status, 502);
   assert.equal(unavailable.headers.get('content-type'), 'text/plain; charset=UTF-8');
   assert.equal(await unavailable.text(), 'Dictionary download unavailable');
