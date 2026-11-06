@@ -100,7 +100,18 @@
         "to": "web",
         "filter": [
           "**/*",
-          "!tests/**/*"
+          "!tests/**/*",
+          "!node_modules/**/*",
+          "!src/**/*",
+          "!templates/**/*",
+          "!scripts/**/*",
+          "!types/**/*",
+          "!site-dist/**/*",
+          "!coverage/**/*",
+          "!package.json",
+          "!pnpm-lock.yaml",
+          "!tsconfig*.json",
+          "!build-manifest.json"
         ]
       },
       {

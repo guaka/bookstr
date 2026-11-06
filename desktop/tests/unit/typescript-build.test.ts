@@ -74,6 +74,14 @@ test('TypeScript uses strict checks and emits beside existing Electron modules',
     assert.ok(fs.existsSync(path.join(root, 'src', `${name}.ts`)));
   }
   assert.ok(bundled.includes('*.js.map'));
+  const webFiles = manifest.build.files.find((entry): entry is import('../types/package-manifest').BundledDirectory => typeof entry !== 'string' && entry.to === 'web')!.filter;
+  assert.ok(webFiles.includes('**/*'));
+  for (const directory of ['tests', 'node_modules', 'src', 'templates', 'scripts', 'types', 'site-dist', 'coverage']) {
+    assert.ok(webFiles.includes(`!${directory}/**/*`), directory);
+  }
+  for (const file of ['package.json', 'pnpm-lock.yaml', 'tsconfig*.json', 'build-manifest.json']) {
+    assert.ok(webFiles.includes(`!${file}`), file);
+  }
 });
 
 test('all packaged Electron modules and build helpers have TypeScript sources', () => {
