@@ -16,16 +16,10 @@ import org.junit.runner.RunWith
 class AcquisitionScreenTest {
     @get:Rule val compose = createComposeRule()
     private val hash = "a".repeat(32)
-    @OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
     private fun touchContent(content: @androidx.compose.runtime.Composable () -> Unit) {
-        compose.setContent {
-            val inputMode = androidx.compose.ui.platform.LocalInputModeManager.current
-            androidx.compose.runtime.LaunchedEffect(inputMode) {
-                // Remote-navigation tests can leave the process in keyboard mode.
-                inputMode.requestInputMode(androidx.compose.ui.input.InputMode.Touch)
-            }
-            content()
-        }
+        // Compose can request keyboard mode, but Android owns returning to touch mode.
+        androidx.test.platform.app.InstrumentationRegistry.getInstrumentation().setInTouchMode(true)
+        compose.setContent(content)
     }
     @Test fun privateSearchSupportsPaginationEditionSelectionAndDownloadNavigation() {
         var searched = false; var more = false; var downloads = false; var opened = false
@@ -115,17 +109,18 @@ class AcquisitionScreenTest {
         val metadataTop = compose.onNodeWithTag("search.metadata-only.heading").fetchSemanticsNode().boundsInRoot.top
         assertTrue(readableTop < metadataTop)
         compose.onNodeWithTag("search.open.$hash").assertTextContains("English", substring = true)
-        compose.onNodeWithTag("search.query").performClick().assertIsFocused()
-        compose.onNodeWithTag("search.language").performClick()
-        compose.onNodeWithTag("search.language.en").performClick()
+        // Exercise real touch input after D-pad tests have selected keyboard mode.
+        compose.onNodeWithTag("search.query").performTouchInput { click() }.assertIsFocused()
+        compose.onNodeWithTag("search.language").performTouchInput { click() }
+        compose.onNodeWithTag("search.language.en").performTouchInput { click() }
         compose.onNodeWithTag("search.query").assertIsNotFocused()
-        compose.onNodeWithTag("search.query").performClick().assertIsFocused()
-        compose.onNodeWithTag("search.format").performClick()
-        compose.onNodeWithTag("search.format.epub").performClick()
+        compose.onNodeWithTag("search.query").performTouchInput { click() }.assertIsFocused()
+        compose.onNodeWithTag("search.format").performTouchInput { click() }
+        compose.onNodeWithTag("search.format.epub").performTouchInput { click() }
         compose.onNodeWithTag("search.query").assertIsNotFocused()
-        compose.onNodeWithTag("search.query").performClick().performTextInput(" extra")
+        compose.onNodeWithTag("search.query").performTouchInput { click() }.performTextInput(" extra")
         compose.onNodeWithTag("search.query").assertIsFocused()
-        compose.onNodeWithTag("search.submit").performClick()
+        compose.onNodeWithTag("search.submit").performTouchInput { click() }
         compose.onNodeWithTag("search.query").assertIsNotFocused()
     }
     @Test fun unavailableZlibMetadataIsCountedWithoutShowingItsRow() {
