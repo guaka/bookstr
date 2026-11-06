@@ -67,7 +67,7 @@ test('generated-file checking reports drift without modifying served files', t =
 
 test('site output contains static assets and reports while excluding development dependencies', t => {
   const temporary = directory(t);
-  for (const name of ['index.html', 'vendor/reader.wasm', 'docs/README.md', 'tests/index.html', 'tests/source.test.mjs', 'src/app.ts', 'templates/index.html', 'scripts/build.cts', 'types/window.d.ts', 'node_modules/tool/index.js', 'package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml', 'build-manifest.json', 'playwright.config.mjs', 'webtorrent-dev-bridge.mjs', 'tsconfig.json', 'tsconfig.tools.json', '.hidden']) {
+  for (const name of ['index.html', 'vendor/reader.wasm', 'docs/README.md', 'tests/index.html', 'tests/source.test.mjs', 'src/app.ts', 'templates/index.html', 'scripts/build.cts', 'types/window.d.ts', 'node_modules/tool/index.js', 'package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml', 'build-manifest.json', 'playwright.config.mts', 'webtorrent-dev-bridge.mts', 'tsconfig.json', 'tsconfig.tools.json', 'tsconfig.dev.json', '.hidden']) {
     fs.mkdirSync(path.dirname(path.join(temporary, name)), { recursive: true });
     fs.writeFileSync(path.join(temporary, name), name);
   }
@@ -89,6 +89,8 @@ test('the real compiler builds and checks isolated classic, module, and inline p
   fs.copyFileSync(path.join(root, 'scripts/typescript.cts'), path.join(temporary, 'scripts/typescript.cts'));
   fs.copyFileSync(path.join(root, 'tsconfig.tools.json'), path.join(temporary, 'tsconfig.tools.json'));
   fs.copyFileSync(path.join(root, 'tsconfig.tests.json'), path.join(temporary, 'tsconfig.tests.json'));
+  fs.writeFileSync(path.join(temporary, 'tsconfig.dev.json'), JSON.stringify({ compilerOptions: { strict: true, noEmit: true, target: 'ES2022' }, include: ['dev.ts'] }));
+  fs.writeFileSync(path.join(temporary, 'dev.ts'), 'export const developmentFixture: string = "typed";');
   fs.writeFileSync(path.join(temporary, 'tsconfig.json'), JSON.stringify({ compilerOptions: { strict: true, target: 'ES2022', module: 'ESNext', moduleDetection: 'force', rootDir: 'src', noEmitOnError: true, skipLibCheck: true }, include: ['src/*.ts'] }));
   const manifest = { classic: ['fixture'], modules: ['module'], pages: [{ source: 'page', template: 'page.html', output: 'index.html', mode: 'classic' }] };
   const writeManifest = () => fs.writeFileSync(path.join(temporary, 'build-manifest.json'), JSON.stringify(manifest));
@@ -190,7 +192,7 @@ test('CI verifies generated assets and Pages publishes the clean static output',
   }
   assert.match(ci, /pnpm --dir web run typecheck/);
   assert.match(ci, /web\/tests\/\*\.test\.mts/);
-  assert.match(ci, /playwright\/test\/cli\.js test --config web\/playwright\.config\.mjs --workers=1/);
+  assert.match(ci, /playwright\/test\/cli\.js test --config web\/playwright\.config\.mts --workers=1/);
   assert.match(pages, /pnpm --dir web run build:site/);
   assert.match(pages, /path: web\/site-dist/);
   const manifest = JSON.parse(fs.readFileSync(path.join(root, 'build-manifest.json'), 'utf8')) as { classic: string[]; modules: string[]; pages: Array<{ output: string }> };
@@ -213,5 +215,5 @@ test('migrated browser suites use strict checking and source-derived global API 
   assert.ok(tests.include.includes('tests/*.d.ts'));
   assert.equal(tools.compilerOptions.strict, true);
   assert.equal(tools.compilerOptions.noUncheckedIndexedAccess, true);
-  assert.match(fs.readFileSync(path.join(root, 'tests/browser-runtime.d.ts'), 'utf8'), /import\('\.\.\/src\/book-metadata\.js'\)\.BookMetadataApi/);
+  assert.match(fs.readFileSync(path.join(root, 'tests/book-metadata-api.mts'), 'utf8'), /import type \{ BookMetadataApi \} from '\.\.\/src\/book-metadata\.js'/);
 });

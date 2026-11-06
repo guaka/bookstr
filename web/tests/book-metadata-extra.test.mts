@@ -2,7 +2,7 @@ import { present } from './test-values.mts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import '../book-metadata.js';
+import { bookMetadata } from './book-metadata-api.mts';
 const {
   metadataObject,
   canonicalReadUrl,
@@ -25,7 +25,7 @@ const {
   readingProgressForBook,
   authorSearchName,
   sortBooks,
-} = globalThis.BookMetadata;
+} = bookMetadata;
 
 test('metadataObject parses valid JSON objects and ignores primitive JSON payloads', () => {
   assert.deepEqual(metadataObject('{"source":"openlibrary"}'), { source: 'openlibrary' });

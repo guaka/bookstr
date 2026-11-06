@@ -163,7 +163,8 @@ const __bookstrNostrSocialApi = (function (root) {
     }
     function nip05Matches(document, name, pubkey) {
         const expected = normalizedPubkey(pubkey);
-        if (!expected || !document?.names || typeof document.names !== 'object')
+        if (!expected || !document || typeof document !== 'object' || !('names' in document)
+            || !document.names || typeof document.names !== 'object')
             return false;
         const names = Object.entries(document.names);
         const match = names.find(([candidate]) => String(candidate).toLowerCase() === String(name).toLowerCase());

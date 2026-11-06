@@ -2,8 +2,8 @@ import { present } from './test-values.mts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import '../book-metadata.js';
-const { sameLibraryBook, dedupeLibraryBooks, availabilityForBook, mergeLibraryState } = globalThis.BookMetadata;
+import { bookMetadata } from './book-metadata-api.mts';
+const { sameLibraryBook, dedupeLibraryBooks, availabilityForBook, mergeLibraryState } = bookMetadata;
 
 test('sameLibraryBook preserves query distinctions when no stable IDs exist', () => {
   assert.equal(

@@ -40,6 +40,6 @@ declare module '*shared/catalog/acquisition.mjs' {
   }
   export function normalizeProviderRecord(value?: unknown): NormalizedProviderRecord;
   export function listAcquisitions(record: unknown, options?: { format?: string; preferTorrent?: boolean; includeRestricted?: boolean }): AcquisitionCandidate[];
-  export function selectAcquisition(record: unknown, options?: Record<string, unknown>): AcquisitionCandidate | null;
+  export function selectAcquisition(record: unknown, options?: { format?: string; preferTorrent?: boolean; includeRestricted?: boolean }): AcquisitionCandidate | null;
   export function providerBookFields(record: unknown): Record<string, unknown> & { id: string };
 }

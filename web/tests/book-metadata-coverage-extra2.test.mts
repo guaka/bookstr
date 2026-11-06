@@ -2,8 +2,8 @@ import { present } from './test-values.mts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import '../book-metadata.js';
-const { dedupeLibraryBooks } = globalThis.BookMetadata;
+import { bookMetadata } from './book-metadata-api.mts';
+const { dedupeLibraryBooks } = bookMetadata;
 
 test('dedupeLibraryBooks prefers real titles and preserves existing author metadata', () => {
   const md5 = 'a'.repeat(32);

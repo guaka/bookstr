@@ -2,7 +2,7 @@ import { present } from './test-values.mts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import '../book-metadata.js';
+import { bookMetadata } from './book-metadata-api.mts';
 const {
   bookIdentity,
   metadataObject,
@@ -29,7 +29,7 @@ const {
   earliestFavoriteAddedAt,
   favoriteAddedTag,
   isbnForBook,
-} = globalThis.BookMetadata;
+} = bookMetadata;
 
 test('resolveTitle reads nested source and publication titles', () => {
   assert.equal(resolveTitle({
