@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import worker, { allowedPath } from './index.ts';
 
-test('LitRes worker route uses only its configured fixed catalogue and filters lawful free FB2 records', async (t) => {
+test('LitRes worker route uses only its configured fixed catalogue and filters lawful free EPUB records', async (t) => {
   const originalFetch = globalThis.fetch;
   const calls: { url: URL; init?: RequestInit }[] = [];
   globalThis.fetch = async (input, init) => {
@@ -14,13 +14,13 @@ test('LitRes worker route uses only its configured fixed catalogue and filters l
           title: 'Public-domain title',
           rights: 'Public Domain',
           free: true,
-          files: [{ format: 'fb2.zip', url: 'https://download.litres.example/public.fb2.zip' }],
+          files: [{ format: 'epub', url: 'https://download.litres.example/public.epub' }],
         },
         {
           id: 'ambiguous',
           title: 'Not labelled public domain',
           free: true,
-          files: [{ format: 'fb2', url: 'https://download.litres.example/ambiguous.fb2' }],
+          files: [{ format: 'epub', url: 'https://download.litres.example/ambiguous.epub' }],
         },
       ],
     });
@@ -42,8 +42,8 @@ test('LitRes worker route uses only its configured fixed catalogue and filters l
       languages: [],
       rights: { status: 'public_domain', license: 'Public Domain', source: 'litres' },
       acquisitions: [{
-        format: 'fb2',
-        url: 'https://download.litres.example/public.fb2.zip',
+        format: 'epub',
+        url: 'https://download.litres.example/public.epub',
         availability: 'open',
       }],
     }],
@@ -186,7 +186,7 @@ test('LitRes HEAD searches match author terms and return headers without a body'
   globalThis.fetch = async () => Response.json({ results: [{
     id: 'author-match', title: 'Collected works', authors: ['Leo Tolstoy'],
     rights: 'Public Domain', free: true,
-    files: [{ format: 'fb2', url: 'https://download.litres.example/works.fb2' }],
+    files: [{ format: 'epub', url: 'https://download.litres.example/works.epub' }],
   }] });
   const env = { LITRES_PUBLIC_DOMAIN_CATALOG_URL: 'https://catalog.bookstr.example/items.json' };
   const url = 'https://books-api.guaka.org/api/litres/search?q=Leo%20Tolstoy';
