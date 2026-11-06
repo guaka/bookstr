@@ -638,6 +638,15 @@ final class CatalogRepository {
         fileStore.bookFileURL(bookId: book.id, format: book.format)
     }
 
+    func importLocalBook(_ source: URL) async throws -> CatalogBook {
+        let store = fileStore
+        let book = try await Task.detached(priority: .userInitiated) {
+            try LocalBookImport.copy(source, to: store)
+        }.value
+        rememberDownloaded(book)
+        return book
+    }
+
     /// Resolve catalog and LibVault identities to an existing local file before networking.
     func localPublication(for book: CatalogBook) -> (book: CatalogBook, url: URL)? {
         for id in Self.publicationIdentityCandidates(for: book) {
