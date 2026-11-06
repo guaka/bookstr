@@ -30,13 +30,17 @@ test('pairing builders produce bounded transfer messages', () => {
     version: 1, type: 'bookstr.device.announce', device_id: 'phone', expires_at: 160,
   });
   assert.equal(createManifestRequest({ requestId: 'm-1', limit: 500 }).limit, 100);
-  assert.equal(createTransferRequest({ requestId: 't-1', sha256: 'b'.repeat(64) }).private, true);
+  const transfer = createTransferRequest({ requestId: 't-1', sha256: 'b'.repeat(64) });
+  assert.ok(transfer);
+  assert.equal(transfer.private, true);
 });
 
 test('only authorized, unexpired devices may deliver control messages', () => {
   const registry = registerDevice({}, device, { now: 100 });
   const request = createManifestRequest({ requestId: 'm-2' });
-  assert.equal(acceptDeviceMessage(registry, key, request, { now: 100 }).request_id, 'm-2');
+  const accepted = acceptDeviceMessage(registry, key, request, { now: 100 });
+  assert.ok(accepted && 'request_id' in accepted);
+  assert.equal(accepted.request_id, 'm-2');
   assert.equal(acceptDeviceMessage(registry, 'c'.repeat(64), request, { now: 100 }), null);
   const expired = createDeviceAnnouncement(device, { now: 100, ttl: 30 });
   assert.equal(acceptDeviceMessage(registry, key, expired, { now: 130 }), null);
@@ -57,6 +61,7 @@ test('pairing builders generate safe request ids and current timestamps by defau
   const manifest = createManifestRequest();
   assert.match(manifest.request_id, /^manifest-[a-f0-9]{24}$/);
   const transfer = createTransferRequest({ sha256: 'd'.repeat(64), private: false });
+  assert.ok(transfer);
   assert.match(transfer.request_id, /^transfer-[a-f0-9]{24}$/);
   assert.equal(transfer.private, false);
   const announcement = createDeviceAnnouncement(device);

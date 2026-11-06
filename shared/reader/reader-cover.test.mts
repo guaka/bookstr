@@ -8,23 +8,24 @@ import { functionSource } from '../../web/tests/source-tools.mts';
 const path = fileURLToPath(new URL('./reader.html', import.meta.url));
 const html = readFileSync(path, 'utf8');
 const context = vm.createContext({});
+type SpineItem = { index?: number; linear: boolean; prev?: () => unknown; next?: () => unknown };
 vm.runInContext(functionSource(html, 'includeOpeningSpineItems'), context, { filename: path });
 
 test('opening covers stay in reading order without changing saved spine indexes', () => {
-  const items = [{ index: 0, linear: false }, { index: 1, linear: false }, { index: 2, linear: true }, { index: 3, linear: false }];
+  const items: SpineItem[] = [{ index: 0, linear: false }, { index: 1, linear: false }, { index: 2, linear: true }, { index: 3, linear: false }];
   context.includeOpeningSpineItems(items);
   assert.deepEqual(items.map(item => item.linear), [true, true, true, false]);
-  assert.equal(items[0].prev(), undefined);
-  assert.equal(items[0].next(), items[1]);
-  assert.equal(items[1].prev(), items[0]);
-  assert.equal(items[1].next(), items[2]);
+  assert.equal(items[0].prev?.(), undefined);
+  assert.equal(items[0].next?.(), items[1]);
+  assert.equal(items[1].prev?.(), items[0]);
+  assert.equal(items[1].next?.(), items[2]);
   assert.deepEqual(items.map(item => item.index), [0, 1, 2, 3]);
   context.includeOpeningSpineItems(items);
   context.includeOpeningSpineItems([]);
-  const only = [{ linear: false }];
+  const only: SpineItem[] = [{ linear: false }];
   context.includeOpeningSpineItems(only);
-  assert.equal(only[0].next(), undefined);
-  assert.equal(only[0].prev(), undefined);
+  assert.equal(only[0].next?.(), undefined);
+  assert.equal(only[0].prev?.(), undefined);
 });
 
 test('cover layout never clips mixed images and index or sizes media against its own iframe', () => {
@@ -35,10 +36,10 @@ test('cover layout never clips mixed images and index or sizes media against its
 
 test('theme image bounds use the outer viewport height for every theme', () => {
   const registerThemes = functionSource(html, 'registerThemes');
-  const registered = [];
+  const registered: Array<{ name: string; rules: Record<string, Record<string, string>> }> = [];
   const context = vm.createContext({
     window: { innerHeight: 844 },
-    rendition: { themes: { register: (name, rules) => registered.push({ name, rules }) } },
+    rendition: { themes: { register: (name: string, rules: Record<string, Record<string, string>>) => registered.push({ name, rules }) } },
   });
   vm.runInContext(registerThemes, context, { filename: path });
   context.registerThemes();
@@ -51,12 +52,12 @@ test('theme image bounds use the outer viewport height for every theme', () => {
 
 test('opening a book includes non-linear front matter before the first display', async () => {
   const opening = { linear: false };
-  const calls = [];
-  const stages = [];
+  const calls: Array<{ target: unknown; included: boolean }> = [];
+  const stages: string[] = [];
   const rendition = {
     hooks: { content: { register() {} } }, on() {},
     themes: { fontSize() {} },
-    display(target) { calls.push({ target, included: opening.linear }); return Promise.resolve(); },
+    display(target: unknown) { calls.push({ target, included: opening.linear }); return Promise.resolve(); },
     currentLocation() { return {}; },
   };
   const book = {
@@ -70,7 +71,7 @@ test('opening a book includes non-linear front matter before the first display',
     reportBookMetadata: noop, reportBookSections: noop, installContinuousShellWatch: noop,
     registerThemes: noop, restoredHighlights: () => ({ words: [], marks: [] }),
     rememberReaderHighlights: noop, activeReaderHighlights: { words: [], marks: [] },
-    reportLocation: noop, reportReaderStartupStage: stage => stages.push(stage),
+    reportLocation: noop, reportReaderStartupStage: (stage: string) => stages.push(stage),
   });
   // Use the real front-matter and open-book functions in this reader context too.
   vm.runInContext(functionSource(html, 'includeOpeningSpineItems'), context, { filename: path });

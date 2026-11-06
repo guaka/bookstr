@@ -7,7 +7,7 @@ import {
   verifyDeviceRegistryEvent,
 } from './device-registry-nip78.mjs';
 
-function registryEvent(secret, devices = []) {
+function registryEvent(secret: Uint8Array, devices: Array<Record<string, unknown>> = []) {
   const owner = nostrTools.getPublicKey(secret);
   const conversationKey = nostrTools.nip44.v2.utils.getConversationKey(secret, owner);
   return nostrTools.finalizeEvent({
@@ -22,7 +22,7 @@ test('verifies and decrypts an account-owned device registry event', async () =>
   const account = nostrTools.generateSecretKey();
   const deviceSecret = nostrTools.generateSecretKey();
   const devicePubkey = nostrTools.getPublicKey(deviceSecret);
-  const event = registryEvent(account, [{ device_id: 'phone', pubkey: devicePubkey, platform: 'ios' }]);
+      const event = registryEvent(account, [{ device_id: 'phone', pubkey: devicePubkey, platform: 'ios' }]);
   const registry = await verifyDeviceRegistryEvent(event, {
     ownerPubkey: nostrTools.getPublicKey(account),
     tools: nostrTools,
@@ -31,6 +31,7 @@ test('verifies and decrypts an account-owned device registry event', async () =>
       nostrTools.nip44.v2.utils.getConversationKey(account, peer),
     ),
   });
+  assert.ok(registry);
   assert.equal(registry.devices[0].device_id, 'phone');
   assert.equal(registry.devices[0].pubkey, devicePubkey);
 });

@@ -4,11 +4,11 @@ import * as nostrTools from '../../web/vendor/nostr-tools.js';
 import { createManifestRequest, registerDevice } from './device-pairing-v1.mjs';
 import { DevicePairingClient, createWebPairingClient } from './device-pairing-client.mjs';
 
-function signerFor(secret) {
+function signerFor(secret: Uint8Array) {
   return {
     getPublicKey: async () => nostrTools.getPublicKey(secret),
     nip44: {
-      decrypt: async (peer, ciphertext) => nostrTools.nip44.v2.decrypt(ciphertext, nostrTools.nip44.v2.utils.getConversationKey(secret, peer)),
+      decrypt: async (peer: string, ciphertext: string) => nostrTools.nip44.v2.decrypt(ciphertext, nostrTools.nip44.v2.utils.getConversationKey(secret, peer)),
     },
   };
 }
@@ -20,15 +20,16 @@ test('web client falls back to a session-only identity without secure storage', 
   assert.equal(status.platform, 'web');
   assert.equal(status.persistent, false);
   assert.equal(status.relays.length, 0);
+  assert.equal((await client.announce({ now: 100 })).type, 'bookstr.device.announce');
 });
 
 test('native-style secure storage persists the device secret without exposing it', async () => {
   const account = nostrTools.generateSecretKey();
-  let stored = null;
+  let stored: Uint8Array | null = null;
   const storage = {
     isAvailable: () => true,
     get: async () => stored,
-    set: async secret => { stored = new Uint8Array(secret); },
+    set: async (secret: Uint8Array) => { stored = new Uint8Array(secret); },
   };
   const first = new DevicePairingClient({ platform: 'ios', signer: signerFor(account), tools: nostrTools, secureStorage: storage, name: 'Phone' });
   const firstStatus = await first.status();
@@ -36,7 +37,8 @@ test('native-style secure storage persists the device secret without exposing it
   assert.equal(firstStatus.persistent, true);
   assert.equal(secondStatus.devicePubkey, firstStatus.devicePubkey);
   assert.equal(Object.hasOwn(firstStatus, 'deviceSecret'), false);
-  assert.equal(stored instanceof Uint8Array, true);
+  const storedSecret: unknown = stored;
+  assert.equal(storedSecret instanceof Uint8Array, true);
 });
 
 test('pairing client encrypts messages and enforces the shared device registry', async () => {
@@ -60,11 +62,11 @@ test('pairing client encrypts messages and enforces the shared device registry',
 
 test('relay publication is limited to secure WSS endpoints', async () => {
   const account = nostrTools.generateSecretKey();
-  const calls = [];
+  const calls: Array<[string, number]> = [];
   const client = new DevicePairingClient({
     platform: 'web', signer: signerFor(account), tools: nostrTools,
     relays: ['wss://one.example', 'https://bad.example', 'wss://one.example'],
-    publish: async (relay, event) => { calls.push([relay, event.kind]); return true; },
+    publish: async (relay: string, event: { kind: number }) => { calls.push([relay, event.kind]); return true; },
   });
   const recipient = nostrTools.getPublicKey(nostrTools.generateSecretKey());
   await client.publishMessage(createManifestRequest({ requestId: 'client-2' }), recipient, { now: 100 });

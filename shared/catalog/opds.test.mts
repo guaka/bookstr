@@ -78,6 +78,7 @@ test('discovers OPDS 1 OpenSearch and OPDS 2 FB2 acquisitions', () => {
   const opds2Discovery = discoverOPDSFeed(JSON.stringify({
     links: [{ rel: 'search', href: '/search{?query}', type: 'application/opds+json' }],
   }), { provider: 'public-feed', feedURL: 'https://books.example/catalog.json' });
+  assert.ok(opds2Discovery.search);
   assert.equal(opds2Discovery.search.href, 'https://books.example/search{?query}');
   assert.equal(resolveOPDSSearchURL(opds2Discovery.search, 'Идиот'), 'https://books.example/search?query=%D0%98%D0%B4%D0%B8%D0%BE%D1%82');
 
@@ -212,6 +213,7 @@ test('OPDS normalizers support fallback metadata and ignore unusable acquisition
     { id: 'fallback', title: 'Fallback', author: 'Author', language: ['en', 'english'], license: 'Open publication',
       acquisitions: { href: 'https://books.example/fallback.fb2', mime: 'application/x-fictionbook+xml' } },
     { id: 'images-only', links: { href: 'https://books.example/image.jpg', type: 'image/jpeg' } },
+    { id: 'invalid-url', links: { href: 'https://[malformed', type: 'application/fb2+xml' } },
   ] }, { provider: 'feed', feedURL: 'https://books.example/catalog' });
   assert.deepEqual(opds2, [{
     provider: 'feed', recordId: 'fallback', publicationId: 'feed:fallback', title: 'Fallback', authors: ['Author'],

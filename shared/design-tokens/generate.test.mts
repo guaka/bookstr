@@ -12,8 +12,9 @@ import {
   run,
   validateTokens,
 } from './generate.mjs';
+import type { DesignTokens } from './generate.mjs';
 
-function tokens() {
+function tokens(): DesignTokens {
   return {
     version: 1,
     web: {
@@ -53,11 +54,11 @@ test('rejects invalid roots, web themes, Android colors, and Swift roles', () =>
   assert.throws(() => validateTokens({ version: 1, web: {}, android: {}, swift: null }), /version 1/);
 
   const missingRoot = tokens();
-  missingRoot.web.root = {};
+  missingRoot.web.root = {} as never;
   assert.throws(() => validateTokens(missingRoot), /root color scheme/);
 
   const absentRoot = tokens();
-  absentRoot.web.root = null;
+  absentRoot.web.root = null as never;
   assert.throws(() => validateTokens(absentRoot), /root color scheme/);
 
   const missingThemes = tokens();
@@ -65,7 +66,7 @@ test('rejects invalid roots, web themes, Android colors, and Swift roles', () =>
   assert.throws(() => validateTokens(missingThemes), /Web themes/);
 
   const nonArrayThemes = tokens();
-  nonArrayThemes.web.themes = {};
+  nonArrayThemes.web.themes = {} as never;
   assert.throws(() => validateTokens(nonArrayThemes), /Web themes/);
 
   const invalidSelector = tokens();
@@ -73,15 +74,15 @@ test('rejects invalid roots, web themes, Android colors, and Swift roles', () =>
   assert.throws(() => validateTokens(invalidSelector), /target body/);
 
   const missingSelector = tokens();
-  missingSelector.web.themes[0].selector = null;
+  missingSelector.web.themes[0].selector = null as never;
   assert.throws(() => validateTokens(missingSelector), /target body/);
 
   const missingVariables = tokens();
-  missingVariables.web.themes[0].variables = [];
+  missingVariables.web.themes[0].variables = [] as never;
   assert.throws(() => validateTokens(missingVariables), /include variables/);
 
   const absentVariables = tokens();
-  absentVariables.web.themes[0].variables = null;
+  absentVariables.web.themes[0].variables = null as never;
   assert.throws(() => validateTokens(absentVariables), /include variables/);
 
   const emptyVariables = tokens();
@@ -89,7 +90,7 @@ test('rejects invalid roots, web themes, Android colors, and Swift roles', () =>
   assert.throws(() => validateTokens(emptyVariables), /include variables/);
 
   const invalidScheme = tokens();
-  invalidScheme.web.themes[0].colorScheme = 'sepia';
+  invalidScheme.web.themes[0].colorScheme = 'sepia' as never;
   assert.throws(() => validateTokens(invalidScheme), /invalid color scheme/);
 
   const invalidVariable = tokens();
@@ -97,7 +98,7 @@ test('rejects invalid roots, web themes, Android colors, and Swift roles', () =>
   assert.throws(() => validateTokens(invalidVariable), /invalid variable/);
 
   const nonStringVariable = tokens();
-  nonStringVariable.web.themes[0].variables = { accent: 1 };
+  nonStringVariable.web.themes[0].variables = { accent: 1 } as never;
   assert.throws(() => validateTokens(nonStringVariable), /invalid variable/);
 
   const missingAndroid = tokens();
@@ -109,7 +110,7 @@ test('rejects invalid roots, web themes, Android colors, and Swift roles', () =>
   assert.throws(() => validateTokens(duplicateAndroid), /unique Kotlin names/);
 
   const missingAndroidColor = tokens();
-  missingAndroidColor.android.colors[0] = null;
+  missingAndroidColor.android.colors[0] = null as never;
   assert.throws(() => validateTokens(missingAndroidColor), /unique Kotlin names/);
 
   const invalidAndroidValue = tokens();
@@ -117,7 +118,7 @@ test('rejects invalid roots, web themes, Android colors, and Swift roles', () =>
   assert.throws(() => validateTokens(invalidAndroidValue), /six-digit hex/);
 
   const nonStringAndroidValue = tokens();
-  nonStringAndroidValue.android.colors[0].value = null;
+  nonStringAndroidValue.android.colors[0].value = null as never;
   assert.throws(() => validateTokens(nonStringAndroidValue), /six-digit hex/);
 
   const ambiguousAndroid = tokens();
@@ -129,7 +130,7 @@ test('rejects invalid roots, web themes, Android colors, and Swift roles', () =>
   assert.throws(() => validateTokens(invalidAlias), /earlier color/);
 
   const nonStringAlias = tokens();
-  nonStringAlias.android.colors[1].alias = 1;
+  nonStringAlias.android.colors[1].alias = 1 as never;
   assert.throws(() => validateTokens(nonStringAlias), /earlier color/);
 
   const invalidSwiftName = tokens();
@@ -137,7 +138,7 @@ test('rejects invalid roots, web themes, Android colors, and Swift roles', () =>
   assert.throws(() => validateTokens(invalidSwiftName), /lower-camel-case/);
 
   const missingSwiftColor = tokens();
-  missingSwiftColor.swift.colors[0] = null;
+  missingSwiftColor.swift.colors[0] = null as never;
   assert.throws(() => validateTokens(missingSwiftColor), /lower-camel-case/);
 
   const missingSwiftThemes = tokens();
@@ -149,7 +150,7 @@ test('rejects invalid roots, web themes, Android colors, and Swift roles', () =>
   assert.throws(() => validateTokens(duplicateSwiftTheme), /include white, paper, and night once/);
 
   const missingSwiftTheme = tokens();
-  missingSwiftTheme.swift.readerThemes[2] = null;
+  missingSwiftTheme.swift.readerThemes[2] = null as never;
   assert.throws(() => validateTokens(missingSwiftTheme), /include white, paper, and night once/);
 
   const incompleteSwiftThemes = tokens();
@@ -199,11 +200,11 @@ test('parses defaults, explicit inputs, and invalid arguments', () => {
 test('writes all outputs and checks every generated file for staleness', async () => {
   const files = new Map([['/repo/input.json', JSON.stringify(tokens())]]);
   const io = {
-    readFile: async (path) => {
+    readFile: async (path: string) => {
       if (!files.has(path)) throw new Error('missing');
-      return files.get(path);
+      return files.get(path)!;
     },
-    writeFile: async (path, value) => files.set(path, value),
+    writeFile: async (path: string, value: string) => files.set(path, value),
   };
   assert.equal(await run(['--input=input.json'], io, '/repo'), 'generated');
   assert.equal(files.size, 4);

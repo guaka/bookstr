@@ -133,6 +133,8 @@ jobs:
           pnpm --dir web run typecheck
           pnpm --dir web run typecheck:worker
           node scripts/typescript.cts --check
+          node shared/build-typescript.mts --check
+          GOMEMLIMIT=512MiB GOMAXPROCS=2 node --max-old-space-size=512 web/node_modules/typescript/bin/tsc -p shared/tsconfig.json
           pnpm --dir web run check:generated
           pnpm --dir web run check:vendor
       - name: Run static web tests
@@ -148,7 +150,8 @@ jobs:
           node shared/contracts/generate-nostr-constants.mjs --check
           node --test --experimental-test-coverage --test-coverage-lines=100 --test-coverage-branches=100 --test-coverage-functions=100 scripts/coverage-ratchet.test.mts
           node --test --experimental-test-coverage --test-coverage-lines=100 --test-coverage-branches=100 --test-coverage-functions=100 scripts/typescript.test.mts
-          node --test --test-concurrency=1 --test-reporter=tap web/tests/*.test.mjs web/tests/*.test.mts worker/src/*.test.mts scripts/*.test.mts shared/catalog/*.test.mjs shared/contracts/*.test.mjs shared/design-tokens/*.test.mjs shared/reader/*.test.mjs | tee web-tests.tap
+          node --test --experimental-test-coverage --test-coverage-lines=100 --test-coverage-branches=100 --test-coverage-functions=100 shared/build-typescript.test.mts
+          node --test --test-concurrency=1 --test-reporter=tap web/tests/*.test.mjs web/tests/*.test.mts worker/src/*.test.mts scripts/*.test.mts shared/build-typescript.test.mts shared/catalog/*.test.mts shared/contracts/*.test.mts shared/design-tokens/*.test.mts shared/reader/*.test.mts | tee web-tests.tap
           status=${PIPESTATUS[0]}
           echo "duration_ms=$((($(date +%s) - started) * 1000))" >> "$GITHUB_OUTPUT"
           exit "$status"
@@ -165,7 +168,7 @@ jobs:
             --reporter=lcov \
             --reporter=json-summary \
             --reporter=text \
-            node --test --test-concurrency=1 web/tests/*.test.mjs web/tests/*.test.mts worker/src/*.test.mts shared/catalog/*.test.mjs shared/contracts/*.test.mjs shared/design-tokens/*.test.mjs shared/reader/*.test.mjs
+            node --test --test-concurrency=1 web/tests/*.test.mjs web/tests/*.test.mts worker/src/*.test.mts shared/build-typescript.test.mts shared/catalog/*.test.mts shared/contracts/*.test.mts shared/design-tokens/*.test.mts shared/reader/*.test.mts
       - name: Archive web coverage artifacts
         uses: actions/upload-artifact@v4
         with:

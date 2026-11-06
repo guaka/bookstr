@@ -19,7 +19,7 @@ const tools = {
 const recipientSigner = {
   getPublicKey: async () => recipientPubkey,
   nip44: {
-    decrypt: async (peer, ciphertext) => nostrTools.nip44.v2.decrypt(ciphertext, nostrTools.nip44.v2.utils.getConversationKey(recipientSecret, peer)),
+    decrypt: async (peer: string, ciphertext: string) => nostrTools.nip44.v2.decrypt(ciphertext, nostrTools.nip44.v2.utils.getConversationKey(recipientSecret, peer)),
   },
 };
 
@@ -52,7 +52,7 @@ test('rejects a wrap whose inner rumor cannot be decrypted', async () => {
   const signer = {
     ...recipientSigner,
     nip44: {
-      decrypt: async (...args) => {
+      decrypt: async (...args: [string, string]) => {
         decryptions += 1;
         if (decryptions === 2) throw new Error('corrupt rumor');
         return recipientSigner.nip44.decrypt(...args);
@@ -63,14 +63,14 @@ test('rejects a wrap whose inner rumor cannot be decrypted', async () => {
 });
 
 test('publishes once to each secure relay and requires one acceptance', async () => {
-  const calls = [];
+  const calls: Array<[string, number]> = [];
   const result = await publishDeviceControlMessage(createManifestRequest({ requestId: 'm-3' }), {
     deviceSecret: senderSecret,
     recipientPubkey,
     tools,
     now: 1000,
     relays: ['wss://one.example', 'https://insecure.example', 'wss://two.example', 'wss://one.example'],
-    publish: async (relay, wrap) => { calls.push([relay, wrap.kind]); return relay === 'wss://two.example'; },
+    publish: async (relay: string, wrap: { kind: number }) => { calls.push([relay, wrap.kind]); return relay === 'wss://two.example'; },
   });
   assert.deepEqual(calls.map(call => call[0]), ['wss://one.example', 'wss://two.example']);
   assert.equal(result.wrap.kind, 1059);

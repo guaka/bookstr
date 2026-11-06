@@ -17,10 +17,12 @@ test('private transfer messages carry hashes and no filesystem paths', () => {
   const page = normalizeTransferMessage({
     type: 'bookstr.library.manifest.page', request_id: 'r1', entries: [{ id: 'book', title: 'Title', sha256: hash, path: '/secret' }],
   });
+  assert.ok(page);
   assert.equal(page.version, 1);
   assert.equal(page.entries[0].sha256, hash);
   assert.equal(Object.hasOwn(page.entries[0], 'path'), false);
   const offer = normalizeTransferMessage({ type: 'bookstr.transfer.offer', request_id: 'r1', sha256: hash, infohash, expires_at: 9, ice: ['candidate'] });
+  assert.ok(offer);
   assert.equal(offer.infohash, infohash);
   assert.deepEqual(normalizeTransferMessage({ type: 'unknown' }), null);
 });

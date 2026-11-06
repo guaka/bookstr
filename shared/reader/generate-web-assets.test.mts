@@ -16,8 +16,8 @@ const canonical = {
   'jszip.min.js': Buffer.from('zip'),
 };
 
-function fakeIO({ outputs = true, missing = null } = {}) {
-  const files = new Map();
+function fakeIO({ outputs = true, missing = null }: { outputs?: boolean; missing?: string | null } = {}) {
+  const files = new Map<string, Buffer | string>();
   for (const [name, value] of Object.entries(canonical)) {
     files.set(`/repo/shared/reader/${name}`, value);
     if (outputs && name !== missing) files.set(`/repo/web/${name}`, value);
@@ -25,11 +25,11 @@ function fakeIO({ outputs = true, missing = null } = {}) {
   return {
     files,
     io: {
-      readFile: async (path) => {
+      readFile: async (path: string) => {
         if (!files.has(path)) throw new Error('missing');
-        return files.get(path);
+        return files.get(path)!;
       },
-      writeFile: async (path, value) => files.set(path, value),
+      writeFile: async (path: string, value: Buffer | string) => files.set(path, value),
     },
   };
 }
@@ -73,7 +73,7 @@ test('rejects changed canonical bytes and missing or stale outputs', async () =>
 });
 
 test('reports CLI failures and invokes only the matching entrypoint', async () => {
-  const errors = [];
+  const errors: string[] = [];
   let failures = 0;
   assert.equal(await cli([], { run: async () => 'ok' }), 'ok');
   assert.equal(await cli([], {
@@ -89,9 +89,9 @@ test('reports CLI failures and invokes only the matching entrypoint', async () =
 
   const originalWrite = process.stderr.write;
   const originalExitCode = process.exitCode;
-  const defaultErrors = [];
+  const defaultErrors: string[] = [];
   try {
-    process.stderr.write = (message) => { defaultErrors.push(message); return true; };
+    process.stderr.write = (message) => { defaultErrors.push(message.toString()); return true; };
     process.exitCode = undefined;
     assert.equal(await cli(['--unknown']), 'failed');
     assert.deepEqual(defaultErrors, ['Unknown argument: --unknown\n']);
@@ -109,7 +109,10 @@ test('repository packaging consumes checked web assets', async () => {
   for (const command of ['pack', 'dist', 'dist:linux', 'dist:win', 'dist:mac', 'dist:all']) {
     assert.equal(desktop.scripts[`pre${command}`], 'pnpm run build:typescript && pnpm run check:reader-assets && pnpm run build:kindle-mtp');
   }
-  assert.ok(desktop.build.files.some((entry) => entry === '../web/**/*'
-    || (entry?.from === '../web' && entry?.to === 'web' && entry.filter?.includes('**/*'))));
+  assert.ok((desktop.build.files as unknown[]).some((entry: unknown) => {
+    const value = entry && typeof entry === 'object' ? entry as Record<string, unknown> : {};
+    return entry === '../web/**/*'
+      || (value.from === '../web' && value.to === 'web' && Array.isArray(value.filter) && value.filter.includes('**/*'));
+  }));
   assert.match(workflow, /node shared\/reader\/generate-web-assets\.mjs --check/);
 });

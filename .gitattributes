@@ -56,3 +56,29 @@ android/scripts/instrumentation-results.mjs linguist-generated=true
 android/scripts/instrumentation-results.d.mts linguist-generated=true
 android/scripts/native-coverage.mjs linguist-generated=true
 android/scripts/native-coverage.d.mts linguist-generated=true
+
+# Shared runtime artifacts are generated from adjacent TypeScript sources.
+shared/catalog/acquisition.mjs linguist-generated=true
+shared/catalog/generate-provider-record-dtos.mjs linguist-generated=true
+shared/catalog/opds.js linguist-generated=true
+shared/catalog/source-registry.mjs linguist-generated=true
+shared/catalog/validate-provider-records.mjs linguist-generated=true
+shared/contracts/device-pairing-client.mjs linguist-generated=true
+shared/contracts/device-pairing-nip17.mjs linguist-generated=true
+shared/contracts/device-pairing-v1.mjs linguist-generated=true
+shared/contracts/device-registry-nip78.mjs linguist-generated=true
+shared/contracts/device-transfer-v1.mjs linguist-generated=true
+shared/contracts/generate-nostr-constants.mjs linguist-generated=true
+shared/contracts/publication-nip94-v1.mjs linguist-generated=true
+shared/design-tokens/generate.mjs linguist-generated=true
+shared/reader/generate-web-assets.mjs linguist-generated=true
+shared/rights/rights.mjs linguist-generated=true
+shared/torrent/metadata.mjs linguist-generated=true
+web/generated/catalog-provider-record-v1.js linguist-generated=true
+web/generated/nostr-constants-v1.js linguist-generated=true
+
+# Browser deployment mirrors use the generated canonical shared contracts.
+web/shared/contracts/device-pairing-client.mjs linguist-generated=true
+web/shared/contracts/device-pairing-nip17.mjs linguist-generated=true
+web/shared/contracts/device-pairing-v1.mjs linguist-generated=true
+web/shared/contracts/device-transfer-v1.mjs linguist-generated=true

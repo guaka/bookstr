@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
 import test from 'node:test';
 import {
   cli,
@@ -29,7 +30,13 @@ test('schema validation rejects incompatible contract shapes', () => {
 });
 
 test('renderers produce versioned wire DTOs for every client language', () => {
-  assert.match(renderJavaScript(schema), /parseCatalogProviderRecordV1/);
+  const javascript = renderJavaScript(schema);
+  assert.match(javascript, /parseCatalogProviderRecordV1/);
+  const syntax = spawnSync(process.execPath, ['--check', '--input-type=module'], {
+    encoding: 'utf8',
+    input: javascript,
+  });
+  assert.equal(syntax.status, 0, syntax.stderr);
   assert.match(renderKotlin(schema), /data class CatalogProviderRecordV1/);
   assert.match(renderSwift(schema), /struct CatalogProviderRecordV1: Codable, Equatable/);
 });
@@ -43,12 +50,12 @@ test('argument parser supports generation and stale checking only', () => {
 test('generator writes every output and accepts deterministic check mode', async () => {
   const files = new Map([['/repo/shared/catalog/provider-records.schema.json', JSON.stringify(schema)]]);
   const io = {
-    async readFile(path) {
+    async readFile(path: string) {
       if (!files.has(path)) throw new Error('missing');
-      return files.get(path);
+      return files.get(path)!;
     },
     async mkdir() {},
-    async writeFile(path, value) { files.set(path, value); },
+    async writeFile(path: string, value: string) { files.set(path, value); },
   };
   assert.equal(await run([], io, '/repo'), 'generated');
   assert.equal(files.size, 4);
@@ -60,7 +67,7 @@ test('generator writes every output and accepts deterministic check mode', async
 });
 
 test('CLI reports failures and main invocation dispatches only matching paths', async () => {
-  const errors = [];
+  const errors: string[] = [];
   let failed = false;
   assert.equal(await cli([], {
     run: async () => { throw new Error('boom'); },
@@ -78,8 +85,8 @@ test('CLI reports failures and main invocation dispatches only matching paths', 
 test('default CLI handlers report errors and set a failing exit code', async () => {
   const originalWrite = process.stderr.write;
   const originalExitCode = process.exitCode;
-  const errors = [];
-  process.stderr.write = message => { errors.push(message); return true; };
+  const errors: string[] = [];
+  process.stderr.write = message => { errors.push(message.toString()); return true; };
   process.exitCode = 0;
   try {
     assert.equal(await cli(['--invalid']), 'failed');

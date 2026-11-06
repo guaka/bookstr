@@ -57,12 +57,12 @@ test('argument parsing and generation support deterministic stale checks', async
   assert.throws(() => parseArgs(['--invalid']), /Unknown arguments/);
   const files = new Map([['/repo/shared/contracts/nostr-constants-v1.json', JSON.stringify(constants())]]);
   const io = {
-    async readFile(path) {
+    async readFile(path: string) {
       if (!files.has(path)) throw new Error('missing');
-      return files.get(path);
+      return files.get(path)!;
     },
     async mkdir() {},
-    async writeFile(path, value) { files.set(path, value); },
+    async writeFile(path: string, value: string) { files.set(path, value); },
   };
   assert.equal(await run([], io, '/repo'), 'generated');
   assert.equal(files.size, 4);
@@ -74,7 +74,7 @@ test('argument parsing and generation support deterministic stale checks', async
 });
 
 test('CLI reports failures and dispatches only the invoked module', async () => {
-  const errors = [];
+  const errors: string[] = [];
   let failed = false;
   assert.equal(await cli([], {
     run: async () => { throw new Error('boom'); },
@@ -92,8 +92,8 @@ test('CLI reports failures and dispatches only the invoked module', async () => 
 test('default CLI handlers report invalid arguments', async () => {
   const originalWrite = process.stderr.write;
   const originalExitCode = process.exitCode;
-  const errors = [];
-  process.stderr.write = value => { errors.push(value); return true; };
+  const errors: string[] = [];
+  process.stderr.write = value => { errors.push(value.toString()); return true; };
   process.exitCode = 0;
   try {
     assert.equal(await cli(['--invalid']), 'failed');

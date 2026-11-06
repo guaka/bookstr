@@ -31,6 +31,7 @@ test('normalizes provider records and keeps rights evidence', () => {
 
 test('selects an open torrent before an equivalent HTTPS acquisition', () => {
   const selected = selectAcquisition(record);
+  assert.ok(selected);
   assert.equal(selected.format, 'epub');
   assert.match(selected.torrent, /^https:\/\//);
   assert.equal(listAcquisitions(record, { format: 'pdf' }).length, 0);
@@ -79,4 +80,21 @@ test('drops malformed HTTP and magnet locators without losing valid acquisitions
     { url: '', torrent: 'magnet:?xt=urn:btih:abc' },
     { url: '', torrent: 'magnet:invalid' },
   ]);
+});
+
+test('ranks borrow and preview options while honoring torrent preference', () => {
+  const alternate = normalizeProviderRecord({
+    provider: 'unregistered-provider',
+    record_id: 'alternate-1',
+    rights_status: 'unknown',
+    acquisitions: [
+      { format: 'epub', torrent: 'magnet:?xt=urn:btih:abc', availability: 'borrow' },
+      { format: '.epub', href: 'https://example.test/preview.epub', availability: 'preview' },
+    ],
+  });
+  assert.equal(alternate.publicationId, 'unregistered-provider:alternate-1');
+  assert.equal(alternate.providerDescriptor, null);
+  assert.deepEqual(listAcquisitions(alternate, { includeRestricted: true, preferTorrent: false }).map(item => item.availability), ['borrow', 'preview']);
+  assert.equal(listAcquisitions(alternate, { preferTorrent: false }).length, 1);
+  assert.equal(selectAcquisition({ provider: 'unregistered-provider', recordId: 'empty' }), null);
 });

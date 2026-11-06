@@ -36,6 +36,8 @@ test('web tests are gated by web-related path changes', async () => {
 
   assert.match(workflow, /name: Detect web changes/);
   assert.match(workflow, /node scripts\/typescript\.cts --check/);
+  assert.match(workflow, /node shared\/build-typescript\.mts --check/);
+  assert.match(workflow, /tsc -p shared\/tsconfig\.json/);
   assert.match(workflow, /--test-coverage-functions=100 scripts\/typescript\.test\.mts/);
   assert.match(workflow, /- 'web\/\*\*'/);
   assert.match(workflow, /- 'shared\/architecture\/\*\*'/);
@@ -46,7 +48,7 @@ test('web tests are gated by web-related path changes', async () => {
   assert.match(workflow, /node scripts\/generate-client-overview\.mjs --check/);
   assert.match(workflow, /node shared\/contracts\/generate-nostr-constants\.mjs --check/);
   assert.match(workflow, /--test-coverage-lines=100 --test-coverage-branches=100 --test-coverage-functions=100 scripts\/coverage-ratchet\.test\.mts/);
-  assert.match(workflow, /shared\/contracts\/\*\.test\.mjs/);
+  assert.match(workflow, /shared\/contracts\/\*\.test\.mts/);
   assert.match(workflow, /if: needs\.changes\.outputs\.web == 'true'/);
   assert.match(workflow, /repository-hygiene:/);
   assert.match(workflow, /name: Workflow contracts/);

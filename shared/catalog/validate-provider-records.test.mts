@@ -3,7 +3,9 @@ import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 import { validateProviderRecords } from './validate-provider-records.mjs';
 
-const fixture = JSON.parse(await readFile(new URL('./provider-records.json', import.meta.url)));
+type FixtureRecord = { rights: { status: string; license?: string }; publicationId: string; provider: string; recordId: string; acquisitions: Array<{ format: string; availability: string }> };
+type Fixture = { records: FixtureRecord[] };
+const fixture = JSON.parse(await readFile(new URL('./provider-records.json', import.meta.url), 'utf8')) as Fixture;
 const contract = await readFile(new URL('./provider-contract.md', import.meta.url), 'utf8');
 
 test('provider catalog fixtures conform to the versioned contract', () => {
