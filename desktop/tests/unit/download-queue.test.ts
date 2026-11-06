@@ -36,9 +36,9 @@ const book: TestBook = { md5: 'a'.repeat(32), libgenId: 2412930, title: 'Queued 
 const tick = (): Promise<void> => new Promise(resolve => setImmediate(resolve));
 const bookId = (record: Record<string, unknown>): string => String(record.md5);
 
-test('legacy FB2 download requests are rejected before queueing', async () => {
+test('unsupported format download requests are rejected before queueing', async () => {
   const queue = makeQueue({ store: {} });
-  await assert.rejects(queue.prepare({ kind: 'libgen', record: { ...book, extension: 'fb2' } }), /supported format/);
+  await assert.rejects(queue.prepare({ kind: 'libgen', record: { ...book, extension: 'mobi' } }), /supported format/);
   assert.equal(queue.pending.length, 0);
 });
 

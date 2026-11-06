@@ -507,7 +507,7 @@ class NostrFavoritesRepository(
             }
 
             fun supportedFormat(value: String): String? =
-                value.lowercase().takeIf { it == "epub" || it == "pdf" || it == "fb2" }
+                value.lowercase().takeIf { it == "epub" || it == "pdf" }
 
             fun mergeAt(index: Int, ref: SharedFavoriteRef, preferIncomingUrl: Boolean = false) {
                 val old = refs[index]

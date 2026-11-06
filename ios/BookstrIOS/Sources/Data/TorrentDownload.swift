@@ -268,7 +268,7 @@ final class BookDownloadQueue: ObservableObject {
         self.now = now
         guard let fileURL, FileManager.default.fileExists(atPath: fileURL.path) else { return }
         do {
-            jobs = try JSONDecoder().decode([Job].self, from: Data(contentsOf: fileURL))
+            jobs = try JSONFileStore.decodeArray(Data(contentsOf: fileURL), as: Job.self)
             if removeStaleCompleted(now: now()) > 0 { persist() }
         } catch { persistenceError = "Could not restore downloads: \(error.localizedDescription)" }
     }

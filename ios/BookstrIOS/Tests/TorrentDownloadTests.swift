@@ -68,34 +68,22 @@ final class TorrentDownloadTests: XCTestCase {
     }
 
     @MainActor
-    func testUnsupportedFB2DownloadRowsArePreservedButNeverStartedOrRetried() throws {
-        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        defer { try? FileManager.default.removeItem(at: root) }
-        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-        let manifest = root.appendingPathComponent("downloads.json")
-        let fb2 = BookSearchResult(
-            id: "legacy-fb2", source: "catalog", title: "Legacy", author: "Author", year: nil,
-            publisher: nil, language: nil, format: .fb2, downloadUrl: "https://example.test/book.fb2",
-            coverUrl: nil, rating: 0, editionCount: 1
-        )
-        let job = BookDownloadQueue.Job(result: fb2)
-        try JSONEncoder().encode([job]).write(to: manifest, options: .atomic)
-
-        let queue = BookDownloadQueue(fileURL: manifest)
-        var starts = 0
-        let prepare: BookDownloadQueue.Prepare = { _, _ in
-            starts += 1
-            return CatalogBook(id: "legacy-fb2", title: "Legacy", author: "Author", epubUrl: "",
-                coverUrl: nil, sourceUrl: nil, isbn: nil, libvaultMd5: nil, format: .fb2, year: nil)
-        }
-        queue.resume(prepare: prepare)
-        queue.enqueue(fb2, prepare: prepare)
-
-        XCTAssertEqual(starts, 0)
-        XCTAssertEqual(queue.jobs.map(\.id), ["legacy-fb2"])
-        let persisted = try JSONDecoder().decode([BookDownloadQueue.Job].self, from: Data(contentsOf: manifest))
-        XCTAssertEqual(persisted.map(\.id), ["legacy-fb2"])
-        XCTAssertFalse(persisted[0].failed)
+    func testRestoredQueueSkipsUnsupportedAndMalformedRecords() throws {
+        let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: file) }
+        let result = BookSearchResult(id: "supported", source: "test", title: "Book", author: "Author",
+            year: nil, publisher: nil, language: nil, format: .pdf,
+            downloadUrl: "https://example.test/book.pdf", coverUrl: nil, rating: 0, editionCount: 1)
+        let encoded = try JSONEncoder().encode(BookDownloadQueue.Job(result: result))
+        let supported = try XCTUnwrap(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+        var unsupported = supported
+        var unsupportedResult = try XCTUnwrap(unsupported["result"] as? [String: Any])
+        unsupportedResult["format"] = "mobi"
+        unsupported["result"] = unsupportedResult
+        try JSONSerialization.data(withJSONObject: [unsupported, ["broken": true], supported]).write(to: file)
+        let queue = BookDownloadQueue(fileURL: file)
+        XCTAssertEqual(queue.jobs.map(\.id), ["supported"])
+        XCTAssertNil(queue.persistenceError)
     }
 
     @MainActor
@@ -459,7 +447,7 @@ extension TorrentDownloadTests {
         let md5 = String(repeating: "a", count: 32)
         let engine = NativeBookTorrentEngine(root: root)
         engine.setActive(false)
-        for suffix in ["", ".pdf", ".epub", ".fb2.zip"] {
+        for suffix in ["", ".pdf", ".epub", ".cbz"] {
             let metadata = bencode(["info": ["name": md5.uppercased() + suffix, "length": 1, "piece length": 16384, "pieces": Data(repeating: 0, count: 20)]])
             try engine.start(metadata: metadata, md5: md5)
             XCTAssertTrue((engine.snapshot()["path"] as? String)?.hasSuffix(md5.uppercased() + suffix) == true)

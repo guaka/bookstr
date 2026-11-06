@@ -447,7 +447,7 @@ const __bookstrMetadataApi = (function (root) {
     function matchingTorrentCatalogRecord(book, candidates = []) {
         const torrentRecords = candidates.filter(candidate => libgenTorrentMetadataForBook(candidate));
         const isbn = isbnForBook(book);
-        const formatRank = { epub: 4, pdf: 3, fb2: 2, cbz: 1, cbr: 1 };
+        const formatRank = { epub: 4, pdf: 3, cbz: 1, cbr: 1 };
         const exact = torrentRecords.filter(candidate => ((isbn && isbnForBook(candidate) === isbn) || sameLibraryBook(book, candidate))).map((candidate, index) => ({
             candidate,
             index,

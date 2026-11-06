@@ -12,7 +12,6 @@
     "desktop-progress",
     "desktop-kindle",
     "reader-chrome",
-    "fb2-validation",
     "blossom-authorization",
     "catalog-invitation",
     "reader-speech"
@@ -23,7 +22,6 @@
     "nip17-fetch",
     "device-pairing",
     "webtorrent-transfer",
-    "fb2",
     "pdf-reader"
   ],
   "pages": [
@@ -44,12 +42,6 @@
       "template": "comic-reader-app.html",
       "output": "comic-reader.html",
       "mode": "classic"
-    },
-    {
-      "source": "fb2-reader-app",
-      "template": "fb2-reader-app.html",
-      "output": "fb2-reader.html",
-      "mode": "module"
     },
     {
       "source": "pdf-reader-app",

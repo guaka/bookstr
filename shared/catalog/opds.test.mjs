@@ -12,20 +12,20 @@ import {
   resolveOPDSSearchURL,
 } from './opds.js';
 
-const feed = `<?xml version="1.0"?><feed><entry><id>a-1</id><title>Open FB2</title><author><name>Ada Author</name></author><dc:language>ru</dc:language><dc:rights>CC BY 4.0</dc:rights><link rel="http://opds-spec.org/acquisition/open-access" type="application/x-fictionbook+xml" href="books/open.fb2"/></entry><entry><id>no-file</id><title>Metadata only</title></entry></feed>`;
+const feed = `<?xml version="1.0"?><feed><entry><id>a-1</id><title>Open EPUB</title><author><name>Ada Author</name></author><dc:language>ru</dc:language><dc:rights>CC BY 4.0</dc:rights><link rel="http://opds-spec.org/acquisition/open-access" type="application/epub+zip" href="books/open.epub"/></entry><entry><id>no-file</id><title>Metadata only</title></entry></feed>`;
 
-test('normalizes a public OPDS FB2 acquisition without trusting unrecognized records', () => {
+test('normalizes a public OPDS EPUB acquisition without trusting unrecognized records', () => {
   assert.deepEqual(normalizeOPDSFeed(feed, { provider: 'my-feed', feedURL: 'https://books.example/opds' }), [{
-    provider: 'my-feed', recordId: 'a-1', publicationId: 'my-feed:a-1', title: 'Open FB2', authors: ['Ada Author'], languages: ['ru'],
+    provider: 'my-feed', recordId: 'a-1', publicationId: 'my-feed:a-1', title: 'Open EPUB', authors: ['Ada Author'], languages: ['ru'],
     rights: { status: 'open_license', license: 'CC BY 4.0', source: 'my-feed' },
-    acquisitions: [{ format: 'fb2', url: 'https://books.example/books/open.fb2', availability: 'open' }],
+    acquisitions: [{ format: 'epub', url: 'https://books.example/books/open.epub', availability: 'open' }],
   }]);
 });
 
 test('neutralizes markup introduced by XML entity decoding', () => {
-  const hostile = feed.replace('Open FB2', '&lt;script&gt;alert(1)&lt;/script&gt;Open FB2');
+  const hostile = feed.replace('Open EPUB', '&lt;script&gt;alert(1)&lt;/script&gt;Open EPUB');
   const [record] = normalizeOPDSFeed(hostile, { provider: 'my-feed', feedURL: 'https://books.example/opds' });
-  assert.equal(record.title, 'alert(1)Open FB2');
+  assert.equal(record.title, 'alert(1)Open EPUB');
   assert.doesNotMatch(record.title, /[<>]/);
 });
 
@@ -49,7 +49,7 @@ test('normalizes portable public custom-feed settings without credentials or pri
   ]), [{ name: 'My catalogue', url: 'https://books.example/opds' }]);
 });
 
-test('discovers OPDS 1 OpenSearch and OPDS 2 FB2 acquisitions', () => {
+test('discovers OPDS 1 OpenSearch and OPDS 2 EPUB acquisitions', () => {
   const opds1 = `<?xml version="1.0"?>
     <feed>
       <link rel="search" type="application/opensearchdescription+xml" href="/opensearch.xml"/>
@@ -86,15 +86,15 @@ test('discovers OPDS 1 OpenSearch and OPDS 2 FB2 acquisitions', () => {
     publications: [{
       metadata: {
         identifier: 'opds-2-book',
-        title: 'Cyrillic FB2',
+        title: 'Cyrillic EPUB',
         author: [{ name: 'Автор' }],
         language: 'ru',
         rights: 'Public Domain',
       },
       links: [{
         rel: ['http://opds-spec.org/acquisition/open-access'],
-        type: 'application/fb2+xml',
-        href: '/files/book.fb2',
+        type: 'application/epub+zip',
+        href: '/files/book.epub',
       }],
     }],
   }, { provider: 'public-feed', feedURL: 'https://books.example/catalog.json' });
@@ -102,15 +102,15 @@ test('discovers OPDS 1 OpenSearch and OPDS 2 FB2 acquisitions', () => {
     provider: 'public-feed',
     recordId: 'opds-2-book',
     publicationId: 'public-feed:opds-2-book',
-    title: 'Cyrillic FB2',
+    title: 'Cyrillic EPUB',
     authors: ['Автор'],
     languages: ['ru'],
     rights: { status: 'public_domain', license: 'Public Domain', source: 'public-feed' },
-    acquisitions: [{ format: 'fb2', url: 'https://books.example/files/book.fb2', availability: 'open' }],
+    acquisitions: [{ format: 'epub', url: 'https://books.example/files/book.epub', availability: 'open' }],
   }]);
 });
 
-test('LitRes adapter keeps only explicit free public-domain direct FB2 downloads', () => {
+test('LitRes adapter keeps only explicit free public-domain direct EPUB downloads', () => {
   const records = normalizeLitresPublicDomainRecords({
     results: [
       {
@@ -120,27 +120,27 @@ test('LitRes adapter keeps only explicit free public-domain direct FB2 downloads
         language: 'ru',
         rights: 'Public Domain',
         price: 0,
-        files: [{ format: 'fb2.zip', url: 'https://download.litres.example/books/allowed.fb2.zip' }],
+        files: [{ format: 'epub', url: 'https://download.litres.example/books/allowed.epub' }],
       },
       {
         id: 'not-free',
         title: 'Paid edition',
         rights: 'Public Domain',
         price: 199,
-        files: [{ format: 'fb2', url: 'https://download.litres.example/books/paid.fb2' }],
+        files: [{ format: 'epub', url: 'https://download.litres.example/books/paid.epub' }],
       },
       {
         id: 'no-rights',
         title: 'Free but not explicitly public domain',
         price: 0,
-        files: [{ format: 'fb2', url: 'https://download.litres.example/books/no-rights.fb2' }],
+        files: [{ format: 'epub', url: 'https://download.litres.example/books/no-rights.epub' }],
       },
       {
         id: 'landing-page',
         title: 'No direct file',
         rights: 'Public Domain',
         price: 0,
-        files: [{ format: 'fb2', url: 'https://www.litres.ru/book/title-123/' }],
+        files: [{ format: 'epub', url: 'https://www.litres.ru/book/title-123/' }],
       },
     ],
   });
@@ -153,8 +153,8 @@ test('LitRes adapter keeps only explicit free public-domain direct FB2 downloads
     languages: ['ru'],
     rights: { status: 'public_domain', license: 'Public Domain', source: 'litres' },
     acquisitions: [{
-      format: 'fb2',
-      url: 'https://download.litres.example/books/allowed.fb2.zip',
+      format: 'epub',
+      url: 'https://download.litres.example/books/allowed.epub',
       availability: 'open',
     }],
   }]);
@@ -195,28 +195,28 @@ test('OPDS normalizers support fallback metadata and ignore unusable acquisition
         <author><name>First</name></author><author><name>Second</name></author>
         <dc:language>en</dc:language><dc:language>invalid</dc:language><dc:rights>CC0</dc:rights>
         <link href="/cover.jpg" type="image/jpeg"/>
-        <link href="/book.fb2?download=1" type="application/octet-stream"/>
+        <link href="/book.epub?download=1" type="application/octet-stream"/>
       </entry>
       <entry><id>bad</id><link href="https://books.example/landing" type="text/html"/></entry>
     </feed>`, { provider: 'feed', feedURL: 'https://books.example/catalog' });
   assert.deepEqual(records, [{
-    provider: 'feed', recordId: '/book.fb2?download=1',
-    publicationId: 'feed:/book.fb2?download=1', title: 'Untitled candidate',
+    provider: 'feed', recordId: '/book.epub?download=1',
+    publicationId: 'feed:/book.epub?download=1', title: 'Untitled candidate',
     authors: ['First', 'Second'], languages: ['en'], publishedYear: '2024',
     rights: { status: 'public_domain', license: 'CC0', source: 'feed' },
-    acquisitions: [{ format: 'fb2', url: 'https://books.example/book.fb2?download=1', availability: 'open' }],
+    acquisitions: [{ format: 'epub', url: 'https://books.example/book.epub?download=1', availability: 'open' }],
   }]);
 
   const opds2 = normalizeOPDS2Feed({ items: [
     null,
     { id: 'fallback', title: 'Fallback', author: 'Author', language: ['en', 'english'], license: 'Open publication',
-      acquisitions: { href: 'https://books.example/fallback.fb2', mime: 'application/x-fictionbook+xml' } },
+      acquisitions: { href: 'https://books.example/fallback.epub', mime: 'application/epub+zip' } },
     { id: 'images-only', links: { href: 'https://books.example/image.jpg', type: 'image/jpeg' } },
   ] }, { provider: 'feed', feedURL: 'https://books.example/catalog' });
   assert.deepEqual(opds2, [{
     provider: 'feed', recordId: 'fallback', publicationId: 'feed:fallback', title: 'Fallback', authors: ['Author'],
     languages: ['en'], rights: { status: 'open_license', license: 'Open publication', source: 'feed' },
-    acquisitions: [{ format: 'fb2', url: 'https://books.example/fallback.fb2', availability: 'open' }],
+    acquisitions: [{ format: 'epub', url: 'https://books.example/fallback.epub', availability: 'open' }],
   }]);
 });
 
@@ -239,14 +239,14 @@ test('OPDS search helpers handle absent links, templates, and invalid bases', ()
 test('LitRes normalization accepts alternate evidence fields and rejects unsafe files', () => {
   assert.deepEqual(normalizeLitresPublicDomainRecords(JSON.stringify([
     { uuid: 'uuid-1', name: 'Named', is_public_domain: true, isFree: true,
-      author: { title: 'Writer' }, languages: ['RU', 'invalid'], formats: { href: 'https://books.example/named.fb2', extension: 'fb2' } },
+      author: { title: 'Writer' }, languages: ['RU', 'invalid'], formats: { href: 'https://books.example/named.epub', extension: 'epub' } },
     { slug: 'slug-1', metadata: { title: 'Zero', year: '1900' }, rights: { status: 'Public Domain' }, price: { amount: 0 },
-      download_url: 'https://books.example/zero.fb2', format: 'application/fb2+xml' },
-    { id: 'private', public_domain: true, free: true, files: [{ format: 'fb2', url: 'https://127.0.0.1/private.fb2' }] },
-    { id: 'not-direct', public_domain: true, free: true, files: [{ type: 'application/fb2+xml', url: 'https://books.example/page' }] },
+      download_url: 'https://books.example/zero.epub', format: 'application/epub+zip' },
+    { id: 'private', public_domain: true, free: true, files: [{ format: 'epub', url: 'https://127.0.0.1/private.epub' }] },
+    { id: 'not-direct', public_domain: true, free: true, files: [{ type: 'application/epub+zip', url: 'https://books.example/page' }] },
   ])), [
-    { provider: 'litres-public-domain', recordId: 'uuid-1', publicationId: 'litres-public-domain:uuid-1', title: 'Named', authors: ['Writer'], languages: ['ru'], rights: { status: 'public_domain', license: 'Public Domain', source: 'litres' }, acquisitions: [{ format: 'fb2', url: 'https://books.example/named.fb2', availability: 'open' }] },
-    { provider: 'litres-public-domain', recordId: 'slug-1', publicationId: 'litres-public-domain:slug-1', title: 'Zero', authors: [], languages: [], publishedYear: '1900', rights: { status: 'public_domain', license: 'Public Domain', source: 'litres' }, acquisitions: [{ format: 'fb2', url: 'https://books.example/zero.fb2', availability: 'open' }] },
+    { provider: 'litres-public-domain', recordId: 'uuid-1', publicationId: 'litres-public-domain:uuid-1', title: 'Named', authors: ['Writer'], languages: ['ru'], rights: { status: 'public_domain', license: 'Public Domain', source: 'litres' }, acquisitions: [{ format: 'epub', url: 'https://books.example/named.epub', availability: 'open' }] },
+    { provider: 'litres-public-domain', recordId: 'slug-1', publicationId: 'litres-public-domain:slug-1', title: 'Zero', authors: [], languages: [], publishedYear: '1900', rights: { status: 'public_domain', license: 'Public Domain', source: 'litres' }, acquisitions: [{ format: 'epub', url: 'https://books.example/zero.epub', availability: 'open' }] },
   ]);
   assert.deepEqual(normalizeLitresPublicDomainRecords({}), []);
   assert.deepEqual(normalizeLitresPublicDomainRecords({ records: [] }), []);
@@ -255,17 +255,17 @@ test('LitRes normalization accepts alternate evidence fields and rejects unsafe 
 
 test('OPDS adapters handle alternate links, metadata, and conservative search discovery', () => {
   const context = { provider: 'feed', feedURL: 'https://books.example/root/catalog' };
-  const opds1 = normalizeOPDS1Feed(`<feed><entry><link href="ftp://books.example/book.fb2" type="application/fb2+xml"/></entry>
-    <entry><link href="/book.FB2.zip?download=1"/><dc:published>around 1899</dc:published><dc:rights>unknown</dc:rights></entry></feed>`, context);
+  const opds1 = normalizeOPDS1Feed(`<feed><entry><link href="ftp://books.example/book.epub" type="application/epub+zip"/></entry>
+    <entry><link href="/book.EPUB?download=1"/><dc:published>around 1899</dc:published><dc:rights>unknown</dc:rights></entry></feed>`, context);
   assert.equal(opds1.length, 1);
   assert.equal(opds1[0].title, 'Untitled');
   assert.equal(opds1[0].publishedYear, '1899');
   assert.equal(opds1[0].rights.status, 'unknown');
-  assert.equal(opds1[0].acquisitions[0].url, 'https://books.example/book.FB2.zip?download=1');
+  assert.equal(opds1[0].acquisitions[0].url, 'https://books.example/book.EPUB?download=1');
 
   const opds2 = normalizeOPDS2Feed({ publications: [{
     id: 42, title: 8, creator: [{ identifier: 'Writer' }, 9], languages: ['EN', 'nonsense'], license: 'CC-BY',
-    acquisition: { url: '/book.fb2', media_type: 'application/fb2+xml' }, images: { url: '/cover.jpg' },
+    acquisition: { url: '/book.epub', media_type: 'application/epub+zip' }, images: { url: '/cover.jpg' },
   }] }, context);
   assert.equal(opds2[0].recordId, '42');
   assert.deepEqual(opds2[0].authors, ['Writer']);
@@ -282,9 +282,27 @@ test('OPDS adapters handle alternate links, metadata, and conservative search di
 
   const litres = normalizeLitresPublicDomainRecords({ items: [{
     file_id: 7, name: 'Fallback title', public_domain: true, price: { value: '0,00' }, language: 'RU',
-    labels: [{ title: 'Public Domain' }], downloads: { download_url: 'https://books.example/direct.fb2', type: 'application/fb2+xml' },
+    labels: [{ title: 'Public Domain' }], downloads: { download_url: 'https://books.example/direct.epub', type: 'application/epub+zip' },
   }] });
   assert.equal(litres[0].recordId, '7');
   assert.equal(litres[0].title, 'Fallback title');
   assert.deepEqual(litres[0].languages, ['ru']);
+});
+
+test('OPDS selects EPUB and PDF by MIME or filename and ignores unsupported links', () => {
+  const records = normalizeOPDS2Feed({ publications: [
+    { metadata: { identifier: 'pdf-mime' }, links: [{ href: '/download', type: 'application/pdf; charset=binary' }] },
+    { metadata: { identifier: 'pdf-path' }, links: [{ href: '/book.PDF' }] },
+    { metadata: { identifier: 'epub-label' }, links: [{ href: '/download', type: 'epub' }] },
+    { metadata: { identifier: 'unknown' }, links: [{ href: '/book.mobi' }] },
+  ] }, { provider: 'feed', feedURL: 'https://books.example/catalog' });
+  assert.deepEqual(records.map(record => [record.recordId, record.acquisitions[0].format]), [
+    ['pdf-mime', 'pdf'], ['pdf-path', 'pdf'], ['epub-label', 'epub'],
+  ]);
+  assert.deepEqual(normalizeLitresPublicDomainRecords({ items: [
+    { id: 'pdf', public_domain: true, free: true, files: [{ format: 'pdf', url: 'https://books.example/book.pdf' }] },
+    { id: 'mime', public_domain: true, free: true, files: [{ mime: 'application/pdf', url: 'https://books.example/mime.pdf' }] },
+    { id: 'media-type', public_domain: true, free: true, files: [{ media_type: 'application/epub+zip', url: 'https://books.example/media.epub' }] },
+    { id: 'unknown', public_domain: true, free: true, files: [{ format: 'mobi', url: 'https://books.example/book.mobi', direct: true }] },
+  ] }).map(record => record.acquisitions[0].format), ['pdf', 'pdf', 'epub']);
 });

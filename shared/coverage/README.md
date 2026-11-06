@@ -7,7 +7,7 @@ meet or exceed every percentage.
 
 Web and Electron were captured together after Electron reporting landed.
 Android uses the passing Robolectric coverage run cited in its baseline. The latest successful iOS
-artifact is retained until the queued post-FB2 run completes; raising a floor
+artifact is retained until the next native run completes; raising a floor
 requires a newer passing artifact and its run URL and commit.
 
 End-to-end suites remain mandatory workflow checks but do not report source

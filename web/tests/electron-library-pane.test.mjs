@@ -126,7 +126,7 @@ test('Library titles keep disabled formats as metadata across routing and callba
     isLibraryBook: () => true, rightsMarkerMarkup: () => '', readRouteValue: () => 'book',
   });
   for (const options of [{ routeOnly: true }, { canOpen: () => true }, { onOpen() {} }, { canOpen: () => false }, {}]) {
-    for (const format of [{ extension: 'fb2' }, { extension: 'epub' }, { format: 'fb2' }, { format: 'epub' }]) {
+    for (const format of [{ extension: 'mobi' }, { extension: 'epub' }, { format: 'mobi' }, { format: 'epub' }]) {
       const target = node();
       c.renderBookTable(target, [{ title: 'Saved book', ...format }], options);
       const markup = target.children[0].children[1].innerHTML;
@@ -137,7 +137,7 @@ test('Library titles keep disabled formats as metadata across routing and callba
   }
 });
 
-test('legacy saved FB2 formats survive normalization without restoring guessed EPUB formats', () => {
+test('legacy saved MOBI formats survive normalization without restoring guessed EPUB formats', () => {
   const formats = loadFunction('isDisabledBookFormat', '', {});
   const c = loadFunction('normalizeFavoriteFromRemote', '', {
     isDisabledBookFormat: formats.isDisabledBookFormat, BookMetadata: globalThis.BookMetadata,
@@ -145,7 +145,7 @@ test('legacy saved FB2 formats survive normalization without restoring guessed E
     normalizeSha256: () => '', isMd5: () => true,
   });
   for (const [ref, expected] of [
-    [{ extension: 'fb2' }, 'fb2'], [{ format: '.FB2' }, 'fb2'],
+    [{ extension: 'mobi' }, 'mobi'], [{ format: '.MOBI' }, 'mobi'],
     [{ extension: 'epub' }, ''],
     [{ extension: 'pdf', metadataProvenance: { extension: 'detected-local' } }, 'pdf'],
   ]) {
@@ -165,7 +165,7 @@ test('Electron library requires a verified readable local file', () => {
   });
   assert.equal(c.isBookReadableNow({ job: { status: 'ready', readable: false } }), false);
   assert.equal(c.isBookReadableNow({ job: { status: 'failed', readable: true } }), true);
-  assert.equal(c.isBookReadableNow({ extension: 'fb2', job: { readable: true } }), false);
+  assert.equal(c.isBookReadableNow({ extension: 'mobi', job: { readable: true } }), false);
   assert.equal(c.isBookReadableNow({ readUrl: 'https://books.test/book.epub' }), false);
   c.isDesktopMode = false;
   assert.equal(c.isBookReadableNow({}), true);

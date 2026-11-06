@@ -22,7 +22,7 @@ test('custom-feed settings retain only public credential-free HTTPS feeds', () =
   assert.match(providerForOPDSFeed({ name: 'Public catalogue', url: 'https://books.example/opds' }), /^opds-[a-z0-9]+$/);
 });
 
-test('OPDS search omits disabled FB2 acquisitions from discovery results', async () => {
+test('OPDS search exposes supported EPUB acquisitions', async () => {
   const feed = { name: 'Example OPDS', url: 'https://books.example/catalog.json' };
   const calls = [];
   const fetchImpl = async (url) => {
@@ -44,8 +44,8 @@ test('OPDS search omits disabled FB2 acquisitions from discovery results', async
         },
         links: [{
           rel: ['http://opds-spec.org/acquisition/open-access'],
-          type: 'application/fb2+xml',
-          href: 'https://downloads.example/idiot.fb2',
+          type: 'application/epub+zip',
+          href: 'https://downloads.example/idiot.epub',
         }],
       }],
     }));
@@ -54,8 +54,8 @@ test('OPDS search omits disabled FB2 acquisitions from discovery results', async
   const records = await searchOPDSFeed(feed, 'Идиот', fetchImpl);
   assert.equal(calls.length, 2);
   assert.equal(calls.every(url => url.startsWith('https://books.example/')), true);
-  assert.deepEqual(records, []);
-  assert.equal(providerRecordToBook({ acquisitions: [{ format: 'fb2', availability: 'open' }] }, feed.url), null);
+  assert.equal(records.length, 1);
+  assert.equal(providerRecordToBook({ acquisitions: [{ format: 'mobi', availability: 'open' }] }, feed.url), null);
 });
 
 test('discovers an OPDS 1 OpenSearch descriptor without proxying it through the worker', async () => {
@@ -63,7 +63,7 @@ test('discovers an OPDS 1 OpenSearch descriptor without proxying it through the 
   const calls = [];
   const atom = '<?xml version="1.0"?><feed><link rel="search" type="application/opensearchdescription+xml" href="/open.xml"/></feed>';
   const descriptor = '<OpenSearchDescription><Url type="application/atom+xml" template="https://atom.example/find?q={searchTerms}"/></OpenSearchDescription>';
-  const result = '<feed><entry><id>a-1</id><title>Open book</title><author><name>Ada</name></author><dc:language>en</dc:language><dc:rights>CC BY 4.0</dc:rights><link rel="http://opds-spec.org/acquisition/open-access" type="application/x-fictionbook+xml" href="/books/open.fb2"/></entry></feed>';
+  const result = '<feed><entry><id>a-1</id><title>Open book</title><author><name>Ada</name></author><dc:language>en</dc:language><dc:rights>CC BY 4.0</dc:rights><link rel="http://opds-spec.org/acquisition/open-access" type="application/epub+zip" href="/books/open.epub"/></entry></feed>';
   const fetchImpl = async (url) => {
     calls.push(String(url));
     if (String(url) === feed.url) return response(url, atom);
@@ -73,14 +73,15 @@ test('discovers an OPDS 1 OpenSearch descriptor without proxying it through the 
   };
   const records = await searchOPDSFeed(feed, 'open', fetchImpl);
   assert.deepEqual(calls, [feed.url, 'https://atom.example/open.xml', 'https://atom.example/find?q=open']);
-  assert.deepEqual(records, []);
+  assert.equal(records[0].acquisitions[0].format, 'epub');
+  assert.equal(records[0].title, 'Open book');
 });
 
 test('neutralizes encoded markup in directly fetched OPDS metadata', async () => {
   const feed = { name: 'Atom', url: 'https://atom.example/catalog' };
-  const hostile = '<feed><entry><id>a-1</id><title>&lt;script&gt;alert(1)&lt;/script&gt;Open book</title><dc:rights>Public Domain</dc:rights><link rel="http://opds-spec.org/acquisition/open-access" type="application/x-fictionbook+xml" href="/books/open.fb2"/></entry></feed>';
+  const hostile = '<feed><entry><id>a-1</id><title>&lt;script&gt;alert(1)&lt;/script&gt;Open book</title><dc:rights>Public Domain</dc:rights><link rel="http://opds-spec.org/acquisition/open-access" type="application/epub+zip" href="/books/open.epub"/></entry></feed>';
   const records = await searchOPDSFeed(feed, '', async url => response(url, hostile));
-  assert.deepEqual(records, []);
+  assert.equal(records[0].title, 'alert(1)Open book');
 });
 
 test('reports custom OPDS request failures to the caller for per-source status handling', async () => {
@@ -104,3 +105,14 @@ function response(url, body) {
     text: async () => body,
   };
 }
+
+test('OPDS accepts PDF filenames and EPUB format labels while ignoring unknown acquisitions', async () => {
+  const feed = { name: 'Formats', url: 'https://books.example/catalog' };
+  const records = await searchOPDSFeed(feed, '', async url => response(url, JSON.stringify({ publications: [
+    { metadata: { identifier: 'pdf' }, links: [{ href: '/book.PDF' }] },
+    { metadata: { identifier: 'epub' }, links: [{ href: '/download', type: 'epub' }] },
+    { metadata: { identifier: 'unknown' }, links: [{ href: '/book.mobi' }] },
+  ] })));
+  assert.deepEqual(records.map(record => record.acquisitions[0].format), ['pdf', 'epub']);
+  assert.equal(providerRecordToBook(records[0], feed.url).extension, 'pdf');
+});

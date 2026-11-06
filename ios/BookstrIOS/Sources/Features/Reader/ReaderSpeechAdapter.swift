@@ -1,7 +1,6 @@
 import Foundation
 
-/// Presents EPUB and FB2 speech controllers to the host through one small,
-/// format-neutral command surface without hiding their format-specific work.
+/// Presents EPUB speech commands to the reader host.
 @MainActor
 struct ReaderSpeechAdapter {
     let state: ReaderSpeechState
@@ -22,13 +21,5 @@ struct ReaderSpeechAdapter {
         stop = { controller.stopSpeechCompletely() }
     }
 
-    init(fb2 controller: FB2ReaderController, playback: SpeechPlaybackChoice) {
-        state = controller.speechState
-        isRetained = controller.isSpeechRetained
-        isPlaying = controller.isSpeaking
-        toggle = { controller.toggleSpeech(playback: playback) }
-        restart = { controller.restartSpeech(playback: playback) }
-        updateRate = { controller.updateSpeechRate($0) }
-        stop = { controller.stopSpeechCompletely() }
-    }
+
 }

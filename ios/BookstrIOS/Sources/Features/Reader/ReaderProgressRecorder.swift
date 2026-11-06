@@ -47,7 +47,7 @@ enum ReaderProgressRecorder {
             return max(0, locator.split(separator: ":").dropFirst().first.flatMap { Int($0) } ?? 0)
         case .pdf:
             return locator.split(separator: ":").dropFirst().first.flatMap { Int($0) } ?? 0
-        case .epub, .fb2:
+        case .epub:
             return 0
         }
     }

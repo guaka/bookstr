@@ -10,7 +10,7 @@ struct CatalogSearchPage {
         let books = records.compactMap { record -> BookSearchResult? in
             guard let md5 = record["md5"] as? String, validHash(md5, length: 32) else { return nil }
             let raw = (record["extension"] as? String ?? "").lowercased()
-            let format = ["epub", "pdf", "fb2", "cbr", "cbz"].contains(raw) ? BookFormat.from(format: raw, url: "") : nil
+            let format = ["epub", "pdf", "cbr", "cbz"].contains(raw) ? BookFormat.from(format: raw, url: "") : nil
             return BookSearchResult(id: md5.lowercased(), source: "libcat", title: record["title"] as? String ?? "Untitled",
                 author: [record["authors"], record["author"]].compactMap { ($0 as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) }.first(where: { !$0.isEmpty }) ?? "Unknown author", year: record["year"] as? String,
                 publisher: record["publisher"] as? String, language: record["language"] as? String,

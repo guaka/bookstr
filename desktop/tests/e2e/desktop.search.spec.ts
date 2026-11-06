@@ -299,7 +299,7 @@ test('Library sorts readable desktop downloads by completion and filters with fu
       globalThis.libraryDownloadsFixture = [
         { bookId: 'e'.repeat(32), md5: 'e'.repeat(32), title: 'Older French', authors: ['Fixture Author'], language: 'fr', extension: 'epub', status: 'ready', readable: true, completedAt: 10 },
         { bookId: 'f'.repeat(32), md5: 'f'.repeat(32), title: 'Newest English', authors: ['Fixture Author'], language: 'en', extension: 'pdf', status: 'ready', readable: true, completedAt: 30 },
-        { bookId: '1'.repeat(32), md5: '1'.repeat(32), title: 'Middle English', authors: ['Fixture Author'], language: 'en', extension: 'fb2', status: 'ready', readable: true, completedAt: 20 },
+        { bookId: '1'.repeat(32), md5: '1'.repeat(32), title: 'Middle English', authors: ['Fixture Author'], language: 'en', extension: 'cbz', status: 'ready', readable: true, completedAt: 20 },
         { bookId: '2'.repeat(32), md5: '2'.repeat(32), title: 'Unreadable metadata', authors: ['Fixture Author'], language: 'en', extension: 'txt', status: 'ready', readable: false, completedAt: 40 },
       ];
       ipcMain.removeHandler('bookstr-desktop-library-downloads');

@@ -47,10 +47,7 @@ data class CatalogSearchPage(val books: List<BookSearchResult>, val nextOffset: 
                 val md5 = record.optString("md5").lowercase()
                 val validMd5 = md5.takeIf { Regex("[0-9a-f]{32}").matches(it) }
                 val extension = record.optString("extension").trim().lowercase()
-                val format = when (extension) {
-                    "fb2.zip" -> BookFormat.Fb2
-                    else -> BookFormat.entries.find { it.extension == extension }
-                }
+                val format = BookFormat.entries.find { it.extension == extension }
                 val nativeId = record.optString("id").takeUnless { it.isBlank() || it == "null" }
                 val id = validMd5 ?: nativeId?.let { "libcat:$it" } ?: return@mapNotNull null
                 fun text(key: String) = record.optString(key).takeUnless { it.isBlank() || it == "null" }

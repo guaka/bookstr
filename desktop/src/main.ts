@@ -1261,10 +1261,6 @@ function setupIpcHandlers() {
     const expectedSha256 = /^[a-f0-9]{64}$/i.test(String(request.expectedSha256 || ''))
       ? String(request.expectedSha256).toLowerCase()
       : undefined;
-    if (String(request.extension || path.extname(selection.filePaths[0]).slice(1)).toLowerCase() === 'fb2'
-      || path.extname(selection.filePaths[0]).toLowerCase() === '.fb2') {
-      throw new Error('The selected book format is not supported.');
-    }
     const imported = await getLibraryImporter().importFile(selection.filePaths[0], {
       extension: request.extension,
       expectedSha256,

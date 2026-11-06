@@ -85,9 +85,6 @@ enum LibraryUITestFixtures {
             ], [
                 "bookstr", "ui-test-unreadable-unknown-author", "Unreadable Unknown Author Fixture",
                 "", "", "epub", "2026",
-            ], [
-                "bookstr", "ui-test-disabled-fb2", "Legacy FB2 Fixture",
-                "Fixture Author", "https://example.test/book.fb2", "fb2", "2026",
             ]]
             if let data = try? JSONSerialization.data(withJSONObject: tags),
                let plaintext = String(data: data, encoding: .utf8) {

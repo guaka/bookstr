@@ -157,7 +157,7 @@ fun SettingsScreen(
                     )
                 }
                 Text(
-                    "Keeps the display on for EPUB, PDF, FB2, and comics. Your last book and position remain saved.",
+                    "Keeps the display on for EPUB, PDF, and comics. Your last book and position remain saved.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.secondary,
                 )

@@ -7,7 +7,7 @@ It also exposes `/api/litres/search` as a fixed-origin LitRes adapter. Set
 the worker's operator-owned `LITRES_PUBLIC_DOMAIN_CATALOG_URL` environment
 value to a vetted public HTTPS catalogue produced through LitRes partner
 access. The route returns records only when their data explicitly labels them
-public domain, free, and directly downloadable as FB2. Custom OPDS feeds
+public domain, free, and directly downloadable as EPUB or PDF. Custom OPDS feeds
 never use this worker: clients fetch their configured public HTTPS feed
 directly.
 

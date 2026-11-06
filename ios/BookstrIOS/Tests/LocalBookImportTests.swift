@@ -17,6 +17,15 @@ final class LocalBookImportTests: XCTestCase {
         let project = try String(contentsOf: ios.appendingPathComponent("project.yml"))
         for type in ["org.idpf.epub-container", "com.adobe.pdf"] { XCTAssertTrue(project.contains(type)) }
     }
+    func testSavedArraysSkipUnknownFormatsWithoutLosingSupportedEntries() {
+        let store = JSONFileStore(subdirectory: "BookstrImportTests/\(UUID().uuidString)")
+        XCTAssertEqual(store.loadArray("missing.json", as: BookFormat.self), [])
+        store.save("formats.json", value: ["pdf", "mobi", "epub", "cbz", "cbr"])
+        XCTAssertEqual(store.loadArray("formats.json", as: BookFormat.self), [.pdf, .epub, .cbz, .cbr])
+        store.save("formats.json", value: ["format": "pdf"])
+        XCTAssertEqual(store.loadArray("formats.json", as: BookFormat.self), [])
+    }
+
     func testCopiesDocumentsAndReusesContentIdentity() throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)

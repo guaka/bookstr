@@ -7,7 +7,7 @@ import org.junit.Test
 class BookListFiltersTest {
     @Test fun normalizesLanguageNamesCodesAndRegions() {
         assertEquals(listOf("en", "pt", "zz"), BookListFilters.languages(listOf(null, "", " English ", "eng", "en-US", "pt_BR", "Portuguese", "zz")))
-        assertEquals(listOf("epub", "fb2", "pdf"), BookListFilters.formats(listOf(null, "", " .EPUB ", "fb2.zip", "PDF", "pdf")))
+        assertEquals(listOf("cbz", "epub", "pdf"), BookListFilters.formats(listOf(null, "", " .EPUB ", ".CBZ", "PDF", "pdf")))
     }
     @Test fun combinesFacetsAndKeepsUnknownMetadataOnlyForAll() {
         assertTrue(BookListFilters().matches(null, null))
@@ -15,11 +15,11 @@ class BookListFiltersTest {
         assertFalse(BookListFilters("en").matches(null, "epub"))
         assertTrue(BookListFilters(format = "pdf").matches(null, ".PDF"))
         assertFalse(BookListFilters(format = "pdf").matches("en", null))
-        val both = BookListFilters("pt", "fb2")
-        assertTrue(both.matches("pt-BR", "fb2.zip"))
-        assertFalse(both.matches("en", "fb2"))
+        val both = BookListFilters("pt", "cbz")
+        assertTrue(both.matches("pt-BR", ".CBZ"))
+        assertFalse(both.matches("en", "cbz"))
         assertFalse(both.matches("pt", "epub"))
-        assertEquals(both, both.sanitize(listOf("pt"), listOf("fb2")))
+        assertEquals(both, both.sanitize(listOf("pt"), listOf("cbz")))
         assertEquals(BookListFilters(), both.sanitize(emptyList(), emptyList()))
     }
     @Test fun authorPlaceholdersAreHiddenWithoutHidingRealNames() {

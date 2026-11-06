@@ -6,7 +6,7 @@
   </picture>
 </p>
 
-**A calm, open-source EPUB, PDF, and FictionBook 2 (FB2) reader for the web, desktop, Android, and iOS.**
+**A calm, open-source EPUB, PDF, CBZ, and CBR reader for the web, desktop, Android, and iOS.**
 
 [Read on the web](https://books.guaka.org) · [Download the Android APK](https://github.com/guaka/bookstr/releases/latest) · [View the source](https://github.com/guaka/bookstr)
 
@@ -15,13 +15,13 @@
 
 ## Reading without the noise
 
-Bookstr is built around the book rather than the storefront. Open an EPUB, PDF, or FictionBook 2 (FB2) title, pick a comfortable theme, and keep reading without accounts, recommendations, or attention-grabbing chrome.
+Bookstr is built around the book rather than the storefront. Open an EPUB, PDF, CBZ, or CBR title, pick a comfortable theme, and keep reading without accounts, recommendations, or attention-grabbing chrome.
 
 Your library and reading state stay local. Optional Nostr sync carries favorites, progress, and saved vocabulary between devices without making Bookstr the owner of your identity or data.
 
 ## Highlights
 
-- **EPUB, PDF, and FB2 reading** with focused, responsive reader interfaces.
+- **EPUB, PDF, CBZ, and CBR reading** with focused, responsive reader interfaces.
 - **Library, search, and reading tools** including themes, progress tracking, text-to-speech, dictionary lookup, and saved vocabulary.
 - **Local-first, optional sync** with content-addressed delivery, SHA-256 verification, and Nostr.
 - **Public OPDS catalogs** fetched directly by your device, plus optional Blossom mirrors.

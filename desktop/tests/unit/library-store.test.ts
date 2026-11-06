@@ -13,7 +13,7 @@ function withStore<T>(fn: (store: InstanceType<typeof LibraryStore>, root: strin
 }
 
 test('local catalog upserts and Unicode search are available in Electron', () => withStore(store => {
-  store.upsertBook({ id: 'ru-1', title: 'Война и мир', authors: 'Лев Толстой', language: 'ru', extension: 'fb2', rights_status: 'public_domain' });
+  store.upsertBook({ id: 'ru-1', title: 'Война и мир', authors: 'Лев Толстой', language: 'ru', extension: 'epub', rights_status: 'public_domain' });
   store.upsertBook({ id: 'zh-1', title: '红楼梦', authors: '曹雪芹', language: 'zh', extension: 'epub', rights_status: 'public_domain' });
   store.upsertBook({ id: 'nc-1', title: 'Restricted', license: 'CC BY-NC 4.0', rights_status: 'open_license' });
   assert.equal(store.search({ query: 'Толстой' }).total, 1);

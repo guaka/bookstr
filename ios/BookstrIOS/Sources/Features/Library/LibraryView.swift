@@ -335,7 +335,6 @@ struct LibraryView: View {
     }
 
     private func open(_ book: CatalogBook) {
-        guard book.format.isAvailableOnIOS else { return }
         guard openingBookID == nil else { return }
         let local = container.catalogRepository.localPublication(for: book)
         playback.present(book: local?.book ?? book, preparedURL: local?.url)

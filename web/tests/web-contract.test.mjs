@@ -496,7 +496,7 @@ test('PDFs are fetched and displayed inside the Bookstr reader pane', () => {
   assert.match(html, /new Blob\(\[blob\], \{ type: 'application\/pdf' \}\)/);
   assert.match(html, /PDF download failed/);
   assert.match(html, /await displayPdf\(blob, book, readPath, openGeneration\)/);
-  assert.match(html, /const readerPath = kind === 'pdf' \? 'pdf-reader\.html' : kind === 'fb2' \? 'fb2-reader\.html' : kind === 'comic' \? 'comic-reader\.html' : 'reader\.html'/);
+  assert.match(html, /const readerPath = kind === 'pdf' \? 'pdf-reader\.html' : kind === 'comic' \? 'comic-reader\.html' : 'reader\.html'/);
   assert.match(html, /const readerLoad = await readerFrameLoader\('pdf', openGeneration, book\.md5 \|\| BookMetadata\.bookIdentity\(book\)\)/);
   assert.match(html, /filename: pdfDownloadFilename\(book\)/);
   assert.match(html, /return `\$\{safeTitle \|\| 'Bookstr book'\}\.pdf`/);
@@ -759,7 +759,7 @@ test('metadata-only books resolve repository torrent metadata through private NI
   assert.match(html, /BookMetadata\.matchingTorrentCatalogRecord\(book, candidates\)/);
   assert.match(bookMetadata, /const titleRank = \(?candidate\)? =>/);
   assert.match(bookMetadata, /overlap \/ candidateTokens\.length >= 0\.6/);
-  assert.match(bookMetadata, /const formatRank = \{ epub: 4, pdf: 3, fb2: 2/);
+  assert.match(bookMetadata, /const formatRank = \{ epub: 4, pdf: 3, cbz: 1/);
   assert.match(bookMetadata, /candidateYear === wantedYear/);
   assert.match(bookMetadata, /right\.formatRank - left\.formatRank/);
   assert.match(html, /signer: nostrSigner,[\s\S]*?publish: publishRelayEvent,[\s\S]*?onTrace: showNip17Trace/);

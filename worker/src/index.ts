@@ -92,7 +92,7 @@ async function fetchLitResPublicDomain(request: Request, incoming: URL, env: Wor
     return jsonResponse({ error: 'LitRes returned an invalid response.' }, { request, status: 502 });
   }
   // The normalizer requires explicit public-domain rights, zero/free pricing,
-  // and a direct HTTPS FB2 file. A landing page or an ambiguous record is not
+  // and a direct HTTPS EPUB or PDF file. A landing page or an ambiguous record is not
   // returned to Bookstr.
   const records = normalizeLitresPublicDomainRecords(payload)
     .filter((record: SearchableRecord) => matchesLitResQuery(record, search.query))

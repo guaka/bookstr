@@ -15,7 +15,6 @@ import AppKit
 #endif
 
 enum PublicationUtilities {
-    static let maxFB2Bytes: Int64 = 50 * 1024 * 1024
     static let maxComicEntries = 2_000
     static let maxComicPageBytes: UInt32 = 30 * 1024 * 1024
     static let maxComicMetadataBytes = 1 * 1024 * 1024
@@ -174,55 +173,6 @@ enum PublicationUtilities {
               !data.isEmpty else { return nil }
 #endif
         return EmbeddedCover(data: data, pathExtension: "jpg")
-    }
-
-    /// FB2 coverpage references a base64-encoded <binary> by ID. The parser
-    /// only retains that one payload, rather than every illustration in the book.
-    static func fb2Cover(fileURL: URL) -> EmbeddedCover? {
-        guard let data = fb2Data(fileURL: fileURL), Int64(data.count) <= maxFB2Bytes else { return nil }
-        let delegate = FB2CoverParser()
-        let parser = XMLParser(data: data)
-        parser.delegate = delegate
-        parser.shouldProcessNamespaces = false
-        parser.shouldResolveExternalEntities = false
-        guard parser.parse(), let encoded = delegate.encoded,
-              encoded.utf8.count <= maxCoverBytes * 2,
-              let image = Data(base64Encoded: encoded, options: .ignoreUnknownCharacters) else { return nil }
-        return validatedCover(image)
-    }
-
-    private final class FB2CoverParser: NSObject, XMLParserDelegate {
-        private var inCoverpage = false
-        private var targetID: String?
-        private var inTargetBinary = false
-        private var payload = ""
-        var encoded: String?
-
-        func parser(_ parser: XMLParser, didStartElement elementName: String,
-                    namespaceURI: String?, qualifiedName: String?, attributes: [String: String]) {
-            let name = elementName.split(separator: ":").last.map(String.init)?.lowercased() ?? elementName.lowercased()
-            if name == "coverpage" { inCoverpage = true }
-            if inCoverpage, name == "image",
-               let href = attributes.first(where: { $0.key.lowercased().hasSuffix("href") })?.value,
-               href.hasPrefix("#") { targetID = String(href.dropFirst()) }
-            if name == "binary", let targetID, attributes["id"] == targetID { inTargetBinary = true }
-        }
-
-        func parser(_ parser: XMLParser, foundCharacters string: String) {
-            guard inTargetBinary else { return }
-            payload += string
-            if payload.utf8.count > PublicationUtilities.maxCoverBytes * 2 { parser.abortParsing() }
-        }
-
-        func parser(_ parser: XMLParser, didEndElement elementName: String,
-                    namespaceURI: String?, qualifiedName: String?) {
-            let name = elementName.split(separator: ":").last.map(String.init)?.lowercased() ?? elementName.lowercased()
-            if name == "coverpage" { inCoverpage = false }
-            if name == "binary", inTargetBinary {
-                encoded = payload
-                inTargetBinary = false
-            }
-        }
     }
 
     /// One defensive pass over the ZIP central directory returning the first
@@ -452,7 +402,6 @@ enum PublicationUtilities {
             return nil
         }
         let format = BookFormat.from(format: favorite.format, url: parsed.absoluteString)
-        guard format.isAvailableOnIOS else { return nil }
         return CatalogBook(
             id: favorite.key,
             title: favorite.title,
@@ -479,14 +428,12 @@ enum PublicationUtilities {
         if String(data: prefix, encoding: .ascii)?.hasPrefix("%PDF-") == true { return .pdf }
         if isRARSignature(prefix) { return .cbr }
         if prefix.starts(with: [0x50, 0x4b]) {
-            if isSafeFB2Zip(fileURL: fileURL) { return .fb2 }
             if fileContains(fileURL, needle: Data("META-INF/container.xml".utf8)) { return .epub }
             if zipContainsComicImage(fileURL: fileURL) { return .cbz }
             // Preserve the historical detection contract: an unknown ZIP is
             // provisionally EPUB, then structural validation rejects it.
             return .epub
         }
-        if String(data: prefix, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("<") == true { return .fb2 }
         return nil
     }
 
@@ -497,8 +444,6 @@ enum PublicationUtilities {
         case .epub:
             return detectedFormat(fileURL: fileURL) == .epub
                 && fileContains(fileURL, needle: Data("META-INF/container.xml".utf8))
-        case .fb2:
-            return validateFB2(fileURL: fileURL)
         case .cbr:
             return detectedFormat(fileURL: fileURL) == .cbr
         case .cbz:
@@ -711,165 +656,8 @@ enum PublicationUtilities {
         #endif
     }
 
-    /// Returns descriptive metadata from a local FB2 file without inserting
-    /// source XML into a view. XMLParser is non-validating and external entity
-    /// resolution is explicitly disabled.
-    static func fb2Metadata(fileURL: URL) -> (title: String?, author: String?, year: String?)? {
-        guard let data = fb2Data(fileURL: fileURL), Int64(data.count) <= maxFB2Bytes,
-              let parsed = parseFB2(data: data) else { return nil }
-        return (parsed.title, parsed.author, parsed.year)
-    }
-
-    private static func validateFB2(fileURL: URL) -> Bool {
-        guard let data = fb2Data(fileURL: fileURL), !data.isEmpty,
-              Int64(data.count) <= maxFB2Bytes else { return false }
-        return parseFB2(data: data) != nil
-    }
-
-    private final class FB2MetadataParser: NSObject, XMLParserDelegate {
-        var title: String?
-        var firstName: String?
-        var lastName: String?
-        var nickname: String?
-        var year: String?
-        private var path: [String] = []
-        private var value = ""
-        private var invalid = false
-        private var rootSeen = false
-        private var sectionCount = 0
-
-        var author: String? {
-            if let nickname, !nickname.isEmpty { return nickname }
-            let result = [firstName, lastName].compactMap { $0 }.joined(separator: " ")
-            return result.isEmpty ? nil : result
-        }
-
-        func parser(_ parser: XMLParser, didStartElement elementName: String,
-                    namespaceURI: String?, qualifiedName qName: String?, attributes attributeDict: [String: String] = [:]) {
-            let name = (qName ?? elementName).split(separator: ":").last.map(String.init)?.lowercased() ?? elementName.lowercased()
-            path.append(name)
-            value = ""
-            if path.count == 1 {
-                rootSeen = true
-                if name != "fictionbook" { invalid = true }
-            } else if name == "fictionbook" {
-                invalid = true
-            }
-            if name == "section" { sectionCount += 1 }
-        }
-
-        func parser(_ parser: XMLParser, foundCharacters string: String) { value += string }
-
-        func parser(_ parser: XMLParser, didEndElement elementName: String,
-                    namespaceURI: String?, qualifiedName qName: String?) {
-            let name = (qName ?? elementName).split(separator: ":").last.map(String.init)?.lowercased() ?? elementName.lowercased()
-            let text = value.trimmingCharacters(in: .whitespacesAndNewlines)
-            switch name {
-            case "book-title": if title == nil, !text.isEmpty { title = text }
-            case "first-name": if firstName == nil, !text.isEmpty { firstName = text }
-            case "last-name": if lastName == nil, !text.isEmpty { lastName = text }
-            case "nickname": if nickname == nil, !text.isEmpty { nickname = text }
-            case "date": if year == nil { year = text.range(of: #"\b(1[0-9]{3}|20[0-9]{2}|21[0-9]{2})\b"#, options: .regularExpression).map { String(text[$0]) } }
-            default: break
-            }
-            _ = path.popLast()
-            value = ""
-        }
-
-        var isValid: Bool { rootSeen && !invalid && title != nil && sectionCount > 0 }
-    }
-
-    private static func parseFB2(data: Data) -> (title: String?, author: String?, year: String?)? {
-        let source = String(decoding: data, as: UTF8.self)
-        guard !data.isEmpty, source.range(of: "<!DOCTYPE", options: .caseInsensitive) == nil,
-              source.range(of: "<!ENTITY", options: .caseInsensitive) == nil else { return nil }
-        let delegate = FB2MetadataParser()
-        let parser = XMLParser(data: data)
-        parser.delegate = delegate
-        parser.shouldProcessNamespaces = true
-        parser.shouldResolveExternalEntities = false
-        guard parser.parse(), delegate.isValid else { return nil }
-        return (delegate.title, delegate.author, delegate.year)
-    }
-
-    /// Returns native FB2 XML or the sole validated entry from a safe FB2 ZIP.
-    /// The cache retains the original download; readers consume this extracted view.
-    static func fb2Data(fileURL: URL) -> Data? {
-        guard let attributes = try? FileManager.default.attributesOfItem(atPath: fileURL.path),
-              let size = attributes[.size] as? NSNumber, size.int64Value > 0,
-              size.int64Value <= maxFB2Bytes else { return nil }
-        guard let data = try? Data(contentsOf: fileURL, options: [.mappedIfSafe]), !data.isEmpty else { return nil }
-        if data.starts(with: [0x50, 0x4b]) { return extractFB2Zip(data) }
-        return data
-    }
-
-    // iOS has no Foundation ZIP API. Parse the central directory defensively
-    // and support a single stored or raw-deflate FB2 entry. All archive
-    // metadata is bounded before allocating or inflating any payload.
-    private static func extractFB2Zip(_ data: Data) -> Data? {
-        guard data.count >= 22 else { return nil }
-        let end = data.endIndex - 4
-        let lower = max(data.startIndex, end - 65_557)
-        var eocd: Data.Index?
-        var cursor = end
-        while cursor >= lower {
-            if data[cursor] == 0x50, cursor + 3 < data.endIndex,
-               data[cursor + 1] == 0x4b, data[cursor + 2] == 0x05, data[cursor + 3] == 0x06 { eocd = cursor; break }
-            if cursor == data.startIndex { break }
-            cursor -= 1
-        }
-        guard let endRecord = eocd,
-              readUInt16(data, endRecord + 4) == 0,
-              readUInt16(data, endRecord + 6) == 0,
-              readUInt16(data, endRecord + 8) == 1,
-              readUInt16(data, endRecord + 10) == 1,
-              endRecord + 22 + Int(readUInt16(data, endRecord + 20)) == data.endIndex else { return nil }
-        let directorySize = Int(readUInt32(data, endRecord + 12))
-        let directoryOffset = Int(readUInt32(data, endRecord + 16))
-        guard directoryOffset >= 0, directorySize >= 46, directoryOffset + directorySize <= data.count,
-              readUInt32(data, data.startIndex + directoryOffset) == 0x02014b50 else { return nil }
-        let nameLength = Int(readUInt16(data, data.startIndex + directoryOffset + 28))
-        let extraLength = Int(readUInt16(data, data.startIndex + directoryOffset + 30))
-        let commentLength = Int(readUInt16(data, data.startIndex + directoryOffset + 32))
-        let entry = data.startIndex + directoryOffset
-        let nameStart = entry + 46
-        guard nameLength > 0, nameStart + nameLength + extraLength + commentLength <= data.endIndex,
-              let name = String(data: data[nameStart..<(nameStart + nameLength)], encoding: .utf8) else { return nil }
-        let normalized = name.replacingOccurrences(of: "\\", with: "/")
-        guard !normalized.hasPrefix("/"), !normalized.split(separator: "/").contains(".."),
-              !normalized.split(separator: "/").contains(""), normalized.lowercased().hasSuffix(".fb2") else { return nil }
-        let flags = readUInt16(data, entry + 8)
-        let method = readUInt16(data, entry + 10)
-        guard method == 0 || method == 8 else { return nil }
-        guard flags & 0x0001 == 0 else { return nil }
-        let compressedSize = Int(readUInt32(data, entry + 20))
-        let uncompressedSize = Int(readUInt32(data, entry + 24))
-        let localOffset = Int(readUInt32(data, entry + 42))
-        guard compressedSize > 0, uncompressedSize > 0,
-              Int64(compressedSize) <= maxFB2Bytes, Int64(uncompressedSize) <= maxFB2Bytes, localOffset >= 0,
-              localOffset + 30 <= data.count, readUInt32(data, data.startIndex + localOffset) == 0x04034b50 else { return nil }
-        guard readUInt16(data, data.startIndex + localOffset + 6) == flags,
-              readUInt16(data, data.startIndex + localOffset + 8) == method else { return nil }
-        let localNameLength = Int(readUInt16(data, data.startIndex + localOffset + 26))
-        let localExtraLength = Int(readUInt16(data, data.startIndex + localOffset + 28))
-        let payload = data.startIndex + localOffset + 30 + localNameLength + localExtraLength
-        guard payload + compressedSize <= data.endIndex else { return nil }
-        let compressed = Data(data[payload..<(payload + compressedSize)])
-        if method == 0 {
-            guard compressedSize == uncompressedSize else { return nil }
-            return compressed
-        }
-        return inflateRawDeflate(compressed, expectedSize: uncompressedSize)
-    }
-
-    private static func isSafeFB2Zip(fileURL: URL) -> Bool {
-        guard let data = try? Data(contentsOf: fileURL, options: [.mappedIfSafe]), Int64(data.count) <= maxFB2Bytes else { return false }
-        return extractFB2Zip(data) != nil
-    }
-
     private static func inflateRawDeflate(_ compressed: Data, expectedSize: Int) -> Data? {
         #if canImport(zlib)
-        guard !compressed.isEmpty, expectedSize > 0, expectedSize <= maxFB2Bytes else { return nil }
         var stream = z_stream()
         guard inflateInit2_(&stream, -15, ZLIB_VERSION, Int32(MemoryLayout<z_stream>.size)) == Z_OK else { return nil }
         defer { inflateEnd(&stream) }

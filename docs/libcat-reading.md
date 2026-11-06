@@ -34,7 +34,7 @@ peers or compatible trackers. Downloads pause when the app leaves the foreground
 Before relying on this path as the only acquisition route:
 
 1. Validate invitation, search, pagination, edition selection, interrupted
-   downloads, relaunch recovery, and offline EPUB, PDF, FB2, and comic reading on
+   downloads, relaunch recovery, and offline EPUB, PDF, and comic reading on
    real packaged Electron and iPhone builds.
 2. Exercise unavailable peers, malformed torrent metadata, wrong file hashes,
    duplicate selections, low storage, cancellation, and retry without losing

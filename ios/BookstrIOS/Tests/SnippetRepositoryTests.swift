@@ -98,13 +98,13 @@ final class SnippetRepositoryTests: XCTestCase {
             "bookId": "book",
             "title": "Legacy title",
             "author": "Author",
-            "format": "fb2",
-            "locator": "fb2:sec:0:0",
+            "format": "epub",
+            "locator": "epubcfi(/6/2)",
             "createdAt": 1_700_000_000_000,
         ] as [String: Any]))
         XCTAssertEqual(legacy.syncId, "legacy-id")
         XCTAssertEqual(legacy.bookTitle, "Legacy title")
-        XCTAssertEqual(legacy.format, .fb2)
+        XCTAssertEqual(legacy.format, .epub)
         XCTAssertEqual(legacy.updatedAt, 1_700_000_000_000)
         XCTAssertFalse(legacy.deleted)
     }

@@ -19,7 +19,6 @@ struct BookListFacetFilters: Equatable, Sendable {
     static func normalizedFormat(_ value: String?) -> String {
         var raw = value?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() ?? ""
         if raw.hasPrefix(".") { raw.removeFirst() }
-        if raw == "fb2.zip" { return "fb2" }
         return raw
     }
 
@@ -55,7 +54,7 @@ struct BookListFacetFilters: Equatable, Sendable {
     /// Compact label for list rows and filter menus: `EN`, `FR`, `EPUB`, …
     static func displayLabel(for value: String) -> String {
         let format = normalizedFormat(value)
-        if ["epub", "pdf", "fb2", "cbr", "cbz"].contains(format) {
+        if ["epub", "pdf", "cbr", "cbz"].contains(format) {
             return format.uppercased()
         }
         let base = normalizedLanguage(value)

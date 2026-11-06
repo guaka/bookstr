@@ -92,7 +92,6 @@ test('Bookstr routes CBZ and CBR files to the comic reader', () => {
   assert.match(app, /id = 'read-comic-opening-progress'/);
   assert.match(app, /format === 'cbz' \|\| format === 'cbr'/);
   assert.match(app, /Only EPUB, PDF, CBZ, and CBR book files can be opened/);
-  assert.match(app, /if \(format === 'fb2'\)\s*throw new Error\('The downloaded book format is not supported\.'\)/);
 });
 
 test('EPUB reader uses continuous vertical scrolling', () => {
@@ -183,4 +182,32 @@ test('comic archive paths normalize all Windows separators without replaceAll', 
   const imageName = vm.runInNewContext(`${source}; String.prototype.replaceAll = undefined; imageName`);
   for (const name of ['folder\\nested\\page.JPG', 'chapter/page.png', 'page.webp']) assert.equal(imageName(name), true, name);
   for (const name of ['', 'folder\\', 'folder\\..\\page.jpg', '__MACOSX\\page.png', 'thumbs\\page.jpg', 'cover.txt']) assert.equal(imageName(name), false, name);
+});
+
+test('reader format detection recognizes PDF, EPUB and comic archives without treating XML as a book', async () => {
+  const context = vm.createContext({ Blob, Uint8Array, String, Object,
+    isComicImageName: name => /\.(?:png|jpg)$/i.test(name),
+    JSZip: { loadAsync: async blob => ({ files: JSON.parse(await blob.text()) }) },
+  });
+  vm.runInContext(functionSource(app, 'bookFormatForBlob'), context);
+  const detect = context.bookFormatForBlob;
+  assert.equal(await detect(null), '');
+  assert.equal(await detect(new Blob(['%PDF-test'])), 'pdf');
+  assert.equal(await detect(new Blob(['ignored'], { type: 'application/pdf' })), 'pdf');
+  assert.equal(await detect(new Blob(['<document>text</document>'])), '');
+  assert.equal(await detect(new Blob(['Rar!payload'])), 'cbr');
+  assert.equal(await detect(new Blob(['{"META-INF/container.xml":{}}'], { type: 'application/epub+zip' })), 'epub');
+  assert.equal(await detect(new Blob(['{"page.jpg":{}}'], { type: 'application/zip' })), 'cbz');
+  assert.equal(await detect(new Blob(['broken zip'], { type: 'application/zip' })), 'epub');
+});
+
+test('readability accepts only registered extensions and publication MIME types', () => {
+  const context = vm.createContext({});
+  vm.runInContext(functionSource(app, 'isDisabledBookFormat'), context);
+  for (const format of ['', null, 'epub', '.PDF', 'CBZ', 'cbr', 'application/epub+zip', 'application/pdf', 'application/vnd.comicbook+zip', 'application/vnd.comicbook-rar']) {
+    assert.equal(context.isDisabledBookFormat(format), false, String(format));
+  }
+  for (const format of ['mobi', 'exe', 'application/octet-stream']) {
+    assert.equal(context.isDisabledBookFormat(format), true, format);
+  }
 });

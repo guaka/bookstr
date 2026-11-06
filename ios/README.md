@@ -24,9 +24,7 @@ Minimum iOS version: 17.0.
 ## CarPlay audio
 
 The CarPlay browse scene lists only locally downloaded EPUB books and uses
-cached artwork; cover discovery does not run from the car UI. FB2 records and
-files remain available for migration and progress preservation, but iOS no
-longer discovers, downloads, or opens FB2 publications. Apple must
+cached artwork; cover discovery does not run from the car UI. Apple must
 approve the `com.apple.developer.carplay-audio` capability for this app ID
 before the scene appears on a real car display. After approval and provisioning
 profile regeneration, set `CODE_SIGN_ENTITLEMENTS` for the BookstrIOS target to

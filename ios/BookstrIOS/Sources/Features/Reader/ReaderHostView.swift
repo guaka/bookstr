@@ -1,7 +1,5 @@
 import SwiftUI
 import Foundation
-import AVFoundation
-import MediaPlayer
 import UIKit
 
 struct ReaderHostView: View {
@@ -42,7 +40,6 @@ struct ReaderHostView: View {
     )
     @StateObject private var epubController = EPUBReaderController()
     @StateObject private var pdfController = PDFReaderController()
-    @StateObject private var fb2Controller = FB2ReaderController()
     @StateObject private var comicController = ComicReaderController()
     @StateObject private var chromeVisibility = ReaderChromeVisibilityController()
 
@@ -87,18 +84,6 @@ struct ReaderHostView: View {
                         controller: pdfController
                     )
                     .padding(.top, metrics.contentTopInset)
-                } else if activeFormat == .fb2 {
-                    FB2ReaderView(
-                        book: book,
-                        fileURL: localURL,
-                        controller: fb2Controller,
-                        initialLocator: initialLocator,
-                        onProgress: { progression, locator in
-                            persistProgress(progression, locator: locator, format: .fb2)
-                        }
-                    )
-                    .padding(.top, metrics.contentTopInset)
-                    .padding(.bottom, 5)
                 } else if activeFormat == .cbr || activeFormat == .cbz {
                     ComicReaderView(
                         book: book,
@@ -213,7 +198,7 @@ struct ReaderHostView: View {
             readerTopBar(metrics: metrics)
         }
         .overlay(alignment: .topTrailing) {
-            if speechControlsExpanded && (activeFormat == .epub || activeFormat == .fb2) {
+            if speechControlsExpanded && (activeFormat == .epub) {
                 speechControlIsland
                     .padding(.top, metrics.headerHeight + 4)
                     .padding(.trailing, max(8, metrics.safeTrailing + 8))
@@ -243,9 +228,7 @@ struct ReaderHostView: View {
             chromeVisibility.cancel()
             UIApplication.shared.isIdleTimerDisabled = false
             if epubController.isSpeechRetained { epubController.stopSpeechCompletely() }
-            if fb2Controller.isSpeechRetained { fb2Controller.stopSpeechCompletely() }
             epubController.endNowPlaying()
-            fb2Controller.endNowPlaying()
         }
     }
 
@@ -254,14 +237,8 @@ struct ReaderHostView: View {
         .onChange(of: showsReaderChrome) { _, _ in updateIdleTimer() }
         .onChange(of: epubController.isSpeechRetained) { _, _ in syncPlaybackSpeech() }
         .onChange(of: epubController.isSpeaking) { _, _ in syncPlaybackSpeech() }
-        .onChange(of: fb2Controller.isSpeechRetained) { _, _ in syncPlaybackSpeech() }
-        .onChange(of: fb2Controller.isSpeaking) { _, _ in syncPlaybackSpeech() }
         .onChange(of: activeSpeechState) { previous, current in
             if previous != .idle && current == .idle { speechControlsExpanded = false }
-        }
-        .onChange(of: fb2Controller.speechLocator) { _, locator in
-            guard let locator else { return }
-            persistProgress(fb2Controller.progression, locator: locator, format: .fb2)
         }
     }
 
@@ -275,13 +252,10 @@ struct ReaderHostView: View {
             guard let message, epubRecovery.shouldRetry(message: message, readerWasReady: epubController.ready) else { return }
             restartEPUBReader()
         }
-        .onChange(of: fb2Controller.ready) { _, _ in startCarPlaySpeechIfReady() }
         .onChange(of: playback.carPlayStartToken) { _, _ in startCarPlaySpeechIfReady() }
         .onReceive(container.coverDiscovery.$cachedURLs) { _ in
             if activeFormat == .epub {
                 epubController.refreshNowPlayingArtwork(book: book)
-            } else if activeFormat == .fb2 {
-                fb2Controller.refreshNowPlayingArtwork(book: book)
             }
         }
         .onChange(of: container.settingsRepository.theme) { _, theme in
@@ -332,23 +306,6 @@ struct ReaderHostView: View {
                         Text(section.label).foregroundStyle(.primary)
                         Spacer()
                         if section.index == epubController.sectionIndex {
-                            Image(systemName: "checkmark")
-                                .foregroundStyle(container.settingsRepository.theme.primary)
-                        }
-                    }
-                }
-            }
-        } else if activeFormat == .fb2 {
-            List(fb2Controller.sections) { section in
-                Button {
-                    showSections = false
-                    fb2Controller.requestedSectionID = section.id
-                } label: {
-                    HStack {
-                        Text(section.title.isEmpty ? "Section \(section.index + 1)" : section.title)
-                            .foregroundStyle(.primary)
-                        Spacer()
-                        if section.index == fb2Controller.sectionIndex {
                             Image(systemName: "checkmark")
                                 .foregroundStyle(container.settingsRepository.theme.primary)
                         }
@@ -468,7 +425,7 @@ struct ReaderHostView: View {
 
     private func readerActionButtons(buttonWidth: CGFloat) -> some View {
         HStack(spacing: 0) {
-            if activeFormat == .epub || activeFormat == .fb2 {
+            if activeFormat == .epub {
                 Button {
                     toggleActiveSpeech()
                     withAnimation(.snappy(duration: 0.2)) { speechControlsExpanded = true }
@@ -491,7 +448,7 @@ struct ReaderHostView: View {
                 .accessibilityIdentifier("reader-contents")
             }
 
-            if activeFormat == .epub || activeFormat == .pdf || activeFormat == .fb2 {
+            if activeFormat == .epub || activeFormat == .pdf {
                 searchButton(buttonWidth: buttonWidth)
             }
 
@@ -515,13 +472,8 @@ struct ReaderHostView: View {
 
     private var hasTableOfContents: Bool {
         if activeFormat == .epub { return epubController.hasTableOfContents }
-        if activeFormat == .fb2 { return !fb2Controller.sections.isEmpty }
         if activeFormat == .pdf { return !pdfController.tableOfContents.isEmpty }
         return false
-    }
-
-    private var fb2SpeechChoice: SpeechPlaybackChoice {
-        container.settingsRepository.speechChoice(for: fb2Controller.document?.language ?? "en")
     }
 
     private var activeSpeechState: ReaderSpeechState {
@@ -529,15 +481,13 @@ struct ReaderHostView: View {
     }
 
     private var activeSpeechChoice: SpeechPlaybackChoice {
-        container.settingsRepository.speechChoice(for: book.language ?? fb2Controller.document?.language ?? "en")
+        container.settingsRepository.speechChoice(for: book.language ?? "en")
     }
 
     private var activeSpeech: ReaderSpeechAdapter? {
         switch activeFormat {
         case .epub:
             return ReaderSpeechAdapter(epub: epubController)
-        case .fb2:
-            return ReaderSpeechAdapter(fb2: fb2Controller, playback: fb2SpeechChoice)
         case .pdf, .cbr, .cbz:
             return nil
         }
@@ -649,8 +599,7 @@ struct ReaderHostView: View {
     }
 
     private func startCarPlaySpeechIfReady() {
-        guard (activeFormat == .epub && epubController.ready)
-                || (activeFormat == .fb2 && fb2Controller.ready),
+        guard (activeFormat == .epub && epubController.ready),
               playback.consumeCarPlayAutoplay(for: book.id) else { return }
         if activeSpeechState != .playing && activeSpeechState != .preparing { toggleActiveSpeech() }
     }
@@ -711,22 +660,6 @@ struct ReaderHostView: View {
                 }
                 .accessibilityIdentifier("reader-search-result-epub-\(result.sectionIndex)")
             }
-        } else if activeFormat == .fb2 {
-            List(fb2Controller.searchResults) { result in
-                Button {
-                    showSearch = false
-                    fb2Controller.requestedSectionID = fb2Controller.sections[result.sectionIndex].id
-                } label: {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(fb2Controller.sections[result.sectionIndex].title.isEmpty
-                             ? "Section \(result.sectionIndex + 1)"
-                             : fb2Controller.sections[result.sectionIndex].title)
-                            .font(.caption).foregroundStyle(.secondary)
-                        Text(result.excerpt).foregroundStyle(.primary).lineLimit(3)
-                    }
-                }
-                .accessibilityIdentifier("reader-search-result-fb2-\(result.sectionIndex)")
-            }
         } else {
             List(pdfController.searchResults) { result in
                 Button {
@@ -745,13 +678,11 @@ struct ReaderHostView: View {
 
     private var isSearching: Bool {
         if activeFormat == .epub { return epubController.searching }
-        if activeFormat == .fb2 { return fb2Controller.searching }
         return pdfController.searching
     }
 
     private var searchResultCount: Int {
         if activeFormat == .epub { return epubController.searchResults.count }
-        if activeFormat == .fb2 { return fb2Controller.searchResults.count }
         return pdfController.searchResults.count
     }
 
@@ -759,7 +690,6 @@ struct ReaderHostView: View {
         let query = searchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
         guard query.count >= 2 else { return }
         if activeFormat == .epub { epubController.search(query) }
-        else if activeFormat == .fb2 { fb2Controller.search(query) }
         else { pdfController.search(query) }
     }
 
@@ -770,13 +700,10 @@ struct ReaderHostView: View {
     @ViewBuilder
     private func readerBottomBar(metrics: ReaderChromeMetrics) -> some View {
         let progress = activeFormat == .epub ? epubController.progression :
-            (activeFormat == .fb2 ? fb2Controller.progression :
-                ((activeFormat == .cbr || activeFormat == .cbz) ? comicController.progression : pdfController.progression))
+            ((activeFormat == .cbr || activeFormat == .cbz) ? comicController.progression : pdfController.progression)
         let furthest = activeFormat == .epub ? epubController.furthestProgression :
-            (activeFormat == .fb2 ? fb2Controller.furthestProgression :
-                ((activeFormat == .cbr || activeFormat == .cbz) ? comicController.furthestProgression : pdfController.furthestProgression))
+            ((activeFormat == .cbr || activeFormat == .cbz) ? comicController.furthestProgression : pdfController.furthestProgression)
         if (activeFormat == .epub && epubController.ready) || (activeFormat == .pdf && localURL != nil) ||
-            (activeFormat == .fb2 && fb2Controller.ready) ||
             ((activeFormat == .cbr || activeFormat == .cbz) && comicController.ready) {
             CurvedReaderProgress(
                 progress: progress,
@@ -903,14 +830,12 @@ struct ReaderHostView: View {
             let saved = container.progressRepository.get(bookId: book.id)
             let format = CatalogRepository.detectedFormat(fileURL: openedURL) ?? book.format
             resolvedFormat = format
-            if format == .fb2 { fb2Controller.configureNowPlaying(book: book) }
             if presentationOrigin == .user {
                 container.settingsRepository.saveReaderSelection(
                     ReaderSelection(bookId: book.id, format: format)
                 )
             }
             epubController.furthestProgression = saved.progression
-            fb2Controller.furthestProgression = saved.progression
             comicController.furthestProgression = saved.progression
             saveReaderSession(
                 format: format,
@@ -1145,793 +1070,5 @@ struct ReaderClockLabel: View {
         let percent = level >= 0 ? Int((level * 100).rounded()) : nil
         let charging = device.batteryState == .charging || device.batteryState == .full
         return (percent, charging)
-    }
-}
-
-struct FB2Paragraph: Identifiable, Equatable {
-    let id: String
-    let text: String
-}
-
-struct FB2Section: Identifiable, Equatable {
-    let index: Int
-    let id: String
-    let title: String
-    let paragraphs: [FB2Paragraph]
-    let children: [FB2Section]
-}
-
-struct FB2SearchResult: Identifiable, Equatable {
-    let sectionIndex: Int
-    let excerpt: String
-    var id: String { "\(sectionIndex):\(excerpt)" }
-}
-
-struct FB2Document: Equatable {
-    let title: String
-    let author: String?
-    let language: String?
-    let sections: [FB2Section]
-
-    var flatSections: [FB2Section] {
-        var result: [FB2Section] = []
-        func append(_ sections: [FB2Section]) {
-            for section in sections {
-                result.append(section)
-                append(section.children)
-            }
-        }
-        append(sections)
-        return result.enumerated().map { index, section in
-            FB2Section(index: index, id: section.id, title: section.title,
-                       paragraphs: section.paragraphs, children: section.children)
-        }
-    }
-}
-
-enum FB2ParseError: LocalizedError, Equatable {
-    case tooLarge
-    case unsafeDocument
-    case invalidDocument
-    case emptyBody
-
-    var errorDescription: String? {
-        switch self {
-        case .tooLarge: return "This FB2 file is empty or too large."
-        case .unsafeDocument: return "External entities are not allowed in FB2 files."
-        case .invalidDocument: return "This is not a valid FictionBook document."
-        case .emptyBody: return "The FB2 document has no readable body."
-        }
-    }
-}
-
-private func fb2NilIfBlank(_ value: String?) -> String? {
-    guard let value = value?.trimmingCharacters(in: .whitespacesAndNewlines), !value.isEmpty else { return nil }
-    return value
-}
-
-/// Parses FictionBook XML into a small safe structure. XML is never turned into HTML and
-/// external entities/resources are disabled and rejected before Foundation parses it.
-enum FB2Parser {
-    private static let maximumBytes = 50 * 1024 * 1024
-
-    static func parse(data: Data) throws -> FB2Document {
-        guard !data.isEmpty, data.count <= maximumBytes else { throw FB2ParseError.tooLarge }
-        let prefix = String(data: data.prefix(256 * 1024), encoding: .utf8) ?? ""
-        guard prefix.range(of: "<!DOCTYPE", options: .caseInsensitive) == nil,
-              prefix.range(of: "<!ENTITY", options: .caseInsensitive) == nil
-        else { throw FB2ParseError.unsafeDocument }
-        let delegate = FB2XMLDelegate()
-        let parser = XMLParser(data: data)
-        parser.delegate = delegate
-        parser.shouldResolveExternalEntities = false
-        guard parser.parse(), let root = delegate.root,
-              root.name.lowercased() == "fictionbook" else { throw FB2ParseError.invalidDocument }
-        let metadata = root.first(named: "description")
-        let title = fb2NilIfBlank(metadata?.firstDescendant(named: "book-title")?.textValue) ?? "Untitled"
-        let authorNode = metadata?.firstDescendant(named: "author")
-        let author = fb2NilIfBlank(authorNode?.children.map(\.textValue).joined(separator: " "))
-            ?? fb2NilIfBlank(metadata?.firstDescendant(named: "nickname")?.textValue)
-        let language = fb2NilIfBlank(metadata?.firstDescendant(named: "lang")?.textValue)
-        let bodies = root.children.filter { $0.localName == "body" }
-        var sections: [FB2Section] = []
-        var looseParagraphs: [FB2Paragraph] = []
-        for body in bodies {
-            for child in body.children {
-                if child.localName == "section" {
-                    sections.append(convertSection(child, index: sections.count, parentID: "section"))
-                } else if blockNames.contains(child.localName), let text = clean(child.textValue) {
-                    looseParagraphs.append(FB2Paragraph(id: "body:\(looseParagraphs.count)", text: text))
-                }
-            }
-        }
-        if !looseParagraphs.isEmpty {
-            sections.insert(FB2Section(index: 0, id: "body", title: "", paragraphs: looseParagraphs, children: []), at: 0)
-        }
-        guard !sections.isEmpty else { throw FB2ParseError.emptyBody }
-        return FB2Document(title: title, author: author, language: language, sections: sections)
-    }
-
-    private static let blockNames: Set<String> = ["p", "subtitle", "text-author", "epigraph", "poem", "v"]
-
-    private static func convertSection(_ node: FB2XMLNode, index: Int, parentID: String) -> FB2Section {
-        let id = fb2NilIfBlank(node.attributes["id"]) ?? "\(parentID)-\(index)"
-        let title = fb2NilIfBlank(node.first(named: "title")?.textValue) ?? ""
-        var paragraphs: [FB2Paragraph] = []
-        var children: [FB2Section] = []
-        for child in node.children {
-            if child.localName == "section" {
-                children.append(convertSection(child, index: children.count, parentID: id))
-            } else if blockNames.contains(child.localName), let text = clean(child.textValue) {
-                paragraphs.append(FB2Paragraph(id: "\(id):\(paragraphs.count)", text: text))
-            }
-        }
-        return FB2Section(index: index, id: id, title: title, paragraphs: paragraphs, children: children)
-    }
-
-    private static func clean(_ value: String) -> String? {
-        let normalized = value.replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        return normalized.isEmpty ? nil : normalized
-    }
-}
-
-private final class FB2XMLNode {
-    let name: String
-    let attributes: [String: String]
-    var children: [FB2XMLNode] = []
-    private var contents: [FB2XMLContent] = []
-
-    init(name: String, attributes: [String: String]) { self.name = name; self.attributes = attributes }
-    func appendText(_ value: String) {
-        guard !value.isEmpty else { return }
-        if case let .text(previous)? = contents.last {
-            contents[contents.count - 1] = .text(previous + value)
-        } else {
-            contents.append(.text(value))
-        }
-    }
-    func appendChild(_ child: FB2XMLNode) {
-        children.append(child)
-        contents.append(.child(child))
-    }
-    var localName: String { name.split(separator: ":").last.map(String.init) ?? name }
-    var textValue: String {
-        contents.map { content in
-            switch content {
-            case let .text(value): return value
-            case let .child(child): return child.textValue
-            }
-        }.joined()
-    }
-    func first(named name: String) -> FB2XMLNode? { children.first { $0.localName == name } }
-    func firstDescendant(named name: String) -> FB2XMLNode? {
-        if localName == name { return self }
-        for child in children { if let found = child.firstDescendant(named: name) { return found } }
-        return nil
-    }
-}
-
-private enum FB2XMLContent {
-    case text(String)
-    case child(FB2XMLNode)
-}
-
-private final class FB2XMLDelegate: NSObject, XMLParserDelegate {
-    var root: FB2XMLNode?
-    private var stack: [FB2XMLNode] = []
-
-    func parser(_ parser: XMLParser, didStartElement elementName: String,
-                namespaceURI: String?, qualifiedName qName: String?, attributes attributeDict: [String: String] = [:]) {
-        let node = FB2XMLNode(name: qName ?? elementName, attributes: attributeDict)
-        stack.append(node)
-    }
-
-    func parser(_ parser: XMLParser, foundCharacters string: String) { stack.last?.appendText(string) }
-
-    func parser(_ parser: XMLParser, didEndElement elementName: String, namespaceURI: String?, qualifiedName qName: String?) {
-        guard let node = stack.popLast() else { return }
-        if let parent = stack.last { parent.appendChild(node) } else { root = node }
-    }
-}
-
-@MainActor
-final class FB2ReaderController: NSObject, ObservableObject {
-    @Published var document: FB2Document?
-    @Published var sections: [FB2Section] = []
-    @Published var sectionIndex = 0
-    @Published var progression = 0.0
-    @Published var furthestProgression = 0.0
-    @Published var ready = false
-    @Published var errorMessage: String?
-    @Published var requestedSectionID: String?
-    @Published var searchResults: [FB2SearchResult] = []
-    @Published var searching = false
-    @Published var isSpeaking = false
-    @Published var isSpeechPreparing = false
-    @Published private(set) var speechState = ReaderSpeechState.idle
-    @Published private(set) var speechLocator: String?
-    @Published private(set) var isSpeechRetained = false
-    @Published var textSelection: ReaderTextSelection?
-    private let speech = AVSpeechSynthesizer()
-    private let neuralSpeech = NeuralSpeechPlayback()
-    private var pauseExpiryTask: Task<Void, Never>?
-    private var speechLocations: [(offset: Int, locator: String)] = []
-    private var lastPlayback: SpeechPlaybackChoice?
-    private var resumeParagraphIndex = 0
-    private var nowPlayingBookID = ""
-    private var nowPlayingTitle = ""
-    private var nowPlayingAuthor = ""
-    private var nowPlayingArtwork: MPMediaItemArtwork?
-    private var remoteTargets: [(MPRemoteCommand, Any)] = []
-
-    func configureNowPlaying(book: CatalogBook) {
-        nowPlayingBookID = book.id
-        nowPlayingTitle = book.title
-        nowPlayingAuthor = book.author
-        refreshNowPlayingArtwork(book: book)
-        guard remoteTargets.isEmpty else { return }
-        let commands = MPRemoteCommandCenter.shared()
-        commands.playCommand.isEnabled = true
-        commands.pauseCommand.isEnabled = true
-        remoteTargets.append((commands.playCommand, commands.playCommand.addTarget { [weak self] _ in
-            Task { @MainActor in
-                guard let self else { return }
-                if self.speechState == .paused { self.resumeSpeech() }
-                else if self.speechState == .idle, let playback = self.lastPlayback {
-                    self.toggleSpeech(playback: playback)
-                }
-            }
-            return .success
-        }))
-        remoteTargets.append((commands.pauseCommand, commands.pauseCommand.addTarget { [weak self] _ in
-            Task { @MainActor in self?.pauseSpeech() }
-            return .success
-        }))
-    }
-
-    func refreshNowPlayingArtwork(book: CatalogBook) {
-        guard nowPlayingBookID == book.id else { return }
-        let image = CoverArtwork.image(for: book, discovery: AppContainer.shared.coverDiscovery)
-        nowPlayingArtwork = MPMediaItemArtwork(boundsSize: image.size) { _ in image }
-        if MPNowPlayingInfoCenter.default().nowPlayingInfo != nil { updateNowPlaying() }
-    }
-
-    func endNowPlaying() {
-        for (command, target) in remoteTargets { command.removeTarget(target) }
-        remoteTargets.removeAll()
-        clearNowPlaying()
-    }
-
-    private func clearNowPlaying() {
-        MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
-        UIApplication.shared.endReceivingRemoteControlEvents()
-    }
-
-    private func updateNowPlaying() {
-        UIApplication.shared.beginReceivingRemoteControlEvents()
-        let playing = speechState == .playing || speechState == .preparing
-        let center = MPNowPlayingInfoCenter.default()
-        center.playbackState = playing ? .playing : .paused
-        var info: [String: Any] = [
-            MPMediaItemPropertyTitle: nowPlayingTitle,
-            MPMediaItemPropertyArtist: nowPlayingAuthor,
-            MPMediaItemPropertyMediaType: MPMediaType.audioBook.rawValue,
-            MPNowPlayingInfoPropertyPlaybackRate: playing ? 1.0 : 0.0
-        ]
-        if let nowPlayingArtwork { info[MPMediaItemPropertyArtwork] = nowPlayingArtwork }
-        center.nowPlayingInfo = info
-    }
-
-    override init() {
-        super.init()
-        speech.delegate = self
-    }
-
-    func setSelection(text: String, locator: String) {
-        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else {
-            textSelection = nil
-            return
-        }
-        textSelection = ReaderTextSelection(
-            text: String(trimmed.prefix(2_000)),
-            locator: locator,
-            language: document?.language ?? "en",
-            context: String(trimmed.prefix(2_000))
-        )
-    }
-
-    func load(fileURL: URL, initialLocator: String?) async {
-        do {
-            guard let data = PublicationUtilities.fb2Data(fileURL: fileURL) else {
-                throw FB2ParseError.invalidDocument
-            }
-            let parsed = try FB2Parser.parse(data: data)
-            document = parsed
-            sections = parsed.flatSections
-            if let locator = initialLocator,
-               let location = parseLocator(locator),
-               let index = sections.firstIndex(where: { $0.id == location.sectionID }) {
-                let paragraph = min(max(location.paragraph, 0), max(0, sections[index].paragraphs.count - 1))
-                sectionIndex = index
-                let count = sections.reduce(0) { $0 + $1.paragraphs.count }
-                let rank = sections.prefix(index).reduce(0) { $0 + $1.paragraphs.count } + paragraph
-                progression = count > 1 ? Double(rank) / Double(count - 1) : progress(for: index)
-                resumeParagraphIndex = paragraph
-                requestedSectionID = sections[index].id
-            }
-            ready = true
-            errorMessage = nil
-        } catch { errorMessage = error.localizedDescription; ready = false }
-    }
-
-    func update(section index: Int, paragraph paragraphIndex: Int = 0, offset: Int = 0) -> String {
-        sectionIndex = index
-        let count = sections.reduce(0) { $0 + $1.paragraphs.count }
-        let rank = sections.prefix(index).reduce(0) { $0 + $1.paragraphs.count } + paragraphIndex
-        progression = count > 1 ? Double(rank) / Double(count - 1) : progress(for: index)
-        furthestProgression = max(furthestProgression, progression)
-        resumeParagraphIndex = paragraphIndex
-        return "fb2:\(sections[index].id):\(max(0, paragraphIndex)):\(max(0, offset))"
-    }
-
-    func search(_ query: String) {
-        let needle = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard needle.count >= 2 else { searchResults = []; return }
-        searching = true
-        let foldedNeedle = needle.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
-        searchResults = sections.enumerated().flatMap { index, section in
-            section.paragraphs.compactMap { paragraph in
-                let folded = paragraph.text.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
-                guard folded.range(of: foldedNeedle) != nil else { return nil }
-                return FB2SearchResult(sectionIndex: index, excerpt: String(paragraph.text.prefix(240)))
-            }
-        }.prefix(100).map { $0 }
-        searching = false
-    }
-
-    func toggleSpeech(playback: SpeechPlaybackChoice) {
-        switch speechState {
-        case .playing, .preparing:
-            pauseSpeech()
-        case .paused:
-            resumeSpeech()
-        case .idle:
-            let plan = speechPlan()
-            speechLocations = plan.locations
-            startSpeaking(text: plan.text, chunks: plan.chunks, playback: playback)
-        }
-    }
-
-    func stopSpeechCompletely() {
-        stopSpeech(unload: true)
-    }
-
-    func restartSpeech(playback: SpeechPlaybackChoice) {
-        guard speechState != .idle else { return }
-        stopSpeech()
-        toggleSpeech(playback: playback)
-    }
-
-    func updateSpeechRate(_ rate: Double) {
-        guard var lastPlayback else { return }
-        lastPlayback.rate = SpeechLanguageSettings.clampRate(rate)
-        self.lastPlayback = lastPlayback
-        guard speechState != .idle else { return }
-        if lastPlayback.neuralEngine != nil {
-            neuralSpeech.updateSpeed(Float(min(max(lastPlayback.rate / SpeechLanguageSettings.defaultRate, 0.73), 1.25)))
-        } else {
-            // AVSpeechUtterance cannot change speed mid-utterance. FB2 uses one
-            // long utterance, so restart at the current paragraph, not the next.
-            restartSpeech(playback: lastPlayback)
-        }
-    }
-
-    func speakFromSelection(_ selected: String, playback: SpeechPlaybackChoice) {
-        if isSpeechSessionActive {
-            stopSpeech()
-        }
-        let all = sections.flatMap(\.paragraphs).map(\.text).joined(separator: "\n\n")
-        let needle = selected.trimmingCharacters(in: .whitespacesAndNewlines)
-        let spoken: String
-        if needle.isEmpty {
-            spoken = all
-        } else if let range = all.range(of: needle) {
-            spoken = String(all[range.lowerBound...])
-        } else {
-            spoken = needle
-        }
-        speechLocations = []
-        startSpeaking(text: spoken, chunks: nil, playback: playback)
-    }
-
-    private var isSpeechSessionActive: Bool {
-        ReaderSpeechRetention.isRetained(
-            speaking: isSpeaking,
-            systemSpeaking: speech.isSpeaking,
-            systemPaused: speech.isPaused,
-            neuralPlaying: neuralSpeech.isPlaying,
-            neuralPaused: neuralSpeech.isPaused,
-            preparing: isSpeechPreparing
-        )
-    }
-
-    private func setSpeaking(_ speaking: Bool) {
-        isSpeaking = speaking
-        if !speaking { isSpeechPreparing = false }
-        if speaking, !isSpeechPreparing { speechState = .playing }
-        refreshSpeechRetention()
-    }
-
-    private func markSpeechStarted() {
-        if isSpeechPreparing {
-            isSpeechPreparing = false
-            speechState = .playing
-            refreshSpeechRetention()
-        }
-    }
-
-    private func refreshSpeechRetention() {
-        isSpeechRetained = isSpeechSessionActive
-    }
-
-    private func startSpeaking(text: String, chunks: [SpeechQueueChunk]?, playback: SpeechPlaybackChoice) {
-        guard !text.isEmpty else { return }
-        do {
-            let session = AVAudioSession.sharedInstance()
-            try session.setCategory(.playback, mode: .spokenAudio, options: [])
-            try session.setActive(true)
-        } catch {
-            return
-        }
-        isSpeechPreparing = true
-        speechState = .preparing
-        updateNowPlaying()
-        lastPlayback = playback
-        setSpeaking(true)
-        switch playback.engine {
-        case .neural(let engine):
-            guard engine.supports(language: playback.languageTag) else {
-                setSpeaking(false)
-                return
-            }
-            neuralSpeech.play(
-                chunks: chunks ?? [SpeechQueueChunk(text: text, offset: 0, pauseSeconds: 0)],
-                engine: engine,
-                speed: Float(min(max(playback.rate / SpeechLanguageSettings.defaultRate, 0.73), 1.25)),
-                onPhrase: { [weak self] chunk in
-                    self?.markSpeechStarted()
-                    self?.updateSpeechLocation(offset: chunk.offset)
-                },
-                onProgress: { [weak self] _, _ in
-                    self?.markSpeechStarted()
-                },
-                completion: { [weak self] result in
-                    self?.finishSpeech()
-                    if case .failure = result { return }
-                }
-            )
-        case .apple:
-            let utterance = AVSpeechUtterance(string: text)
-            if !playback.voiceIdentifier.isEmpty {
-                utterance.voice = AVSpeechSynthesisVoice(identifier: playback.voiceIdentifier)
-            } else {
-                utterance.voice = AVSpeechSynthesisVoice(language: playback.languageTag)
-            }
-            utterance.rate = Float(playback.rate)
-            speech.speak(utterance)
-        }
-    }
-
-    private func pauseSpeech() {
-        guard speechState == .playing || speechState == .preparing else { return }
-        if speech.isSpeaking { speech.pauseSpeaking(at: .word) }
-        if neuralSpeech.isPlaying { neuralSpeech.pause() }
-        isSpeaking = false
-        isSpeechPreparing = false
-        speechState = .paused
-        updateNowPlaying()
-        refreshSpeechRetention()
-        pauseExpiryTask?.cancel()
-        pauseExpiryTask = Task { [weak self] in
-            try? await Task.sleep(for: .seconds(ReaderSpeechPausePolicy.expiration))
-            guard !Task.isCancelled else { return }
-            self?.stopSpeech(unload: true)
-        }
-    }
-
-    private func resumeSpeech() {
-        guard speechState == .paused else { return }
-        pauseExpiryTask?.cancel()
-        if speech.isPaused { speech.continueSpeaking() }
-        else if neuralSpeech.isPaused { neuralSpeech.resume() }
-        else if let lastPlayback {
-            stopSpeech()
-            toggleSpeech(playback: lastPlayback)
-            return
-        }
-        speechState = .playing
-        setSpeaking(true)
-        updateNowPlaying()
-    }
-
-    private func stopSpeech(unload: Bool = false) {
-        pauseExpiryTask?.cancel()
-        pauseExpiryTask = nil
-        if unload { neuralSpeech.unload() } else { neuralSpeech.stop() }
-        speech.stopSpeaking(at: .immediate)
-        speechState = .idle
-        setSpeaking(false)
-        clearNowPlaying()
-        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
-    }
-
-    private func finishSpeech() {
-        pauseExpiryTask?.cancel()
-        speechState = .idle
-        setSpeaking(false)
-        clearNowPlaying()
-        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
-    }
-
-    private func speechPlan() -> (text: String, chunks: [SpeechQueueChunk], locations: [(Int, String)]) {
-        var text = ""
-        var chunks: [SpeechQueueChunk] = []
-        var locations: [(Int, String)] = []
-        for section in sections.dropFirst(sectionIndex) {
-            for (paragraphIndex, paragraph) in section.paragraphs.enumerated() {
-                if section.index == sectionIndex && paragraphIndex < resumeParagraphIndex { continue }
-                let value = paragraph.text.trimmingCharacters(in: .whitespacesAndNewlines)
-                guard !value.isEmpty else { continue }
-                if !text.isEmpty { text += "\n\n" }
-                let offset = (text as NSString).length
-                let locator = "fb2:\(section.id):\(paragraphIndex):0"
-                locations.append((offset, locator))
-                chunks.append(SpeechQueueChunk(text: value, offset: offset, pauseSeconds: 0.08))
-                text += value
-            }
-        }
-        return (text, chunks, locations)
-    }
-
-    private func updateSpeechLocation(offset: Int) {
-        guard let entry = speechLocations.last(where: { $0.offset <= offset }) else { return }
-        speechLocator = entry.locator
-        if let location = parseLocator(entry.locator),
-           let index = sections.firstIndex(where: { $0.id == location.sectionID }) {
-            _ = update(section: index, paragraph: location.paragraph)
-        }
-    }
-
-    private func progress(for index: Int) -> Double {
-        guard sections.count > 1 else { return 0 }
-        return Double(index) / Double(sections.count - 1)
-    }
-
-    private struct FB2Locator {
-        let sectionID: String
-        let paragraph: Int
-    }
-
-    private func parseLocator(_ locator: String) -> FB2Locator? {
-        let parts = locator.split(separator: ":", omittingEmptySubsequences: false)
-        guard parts.count == 4, parts[0] == "fb2", !parts[1].isEmpty,
-              let paragraph = Int(parts[2]), let offset = Int(parts[3]),
-              paragraph >= 0, offset >= 0 else { return nil }
-        return FB2Locator(sectionID: String(parts[1]), paragraph: paragraph)
-    }
-}
-
-extension FB2ReaderController: AVSpeechSynthesizerDelegate {
-    nonisolated func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didStart utterance: AVSpeechUtterance) {
-        Task { @MainActor in self.markSpeechStarted() }
-    }
-    nonisolated func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {
-        Task { @MainActor in self.finishSpeech() }
-    }
-    nonisolated func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didCancel utterance: AVSpeechUtterance) {
-        Task { @MainActor in if self.speechState != .paused { self.finishSpeech() } }
-    }
-    nonisolated func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, willSpeakRangeOfSpeechString range: NSRange, utterance: AVSpeechUtterance) {
-        Task { @MainActor in self.updateSpeechLocation(offset: range.location) }
-    }
-}
-
-struct FB2ReaderView: View {
-    let book: CatalogBook
-    let fileURL: URL
-    @ObservedObject var controller: FB2ReaderController
-    let initialLocator: String?
-    let onProgress: (Double, String) -> Void
-    @EnvironmentObject private var container: AppContainer
-
-    var body: some View {
-        Group {
-            if let error = controller.errorMessage {
-                Text(error).foregroundStyle(.red).padding(24)
-            } else if !controller.ready {
-                ProgressView(ReaderHostView.openingMessage(for: book))
-            } else {
-                ScrollViewReader { proxy in
-                    ScrollView {
-                        LazyVStack(alignment: .leading, spacing: 8) {
-                            ForEach(controller.sections) { section in
-                                VStack(alignment: .leading, spacing: 8) {
-                                    if !section.title.isEmpty {
-                                        Text(section.title).font(.title2.bold()).padding(.top, section.index == 0 ? 12 : 24)
-                                    }
-                                    ForEach(section.paragraphs) { paragraph in
-                                        let paragraphIndex = section.paragraphs.firstIndex(of: paragraph) ?? 0
-                                        FB2SelectableParagraph(
-                                            text: paragraph.text,
-                                            onSelectionChange: { selected in
-                                                let locator = controller.update(
-                                                    section: section.index,
-                                                    paragraph: paragraphIndex
-                                                )
-                                                controller.setSelection(text: selected, locator: locator)
-                                            },
-                                            onAddWord: {
-                                                guard let selection = controller.textSelection,
-                                                      let phrase = ReaderSelectionActions.phraseForVocabulary(from: selection.text)
-                                                else { return }
-                                                _ = container.vocabularyRepository.saveSelection(
-                                                    word: phrase,
-                                                    language: selection.language,
-                                                    bookId: book.id,
-                                                    bookTitle: book.title,
-                                                    cfi: selection.locator,
-                                                    context: selection.context
-                                                )
-                                                NotificationCenter.default.post(name: .bookstrVocabularyDidChange, object: nil)
-                                            },
-                                            onMark: {
-                                                guard let selection = controller.textSelection else { return }
-                                                let text = ReaderSelectionActions.normalizedText(selection.text)
-                                                guard !text.isEmpty else { return }
-                                                guard container.snippetRepository.saveMark(
-                                                    text: text,
-                                                    bookId: book.id,
-                                                    bookTitle: book.title,
-                                                    author: book.author,
-                                                    isbn: NostrSyncService.normalizedISBN(book.isbn),
-                                                    format: .fb2,
-                                                    locator: selection.locator
-                                                ) != nil else { return }
-                                                NotificationCenter.default.post(name: .bookstrSnippetsDidChange, object: nil)
-                                            },
-                                            onReadFromHere: {
-                                                controller.speakFromSelection(
-                                                    controller.textSelection?.text ?? "",
-                                                    playback: container.settingsRepository.speechChoice(
-                                                        for: controller.document?.language ?? "en"
-                                                    )
-                                                )
-                                            }
-                                        )
-                                        .onAppear {
-                                            let locator = controller.update(
-                                                section: section.index,
-                                                paragraph: paragraphIndex
-                                            )
-                                            onProgress(controller.progression, locator)
-                                        }
-                                    }
-                                }
-                                .id(section.id)
-                                .onAppear {
-                                    if section.paragraphs.isEmpty {
-                                        let locator = controller.update(section: section.index)
-                                        onProgress(controller.progression, locator)
-                                    }
-                                }
-                            }
-                        }
-                        .padding(.horizontal, 18)
-                        .padding(.bottom, 24)
-                    }
-                    .onChange(of: controller.requestedSectionID) { _, requested in
-                        guard let requested else { return }
-                        withAnimation { proxy.scrollTo(requested, anchor: .top) }
-                        controller.requestedSectionID = nil
-                    }
-                }
-            }
-        }
-        .task { await controller.load(fileURL: fileURL, initialLocator: initialLocator) }
-        .onDisappear {
-            controller.requestedSectionID = nil
-            controller.textSelection = nil
-        }
-    }
-}
-
-private final class FB2ParagraphTextView: UITextView {
-    var onAddWord: (() -> Void)?
-    var onMark: (() -> Void)?
-    var onReadFromHere: (() -> Void)?
-
-    override func editMenu(for textRange: UITextRange, suggestedActions: [UIMenuElement]) -> UIMenu? {
-        ReaderEditMenu.menu(
-            defaultActions: ReaderEditMenu.copyOnly(from: suggestedActions),
-            selection: text(in: textRange) ?? "",
-            allowsSpeech: true,
-            addWord: { [weak self] in self?.onAddWord?() },
-            mark: { [weak self] in self?.onMark?() },
-            readFromHere: { [weak self] in self?.onReadFromHere?() }
-        )
-    }
-}
-
-private struct FB2SelectableParagraph: UIViewRepresentable {
-    let text: String
-    let onSelectionChange: (String) -> Void
-    let onAddWord: () -> Void
-    let onMark: () -> Void
-    let onReadFromHere: () -> Void
-
-    func makeUIView(context: Context) -> FB2ParagraphTextView {
-        let view = FB2ParagraphTextView()
-        view.isEditable = false
-        view.isScrollEnabled = false
-        view.backgroundColor = .clear
-        view.textContainerInset = .zero
-        view.textContainer.lineFragmentPadding = 0
-        view.font = .preferredFont(forTextStyle: .body)
-        view.delegate = context.coordinator
-        view.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-        view.text = text
-        view.onAddWord = onAddWord
-        view.onMark = onMark
-        view.onReadFromHere = onReadFromHere
-        return view
-    }
-
-    func updateUIView(_ uiView: FB2ParagraphTextView, context: Context) {
-        if uiView.text != text {
-            uiView.text = text
-        }
-        context.coordinator.onSelectionChange = onSelectionChange
-        uiView.onAddWord = onAddWord
-        uiView.onMark = onMark
-        uiView.onReadFromHere = onReadFromHere
-    }
-
-    func sizeThatFits(_ proposal: ProposedViewSize, uiView: FB2ParagraphTextView, context: Context) -> CGSize? {
-        let width = proposal.width ?? uiView.bounds.width
-        let size = uiView.sizeThatFits(CGSize(width: width, height: .greatestFiniteMagnitude))
-        return CGSize(width: width, height: size.height)
-    }
-
-    func makeCoordinator() -> Coordinator {
-        Coordinator(onSelectionChange: onSelectionChange)
-    }
-
-    final class Coordinator: NSObject, UITextViewDelegate {
-        var onSelectionChange: (String) -> Void
-
-        init(onSelectionChange: @escaping (String) -> Void) {
-            self.onSelectionChange = onSelectionChange
-        }
-
-        func textViewDidChangeSelection(_ textView: UITextView) {
-            guard let range = textView.selectedTextRange else {
-                onSelectionChange("")
-                return
-            }
-            onSelectionChange(textView.text(in: range) ?? "")
-        }
-    }
-}
-
-private extension ReaderFont {
-    var readingFont: Font {
-        switch self {
-        case .arial: .custom("Arial", size: 17, relativeTo: .body)
-        case .georgia: .custom("Georgia", size: 17, relativeTo: .body)
-        case .palatino: .custom("Palatino", size: 17, relativeTo: .body)
-        case .system: .body
-        }
     }
 }

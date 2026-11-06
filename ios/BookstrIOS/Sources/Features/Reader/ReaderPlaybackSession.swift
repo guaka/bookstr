@@ -104,7 +104,6 @@ final class ReaderPlaybackSession: ObservableObject {
         highlightKind: ReaderHighlightKind? = nil,
         origin: ReaderPresentationOrigin = .user
     ) {
-        guard book.format.isAvailableOnIOS else { return }
         isCarPlayPlayback = false
         if origin == .user { pendingCarPlayBookID = nil }
         // Keep the last opened book mounted so Continue / Back → reopen skips a
@@ -140,7 +139,6 @@ final class ReaderPlaybackSession: ObservableObject {
     }
 
     func presentForCarPlay(book: CatalogBook, localURL: URL, locator: String?) {
-        guard book.format.isAvailableOnIOS else { return }
         present(book: book, preparedURL: localURL, initialLocator: locator, origin: .continuation)
         isVisible = false
         isCarPlayPlayback = true
