@@ -8,11 +8,13 @@ import { fileURLToPath } from 'node:url';
 
 const androidDirectory = fileURLToPath(new URL('../', import.meta.url));
 const cases = [
-  { name: 'release and local builds retain every supported ABI without a compiler launcher', properties: [], abis: ['arm64-v8a', 'armeabi-v7a', 'x86_64'], cmake: [] },
-  { name: 'CI builds only the emulator ABI and enables the requested compiler cache', properties: ['-Pbookstr.abis=x86_64', '-Pbookstr.cxxCompilerLauncher=ccache'], abis: ['x86_64'], cmake: ['-DCMAKE_CXX_COMPILER_LAUNCHER=ccache'] },
-  { name: 'local ARM emulator builds can select one ABI without installing ccache', properties: ['-Pbookstr.abis=arm64-v8a'], abis: ['arm64-v8a'], cmake: [] },
-  { name: 'release version properties override the UTC default without changing versionCode', properties: ['-Pbookstr.versionCode=1000000042', '-Pbookstr.versionName=0.1-20261105-1932'], abis: ['arm64-v8a', 'armeabi-v7a', 'x86_64'], cmake: [], sourceDateEpoch: 1700000000, versionCode: 1000000042, versionName: '0.1-20261105-1932', buildDate: '2023-11-14 22:13' },
-  { name: 'SOURCE_DATE_EPOCH fixes generated BuildConfig and default APK version values', properties: [], abis: ['arm64-v8a', 'armeabi-v7a', 'x86_64'], cmake: [], sourceDateEpoch: 1700000000, versionCode: 28333333, versionName: '0.1-20231114-2213', buildDate: '2023-11-14 22:13' },
+  { name: 'release and local builds retain every supported ABI without a compiler launcher', properties: [], abis: ['arm64-v8a', 'armeabi-v7a', 'x86_64'], cmake: ['-DBOOKSTR_NATIVE_COVERAGE=OFF'] },
+  { name: 'CI builds only the emulator ABI and enables the requested compiler cache', properties: ['-Pbookstr.abis=x86_64', '-Pbookstr.cxxCompilerLauncher=ccache'], abis: ['x86_64'], cmake: ['-DCMAKE_CXX_COMPILER_LAUNCHER=ccache', '-DBOOKSTR_NATIVE_COVERAGE=OFF'] },
+  { name: 'local ARM emulator builds can select one ABI without installing ccache', properties: ['-Pbookstr.abis=arm64-v8a'], abis: ['arm64-v8a'], cmake: ['-DBOOKSTR_NATIVE_COVERAGE=OFF'] },
+  { name: 'debug builds can opt into native source coverage', properties: ['-Pbookstr.nativeCoverage=true'], abis: ['arm64-v8a', 'armeabi-v7a', 'x86_64'], cmake: ['-DBOOKSTR_NATIVE_COVERAGE=ON'] },
+  { name: 'explicit false resets cached native coverage to off', properties: ['-Pbookstr.nativeCoverage=false'], abis: ['arm64-v8a', 'armeabi-v7a', 'x86_64'], cmake: ['-DBOOKSTR_NATIVE_COVERAGE=OFF'] },
+  { name: 'release version properties override the UTC default without changing versionCode', properties: ['-Pbookstr.versionCode=1000000042', '-Pbookstr.versionName=0.1-20261105-1932'], abis: ['arm64-v8a', 'armeabi-v7a', 'x86_64'], cmake: ['-DBOOKSTR_NATIVE_COVERAGE=OFF'], sourceDateEpoch: 1700000000, versionCode: 1000000042, versionName: '0.1-20261105-1932', buildDate: '2023-11-14 22:13' },
+  { name: 'SOURCE_DATE_EPOCH fixes generated BuildConfig and default APK version values', properties: [], abis: ['arm64-v8a', 'armeabi-v7a', 'x86_64'], cmake: ['-DBOOKSTR_NATIVE_COVERAGE=OFF'], sourceDateEpoch: 1700000000, versionCode: 28333333, versionName: '0.1-20231114-2213', buildDate: '2023-11-14 22:13' },
 ];
 
 for (const configuration of cases) {
@@ -244,4 +246,15 @@ test('managed coverage input guard reuses the configuration cache', () => {
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }
+});
+
+test('native coverage Gradle property rejects unrecognized values', () => {
+  const result = spawnSync(process.platform === 'win32' ? 'gradlew.bat' : './gradlew', [
+    process.env.GITHUB_ACTIONS === 'true' ? '--daemon' : '--no-daemon',
+    '--no-configuration-cache', '--max-workers=2',
+    '-Dorg.gradle.jvmargs=-Xmx1536m -Dfile.encoding=UTF-8',
+    'help', '-Pbookstr.nativeCoverage=enabled',
+  ], { cwd: androidDirectory, encoding: 'utf8', timeout: 300_000, maxBuffer: 4 * 1024 * 1024 });
+  assert.notEqual(result.status, 0, `${result.stdout}\n${result.stderr}`);
+  assert.match(`${result.stdout}\n${result.stderr}`, /bookstr\.nativeCoverage must be true or false/);
 });

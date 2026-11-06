@@ -2,6 +2,7 @@ cmake_minimum_required(VERSION 3.22)
 project(bookstr_torrent LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+option(BOOKSTR_NATIVE_COVERAGE "Collect opt-in source coverage for Bookstr's JNI C++ source" OFF)
 include(FetchContent)
 # Same immutable libtorrent revision as scripts/build-ios-torrent.sh.
 set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
@@ -27,3 +28,15 @@ FetchContent_MakeAvailable(libtorrent)
 add_library(bookstr_torrent SHARED torrent_jni.cpp)
 target_link_libraries(bookstr_torrent PRIVATE torrent-rasterbar log)
 target_link_options(bookstr_torrent PRIVATE "-Wl,-z,max-page-size=16384")
+if(BOOKSTR_NATIVE_COVERAGE)
+    if(NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
+        message(FATAL_ERROR "BOOKSTR_NATIVE_COVERAGE is available only in Debug builds")
+    endif()
+    # Instrument only Bookstr's maintained JNI translation unit, not fetched libtorrent.
+    target_compile_options(bookstr_torrent PRIVATE
+        -fprofile-instr-generate
+        -fcoverage-mapping
+        "-fcoverage-compilation-dir=${CMAKE_CURRENT_SOURCE_DIR}")
+    target_compile_definitions(bookstr_torrent PRIVATE BOOKSTR_NATIVE_COVERAGE=1)
+    target_link_options(bookstr_torrent PRIVATE -fprofile-instr-generate)
+endif()
