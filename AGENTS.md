@@ -2,6 +2,11 @@
 
 ## Development workflow
 
+- iOS development and CI are paused. Focus routine work on Android, web, and
+  desktop; do not change iOS-specific code, run iOS builds/tests, or resume iOS
+  automation unless the user explicitly requests it. Shared code may still
+  change for active platforms. Keep the required iOS checks reporting skipped
+  while paused; restore validation before resuming iOS development.
 - Make repository changes on a dedicated branch and deliver them through a pull
   request. Do not push commits directly to the default branch.
 - Keep required workflow job names aligned with `.github/required-checks.json`.
