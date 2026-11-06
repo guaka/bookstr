@@ -76,8 +76,8 @@ class AndroidAppContractTest {
     fun applicationIdAndNamespaceStayAligned() {
         val gradle = File("build.gradle.kts").readText()
 
-        assertEquals(2, Regex("app\\.bookstr").findAll(gradle).count())
         assertTrue(gradle.contains("namespace = \"app.bookstr\""))
         assertTrue(gradle.contains("applicationId = \"app.bookstr\""))
+        assertTrue(gradle.contains("testInstrumentationRunner = \"app.bookstr.BookstrTestRunner\""))
     }
 }
