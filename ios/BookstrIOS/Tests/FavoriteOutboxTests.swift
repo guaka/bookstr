@@ -1,3 +1,4 @@
+import Combine
 import XCTest
 import NostrCore
 @testable import BookstrIOS
@@ -147,16 +148,29 @@ final class FavoriteOutboxTests: XCTestCase {
     @MainActor
     func testNetworkRecoveryOnlySignalsARealTransition() async throws {
         let monitor = FavoriteNetworkRecoveryMonitor(startMonitoring: false)
+        let recovered = expectation(description: "network recovery is published")
+        let observation = monitor.$recoveryToken
+            .dropFirst()
+            .sink { _ in recovered.fulfill() }
+
         monitor.recordConnectivity(true)
-        try await Task.sleep(nanoseconds: 20_000_000)
+        await drainMainQueue()
         XCTAssertEqual(monitor.recoveryToken, 0)
         monitor.recordConnectivity(false)
         monitor.recordConnectivity(true)
-        try await Task.sleep(nanoseconds: 20_000_000)
+        await fulfillment(of: [recovered], timeout: 2)
         XCTAssertEqual(monitor.recoveryToken, 1)
         monitor.recordConnectivity(true)
-        try await Task.sleep(nanoseconds: 20_000_000)
+        await drainMainQueue()
         XCTAssertEqual(monitor.recoveryToken, 1)
+        withExtendedLifetime(observation) { }
+    }
+
+    @MainActor
+    private func drainMainQueue() async {
+        await withCheckedContinuation { continuation in
+            DispatchQueue.main.async { continuation.resume() }
+        }
     }
 
     func testPullReadingMetadataSkipsWhenReadingOrApplicationSyncIsRecent() async {
