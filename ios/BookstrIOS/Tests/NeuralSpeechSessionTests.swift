@@ -400,12 +400,20 @@ final class NeuralSpeechSessionTests: XCTestCase {
         let player = MockNeuralPlayer()
         let session = NeuralSpeechSession(synthesizer: synthesizer, player: player)
         var progress: [(Int, Int)] = []
+        var stopped = false
+        let ticked = expectation(description: "playback progress ticks while the phrase is active")
+        let noFurtherTicksAfterStop = expectation(description: "stopping playback cancels future progress ticks")
+        noFurtherTicksAfterStop.isInverted = true
         session.start(
             chunks: [SpeechQueueChunk(text: "Hello there friend.", offset: 0, pauseSeconds: 0)],
             engine: .kokoroEnglish,
             speed: 1,
             onPhrase: { _ in },
-            onProgress: { start, end in progress.append((start, end)) },
+            onProgress: { start, end in
+                progress.append((start, end))
+                if progress.count == 2 { ticked.fulfill() }
+                if stopped { noFurtherTicksAfterStop.fulfill() }
+            },
             completion: { _ in }
         )
         synthesizer.complete()
@@ -413,10 +421,11 @@ final class NeuralSpeechSessionTests: XCTestCase {
         XCTAssertFalse(progress.isEmpty, "phrase start must report a progress window")
         XCTAssertEqual(progress[0].0, 0)
         XCTAssertGreaterThan(progress[0].1, progress[0].0)
-        try? await Task.sleep(nanoseconds: NeuralSpeechProgress.tickNanoseconds + 50_000_000)
-        await settle()
+        await fulfillment(of: [ticked], timeout: 3)
         XCTAssertGreaterThan(progress.count, 1, "progress must tick during playback")
+        stopped = true
         session.stop()
+        await fulfillment(of: [noFurtherTicksAfterStop], timeout: 1)
     }
 
     func testKeepAliveSilenceUsesSampleRate() {
