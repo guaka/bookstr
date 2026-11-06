@@ -177,6 +177,11 @@ jacoco {
 }
 
 tasks.withType<Test>().configureEach {
+    extensions.configure<JacocoTaskExtension> {
+        // Robolectric loads app classes without a code-source location.
+        isIncludeNoLocationClasses = true
+        excludes = listOf("jdk.internal.*")
+    }
     finalizedBy("jacocoDebugUnitTestReport")
     extensions.configure<JacocoTaskExtension> {
         // Robolectric loads instrumented Android classes without a code-source location.

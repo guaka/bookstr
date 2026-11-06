@@ -1,26 +1,67 @@
-'use strict';
+import type { Readable as NodeReadable } from 'node:stream';
 
-const fs = require('node:fs');
-const fsp = require('node:fs/promises');
-const net = require('node:net');
-const path = require('node:path');
-const { Readable, Transform } = require('node:stream');
-const { pipeline } = require('node:stream/promises');
+type Progress = { source?: string; bytes: number; totalBytes: number | null; bookId?: string };
+type ProgressCallback = (progress: Progress) => void;
+type BookRecord = Record<string, unknown> & {
+  id?: string | number; md5?: string; title?: string; authors?: string; author?: string;
+  language?: string; year?: string; extension?: string; format?: string; isbn?: string;
+  source?: string; source_url?: string; sourceUrl?: string; sourceNativeId?: string | number;
+  source_native_id?: string | number; libgenId?: string | number; libgen_id?: string | number;
+  filesize?: number; filesize_bytes?: number; size?: number; collection?: string;
+  rights_status?: string; rightsStatus?: string; license?: string; license_url?: string;
+  licenseUrl?: string; rights_source?: string; rightsSource?: string;
+};
+type AcquisitionCandidate = import('../shared/catalog/acquisition.mjs').AcquisitionCandidate & {
+  url?: string; sha256?: string; format?: string; availability?: string;
+  private?: boolean; torrent?: string; size?: number; source_id?: string;
+};
+type ManagedTorrent = import('./torrent-types').Torrent;
+type TorrentBridge = Partial<Pick<InstanceType<typeof import('./webtorrent-bridge').WebTorrentBridge>, 'addPrivate' | 'addPublic' | 'downloadSelected' | 'remove'>>;
+type AcquisitionStore = {
+  downloads(): Array<BookRecord & { bookId?: string; status?: string; totalBytes?: number; bytes?: number }>;
+  getBook(id: string): BookRecord | null;
+  upsertBook(book: BookRecord): BookRecord & { id: string };
+  setDownload(download: BookRecord & { bookId: string; status: string }): void;
+  registerLibraryFile(file: { bookId: string; relativePath: string; sizeBytes: number; sha256: string }): void;
+  libraryFile?(id: string): { relativePath?: string; sizeBytes?: number } | null;
+  sourceHealth?(source: string): Record<string, unknown> | null;
+  recordSourceHealth?(health: { source: string; success: boolean; latencyMs: number }): void;
+};
+type ImportedFile = { sha256: string; size: number; extension: string; relativePath: string };
+type AcquisitionImporter = {
+  importFile(filePath: string, options?: { extension?: string; expectedSha256?: string }): Promise<ImportedFile>;
+  resolveRelativePath(relativePath: string): string;
+};
+type AcquisitionResult = { book: BookRecord & { id: string }; source: string; sha256: string; size: number; extension: string };
+type AcquisitionJob = { listeners: Set<ProgressCallback>; lastProgress: Progress | null; promise: Promise<AcquisitionResult> | null };
+type AcquisitionOptions = {
+  store: AcquisitionStore; importer: AcquisitionImporter; torrentBridge?: TorrentBridge;
+  fetchImpl?: typeof fetch; stagingRoot: string; maxAttempts?: number; maxBytes?: number;
+  trustedOrigins?: Record<string, string[]> | Map<string, string[]>;
+  seedResumeIntervalMs?: number; sleep?: (ms: number, signal?: AbortSignal) => Promise<void>;
+};
+
+const fs = require('node:fs') as typeof import('node:fs');
+const fsp = require('node:fs/promises') as typeof import('node:fs/promises');
+const net = require('node:net') as typeof import('node:net');
+const path = require('node:path') as typeof import('node:path');
+const { Readable, Transform } = require('node:stream') as typeof import('node:stream');
+const { pipeline } = require('node:stream/promises') as typeof import('node:stream/promises');
 
 const DEFAULT_MAX_ACQUISITION_BYTES = 512 * 1024 * 1024;
 const LIBGEN_TORRENT_METADATA_BASE_URL = 'https://annas-archive.gl/dyn/small_file/torrents/external/libgen_rs_non_fic';
 const MAX_TORRENT_METADATA_BYTES = 8 * 1024 * 1024;
 const TORRENT_PROGRESS_INTERVAL_MS = 100;
 
-function createProgressThrottle(onProgress, intervalMs = TORRENT_PROGRESS_INTERVAL_MS, {
+function createProgressThrottle(onProgress?: ProgressCallback, intervalMs = TORRENT_PROGRESS_INTERVAL_MS, {
   now = Date.now,
   schedule = setTimeout,
   unschedule = clearTimeout,
-} = {}) {
+}: { now?: () => number; schedule?: typeof setTimeout; unschedule?: typeof clearTimeout } = {}): { report(progress: Progress): void; flush(): void; cancel(): void } {
   let lastSentAt = -Infinity;
-  let pending = null;
-  let timer = null;
-  const send = progress => {
+  let pending: Progress | null = null;
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  const send = (progress: Progress) => {
     lastSentAt = now();
     onProgress?.(progress);
   };
@@ -64,13 +105,13 @@ function createProgressThrottle(onProgress, intervalMs = TORRENT_PROGRESS_INTERV
   };
 }
 
-let catalogModulePromise;
+let catalogModulePromise: Promise<typeof import('../shared/catalog/acquisition.mjs')> | undefined;
 function catalogModule() {
   catalogModulePromise ||= import('../shared/catalog/acquisition.mjs');
   return catalogModulePromise;
 }
 
-function safePath(root, value) {
+function safePath(root: string, value: string): string {
   const candidate = path.resolve(root, value);
   const relative = path.relative(path.resolve(root), candidate);
   if (!relative || relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
@@ -79,13 +120,13 @@ function safePath(root, value) {
   return candidate;
 }
 
-function extensionFor(format) {
+function extensionFor(format: unknown): string {
   const extension = String(format || '').trim().toLowerCase().replace(/^\./, '');
   if (!['epub', 'pdf', 'fb2', 'cbz', 'cbr'].includes(extension)) throw new TypeError('unsupported acquisition format');
   return extension;
 }
 
-function responseLength(response) {
+function responseLength(response: Pick<Response, 'headers'> | null | undefined): number | null {
   const value = response?.headers?.get?.('content-length');
   if (value === null || value === undefined || String(value).trim() === '') return null;
   const size = Number(value);
@@ -93,7 +134,7 @@ function responseLength(response) {
   return size;
 }
 
-function hostFromOrigin(value) {
+function hostFromOrigin(value: unknown): string {
   try {
     const parsed = new URL(String(value || '').trim());
     return parsed.protocol === 'https:' && !parsed.username && !parsed.password
@@ -104,13 +145,13 @@ function hostFromOrigin(value) {
   }
 }
 
-function privateHostname(hostname) {
+function privateHostname(hostname: string): boolean {
   const host = String(hostname || '').toLowerCase().replace(/^\[|\]$/g, '');
   if (!host || host === 'localhost' || host.endsWith('.localhost') || host === 'local' || host.endsWith('.local')
     || host === 'internal' || host.endsWith('.internal') || host === 'home.arpa' || host.endsWith('.home.arpa')) return true;
   const kind = net.isIP(host);
   if (kind === 4) {
-    const [first, second] = host.split('.').map(Number);
+    const [first, second] = host.split('.').map(Number) as [number, number, number, number];
     return first === 0 || first === 10 || first === 127 || (first === 100 && second >= 64 && second <= 127)
       || (first === 169 && second === 254) || (first === 172 && second >= 16 && second <= 31)
       || (first === 192 && second === 0) || (first === 192 && second === 168)
@@ -124,18 +165,18 @@ function privateHostname(hostname) {
   return false;
 }
 
-function configuredOrigins(origins, provider) {
+function configuredOrigins(origins: AcquisitionOptions['trustedOrigins'], provider: string | undefined): string[] {
   if (!origins) return [];
-  if (origins instanceof Map) return Array.isArray(origins.get(provider)) ? origins.get(provider) : [];
-  return Array.isArray(origins[provider]) ? origins[provider] : [];
+  if (origins instanceof Map) return Array.isArray(origins.get(provider!)) ? origins.get(provider!)! : [];
+  return Array.isArray(origins[provider!]) ? origins[provider!]! : [];
 }
 
-function trustedHosts(provider, descriptor, origins) {
+function trustedHosts(provider: string | undefined, descriptor: { homepage?: string } | undefined, origins: AcquisitionOptions['trustedOrigins']): string[] {
   const values = [descriptor?.homepage, ...configuredOrigins(origins, provider)];
   return [...new Set(values.map(hostFromOrigin).filter(Boolean))];
 }
 
-function assertTrustedURL(value, { provider, descriptor, origins, label = 'acquisition URL' } = {}) {
+function assertTrustedURL(value: unknown, { provider, descriptor, origins, label = 'acquisition URL' }: { provider?: string; descriptor?: { homepage?: string }; origins?: AcquisitionOptions['trustedOrigins']; label?: string } = {}): string {
   let parsed;
   try {
     parsed = new URL(String(value || '').trim());
@@ -154,9 +195,9 @@ function assertTrustedURL(value, { provider, descriptor, origins, label = 'acqui
   return parsed.href;
 }
 
-async function responseStream(response, maxBytes = DEFAULT_MAX_ACQUISITION_BYTES) {
-  if (response?.body && typeof response.body.getReader === 'function') return Readable.fromWeb(response.body);
-  if (response?.body && typeof response.body.pipe === 'function') return response.body;
+async function responseStream(response: Response, maxBytes = DEFAULT_MAX_ACQUISITION_BYTES): Promise<NodeReadable> {
+  if (response?.body && typeof response.body.getReader === 'function') return Readable.fromWeb(response.body as import('node:stream/web').ReadableStream);
+  if (response?.body && typeof (response.body as unknown as NodeReadable).pipe === 'function') return response.body as unknown as NodeReadable;
   if (response && typeof response.arrayBuffer === 'function') {
     const bytes = await response.arrayBuffer();
     if (bytes.byteLength > maxBytes) throw new Error('source exceeded the maximum acquisition size');
@@ -165,14 +206,14 @@ async function responseStream(response, maxBytes = DEFAULT_MAX_ACQUISITION_BYTES
   throw new Error('acquisition response has no readable body');
 }
 
-function waitForTorrent(torrent, onProgress, signal, maxBytes) {
+function waitForTorrent(torrent: ManagedTorrent, onProgress: ProgressCallback | undefined, signal: AbortSignal | undefined, maxBytes: number): Promise<ManagedTorrent> {
   if (!torrent || typeof torrent.on !== 'function') throw new Error('torrent did not return an event source');
   const total = Number(torrent.length || torrent.files?.[0]?.length || 0);
   if (total > maxBytes) throw new Error('torrent exceeds the maximum acquisition size');
   if (torrent.done) return Promise.resolve(torrent);
-  return new Promise((resolve, reject) => {
+  return new Promise<ManagedTorrent>((resolve, reject) => {
     let settled = false;
-    const finish = (error) => {
+    const finish = (error?: Error) => {
       if (settled) return;
       settled = true;
       signal?.removeEventListener?.('abort', abort);
@@ -193,15 +234,15 @@ function waitForTorrent(torrent, onProgress, signal, maxBytes) {
   });
 }
 
-function torrentFilePath(torrent, root) {
+function torrentFilePath(torrent: ManagedTorrent, root: string): string {
   const files = Array.isArray(torrent.files) ? torrent.files : [];
   if (files.length !== 1) throw new Error('book torrent must contain exactly one file');
-  const relative = String(files[0].path || files[0].name || '').replaceAll('\\', '/');
+  const relative = String(files[0]!.path || files[0]!.name || '').replaceAll('\\', '/');
   if (!relative || relative.split('/').includes('..') || relative.startsWith('/')) throw new Error('torrent file path is invalid');
   return safePath(root, relative);
 }
 
-function healthScore(health, now = Math.floor(Date.now() / 1000)) {
+function healthScore(health: Record<string, unknown> | null | undefined, now = Math.floor(Date.now() / 1000)): number {
   if (!health) return 0;
   const cooling = Number(health.cooldownUntil) > now;
   const failures = Number(health.consecutiveFailures) || 0;
@@ -210,12 +251,12 @@ function healthScore(health, now = Math.floor(Date.now() / 1000)) {
   return (cooling ? -10000 : 0) - failures * 100 + successes * 5 - Math.min(1000, latency / 1000);
 }
 
-function sourceKey(provider, candidate, recordId) {
+function sourceKey(provider: string, candidate: AcquisitionCandidate, recordId: string): string {
   const raw = `${provider}:${candidate.source_id || recordId}`;
   return raw.length <= 256 ? raw : raw.slice(0, 256);
 }
 
-async function destroyTorrent(torrentBridge, torrent) {
+async function destroyTorrent(torrentBridge: TorrentBridge | undefined, torrent: ManagedTorrent | undefined): Promise<void> {
   if (!torrent) return;
   if (typeof torrentBridge?.remove === 'function') {
     await torrentBridge.remove(torrent).catch(() => {});
@@ -224,7 +265,7 @@ async function destroyTorrent(torrentBridge, torrent) {
   try { torrent.destroy?.(); } catch { /* best effort cleanup */ }
 }
 
-function libgenCollection(book) {
+function libgenCollection(book: BookRecord | null | undefined): string {
   const collection = String(book?.collection || '').toLowerCase();
   if (['nonfiction', 'fiction', 'comics'].includes(collection)) return collection;
   // Older saved jobs did not preserve the catalog collection.
@@ -234,23 +275,41 @@ function libgenCollection(book) {
   return 'nonfiction';
 }
 
-function libgenTorrentMetadataURL(libgenId, baseURL = '', collection = 'nonfiction') {
+function libgenTorrentMetadataURL(libgenId: unknown, baseURL = '', collection = 'nonfiction'): string {
   const id = Number(libgenId);
   if (!Number.isSafeInteger(id) || id <= 0) throw new TypeError('LibGen ID must be a positive integer');
   const batch = Math.floor(id / 1000) * 1000;
-  const repositories = {
+  const repositories: Record<string, [string, string]> = {
     nonfiction: [LIBGEN_TORRENT_METADATA_BASE_URL, 'r_'],
     fiction: ['https://annas-archive.gl/dyn/small_file/torrents/external/libgen_rs_fic', 'f_'],
     comics: ['https://annas-archive.gl/dyn/small_file/torrents/external/libgen_li_comics', 'c_'],
   };
-  const [repository, prefix] = repositories[collection] || repositories.nonfiction;
+  const [repository, prefix] = repositories[collection] || repositories.nonfiction!;
   const batchName = prefix === 'r_' && batch === 0 ? '000' : String(batch);
   return `${String(baseURL || repository).replace(/\/$/, '')}/${prefix}${batchName}.torrent`;
 }
 
 class AcquisitionManager {
-  constructor({ store, importer, torrentBridge, fetchImpl = globalThis.fetch, stagingRoot, maxAttempts = 3, maxBytes = DEFAULT_MAX_ACQUISITION_BYTES, trustedOrigins = {}, seedResumeIntervalMs = 1500, sleep = (ms, signal) => new Promise(resolve => {
-    let timer;
+  declare private readonly store: AcquisitionStore;
+  declare private readonly importer: AcquisitionImporter;
+  declare private readonly torrentBridge?: TorrentBridge;
+  declare private readonly fetch: typeof fetch;
+  declare private readonly stagingRoot: string;
+  declare private readonly maxAttempts: number;
+  declare private readonly maxBytes: number;
+  declare private readonly trustedOrigins: AcquisitionOptions['trustedOrigins'];
+  declare private readonly seedResumeIntervalMs: number;
+  declare private readonly sleep: NonNullable<AcquisitionOptions['sleep']>;
+  declare private resumeLibgenSeedsPromise: Promise<{ seeded: number; resumed: number }> | null;
+  declare private libgenAcquisitionJobs: Map<string, AcquisitionJob>;
+  declare private progressThrottles: Set<ReturnType<typeof createProgressThrottle>>;
+  declare private lifecycleControllers: Set<AbortController>;
+  declare private closed: boolean;
+  declare private closePromise: Promise<void> | null;
+  declare private seedResumeController: AbortController | null;
+
+  constructor({ store, importer, torrentBridge, fetchImpl = globalThis.fetch, stagingRoot, maxAttempts = 3, maxBytes = DEFAULT_MAX_ACQUISITION_BYTES, trustedOrigins = {}, seedResumeIntervalMs = 1500, sleep = (ms: number, signal?: AbortSignal) => new Promise<void>(resolve => {
+    let timer: ReturnType<typeof setTimeout>;
     const finish = () => {
       clearTimeout(timer);
       signal?.removeEventListener?.('abort', finish);
@@ -259,7 +318,7 @@ class AcquisitionManager {
     timer = setTimeout(finish, ms);
     signal?.addEventListener?.('abort', finish, { once: true });
     if (signal?.aborted) finish();
-  }) } = {}) {
+  }) }: AcquisitionOptions = {} as AcquisitionOptions) {
     if (!store || !importer || !stagingRoot) throw new TypeError('store, importer, and stagingRoot are required');
     if (typeof fetchImpl !== 'function') throw new TypeError('fetchImpl is required');
     this.store = store;
@@ -296,7 +355,7 @@ class AcquisitionManager {
     return this.closePromise;
   }
 
-  resumeLibgenSeeds({ autoSeed = true } = {}) {
+  resumeLibgenSeeds({ autoSeed = true }: { autoSeed?: boolean } = {}) {
     if (this.closed) return Promise.resolve({ seeded: 0, resumed: 0 });
     if (this.resumeLibgenSeedsPromise) return this.resumeLibgenSeedsPromise;
     this.seedResumeController = new AbortController();
@@ -307,7 +366,7 @@ class AcquisitionManager {
     return this.resumeLibgenSeedsPromise;
   }
 
-  async #resumeLibgenSeeds({ autoSeed = true, signal } = {}) {
+  async #resumeLibgenSeeds({ autoSeed = true, signal }: { autoSeed?: boolean; signal?: AbortSignal } = {}) {
     if (!this.torrentBridge?.downloadSelected) return { seeded: 0, resumed: 0 };
     const seedRoot = path.join(this.stagingRoot, 'libgen-seeds');
     let seeded = 0;
@@ -363,21 +422,21 @@ class AcquisitionManager {
             if (this.closed || signal?.aborted) break;
             const expectedSize = Math.max(0, Number(download.totalBytes || download.bytes || registration.sizeBytes || 0));
             if (libraryStats?.isFile() && libraryStats.size > 0 && (!expectedSize || libraryStats.size === expectedSize)) {
-              seedFile = seedCandidates[0];
+              seedFile = seedCandidates[0]!;
               await fsp.mkdir(path.dirname(seedFile), { recursive: true });
               await fsp.link(libraryFile, seedFile);
               stats = await fsp.stat(seedFile).catch(() => null);
             }
           }
         } catch (error) {
-          if (error?.code === 'EXDEV' && seedFile) {
+          if ((error as NodeJS.ErrnoException)?.code === 'EXDEV' && seedFile) {
             const registration = this.store.libraryFile?.(md5);
             const libraryFile = registration?.relativePath
               ? this.importer.resolveRelativePath(registration.relativePath)
               : '';
             if (libraryFile) await fsp.copyFile(libraryFile, seedFile, fs.constants.COPYFILE_EXCL).catch(() => {});
             stats = await fsp.stat(seedFile).catch(() => null);
-          } else if (error?.code === 'EEXIST' && seedFile) {
+          } else if ((error as NodeJS.ErrnoException)?.code === 'EEXIST' && seedFile) {
             stats = await fsp.stat(seedFile).catch(() => null);
           }
         }
@@ -416,7 +475,7 @@ class AcquisitionManager {
     return { seeded, resumed };
   }
 
-  async acquireLibgen(book, { signal, onProgress, autoSeed = true } = {}) {
+  async acquireLibgen(book: BookRecord, { signal, onProgress, autoSeed = true }: { signal?: AbortSignal; onProgress?: ProgressCallback; autoSeed?: boolean } = {}): Promise<AcquisitionResult> {
     if (this.closed) throw new Error('acquisition manager is closed');
     const md5 = String(book?.md5 || '').trim().toLowerCase();
     if (!/^[a-f0-9]{32}$/.test(md5)) throw new TypeError('LibGen torrent acquisition requires an MD5 record identifier');
@@ -427,8 +486,8 @@ class AcquisitionManager {
         signal,
         autoSeed,
         onProgress: progress => {
-          job.lastProgress = progress;
-          for (const listener of job.listeners) {
+          job!.lastProgress = progress;
+          for (const listener of job!.listeners) {
             try { listener(progress); } catch { /* a closed view must not stop the download */ }
           }
         },
@@ -438,19 +497,19 @@ class AcquisitionManager {
       this.libgenAcquisitionJobs.set(md5, job);
     }
     if (typeof onProgress === 'function') {
-      job.listeners.add(onProgress);
+      job!.listeners.add(onProgress);
       if (job.lastProgress) queueMicrotask(() => {
-        try { onProgress(job.lastProgress); } catch { /* best effort progress replay */ }
+        try { onProgress(job!.lastProgress!); } catch { /* best effort progress replay */ }
       });
     }
     try {
-      return await job.promise;
+      return await job.promise!;
     } finally {
-      if (typeof onProgress === 'function') job.listeners.delete(onProgress);
+      if (typeof onProgress === 'function') job!.listeners.delete(onProgress);
     }
   }
 
-  async runLibgenAcquisition(book, { signal, onProgress, autoSeed = true } = {}) {
+  async runLibgenAcquisition(book: BookRecord, { signal, onProgress, autoSeed = true }: { signal?: AbortSignal; onProgress?: ProgressCallback; autoSeed?: boolean } = {}): Promise<AcquisitionResult> {
     if (this.closed) throw new Error('acquisition manager is closed');
     if (!this.torrentBridge?.downloadSelected) throw new Error('torrent bridge is not configured');
     const md5 = String(book?.md5 || '').trim().toLowerCase();
@@ -537,7 +596,7 @@ class AcquisitionManager {
     } catch (error) {
       progressThrottle.cancel();
       if (!this.closed) {
-        this.store.setDownload({ bookId: md5, status: 'failed', source: 'torrent', error: error?.message || String(error) });
+        this.store.setDownload({ bookId: md5, status: 'failed', source: 'torrent', error: (error as Error)?.message || String(error) });
       }
       throw error;
     } finally {
@@ -552,7 +611,7 @@ class AcquisitionManager {
     }
   }
 
-  async acquire(record, { format, preferTorrent = true, includeRestricted = false, allowUnverifiedOpen = false, signal, onProgress } = {}) {
+  async acquire(record: unknown, { format, preferTorrent = true, includeRestricted = false, allowUnverifiedOpen = false, signal, onProgress }: { format?: string; preferTorrent?: boolean; includeRestricted?: boolean; allowUnverifiedOpen?: boolean; signal?: AbortSignal; onProgress?: ProgressCallback } = {}): Promise<AcquisitionResult> {
     const { listAcquisitions, normalizeProviderRecord, providerBookFields } = await catalogModule();
     const normalized = normalizeProviderRecord(record);
     const fields = providerBookFields(record);
@@ -560,7 +619,7 @@ class AcquisitionManager {
       // Private torrents require an authenticated peer handoff. Until that
       // exists, do not attempt them as ordinary catalog acquisitions.
       .filter(candidate => !candidate.private && (
-        /^[a-f0-9]{64}$/i.test(candidate.sha256)
+        /^[a-f0-9]{64}$/i.test(candidate.sha256!)
         || (allowUnverifiedOpen && candidate.availability === 'open' && candidate.url && !candidate.torrent)
       ));
     if (!candidates.length) throw new Error('no eligible acquisition with a verified SHA-256 is available');
@@ -610,7 +669,7 @@ class AcquisitionManager {
       } catch (error) {
         errors.push(error instanceof Error ? error : new Error(String(error)));
         this.store.recordSourceHealth?.({ source, success: false, latencyMs: Date.now() - startedAt });
-        this.store.setDownload({ bookId: fields.id, status: index + 1 < attempts.length ? 'retrying' : 'failed', source, error: errors.at(-1).message });
+        this.store.setDownload({ bookId: fields.id, status: index + 1 < attempts.length ? 'retrying' : 'failed', source, error: errors.at(-1)!.message });
       } finally {
         if (stageDir) await fsp.rm(stageDir, { recursive: true, force: true }).catch(() => {});
       }
@@ -618,7 +677,7 @@ class AcquisitionManager {
     throw new AggregateError(errors, 'all eligible acquisitions failed');
   }
 
-  async downloadHTTP(candidate, stageDir, { signal, onProgress, source, provider, descriptor, allowMissingSize = false } = {}) {
+  async downloadHTTP(candidate: AcquisitionCandidate, stageDir: string, { signal, onProgress, source, provider, descriptor, allowMissingSize = false }: { signal?: AbortSignal; onProgress?: ProgressCallback; source?: string; provider?: string; descriptor?: { homepage?: string }; allowMissingSize?: boolean } = {}) {
     const url = assertTrustedURL(candidate.url, {
       provider,
       descriptor,
@@ -651,11 +710,11 @@ class AcquisitionManager {
     return stagedPath;
   }
 
-  async downloadTorrent(candidate, stageDir, { signal, onProgress } = {}) {
+  async downloadTorrent(candidate: AcquisitionCandidate, stageDir: string, { signal, onProgress }: { signal?: AbortSignal; onProgress?: ProgressCallback } = {}) {
     if (!this.torrentBridge) throw new Error('torrent bridge is not configured');
     const torrent = await (candidate.private
-      ? this.torrentBridge.addPrivate(candidate.torrent, { path: stageDir })
-      : this.torrentBridge.addPublic(candidate.torrent, { path: stageDir }));
+      ? this.torrentBridge.addPrivate!(candidate.torrent!, { path: stageDir })
+      : this.torrentBridge.addPublic!(candidate.torrent!, { path: stageDir }));
     try {
       if (Array.isArray(torrent?.files) && torrent.files.length !== 1) throw new Error('book torrent must contain exactly one file');
       await waitForTorrent(torrent, onProgress, signal, this.maxBytes);
@@ -678,7 +737,7 @@ class AcquisitionManager {
   }
 }
 
-module.exports = {
+export {
   AcquisitionManager,
   DEFAULT_MAX_ACQUISITION_BYTES,
   assertTrustedURL,
