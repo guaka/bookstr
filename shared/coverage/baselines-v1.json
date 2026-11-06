@@ -25,8 +25,8 @@
     },
     "android": {
       "minimumTests": 530,
-      "source": "https://github.com/guaka/bookstr/actions/runs/42126949768",
-      "commit": "87a054934f8d56e8eac67ab5327e11433ed072d1",
+      "source": "https://github.com/guaka/bookstr/actions/runs/42135818981",
+      "commit": "07caf4791c667e0c0c3e97d58c5b24ebffaa8832",
       "metrics": {
         "Instructions": 61.71,
         "Branches": 55.68,

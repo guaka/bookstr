@@ -128,6 +128,8 @@ android {
     }
 
     packaging {
+        // Compress native libraries in the downloadable APK. Android extracts the device ABI at install.
+        jniLibs.useLegacyPackaging = true
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
         }
@@ -175,6 +177,11 @@ jacoco {
 }
 
 tasks.withType<Test>().configureEach {
+    extensions.configure<JacocoTaskExtension> {
+        // Robolectric loads app classes without a code-source location.
+        isIncludeNoLocationClasses = true
+        excludes = listOf("jdk.internal.*")
+    }
     finalizedBy("jacocoDebugUnitTestReport")
     extensions.configure<JacocoTaskExtension> {
         // Robolectric loads instrumented Android classes without a code-source location.

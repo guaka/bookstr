@@ -1,6 +1,6 @@
-const { defineConfig } = require('@playwright/test');
+const { defineConfig } = require('@playwright/test') as typeof import('@playwright/test');
 
-module.exports = defineConfig({
+export = defineConfig({
   testDir: 'tests/e2e',
   timeout: 90_000,
   fullyParallel: false,
@@ -11,6 +11,6 @@ module.exports = defineConfig({
     screenshot: 'on',
     launchOptions: {
       devtools: false,
-    },
+    } as import('@playwright/test').LaunchOptions & { devtools: boolean },
   },
 });

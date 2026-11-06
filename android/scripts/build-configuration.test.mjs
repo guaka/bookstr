@@ -27,8 +27,10 @@ for (const configuration of cases) {
       println('BOOKSTR_BUILD_CONFIGURATION=' + groovy.json.JsonOutput.toJson([
         includeNoLocationClasses: coverage.includeNoLocationClasses,
         coverageExcludes: coverage.excludes,
+        compressNativeLibraries: project.android.packaging.jniLibs.useLegacyPackaging,
         abis: config.ndk.abiFilters.sort(),
         cmake: config.externalNativeBuild.cmake.arguments,
+        coverage: [includeNoLocationClasses: coverage.includeNoLocationClasses, excludes: coverage.excludes],
         versionCode: config.versionCode,
         versionName: config.versionName
       ]))
@@ -46,8 +48,10 @@ for (const configuration of cases) {
       const line = result.stdout.split('\n').find(value => value.startsWith('BOOKSTR_BUILD_CONFIGURATION='));
       assert.ok(line, 'Gradle reported the actual Android build configuration');
       const actual = JSON.parse(line.slice('BOOKSTR_BUILD_CONFIGURATION='.length));
-      assert.deepEqual({ abis: actual.abis, cmake: actual.cmake }, {
+      assert.equal(actual.compressNativeLibraries, true);
+      assert.deepEqual({ abis: actual.abis, cmake: actual.cmake, coverage: actual.coverage }, {
         abis: configuration.abis, cmake: configuration.cmake,
+        coverage: { includeNoLocationClasses: true, excludes: ['jdk.internal.*'] },
       });
       assert.equal(actual.includeNoLocationClasses, true, 'Robolectric sandbox classes contribute coverage');
       assert.deepEqual(actual.coverageExcludes, ['jdk.internal.*'], 'only JDK internals are excluded from instrumentation');
