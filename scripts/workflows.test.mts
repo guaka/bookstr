@@ -8,6 +8,23 @@ import { spawnSync } from 'node:child_process';
 const readWorkflow = (name: string) =>
   readFile(new URL(`../.github/workflows/${name}`, import.meta.url), 'utf8');
 
+test('iOS freeze skips routing and dependent native work while preserving required checks', async () => {
+  const workflow = await readWorkflow('ios.yml');
+  const routing = workflow.split('\n  changes:\n')[1]?.split('\n  ios:\n')[0];
+  const native = workflow.split('\n  ios:\n')[1];
+  assert.ok(routing);
+  assert.ok(native);
+  assert.match(routing, /^    name: Route iOS checks$/m);
+  assert.match(routing, /^    if: \$\{\{ false \}\}$/m);
+  assert.match(native, /^    name: iOS$/m);
+  assert.match(native, /^    needs: changes$/m);
+  assert.match(native, /^    if: needs.changes.outputs.ios == 'true'$/m);
+  assert.match(workflow, /^  pull_request:$/m);
+  const instructions = await readFile(new URL('../AGENTS.md', import.meta.url), 'utf8');
+  assert.match(instructions, /iOS development and CI are paused/);
+  assert.match(instructions, /unless the user explicitly requests it/);
+});
+
 test('repository hygiene rejects committed APKs and directs them to release assets', async () => {
   const workflow = await readWorkflow('ci.yml');
   assert.match(workflow, /tracked_apks="\$\(git ls-files '\*\.apk'\)"/);
