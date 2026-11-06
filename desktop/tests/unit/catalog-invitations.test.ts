@@ -1,10 +1,19 @@
-const {test}=require('node:test');
-const assert=require('node:assert/strict');
-const {EventEmitter}=require('node:events');
-const {nip19}=require('nostr-tools');
-const {parseCatalogInvitation}=require('../../../web/catalog-invitation');
-const {CatalogInvitations}=require('../../catalog-invitations');
-const f=require('../../../shared/fixtures/catalog-invitation-v1.json');
+const {test}=require('node:test') as typeof import('node:test');
+const assert: typeof import('node:assert/strict')=require('node:assert/strict');
+const {EventEmitter}=require('node:events') as typeof import('node:events');
+const {nip19}=require('nostr-tools') as typeof import('nostr-tools', { with: { 'resolution-mode': 'import' } });
+const {parseCatalogInvitation}=require('../../../web/catalog-invitation') as {parseCatalogInvitation(value: unknown, decode: (value:string)=>{type:string;data:unknown}):Invitation};
+const {CatalogInvitations}=require('../../catalog-invitations') as typeof import('../../src/catalog-invitations');
+type ControllerOptions = ConstructorParameters<typeof CatalogInvitations>[0];
+type Invitation = NonNullable<Awaited<ReturnType<InstanceType<typeof CatalogInvitations>['current']>>>;
+type DecodeNpub = ControllerOptions['decodeNPub'];
+interface ControllerHarness {
+ decodeNPub: DecodeNpub;
+ pending: Invitation[];
+ running: boolean;
+ dialog: { showMessageBox: (window: unknown, options: import('electron').MessageBoxOptions) => Promise<{response:number}> };
+}
+const f=require('../../../shared/fixtures/catalog-invitation-v1.json') as Invitation;
 
 test('catalog invitations validate identity, version, fields and relays',()=>{
  assert.deepEqual(parseCatalogInvitation(f.uri,nip19.decode),{...f,version:1});
@@ -21,28 +30,30 @@ test('catalog invitations validate identity, version, fields and relays',()=>{
 });
 
 function harness(){
- const app=new EventEmitter();app.isPackaged=true;const registrations=[];app.setAsDefaultProtocolClient=(...args)=>registrations.push(args);
- let saved={},response=0,reloads=0;const questions=[];
- const controller=new CatalogInvitations({app,dialog:{showMessageBox:async(_win,options)=>{questions.push(options);return{response}}},
+ const registrations: string[][]=[];
+ const app=Object.assign(new EventEmitter(), {isPackaged:true, setAsDefaultProtocolClient:(...args:string[])=>{registrations.push(args);return true;}});
+ let saved: Awaited<ReturnType<ControllerOptions['loadState']>>={},response=0,reloads=0;const questions: import('electron').MessageBoxOptions[]=[];
+ const controller=new CatalogInvitations({app,dialog:{showMessageBox:async(_win:unknown,options:import('electron').MessageBoxOptions)=>{questions.push(options);return{response}}} as ControllerOptions['dialog'],
  loadState:async()=>saved,saveState:async state=>{saved={...saved,...state}},decodeNPub:nip19.decode,
- getWindow:()=>({show(){},focus(){},reload(){reloads++}})});
- return {controller,app,questions,registrations,setResponse:v=>response=v,saved:()=>saved,reloads:()=>reloads};
+ getWindow:()=>({show(){},focus(){},reload(){reloads++}} as ReturnType<ControllerOptions['getWindow']>)});
+ const internals=controller as unknown as ControllerHarness;
+ return {controller,internals,app,questions,registrations,setResponse:(v:number)=>response=v,saved:()=>saved,reloads:()=>reloads};
 }
 
 test('cold launch cancellation confirmation persistence and duplicate invitations',async()=>{
  const h=harness();assert.equal(await h.controller.current(),null);
  await h.controller.receive(f.uri);await h.controller.start([], '/electron',false,'/app');
  assert.equal(h.questions.length,1);assert.equal(h.reloads(),0);assert.deepEqual(h.registrations,[['bookstr']]);
- h.setResponse(1);await h.controller.receive(f.uri);assert.equal(h.reloads(),1);assert.equal((await h.controller.current()).pubkey,f.pubkey);
+ h.setResponse(1);await h.controller.receive(f.uri);assert.equal(h.reloads(),1);assert.equal((await h.controller.current())!.pubkey,f.pubkey);
  await h.controller.receive(f.uri);assert.equal(h.questions.length,2);assert.equal(h.reloads(),1);
  assert.equal(await h.controller.receive('bookstr://wrong'),false);
 });
 
 test('receive returns false when decoding a valid invitation throws',async()=>{
  const h=harness();
- h.controller.decodeNPub=()=>{throw new Error('decode failed')};
+ h.internals.decodeNPub=()=>{throw new Error('decode failed')};
  assert.equal(await h.controller.receive(f.uri),false);
- assert.equal(h.controller.pending.length,0);
+ assert.equal(h.internals.pending.length,0);
 });
 
 test('OS events and startup argv queue valid invitations only',async()=>{
@@ -56,9 +67,9 @@ test('OS events and startup argv queue valid invitations only',async()=>{
 });
 
 test('concurrent invitations never overlap confirmation dialogs',async()=>{
- let release;const gate=new Promise(r=>release=r);const h=harness();
- h.controller.dialog.showMessageBox=async()=>{await gate;return{response:0}};
+ let release!:()=>void;const gate=new Promise<void>(r=>release=r);const h=harness();
+ h.internals.dialog.showMessageBox=async()=>{await gate;return{response:0}};
  await h.controller.start([],'',false,'');
  const first=h.controller.receive(f.uri);await h.controller.receive(f.uri);release();await first;
- assert.equal(h.controller.pending.length,0);assert.equal(h.controller.running,false);
+ assert.equal(h.internals.pending.length,0);assert.equal(h.internals.running,false);
 });

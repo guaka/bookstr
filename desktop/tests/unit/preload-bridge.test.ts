@@ -1,31 +1,47 @@
-const test = require('node:test');
-const assert = require('node:assert/strict');
-const fs = require('node:fs');
-const path = require('node:path');
-const vm = require('node:vm');
+const test = require('node:test') as typeof import('node:test');
+const assert: typeof import('node:assert/strict') = require('node:assert/strict');
+const fs: typeof import('node:fs') = require('node:fs');
+const path: typeof import('node:path') = require('node:path');
+const vm: typeof import('node:vm') = require('node:vm');
+import type { DesktopBridge } from '../../src/desktop-bridge';
 
 const preloadPath = path.join(__dirname, '../../preload.js');
 
-function createPreload(options = {}) {
-  const calls = [];
-  const listeners = new Map();
-  let keydownListener;
-  let bridge;
+type Listener = (event: unknown, payload?: unknown) => void;
+type PreloadOptions = { rejectInvokes?: boolean };
+type IpcCall = { kind: 'send' | 'invoke'; args: unknown[] };
+type KeydownEvent = Pick<KeyboardEvent, 'key' | 'defaultPrevented' | 'altKey' | 'shiftKey' | 'metaKey' | 'ctrlKey' | 'preventDefault'>;
+type RegistrationCase = {
+  subscribe: (callback: () => void) => () => void;
+  channel: string;
+  payload: unknown;
+};
+
+function createPreload(options: PreloadOptions = {}): {
+  bridge: DesktopBridge;
+  calls: IpcCall[];
+  listeners: Map<string, Listener>;
+  keydown: (event: KeydownEvent) => void;
+} {
+  const calls: IpcCall[] = [];
+  const listeners = new Map<string, Listener>();
+  let keydownListener: ((event: KeydownEvent) => void) | undefined;
+  let bridge: DesktopBridge | undefined;
   const electron = {
     contextBridge: {
-      exposeInMainWorld(name, value) {
+      exposeInMainWorld(name: string, value: DesktopBridge): void {
         assert.equal(name, 'bookstrDesktop');
         bridge = value;
       },
     },
     ipcRenderer: {
-      on(channel, listener) {
+      on(channel: string, listener: Listener) {
         listeners.set(channel, listener);
       },
-      send(...args) {
+      send(...args: unknown[]) {
         calls.push({ kind: 'send', args });
       },
-      invoke(...args) {
+      invoke(...args: unknown[]) {
         calls.push({ kind: 'invoke', args });
         if (options.rejectInvokes) return Promise.reject(new Error('IPC unavailable'));
         return Promise.resolve({ ok: true });
@@ -34,12 +50,12 @@ function createPreload(options = {}) {
   };
   const context = {
     exports: {},
-    require(name) {
+    require(name: string) {
       assert.equal(name, 'electron');
       return electron;
     },
     window: {
-      addEventListener(name, listener) {
+      addEventListener(name: string, listener: (event: KeydownEvent) => void) {
         assert.equal(name, 'keydown');
         keydownListener = listener;
       },
@@ -48,10 +64,11 @@ function createPreload(options = {}) {
   };
   vm.runInNewContext(fs.readFileSync(preloadPath, 'utf8'), context, { filename: preloadPath });
   assert.ok(bridge, 'preload exposes the bridge');
+  assert.ok(keydownListener, 'preload registers its keyboard listener');
   return { bridge, calls, listeners, keydown: keydownListener };
 }
 
-function plain(value) {
+function plain(value: unknown): unknown {
   return JSON.parse(JSON.stringify(value));
 }
 
@@ -69,7 +86,7 @@ test('preload bridge exposes the complete version 1 surface', () => {
 test('preload methods preserve their IPC channels, arguments, and optional defaults', async () => {
   const { bridge, calls } = createPreload();
   const record = { md5: 'aabb' };
-  const methods = [
+  const methods: ReadonlyArray<readonly [string, () => Promise<unknown>, string, ...unknown[]]> = [
     ['catalog.get', () => bridge.catalog.get(), 'bookstr-desktop-catalog-current'],
     ['signer.status', () => bridge.signer.status(), 'bookstr-desktop-signer-status'],
     ['signer.connectNip46', () => bridge.signer.connectNip46('input'), 'bookstr-desktop-signer-connect-nip46', 'input'],
@@ -144,11 +161,11 @@ test('openReader resolves from the main-process ok flag', async () => {
 test('openPane and keyboard shortcuts allow only the supported panes', () => {
   const { bridge, calls, keydown } = createPreload();
   assert.equal(bridge.openPane('reading'), true);
-  assert.equal(bridge.openPane('unsupported'), false);
+  assert.equal((bridge.openPane as (pane: string) => boolean)('unsupported'), false);
   assert.deepEqual(plain(calls), [{ kind: 'send', args: ['bookstr-desktop-pane-shortcut', 'reading'] }]);
 
-  const events = [];
-  const press = (key, modifiers = {}) => {
+  const events: boolean[] = [];
+  const press = (key: string, modifiers: Partial<KeydownEvent> = {}) => {
     let prevented = false;
     keydown({
       key,
@@ -177,39 +194,41 @@ test('listener registration, invalid callbacks, and unsubscribe behavior are sta
   const { bridge, listeners } = createPreload();
   const eventPayload = { id: 'book' };
   const calls = [];
-  const registrations = [
-    [bridge.onOpenReader, 'bookstr-desktop-open-reader', eventPayload],
-    [bridge.onProgress, 'bookstr-desktop-reader-progress', eventPayload],
-    [bridge.library.onAcquisitionProgress, 'bookstr-desktop-acquisition-progress', eventPayload],
-    [bridge.library.onDownloadsChanged, 'bookstr-desktop-downloads-changed', undefined],
-    [bridge.kindle.onProgress, 'bookstr-desktop-kindle-progress', eventPayload],
-    [bridge.onOpenSettings, 'bookstr-desktop-open-settings', undefined],
-    [bridge.onOpenPane, 'bookstr-desktop-open-pane', 'reading'],
-    [bridge.speechModels.onProgress, 'bookstr-desktop-speech-model-progress', eventPayload],
+  const registrations: RegistrationCase[] = [
+    { subscribe: bridge.onOpenReader, channel: 'bookstr-desktop-open-reader', payload: eventPayload },
+    { subscribe: bridge.onProgress, channel: 'bookstr-desktop-reader-progress', payload: eventPayload },
+    { subscribe: bridge.library.onAcquisitionProgress, channel: 'bookstr-desktop-acquisition-progress', payload: eventPayload },
+    { subscribe: bridge.library.onDownloadsChanged, channel: 'bookstr-desktop-downloads-changed', payload: undefined },
+    { subscribe: bridge.kindle.onProgress, channel: 'bookstr-desktop-kindle-progress', payload: eventPayload },
+    { subscribe: bridge.onOpenSettings, channel: 'bookstr-desktop-open-settings', payload: undefined },
+    { subscribe: bridge.onOpenPane, channel: 'bookstr-desktop-open-pane', payload: 'reading' },
+    { subscribe: bridge.speechModels.onProgress, channel: 'bookstr-desktop-speech-model-progress', payload: eventPayload },
   ];
 
-  for (const [subscribe, channel] of registrations) {
+  for (const { subscribe, channel, payload } of registrations) {
     let callbackCount = 0;
     const unsubscribe = subscribe(() => { callbackCount += 1; });
     assert.equal(typeof unsubscribe, 'function', channel);
-    const invalidUnsubscribe = subscribe(null);
+    const invalidUnsubscribe = subscribe(null as never);
     assert.equal(typeof invalidUnsubscribe, 'function', 'invalid callback returns a no-op function');
     assert.equal(invalidUnsubscribe(), undefined);
     const listener = listeners.get(channel);
-    assert.equal(typeof listener, 'function', channel);
-    listener({}, channel === 'bookstr-desktop-open-pane' ? 'reading' : eventPayload);
+    assert.ok(listener, channel);
+    listener({}, payload);
     assert.equal(callbackCount, 1, channel);
     assert.equal(unsubscribe(), true, `${channel} unsubscribe removes its callback`);
-    listener({}, channel === 'bookstr-desktop-open-pane' ? 'reading' : eventPayload);
+    listener({}, payload);
     assert.equal(callbackCount, 1, `${channel} unsubscribes`);
     calls.push(channel);
   }
   assert.equal(new Set(calls).size, registrations.length);
 
-  const receivedPanes = [];
+  const receivedPanes: string[] = [];
   bridge.onOpenPane(pane => receivedPanes.push(pane));
-  listeners.get('bookstr-desktop-open-pane')({}, 'invalid');
-  listeners.get('bookstr-desktop-open-pane')({}, 'search');
+  const paneListener = listeners.get('bookstr-desktop-open-pane');
+  assert.ok(paneListener);
+  paneListener({}, 'invalid');
+  paneListener({}, 'search');
   assert.deepEqual(receivedPanes, ['search']);
 });
 
@@ -226,7 +245,7 @@ test('invalid callback registrations return no-op unsubscribe functions', () => 
     bridge.kindle.onProgress,
   ];
   for (const register of invalidRegistrations) {
-    const unsubscribe = register(null);
+    const unsubscribe = register(null as never);
     assert.equal(typeof unsubscribe, 'function');
     assert.equal(unsubscribe(), undefined);
   }
@@ -235,20 +254,22 @@ test('invalid callback registrations return no-op unsubscribe functions', () => 
 test('a throwing callback does not stop later listeners from receiving events', () => {
   const { bridge, listeners } = createPreload();
   const eventPayload = { id: 'book' };
-  const cases = [
-    [bridge.onOpenReader, 'bookstr-desktop-open-reader', eventPayload],
-    [bridge.onProgress, 'bookstr-desktop-reader-progress', eventPayload],
-    [bridge.library.onAcquisitionProgress, 'bookstr-desktop-acquisition-progress', eventPayload],
-    [bridge.onOpenSettings, 'bookstr-desktop-open-settings', undefined],
-    [bridge.onOpenPane, 'bookstr-desktop-open-pane', 'words'],
-    [bridge.speechModels.onProgress, 'bookstr-desktop-speech-model-progress', eventPayload],
+  const cases: RegistrationCase[] = [
+    { subscribe: bridge.onOpenReader, channel: 'bookstr-desktop-open-reader', payload: eventPayload },
+    { subscribe: bridge.onProgress, channel: 'bookstr-desktop-reader-progress', payload: eventPayload },
+    { subscribe: bridge.library.onAcquisitionProgress, channel: 'bookstr-desktop-acquisition-progress', payload: eventPayload },
+    { subscribe: bridge.onOpenSettings, channel: 'bookstr-desktop-open-settings', payload: undefined },
+    { subscribe: bridge.onOpenPane, channel: 'bookstr-desktop-open-pane', payload: 'words' },
+    { subscribe: bridge.speechModels.onProgress, channel: 'bookstr-desktop-speech-model-progress', payload: eventPayload },
   ];
 
-  for (const [subscribe, channel, payload] of cases) {
+  for (const { subscribe, channel, payload } of cases) {
     let received = 0;
     subscribe(() => { throw new Error(`listener failure: ${channel}`); });
     subscribe(() => { received += 1; });
-    listeners.get(channel)({}, payload);
+    const listener = listeners.get(channel);
+    assert.ok(listener);
+    listener({}, payload);
     assert.equal(received, 1, channel);
   }
 });

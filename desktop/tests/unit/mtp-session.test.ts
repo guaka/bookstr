@@ -1,33 +1,48 @@
-'use strict';
+const assert: typeof import('node:assert/strict') = require('node:assert/strict');
+const { EventEmitter } = require('node:events') as typeof import('node:events');
+const fs: typeof import('node:fs/promises') = require('node:fs/promises');
+const os: typeof import('node:os') = require('node:os');
+const path: typeof import('node:path') = require('node:path');
+const test = require('node:test') as typeof import('node:test');
+const { MtpKindles } = require('../../kindle-mtp') as typeof import('../../src/kindle-mtp');
+const { MtpSession } = require('../../mtp-session') as typeof import('../../src/mtp-session');
 
-const assert = require('node:assert/strict');
-const { EventEmitter } = require('node:events');
-const fs = require('node:fs/promises');
-const os = require('node:os');
-const path = require('node:path');
-const test = require('node:test');
-const { MtpKindles } = require('../../kindle-mtp');
-const { MtpSession } = require('../../mtp-session');
+type SessionOptions = Exclude<ConstructorParameters<typeof MtpSession>[0], undefined>;
+type SpawnProcess = NonNullable<SessionOptions['spawnProcess']>;
+type Child = ReturnType<SpawnProcess>;
+type Emitter = InstanceType<typeof EventEmitter>;
+type ChildMock = Emitter & {
+  stdout: Emitter;
+  stderr: Emitter;
+  stdin: Emitter & { write(line: string): boolean; end(): void };
+  kill(signal?: NodeJS.Signals): boolean;
+};
+type SessionHarness = { pending: unknown; child: Child | null };
+const internals = (session: InstanceType<typeof MtpSession>): SessionHarness =>
+  session as unknown as SessionHarness;
+type TransportHarness = { session: unknown | null };
+const transportHarness = (transport: InstanceType<typeof MtpKindles>): TransportHarness =>
+  transport as unknown as TransportHarness;
 
-function fakeSpawn(script) {
+function fakeSpawn(script: (line: string, child: Child) => void): SpawnProcess {
   return () => {
-    const child = new EventEmitter();
+    const child = new EventEmitter() as ChildMock;
     child.stdout = new EventEmitter();
     child.stderr = new EventEmitter();
-    child.stdin = new EventEmitter();
+    child.stdin = new EventEmitter() as ChildMock['stdin'];
     child.stdin.write = line => {
-      queueMicrotask(() => script(String(line), child));
+      queueMicrotask(() => script(String(line), child as unknown as Child));
       return true;
     };
     child.stdin.end = () => child.emit('close', 0, null);
-    child.kill = () => child.emit('close', null, 'SIGTERM');
-    queueMicrotask(() => child.stdout.emit('data', Buffer.from('{"ready":true,"freeBytes":123456}\n')));
-    return child;
+    child.kill = () => { child.emit('close', null, 'SIGTERM'); return true; };
+    queueMicrotask(() => child.stdout.emit('data', Buffer.from('libmtp adapter diagnostic\n{"ready":true,"freeBytes":123456}\n')));
+    return child as unknown as Child;
   };
 }
 
 test('session serializes commands and surfaces progress and completion', async () => {
-  const progress = [];
+  const progress: Array<Record<string, unknown>> = [];
   const session = new MtpSession({
     helper: '/tmp/kindle-mtp',
     deviceId: '1-2',
@@ -85,7 +100,7 @@ test('session rejects timed out replies and invalid ready handshakes', async () 
     helper: '/tmp/kindle-mtp',
     deviceId: '1-2',
     timeout: 30,
-    spawnProcess: fakeSpawn((line, child) => {
+    spawnProcess: fakeSpawn((line, _child) => {
       if (line === 'files\n') {
         // Leave the response hanging so the operation timer fires.
       }
@@ -98,22 +113,22 @@ test('session rejects timed out replies and invalid ready handshakes', async () 
     deviceId: '1-2',
     timeout: 2000,
     spawnProcess: () => {
-      const child = new EventEmitter();
+      const child = new EventEmitter() as ChildMock;
       child.stdout = new EventEmitter();
       child.stderr = new EventEmitter();
-      child.stdin = new EventEmitter();
+      child.stdin = new EventEmitter() as ChildMock['stdin'];
       child.stdin.write = () => true;
       child.stdin.end = () => child.emit('close', 0, null);
-      child.kill = () => child.emit('close', null, 'SIGTERM');
+      child.kill = () => { child.emit('close', null, 'SIGTERM'); return true; };
       queueMicrotask(() => child.stdout.emit('data', Buffer.from('{"ready":true,"freeBytes":-1}\n')));
-      return child;
+      return child as unknown as Child;
     },
   });
   await assert.rejects(() => badReady.command('files'), /Invalid Kindle session response/);
 });
 
 test('session routes pipe and process errors to the pending command', async () => {
-  for (const [event, message] of [['stdin-error', 'pipe failed'], ['process-error', 'spawn failed']]) {
+  for (const [event, message] of [['stdin-error', 'pipe failed'], ['process-error', 'spawn failed']] as const) {
     const session = new MtpSession({
       helper: '/tmp/kindle-mtp',
       deviceId: '1-2',
@@ -139,7 +154,7 @@ test('session rejects synchronous helper spawn failures without leaving a pendin
     spawnProcess: () => { throw new Error('helper could not start'); },
   });
   await assert.rejects(() => session.command('files'), /helper could not start/);
-  assert.equal(session.pending, null);
+  assert.equal(internals(session).pending, null);
 });
 
 test('session close timeout kills a helper that does not exit on stdin end', async () => {
@@ -155,13 +170,13 @@ test('session close timeout kills a helper that does not exit on stdin end', asy
   const originalSetTimeout = global.setTimeout;
   let killed = false;
   try {
-    global.setTimeout = callback => {
+    global.setTimeout = ((callback: () => void) => {
       callback();
       return {};
-    };
-    const child = session.child;
+    }) as unknown as typeof global.setTimeout;
+    const child = internals(session).child!;
     const originalKill = child.kill;
-    child.kill = signal => { killed = true; originalKill(signal); };
+    child.kill = signal => { killed = true; originalKill(signal); return true; };
     await session.close();
   } finally {
     global.setTimeout = originalSetTimeout;
@@ -175,21 +190,21 @@ test('session accepts stderr diagnostics and ignores progress without a handler'
     deviceId: '1-2',
     timeout: 2000,
     spawnProcess: () => {
-      const child = new EventEmitter();
+      const child = new EventEmitter() as ChildMock;
       child.stdout = new EventEmitter();
       child.stderr = new EventEmitter();
-      child.stdin = new EventEmitter();
-      child.stdin.write = line => {
+      child.stdin = new EventEmitter() as ChildMock['stdin'];
+      child.stdin.write = (line: string) => {
         if (line === 'files\n') queueMicrotask(() => child.stdout.emit('data', Buffer.from('{"progress":true,"phase":"checking"}\n[]\n{"complete":true}\n')));
         return true;
       };
       child.stdin.end = () => child.emit('close', 0, null);
-      child.kill = () => child.emit('close', null, 'SIGTERM');
+      child.kill = () => { child.emit('close', null, 'SIGTERM'); return true; };
       queueMicrotask(() => {
         child.stderr.emit('data', Buffer.from('adapter diagnostic'));
         child.stdout.emit('data', Buffer.from('{"ready":true,"freeBytes":1}\n'));
       });
-      return child;
+      return child as unknown as Child;
     },
   });
 
@@ -218,18 +233,18 @@ test('MTP withSession retains successful sessions, enforces free space, and clos
         };
       },
     });
-    const device = { id: 'mtp:darwin:1-2', helperId: '1-2' };
+    const device: Parameters<typeof transport.withSession>[0] = { id: 'mtp:darwin:1-2', helperId: '1-2', name: 'Kindle', kind: 'mtp' };
     await transport.withSession(device, async () => {
       assert.equal(openCount, 1);
       assert.throws(() => transport.ensureSpace(11), /enough free space/);
       transport.ensureSpace(5);
       assert.equal(closed, 0);
     });
-    assert.ok(transport.session);
+    assert.ok(transportHarness(transport).session);
     await transport.withSession(device, async () => { assert.equal(openCount, 1); });
     assert.equal(closed, 0);
     await transport.close();
-    assert.equal(transport.session, null);
+    assert.equal(transportHarness(transport).session, null);
     assert.equal(closed, 1);
 
     const active = new MtpKindles({
@@ -248,7 +263,7 @@ test('MTP withSession retains successful sessions, enforces free space, and clos
     });
     await active.withSession(device, async () => {});
     await assert.rejects(
-      () => active.withSession({ id: 'mtp:darwin:9-9', helperId: '9-9' }, async () => {}),
+      () => active.withSession({ id: 'mtp:darwin:9-9', helperId: '9-9', name: 'Kindle', kind: 'mtp' }, async () => {}),
       /different Kindle session/,
     );
     await assert.rejects(() => active.command('files', '9-9'), /Kindle device changed/);
@@ -264,7 +279,7 @@ test('session rejects malformed JSON and structurally invalid command replies', 
     ['files', [], '{"ok":true}\n{"complete":true}\n', /Invalid Kindle operation response/],
     ['get', ['1', '/tmp/out.pdf'], '{"ok":false}\n{"complete":true}\n', /Invalid Kindle operation response/],
     ['put', ['/tmp/in.pdf', 'in.pdf'], '{"id":"0"}\n{"complete":true}\n', /Invalid Kindle operation response/],
-  ]) {
+  ] as const) {
     const session = new MtpSession({ helper: '/tmp/kindle-mtp', deviceId: '1-2', timeout: 2000,
       spawnProcess: fakeSpawn((_line, child) => child.stdout.emit('data', Buffer.from(reply))) });
     await assert.rejects(session.command(action, ...args), expected);
