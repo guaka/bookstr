@@ -46,6 +46,15 @@ final class LibraryReaderUITests: XCTestCase {
         let alert = app.alerts["Can't open book"]
         XCTAssertTrue(alert.waitForExistence(timeout: 5))
         XCTAssertTrue(alert.staticTexts["This favorite does not include a readable publication URL."].exists)
+        alert.buttons["OK"].tap()
+
+        favorite.press(forDuration: 1)
+        let rights = app.buttons["library-favorite-rights-ui-test-unreadable-remote"]
+        XCTAssertTrue(rights.waitForExistence(timeout: 5))
+        rights.tap()
+        XCTAssertTrue(app.navigationBars["Book details"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.descendants(matching: .any)["book-details-cover"].exists)
+        XCTAssertTrue(app.staticTexts["Remote Author"].exists)
     }
 
     func testEPUBTimeoutRecoversOnceWithFreshReader() {
