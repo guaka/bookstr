@@ -1,6 +1,6 @@
 // Custom OPDS feeds are fetched by this browser module. They are deliberately
 // never sent through the Bookstr worker.
-const FB2_TYPES = new Set(['application/x-fictionbook+xml', 'application/fb2+xml']);
+const ACQUISITION_TYPES = new Map([['application/epub+zip', 'epub'], ['application/pdf', 'pdf']]);
 const MAX_FEEDS = 12;
 
 type PublicFeed = { name: string; url: string };
@@ -150,7 +150,7 @@ function recordsFromJSON(document: RawRecord, context: FeedContext): ProviderRec
     const metadata = publication.metadata && typeof publication.metadata === 'object'
       ? publication.metadata as RawRecord
       : publication;
-    const acquisition = objectLinks(publication).find(link => isFB2Link(link, context.feedURL));
+    const acquisition = objectLinks(publication).find(link => isReadableLink(link, context.feedURL));
     if (!acquisition) return null;
     return makeRecord({
       provider: context.provider,
@@ -169,7 +169,7 @@ function recordsFromJSON(document: RawRecord, context: FeedContext): ProviderRec
 function recordsFromXML(xml: string, context: FeedContext): ProviderRecord[] {
   const entries = [...xml.matchAll(/<(?:[\w.-]+:)?entry\b[^>]*>([\s\S]*?)<\/(?:[\w.-]+:)?entry\s*>/gi)].map(match => match[1]!);
   return entries.map((entry, index): ProviderRecord | null => {
-    const acquisition = xmlLinks(entry).find(link => isFB2Link(link, context.feedURL));
+    const acquisition = xmlLinks(entry).find(link => isReadableLink(link, context.feedURL));
     if (!acquisition) return null;
     const authors = [...entry.matchAll(/<(?:[\w.-]+:)?author\b[^>]*>([\s\S]*?)<\/(?:[\w.-]+:)?author\s*>/gi)]
       .flatMap(match => xmlValues(match[1]!, 'name'));
@@ -203,7 +203,7 @@ function makeRecord(value: RecordValues): ProviderRecord | null {
     languages: languageList(value.language),
     ...(year(value.published) ? { publishedYear: year(value.published) } : {}),
     rights: evidence ? { status, license: evidence, source: value.provider } : { status, source: value.provider },
-    acquisitions: [{ format: 'fb2', url: new URL(value.acquisition.href!, value.feedURL).href, availability: 'open' }],
+    acquisitions: [{ format: acquisitionFormat(value.acquisition.type, new URL(value.acquisition.href!, value.feedURL).pathname), url: new URL(value.acquisition.href!, value.feedURL).href, availability: 'open' }],
   };
 }
 
@@ -286,11 +286,11 @@ function xmlValues(xml: string, tag: string): string[] {
   return [...xml.matchAll(expression)].map(match => decodeXML(match[1]!).trim()).filter(Boolean);
 }
 
-function isFB2Link(link: OPDSLink, baseURL: string): boolean {
+function isReadableLink(link: OPDSLink, baseURL: string): boolean {
   try {
     const url = new URL(link?.href as string, baseURL);
     const type = String(link?.type || '').split(';', 1)[0]!.trim().toLowerCase();
-    return /^https?:$/.test(url.protocol) && (FB2_TYPES.has(type) || /\.fb2(?:\.zip)?$/i.test(url.pathname));
+    return /^https?:$/.test(url.protocol) && Boolean(acquisitionFormat(type, url.pathname));
   } catch {
     return false;
   }
@@ -382,4 +382,9 @@ function publicHost(value: string): boolean {
 
 function escapeRegExp(value: string): string {
   return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function acquisitionFormat(type: unknown, path: string): string {
+  const normalized = String(type || '').split(';', 1)[0]!.trim().toLowerCase();
+  return ACQUISITION_TYPES.get(normalized) || (/^(?:epub|pdf)$/.test(normalized) ? normalized : path.match(/\.(epub|pdf)$/i)?.[1]?.toLowerCase() || '');
 }

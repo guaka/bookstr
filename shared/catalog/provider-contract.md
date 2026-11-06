@@ -46,7 +46,7 @@ serialized. The portable Nostr representation is a
 `["bookstr-opds-feeds", "1"]` marker.
 
 Adapters support OPDS 1 Atom acquisition feeds, OpenSearch discovery, and
-OPDS 2 JSON publication feeds. They return only FB2 acquisitions and report a
+OPDS 2 JSON publication feeds. They return EPUB and PDF acquisitions and report a
 feed-specific failure to the calling client; custom feed URLs are fetched by
 the client and are never forwarded through Bookstr's public worker.
 

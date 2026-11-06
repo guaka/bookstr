@@ -1,10 +1,7 @@
 // Dependency-free OPDS and LitRes normalizers. Network transport stays in the
 // platform adapters: custom OPDS feeds are fetched directly by a client and
 // LitRes is fetched only through Bookstr's fixed-origin worker.
-export const FB2_MIME_TYPES = new Set([
-    'application/x-fictionbook+xml',
-    'application/fb2+xml',
-]);
+const ACQUISITION_TYPES = new Map([['application/epub+zip', 'epub'], ['application/pdf', 'pdf']]);
 const MAX_PUBLIC_OPDS_FEEDS = 12;
 const MAX_FEED_NAME_LENGTH = 80;
 function asRecord(value) {
@@ -124,7 +121,7 @@ export function resolveOPDSSearchURL(search, query, baseURL) {
 }
 // LitRes results are accepted only when the provider sends every required
 // piece of evidence: explicitly public-domain, explicitly free, and a direct
-// HTTPS FB2 download. This prevents Bookstr from guessing rights from age,
+// HTTPS EPUB or PDF download. This prevents Bookstr from guessing rights from age,
 // title, or a general catalogue landing page.
 export function normalizeLitresPublicDomainRecords(payload) {
     const document = typeof payload === 'string' ? parseOPDSJSON(payload) : payload;
@@ -198,7 +195,7 @@ function xmlValues(xml, name) {
 }
 function recordFromOPDS1Entry(entry, index, context) {
     const links = xmlLinks(entry);
-    const acquisition = links.find(link => isFB2Link(link, context.feedURL));
+    const acquisition = links.find(link => isReadableLink(link, context.feedURL));
     if (!acquisition)
         return null;
     const id = xmlValue(entry, 'id') || acquisition.href || String(index + 1);
@@ -223,7 +220,7 @@ function recordFromOPDS2Publication(value, index, context) {
         return null;
     const metadata = asRecord(publication.metadata) || publication;
     const links = objectLinks(publication);
-    const acquisition = links.find(link => isFB2Link(link, context.feedURL));
+    const acquisition = links.find(link => isReadableLink(link, context.feedURL));
     if (!acquisition)
         return null;
     const recordId = scalar(metadata.identifier || metadata.id || publication.id || acquisition.href || index + 1);
@@ -299,16 +296,16 @@ function objectLinks(value) {
     }));
 }
 function acquisitionRecord(link, baseURL) {
-    return { format: 'fb2', url: new URL(link.href || '', baseURL).href, availability: 'open' };
+    return { format: acquisitionFormat(link.type, new URL(link.href || '', baseURL).pathname), url: new URL(link.href || '', baseURL).href, availability: 'open' };
 }
-function isFB2Link(link, baseURL) {
+function isReadableLink(link, baseURL) {
     if (!link?.href)
         return false;
     const href = absoluteURL(link.href, baseURL);
     if (!href || !/^https?:/i.test(href))
         return false;
     const type = String(link.type || '').split(';', 1)[0].trim().toLowerCase();
-    return FB2_MIME_TYPES.has(type) || /\.fb2(?:\.zip)?$/i.test(new URL(href).pathname);
+    return Boolean(acquisitionFormat(type, new URL(href).pathname));
 }
 function absoluteURL(href, baseURL) {
     try {
@@ -360,7 +357,7 @@ function litResRecord(value, index) {
     const item = asRecord(value);
     if (!item || !explicitPublicDomain(item) || !explicitlyFree(item))
         return null;
-    const acquisition = litResFB2Acquisition(item);
+    const acquisition = litResAcquisition(item);
     if (!acquisition)
         return null;
     const recordId = scalar(item.id || item.file_id || item.uuid || item.slug || index + 1);
@@ -409,7 +406,7 @@ function explicitlyFree(item) {
         .filter(Number.isFinite);
     return prices.some(value => value === 0);
 }
-function litResFB2Acquisition(item) {
+function litResAcquisition(item) {
     const groups = [item.acquisitions, item.files, item.downloads, item.links, item.formats];
     const candidates = groups.flatMap(group => Array.isArray(group) ? group : group && typeof group === 'object' ? [group] : []);
     if (item.download_url || item.downloadUrl)
@@ -420,16 +417,15 @@ function litResFB2Acquisition(item) {
             return false;
         const href = scalar(file?.href || file?.url || file?.download_url || file?.downloadUrl);
         const format = scalar(file?.format || file?.extension || file?.type || file?.mime || file?.media_type).toLowerCase();
-        const labelledFB2 = /(?:^|\/)fb2(?:\.zip)?$/.test(format)
-            || FB2_MIME_TYPES.has(format.split(';', 1)[0]);
-        const fileURL = /\.fb2(?:\.zip)?(?:[?#]|$)/i.test(href);
+        const formatName = acquisitionFormat(format, '');
+        const fileURL = /\.(?:epub|pdf)(?:[?#]|$)/i.test(href);
         const direct = file?.direct === true || file?.is_direct === true || Boolean(file?.download_url || file?.downloadUrl);
-        return isPublicHTTPSURL(href) && labelledFB2 && (fileURL || direct);
+        return isPublicHTTPSURL(href) && formatName && (fileURL || direct);
     });
     if (!candidate)
         return null;
     const url = scalar(candidate.href || candidate.url || candidate.download_url || candidate.downloadUrl);
-    return { format: 'fb2', url, availability: 'open' };
+    return { format: acquisitionFormat(scalar(candidate.format || candidate.extension || candidate.type || candidate.mime || candidate.media_type), ''), url, availability: 'open' };
 }
 function decodeXML(value) {
     const decoded = String(value).replace(/&(?:amp|lt|gt|quot|apos);/g, entity => ({
@@ -458,4 +454,8 @@ function textWithoutXMLMarkup(value) {
 }
 function escapeRegExp(value) {
     return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+function acquisitionFormat(type, path) {
+    const normalized = (String(type || '').split(';', 1)[0] || '').trim().toLowerCase();
+    return ACQUISITION_TYPES.get(normalized) || (/^(?:epub|pdf)$/.test(normalized) ? normalized : path.match(/\.(epub|pdf)$/i)?.[1]?.toLowerCase() || '');
 }
