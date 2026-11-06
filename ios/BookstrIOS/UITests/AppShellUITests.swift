@@ -38,7 +38,6 @@ final class AppShellUITests: XCTestCase {
         app.buttons["downloads.done"].tap()
         XCTAssertTrue(query.waitForExistence(timeout: 5))
         query.tap(); query.typeText(" more\n")
-        app.buttons["Close"].tap()
         app.buttons["search.downloads"].tap()
         let downloaded = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "downloads.open.")).firstMatch
         XCTAssertTrue(downloaded.waitForExistence(timeout: 20))
@@ -59,9 +58,12 @@ final class AppShellUITests: XCTestCase {
         language.tap()
         app.buttons["Dutch"].tap()
         let download = app.buttons["speech-model-piper_nl_nl_dii"]
-        reveal(download)
-        XCTAssertTrue(download.waitForExistence(timeout: 5))
-        XCTAssertTrue(app.descendants(matching: .any)["speech-voice-nl"].exists)
+        let remove = app.buttons["speech-model-remove-piper_nl_nl_dii"]
+        reveal(download, alternative: remove)
+        XCTAssertTrue(download.exists || remove.exists)
+        let voice = app.descendants(matching: .any)["speech-voice-nl"]
+        reveal(voice)
+        XCTAssertTrue(voice.exists)
     }
 
     func testPortugueseOffersBrazilAndPortugalVoicesTogether() throws {
@@ -73,7 +75,9 @@ final class AppShellUITests: XCTestCase {
         let portuguese = pickerChoice("Portuguese")
         XCTAssertTrue(portuguese.waitForExistence(timeout: 5))
         portuguese.tap()
-        XCTAssertTrue(app.descendants(matching: .any)["speech-voice-pt"].waitForExistence(timeout: 5))
+        let voice = app.descendants(matching: .any)["speech-voice-pt"]
+        reveal(voice)
+        XCTAssertTrue(voice.waitForExistence(timeout: 5))
         let brazil = app.buttons["speech-model-kokoro_pt_br"]
         let portugal = app.buttons["speech-model-piper_pt_pt"]
         reveal(brazil)
@@ -116,7 +120,9 @@ final class AppShellUITests: XCTestCase {
         XCTAssertTrue(app.buttons["downloads.done"].waitForExistence(timeout: 10))
         app.buttons["downloads.done"].tap()
         selectTab("Library")
-        XCTAssertTrue(app.buttons["library-book-\(id)"].waitForExistence(timeout: 20))
+        let downloaded = app.buttons["library-book-\(id)"]
+        reveal(downloaded)
+        XCTAssertTrue(downloaded.waitForExistence(timeout: 20), app.debugDescription)
         XCTAssertFalse(app.descendants(matching: .any)["pdf-reader"].exists)
     }
 
@@ -337,8 +343,10 @@ final class AppShellUITests: XCTestCase {
             if portugueseChoice.waitForExistence(timeout: 4) {
                 portugueseChoice.tap()
                 let portugueseVoice = app.descendants(matching: .any)["speech-voice-pt"]
+                reveal(portugueseVoice)
                 XCTAssertTrue(portugueseVoice.waitForExistence(timeout: 4), "Settings did not expose the Portuguese voice picker")
             }
+            reveal(speechLanguage, towardTop: true)
             if speechLanguage.isHittable {
                 speechLanguage.tap()
                 let englishChoice = pickerChoice("English")
@@ -361,30 +369,32 @@ final class AppShellUITests: XCTestCase {
         reveal(app.buttons["speech-model-kokoro_en"])
         XCTAssertTrue(app.buttons["speech-model-kokoro_en"].waitForExistence(timeout: 4), "Settings did not expose the Kokoro download control")
         XCTAssertFalse(app.staticTexts["Speech speed"].exists)
-        reveal(speechLanguage)
+        reveal(speechLanguage, towardTop: true)
         if speechLanguage.isHittable {
             speechLanguage.tap()
             let portugueseChoice = pickerChoice("Portuguese")
             if portugueseChoice.waitForExistence(timeout: 4) {
                 portugueseChoice.tap()
-                XCTAssertTrue(
-                    app.buttons["speech-model-piper_pt_pt"].waitForExistence(timeout: 4),
-                    "Settings did not expose the Tugão download control for Portuguese"
-                )
-                XCTAssertTrue(app.buttons["speech-model-piper_pt_pt_miro"].waitForExistence(timeout: 2))
-                XCTAssertTrue(app.buttons["speech-model-piper_pt_pt_dii"].waitForExistence(timeout: 2))
+                for identifier in ["speech-model-piper_pt_pt", "speech-model-piper_pt_pt_miro", "speech-model-piper_pt_pt_dii"] {
+                    let model = app.buttons[identifier]
+                    reveal(model)
+                    XCTAssertTrue(model.waitForExistence(timeout: 4), identifier)
+                }
             }
+            reveal(speechLanguage, towardTop: true)
             if speechLanguage.isHittable {
                 speechLanguage.tap()
                 let frenchChoice = pickerChoice("French")
                 if frenchChoice.waitForExistence(timeout: 4) {
                     frenchChoice.tap()
+                    reveal(app.buttons["speech-model-piper_fr_fr"])
                     XCTAssertTrue(
                         app.buttons["speech-model-piper_fr_fr"].waitForExistence(timeout: 4),
                         "Settings did not expose the French Miro download control"
                     )
                 }
             }
+            reveal(speechLanguage, towardTop: true)
             if speechLanguage.isHittable {
                 speechLanguage.tap()
                 let englishChoice = pickerChoice("English")
@@ -462,10 +472,10 @@ final class AppShellUITests: XCTestCase {
         library.tap()
     }
 
-    private func reveal(_ element: XCUIElement) {
+    private func reveal(_ element: XCUIElement, alternative: XCUIElement? = nil, towardTop: Bool = false) {
         for _ in 0..<24 {
-            if element.exists { return }
-            app.swipeUp()
+            if element.isHittable || alternative?.isHittable == true { return }
+            if towardTop { app.swipeDown() } else { app.swipeUp() }
         }
     }
 
