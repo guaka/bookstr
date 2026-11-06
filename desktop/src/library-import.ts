@@ -1,48 +1,50 @@
 'use strict';
 
-const fs = require('node:fs');
-const fsp = require('node:fs/promises');
-const path = require('node:path');
-const crypto = require('node:crypto');
-const { Transform } = require('node:stream');
-const { pipeline } = require('node:stream/promises');
+const fs = require('node:fs') as typeof import('node:fs');
+const fsp = require('node:fs/promises') as typeof import('node:fs/promises');
+const path = require('node:path') as typeof import('node:path');
+const crypto = require('node:crypto') as typeof import('node:crypto');
+const { Transform } = require('node:stream') as typeof import('node:stream');
+const { pipeline } = require('node:stream/promises') as typeof import('node:stream/promises');
 
-function safeExtension(value, fallback = '') {
+function safeExtension(value: unknown, fallback = '') {
   const extension = String(value || fallback).trim().toLowerCase().replace(/^\./, '');
   if (!/^[a-z0-9][a-z0-9+.-]{0,15}$/.test(extension)) throw new TypeError('extension must be a short safe file extension');
   return extension;
 }
 
-function safeRelativePath(value) {
+function safeRelativePath(value: unknown) {
   const relative = String(value || '').replaceAll('\\', '/');
   if (!relative || relative.startsWith('/') || relative.split('/').includes('..') || /[\u0000-\u001f]/.test(relative)) throw new TypeError('relative path is invalid');
   return relative;
 }
 
-function inside(root, candidate) {
+function inside(root: string, candidate: string) {
   const relative = path.relative(path.resolve(root), path.resolve(candidate));
   return relative && relative !== '..' && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative);
 }
 
-function hashFile(filePath) {
+function hashFile(filePath: string): Promise<{ sha256: string; size: number }> {
   const hash = crypto.createHash('sha256');
   let size = 0;
   return new Promise((resolve, reject) => {
     const stream = fs.createReadStream(filePath);
-    stream.on('data', chunk => { hash.update(chunk); size += chunk.length; });
+    stream.on('data', (chunk: string | Buffer) => { hash.update(chunk); size += chunk.length; });
     stream.once('error', reject);
     stream.once('end', () => resolve({ sha256: hash.digest('hex'), size }));
   });
 }
 
 class LibraryImporter {
-  constructor({ libraryRoot } = {}) {
+  declare readonly libraryRoot: string;
+  declare readonly booksRoot: string;
+  constructor({ libraryRoot }: { libraryRoot?: string } = {}) {
     if (!libraryRoot) throw new TypeError('libraryRoot is required');
     this.libraryRoot = path.resolve(libraryRoot);
     this.booksRoot = path.join(this.libraryRoot, 'books');
   }
 
-  async importFile(sourcePath, { extension, expectedSha256 } = {}) {
+  async importFile(sourcePath: unknown, { extension, expectedSha256 }: { extension?: unknown; expectedSha256?: unknown } = {}) {
     if (typeof sourcePath !== 'string' || !sourcePath.trim() || sourcePath.includes('\0')) throw new TypeError('sourcePath is invalid');
     const source = path.resolve(sourcePath);
     const stat = await fsp.stat(source);
@@ -70,7 +72,7 @@ class LibraryImporter {
         await fsp.access(destination, fs.constants.F_OK);
         await fsp.unlink(tempPath);
       } catch (error) {
-        if (error.code !== 'ENOENT') throw error;
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
         await fsp.rename(tempPath, destination);
       }
       return { sha256, size, extension: ext, relativePath };
@@ -80,7 +82,7 @@ class LibraryImporter {
     }
   }
 
-  resolveRelativePath(relativePath) {
+  resolveRelativePath(relativePath: unknown) {
     const relative = safeRelativePath(relativePath);
     const resolved = path.resolve(this.libraryRoot, relative);
     if (!inside(this.libraryRoot, resolved)) throw new TypeError('relative path escaped library root');
@@ -88,4 +90,4 @@ class LibraryImporter {
   }
 }
 
-module.exports = { LibraryImporter, hashFile, safeExtension };
+export = { LibraryImporter, hashFile, safeExtension };

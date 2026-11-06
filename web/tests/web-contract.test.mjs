@@ -11,10 +11,10 @@ const desktopProgress = await readFile(new URL('../desktop-progress.js', import.
 const readerHtml = await readFile(new URL('../reader.html', import.meta.url), 'utf8');
 const pdfReaderHtml = await readFile(new URL('../pdf-reader.html', import.meta.url), 'utf8');
 const pdfReaderJs = await readFile(new URL('../pdf-reader.js', import.meta.url), 'utf8');
-const desktopMain = await readFile(new URL('../../desktop/main.js', import.meta.url), 'utf8');
+const desktopMain = await readFile(new URL('../../desktop/src/main.ts', import.meta.url), 'utf8');
 const desktopPreload = await readFile(new URL('../../desktop/src/preload.ts', import.meta.url), 'utf8');
 const desktopPolicy = await readFile(new URL('../../desktop/src/security-policy.ts', import.meta.url), 'utf8');
-const desktopWebTorrent = await readFile(new URL('../../desktop/webtorrent-bridge.js', import.meta.url), 'utf8');
+const desktopWebTorrent = await readFile(new URL('../../desktop/src/webtorrent-bridge.ts', import.meta.url), 'utf8');
 const webtorrentDevBridge = await readFile(new URL('../webtorrent-dev-bridge.mjs', import.meta.url), 'utf8');
 const coverAssets = await readFile(new URL('../cover-assets.js', import.meta.url), 'utf8');
 const bookMetadata = await readFile(new URL('../book-metadata.js', import.meta.url), 'utf8');
@@ -516,9 +516,9 @@ test('desktop EPUB and PDF readers stay inside the main reading pane', () => {
 });
 
 test('desktop main process enforces reader payloads and returns explicit open results', () => {
-  assert.match(desktopMain, /function normalizePayload\(payload\)/);
-  assert.match(desktopMain, /font: String\(payload\.font \|\| 'arial'\)\.toLowerCase\(\)/);
-  assert.match(desktopMain, /alignment: String\(payload\.alignment \|\| 'justified'\)\.toLowerCase\(\)/);
+  assert.match(desktopMain, /function normalizePayload\(payload: unknown\)/);
+  assert.match(desktopMain, /font: String\(\(payload as UnknownRecord\)\.font \|\| 'arial'\)\.toLowerCase\(\)/);
+  assert.match(desktopMain, /alignment: String\(\(payload as UnknownRecord\)\.alignment \|\| 'justified'\)\.toLowerCase\(\)/);
   assert.match(desktopMain, /return \{ ok: false, error: 'Invalid reader payload\.' \}/);
   assert.match(desktopMain, /return \{ ok: true, key, reused: currentURL === readerURL, kind: requestedKind \}/);
   assert.match(desktopMain, /ALLOWED_EXTERNAL_URL_PROTOCOLS/);
@@ -529,8 +529,8 @@ test('desktop main process enforces reader payloads and returns explicit open re
   assert.match(desktopMain, /async function loadNostrTools\(\)/);
   assert.match(desktopMain, /async function resolveNostrSignerSecret\(\)/);
   assert.match(desktopMain, /async function resolveNostrSignerPublicKey\(\)/);
-  assert.match(desktopMain, /function normalizeNostrEventPayload\(payload\)/);
-  assert.match(desktopMain, /function normalizeNip44Payload\(payload\)/);
+  assert.match(desktopMain, /function normalizeNostrEventPayload\(payload: unknown\)/);
+  assert.match(desktopMain, /function normalizeNip44Payload\(payload: unknown\)/);
   assert.match(desktopMain, /ipcMain\.handle\('bookstr-desktop-nostr-get-public-key'/);
   assert.match(desktopMain, /ipcMain\.handle\('bookstr-desktop-nostr-sign-event'/);
   assert.match(desktopMain, /ipcMain\.handle\('bookstr-desktop-nostr-nip44-encrypt'/);
@@ -993,7 +993,7 @@ test('Electron windows and packages use the Bookstr app icon', async () => {
   assert.match(desktopMain, /const APP_ICON_PATH = path\.join\(__dirname, 'assets', 'icon-macos\.png'\)/);
   assert.match(desktopMain, /title: 'libstr',[\s\S]*?icon: APP_ICON_PATH/);
   assert.equal((desktopMain.match(/new BrowserWindow\(/g) || []).length, 1);
-  assert.match(desktopMain, /app\.dock\.setIcon\(APP_ICON_PATH\)/);
+  assert.match(desktopMain, /app\.dock!\.setIcon\(APP_ICON_PATH\)/);
   assert.equal(desktopPackage.build.icon, 'assets/icon-macos.png');
   assert.equal(desktopPackage.build.win.icon, 'assets/icon-macos.png');
   assert.equal(desktopPackage.build.linux.icon, 'assets/icon-macos.png');

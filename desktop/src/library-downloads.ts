@@ -1,6 +1,6 @@
 'use strict';
 
-const fs = require('node:fs/promises');
+const fs = require('node:fs/promises') as typeof import('node:fs/promises');
 
 const READER_FORMATS = new Set(['epub', 'pdf', 'fb2', 'cbz', 'cbr']);
 const ZIP_SIGNATURE = 0x04034b50;
@@ -11,19 +11,20 @@ const MAX_ZIP_CENTRAL_DIRECTORY_BYTES = 2 * 1024 * 1024;
 const MAX_ZIP_ENTRIES = 10_000;
 const MAX_FORMAT_CACHE_ENTRIES = 256;
 const MAX_PARALLEL_FORMAT_CHECKS = 4;
-const formatCache = new Map();
+interface DownloadRow { bookId: string; [key: string]: unknown }
+const formatCache = new Map<string, { signature: string; format: string }>();
 
-async function sniffFileFormat(filePath, fileSystem = fs) {
-  let file;
+async function sniffFileFormat(filePath: string, fileSystem = fs) {
+  let file: Awaited<ReturnType<typeof fs.open>> | undefined;
   try {
     file = await fileSystem.open(filePath, 'r');
     const stats = await file.stat();
     if (!stats.isFile() || stats.size < 4) return '';
-    const readAt = async (position, requestedLength) => {
+    const readAt = async (position: number, requestedLength: number) => {
       const length = Math.min(requestedLength, Math.max(0, stats.size - position));
       if (length <= 0) return Buffer.alloc(0);
       const bytes = Buffer.alloc(length);
-      const { bytesRead } = await file.read(bytes, 0, length, position);
+      const { bytesRead } = await file!.read(bytes, 0, length, position);
       return bytes.subarray(0, bytesRead);
     };
     const prefix = await readAt(0, 4096);
@@ -84,27 +85,27 @@ async function sniffFileFormat(filePath, fileSystem = fs) {
   }
 }
 
-async function detectedFormat(filePath) {
+async function detectedFormat(filePath: string) {
   const stats = await fs.stat(filePath);
   if (!stats.isFile()) return '';
   const signature = `${stats.dev}:${stats.ino}:${stats.size}:${stats.mtimeMs}`;
   const cached = formatCache.get(filePath);
   if (cached?.signature === signature) return cached.format;
   const format = await sniffFileFormat(filePath);
-  if (formatCache.size >= MAX_FORMAT_CACHE_ENTRIES) formatCache.delete(formatCache.keys().next().value);
+  if (formatCache.size >= MAX_FORMAT_CACHE_ENTRIES) formatCache.delete(formatCache.keys().next().value!);
   formatCache.set(filePath, { signature, format });
   return format;
 }
 
-async function downloadsForRenderer(downloads, resolveRegisteredFile) {
-  const rows = Array.isArray(downloads) ? downloads : [];
-  const results = new Array(rows.length);
+async function downloadsForRenderer(downloads: unknown, resolveRegisteredFile: (bookId: string) => Promise<{ filePath: string }>) {
+  const rows: DownloadRow[] = Array.isArray(downloads) ? downloads : [];
+  const results = new Array<DownloadRow & { readable: boolean }>(rows.length);
   let nextIndex = 0;
   const worker = async () => {
     while (nextIndex < rows.length) {
       const index = nextIndex;
       nextIndex += 1;
-      const download = rows[index];
+      const download = rows[index]!;
       let readable = false;
       let format = '';
       try {
@@ -121,4 +122,4 @@ async function downloadsForRenderer(downloads, resolveRegisteredFile) {
   return results;
 }
 
-module.exports = { downloadsForRenderer, detectedFormat, sniffFileFormat };
+export = { downloadsForRenderer, detectedFormat, sniffFileFormat };

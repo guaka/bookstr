@@ -1,18 +1,56 @@
-'use strict';
+interface DeviceTools {
+  generateSecretKey(): Uint8Array;
+  getPublicKey(secret: Uint8Array): string;
+  [key: string]: unknown;
+}
 
-let contractsPromise;
+interface PairingDevice {
+  device_id: string;
+  pubkey: string;
+  platform: 'electron';
+  name: string;
+  capabilities: string[];
+}
+
+interface StoredPairing {
+  secret?: string;
+  device_id?: string;
+  name?: string;
+  registry?: object;
+  [key: string]: unknown;
+}
+
+interface PairingState { devicePairing?: StoredPairing; [key: string]: unknown }
+interface SafeStorage {
+  isEncryptionAvailable(): boolean;
+  decryptString(value: Buffer): string;
+  encryptString(value: string): Buffer;
+}
+interface DevicePairingOptions {
+  loadState: () => Promise<PairingState>;
+  saveState: (state: { devicePairing: StoredPairing }) => Promise<void>;
+  safeStorage: SafeStorage;
+  loadTools: () => Promise<DeviceTools>;
+  accountPublicKey: () => Promise<string> | string;
+  decryptForAccount: (pubkey: string, ciphertext: string) => Promise<string>;
+  loadRegistry?: () => Promise<unknown>;
+  clock?: () => number;
+  relays?: string[];
+}
+
+let contractsPromise: Promise<typeof import('../shared/contracts/device-pairing-v1.mjs')> | undefined;
 function contracts() {
   contractsPromise ||= import('../shared/contracts/device-pairing-v1.mjs');
   return contractsPromise;
 }
 
-let nip17Promise;
+let nip17Promise: Promise<typeof import('../shared/contracts/device-pairing-nip17.mjs')> | undefined;
 function nip17() {
   nip17Promise ||= import('../shared/contracts/device-pairing-nip17.mjs');
   return nip17Promise;
 }
 
-function encodedSecret(value) {
+function encodedSecret(value: unknown): Uint8Array | null {
   if (typeof value !== 'string' || !value) return null;
   try {
     const secret = Buffer.from(value, 'base64');
@@ -22,11 +60,11 @@ function encodedSecret(value) {
   }
 }
 
-function secretValue(value) {
+function secretValue(value: Uint8Array): string {
   return Buffer.from(value).toString('base64');
 }
 
-function decryptStoredSecret(encoded, safeStorage) {
+function decryptStoredSecret(encoded: unknown, safeStorage: SafeStorage): Uint8Array | null {
   if (typeof encoded !== 'string' || !encoded) return null;
   try {
     const plaintext = safeStorage.decryptString(Buffer.from(encoded, 'base64'));
@@ -36,8 +74,20 @@ function decryptStoredSecret(encoded, safeStorage) {
   }
 }
 
-class ElectronDevicePairing {
-  constructor({ loadState, saveState, safeStorage, loadTools, accountPublicKey, decryptForAccount, loadRegistry, clock, relays = [] } = {}) {
+export class ElectronDevicePairing {
+  declare private readonly loadState: DevicePairingOptions['loadState'];
+  declare private readonly saveState: DevicePairingOptions['saveState'];
+  declare private readonly safeStorage: SafeStorage;
+  declare private readonly loadTools: DevicePairingOptions['loadTools'];
+  declare private readonly accountPublicKey: DevicePairingOptions['accountPublicKey'];
+  declare private readonly decryptForAccount: DevicePairingOptions['decryptForAccount'];
+  declare private readonly loadRegistry: () => Promise<unknown>;
+  declare private readonly clock: () => number;
+  declare private readonly relays: string[];
+  declare private device: PairingDevice | null;
+  declare private deviceSecret: Uint8Array | null;
+
+  constructor({ loadState, saveState, safeStorage, loadTools, accountPublicKey, decryptForAccount, loadRegistry, clock, relays = [] }: DevicePairingOptions = {} as DevicePairingOptions) {
     if (typeof loadState !== 'function' || typeof saveState !== 'function') throw new TypeError('loadState and saveState are required');
     if (!safeStorage || typeof safeStorage.isEncryptionAvailable !== 'function') throw new TypeError('safeStorage is required');
     if (typeof loadTools !== 'function') throw new TypeError('loadTools is required');
@@ -80,7 +130,7 @@ class ElectronDevicePairing {
     };
     if (!storedSecret && this.safeStorage.isEncryptionAvailable()) {
       try {
-        const devicePairing = {
+        const devicePairing: StoredPairing = {
           version: 1,
           device_id: deviceId,
           pubkey,
@@ -119,23 +169,23 @@ class ElectronDevicePairing {
     };
   }
 
-  async announce(options = {}) {
+  async announce(options: { ttl?: number } = {}) {
     const { createDeviceAnnouncement } = await contracts();
     return createDeviceAnnouncement(await this.ensureDevice(), { ...options, now: this.clock() });
   }
 
-  async createEnvelope(recipientPubkey, message, options = {}) {
+  async createEnvelope(recipientPubkey: string, message: unknown, options: { ttl?: number } = {}) {
     const { createDeviceControlWrap } = await nip17();
     return createDeviceControlWrap(message, {
       ...options,
       recipientPubkey,
-      deviceSecret: this.deviceSecret || (await this.ensureDevice(), this.deviceSecret),
+      deviceSecret: (this.deviceSecret || (await this.ensureDevice(), this.deviceSecret))!,
       tools: await this.loadTools(),
       now: this.clock(),
     });
   }
 
-  async openEnvelope(wrapped, { senderPubkey } = {}) {
+  async openEnvelope(wrapped: unknown, { senderPubkey }: { senderPubkey?: string } = {}) {
     const [{ unwrapDeviceControlWrap }, { acceptDeviceMessage }] = await Promise.all([nip17(), contracts()]);
     const registry = await this.loadRegistry();
     const now = this.clock();
@@ -152,5 +202,3 @@ class ElectronDevicePairing {
     return message ? acceptDeviceMessage(registry, senderPubkey, message, { now }) : null;
   }
 }
-
-module.exports = { ElectronDevicePairing };

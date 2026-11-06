@@ -47,6 +47,7 @@ test('TypeScript uses strict checks and emits beside existing Electron modules',
   for (const key of ['strict', 'noUncheckedIndexedAccess', 'noUnusedLocals', 'noUnusedParameters', 'noEmitOnError', 'sourceMap', 'inlineSources']) {
     assert.equal(config.compilerOptions[key], true, key);
   }
+  assert.ok(config.compilerOptions.lib.includes('DOM.AsyncIterable'));
   assert.equal(config.compilerOptions.rootDir, 'src');
   assert.equal(config.compilerOptions.outDir, '.');
   assert.ok(config.exclude.includes('node_modules'));
@@ -57,10 +58,23 @@ test('TypeScript uses strict checks and emits beside existing Electron modules',
   }
   const ignored = fs.readFileSync(path.join(root, '../.gitignore'), 'utf8');
   const bundled = manifest.build.files.find(entry => entry.to === 'desktop').filter;
-  for (const name of ['preload', 'catalog-invitations', 'security-policy', 'dictionary-proxy']) {
+  for (const name of ['preload', 'catalog-invitations', 'security-policy', 'dictionary-proxy', 'main', 'catalog-proxy', 'speech-model-store', 'webtorrent-bridge', 'library-store', 'library-import', 'library-cover', 'acquisition-manager', 'download-queue', 'library-downloads', 'kindle-sync', 'kindle-mtp', 'mtp-session', 'comic-pdf', 'comic-image', 'device-pairing']) {
     assert.ok(ignored.includes(`/desktop/${name}.js`));
     assert.ok(bundled.includes(`${name}.js`));
     assert.ok(fs.existsSync(path.join(root, 'src', `${name}.ts`)));
   }
   assert.ok(bundled.includes('*.js.map'));
+});
+
+test('all packaged Electron modules and build helpers have TypeScript sources', () => {
+  const manifest = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
+  const bundled = manifest.build.files.find(entry => entry.to === 'desktop').filter;
+  for (const file of bundled.filter(file => /^[a-z-]+\.js$/.test(file))) {
+    assert.ok(fs.existsSync(path.join(root, 'src', file.replace(/\.js$/, '.ts'))), file);
+  }
+  const ignored = fs.readFileSync(path.join(root, '../.gitignore'), 'utf8');
+  for (const file of ['stamp-build', 'playwright.config', 'native/build-kindle-mtp']) {
+    assert.ok(fs.existsSync(path.join(root, 'src', `${file}.ts`)), file);
+    assert.ok(ignored.includes(`/desktop/${file}.js`), file);
+  }
 });
