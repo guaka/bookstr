@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>bookstr reader</title>
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: #f7f3ea;
+      color: #1c1916;
+      touch-action: manipulation;
+    }
+    body.white {
+      background: #ffffff;
+      color: #1c1916;
+    }
+    body.night {
+      background: #121212;
+      color: #e8e4dc;
+    }
+    #viewer {
+      width: 100vw;
+      height: 100vh;
+      background: inherit;
+    }
+    .epub-container {
+      background: inherit !important;
+      overflow-x: hidden !important;
+      overflow-y: auto !important;
+      -webkit-overflow-scrolling: touch;
+      scrollbar-width: none;
+    }
+    .epub-view,
+    .epub-view iframe {
+      background: inherit !important;
+    }
+    .epub-container::-webkit-scrollbar,
+    #dictionary-card::-webkit-scrollbar { display: none; width: 0; height: 0; }
+    #dictionary-card {
+      position: fixed;
+      z-index: 20;
+      left: 0.65rem;
+      right: 0.65rem;
+      bottom: 0.65rem;
+      max-height: 48vh;
+      overflow-y: auto;
+      border: 1px solid rgba(128, 128, 128, 0.55);
+      border-radius: 0.8rem;
+      padding: 0.9rem;
+      box-sizing: border-box;
+      background: #f7f3ea;
+      color: #1c1916;
+      box-shadow: 0 0.8rem 2.5rem rgba(0, 0, 0, 0.35);
+      font-family: system-ui, sans-serif;
+    }
+    body.white #dictionary-card { background: #ffffff; color: #1c1916; }
+    body.night #dictionary-card { background: #1b1a18; color: #e8e4dc; }
+    #dictionary-card[hidden] { display: none; }
+    .dictionary-heading { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
+    .dictionary-heading-actions { display: flex; align-items: center; gap: 0.35rem; }
+    .dictionary-heading strong { font-size: 1.25rem; }
+    .dictionary-heading span { display: block; opacity: 0.7; font-size: 0.78rem; }
+    #dictionary-save, #dictionary-close {
+      border: 0;
+      background: transparent;
+      color: inherit;
+      font-size: 1.6rem;
+      line-height: 1;
+      padding: 0.25rem 0.4rem;
+    }
+    #dictionary-save[disabled] { opacity: 0.65; }
+    #dictionary-card ol { margin: 0.75rem 0 0; padding-left: 1.4rem; }
+    #dictionary-card li + li { margin-top: 0.45rem; }
+    #dictionary-status { margin: 0.75rem 0 0; opacity: 0.75; }
+    #dictionary-source { display: none !important; }
+    body.night #dictionary-source { color: #7fb8a7; }
+    #dictionary-context { margin: 0.65rem 0 0; font-size: 0.9rem; line-height: 1.4; opacity: 0.9; }
+    #dictionary-context mark { background: #e7c766; color: #1c1916; font-weight: 700; padding: 0 0.08em; }
+    #image-zoom {
+      position: fixed;
+      z-index: 30;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-sizing: border-box;
+      padding: 0.25rem;
+      background: rgba(0, 0, 0, 0.92);
+    }
+    #image-zoom[hidden] { display: none; }
+    #image-zoom > * {
+      display: block !important;
+      width: auto !important;
+      height: auto !important;
+      max-width: 100% !important;
+      max-height: 100% !important;
+      object-fit: contain !important;
+    }
+  </style>
+  <script src="jszip.min.js"></script>
+  <script src="epub.min.js"></script>
+  <script src="reader-speech.js"></script>
+  <script src="reader-typography.js"></script>
+  <script src="reader-chrome.js"></script>
+</head>
+<body>
+  <div id="viewer"></div>
+  <aside id="dictionary-card" hidden aria-live="polite">
+    <div class="dictionary-heading">
+      <div><strong id="dictionary-word"></strong><span id="dictionary-kind"></span></div>
+      <div class="dictionary-heading-actions">
+        <button id="dictionary-save" type="button" aria-label="Add to Words" title="Add to Words">＋</button>
+        <button id="dictionary-close" type="button" aria-label="Close definition">×</button>
+      </div>
+    </div>
+    <p id="dictionary-status"></p>
+    <p id="dictionary-context"></p>
+    <ol id="dictionary-definitions"></ol>
+    <a id="dictionary-source" target="_blank" rel="noreferrer">Wiktionary</a>
+  </aside>
+  <div id="image-zoom" hidden aria-label="Expanded book image"></div>
+  <script>
+/* @bookstr-typescript:shared-reader-app */
+</script>
+</body>
+</html>

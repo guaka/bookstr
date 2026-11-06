@@ -1,0 +1,2039 @@
+interface SharedNavItem { href?: string; label?: string; subitems?: SharedNavItem[] }
+interface SharedSection { idref?: string; href?: string; index?: number; linear?: boolean; prev?(): SharedSection | undefined; next?(): SharedSection | undefined; load(loader: (href: string) => Promise<Document>): Promise<Document>; unload(): void; find(needle: string): Array<{ cfi: string; excerpt: string }> }
+interface SharedBook {
+  ready: Promise<unknown>; loaded: { navigation: Promise<{ toc: SharedNavItem[] }> };
+  packaging?: { metadata?: Record<string, unknown> };
+  spine: { spineItems: SharedSection[]; items?: SharedSection[]; get(href: string): SharedSection | undefined };
+  load(href: string): Promise<Document>; renderTo(target: string, options: Record<string, unknown>): SharedRendition;
+  locations: { generate(count: number): Promise<unknown>; length(): number; percentageFromCfi(cfi: string): number };
+  destroy(): void;
+}
+interface SharedContent { document?: Document; window?: Window; section?: SharedSection; range?(cfi: string): Range; cfiFromRange?(range: Range): string; [key: string]: unknown }
+interface SharedLocation { start?: { cfi?: string; percentage?: number; index?: number }; end?: { cfi?: string; percentage?: number }; atStart?: boolean; atEnd?: boolean; [key: string]: unknown }
+interface SharedRendition {
+  themes: { fontSize(size: string): void; select(theme: string): void; register(name: string, rules: Record<string, string | Record<string, string>>): void };
+  hooks: { content: { register(callback: (contents: SharedContent) => void): void } };
+  annotations: { highlight(cfi: string, data?: unknown, callback?: (() => void) | null, className?: string, styles?: Record<string, string>): void; remove(cfi: string, type?: string): void };
+  getContents(): SharedContent[]; currentLocation(): SharedLocation | null; display(cfi?: string): Promise<unknown>; destroy(): void; next(): Promise<unknown>; prev(): Promise<unknown>;
+  on(event: 'rendered', callback: (section: SharedSection, view: { element?: Element; contents?: SharedContent }) => void): void;
+  on(event: 'selected', callback: (cfi: string, contents: SharedContent) => void): void;
+  on(event: 'relocated', callback: (location: SharedLocation) => void): void;
+  on(event: string, callback: (...args: unknown[]) => void): void;
+}
+interface ReaderSearchResult { sectionIndex: number; cfi: string; excerpt: string }
+interface ReaderSpeechBlock { element: HTMLElement; start: number; end: number }
+interface DictionaryEntry { word: string; language: string; cfi?: string; contextSentence?: string }
+interface DictionaryLookupResult { partOfSpeech?: string; definitions: string[]; sourceUrl?: string }
+interface ReaderSelection { text: string; language: string; cfi: string; contextSentence: string }
+interface PinchAnchor { target: Document; range: Range | null; clientY: number; offsetY: number }
+interface SavedReaderHighlight { kind: string; locator: string }
+type SharedSpeechPlan = import('./reader-speech.js').SpeechPlan & { language?: string };
+declare global {
+  interface Window {
+    BookstrReaderChrome: { themeBackgroundColor(theme: string): string; paintShell(nodes: Element[], theme: string): void; prepareContentDocument(doc: Document | undefined, theme: string): void };
+    readerFontPercent?: number;
+    bookstrNativeSwipeNavigation?: boolean;
+    ePub?: typeof ePub;
+    CSS?: { highlights: HighlightRegistry };
+    Highlight?: typeof Highlight;
+    __bookstrTextSelection?: ReaderSelection | Selection | null;
+    bookstrCurrentTextSelection?: () => ReaderSelection | Selection | null;
+    loadBook: (...args: unknown[]) => Promise<unknown>;
+    loadBookUrl(url: string, cfi: string, theme: string, highlightCfi: string | null, bookId: string, highlightKind?: string): void;
+    highlightCurrentSelection(kind?: string): void;
+    setKnownWords(json: string): void;
+    setReaderHighlights(json: string): void;
+    highlightReaderCfi(cfi: string, kind: string): void;
+    activateSavedHighlightAtViewportPoint(x: number, y: number): boolean;
+    nextPage(): void; prevPage(): void;
+    adjustReaderFont(delta: number): void; beginNativeFontPinch(): void; updateNativeFontPinch(scale: number): void; endNativeFontPinch(): void;
+    searchBook(query: string): Promise<void>; displaySearchResult(cfi: string): void;
+    receiveDictionaryResult(payload: string): void;
+    persistSpeechLocation(): void; setSpeechResumeCfi(cfi: string): void; restoreReaderLocation(cfi: string): void;
+    requestSpeechText(notifyNative?: boolean, requestId?: number | string | null, fromCfi?: string): SharedSpeechPlan | undefined;
+    refreshSpeechBlocks(): void; continueSpeechAfterSection(notifyNative?: boolean, requestId?: number | string | null, attempts?: number): void;
+    showSpeechProgress(start: number, end: number): void; clearSpeechProgress(keepLocation?: boolean): void;
+    beginNativePageSwipe(): void; updateNativePageSwipe(offset: number): void; endNativePageSwipe(direction: number): void;
+    displaySection(href: string): void; setReaderTheme(theme: string): void;
+  }
+}
+declare const AndroidBridge: NonNullable<Window['AndroidBridge']> & {
+  onTextSelected?(payload: string): void; onSections?(payload: string): void;
+  onKnownWordTapped?(payload: string): void; onSavedHighlightTapped?(payload: string): void;
+  onReaderInteracted?(): void; onReaderLongPress?(payload: string): void;
+};
+declare const clearSpeechProgress: (keepLocation?: boolean) => void;
+declare const nextPage: typeof window.nextPage;
+declare const prevPage: typeof window.prevPage;
+
+let book: SharedBook | null = null;
+    let rendition: SharedRendition | null = null;
+    let currentBookId = "";
+    let activeDictionary: DictionaryEntry | null = null;
+    let knownWordSet = new Set<string>();
+    let currentReaderTheme = "paper";
+    const activeReaderHighlights: { words: string[]; marks: string[] } = { words: [], marks: [] };
+    let readerInteractionReported = false;
+    let pageTransitioning = false;
+    let readerFontPercent = Number(localStorage.getItem("bookstr-reader-font-percent")) || 100;
+    window.readerFontPercent = readerFontPercent;
+    let nativePinchStartFontPercent = readerFontPercent;
+    let speechBlocks: ReaderSpeechBlock[] = [];
+    let speechPlanStartCfi = "";
+    let activeSpeechBlock: ReaderSpeechBlock | null = null;
+    let activeSpeechHighlightWindow: Window | null = null;
+    let lastSpeechCfi = "";
+    let speechActive = false;
+    let readerStartupStage = "starting";
+
+    function reportReaderStartupStage(stage: string) {
+      readerStartupStage = stage;
+      if (window.AndroidBridge && AndroidBridge.onReaderStage) AndroidBridge.onReaderStage(stage);
+    }
+
+    function base64ToArrayBuffer(base64: string) {
+      const binary = atob(base64);
+      const len = binary.length;
+      const bytes = new Uint8Array(len);
+      for (let i = 0; i < len; i++) {
+        bytes[i] = binary.charCodeAt(i);
+      }
+      return bytes.buffer;
+    }
+
+    function applyTheme(theme: string) {
+      currentReaderTheme = theme === "night" ? "night" : (theme === "white" ? "white" : "paper");
+      document.body.className = theme === "night" ? "night" : (theme === "white" ? "white" : "");
+      if (rendition) {
+        rendition!.themes.select(theme === "night" ? "night" : (theme === "white" ? "white" : "paper"));
+        rendition!.getContents().forEach(function(contents) {
+          isolateAuthorBackgrounds(contents && contents.document);
+          applyReaderHighlightStyles(contents && contents.document);
+        });
+        repaintReaderAnnotations();
+      }
+      applyTypography();
+      applyContinuousShellBackground();
+    }
+
+    let readerFontFamily = "arial";
+    let readerAlignment = "justified";
+    let readerPadding = 0;
+
+    function themeBackgroundColor(theme: string) {
+      return window.BookstrReaderChrome.themeBackgroundColor(theme);
+    }
+    void themeBackgroundColor;
+
+    function applyContinuousShellBackground() {
+      const nodes = [document.documentElement, document.body, (document.getElementById("viewer") as HTMLElement)]
+        .concat(Array.from(document.querySelectorAll(".epub-container, .epub-view, .epub-view iframe")));
+      window.BookstrReaderChrome.paintShell(nodes.filter(Boolean), currentReaderTheme);
+    }
+
+    function installContinuousShellWatch() {
+      const viewer = (document.getElementById("viewer") as HTMLElement);
+      if (!viewer || viewer.__bookstrShellWatch) return;
+      viewer.__bookstrShellWatch = true;
+      const observer = new MutationObserver(function() {
+        applyContinuousShellBackground();
+      });
+      observer.observe(viewer, { childList: true, subtree: true });
+      applyContinuousShellBackground();
+    }
+
+    // Author figure wrappers often paint white across the rest of a section.
+    // Keep media/SVG guts intact; clear wrapper backgrounds so theme shows through.
+    function isolateAuthorBackgrounds(contentDocument: Document | undefined) {
+      window.BookstrReaderChrome.prepareContentDocument(contentDocument, currentReaderTheme);
+    }
+
+    function typographyCSS() {
+      return window.BookstrTypography.css(readerFontFamily, readerAlignment, readerPadding);
+    }
+
+    function applyTypographyToDocument(contentDocument: Document | undefined) {
+      if (!contentDocument) return;
+      let style = contentDocument.getElementById("bookstr-typography");
+      if (!style) {
+        style = contentDocument.createElement("style");
+        style.id = "bookstr-typography";
+        (contentDocument.head || contentDocument.documentElement).appendChild(style);
+      }
+      style.textContent = typographyCSS();
+    }
+
+    function applyTypography() {
+      if (!rendition || typeof rendition!.getContents !== "function") return;
+      rendition!.getContents().forEach(function(contents) {
+        applyTypographyToDocument(contents && contents.document);
+      });
+    }
+
+    function registerThemes() {
+      const shared = {
+        "font-family": "Arial, Helvetica, sans-serif !important",
+        "line-height": "1.6 !important",
+        "box-sizing": "border-box",
+        "width": "100% !important",
+        "max-width": "none !important",
+        "margin-left": "0 !important",
+        "margin-right": "0 !important",
+        "padding-left": "0.12rem !important",
+        "padding-right": "0.12rem !important"
+      };
+      const media = {
+        "max-width": "100% !important",
+        "max-height": Math.round(window.innerHeight * 0.88) + "px !important",
+        "width": "auto !important",
+        "height": "auto !important",
+        "object-fit": "contain !important",
+        "display": "block",
+        "margin-left": "auto !important",
+        "margin-right": "auto !important"
+      };
+      const contentReset = {
+        "background-color": "transparent !important",
+        "background-image": "none !important"
+      };
+      const contentBlocks =
+        "p, div, span, li, blockquote, td, th, h1, h2, h3, h4, h5, h6, section, article, aside, header, footer, main, nav, figure, figcaption, table, tr, thead, tbody, tfoot";
+      rendition!.themes.register("white", {
+        "html, body": { background: "#ffffff !important", color: "#1c1916 !important" },
+        body: Object.assign({}, shared, { background: "#ffffff !important", color: "#1c1916 !important" }),
+        [contentBlocks]: contentReset,
+        a: { color: "#2f5d50 !important" },
+        "img, svg, video": media
+      });
+      rendition!.themes.register("paper", {
+        "html, body": { background: "#f7f3ea !important", color: "#1c1916 !important" },
+        body: Object.assign({}, shared, { background: "#f7f3ea !important", color: "#1c1916 !important" }),
+        [contentBlocks]: contentReset,
+        a: { color: "#2f5d50 !important" },
+        "img, svg, video": media
+      });
+      rendition!.themes.register("night", {
+        html: { background: "#121212 !important", color: "#e8e4dc !important", "color-scheme": "dark !important" },
+        body: Object.assign({}, shared, { background: "#121212 !important", color: "#e8e4dc !important" }),
+        [contentBlocks]: Object.assign({}, contentReset, {
+          color: "#e8e4dc !important",
+          "border-color": "#4a4844 !important"
+        }),
+        "pre, code, table": { background: "#1b1a18 !important", color: "#e8e4dc !important" },
+        a: { color: "#7fb8a7 !important" },
+        "img, svg, video": media
+      });
+    }
+
+    function openBook(source: string | ArrayBuffer, cfi: string, theme: string, highlightCfi: string | null, bookId: string, highlightKind: string | null) {
+      reportReaderStartupStage("parsing");
+      currentBookId = String(bookId || "");
+      lastSpeechCfi = String(cfi || "").trim();
+      speechActive = false;
+      applyTheme(theme || "paper");
+      try {
+        book = ePub(source) as unknown as SharedBook;
+      } catch (error) {
+        return Promise.reject(error);
+      }
+      return waitForReaderViewport().then(function() { return book!.ready; }).then(function() {
+        includeOpeningSpineItems(book!.spine.spineItems);
+        reportBookMetadata();
+        reportBookSections();
+        // Keep the same continuous document model on Android, iOS, and web.
+        // iOS adds a native horizontal gesture on top, but that gesture still
+        // advances through this vertical document by one viewport.
+        rendition = book!.renderTo("viewer", {
+          width: "100%",
+          height: "100%",
+          spread: "none",
+          manager: "continuous",
+          flow: "scrolled-doc"
+        });
+        installContinuousShellWatch();
+        if (rendition!.hooks && rendition!.hooks.content && typeof rendition!.hooks.content.register === "function") {
+          rendition!.hooks.content.register(function(contents) {
+            isolateAuthorBackgrounds(contents && contents.document);
+            applyTypographyToDocument(contents && contents.document);
+            applyContinuousShellBackground();
+          });
+        }
+        rendition!.on("rendered", function(_section, view) {
+          const contentDocument = view && view.contents && view.contents.document;
+          if (contentDocument) {
+            isolateAuthorBackgrounds(contentDocument);
+            installSwipeNavigation(contentDocument);
+            installImageZoom(contentDocument);
+            installReaderContextMenu(contentDocument);
+            installSelectionBridge(contentDocument);
+            installKnownWordNavigation(contentDocument);
+            highlightKnownWords(contentDocument);
+            applyTypographyToDocument(contentDocument);
+          }
+          applyContinuousShellBackground();
+          if (speechActive && speechBlocks.length) {
+            requestAnimationFrame(function() { window.refreshSpeechBlocks(); });
+          }
+        });
+        rendition!.on("selected", function(cfi, contents) {
+          const selectedRange = contents && contents.window && contents.window.getSelection();
+          const selection = selectedRange ? selectedRange.toString() : "";
+          const language = ((contents && contents.document && contents.document.documentElement.lang) ||
+            (book!.packaging && book!.packaging.metadata && book!.packaging.metadata.language) || "en") as string;
+          const payload: ReaderSelection = {
+            text: cleanDictionaryText(selection).slice(0, 2000),
+            language: language,
+            cfi: cfi || "",
+            contextSentence: selectionContext(selectedRange)
+          };
+          window.__bookstrTextSelection = payload;
+          if (window.AndroidBridge && AndroidBridge.onTextSelected) {
+            AndroidBridge.onTextSelected(JSON.stringify(payload));
+          }
+          showDictionary(selection, language, cfi as string, selectionContext(selectedRange));
+        });
+        window.bookstrCurrentTextSelection = function() {
+          return (captureLiveTextSelection() || window.__bookstrTextSelection || null) as ReaderSelection | Selection | null;
+        };
+        window.highlightCurrentSelection = function(kind) {
+          const resolvedKind = kind === "mark" ? "mark" : "word";
+          paintCurrentSelectionHighlight(resolvedKind);
+          const live = (captureLiveTextSelection() || window.__bookstrTextSelection) as ReaderSelection | null | undefined;
+          if (live && live.cfi) keepHighlight(live.cfi, resolvedKind);
+        };
+        registerThemes();
+        applyTheme(theme || "paper");
+        rendition!.themes.fontSize(readerFontPercent + "%");
+        rendition!.on("relocated", function(location) {
+          reportLocation(location);
+        });
+        reportReaderStartupStage("rendering");
+        return rendition!.display(cfi || undefined);
+      }).then(function() {
+        const highlights = restoredHighlights(highlightCfi, highlightKind || "word");
+        rememberReaderHighlights(highlights);
+        activeReaderHighlights.words.forEach(function(value) { applyHighlight(value, "word"); });
+        activeReaderHighlights.marks.forEach(function(value) { applyHighlight(value, "mark"); });
+        if (highlightCfi) positionReferenceBelowTop();
+        reportReaderStartupStage("ready");
+        if (window.AndroidBridge) AndroidBridge.onReaderReady!();
+        const restore = String(cfi || "").trim();
+        function reportRestoredLocation() {
+          if (speechActive) {
+            reportSpeechLocator(lastSpeechCfi, false);
+            return Promise.resolve();
+          }
+          const shown = restore && rendition && typeof rendition!.display === "function"
+            ? rendition!.display(restore)
+            : Promise.resolve();
+          return Promise.resolve(shown).then(function() {
+            reportLocation(rendition!.currentLocation());
+          }).catch(function() {
+            reportLocation(rendition!.currentLocation());
+          });
+        }
+        if (!restore) reportLocation(rendition!.currentLocation());
+        book!.locations.generate(100).then(function() {
+          return reportRestoredLocation();
+        }).catch(function(error) {
+          console.warn("Could not generate EPUB locations", error);
+          reportRestoredLocation();
+        });
+      });
+    }
+
+    function cfiProgression(cfi: string) {
+      try {
+        if (book && book!.locations && book!.locations.length() > 0) {
+          return book!.locations.percentageFromCfi(cfi);
+        }
+      } catch (error) {
+        console.warn("Could not calculate EPUB progress", error);
+      }
+      return Number.NaN;
+    }
+
+    function spinePositionForCfi(cfi: string, fallbackIndex?: number) {
+      try {
+        const item = book && book!.spine && typeof book!.spine.get === "function" ? book!.spine.get(cfi) : null;
+        const items = book && book!.spine && book!.spine.spineItems;
+        const index = item && Number.isFinite(item.index) ? item.index : fallbackIndex;
+        return {
+          sectionIndex: Number.isFinite(index) ? index : 0,
+          sectionCount: items && items.length ? items.length : 1
+        };
+      } catch (_) {
+        return { sectionIndex: Number.isFinite(fallbackIndex) ? fallbackIndex : 0, sectionCount: 1 };
+      }
+    }
+
+    function reportLocation(location: SharedLocation | null) {
+      if (speechActive) return;
+      const start = location && location.start;
+      if (!start || !start.cfi || !window.AndroidBridge) return;
+      lastSpeechCfi = start.cfi;
+      const speechFeatures = window.BookstrSpeech as Partial<import('./reader-speech.js').SpeechApi> | undefined;
+      const progression = speechFeatures?.relocationProgression
+        ? speechFeatures.relocationProgression(cfiProgression(start.cfi), start.percentage)
+        : (Number.isFinite(start.percentage) ? start.percentage : 0);
+      if (!Number.isFinite(progression)) return;
+      const spine = spinePositionForCfi(start.cfi, start.index);
+      AndroidBridge.onRelocated!(JSON.stringify({
+        cfi: start.cfi,
+        progression: progression,
+        sectionIndex: spine.sectionIndex,
+        sectionCount: spine.sectionCount
+      }));
+    }
+
+    function metadataText(value: unknown): string {
+      if (Array.isArray(value)) return value.map(metadataText).filter(Boolean).join(", ");
+      if (value && typeof value === "object") {
+        const metadata = value as Record<string, unknown>;
+        return String(metadata.name || metadata.fileAs || metadata.value || "").trim();
+      }
+      return String(value || "").trim();
+    }
+
+    function reportBookMetadata() {
+      if (!window.AndroidBridge || !book || !book.packaging) return;
+      const metadata = book!.packaging.metadata || {};
+      const rawDate = metadata.pubdate || metadata.date || metadata.modified_date || "";
+      const yearMatch = String(rawDate).match(/(?:^|\D)(\d{4})(?:\D|$)/);
+      AndroidBridge.onMetadata!(JSON.stringify({
+        title: metadataText(metadata.title),
+        author: metadataText(metadata.creator || metadata.author),
+        year: yearMatch ? yearMatch[1] : "",
+        rights: metadataText(metadata.rights)
+      }));
+    }
+
+    function reportBookSections() {
+      if (!window.AndroidBridge || !book || !book.spine) return;
+      Promise.resolve(book!.loaded && book!.loaded.navigation).then(function(navigation) {
+        const labels = new Map<string, string>();
+        const collect = function(items: SharedNavItem[] | undefined) {
+          (items || []).forEach(function(item) {
+            const href = String(item.href || "").split("#")[0];
+            if (href && item.label && !labels.has(href)) labels.set(href, String(item.label).trim());
+            collect(item.subitems);
+          });
+        };
+        collect(navigation && navigation.toc);
+        const spineItems = book!.spine.spineItems || [];
+        const sections = spineItems.map(function(item, index) {
+          const href = String(item.href || "");
+          const plainHref = href.split("#")[0] || "";
+          let label = labels.get(plainHref);
+          if (!label) {
+            for (const entry of labels.entries()) {
+              if (plainHref.endsWith(entry[0]) || entry[0].endsWith(plainHref)) {
+                label = entry[1];
+                break;
+              }
+            }
+          }
+          return {
+            index: index,
+            label: label || "Section " + (index + 1),
+            href: href,
+            hasToc: labels.size > 0
+          };
+        });
+        AndroidBridge.onSections!(JSON.stringify(sections));
+      }).catch(function(error) {
+        console.warn("Could not load EPUB sections", error);
+      });
+    }
+
+    function reportReaderError(error: unknown) {
+      const detail = error as { message?: unknown } | null;
+      const message = detail && detail.message ? detail.message : String(error || "Unknown reader error");
+      if (window.AndroidBridge) AndroidBridge.onReaderError!(message as string);
+    }
+
+    window.loadBook = (function(base64: string, cfi: string, theme: string, highlightCfi: string | null, bookId: string, highlightKind: string | null) {
+      reportReaderStartupStage("decoding");
+      const loading = openBook(
+        base64ToArrayBuffer(base64), cfi, theme, highlightCfi || null, bookId || "", highlightKind || null
+      );
+      return reportPromise(withTimeout(loading, 30000, function() {
+        return "EPUB reader timed out while " + readerStartupStage;
+      }));
+    }) as typeof window.loadBook;
+
+    window.loadBookUrl = function(url, cfi, theme, highlightCfi, bookId, highlightKind) {
+      reportReaderStartupStage("fetching");
+      const loading = fetch(url, { cache: "no-store" }).then(function(response) {
+        // WKURLSchemeHandler-backed resources can have an opaque status of 0 even
+        // when WebKit successfully delivered the complete local response.
+        if (!response.ok && response.status !== 0) {
+          throw new Error("EPUB request failed: HTTP " + response.status);
+        }
+        return response.arrayBuffer();
+      }).then(function(buffer) {
+        if (!buffer.byteLength) throw new Error("Downloaded EPUB is empty");
+        return openBook(buffer, cfi, theme, highlightCfi, bookId, highlightKind || null);
+      });
+      return reportPromise(withTimeout(loading, 30000, function() {
+        return "EPUB reader timed out while " + readerStartupStage;
+      }));
+    };
+
+    function withTimeout(promise: Promise<unknown>, milliseconds: number, message: string | (() => string)) {
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const timeout = new Promise<never>(function(_, reject) {
+        timer = setTimeout(function() { reject(new Error(typeof message === "function" ? message() : message)); }, milliseconds);
+      });
+      return Promise.race([promise, timeout]).finally(function() { clearTimeout(timer); });
+    }
+
+    function waitForReaderViewport() {
+      if (window.innerWidth > 0 && window.innerHeight > 0) return Promise.resolve();
+      return new Promise<void>(function(resolve, reject) {
+        const started = Date.now();
+        const check = function() {
+          if (window.innerWidth > 0 && window.innerHeight > 0) return resolve();
+          if (Date.now() - started > 5000) return reject(new Error("EPUB reader has no visible viewport"));
+          requestAnimationFrame(check);
+        };
+        requestAnimationFrame(check);
+      });
+    }
+
+    function reportPromise(promise: Promise<unknown>) {
+      return promise.catch(function(error) {
+        reportReaderError(error);
+        throw error;
+      });
+    }
+
+    function installSwipeNavigation(target: Document) {
+      if (target.__bookstrSwipeInstalled) return;
+      target.__bookstrSwipeInstalled = true;
+      let startX = 0;
+      let startY = 0;
+      let pinchStartDistance = 0;
+      let pinchStartFontPercent = readerFontPercent;
+      let pinchAnchor: PinchAnchor | null = null;
+      let gestureAxis: "pinch" | "vertical" | "horizontal" | null = null;
+      target.addEventListener("touchstart", function(event) {
+        if (event.touches.length === 1) {
+          startX = event.touches[0]!.clientX;
+          startY = event.touches[0]!.clientY;
+          gestureAxis = null;
+        } else if (event.touches.length === 2) {
+          gestureAxis = "pinch";
+          pinchStartDistance = touchDistance(event.touches[0]!, event.touches[1]!);
+          pinchStartFontPercent = readerFontPercent;
+          pinchAnchor = createPinchAnchor(target, event.touches[0]!, event.touches[1]!);
+        }
+      }, { passive: true });
+      target.addEventListener("touchmove", function(event) {
+        if (event.touches.length === 1) {
+          const dx = event.touches[0]!.clientX - startX;
+          const dy = event.touches[0]!.clientY - startY;
+          const absX = Math.abs(dx);
+          const absY = Math.abs(dy);
+          if (!gestureAxis && Math.max(absX, absY) > 8) {
+            if (absY >= absX) gestureAxis = "vertical";
+            else if (absX > 14 && absX > absY * 1.35) gestureAxis = "horizontal";
+          }
+          if (gestureAxis) reportReaderInteraction();
+          if (gestureAxis === "horizontal") event.preventDefault();
+          return;
+        }
+        if (event.touches.length !== 2 || pinchStartDistance <= 0) return;
+        const centroid = touchCentroid(event.touches[0]!, event.touches[1]!);
+        if (!pinchAnchor) {
+          pinchAnchor = createPinchAnchor(target, event.touches[0]!, event.touches[1]!);
+        } else {
+          pinchAnchor.clientY = pinchClientY(target, centroid.y);
+        }
+        const distance = touchDistance(event.touches[0]!, event.touches[1]!);
+        const ratio = distance / pinchStartDistance;
+        const dampedRatio = 1 + (ratio - 1) * 0.35;
+        const next = Math.max(75, Math.min(180, Math.round(pinchStartFontPercent * dampedRatio)));
+        if (next !== readerFontPercent) {
+          readerFontPercent = next;
+          window.readerFontPercent = readerFontPercent;
+          rendition!.themes.fontSize(readerFontPercent + "%");
+          localStorage.setItem("bookstr-reader-font-percent", String(readerFontPercent));
+          restorePinchAnchor(pinchAnchor);
+        }
+        event.preventDefault();
+      }, { passive: false });
+      target.addEventListener("touchend", function(event) {
+        if (gestureAxis === "pinch") {
+          if (event.touches.length < 2) {
+            gestureAxis = null;
+            pinchStartDistance = 0;
+            pinchAnchor = null;
+          }
+          return;
+        }
+        if (!event.changedTouches.length) return;
+        const endX = event.changedTouches[0]!.clientX;
+        const endY = event.changedTouches[0]!.clientY;
+        const dx = endX - startX;
+        const dy = endY - startY;
+      const selectedText = target.defaultView && target.defaultView.getSelection
+          ? target.defaultView.getSelection()!.toString().trim() : "";
+        if (selectedText) return;
+        if (Math.abs(dx) < 18 && Math.abs(dy) < 18) {
+          closeDictionary();
+          gestureAxis = null;
+          return;
+        }
+        if (gestureAxis !== "horizontal" || Math.abs(dx) < 72) {
+          gestureAxis = null;
+          return;
+        }
+        if (event.cancelable) event.preventDefault();
+        if (window.bookstrNativeSwipeNavigation) {
+          gestureAxis = null;
+          return;
+        }
+        if (dx < 0) nextPage(); else prevPage();
+        gestureAxis = null;
+      }, { passive: false });
+      target.addEventListener("touchcancel", function() {
+        gestureAxis = null;
+        pinchStartDistance = 0;
+        pinchAnchor = null;
+      }, { passive: true });
+    }
+
+    function touchCentroid(first: Touch, second: Touch) {
+      return {
+        x: (first.clientX + second.clientX) / 2,
+        y: (first.clientY + second.clientY) / 2
+      };
+    }
+
+    function caretRangeAtPoint(target: Document, x: number, y: number) {
+      const caretDocument = target as Document & {
+        caretRangeFromPoint?: (x: number, y: number) => Range | null;
+        caretPositionFromPoint?: (x: number, y: number) => { offsetNode: Node; offset: number } | null;
+      };
+      let range: Range | null = null;
+      if (caretDocument.caretRangeFromPoint) {
+        range = caretDocument.caretRangeFromPoint(x, y);
+      } else if (caretDocument.caretPositionFromPoint) {
+        const position = caretDocument.caretPositionFromPoint(x, y);
+        if (position) {
+          range = target.createRange();
+          range.setStart(position.offsetNode, position.offset);
+          range.collapse(true);
+        }
+      }
+      if (!range) return null;
+      const anchor = range.cloneRange();
+      const node = anchor.startContainer;
+      if (node && node.nodeType === Node.TEXT_NODE && (node as Text).length) {
+        const textNode = node as Text;
+        const start = Math.min(anchor.startOffset, textNode.length - 1);
+        anchor.setStart(textNode, start);
+        anchor.setEnd(textNode, start + 1);
+      }
+      return anchor;
+    }
+
+    function pinchAnchorTop(anchor: PinchAnchor | null) {
+      if (!anchor || !anchor.range || !anchor.target.defaultView) return null;
+      const frame = anchor.target.defaultView.frameElement;
+      if (!frame || !frame.getBoundingClientRect) return null;
+      const rect = anchor.range.getBoundingClientRect();
+      if (!rect || !Number.isFinite(rect.top)) return null;
+      return frame.getBoundingClientRect().top + rect.top;
+    }
+
+    function pinchClientY(target: Document, localY: number) {
+      const frame = target.defaultView && target.defaultView.frameElement;
+      const frameTop = frame && frame.getBoundingClientRect ? frame.getBoundingClientRect().top : 0;
+      return frameTop + localY;
+    }
+
+    function createPinchAnchor(target: Document, first: Touch, second: Touch): PinchAnchor | null {
+      const centroid = touchCentroid(first, second);
+      const anchor = {
+        target: target,
+        range: caretRangeAtPoint(target, centroid.x, centroid.y),
+        clientY: pinchClientY(target, centroid.y),
+        offsetY: 0
+      };
+      const top = pinchAnchorTop(anchor);
+      if (top === null) return null;
+      anchor.offsetY = anchor.clientY - top;
+      return anchor;
+    }
+
+    function restorePinchAnchor(anchor: PinchAnchor | null) {
+      if (!anchor) return;
+      requestAnimationFrame(function() {
+        requestAnimationFrame(function() {
+          const top = pinchAnchorTop(anchor);
+          const container = document.querySelector(".epub-container");
+          if (top === null || !container) return;
+          const desiredTop = anchor.clientY - anchor.offsetY;
+          container.scrollBy({ top: top - desiredTop, behavior: "auto" });
+        });
+      });
+    }
+
+    function touchDistance(first: Touch, second: Touch) {
+      const dx = second.clientX - first.clientX;
+      const dy = second.clientY - first.clientY;
+      return Math.sqrt(dx * dx + dy * dy);
+    }
+
+    function positionReferenceBelowTop() {
+      const container = document.querySelector(".epub-container");
+      if (!container) return;
+      const offset = Math.round(container.clientHeight * 0.30);
+      requestAnimationFrame(function() {
+        requestAnimationFrame(function() {
+          container.scrollBy({ top: -offset, behavior: "auto" });
+        });
+      });
+    }
+
+    function showImageZoom(media: Element) {
+      const overlay = (document.getElementById("image-zoom") as HTMLElement);
+      overlay.replaceChildren();
+      const clone = document.importNode(media, true);
+      clone.removeAttribute("width");
+      clone.removeAttribute("height");
+      overlay.appendChild(clone);
+      overlay.hidden = false;
+      closeDictionary();
+    }
+
+    function closeImageZoom() {
+      const overlay = (document.getElementById("image-zoom") as HTMLElement);
+      overlay.hidden = true;
+      overlay.replaceChildren();
+    }
+
+    function installImageZoom(contentDocument: Document) {
+      if (contentDocument.__bookstrImageZoomInstalled) return;
+      contentDocument.__bookstrImageZoomInstalled = true;
+      let holdTimer: ReturnType<typeof setTimeout> | null = null;
+      let holdX = 0;
+      let holdY = 0;
+      let longPressOpened = false;
+      const cancelHold = function() {
+        if (holdTimer) clearTimeout(holdTimer);
+        holdTimer = null;
+      };
+      contentDocument.addEventListener("touchstart", function(event) {
+        if (event.touches.length !== 1) return;
+        const eventTarget = event.target as Element | null;
+        const media = eventTarget?.closest("img, svg") || null;
+        if (!media) return;
+        holdX = event.touches[0]!.clientX;
+        holdY = event.touches[0]!.clientY;
+        longPressOpened = false;
+        cancelHold();
+        holdTimer = setTimeout(function() {
+          longPressOpened = true;
+          showImageZoom(media);
+        }, 425);
+      }, { passive: true });
+      contentDocument.addEventListener("touchmove", function(event) {
+        if (!holdTimer || event.touches.length !== 1) return;
+        if (Math.abs(event.touches[0]!.clientX - holdX) > 10 ||
+            Math.abs(event.touches[0]!.clientY - holdY) > 10) cancelHold();
+      }, { passive: true });
+      contentDocument.addEventListener("touchend", cancelHold, { passive: true });
+      contentDocument.addEventListener("touchcancel", cancelHold, { passive: true });
+      contentDocument.addEventListener("click", function(event) {
+        if (!longPressOpened) return;
+        event.preventDefault();
+        event.stopPropagation();
+        longPressOpened = false;
+      }, true);
+      contentDocument.addEventListener("contextmenu", function(event) {
+        const eventTarget = event.target as Element | null;
+        const media = eventTarget?.closest("img, svg") || null;
+        if (!media) return;
+        event.preventDefault();
+        showImageZoom(media);
+      }, true);
+    }
+
+    function installReaderContextMenu(contentDocument: Document) {
+      if (contentDocument.__bookstrContextMenuInstalled) return;
+      contentDocument.__bookstrContextMenuInstalled = true;
+      contentDocument.addEventListener("contextmenu", function(event) {
+        const eventTarget = event.target as Element | null;
+        const media = eventTarget?.closest("img, svg") || null;
+        if (media) return;
+        if (window.bookstrNativeSwipeNavigation) return;
+        event.preventDefault();
+        event.stopPropagation();
+        const selected = captureLiveTextSelection();
+        let cfi = selected && selected.cfi || "";
+        if (!cfi && typeof contentDocument.caretRangeFromPoint === "function") {
+          cfi = rangeToCfi(contentDocument.caretRangeFromPoint(event.clientX, event.clientY));
+        }
+        if (window.AndroidBridge && AndroidBridge.onReaderLongPress) AndroidBridge.onReaderLongPress(JSON.stringify({
+          text: selected && selected.text || "",
+          cfi: cfi
+        }));
+      }, true);
+    }
+
+    window.adjustReaderFont = function(delta) {
+      readerFontPercent = Math.max(75, Math.min(180, readerFontPercent + Number(delta || 0)));
+      window.readerFontPercent = readerFontPercent;
+      if (rendition) rendition!.themes.fontSize(readerFontPercent + "%");
+      localStorage.setItem("bookstr-reader-font-percent", String(readerFontPercent));
+    };
+
+    window.beginNativeFontPinch = function() {
+      nativePinchStartFontPercent = readerFontPercent;
+    };
+
+    window.updateNativeFontPinch = function(scale) {
+      const ratio = Number(scale || 1);
+      const dampedRatio = 1 + (ratio - 1) * 0.35;
+      const next = Math.max(75, Math.min(180, Math.round(nativePinchStartFontPercent * dampedRatio)));
+      if (next === readerFontPercent) return;
+      readerFontPercent = next;
+      if (rendition) rendition!.themes.fontSize(readerFontPercent + "%");
+      localStorage.setItem("bookstr-reader-font-percent", String(readerFontPercent));
+    };
+
+    window.endNativeFontPinch = function() {
+      nativePinchStartFontPercent = readerFontPercent;
+    };
+
+    window.searchBook = async function(query) {
+      const needle = String(query || "").trim();
+      const results: ReaderSearchResult[] = [];
+      if (!book || needle.length < 2) {
+        if (window.AndroidBridge) AndroidBridge.onSearchResults!("[]");
+        return;
+      }
+      const sections = (book!.spine && book!.spine.spineItems) || [];
+      for (let index = 0; index < sections.length && results.length < 100; index += 1) {
+        const section = sections[index]!;
+        try {
+          await section.load(book!.load.bind(book));
+          const matches = section.find!(needle) || [];
+          matches.slice(0, 100 - results.length).forEach(function(match) {
+            results.push({
+              sectionIndex: index,
+              cfi: match.cfi,
+              excerpt: String(match.excerpt || needle).replace(/\s+/g, " ").trim()
+            });
+          });
+        } catch (error) {
+          console.warn("Could not search EPUB section", index, error);
+        } finally {
+          try { section.unload(); } catch (_) {}
+        }
+      }
+      if (window.AndroidBridge) AndroidBridge.onSearchResults!(JSON.stringify(results));
+    };
+
+    window.displaySearchResult = function(cfi) {
+      if (!rendition || !cfi) return;
+      reportReaderInteraction();
+      rendition!.display(cfi).then(function() {
+        applyHighlight(cfi);
+        positionReferenceBelowTop();
+      });
+    };
+
+    function normalizeSelectedWord(selection: string) {
+      const word = String(selection || "").normalize("NFC").trim()
+        .replace(/^\P{L}+|\P{L}+$/gu, "").toLocaleLowerCase();
+      return word && word.length <= 64 && /^\p{L}+(?:['’-]\p{L}+)*$/u.test(word) ? word : null;
+    }
+
+    function selectionContext(selection: Selection | null | undefined) {
+      if (!selection || !selection.anchorNode) return "";
+      let node = selection.anchorNode.nodeType === Node.ELEMENT_NODE
+        ? selection.anchorNode : selection.anchorNode.parentElement;
+      const element = node instanceof Element ? node : null;
+      const block = element?.closest("p, li, blockquote, dd, dt, figcaption") || null;
+      const text = cleanDictionaryText((block || element)?.textContent || "");
+      if (text.length <= 360) return text;
+      const selected = cleanDictionaryText(selection.toString());
+      const index = text.toLocaleLowerCase().indexOf(selected.toLocaleLowerCase());
+      if (index < 0) return text.slice(0, 357) + "…";
+      const start = Math.max(0, index - 150);
+      const end = Math.min(text.length, index + selected.length + 150);
+      return (start > 0 ? "…" : "") + text.slice(start, end) + (end < text.length ? "…" : "");
+    }
+
+    function cleanDictionaryText(value: unknown) {
+      return String(value || "").replace(/\s+/g, " ").replace(/\[editar\]/gi, "").trim();
+    }
+
+    function closeDictionary() {
+      (document.getElementById("dictionary-card") as HTMLElement).hidden = true;
+      activeDictionary = null;
+    }
+
+    function readerHighlightPalette() {
+      if (currentReaderTheme === "night") {
+        return {
+          word: { background: "#68561f", foreground: "#f4f0e8", fill: "#e7c766", opacity: "0.28" },
+          mark: { background: "#713327", foreground: "#f4f0e8", fill: "#ff8f73", opacity: "0.28" }
+        };
+      }
+      return {
+        word: { background: "#e7c766", foreground: "#1c1916", fill: "#e7c766", opacity: "0.68" },
+        mark: { background: "#efaa96", foreground: "#1c1916", fill: "#c74b32", opacity: "0.36" }
+      };
+    }
+
+    function applyReaderHighlightStyles(contentDocument: Document | undefined) {
+      if (!contentDocument) return;
+      const palette = readerHighlightPalette();
+      let style = contentDocument.getElementById("bookstr-reader-highlight-styles");
+      if (!style) {
+        style = contentDocument.createElement("style");
+        style.id = "bookstr-reader-highlight-styles";
+        (contentDocument.head || contentDocument.documentElement).appendChild(style);
+      }
+      style.textContent =
+        "::highlight(bookstr-known-word){background:" + palette.word.background +
+        ";color:" + palette.word.foreground + "!important;text-decoration:none}" +
+        "::highlight(bookstr-mark){background:" + palette.mark.background +
+        ";color:" + palette.mark.foreground + "!important;text-decoration:none}";
+    }
+
+    function applyHighlight(cfi: string, kind = "") {
+      if (!cfi || !rendition || !rendition.annotations) return;
+      const resolvedKind = kind === "mark" ? "mark" : "word";
+      const colors = readerHighlightPalette()[resolvedKind];
+      try {
+        rendition!.annotations.highlight(
+          cfi, {}, function(event?: Event) {
+            const group = resolvedKind === "mark" ? "marks" : "words";
+            if (!activeReaderHighlights[group].includes(cfi)) return;
+            if (event && event.preventDefault) event.preventDefault();
+            if (event && event.stopPropagation) event.stopPropagation();
+            activateSavedHighlight({ kind: resolvedKind, locator: cfi });
+          }, "bookstr-" + resolvedKind + "-highlight",
+          { fill: colors.fill, "fill-opacity": colors.opacity }
+        );
+      } catch (error) { console.warn("Could not highlight word", error); }
+    }
+
+    function rememberReaderHighlights(highlights: { words?: string[]; marks?: string[] }) {
+      activeReaderHighlights.words = Array.from(new Set(highlights.words || [])).filter(Boolean).slice(-500);
+      activeReaderHighlights.marks = Array.from(new Set(highlights.marks || [])).filter(Boolean).slice(-500);
+    }
+
+    function clearReaderAnnotations() {
+      if (!rendition || !rendition.annotations || typeof rendition!.annotations.remove !== "function") return;
+      const locations = new Set([...activeReaderHighlights.words, ...activeReaderHighlights.marks]);
+      locations.forEach(function(cfi) {
+        try { rendition!.annotations.remove(cfi, "highlight"); } catch (_) {}
+      });
+    }
+
+    function repaintReaderAnnotations() {
+      clearReaderAnnotations();
+      activeReaderHighlights.words.forEach(function(cfi) { applyHighlight(cfi, "word"); });
+      activeReaderHighlights.marks.forEach(function(cfi) { applyHighlight(cfi, "mark"); });
+    }
+
+    function readerLanguageForDocument(contentDocument: Document | undefined) {
+      return (contentDocument && contentDocument.documentElement && contentDocument.documentElement.lang) ||
+        (book && book!.packaging && book!.packaging.metadata && book!.packaging.metadata.language) || "en";
+    }
+
+    function captureLiveTextSelection() {
+      if (!rendition || typeof rendition!.getContents !== "function") return null;
+      const list = rendition!.getContents() || [];
+      for (let index = 0; index < list.length; index += 1) {
+        const contents = list[index];
+        const win = contents && contents.window;
+        const doc = contents && contents.document;
+        const selection = win && win.getSelection ? win.getSelection() : null;
+        if (!selection || selection.rangeCount === 0 || selection.isCollapsed) continue;
+        const text = cleanDictionaryText(selection.toString()).slice(0, 2000);
+        if (!text) continue;
+        let cfi = "";
+        try { cfi = rangeToCfi(selection.getRangeAt(0)); } catch (_) {}
+        const payload = {
+          text: text,
+          language: readerLanguageForDocument(doc) as string,
+          cfi: cfi,
+          contextSentence: selectionContext(selection)
+        };
+        window.__bookstrTextSelection = payload;
+        return payload;
+      }
+      return null;
+    }
+
+    function installSelectionBridge(contentDocument: Document) {
+      if (!contentDocument || contentDocument.__bookstrSelectionBridge) return;
+      contentDocument.__bookstrSelectionBridge = true;
+      const publish = function() {
+        const payload = captureLiveTextSelection();
+        if (!payload || !window.AndroidBridge || !AndroidBridge.onTextSelected) return;
+        AndroidBridge.onTextSelected(JSON.stringify(payload));
+      };
+      contentDocument.addEventListener("selectionchange", publish);
+      contentDocument.addEventListener("mouseup", publish);
+      contentDocument.addEventListener("touchend", publish);
+    }
+
+    function paintCurrentSelectionHighlight(kind: string) {
+      if (!rendition || typeof rendition!.getContents !== "function") return;
+      const resolvedKind = kind === "mark" ? "mark" : "word";
+      const highlightName = resolvedKind === "mark" ? "bookstr-mark" : "bookstr-known-word";
+      const list = rendition!.getContents() || [];
+      for (let index = 0; index < list.length; index += 1) {
+        const contents = list[index];
+        const doc = contents && contents.document;
+        const win = contents && contents.window;
+        if (!doc || !win || !win.CSS || !win.CSS.highlights || typeof win.Highlight !== "function") continue;
+        const selection = win.getSelection && win.getSelection();
+        if (!selection || selection.rangeCount === 0 || selection.isCollapsed) continue;
+        const ranges = [];
+        for (let rangeIndex = 0; rangeIndex < selection.rangeCount; rangeIndex += 1) {
+          try { ranges.push(selection.getRangeAt(rangeIndex).cloneRange()); } catch (_) {}
+        }
+        if (!ranges.length) continue;
+        applyReaderHighlightStyles(doc);
+        const existing = [];
+        try {
+          const previous = win.CSS.highlights.get(highlightName);
+          if (previous) {
+            for (const range of previous) existing.push(range);
+          }
+        } catch (_) {}
+        win.CSS.highlights.set(highlightName, new win.Highlight(...existing, ...ranges));
+      }
+    }
+
+    window.highlightReaderCfi = function(cfi, kind) {
+      keepHighlight(cfi, kind === "mark" ? "mark" : "word");
+    };
+
+    window.setReaderHighlights = function(highlightsJson) {
+      let highlights = { words: [], marks: [] };
+      try {
+        const parsed = JSON.parse(highlightsJson || "{}");
+        highlights = Array.isArray(parsed) ? { words: parsed, marks: [] } : parsed;
+      } catch (_) {}
+      clearReaderAnnotations();
+      rememberReaderHighlights(highlights);
+      try { localStorage.setItem(highlightStorageKey(), JSON.stringify(activeReaderHighlights)); } catch (_) {}
+      activeReaderHighlights.words.forEach(function(cfi) { applyHighlight(cfi, "word"); });
+      activeReaderHighlights.marks.forEach(function(cfi) { applyHighlight(cfi, "mark"); });
+    };
+
+    window.setKnownWords = function(wordsJson) {
+      let words: unknown[] = [];
+      try { words = JSON.parse(wordsJson || "[]") as unknown[]; } catch (_) {}
+      knownWordSet = new Set(words.map(function(word) {
+        return String(word || "").normalize("NFC").toLocaleLowerCase();
+      }).filter(Boolean));
+      if (rendition) {
+        rendition!.getContents().forEach(function(contents) {
+          if (contents && contents.document) highlightKnownWords(contents.document as Document);
+        });
+      }
+    };
+
+    function highlightKnownWords(contentDocument: Document) {
+      const contentWindow = contentDocument && contentDocument.defaultView;
+      if (!contentWindow || !contentWindow.CSS || !contentWindow.CSS.highlights ||
+          typeof contentWindow.Highlight !== "function") return;
+      const ranges = [];
+      const walker = contentDocument.createTreeWalker(
+        contentDocument.body || contentDocument.documentElement,
+        NodeFilter.SHOW_TEXT
+      );
+      let node;
+      while ((node = walker.nextNode()) && ranges.length < 5000) {
+        const parentName = node.parentElement && node.parentElement.tagName;
+        if (/^(SCRIPT|STYLE|NOSCRIPT|TEXTAREA)$/i.test(parentName || "")) continue;
+        const text = node.nodeValue || "";
+        const matches = text.matchAll(/\p{L}+(?:['’-]\p{L}+)*/gu);
+        for (const match of matches) {
+          if (!knownWordSet.has(match[0].normalize("NFC").toLocaleLowerCase())) continue;
+          const range = contentDocument.createRange();
+          range.setStart(node, match.index);
+          range.setEnd(node, match.index + match[0].length);
+          ranges.push(range);
+          if (ranges.length >= 5000) break;
+        }
+      }
+      applyReaderHighlightStyles(contentDocument);
+      contentWindow.CSS.highlights.set("bookstr-known-word", new contentWindow.Highlight(...ranges));
+    }
+
+    function includeOpeningSpineItems(items: SharedSection[]) {
+      // Publishers sometimes mark covers/front matter as non-linear. Keep them
+      // reachable at the start without changing spine indexes or saved CFIs.
+      for (let index = 0; index < items.length && !items[index]!.linear; index += 1) {
+        const item = items[index]!;
+        item.linear = true;
+        item.prev = function() { return items[index - 1]; };
+        item.next = function() { return items.slice(index + 1).find(function(section) { return section.linear; }); };
+      }
+    }
+
+    function installKnownWordNavigation(contentDocument: Document) {
+      if (contentDocument.__bookstrKnownWordNavigation) return;
+      contentDocument.__bookstrKnownWordNavigation = true;
+      contentDocument.addEventListener("click", function(event) {
+        const selection = contentDocument.defaultView!.getSelection();
+        if (selection && selection.toString().trim()) return;
+        const savedHighlight = savedHighlightAtPoint(contentDocument, event.clientX, event.clientY);
+        if (activateSavedHighlight(savedHighlight)) {
+          event.preventDefault();
+          event.stopPropagation();
+          return;
+        }
+        let range = null;
+        if (contentDocument.caretRangeFromPoint) {
+          range = contentDocument.caretRangeFromPoint(event.clientX, event.clientY);
+        } else if (contentDocument.caretPositionFromPoint) {
+          const position = contentDocument.caretPositionFromPoint(event.clientX, event.clientY);
+          if (position) {
+            range = contentDocument.createRange();
+            range.setStart(position.offsetNode, position.offset);
+          }
+        }
+        const node = range && range.startContainer;
+        if (!node || node.nodeType !== Node.TEXT_NODE) return;
+        const offset = range!.startOffset;
+        for (const match of (node.nodeValue || "").matchAll(/\p{L}+(?:['’-]\p{L}+)*/gu)) {
+          if (offset < match.index || offset > match.index + match[0].length) continue;
+          const normalized = match[0].normalize("NFC").toLocaleLowerCase();
+          if (knownWordSet.has(normalized) && window.AndroidBridge) {
+            event.preventDefault();
+            event.stopPropagation();
+            AndroidBridge.onKnownWordTapped!(normalized);
+          }
+          return;
+        }
+      }, true);
+    }
+
+    function savedHighlightAtPoint(contentDocument: Document, x: number, y: number) {
+      if (!rendition || typeof rendition!.getContents !== "function") return null;
+      const contents = (rendition!.getContents() || []).find(function(item) {
+        return item && item.document === contentDocument && typeof item.range === "function";
+      });
+      if (!contents) return null;
+      const groups = [
+        { kind: "mark", values: activeReaderHighlights.marks },
+        { kind: "word", values: activeReaderHighlights.words }
+      ];
+      for (let groupIndex = 0; groupIndex < groups.length; groupIndex += 1) {
+        const group = groups[groupIndex]!;
+        for (let index = 0; index < group.values.length; index += 1) {
+          const cfi = group.values[index]!;
+          try {
+            const range = contents.range!(cfi);
+            const rects = range && range.getClientRects ? Array.from(range.getClientRects()) : [];
+            if (rects.some(function(rect) {
+              return x >= rect.left - 2 && x <= rect.right + 2 &&
+                y >= rect.top - 2 && y <= rect.bottom + 2;
+            })) return { kind: group.kind, locator: cfi };
+          } catch (_) {}
+        }
+      }
+      return null;
+    }
+
+    let lastSavedHighlightActivation = { key: "", time: 0 };
+
+    function activateSavedHighlight(savedHighlight: SavedReaderHighlight | null) {
+      if (!savedHighlight || !window.AndroidBridge || !AndroidBridge.onSavedHighlightTapped) return false;
+      const key = savedHighlight.kind + "\n" + savedHighlight.locator;
+      const now = Date.now();
+      if (lastSavedHighlightActivation.key === key && now - lastSavedHighlightActivation.time < 750) return true;
+      lastSavedHighlightActivation.key = key;
+      lastSavedHighlightActivation.time = now;
+      AndroidBridge.onSavedHighlightTapped(JSON.stringify(savedHighlight));
+      return true;
+    }
+
+    function savedHighlightAtViewportPoint(x: number, y: number) {
+      if (!rendition || typeof rendition!.getContents !== "function") return null;
+      const frames = Array.from(document.querySelectorAll("iframe"));
+      const contentsList = rendition!.getContents() || [];
+      for (let index = 0; index < contentsList.length; index += 1) {
+        const contents = contentsList[index]!;
+        const frame = frames.find(function(candidate) {
+          return candidate.contentDocument === (contents && contents.document);
+        });
+        if (!frame) continue;
+        const rect = frame.getBoundingClientRect();
+        if (x < rect.left - 2 || x > rect.right + 2 || y < rect.top - 2 || y > rect.bottom + 2) continue;
+        const match = savedHighlightAtPoint(contents.document!, x - rect.left, y - rect.top);
+        if (match) return match;
+      }
+      return null;
+    }
+
+    window.activateSavedHighlightAtViewportPoint = function(x, y) {
+      return activateSavedHighlight(savedHighlightAtViewportPoint(Number(x), Number(y)));
+    };
+
+    document.addEventListener("click", function(event) {
+      if (!window.activateSavedHighlightAtViewportPoint(event.clientX, event.clientY)) return;
+      event.preventDefault();
+      event.stopPropagation();
+    }, true);
+
+    function reportReaderInteraction() {
+      if (readerInteractionReported) return;
+      readerInteractionReported = true;
+      if (window.AndroidBridge) AndroidBridge.onReaderInteracted!();
+    }
+
+    function highlightStorageKey() {
+      return "bookstr-highlights:" + currentBookId;
+    }
+
+    function restoredHighlights(extraCfi: string | null, kind: string) {
+      let saved: { words: string[]; marks: string[] } = { words: [], marks: [] };
+      try {
+        const parsed = JSON.parse(localStorage.getItem(highlightStorageKey()) || "{}") as Partial<{ words: string[]; marks: string[] }> | string[];
+        saved = Array.isArray(parsed) ? { words: parsed, marks: [] } : { words: parsed.words || [], marks: parsed.marks || [] };
+      } catch (_) {}
+      saved.words = Array.isArray(saved.words) ? saved.words.filter(Boolean).slice(-500) : [];
+      saved.marks = Array.isArray(saved.marks) ? saved.marks.filter(Boolean).slice(-500) : [];
+      const target = kind === "mark" ? saved.marks : saved.words;
+      if (extraCfi && !target.includes(extraCfi)) target.push(extraCfi);
+      return saved;
+    }
+
+    function keepHighlight(cfi: string, kind: string) {
+      if (!cfi) return;
+      const resolvedKind = kind === "mark" ? "mark" : "word";
+      const saved = restoredHighlights(cfi, resolvedKind);
+      rememberReaderHighlights(saved);
+      try { localStorage.setItem(highlightStorageKey(), JSON.stringify(saved)); } catch (_) {}
+      applyHighlight(cfi, resolvedKind);
+    }
+
+    function renderContext(node: HTMLElement, context: string, word: string) {
+      node.replaceChildren();
+      if (!context) { node.hidden = true; return; }
+      node.hidden = false;
+      const index = context.toLocaleLowerCase().indexOf(word.toLocaleLowerCase());
+      if (index < 0) { node.textContent = context; return; }
+      node.append(document.createTextNode(context.slice(0, index)));
+      const mark = document.createElement("mark");
+      mark.textContent = context.slice(index, index + word.length);
+      node.append(mark, document.createTextNode(context.slice(index + word.length)));
+    }
+
+    function updateDictionarySaveButton() {
+      const button = (document.getElementById("dictionary-save") as HTMLButtonElement);
+      const word = activeDictionary && activeDictionary.word;
+      const normalized = String(word || "").normalize("NFC").toLocaleLowerCase();
+      const saved = Boolean(normalized && knownWordSet.has(normalized));
+      button.disabled = saved || !activeDictionary;
+      button.textContent = saved ? "✓" : "＋";
+      button.setAttribute("aria-label", saved ? "In Words" : "Add to Words");
+      button.title = saved ? "In Words" : "Add to Words";
+    }
+
+    function saveActiveDictionaryWord() {
+      if (!activeDictionary || !window.AndroidBridge) return;
+      const normalized = activeDictionary.word.normalize("NFC").toLocaleLowerCase();
+      if (knownWordSet.has(normalized)) return;
+      AndroidBridge.onWordSelected!(JSON.stringify(activeDictionary));
+      knownWordSet.add(normalized);
+      updateDictionarySaveButton();
+      if (rendition) {
+        rendition!.getContents().forEach(function(contents) { highlightKnownWords(contents.document as Document); });
+      }
+    }
+
+    async function showDictionary(selection: string, language: string, cfi: string, contextSentence: string) {
+      const word = normalizeSelectedWord(selection);
+      if (!word) return;
+      const detectedLanguage = String(language || "en").toLowerCase().split("-")[0]!;
+      const dictionaryLanguage = /^[a-z]{2,3}$/.test(detectedLanguage) ? detectedLanguage as string : "en";
+      const card = (document.getElementById("dictionary-card") as HTMLElement);
+      const wordNode = (document.getElementById("dictionary-word") as HTMLElement);
+      const kindNode = (document.getElementById("dictionary-kind") as HTMLElement);
+      const statusNode = (document.getElementById("dictionary-status") as HTMLElement);
+      const definitionsNode = (document.getElementById("dictionary-definitions") as HTMLElement);
+      const sourceNode = (document.getElementById("dictionary-source") as HTMLAnchorElement);
+      const contextNode = (document.getElementById("dictionary-context") as HTMLElement);
+      card.hidden = false;
+      wordNode.textContent = word;
+      kindNode.textContent = "";
+      statusNode.textContent = "Looking up…";
+      definitionsNode.replaceChildren();
+      renderContext(contextNode, contextSentence || "", word);
+      sourceNode.hidden = true;
+      activeDictionary = {
+        word: word,
+        language: dictionaryLanguage,
+        cfi: cfi || "",
+        contextSentence: contextSentence || ""
+      };
+      updateDictionarySaveButton();
+      if (window.AndroidBridge && AndroidBridge.onLookupDictionary) {
+        AndroidBridge.onLookupDictionary(JSON.stringify(activeDictionary));
+        return;
+      }
+      try {
+        const cacheKey = "bookstr-dictionary-" + dictionaryLanguage + ":" + word;
+        let entry: DictionaryLookupResult | null = null;
+        try { entry = JSON.parse(localStorage.getItem(cacheKey) || "null") as DictionaryLookupResult | null; } catch (_) {}
+        if (!entry || !Array.isArray(entry.definitions) || !entry.definitions.length) {
+          entry = await lookupDictionary(word, dictionaryLanguage);
+          try { localStorage.setItem(cacheKey, JSON.stringify(entry)); } catch (_) {}
+        }
+        if (card.hidden || wordNode.textContent !== word) return;
+        kindNode.textContent = entry.partOfSpeech || "";
+        statusNode.textContent = "";
+        entry.definitions.forEach(function(definition: string) {
+          const item = document.createElement("li");
+          item.textContent = definition;
+          definitionsNode.appendChild(item);
+        });
+        sourceNode.href = entry.sourceUrl as string;
+        sourceNode.hidden = false;
+        if (window.AndroidBridge) AndroidBridge.onDictionaryResult!(JSON.stringify({
+          word: word,
+          language: dictionaryLanguage,
+          partOfSpeech: entry.partOfSpeech || "",
+          definitions: entry.definitions,
+          sourceUrl: entry.sourceUrl || ""
+        }));
+      } catch (error) {
+        console.warn("Dictionary lookup failed", error);
+        statusNode.textContent = ((error as { message?: unknown } | null)?.message || "Definition unavailable") as string;
+      }
+    }
+
+    window.receiveDictionaryResult = function(payloadJson) {
+      let payload;
+      try { payload = JSON.parse(payloadJson); } catch (_) { return; }
+      if (!activeDictionary || payload.word !== activeDictionary.word) return;
+      const statusNode = (document.getElementById("dictionary-status") as HTMLElement);
+      const kindNode = (document.getElementById("dictionary-kind") as HTMLElement);
+      const definitionsNode = (document.getElementById("dictionary-definitions") as HTMLElement);
+      const sourceNode = (document.getElementById("dictionary-source") as HTMLAnchorElement);
+      if (payload.error) {
+        statusNode.textContent = payload.error;
+        return;
+      }
+      activeDictionary = Object.assign({}, activeDictionary, payload);
+      statusNode.textContent = "";
+      kindNode.textContent = payload.partOfSpeech || "";
+      definitionsNode.replaceChildren();
+      ((payload.definitions || []) as string[]).forEach(function(definition: string) {
+        const item = document.createElement("li");
+        item.textContent = definition;
+        definitionsNode.appendChild(item);
+      });
+      sourceNode.textContent = String(payload.partOfSpeech || "").startsWith("WikDict")
+        ? "WikDict" : "Wiktionary";
+      sourceNode.href = payload.sourceUrl || "";
+      sourceNode.hidden = !payload.sourceUrl;
+      if (window.AndroidBridge) AndroidBridge.onDictionaryResult!(JSON.stringify(payload));
+    };
+
+    async function lookupDictionary(word: string, language: string) {
+      const languages = [language, language === "pt" ? "en" : "pt"];
+      for (const candidateLanguage of languages) {
+        const host = candidateLanguage === "pt" ? "pt.wiktionary.org" : "en.wiktionary.org";
+        const params = new URLSearchParams({
+          action: "query", prop: "extracts", explaintext: "1", redirects: "1",
+          titles: word, format: "json", formatversion: "2", origin: "*"
+        });
+        const response = await fetch("https://" + host + "/w/api.php?" + params.toString());
+        if (!response.ok) continue;
+        const payload = await response.json();
+        const pages = payload.query && payload.query.pages;
+        const extract = Array.isArray(pages) && pages[0] && pages[0].extract || "";
+        const parsed = parseDictionaryExtract(extract, candidateLanguage, word);
+        if (parsed.definitions.length) {
+          return {
+            partOfSpeech: parsed.partOfSpeech,
+            definitions: parsed.definitions,
+            sourceUrl: "https://" + host + "/wiki/" + encodeURIComponent(word)
+          };
+        }
+      }
+      throw new Error("No definition found for “" + word + "”");
+    }
+
+    function extractHeading(line: string | undefined) {
+      const match = String(line || "").match(/^(=+)\s*(.*?)\s*\1$/);
+      return match ? { level: match[1]!.length, text: match[2]!.trim() } : null;
+    }
+
+    function parseDictionaryExtract(extract: string, language: string, word: string) {
+      const lines = String(extract || "").split(/\r?\n/).map(function(line) { return line.trim(); });
+      const wanted = language === "pt" ? "português" : "english";
+      let languageIndex = -1;
+      let languageLevel = 0;
+      for (let index = 0; index < lines.length; index++) {
+        const heading = extractHeading(lines[index]!);
+        if (heading && heading.text.toLocaleLowerCase() === wanted) {
+          languageIndex = index;
+          languageLevel = heading.level;
+          break;
+        }
+      }
+      if (languageIndex < 0) return { partOfSpeech: "", definitions: [] };
+      const ignored = /^(Etimologia|Pronúncia|Tradução|Ver também|Ligações externas|Etymology.*|Pronunciation|Translations|Related terms|Derived terms|See also|Further reading|Anagrams)$/i;
+      let accepting = false;
+      let partOfSpeech = "";
+      let skipHeadword = false;
+      const definitions: string[] = [];
+      for (let index = languageIndex + 1; index < lines.length; index++) {
+        const line = lines[index]!;
+        const heading = extractHeading(line);
+        if (heading && heading.level <= languageLevel) break;
+        if (heading) {
+          accepting = Boolean(heading.text) && !ignored.test(heading.text);
+          skipHeadword = accepting;
+          if (accepting && !partOfSpeech) partOfSpeech = heading.text;
+          continue;
+        }
+        if (!accepting || !line) continue;
+        const lettersOnly = line.replace(/[^\p{L}]/gu, "").toLocaleLowerCase();
+        const wordLetters = word.replace(/[^\p{L}]/gu, "").toLocaleLowerCase();
+        if (skipHeadword || lettersOnly === wordLetters) {
+          skipHeadword = false;
+          continue;
+        }
+        if (/^(IPA|Rhymes:|Hyphenation:)/i.test(line) || line.length < 3) continue;
+        if (!definitions.includes(line)) definitions.push(line);
+        if (definitions.length === 4) break;
+      }
+      return { partOfSpeech: partOfSpeech, definitions: definitions };
+    }
+
+    function parseDictionaryHtml(html: string, language: string) {
+      const parsedDocument = new DOMParser().parseFromString(html, "text/html");
+      const wanted = language === "pt" ? "português" : "english";
+      const heading = Array.from(parsedDocument.querySelectorAll("h1, h2")).find(function(node) {
+        return cleanDictionaryText(node.textContent).toLocaleLowerCase().includes(wanted);
+      });
+      const headingRow = heading && heading.parentElement;
+      if (!headingRow) return { definitions: [] };
+      const levelClass = Array.from(headingRow.classList).find(function(name) { return /^mw-heading\d$/.test(name); });
+      const nodes: Element[] = [];
+      let sibling = headingRow.nextElementSibling;
+      while (sibling) {
+        if (levelClass && sibling.classList.contains(levelClass)) break;
+        nodes.push(sibling);
+        sibling = sibling.nextElementSibling;
+      }
+      let partOfSpeech = "";
+      const definitions: string[] = [];
+      nodes.forEach(function(node) {
+        const subheading = node.matches(".mw-heading") ? node.querySelector("h2, h3, h4") : null;
+        if (!partOfSpeech && subheading) {
+          const candidate = cleanDictionaryText(subheading.textContent);
+          if (!/^(Etimologia|Pronúncia|Ver também|Etymology|Pronunciation)$/i.test(candidate)) {
+            partOfSpeech = candidate;
+          }
+        }
+        node.querySelectorAll("ol > li").forEach(function(item) {
+          const definition = cleanDictionaryText(item.textContent);
+          if (definition && !definitions.includes(definition) && definitions.length < 4) definitions.push(definition);
+        });
+      });
+      return { partOfSpeech: partOfSpeech, definitions: definitions };
+    }
+
+    export type ParseDictionaryHtml = typeof parseDictionaryHtml;
+
+    (document.getElementById("dictionary-save") as HTMLElement).addEventListener("click", saveActiveDictionaryWord);
+    (document.getElementById("dictionary-close") as HTMLElement).addEventListener("click", closeDictionary);
+    (document.getElementById("image-zoom") as HTMLElement).addEventListener("click", closeImageZoom);
+    document.addEventListener("pointerdown", function(event) {
+      if (!(document.getElementById("dictionary-card") as HTMLElement).contains(event.target as Node | null)) closeDictionary();
+    });
+
+    function epubCompare(left: string, right: string) {
+      try {
+        const epubWithCfi = ePub as typeof ePub & { CFI?: new () => { compare(left: string, right: string): number | undefined }; EpubCFI?: new () => { compare(left: string, right: string): number | undefined } };
+        const CFI = window.ePub && (epubWithCfi.CFI || epubWithCfi.EpubCFI);
+        if (typeof CFI === "function") {
+          const result = new CFI().compare(left, right);
+          if (Number.isFinite(result)) return result;
+        }
+      } catch (_) {}
+      return undefined;
+    }
+
+    function contentsForDocument(doc: Document) {
+      if (!rendition || typeof rendition!.getContents !== "function" || !doc) return null;
+      const list = rendition!.getContents() || [];
+      for (let index = 0; index < list.length; index += 1) {
+        if (list[index] && list[index]!.document === doc) return list[index]!;
+      }
+      return null;
+    }
+
+    function rangeToCfi(range: Range | null) {
+      if (!range) return "";
+      const owner = range.startContainer && range.startContainer.ownerDocument
+        ? range.startContainer.ownerDocument
+        : range.commonAncestorContainer && range.commonAncestorContainer.ownerDocument;
+      const contents = contentsForDocument(owner as Document);
+      if (!contents || typeof contents.cfiFromRange !== "function") return "";
+      try {
+        return String(contents.cfiFromRange(range) || "").trim();
+      } catch (_) {
+        return "";
+      }
+    }
+
+    function elementBoundaryCfi(element: Element, atEnd: boolean) {
+      if (!element || !element.ownerDocument) return "";
+      const range = element.ownerDocument.createRange();
+      try {
+        range.selectNodeContents(element);
+        range.collapse(Boolean(atEnd));
+      } catch (_) {
+        return "";
+      }
+      return rangeToCfi(range);
+    }
+
+    function textAfterResumeCfi(element: Element, cfi: string) {
+      const speechFeatures = window.BookstrSpeech as Partial<import('./reader-speech.js').SpeechApi> | undefined;
+      const rawText = speechFeatures?.visibleText
+        ? speechFeatures.visibleText(element)
+        : String((element as HTMLElement).innerText || element.textContent || "");
+      const full = window.BookstrSpeech
+        ? window.BookstrSpeech!.normalizeText(rawText)
+        : rawText.replace(/\s+/g, " ").trim();
+      const contents = contentsForDocument(element.ownerDocument);
+      if (!contents || typeof contents.range !== "function" || !cfi) return full;
+      let point;
+      try {
+        point = contents.range(cfi);
+      } catch (_) {
+        return full;
+      }
+      if (!point || !point.startContainer) return full;
+      const root = element.contains(point.startContainer) || point.startContainer === element;
+      if (!root) return full;
+      const mapped = speechTextMap(element as HTMLElement);
+      const index = speechFeatures!.mappedIndexAtPoint!(
+        mapped.positions,
+        point.startContainer,
+        point.startOffset
+      );
+      const remaining = mapped.text.slice(index);
+      return window.BookstrSpeech
+        ? window.BookstrSpeech!.normalizeText(remaining)
+        : remaining.replace(/\s+/g, " ").trim();
+    }
+
+    function reportSpeechLocator(cfi: string, publishRemote: boolean) {
+      const locator = String(cfi || lastSpeechCfi || "").trim();
+      if (!locator || !window.AndroidBridge || !AndroidBridge.onRelocated) return;
+      lastSpeechCfi = locator;
+      const location = rendition && typeof rendition!.currentLocation === "function"
+        ? rendition!.currentLocation()
+        : null;
+      const start = location && location.start;
+      const speechFeatures = window.BookstrSpeech as Partial<import('./reader-speech.js').SpeechApi> | undefined;
+      const progression = speechFeatures && speechFeatures.relocationProgression
+        ? speechFeatures.relocationProgression(cfiProgression(locator), start && start.percentage)
+        : cfiProgression(locator);
+      if (!Number.isFinite(progression)) return;
+      const spine = spinePositionForCfi(locator, (start && start.index) as number | undefined);
+      const payload = {
+        cfi: locator,
+        progression: progression,
+        sectionIndex: spine.sectionIndex,
+        sectionCount: spine.sectionCount
+      };
+      if (!publishRemote) Object.assign(payload, { source: "speech" });
+      AndroidBridge.onRelocated(JSON.stringify(payload));
+    }
+
+    window.persistSpeechLocation = function() {
+      reportSpeechLocator(lastSpeechCfi, true);
+    };
+
+    window.setSpeechResumeCfi = function(cfi) {
+      lastSpeechCfi = String(cfi || "").trim();
+    };
+
+    window.restoreReaderLocation = function(cfi) {
+      const anchor = String(cfi || "").trim();
+      if (!anchor || !rendition || typeof rendition!.display !== "function") return;
+      return rendition!.display(anchor);
+    };
+
+    window.requestSpeechText = function(notifyNative, requestID, fromCfi) {
+      if (!rendition) return;
+      let resumeCfi = String(fromCfi == null ? lastSpeechCfi || "" : fromCfi).trim();
+      speechPlanStartCfi = resumeCfi;
+      if (resumeCfi) lastSpeechCfi = resumeCfi;
+      if (notifyNative !== false) speechActive = true;
+      clearSpeechProgress(false);
+
+      function collectSpeechParts(activeResumeCfi: string) {
+        const contentsList = rendition!.getContents();
+        const parts: string[] = [];
+        const collectedBlocks: ReaderSpeechBlock[] = [];
+        let language = "";
+        let foundVisibleText = false;
+        let totalLength = 0;
+        contentsList.forEach(function(contents) {
+          if (totalLength >= 100000 || !contents || !contents.document) return;
+          const contentDocument = contents.document;
+          const speechFeatures = window.BookstrSpeech as Partial<import('./reader-speech.js').SpeechApi> | undefined;
+          if (speechFeatures?.isOpeningNavigationDocument &&
+              speechFeatures.isOpeningNavigationDocument(
+                contentDocument, (currentSpeechSpineIndex() as number) <= 4
+              )) return;
+          if (!language) language = String(contentDocument.documentElement.lang || "").trim();
+          const frame = contentDocument.defaultView && contentDocument.defaultView.frameElement;
+          const frameTop = frame && frame.getBoundingClientRect ? frame.getBoundingClientRect().top : 0;
+          let blocks = speechFeatures && speechFeatures.speakableBlocks
+            ? window.BookstrSpeech!.speakableBlocks(contentDocument)
+            : Array.from(contentDocument.querySelectorAll(
+              "h1, h2, h3, h4, h5, h6, p, blockquote, pre, figcaption, dt, dd, li"
+            ));
+          blocks.forEach(function(block) {
+            if (totalLength >= 100000) return;
+            let text = speechFeatures && speechFeatures.visibleText
+              ? window.BookstrSpeech!.visibleText(block)
+              : String((block as HTMLElement).innerText || block.textContent || "");
+            text = window.BookstrSpeech
+              ? window.BookstrSpeech!.normalizeText(text)
+              : text.replace(/\s+/g, " ").trim();
+            if (!text) return;
+            if (activeResumeCfi && speechFeatures && speechFeatures.locatorSkipDecision) {
+              const decision = window.BookstrSpeech!.locatorSkipDecision(
+                elementBoundaryCfi(block, false),
+                elementBoundaryCfi(block, true),
+                activeResumeCfi,
+                epubCompare as (left: string, right: string) => number
+              );
+              if (decision === "skip") return;
+              if (decision === "resume") {
+                text = textAfterResumeCfi(block, activeResumeCfi);
+                if (!text) return;
+              }
+            } else {
+              const rect = block.getBoundingClientRect ? block.getBoundingClientRect() : { top: 0, bottom: 1 };
+              const bottom = frameTop + rect.bottom;
+              if (!foundVisibleText && bottom <= 0) return;
+            }
+            foundVisibleText = true;
+            const start = totalLength + (parts.length ? 1 : 0);
+            parts.push(text);
+            totalLength = start + text.length;
+            collectedBlocks.push({ element: block as HTMLElement, start: start, end: totalLength });
+          });
+        });
+        return { parts: parts, language: language, blocks: collectedBlocks };
+      }
+
+      let collected = collectSpeechParts(resumeCfi);
+      if (!collected.parts.length && resumeCfi) {
+        lastSpeechCfi = "";
+        clearSpeechProgress(false);
+        collected = collectSpeechParts("");
+      }
+      speechBlocks = collected.blocks;
+      let language = collected.language;
+      const parts = collected.parts;
+      if (!language && book && book!.packaging && book!.packaging.metadata) {
+        language = metadataText(book!.packaging.metadata.language);
+      }
+      const speechLanguage = language || "en";
+      const speechPlan = (window.BookstrSpeech
+        ? window.BookstrSpeech!.buildPlan(parts, {
+          language: speechLanguage,
+          normalizeEnglish: true,
+        })
+        : { text: parts.join(" ").slice(0, 100000), chunks: [] }) as SharedSpeechPlan;
+      if (speechPlan && typeof speechPlan === "object") speechPlan.language = speechLanguage;
+      const payload = {
+        text: speechPlan.text,
+        language: speechLanguage,
+        chunks: speechPlan.chunks,
+        requestID: requestID || null,
+        exhausted: false,
+      };
+      if (notifyNative !== false && window.AndroidBridge && AndroidBridge.onSpeechText) {
+        if (parts.length) AndroidBridge.onSpeechText(JSON.stringify(payload));
+        else window.continueSpeechAfterSection(true, requestID, 0);
+      }
+      return payload;
+    };
+
+    window.refreshSpeechBlocks = function() {
+      if (!speechActive || !speechBlocks.length) return;
+      const currentCfi = lastSpeechCfi;
+      const startCfi = speechPlanStartCfi;
+      const previousBlocks = speechBlocks;
+      window.requestSpeechText(false, null, startCfi);
+      if (!speechBlocks.length) speechBlocks = previousBlocks;
+      lastSpeechCfi = currentCfi;
+      speechPlanStartCfi = startCfi;
+    };
+    window.addEventListener("resize", function() {
+      if (!speechActive || !speechBlocks.length) return;
+      requestAnimationFrame(function() {
+        requestAnimationFrame(function() { window.refreshSpeechBlocks(); });
+      });
+    });
+
+    function emitSpeechPayload(payload: Record<string, unknown>) {
+      if (window.AndroidBridge && AndroidBridge.onSpeechText) {
+        AndroidBridge.onSpeechText(JSON.stringify(payload));
+      }
+    }
+
+    function currentSpeechSpineIndex() {
+      const location = rendition && typeof rendition!.currentLocation === "function"
+        ? rendition!.currentLocation()
+        : null;
+      if (location && location.start && Number.isFinite(location.start.index)) {
+        return location.start.index;
+      }
+      return spinePositionForCfi(lastSpeechCfi).sectionIndex;
+    }
+
+    // Advances to the next spine item and requests fresh speech text. Skips
+    // empty spine entries (covers, images) up to a small attempt budget.
+    window.continueSpeechAfterSection = function(notifyNative, requestID, attempts) {
+      const attempt = Number(attempts) || 0;
+      const emptyPayload = {
+        text: "",
+        language: "en",
+        chunks: [],
+        requestID: requestID || null,
+        exhausted: true,
+      };
+      if (!rendition || !book || !book.spine) {
+        if (notifyNative !== false) emitSpeechPayload(emptyPayload);
+        return;
+      }
+      const items = book!.spine.spineItems || [];
+      const index = currentSpeechSpineIndex() as number;
+      const next = Number.isFinite(index) ? items[index + 1] : null;
+      if (!next || attempt > 24) {
+        if (notifyNative !== false) emitSpeechPayload(emptyPayload);
+        return;
+      }
+      lastSpeechCfi = "";
+      speechActive = true;
+      clearSpeechProgress(false);
+      const href = String(next.href || "");
+      const display = rendition!.display(href);
+      const afterDisplay = function() {
+        const plan = window.requestSpeechText(false, requestID, "") as SharedSpeechPlan;
+        const text = String(plan.text || "").trim();
+        if (text) {
+          if (notifyNative !== false) {
+            emitSpeechPayload({
+              text: plan.text,
+              language: plan.language || "en",
+              chunks: plan.chunks || [],
+              requestID: requestID || null,
+              exhausted: false,
+            });
+          }
+          return;
+        }
+        window.continueSpeechAfterSection(notifyNative, requestID, attempt + 1);
+      };
+      if (display && typeof display.then === "function") {
+        display.then(afterDisplay).catch(function() {
+          if (notifyNative !== false) emitSpeechPayload(emptyPayload);
+        });
+      } else {
+        afterDisplay();
+      }
+    };
+
+    function clearSpeechWordHighlight() {
+      if (activeSpeechHighlightWindow && activeSpeechHighlightWindow.CSS &&
+          activeSpeechHighlightWindow.CSS.highlights) {
+        activeSpeechHighlightWindow.CSS.highlights.delete("bookstr-speaking-word");
+      }
+      activeSpeechHighlightWindow = null;
+    }
+
+    function speechTextMap(element: HTMLElement) {
+      const document = element.ownerDocument;
+      const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
+      const characters = [];
+      const positions: Array<{ node: Node; start: number; end: number }> = [];
+      let node;
+      while ((node = walker.nextNode())) {
+        const parent = node.parentElement;
+        const speechFeatures = window.BookstrSpeech as Partial<import('./reader-speech.js').SpeechApi> | undefined;
+        if (parent && (speechFeatures?.isSilentSpeechParent
+            ? speechFeatures.isSilentSpeechParent(parent)
+            : parent.closest("script, style, noscript"))) continue;
+        const raw = node.nodeValue || "";
+        for (let index = 0; index < raw.length; index += 1) {
+          if (/\s/.test(raw[index]!)) {
+            if (characters.length && characters[characters.length - 1] !== " ") {
+              characters.push(" ");
+              positions.push({ node: node, start: index, end: index + 1 });
+            }
+          } else {
+            characters.push(raw[index]!);
+            positions.push({ node: node, start: index, end: index + 1 });
+          }
+        }
+      }
+      while (characters[characters.length - 1] === " ") {
+        characters.pop();
+        positions.pop();
+      }
+      return { text: characters.join(""), positions: positions };
+    }
+
+    function showSpeechWord(block: ReaderSpeechBlock, start: number, end: number) {
+      clearSpeechWordHighlight();
+      const contentWindow = block.element.ownerDocument.defaultView;
+      if (!contentWindow || !contentWindow.CSS || !contentWindow.CSS.highlights ||
+          typeof contentWindow.Highlight !== "function") return;
+      const mapped = speechTextMap(block.element);
+      if (!mapped.positions.length) return;
+      let first = Math.max(0, Math.min(mapped.text.length - 1, start - block.start));
+      let last = Math.max(first + 1, Math.min(mapped.text.length, end - block.start));
+      while (first < mapped.text.length && /\s/.test(mapped.text[first]!)) first += 1;
+      while (first > 0 && !/\s/.test(mapped.text[first - 1]!)) first -= 1;
+      while (last < mapped.text.length && !/\s/.test(mapped.text[last]!)) last += 1;
+      if (first >= mapped.positions.length) return;
+      const range = block.element.ownerDocument.createRange();
+      range.setStart(mapped.positions[first]!.node, mapped.positions[first]!.start);
+      const finalPosition = mapped.positions[Math.max(first, last - 1)]!;
+      range.setEnd(finalPosition.node, finalPosition.end);
+      contentWindow.CSS.highlights.set("bookstr-speaking-word", new contentWindow.Highlight(range));
+      activeSpeechHighlightWindow = contentWindow;
+    }
+
+    window.showSpeechProgress = function(start, end) {
+      const block = speechBlocks.find(function(candidate) {
+        return candidate.end > start && candidate.start < end;
+      });
+      if (!block) return "";
+      const paragraph = String(block.element.innerText || block.element.textContent || "")
+        .replace(/\s+/g, " ").trim();
+      let style = block.element.ownerDocument.getElementById("bookstr-speech-style");
+      if (!style) {
+        style = block.element.ownerDocument.createElement("style");
+        style.id = "bookstr-speech-style";
+        style.textContent = ".bookstr-speaking{background:rgba(127,184,167,.18)!important;" +
+          "box-shadow:inset 3px 0 0 #7fb8a7;border-radius:0 .1em .1em 0}" +
+          "::highlight(bookstr-speaking-word){background:rgba(47,93,80,.32);color:inherit}";
+        (block.element.ownerDocument.head || block.element.ownerDocument.documentElement).appendChild(style);
+      }
+      showSpeechWord(block, start, end);
+      const spokenRange = block.element.ownerDocument.createRange();
+      try {
+        const mapped = speechTextMap(block.element);
+        if (mapped.positions.length) {
+          let first = Math.max(0, Math.min(mapped.text.length - 1, start - block.start));
+          let last = Math.max(first + 1, Math.min(mapped.text.length, end - block.start));
+          const finalPosition = mapped.positions[Math.max(first, last - 1)]!;
+          spokenRange.setStart(mapped.positions[first]!.node, mapped.positions[first]!.start);
+          spokenRange.setEnd(finalPosition.node, finalPosition.end);
+          const spokenCfi = rangeToCfi(spokenRange) || elementBoundaryCfi(block.element, false);
+          if (spokenCfi) reportSpeechLocator(spokenCfi, false);
+        }
+      } catch (_) {}
+      if (block !== activeSpeechBlock) {
+        if (activeSpeechBlock && activeSpeechBlock.element) {
+          activeSpeechBlock.element.classList.remove("bookstr-speaking");
+        }
+        activeSpeechBlock = block;
+        block.element.classList.add("bookstr-speaking");
+        block.element.scrollIntoView({ block: "center", behavior: "smooth" });
+        reportReaderInteraction();
+      }
+      return paragraph;
+    };
+
+    window.clearSpeechProgress = function(keepLocation) {
+      if (activeSpeechBlock && activeSpeechBlock.element) {
+        activeSpeechBlock.element.classList.remove("bookstr-speaking");
+      }
+      clearSpeechWordHighlight();
+      activeSpeechBlock = null;
+      speechBlocks = [];
+      if (keepLocation !== false) {
+        speechActive = false;
+        reportSpeechLocator(lastSpeechCfi, true);
+      }
+    };
+
+    window.nextPage = function() {
+      moveViewportPage(1);
+    };
+
+    window.prevPage = function() {
+      moveViewportPage(-1);
+    };
+
+    let nativeSwipeX = 0;
+
+    window.beginNativePageSwipe = function() {
+      if (pageTransitioning) return false;
+      const viewer = (document.getElementById("viewer") as HTMLElement);
+      nativeSwipeX = 0;
+      viewer.style.willChange = "transform";
+      viewer.style.transform = "translate3d(0,0,0)";
+      return true;
+    };
+
+    window.updateNativePageSwipe = function(offset) {
+      if (pageTransitioning) return;
+      nativeSwipeX = Number(offset) || 0;
+      const viewer = (document.getElementById("viewer") as HTMLElement);
+      viewer.style.transform = "translate3d(" + nativeSwipeX + "px,0,0)";
+    };
+
+    window.endNativePageSwipe = function(direction) {
+      const viewer = (document.getElementById("viewer") as HTMLElement);
+      const chosenDirection = Number(direction) || 0;
+      if (!chosenDirection) {
+        viewer.animate(
+          [{ transform: "translate3d(" + nativeSwipeX + "px,0,0)" }, { transform: "translate3d(0,0,0)" }],
+          { duration: 170, easing: "cubic-bezier(.2,.8,.2,1)", fill: "forwards" }
+        ).finished.catch(function() {}).finally(function() {
+          viewer.style.transform = "translate3d(0,0,0)";
+          viewer.style.willChange = "auto";
+          nativeSwipeX = 0;
+        });
+        return;
+      }
+      const container = document.querySelector(".epub-container");
+      if (chosenDirection < 0 && container && container.scrollTop <= 2) {
+        window.endNativePageSwipe(0);
+        return;
+      }
+      pageTransitioning = true;
+      reportReaderInteraction();
+      const width = Math.max(320, viewer.clientWidth || window.innerWidth);
+      const outgoing = chosenDirection > 0 ? -width : width;
+      const incoming = chosenDirection > 0 ? width : -width;
+      viewer.animate(
+        [{ transform: "translate3d(" + nativeSwipeX + "px,0,0)" },
+         { transform: "translate3d(" + outgoing + "px,0,0)" }],
+        { duration: 150, easing: "cubic-bezier(.3,.7,.4,1)", fill: "forwards" }
+      ).finished.catch(function() {}).then(function() {
+        jumpViewportPage(chosenDirection);
+        return viewer.animate(
+          [{ transform: "translate3d(" + incoming + "px,0,0)" }, { transform: "translate3d(0,0,0)" }],
+          { duration: 175, easing: "cubic-bezier(.1,.8,.2,1)", fill: "forwards" }
+        ).finished;
+      }).catch(function() {}).finally(function() {
+        viewer.style.transform = "translate3d(0,0,0)";
+        viewer.style.willChange = "auto";
+        nativeSwipeX = 0;
+        pageTransitioning = false;
+      });
+    };
+
+    window.displaySection = function(href) {
+      if (!rendition || !href) return;
+      reportReaderInteraction();
+      closeDictionary();
+      closeImageZoom();
+      rendition!.display(href).then(function() {
+        reportLocation(rendition!.currentLocation());
+      }).catch(reportReaderError);
+    };
+
+    let pendingPageDirection = 0;
+
+    function moveViewportPage(direction: number) {
+      if (!rendition) return;
+      if (pageTransitioning) {
+        pendingPageDirection = direction;
+        return;
+      }
+      const container = document.querySelector(".epub-container");
+      if (direction < 0 && container && container.scrollTop <= 2) return;
+      reportReaderInteraction();
+      const viewer = (document.getElementById("viewer") as HTMLElement);
+      viewer.style.willChange = "transform";
+      const jump = function() { jumpViewportPage(direction); };
+      if (!viewer.animate) {
+        jump();
+        return;
+      }
+      pageTransitioning = true;
+      const outgoing = direction > 0 ? "-100%" : "100%";
+      const incoming = direction > 0 ? "100%" : "-100%";
+      viewer.animate(
+        [{ transform: "translate3d(0,0,0)" }, { transform: "translate3d(" + outgoing + ",0,0)" }],
+        { duration: 90, easing: "cubic-bezier(.4,0,1,1)", fill: "forwards" }
+      ).finished.catch(function() {}).then(function() {
+        jump();
+        return viewer.animate(
+          [{ transform: "translate3d(" + incoming + ",0,0)" }, { transform: "translate3d(0,0,0)" }],
+          { duration: 105, easing: "cubic-bezier(0,0,.2,1)", fill: "forwards" }
+        ).finished;
+      }).catch(function() {}).finally(function() {
+        viewer.style.willChange = "auto";
+        pageTransitioning = false;
+        if (pendingPageDirection) {
+          const queuedDirection = pendingPageDirection;
+          pendingPageDirection = 0;
+          moveViewportPage(queuedDirection);
+        }
+      });
+    }
+
+    function jumpViewportPage(direction: number) {
+      const container = document.querySelector(".epub-container");
+      const distance = Math.max(180, (container ? container.clientHeight : window.innerHeight) * 0.88);
+      if (container && container.scrollBy) {
+        const before = container.scrollTop;
+        container.scrollBy({ top: direction * distance, behavior: "auto" });
+        setTimeout(function() {
+          if (Math.abs(container.scrollTop - before) > 2) return;
+          const movement = direction > 0 ? rendition!.next() : rendition!.prev();
+          if (movement && typeof movement.catch === "function") movement.catch(reportReaderError);
+        }, 40);
+        return;
+      }
+      const contents = rendition!.getContents();
+      const win = contents[0] && contents[0].window;
+      if (win) {
+        const before = win.scrollY;
+        win.scrollBy({ top: direction * distance, behavior: "auto" });
+        setTimeout(function() {
+          if (Math.abs(win.scrollY - before) > 2) return;
+          const movement = direction > 0 ? rendition!.next() : rendition!.prev();
+          if (movement && typeof movement.catch === "function") movement.catch(reportReaderError);
+        }, 40);
+      }
+    }
+
+    window.setReaderTheme = function(theme) {
+      applyTheme(theme);
+    };
+
+    window.setReaderTypography = function(font, alignment, padding) {
+      readerFontFamily = window.BookstrTypography.normalizeFont(font);
+      readerAlignment = window.BookstrTypography.normalizeAlignment(alignment);
+      readerPadding = window.BookstrTypography.normalizePadding(padding);
+      applyTypography();
+    };

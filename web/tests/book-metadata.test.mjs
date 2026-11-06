@@ -1810,3 +1810,9 @@ test('deduplicated library metadata retains locally detected reader formats', ()
 test('library matching tolerates malformed absolute URLs after its scheme fast path', () => {
   assert.equal(globalThis.BookMetadata.sameLibraryBook({ readUrl: 'https://[' }, {}), false);
 });
+
+test('language sorting falls back to raw catalog values when display names reject a code', () => {
+  const books = [{ id: 'last', language: 'invalid_z' }, { id: 'first', language: 'invalid_a' }];
+  assert.deepEqual(sortBooks(books, 'language').map(book => book.id), ['first', 'last']);
+  assert.deepEqual(sortBooks(books, 'language', 'desc').map(book => book.id), ['last', 'first']);
+});

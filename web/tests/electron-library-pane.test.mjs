@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import vm from 'node:vm';
 import '../book-metadata.js';
 import '../desktop-kindle.js';
+import { functionSource } from './source-tools.mts';
 
 function element() {
   return { dataset: {}, attributes: {}, children: [], classList: { remove() {} },
@@ -33,9 +34,9 @@ function kindleContext({ job = { status: 'ready', extension: 'cbz', bookId: 'com
       return result;
     } } },
   });
-  const start = html.indexOf('      function updateKindleLibraryButton(');
-  const end = html.indexOf('      async function renderDesktopDownloads(', start);
-  vm.runInContext(html.slice(start, end), context);
+  const kindleFunctions = ['updateKindleLibraryButton', 'refreshKindleLibraryButtons', 'refreshKindlePresence',
+    'renderKindleTransferOverview', 'sendLibraryBookToKindle'];
+  vm.runInContext(kindleFunctions.map(name => functionSource(html, name)).join('\n'), context);
   return { context, button, calls, buttons };
 }
 
@@ -104,10 +105,8 @@ test('Kindle progress updates the Library action and ignores late completion eve
   assert.equal(context.desktopKindleSummary.textContent, 'Checking existing books');
 });
 function loadFunction(name, next, values) {
-  const start = html.indexOf(`      function ${name}(`);
-  const end = html.indexOf(`      ${next}`, start + 1);
   const context = vm.createContext(values);
-  vm.runInContext(html.slice(start, end), context);
+  vm.runInContext(functionSource(html, name), context);
   return context;
 }
 
@@ -247,9 +246,7 @@ test('Kindle overview renders determinate progress and stays available after err
 });
 
 test('inactive download rows expose an accessible icon beside Retry', () => {
-  const start = html.indexOf('      async function renderDesktopDownloads(');
-  const end = html.indexOf('      async function openDesktopDownloads(', start);
-  const renderer = html.slice(start, end);
+  const renderer = functionSource(html, 'renderDesktopDownloads');
   assert.match(renderer, /\['failed', 'stopped'\]\.includes\(jobStatus\)/);
   assert.match(renderer, /remove\.setAttribute\('aria-label', `Delete \$\{job.title \|\| 'book'\} from Downloads`\)/);
   assert.match(renderer, /remove\.innerHTML = '<svg[^\n]*aria-hidden="true"/);
@@ -271,9 +268,7 @@ test('an old Downloads snapshot cannot overwrite a newer render', async () => {
       return Promise.resolve([]);
     } } },
   });
-  const start = html.indexOf('      async function renderDesktopDownloads(');
-  const end = html.indexOf('      async function openDesktopDownloads(', start);
-  vm.runInContext(html.slice(start, end), context);
+  vm.runInContext(functionSource(html, 'renderDesktopDownloads'), context);
   const old = context.renderDesktopDownloads();
   await context.renderDesktopDownloads();
   assert.equal(renders, 1);

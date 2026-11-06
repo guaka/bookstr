@@ -1,0 +1,16 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Comic reader</title>
+<script src="jszip.min.js"></script><script src="vendor/libarchive.js"></script>
+<style>
+html,body{height:100%;margin:0;background:#171914;color:#f7f6ef;font-family:system-ui,sans-serif}
+body{display:grid;grid-template-rows:auto 1fr auto;overflow:hidden}.bar{display:flex;align-items:center;gap:.7rem;padding:.65rem .85rem;background:#252820}.title{min-width:0;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:650}.count{font-size:.85rem;color:#c9cdbf}button{border:1px solid #596052;border-radius:.55rem;background:#30362d;color:inherit;padding:.45rem .7rem;font:inherit;cursor:pointer}button:disabled{opacity:.35;cursor:default}
+html.bookstr-native-chrome body{grid-template-rows:1fr}html.bookstr-native-chrome .bar,html.bookstr-native-chrome .footer{display:none}
+#stage{position:relative;display:flex;align-items:center;justify-content:center;min-height:0;overflow:auto;overscroll-behavior:contain;touch-action:pan-x pan-y;-webkit-overflow-scrolling:touch}.page-surface{display:flex;flex:none;align-items:center;justify-content:center;gap:0;min-width:100%;min-height:100%}.page{display:block;flex:none;user-select:none;-webkit-user-drag:none}.message{position:absolute;z-index:1;padding:1rem;text-align:center;color:#e7c766;background:#171914;border-radius:.55rem}.message progress{display:block;width:min(18rem,70vw);height:.55rem;margin:.8rem auto 0;accent-color:#e7c766}.footer{display:flex;align-items:center;justify-content:center;gap:.6rem;padding:.45rem;background:#252820;font-size:.8rem}
+</style></head><body>
+<header class="bar"><button id="prev" aria-label="Previous page">←</button><div id="title" class="title">Comic</div><span id="count" class="count"></span><button id="next" aria-label="Next page">→</button></header>
+<main id="stage" aria-label="Comic page"><div id="message" class="message" role="status" aria-live="polite"><span id="opening-label">Opening comic…</span><progress id="opening-progress" aria-label="Comic opening progress"></progress></div></main>
+<footer class="footer"><button id="zoom-out" aria-label="Zoom out">−</button><span id="zoom-label">Fit</span><button id="zoom-in" aria-label="Zoom in">+</button></footer>
+<script>
+/* @bookstr-typescript:comic-reader-app */
+</script></body></html>
