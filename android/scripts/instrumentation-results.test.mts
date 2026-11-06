@@ -1,3 +1,4 @@
+import { present } from '../../web/tests/test-values.mts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
@@ -5,7 +6,7 @@ import { join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
 
 import { convert, parseInstrumentation, toJUnit } from './instrumentation-results.mjs';
-import { parseJUnit } from '../../scripts/test-overview.mjs';
+import { parseJUnit } from '../../scripts/junit.mjs';
 
 const node = process.execPath;
 const cli = resolve('android/scripts/instrumentation-results.mjs');
@@ -121,7 +122,7 @@ test('rejects a run where every reported test was skipped', () => {
 });
 
 test('accepts mixed passing and skipped outcomes, but rejects mixed passing and failed outcomes', () => {
-  const run = terminal => parseInstrumentation([
+  const run = (terminal: number) => parseInstrumentation([
     'INSTRUMENTATION_STATUS: class=org.example.MixedTest',
     'INSTRUMENTATION_STATUS: test=first',
     'INSTRUMENTATION_STATUS: numtests=2',
@@ -160,7 +161,7 @@ test('rejects truncated blocks, malformed fields, missing protocol, and unsuppor
     ['not instrumentation output', /No Android instrumentation protocol/],
     ['INSTRUMENTATION_STATUS: test=x\nINSTRUMENTATION_STATUS_CODE: 7\nINSTRUMENTATION_CODE: -1', /Unsupported instrumentation status code/],
     ['INSTRUMENTATION_STATUS: test=x\nINSTRUMENTATION_STATUS_CODE: nope\nINSTRUMENTATION_CODE: -1', /Invalid instrumentation status code/],
-  ]) {
+  ] as Array<[string, RegExp]>) {
     const parsed = parseInstrumentation(log);
     assert.equal(parsed.success, false);
     assert.match(parsed.problems.join(' '), pattern);
@@ -199,9 +200,9 @@ test('covers default metadata, duration normalization, and unmatched empty termi
     'INSTRUMENTATION_STATUS_CODE: 0',
     'INSTRUMENTATION_CODE: -1',
   ].join('\n'));
-  assert.equal(defaulted.cases[0].name, 'unnamed test 1');
-  assert.equal(defaulted.cases[0].className, 'AndroidInstrumentation');
-  assert.equal(defaulted.cases[0].duration, 0);
+  assert.equal(present(defaulted.cases[0]).name, 'unnamed test 1');
+  assert.equal(present(defaulted.cases[0]).className, 'AndroidInstrumentation');
+  assert.equal(present(defaulted.cases[0]).duration, 0);
   assert.equal(defaulted.success, true);
 
   const emptyTerminal = parseInstrumentation('INSTRUMENTATION_STATUS_CODE: 0\nINSTRUMENTATION_CODE: -1');
@@ -224,9 +225,9 @@ test('uses runner error fields, positive durations, and case-folded fallback mat
     'INSTRUMENTATION_CODE: -1',
   ].join('\n'));
   assert.equal(failed.success, false);
-  assert.equal(failed.cases[0].name, 'updated terminal name');
-  assert.equal(failed.cases[0].duration, 1.25);
-  assert.equal(failed.cases[0].message, 'runner diagnostic');
+  assert.equal(present(failed.cases[0]).name, 'updated terminal name');
+  assert.equal(present(failed.cases[0]).duration, 1.25);
+  assert.equal(present(failed.cases[0]).message, 'runner diagnostic');
   assert.match(toJUnit(failed), /first stack line\nsecond stack line/);
 });
 
@@ -242,7 +243,7 @@ test('uses a short message on a test and appends repeated stream fields', () => 
     'INSTRUMENTATION_STATUS_CODE: -1',
     'INSTRUMENTATION_CODE: -1',
   ].join('\n'));
-  assert.equal(parsed.cases[0].message, 'method timed out');
+  assert.equal(present(parsed.cases[0]).message, 'method timed out');
   assert.match(toJUnit(parsed), /first output\nsecond output/);
 });
 
@@ -258,7 +259,7 @@ test('matches terminal blocks by test and class and handles malformed final code
     'INSTRUMENTATION_CODE: -1',
   ].join('\n'));
   assert.equal(parsed.success, true);
-  assert.equal(parsed.cases[0].className, 'org.example.DifferentTest');
+  assert.equal(present(parsed.cases[0]).className, 'org.example.DifferentTest');
   const malformed = parseInstrumentation(successLog.replace('INSTRUMENTATION_CODE: -1', 'INSTRUMENTATION_CODE: nope'));
   assert.match(malformed.problems.join(' '), /Unexpected final instrumentation code: NaN/);
 });

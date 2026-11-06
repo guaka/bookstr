@@ -1,3 +1,4 @@
+import { present } from '../web/tests/test-values.mts';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
@@ -7,7 +8,7 @@ const lightLogo = await readFile(new URL('../brand/bookstr-logo.svg', import.met
 const darkLogo = await readFile(new URL('../brand/bookstr-logo-dark.svg', import.meta.url), 'utf8');
 
 test('README presents one centered, theme-aware horizontal Bookstr logo', () => {
-  const header = readme.split('**A calm, open-source')[0];
+  const header = present(readme.split('**A calm, open-source')[0]);
   const imageTags = header.match(/<img\b[^>]*>/gi) ?? [];
   const sources = [...header.matchAll(/<source\b[^>]*media="([^"]+)"[^>]*srcset="([^"]+)"\s*\/>/gi)];
 
@@ -28,7 +29,7 @@ test('README presents one centered, theme-aware horizontal Bookstr logo', () => 
 });
 
 test('dark logo preserves the established mark and changes only wordmark contrast', () => {
-  const normalize = (svg) => svg.replace(/(<text\b[^>]*\bfill=")[^"]+("[^>]*>)/, '$1COLOR$2');
+  const normalize = (svg: string) => svg.replace(/(<text\b[^>]*\bfill=")[^"]+("[^>]*>)/, '$1COLOR$2');
 
   assert.equal(normalize(lightLogo), normalize(darkLogo));
   assert.match(lightLogo, /<text x="338" y="214" textLength="560" lengthAdjust="spacingAndGlyphs"/);

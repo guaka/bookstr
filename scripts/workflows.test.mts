@@ -1,10 +1,11 @@
+import { present } from '../web/tests/test-values.mts';
 import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import test from 'node:test';
 import { spawnSync } from 'node:child_process';
 
-const readWorkflow = (name) =>
+const readWorkflow = (name: string) =>
   readFile(new URL(`../.github/workflows/${name}`, import.meta.url), 'utf8');
 
 test('repository hygiene rejects committed APKs and directs them to release assets', async () => {
@@ -12,7 +13,7 @@ test('repository hygiene rejects committed APKs and directs them to release asse
   assert.match(workflow, /tracked_apks="\$\(git ls-files '\*\.apk'\)"/);
   assert.match(workflow, /if \[ -n "\$tracked_apks" \]; then[\s\S]*?exit 1/);
   assert.match(workflow, /APK binaries must be published as GitHub Release assets/);
-  const script = workflow.match(/      - name: Reject tracked APK binaries\n        run: \|\n([\s\S]*?)(?=\n  workflow-contracts:)/)[1]
+  const script = present(present(workflow.match(/      - name: Reject tracked APK binaries\n        run: \|\n([\s\S]*?)(?=\n  workflow-contracts:)/))[1])
     .replace(/^          /gm, '');
   for (const tracked of ['', 'android/bookstr.apk']) {
     const result = spawnSync('bash', ['-e', '-o', 'pipefail', '-c', 'git() { printf "%s" "$TRACKED_APKS"; }\n' + script], {
@@ -34,6 +35,8 @@ test('web tests are gated by web-related path changes', async () => {
   const workflow = await readWorkflow('ci.yml');
 
   assert.match(workflow, /name: Detect web changes/);
+  assert.match(workflow, /node scripts\/typescript\.cts --check/);
+  assert.match(workflow, /--test-coverage-functions=100 scripts\/typescript\.test\.mts/);
   assert.match(workflow, /- 'web\/\*\*'/);
   assert.match(workflow, /- 'shared\/architecture\/\*\*'/);
   assert.doesNotMatch(workflow.match(/            web_code:[\s\S]*?            electron_code:/)?.[0] ?? '', /shared\/coverage/);
@@ -42,7 +45,7 @@ test('web tests are gated by web-related path changes', async () => {
   assert.match(workflow, /- 'scripts\/\*\*'/);
   assert.match(workflow, /node scripts\/generate-client-overview\.mjs --check/);
   assert.match(workflow, /node shared\/contracts\/generate-nostr-constants\.mjs --check/);
-  assert.match(workflow, /--test-coverage-lines=100 --test-coverage-branches=100 --test-coverage-functions=100 scripts\/coverage-ratchet\.test\.mjs/);
+  assert.match(workflow, /--test-coverage-lines=100 --test-coverage-branches=100 --test-coverage-functions=100 scripts\/coverage-ratchet\.test\.mts/);
   assert.match(workflow, /shared\/contracts\/\*\.test\.mjs/);
   assert.match(workflow, /if: needs\.changes\.outputs\.web == 'true'/);
   assert.match(workflow, /repository-hygiene:/);
@@ -137,7 +140,7 @@ test('iOS e2e builds and runs the same selected tests from shared derived data w
   assert.match(run, /^        timeout-minutes: 30$/m);
   assert.match(run, /^        continue-on-error: true$/m);
 
-  const command = (step) => {
+  const command = (step: string) => {
     const raw = step.match(/xcodebuild ([\s\S]*?)\n\s+CODE_SIGNING_ALLOWED=NO/)?.[0];
     assert.ok(raw, 'step has a complete xcodebuild command');
     return raw
@@ -166,13 +169,13 @@ test('CodeQL workflow is disabled', async () => {
 
 test('Android APK builds share one bounded Gradle invocation without waiting for unit tests', async () => {
   const workflow = await readWorkflow('android.yml');
-  const packaging = workflow.match(/^  package-apks:\n([\s\S]*?)(?=^  emulator-tests:)/m)[1];
+  const packaging = present(present(workflow.match(/^  package-apks:\n([\s\S]*?)(?=^  emulator-tests:)/m))[1]);
   assert.match(packaging, /^    name: Build debug app and test APKs$/m);
   const builds = [...packaging.matchAll(/      - name: (Build[^\n]+)\n        working-directory: android\n        run: (.+)/g)];
   assert.deepEqual(builds.map(match => [match[1], match[2]]), [
     ['Build debug app and instrumentation APKs', "./gradlew --daemon --max-workers=2 '-Dorg.gradle.jvmargs=-Xmx1536m -Dfile.encoding=UTF-8' assembleDebug assembleDebugAndroidTest -Pbookstr.abis=x86_64 -Pbookstr.cxxCompilerLauncher=ccache -Pbookstr.nativeCoverage=true"],
   ]);
-  assert.ok(packaging.indexOf('name: Stage prebuilt APKs') > builds[0].index);
+  assert.ok(packaging.indexOf('name: Stage prebuilt APKs') > present(builds[0]).index);
   assert.match(packaging, /needs: changes\n    if: needs.changes.outputs.android == 'true'/);
   assert.doesNotMatch(packaging, /needs: unit-tests/);
   assert.match(packaging, /name: Upload prebuilt APKs[\s\S]*?compression-level: 0/);
@@ -182,11 +185,11 @@ test('Android CI caches Gradle and native compilation while preserving universal
   const workflow = await readWorkflow('android.yml');
   assert.equal((workflow.match(/uses: gradle\/actions\/setup-gradle@v4/g) || []).length, 4);
   assert.doesNotMatch(workflow, /cache: gradle/);
-  assert.match(workflow, /node --test --test-concurrency=1 android\/scripts\/build-configuration\.test\.mjs/);
+  assert.match(workflow, /node --test --test-concurrency=1 android\/scripts\/build-configuration\.test\.mts/);
   assert.match(workflow, /CCACHE_COMPILERCHECK: content/);
   assert.match(workflow, /CCACHE_MAXSIZE: 1G/);
   for (const [job, variant] of [['package-apks', 'debug-x86_64'], ['release', 'release-universal']]) {
-    const source = workflow.slice(workflow.indexOf(`  ${job}:`)).split(/\n  [a-z-]+:\n/)[0];
+    const source = present(workflow.slice(workflow.indexOf(`  ${job}:`)).split(/\n  [a-z-]+:\n/)[0]);
     assert.match(source, /apt-get install -y libboost-dev ccache/);
     assert.match(source, /name: Restore native compiler cache\n        uses: actions\/cache@v4/);
     assert.match(source, /path: \$\{\{ env\.CCACHE_DIR \}\}/);
@@ -219,11 +222,11 @@ test('Android CI has four ordered jobs and the emulator consumes prebuilt APKs',
     'unit-tests', 'package-apks', 'emulator-tests', 'release',
   ]);
   assert.match(workflow, /testDebugUnitTest jacocoDebugUnitTestReport/);
-  assert.match(workflow, /node --test --experimental-test-coverage --test-coverage-lines=100 --test-coverage-branches=100 --test-coverage-functions=100 android\/scripts\/instrumentation-results\.test\.mjs/);
+  assert.match(workflow, /node --test --experimental-test-coverage --test-coverage-lines=100 --test-coverage-branches=100 --test-coverage-functions=100 android\/scripts\/instrumentation-results\.test\.mts/);
   assert.match(workflow, /assembleDebug assembleDebugAndroidTest -Pbookstr.abis=x86_64 -Pbookstr.cxxCompilerLauncher=ccache -Pbookstr.nativeCoverage=true\n/);
   assert.match(workflow, /needs: \[unit-tests, package-apks\]/);
   assert.match(workflow, /needs: \[unit-tests, package-apks, emulator-tests\]/);
-  const emulatorJob = workflow.match(/^  emulator-tests:\n([\s\S]*?)(?=^  release:)/m)[1];
+  const emulatorJob = present(present(workflow.match(/^  emulator-tests:\n([\s\S]*?)(?=^  release:)/m))[1]);
   assert.match(emulatorJob, /script: \|\n[\s\S]*\.\/android\/scripts\/run-connected-e2e\.sh --prebuilt android\/prebuilt-apks\/app-debug\.apk android\/prebuilt-apks\/app-debug-androidTest\.apk/);
   assert.match(workflow, /profile: pixel_2/);
   assert.match(workflow, /-memory 2048 -cores 2/);
@@ -247,7 +250,7 @@ test('Android CI has four ordered jobs and the emulator consumes prebuilt APKs',
   assert.match(emulatorJob, /name: Upload Android UI results[\s\S]*?path: android\/e2e-results\//);
   const uploads = [...workflow.matchAll(/uses: actions\/upload-artifact@v4\n([\s\S]*?)(?=\n      - |\n  [a-z-]+:|$)/g)];
   assert.equal(uploads.length, 12);
-  for (const upload of uploads) assert.match(upload[1], /overwrite: true/);
+  for (const upload of uploads) assert.match(present(upload[1]), /overwrite: true/);
   assert.match(e2eRunner, /\$adb_path" pull "\$device_screenshot_dir\/\." "\$host_screenshot_dir"/);
   assert.match(e2eRunner, /Android e2e tests produced no screenshots/);
   assert.match(screenshotRule, /screencap -p \/sdcard\/e2e-screenshots\/\$testName\.png/);
@@ -293,9 +296,9 @@ exit "\${MOCK_PARSER_STATUS:-0}"
       [0, 0, 5, 'emulator-5554 device product:emu', false, 1],
       [0, 0, 0, 'emulator-5554 device product:emu', true, 0],
       [0, 0, 0, 'personal-phone device product:phone', false, 1],
-    ]) {
+    ] as Array<[number, number, number, string, boolean, number]>) {
       await rm(adbLog, { force: true });
-      const environment = {
+      const environment: NodeJS.ProcessEnv = {
         ...process.env,
         PATH: `${bin}:${process.env.PATH}`,
         ANDROID_HOME: sdk,
@@ -313,8 +316,8 @@ exit "\${MOCK_PARSER_STATUS:-0}"
       });
       assert.equal(result.status, expected, result.stderr);
       const commands = (await readFile(adbLog, 'utf8')).trim().split('\n');
-      assert.match(commands[0], /^devices -l$/);
-      if (deviceOutput.startsWith('emulator-')) {
+      assert.match(present(commands[0]), /^devices -l$/);
+      if (present(deviceOutput).startsWith('emulator-')) {
         if (installStatus === 0) {
           assert.ok(commands.indexOf(`install -r ${app}`) > 0);
           assert.ok(commands.indexOf(`install -r ${instrumentation}`) > 0);
@@ -338,8 +341,8 @@ exit "\${MOCK_PARSER_STATUS:-0}"
 
 test('Android CI rebuilds APKs for Android and bundled reader changes', async () => {
   const workflow = await readWorkflow('android.yml');
-  const push = workflow.match(/^  push:\n([\s\S]*?)(?=^  pull_request:)/m)[1];
-  const pullRequest = workflow.match(/^  changes:\n([\s\S]*?)(?=^  unit-tests:)/m)[1];
+  const push = present(present(workflow.match(/^  push:\n([\s\S]*?)(?=^  pull_request:)/m))[1]);
+  const pullRequest = present(present(workflow.match(/^  changes:\n([\s\S]*?)(?=^  unit-tests:)/m))[1]);
 
   assert.match(push, /branches: \[main\]/);
   for (const trigger of [push, pullRequest]) {
@@ -349,7 +352,7 @@ test('Android CI rebuilds APKs for Android and bundled reader changes', async ()
       'web/comic-reader.html', 'web/vendor/libarchive.js',
       'web/vendor/libarchive.wasm',
     ]) {
-      assert.ok(trigger.includes(`- '${path}'`), `${path} triggers an APK build`);
+      assert.ok(present(trigger).includes(`- '${path}'`), `${path} triggers an APK build`);
     }
   }
   assert.ok(push.includes("- '.github/workflows/android.yml'"));
@@ -359,9 +362,9 @@ test('Android CI rebuilds APKs for Android and bundled reader changes', async ()
 
 test('required native checks are always reported and route only relevant PR paths', async () => {
   for (const [file, platform, job] of [['android.yml', 'android', 'unit-tests'], ['ios.yml', 'ios', 'ios']]) {
-    const workflow = await readWorkflow(file);
-    const push = workflow.match(/^  push:\n([\s\S]*?)(?=^  pull_request:)/m)[1];
-    const routing = workflow.match(/^  changes:\n([\s\S]*?)(?=^  (?:unit-tests|ios):)/m)[1];
+    const workflow = await readWorkflow(present(file));
+    const push = present(present(workflow.match(/^  push:\n([\s\S]*?)(?=^  pull_request:)/m))[1]);
+    const routing = present(present(workflow.match(/^  changes:\n([\s\S]*?)(?=^  (?:unit-tests|ios):)/m))[1]);
     const codeFilter = routing.match(/filters:\s*\|\n([\s\S]*?)(?=      - name: Compare)/)?.[1] ?? '';
     assert.match(workflow, /  pull_request:\n  workflow_dispatch:/);
     assert.doesNotMatch(workflow, /pull_request:\n    paths:/);
@@ -378,7 +381,7 @@ test('required native checks are always reported and route only relevant PR path
     assert.doesNotMatch(codeFilter, /shared\/coverage/);
     assert.doesNotMatch(codeFilter, new RegExp(`\\.github/workflows/${platform}\\.yml`));
     assert.match(push, new RegExp(`- '\\.github/workflows/${platform}\\.yml'`));
-    const paths = (text) => [...text.matchAll(/- '([^']+)'/g)].map((match) => match[1]);
+    const paths = (text: string) => [...text.matchAll(/- '([^']+)'/g)].map((match) => match[1]);
     const sourcePaths = [
       platform === 'android' ? 'android/**' : 'ios/**',
       'shared/reader/**', 'scripts/coverage-ratchet.mjs', 'scripts/test-overview.mjs',
@@ -412,7 +415,7 @@ test('platform baseline edits use semantic comparison while code and workflow ch
   assert.match(android, /steps\.baseline\.outputs\.android/);
   assert.match(ios, /steps\.baseline\.outputs\.ios/);
   for (const [workflow, name] of [[android, 'android'], [ios, 'ios']]) {
-    assert.match(workflow, new RegExp(`--workflow-base \\"\\$RUNNER_TEMP/base-${name}\\.yml\\" --workflow-head \.github/workflows/${name}\\.yml`));
+    assert.match(present(workflow), new RegExp(`--workflow-base \\"\\$RUNNER_TEMP/base-${name}\\.yml\\" --workflow-head \.github/workflows/${name}\\.yml`));
   }
   assert.match(ci, /steps\.filter\.outputs\.web_code/);
   assert.match(ci, /steps\.filter\.outputs\.electron_code/);
@@ -424,7 +427,7 @@ test('main protection names real workflow jobs and requires trusted up-to-date c
   assert.equal(policy.do_not_enforce_on_create, false);
   const workflows = await Promise.all(['ci.yml', 'android.yml', 'ios.yml'].map(readWorkflow));
   const jobNames = workflows.flatMap((workflow) => [...workflow.matchAll(/^    name: (.+)$/gm)].map((match) => match[1]));
-  const required = policy.required_status_checks.map((check) => check.context);
+  const required = policy.required_status_checks.map((check: {context: string}) => check.context);
   assert.equal(required.length, 11);
   assert.equal(new Set(required).size, 11);
   for (const check of policy.required_status_checks) {
@@ -435,18 +438,18 @@ test('main protection names real workflow jobs and requires trusted up-to-date c
     assert.ok(required.includes(context), `${context} cannot fail while descendants are skipped`);
   }
   assert.doesNotMatch(required.join('\n'), /Publish Android APK/);
-  assert.match(workflows[0], /- '\.github\/required-checks\.json'/);
+  assert.match(present(workflows[0]), /- '\.github\/required-checks\.json'/);
   assert.match(await readFile(new URL('../AGENTS.md', import.meta.url), 'utf8'), /Keep required workflow job names aligned with `\.github\/required-checks\.json`/);
 });
 
 test('Android CI uploads both APKs with bounded retention before emulator tests', async () => {
   const workflow = await readWorkflow('android.yml');
-  const upload = workflow.match(/      - name: Upload prebuilt APKs\n([\s\S]*?)(?=\n  emulator-tests:)/)[1];
+  const upload = present(present(workflow.match(/      - name: Upload prebuilt APKs\n([\s\S]*?)(?=\n  emulator-tests:)/))[1]);
 
   assert.match(upload, /uses: actions\/upload-artifact@v4/);
   assert.match(upload, /name: bookstr-android-apks-\$\{\{ github\.sha \}\}/);
   assert.match(upload, /path: android\/prebuilt-apks\/\*\.apk/);
-  const staging = workflow.match(/      - name: Stage prebuilt APKs\n        run: \|\n([\s\S]*?)(?=      - name: Upload prebuilt APKs)/)[1];
+  const staging = present(present(workflow.match(/      - name: Stage prebuilt APKs\n        run: \|\n([\s\S]*?)(?=      - name: Upload prebuilt APKs)/))[1]);
   assert.match(staging, /app\/build\/outputs\/apk\/debug\/app-debug\.apk android\/prebuilt-apks\/app-debug\.apk/);
   assert.match(staging, /app\/build\/outputs\/apk\/androidTest\/debug\/app-debug-androidTest\.apk android\/prebuilt-apks\/app-debug-androidTest\.apk/);
   assert.match(upload, /if-no-files-found: error/);
@@ -479,13 +482,13 @@ test('Android build documentation describes the CI artifact and signing constrai
 
 test('signed Android releases only run after checks on trusted main builds', async () => {
   const workflow = await readWorkflow('android.yml');
-  const release = workflow.match(/^  release:\n[\s\S]*$/m)[0];
+  const release = present(workflow.match(/^  release:\n[\s\S]*$/m))[0];
 
   assert.match(release, /needs: \[unit-tests, package-apks, emulator-tests\]/);
   assert.match(release, /if: github\.ref == 'refs\/heads\/main' && \(github\.event_name == 'push' \|\| github\.event_name == 'workflow_dispatch'\)/);
   assert.match(release, /permissions:\n      contents: write/);
   assert.match(release, /permissions:\n      contents: write\n      actions: read/);
-  const jobEnvironment = release.match(/    env:\n([\s\S]*?)(?=    steps:)/)[1];
+  const jobEnvironment = present(present(release.match(/    env:\n([\s\S]*?)(?=    steps:)/))[1]);
   assert.match(jobEnvironment, /BOOKSTR_KEYSTORE_FILE: \$\{\{ github\.workspace \}\}\/bookstr-release\.jks/);
   assert.doesNotMatch(jobEnvironment, /\$\{\{\s*runner\./);
   for (const secret of ['BOOKSTR_KEYSTORE_BASE64', 'BOOKSTR_KEYSTORE_PASSWORD', 'BOOKSTR_KEY_ALIAS', 'BOOKSTR_KEY_PASSWORD']) {
@@ -505,8 +508,8 @@ test('Android setup only requests SDK packages still available from Google', asy
   const setups = [...workflow.matchAll(/uses: android-actions\/setup-android@v3\n([\s\S]*?)(?=      - )/g)];
   assert.equal(setups.length, 4);
   for (const setup of setups) {
-    assert.match(setup[1], /with:\n          packages: platform-tools/);
-    assert.doesNotMatch(setup[1], /packages:.*\btools platform-tools\b/);
+    assert.match(present(setup[1]), /with:\n          packages: platform-tools/);
+    assert.doesNotMatch(present(setup[1]), /packages:.*\btools platform-tools\b/);
   }
 });
 
@@ -514,11 +517,11 @@ test('Android jobs expose installed host Boost headers to NDK CMake builds', asy
   const workflow = await readWorkflow('android.yml');
   const cmake = await readFile(new URL('../android/app/src/main/cpp/CMakeLists.txt', import.meta.url), 'utf8');
   assert.match(workflow, /^env:\n  BOOST_ROOT: \$\{\{ github\.workspace \}\}\/\.ci-boost$/m);
-  const unit = workflow.split('  unit-tests:\n')[1].split('  package-apks:\n')[0];
+  const unit = present(present(workflow.split('  unit-tests:\n')[1]).split('  package-apks:\n')[0]);
   assert.doesNotMatch(unit, /libboost-dev|\$BOOST_ROOT/);
   assert.match(unit, /--daemon --max-workers=2 '-Dorg.gradle.jvmargs=-Xmx1536m -Dfile.encoding=UTF-8' testDebugUnitTest jacocoDebugUnitTestReport/);
   for (const job of ['package-apks', 'release']) {
-    const source = workflow.split(`  ${job}:\n`)[1].split(/\n  [a-z-]+:\n/)[0];
+    const source = present(present(workflow.split(`  ${job}:\n`)[1]).split(/\n  [a-z-]+:\n/)[0]);
     assert.match(source, /apt-get install -y libboost-dev/);
     assert.match(source, /mkdir -p "\$BOOST_ROOT\/include"/);
     assert.match(source, /cp -R \/usr\/include\/boost "\$BOOST_ROOT\/include\/"/);
@@ -529,31 +532,31 @@ test('Android jobs expose installed host Boost headers to NDK CMake builds', asy
 test('Android emulator waits for every artifact producer before downloading coverage inputs', async () => {
   const workflow = await readWorkflow('android.yml');
   const jobs = [...workflow.matchAll(/^  ([a-z-]+):\n([\s\S]*?)(?=^  [a-z-]+:\n|$(?![\s\S]))/gm)];
-  const emulator = jobs.find(([, name]) => name === 'emulator-tests')[2];
-  const needs = emulator.match(/^    needs: (.+)$/m)[1];
+  const emulator = present(present(jobs.find(([, name]) => name === 'emulator-tests'))[2]);
+  const needs = present(present(emulator.match(/^    needs: (.+)$/m))[1]);
   const dependencies = needs.replace(/^\[|\]$/g, '').split(',').map(name => name.trim());
   const downloads = [...emulator.matchAll(/uses: actions\/download-artifact@v4\n        with:\n          name: (.+)/g)];
   assert.equal(downloads.length, 4);
   for (const [, artifact] of downloads) {
     const producers = jobs.filter(([, , source]) =>
-      [...source.matchAll(/uses: actions\/upload-artifact@v4\n        with:\n          name: (.+)/g)]
+      [...present(source).matchAll(/uses: actions\/upload-artifact@v4\n        with:\n          name: (.+)/g)]
         .some(([, name]) => name === artifact));
     assert.equal(producers.length, 1, `Expected one producer for ${artifact}`);
-    assert.ok(dependencies.includes(producers[0][1]), `${artifact} must wait for ${producers[0][1]}`);
+    assert.ok(dependencies.includes(present(present(producers[0])[1])), `${artifact} must wait for ${present(producers[0])[1]}`);
   }
 });
 
 test('Android jobs combine JVM and emulator coverage from staged project classes', async () => {
   const workflow = await readWorkflow('android.yml');
-  const unit = workflow.split('  unit-tests:\n')[1].split('  package-apks:\n')[0];
-  const packageApks = workflow.split('  package-apks:\n')[1].split('  emulator-tests:\n')[0];
-  const emulator = workflow.split('  emulator-tests:\n')[1].split('  release:\n')[0];
+  const unit = present(present(workflow.split('  unit-tests:\n')[1]).split('  package-apks:\n')[0]);
+  const packageApks = present(present(workflow.split('  package-apks:\n')[1]).split('  emulator-tests:\n')[0]);
+  const emulator = present(present(workflow.split('  emulator-tests:\n')[1]).split('  release:\n')[0]);
 
   for (const job of [unit, packageApks]) {
-    assert.match(job, /SOURCE_DATE_EPOCH=\$\(git log -1 --format=%ct HEAD\)/);
+    assert.match(present(job), /SOURCE_DATE_EPOCH=\$\(git log -1 --format=%ct HEAD\)/);
   }
-  assert.match(unit, /node --test android\/scripts\/run-connected-e2e\.test\.mjs/);
-  assert.match(unit, /node --test android\/scripts\/native-coverage\.test\.mjs/);
+  assert.match(unit, /node --test android\/scripts\/run-connected-e2e\.test\.mts/);
+  assert.match(unit, /node --test --experimental-test-coverage --test-coverage-lines=100 --test-coverage-branches=100 --test-coverage-functions=100 android\/scripts\/native-coverage\.test\.mts/);
   assert.match(unit, /bash android\/scripts\/test-prepare-native-coverage\.sh/);
   assert.match(unit, /bash android\/scripts\/test-collect-native-coverage\.sh/);
   assert.match(unit, /name: bookstr-android-jvm-exec-\$\{\{ github\.sha \}\}/);
@@ -578,7 +581,7 @@ test('Android jobs combine JVM and emulator coverage from staged project classes
   assert.match(emulator, /sdkmanager "platforms;android-35" "build-tools;35\.0\.0"/);
   assert.doesNotMatch(emulator, /sdkmanager[^\n]*\bndk\b|apt-get install[^\n]*libboost-dev/);
 
-  const reportStep = emulator.match(/- name: Generate full managed JaCoCo report\n([\s\S]*?)(?=\n      - )/)[0];
+  const reportStep = present(emulator.match(/- name: Generate full managed JaCoCo report\n([\s\S]*?)(?=\n      - )/))[0];
   assert.match(reportStep, /jacocoManagedFullDebugReport/);
   assert.doesNotMatch(reportStep, /testDebugUnitTest|assembleDebug|compileDebug/);
   assert.match(emulator, /name: bookstr-android-full-managed-coverage-\$\{\{ github\.sha \}\}/);
@@ -592,7 +595,7 @@ test('Obtainium releases use unique increasing versions and latest APK assets', 
   const resolver = await readFile(new URL('../android/scripts/android-release-version.mjs', import.meta.url), 'utf8');
   const publisher = await readFile(new URL('../android/scripts/publish-obtainium-release.sh', import.meta.url), 'utf8');
   const localReleaseHelper = await readFile(new URL('./release-android-apk.sh', import.meta.url), 'utf8');
-  const release = workflow.match(/^  release:\n[\s\S]*$/m)[0];
+  const release = present(workflow.match(/^  release:\n[\s\S]*$/m))[0];
 
   assert.match(gradle, /versionCode = providers\.gradleProperty\("bookstr\.versionCode"\)\.orNull\?\.toInt\(\) \?: timestampVersionCode/);
   assert.match(gradle, /versionName = providers\.gradleProperty\("bookstr\.versionName"\)\.orNull \?: "0\.1-\$versionTimestamp"/);
@@ -614,8 +617,8 @@ test('Obtainium releases use unique increasing versions and latest APK assets', 
   assert.match(release, /assembleRelease -Pbookstr.cxxCompilerLauncher=ccache "-Pbookstr\.versionCode=\$code" "-Pbookstr\.versionName=\$version"/);
   assert.match(release, /--no-configuration-cache --max-workers=2 assembleRelease/);
   assert.match(release, /run: bash android\/scripts\/publish-obtainium-release\.sh/);
-  assert.match(workflow, /name: Test Android release publisher\n        run: node --test android\/scripts\/publish-obtainium-release\.test\.mjs/);
-  assert.match(workflow, /Test Android release version resolver\n        run: node --test --experimental-test-coverage --test-coverage-lines=100 --test-coverage-branches=100 --test-coverage-functions=100 android\/scripts\/android-release-version\.test\.mjs/);
+  assert.match(workflow, /name: Test Android release publisher\n        run: node --test android\/scripts\/publish-obtainium-release\.test\.mts/);
+  assert.match(workflow, /Test Android release version resolver\n        run: node --test --experimental-test-coverage --test-coverage-lines=100 --test-coverage-branches=100 --test-coverage-functions=100 android\/scripts\/android-release-version\.test\.mts/);
   assert.match(publisher, /gh release create "\$tag" "\$apk"/);
   assert.match(publisher, /gh release upload "\$tag" "\$apk"/);
   assert.match(publisher, /--target "\$GITHUB_SHA"/);
@@ -628,7 +631,7 @@ test('Obtainium releases use unique increasing versions and latest APK assets', 
 
 test('release signing fails before writing a keystore when any secret is missing', async () => {
   const workflow = await readWorkflow('android.yml');
-  const script = workflow.match(/      - name: Restore release signing key\n[\s\S]*?        run: \|\n([\s\S]*?)(?=      - uses:)/)[1]
+  const script = present(present(workflow.match(/      - name: Restore release signing key\n[\s\S]*?        run: \|\n([\s\S]*?)(?=      - uses:)/))[1])
     .replace(/^          /gm, '');
   const secrets = { BOOKSTR_KEYSTORE_BASE64: 'present', BOOKSTR_KEYSTORE_PASSWORD: 'present', BOOKSTR_KEY_ALIAS: 'present', BOOKSTR_KEY_PASSWORD: 'present' };
   for (const missing of Object.keys(secrets)) {
@@ -670,11 +673,11 @@ test('Node.js runtime pin is shared by local development and every workflow', as
   );
   assert.equal(setupNodeSteps.length, 7);
   for (const step of setupNodeSteps) {
-    assert.match(step, /node-version-file: \.nvmrc/);
-    assert.doesNotMatch(step, /node-version:\s*\d/);
+    assert.match(present(step), /node-version-file: \.nvmrc/);
+    assert.doesNotMatch(present(step), /node-version:\s*\d/);
   }
 
-  const ci = workflows[0];
+  const ci = present(workflows[0]);
   assert.match(ci, /web:[\s\S]*?- '\.nvmrc'/);
   assert.match(ci, /electron:[\s\S]*?- '\.nvmrc'/);
   for (const name of ['android.yml', 'ios.yml']) {
@@ -693,7 +696,7 @@ test('Node.js runtime pin is shared by local development and every workflow', as
 test('failed Android unit runs retain their JUnit exception reports per attempt', async () => {
   const workflow = await readWorkflow('android.yml');
   const reportPath = 'android/app/build/test-results/testDebugUnitTest/TEST-*.xml';
-  const upload = workflow.split('      - name: Upload failed JVM test reports\n')[1].split('      - ')[0];
+  const upload = present(present(workflow.split('      - name: Upload failed JVM test reports\n')[1]).split('      - ')[0]);
   assert.ok(upload.includes(`if: always() && steps.unit_tests.outcome == 'failure' && hashFiles('${reportPath}') != ''`));
   assert.ok(upload.includes('uses: actions/upload-artifact@v4'));
   assert.ok(upload.includes('name: bookstr-android-unit-failures-${{ github.run_id }}-${{ github.run_attempt }}'));

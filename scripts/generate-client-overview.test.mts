@@ -1,3 +1,4 @@
+import { present } from '../web/tests/test-values.mts';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
@@ -36,25 +37,25 @@ test('rejects invalid roots, counts, missing fields, duplicates, and missing cli
   assert.throws(() => validateInventory({ version: 1, clients: [] }), /exactly four/);
 
   const missingField = inventory();
-  missingField.clients[0].reader = '   ';
+  present(missingField.clients[0]).reader = '   ';
   assert.throws(() => validateInventory(missingField), /missing reader/);
 
   const nonStringId = inventory();
-  nonStringId.clients[0].id = null;
+  present(nonStringId.clients[0]).id = null as unknown as string;
   assert.throws(() => validateInventory(nonStringId), /Client <unknown> is missing id/);
 
   const duplicate = inventory();
-  duplicate.clients[1].id = 'web';
+  present(duplicate.clients[1]).id = 'web';
   assert.throws(() => validateInventory(duplicate), /Duplicate client id/);
 
   const missingClient = inventory();
-  missingClient.clients[3].id = 'windows';
+  present(missingClient.clients[3]).id = 'windows';
   assert.throws(() => validateInventory(missingClient), /must include/);
 });
 
 test('renders deterministic markdown and escapes table delimiters and whitespace', () => {
   const value = inventory();
-  value.clients[0].shell = 'static | web\n shell';
+  present(value.clients[0]).shell = 'static | web\n shell';
   const rendered = renderOverview(value);
   assert.match(rendered, /^# Bookstr client capability matrix/);
   assert.match(rendered, /static \\| web shell/);
@@ -80,19 +81,19 @@ test('parses defaults and explicit command options', () => {
 
 test('generates output and accepts an identical checked result', async () => {
   const files = new Map([['/repo/input.json', JSON.stringify(inventory())]]);
-  const io = {
-    readFile: async (path) => {
+  const io = present({
+    readFile: async (path: string) => {
       if (!files.has(path)) throw new Error('missing');
-      return files.get(path);
+      return present(files.get(path));
     },
-    writeFile: async (path, value) => files.set(path, value),
-  };
+    writeFile: async (path: string, value: string) => files.set(path, value),
+  });
 
   assert.equal(
     await run(['--input', 'input.json', '--output', 'output.md'], io, '/repo'),
     'generated',
   );
-  assert.match(files.get('/repo/output.md'), /ELECTRON/);
+  assert.match(present(files.get('/repo/output.md')), /ELECTRON/);
   assert.equal(
     await run(['--check', '--input', 'input.json', '--output', 'output.md'], io, '/repo'),
     'checked',
@@ -104,13 +105,13 @@ test('check mode rejects missing, stale, and invalid generated data', async () =
     ['/repo/input.json', JSON.stringify(inventory())],
     ['/repo/output.md', 'stale'],
   ]);
-  const io = {
-    readFile: async (path) => {
+  const io = present({
+    readFile: async (path: string) => {
       if (!files.has(path)) throw new Error('missing');
-      return files.get(path);
+      return present(files.get(path));
     },
     writeFile: async () => assert.fail('check mode must not write'),
-  };
+  });
 
   await assert.rejects(
     run(['--check', '--input', 'input.json', '--output', 'missing.md'], io, '/repo'),

@@ -1,3 +1,4 @@
+import { present } from '../web/tests/test-values.mts';
 import assert from 'node:assert/strict';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -14,7 +15,7 @@ import {
   validateBaselines,
 } from './coverage-ratchet.mjs';
 
-const suite = (minimumTests = 2, metrics = { Lines: 90 }) => ({
+const suite = (minimumTests = 2, metrics: Record<string, number> = { Lines: 90 }) => ({
   minimumTests,
   source: 'https://github.com/guaka/bookstr/actions/runs/1',
   commit: 'a'.repeat(40),
@@ -81,14 +82,14 @@ test('parses CLI options and reads both JSON inputs', async () => {
     ['/repo/report.json', JSON.stringify(report())],
   ]);
   const result = await run(['--baseline', 'base.json', '--suite', 'web', '--report', 'report.json'], {
-    readFile: async path => files.get(path),
+    readFile: async path => present(files.get(path)),
   }, '/repo');
   assert.equal(result.suite, 'web');
 });
 
 test('CLI reports success and failure and invokes only matching modules', async () => {
-  const output = [];
-  const errors = [];
+  const output: string[] = [];
+  const errors: string[] = [];
   let failed = false;
   assert.equal(await cli([], { run: async () => ({ suite: 'web' }), writeOutput: value => output.push(value) }), 'passed');
   assert.deepEqual(output, ['web coverage ratchet passed\n']);
@@ -107,16 +108,16 @@ test('CLI reports success and failure and invokes only matching modules', async 
   assert.equal(process.exitCode, 1);
   process.exitCode = previousExitCode;
   let nonMainCalls = 0;
-  const nonMain = async () => {
+  const nonMain = present(async () => {
     nonMainCalls += 1;
     return 'called';
-  };
+  });
   assert.equal(await invokeIfMain('file:///tool.mjs', ['node'], nonMain), 'imported');
   assert.equal(await invokeIfMain('file:///tool.mjs', ['node', '/other.mjs'], nonMain), 'imported');
   assert.equal(nonMainCalls, 0);
   assert.equal(await nonMain(), 'called');
   assert.equal(nonMainCalls, 1);
-  assert.equal(await invokeIfMain('file:///tool.mjs', ['node', '/tool.mjs'], async () => 'called'), 'called');
+  assert.equal(await invokeIfMain('file:///tool.mjs', ['node', '/tool.mjs'], present(async () => 'called')), 'called');
 });
 
 test('default file and process adapters run the real CLI path', async () => {

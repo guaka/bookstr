@@ -1,3 +1,4 @@
+import { present } from '../../web/tests/test-values.mts';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -109,7 +110,7 @@ for (const value of ['invalid', '-1']) {
   });
 }
 
-function environmentForSourceDate(epoch) {
+function environmentForSourceDate(epoch: unknown) {
   const environment = { ...process.env };
   delete environment.SOURCE_DATE_EPOCH;
   if (epoch !== undefined) environment.SOURCE_DATE_EPOCH = String(epoch);
@@ -130,9 +131,9 @@ test('managed full JaCoCo report validates downloaded inputs without compiling o
   assert.match(guard, /Missing JVM JaCoCo execution data/);
   assert.match(guard, /Missing emulator JaCoCo execution data/);
   assert.match(guard, /Missing staged Android project class files/);
-  assert.doesNotMatch(guard.split('    doLast {')[1], /fileTree\(|managedJvmExecutionData\.get\(|managedDeviceExecutionData\.get\(|stagedManagedCoverageClasses\.get\(/,
+  assert.doesNotMatch(present(guard.split('    doLast {')[1]), /fileTree\(|managedJvmExecutionData\.get\(|managedDeviceExecutionData\.get\(|stagedManagedCoverageClasses\.get\(/,
     'task action must not call Project APIs or resolve providers while executing');
-  const capturedInputs = guard.split('    doLast {')[0];
+  const capturedInputs = present(guard.split('    doLast {')[0]);
   assert.match(capturedInputs, /managedJvmExecutionData\.get\(\)\.asFile/);
   assert.match(capturedInputs, /managedDeviceExecutionData\.get\(\)\.asFile/);
   assert.match(capturedInputs, /managedCoverageClassesDir = stagedManagedCoverageClasses\.get\(\)\.asFile/);
@@ -235,7 +236,7 @@ test('managed coverage input guard reuses the configuration cache', () => {
       `-PcoverageTestBuildDir=${buildDirectory}`,
       ':app:verifyManagedDebugCoverageInputs',
     ];
-    const runGuard = () => spawnSync(command[0], command.slice(1), {
+    const runGuard = () => spawnSync(command[0] as string, command.slice(1), {
       cwd: androidDirectory,
       encoding: 'utf8',
       timeout: 300_000,

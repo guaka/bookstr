@@ -5,7 +5,7 @@ import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
-const read = path => readFileSync(new URL(path, new URL('../', import.meta.url)), 'utf8');
+const read = (path: string) => readFileSync(new URL(path, new URL('../', import.meta.url)), 'utf8');
 
 test('unused iOS icon exports stay outside the app resource manifests', () => {
   const manifests = ['ios/project.yml', 'ios/BookstrIOS.xcodeproj/project.pbxproj'];
@@ -23,7 +23,7 @@ test('unused iOS icon exports stay outside the app resource manifests', () => {
     assert.equal(bytes.subarray(0, 8).toString('hex'), '89504e470d0a1a0a', path);
   }
   const icons = JSON.parse(read('ios/BookstrIOS/Assets.xcassets/AppIcon.appiconset/Contents.json'));
-  assert.ok(icons.images.some(image => image.filename === 'AppIcon.png'));
+  assert.ok(icons.images.some((image: {filename?: string}) => image.filename === 'AppIcon.png'));
   assert.match(read('ios/project.yml'), /ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon/);
   assert.match(read('ios/BookstrIOS.xcodeproj/project.pbxproj'), /ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon/);
 });

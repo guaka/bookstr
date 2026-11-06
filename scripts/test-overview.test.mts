@@ -1,3 +1,4 @@
+import { present } from '../web/tests/test-values.mts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
@@ -40,16 +41,16 @@ test('normalizes platform test reports', () => {
 });
 
 test('normalizes Istanbul and JaCoCo coverage', () => {
-  assert.equal(parseIstanbul({ total: { statements: { pct: 90 }, branches: { pct: 80 }, functions: { pct: 70 }, lines: { pct: 60 } } })[0].value, 90);
+  assert.equal(present(parseIstanbul({ total: { statements: { pct: 90 }, branches: { pct: 80 }, functions: { pct: 70 }, lines: { pct: 60 } } })[0]).value, 90);
   const metrics = parseJacoco('<report><counter covered="8" missed="2" type="LINE"/><counter type="METHOD" missed="1" covered="9"/><counter type="BRANCH" missed="3" covered="7"/><counter type="INSTRUCTION" missed="4" covered="6"/></report>');
   assert.deepEqual(metrics.map(metric => metric.value), [60, 70, 90, 80]);
-  assert.equal(parseXCCov({ targets: [{ coveredLines: 75, executableLines: 100 }] })[0].value, 75);
-  assert.equal(parseXCCov({
+  assert.equal(present(parseXCCov({ targets: [{ coveredLines: 75, executableLines: 100 }] })[0]).value, 75);
+  assert.equal(present(parseXCCov({
     targets: [
       { name: 'BookstrIOS.app', coveredLines: 30, executableLines: 100 },
       { name: 'BookstrIOSTests.xctest', coveredLines: 900, executableLines: 900 },
     ],
-  })[0].value, 30);
+  })[0]).value, 30);
   assert.deepEqual(parseLLVM({ data: [{ files: [
     { filename: '/repo/ios/BookstrIOS/Sources/Data/Store.swift', summary: {
       regions: { count: 10, covered: 7 }, branches: { count: 4, covered: 2 },
@@ -59,14 +60,14 @@ test('normalizes Istanbul and JaCoCo coverage', () => {
       regions: { count: 100, covered: 100 }, lines: { count: 100, covered: 100 },
     } },
   ] }] }).map(metric => metric.value), [70, 50, 80, 75]);
-  assert.equal(parseLLVM({ data: [{ files: [{
+  assert.equal(present(parseLLVM({ data: [{ files: [{
     filename: '/repo/ios/BookstrIOS/Sources/Data/Store.swift',
     summary: { regions: { count: 2, covered: 2 }, lines: { count: 4, covered: 2 } },
     segments: [
       [10, 1, 1, true, true, false], [10, 4, 0, true, true, false],
       [11, 1, 0, true, true, false],
     ],
-  }] }] }).find(metric => metric.label === 'Lines').value, 50);
+  }] }] }).find(metric => metric.label === 'Lines')).value, 50);
 });
 
 test('normalizes Node test-runner coverage from TAP and spec reports', () => {
@@ -78,7 +79,7 @@ test('normalizes Node test-runner coverage from TAP and spec reports', () => {
       { label: 'Functions', value: 100, suffix: '%' },
     ],
   );
-  assert.equal(parseNodeCoverage('ℹ all files | 99.50 | 80.00 | 98.25 |')[0].value, 99.5);
+  assert.equal(present(parseNodeCoverage('ℹ all files | 99.50 | 80.00 | 98.25 |')[0]).value, 99.5);
   assert.deepEqual(parseNodeCoverage('coverage unavailable'), []);
 });
 

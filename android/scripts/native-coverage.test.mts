@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import test from "node:test";
 
@@ -10,11 +10,11 @@ const targetFilename = "/runner/work/bookstr/android/src/main/cpp/torrent_jni.cp
 const vendorFilename = "/runner/work/bookstr/android/app/src/main/cpp/_deps/libtorrent/include/libtorrent/session.hpp";
 const header = "Filename Regions Missed Regions Cover Functions Missed Functions Executed Lines Missed Lines Cover Branches Missed Branches Cover";
 
-function metric(count, covered) {
+function metric(count: number, covered: number) {
   return { count, covered, notcovered: count - covered, percent: count === 0 ? 0 : covered * 100 / count };
 }
 
-function exportFile(filename, { lines = 212, coveredLines = 212, branches = 104, coveredBranches = 79, regions = 134, coveredRegions = 122 } = {}) {
+function exportFile(filename: string, { lines = 212, coveredLines = 212, branches = 104, coveredBranches = 79, regions = 134, coveredRegions = 122 } = {}) {
   return {
     filename,
     summary: {
@@ -25,12 +25,12 @@ function exportFile(filename, { lines = 212, coveredLines = 212, branches = 104,
   };
 }
 
-function exportJson({ target = exportFile(targetFilename), vendor = exportFile(vendorFilename, { lines: 50, coveredLines: 4, branches: 8, coveredBranches: 1, regions: 60, coveredRegions: 3 }), extraFiles = [], files = null } = {}) {
+function exportJson({ target = exportFile(targetFilename), vendor = exportFile(vendorFilename, { lines: 50, coveredLines: 4, branches: 8, coveredBranches: 1, regions: 60, coveredRegions: 3 }), extraFiles = [], files = null }: {target?: unknown; vendor?: unknown; extraFiles?: unknown[]; files?: unknown[] | null} = {}) {
   return JSON.stringify({ data: [{ files: files || [target, vendor, ...extraFiles], totals: {} }], type: "llvm.coverage.json.export", version: "2.0.1" });
 }
 
-function row(filename, { regions = 134, missedRegions = 12, functions = 14, missedFunctions = 0, executedFunctions = 14, lines = 212, missedLines = 0, branches = 104, missedBranches = 25 } = {}) {
-  const pct = (count, missed) => count === 0 ? "-" : `${((count - missed) * 100 / count).toFixed(2)}%`;
+function row(filename: string, { regions = 134, missedRegions = 12, functions = 14, missedFunctions = 0, executedFunctions = 14, lines = 212, missedLines = 0, branches = 104, missedBranches = 25 } = {}) {
+  const pct = (count: number, missed: number) => count === 0 ? "-" : `${((count - missed) * 100 / count).toFixed(2)}%`;
   return `${filename} ${regions} ${missedRegions} ${pct(regions, missedRegions)} ${functions} ${missedFunctions} ${executedFunctions} ${lines} ${missedLines} ${pct(lines, missedLines)} ${branches} ${missedBranches} ${pct(branches, missedBranches)}`;
 }
 
@@ -40,7 +40,7 @@ const completeReport = [
   row("TOTAL", { functions: 14, regions: 134, missedRegions: 12, lines: 212, branches: 104, missedBranches: 25 }),
 ].join("\n");
 
-function sourceFixture(root) {
+function sourceFixture(root: string) {
   const repoRoot = join(root, "repo");
   const sourceRoot = join(repoRoot, "android/app/src/main/cpp");
   mkdirSync(join(sourceRoot, "_deps"), { recursive: true });
@@ -89,7 +89,7 @@ process.exit(2);
   return { root, options, report, exportData, output, source, sourceRoot };
 }
 
-function withFakeTools({ report = completeReport, exportData = exportJson() }, action) {
+function withFakeTools<T>({ report = completeReport, exportData = exportJson() }, action: () => T) {
   const oldReport = process.env.BOOKSTR_TEST_LLVM_REPORT;
   const oldExport = process.env.BOOKSTR_TEST_LLVM_EXPORT;
   const oldArgs = process.env.BOOKSTR_TEST_LLVM_ARGS;
@@ -103,18 +103,18 @@ function withFakeTools({ report = completeReport, exportData = exportJson() }, a
     return { result, stdout };
   } finally {
     process.stdout.write = oldWrite;
-    for (const [name, old] of [["BOOKSTR_TEST_LLVM_REPORT", oldReport], ["BOOKSTR_TEST_LLVM_EXPORT", oldExport], ["BOOKSTR_TEST_LLVM_ARGS", oldArgs]]) {
+    for (const [name, old] of [["BOOKSTR_TEST_LLVM_REPORT", oldReport], ["BOOKSTR_TEST_LLVM_EXPORT", oldExport], ["BOOKSTR_TEST_LLVM_ARGS", oldArgs]] as Array<[string, string | undefined]>) {
       if (old === undefined) delete process.env[name];
       else process.env[name] = old;
     }
   }
 }
 
-function coverageArgs(options, requireComplete = "false") {
+function coverageArgs(options: Record<string, string>, requireComplete = "false") {
   return Object.entries({ ...options, "require-complete": requireComplete }).flatMap(([key, value]) => [`--${key}`, value]);
 }
 
-async function invokeCli(args, { report = completeReport, exportData = exportJson() } = {}) {
+async function invokeCli(args: string[], { report = completeReport, exportData = exportJson() } = {}) {
   const scriptPath = fileURLToPath(new URL("./native-coverage.mjs", import.meta.url));
   let stderr = "";
   let exitCode = 0;

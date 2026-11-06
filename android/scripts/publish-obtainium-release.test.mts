@@ -69,7 +69,7 @@ fi
   if (removeApk) await unlink(apkPath);
   if (emptyApk) await writeFile(apkPath, '');
 
-  const env = {
+  const env: NodeJS.ProcessEnv = {
     ...process.env,
     PATH: `${binDirectory}:${process.env.PATH}`,
     GH_LOG: logFile,

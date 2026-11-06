@@ -1,3 +1,5 @@
+import type { GithubGallery } from './pr-screenshot-gallery.mjs';
+import { present } from '../web/tests/test-values.mts';
 import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -41,8 +43,8 @@ test('publishes screenshots and creates the workflow gallery comment', async () 
   const artifact = join(root, 'bookstr-e2e-screenshots-android-42');
   await mkdir(artifact);
   await writeFile(join(artifact, 'library-filter.png'), png);
-  const uploaded = [];
-  const comments = [];
+  const uploaded: Array<{path: string}> = [];
+  const comments: Array<{body: string}> = [];
   const notFound = Object.assign(new Error('missing'), { status: 404 });
   const github = {
     paginate: async () => [],
@@ -50,20 +52,20 @@ test('publishes screenshots and creates the workflow gallery comment', async () 
       git: { getRef: async () => ({ data: { object: { sha: 'base123' } } }) },
       repos: {
         getContent: async () => { throw notFound; },
-        createOrUpdateFileContents: async payload => {
+        createOrUpdateFileContents: async (payload: {path: string}) => {
           uploaded.push(payload);
           return { data: { commit: { sha: 'abc123' } } };
         },
       },
       issues: {
         listComments: async () => ({ data: [] }),
-        createComment: async payload => { comments.push(payload); },
+        createComment: async (payload: {body: string}) => { comments.push(payload); },
       },
     },
   };
 
   const count = await publishScreenshotGallery({
-    github,
+    github: github as unknown as GithubGallery,
     owner: 'guaka',
     repo: 'bookstr',
     pullRequests: [{ number: 76 }],
@@ -74,6 +76,6 @@ test('publishes screenshots and creates the workflow gallery comment', async () 
   });
   assert.equal(count, 1);
   assert.equal(uploaded.length, 1);
-  assert.match(uploaded[0].path, /^docs\/e2e-screenshots\/pr-76\/android-ci\//);
-  assert.match(comments[0].body, /raw\.githubusercontent\.com\/guaka\/bookstr\/abc123/);
+  assert.match(present(uploaded[0]).path, /^docs\/e2e-screenshots\/pr-76\/android-ci\//);
+  assert.match(present(comments[0]).body, /raw\.githubusercontent\.com\/guaka\/bookstr\/abc123/);
 });

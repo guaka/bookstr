@@ -69,8 +69,8 @@ test("routes all suites for changed global schema, missing suites, or invalid ba
 });
 
 test("fails closed for every malformed suite field", () => {
-  const variants = [];
-  const updateSuite = (modify) => {
+  const variants: string[] = [];
+  const updateSuite = (modify: (suite: Record<string, unknown> & {metrics: Record<string, unknown>}) => void) => {
     const value = structuredClone(baseline);
     modify(value.suites.ios);
     variants.push(JSON.stringify(value));
@@ -81,7 +81,7 @@ test("fails closed for every malformed suite field", () => {
   updateSuite((suite) => { suite.source = "  "; });
   updateSuite((suite) => { suite.commit = 3; });
   updateSuite((suite) => { suite.commit = "bad"; });
-  updateSuite((suite) => { suite.metrics = []; });
+  updateSuite((suite) => { suite.metrics = [] as unknown as Record<string, unknown>; });
   updateSuite((suite) => { suite.metrics = {}; });
   updateSuite((suite) => { delete suite.metrics.Lines; });
   updateSuite((suite) => { suite.metrics.Lines = "100"; });

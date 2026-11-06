@@ -1,3 +1,4 @@
+import { present } from '../../web/tests/test-values.mts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync } from 'node:fs';
@@ -27,7 +28,7 @@ const failedTestLog = [
   'INSTRUMENTATION_CODE: -1',
 ].join('\n');
 
-async function fixture({ device = 'emulator', instrumentation = passLog, coverage = 'fresh-coverage', pullFailure = false, nativePullFailure = false, installFailure = '', hostCoverage = null } = {}) {
+async function fixture({ device = 'emulator', instrumentation = passLog, coverage = 'fresh-coverage', pullFailure = false, nativePullFailure = false, installFailure = '', hostCoverage = null }: {device?: string; instrumentation?: string; coverage?: string | null; pullFailure?: boolean; nativePullFailure?: boolean; installFailure?: string; hostCoverage?: string | null} = {}) {
   const cwd = await mkdtemp(join(tmpdir(), 'connected-e2e-contract-'));
   const sdk = join(cwd, 'sdk');
   const platformTools = join(sdk, 'platform-tools');
@@ -126,7 +127,7 @@ exit 1
     deviceCoverage,
     coverageFile,
     nativeOutput,
-    async run({ optIn = true, nativeCoverage = false, args = ['--prebuilt', appApk, testApk], ...overrides } = {}) {
+    async run({ optIn = true, nativeCoverage = false, args = ['--prebuilt', appApk, testApk], ...overrides }: {optIn?: boolean; nativeCoverage?: boolean; args?: string[]; ANDROID_SERIAL?: string; FAKE_INSTRUMENT_STATUS?: string} = {}) {
       const env = {
         ...process.env,
         ANDROID_HOME: sdk,
@@ -190,7 +191,7 @@ test('native coverage prepares after installs and collects a fresh profile after
     const testInstall = calls.indexOf(`install -r ${f.testApk}`);
     const prepare = calls.findIndex(call => call.includes('shell run-as app.bookstr mkdir -p cache files/torrent-downloads'));
     const instrument = calls.indexOf('shell am instrument -w -r -e coverage true -e coverageFile /data/user/0/app.bookstr/files/bookstr-coverage.ec app.bookstr.test/app.bookstr.BookstrTestRunner');
-    const listProfiles = calls.map((call, index) => call.includes('find cache -type f -name bookstr-native-coverage-*.profraw') ? index : -1).filter(index => index >= 0).at(-1);
+    const listProfiles = present(calls.map((call, index) => call.includes('find cache -type f -name bookstr-native-coverage-*.profraw') ? index : -1).filter(index => index >= 0).at(-1));
     const pullProfile = calls.findIndex(call => call.includes('cat cache/bookstr-native-coverage-1.profraw'));
     assert.ok(safety >= 0 && appInstall > safety && testInstall > appInstall);
     assert.ok(prepare > testInstall, 'profile preparation happens after both APK installs');

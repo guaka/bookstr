@@ -94,3 +94,14 @@ test('finds the highest published Android run number and accepts legacy release 
   ]), 106);
   assert.throws(() => latestPublishedAndroidRunNumber(null), /releases must be an array/);
 });
+
+
+test('release timestamps reject non-string values before date coercion', () => {
+  for (const value of [null, 1, Symbol('timestamp'), new Date('2026-11-06T00:00:00Z')]) {
+    assert.throws(() => formatUtcReleaseTimestamp(value), /valid ISO timestamp/);
+  }
+});
+
+test('published run numbers ignore malformed release entries', () => {
+  assert.equal(latestPublishedAndroidRunNumber([undefined, null, 1, 'malformed', {}]), 0);
+});
