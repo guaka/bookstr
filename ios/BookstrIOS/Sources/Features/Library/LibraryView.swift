@@ -126,37 +126,7 @@ struct LibraryView: View {
                         }
                     }
                     ForEach(sortedExternalFavorites) { favorite in
-                        Button {
-                            if let book = CatalogRepository.fromExternalFavorite(favorite) {
-                                open(book)
-                            } else {
-                                openError = "This favorite does not include a readable publication URL."
-                            }
-                        } label: {
-                            BookListDetails(title: displayTitle(favorite), author: favorite.author ?? "Unknown author",
-                                            year: favorite.year, format: favorite.format, language: nil,
-                                            publisher: favorite.url == nil ? nil : "Remote publication",
-                                            coverURL: favorite.coverUrl,
-                                            bookID: favorite.key,
-                                            preferDiscoveredCover: true,
-                                            rights: favorite.rights)
-                                .textSelection(.enabled)
-
-                        }
-                        .buttonStyle(.plain)
-                        .disabled(openingBookID != nil)
-                        .bookstrListRow()
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .contextMenu {
-                            Button("Rights details") {
-                                rightsDetails = RightsDetailsItem(
-                                    title: favorite.title, author: favorite.author, year: favorite.year,
-                                    format: favorite.format, rights: favorite.rights,
-                                    coverURL: favorite.coverUrl, bookID: favorite.key,
-                                    preferDiscoveredCover: true
-                                )
-                            }
-                        }
+                        externalFavoriteRow(favorite)
                     }
                 }
             }
@@ -313,6 +283,60 @@ struct LibraryView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .contentShape(Rectangle())
+    }
+
+    private func externalFavoriteRow(_ favorite: ExternalFavorite) -> some View {
+        Button(action: { openExternalFavorite(favorite) }) {
+            externalFavoriteDetails(favorite)
+        }
+        .buttonStyle(.plain)
+        .disabled(openingBookID != nil)
+        .accessibilityIdentifier("library-favorite-\(favorite.key)")
+        .bookstrListRow()
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .contextMenu {
+            Button("Rights details") { showRightsDetails(for: favorite) }
+        }
+    }
+
+    private func openExternalFavorite(_ favorite: ExternalFavorite) {
+        guard let book = CatalogRepository.fromExternalFavorite(favorite) else {
+            openError = "This favorite does not include a readable publication URL."
+            return
+        }
+        open(book)
+    }
+
+    private func externalFavoriteDetails(_ favorite: ExternalFavorite) -> some View {
+        let title = displayTitle(favorite)
+        let author = favorite.author ?? "Unknown author"
+        let publisher: String? = favorite.url == nil ? nil : "Remote publication"
+        return BookListDetails(
+            title: title,
+            author: author,
+            year: favorite.year,
+            format: favorite.format,
+            language: nil,
+            publisher: publisher,
+            coverURL: favorite.coverUrl,
+            bookID: favorite.key,
+            preferDiscoveredCover: true,
+            rights: favorite.rights
+        )
+        .textSelection(.enabled)
+    }
+
+    private func showRightsDetails(for favorite: ExternalFavorite) {
+        rightsDetails = RightsDetailsItem(
+            title: favorite.title,
+            author: favorite.author,
+            year: favorite.year,
+            format: favorite.format,
+            rights: favorite.rights,
+            coverURL: favorite.coverUrl,
+            bookID: favorite.key,
+            preferDiscoveredCover: true
+        )
     }
 
     private func open(_ book: CatalogBook) {
