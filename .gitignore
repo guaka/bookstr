@@ -69,6 +69,7 @@ android/.kotlin/
 /desktop/library-import.js
 /desktop/library-store.js
 /desktop/main.js
+/desktop/open-books.js
 /desktop/mtp-session.js
 /desktop/playwright.config.js
 /desktop/preload.js
