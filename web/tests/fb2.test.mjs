@@ -40,22 +40,22 @@ test('validates portable FB2 reading locations', () => {
 test('FB2 reader asset is wired to structural parsing and safe progress reporting', () => {
   assert.match(reader, /import\s*\{\s*parseFB2\s*\}\s*from ['"]\.\/fb2\.js['"]/);
   assert.match(reader, /window\.loadFB2\s*=\s*async/);
-  assert.match(reader, /parseFB2\(decode\(base64\),document\)/);
-  assert.match(reader, /type:'bookstr-reader-progress'/);
-  assert.match(reader, /furthestProgression:furthest/);
-  assert.match(reader, /cfi:locator\(\)/);
+  assert.match(reader, /parseFB2\(decode\(base64\),\s*document\)/);
+  assert.match(reader, /type:\s*'bookstr-reader-progress'/);
+  assert.match(reader, /furthestProgression:\s*furthest/);
+  assert.match(reader, /cfi:\s*locator\(\)/);
   assert.match(reader, /window\.nextPage/);
   assert.match(reader, /window\.prevPage/);
   assert.match(reader, /--reader-padding:24px/);
   assert.match(reader, /settings\.readerPadding/);
-  assert.match(reader, /window\.setReaderTypography=\(font,alignment,padding\)/);
+  assert.match(reader, /window\.setReaderTypography\s*=\s*\(font,\s*alignment,\s*padding\)/);
 });
 
 test('FB2 parser asset rejects active XML content and external navigation', () => {
   assert.match(fb2Source, /<!DOCTYPE\|<!ENTITY/);
   assert.match(fb2Source, /application\/x-fictionbook\+xml/);
   assert.match(fb2Source, /application\/fb2\+xml/);
-  assert.match(fb2Source, /getAttribute\('l:href'\)\s*\|\|\s*child\.getAttribute\('href'\)/);
+  assert.match(fb2Source, /getAttribute\('l:href'\)\s*\|\|\s*child(?:Element)?\.getAttribute\('href'\)/);
   assert.match(fb2Source, /\^#\[-A-Za-z0-9_\.:\]\+\$/);
   assert.match(fb2Source, /createTextNode/);
   assert.doesNotMatch(fb2Source, /innerHTML\s*=/);

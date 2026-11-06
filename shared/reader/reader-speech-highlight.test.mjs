@@ -5,7 +5,7 @@ import test from 'node:test';
 const reader = await readFile(new URL('./reader.html', import.meta.url), 'utf8');
 
 test('speech progress uses a muted sage highlight distinct from known-word gold', () => {
-  assert.match(reader, /window\.showSpeechProgress = function\(start, end\)/);
+  assert.match(reader, /window\.showSpeechProgress = function\s*\(start, end\)/);
   assert.match(
     reader,
     /\.bookstr-speaking\{background:rgba\(127,184,167,\.18\)!important;/,

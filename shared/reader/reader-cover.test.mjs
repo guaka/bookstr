@@ -3,15 +3,12 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 import vm from 'node:vm';
+import { functionSource } from '../../web/tests/source-tools.mts';
 
 const path = fileURLToPath(new URL('./reader.html', import.meta.url));
 const html = readFileSync(path, 'utf8');
-const start = html.indexOf('    function includeOpeningSpineItems(');
-const end = html.indexOf('    function installKnownWordNavigation', start);
 const context = vm.createContext({});
-vm.runInContext(html.slice(start, end), context, {
-  filename: path, lineOffset: html.slice(0, start).split('\n').length - 1,
-});
+vm.runInContext(functionSource(html, 'includeOpeningSpineItems'), context, { filename: path });
 
 test('opening covers stay in reading order without changing saved spine indexes', () => {
   const items = [{ index: 0, linear: false }, { index: 1, linear: false }, { index: 2, linear: true }, { index: 3, linear: false }];
@@ -37,16 +34,13 @@ test('cover layout never clips mixed images and index or sizes media against its
 });
 
 test('theme image bounds use the outer viewport height for every theme', () => {
-  const start = html.indexOf('    function registerThemes()');
-  const end = html.indexOf('    function openBook(', start);
+  const registerThemes = functionSource(html, 'registerThemes');
   const registered = [];
   const context = vm.createContext({
     window: { innerHeight: 844 },
     rendition: { themes: { register: (name, rules) => registered.push({ name, rules }) } },
   });
-  vm.runInContext(html.slice(start, end), context, {
-    filename: path, lineOffset: html.slice(0, start).split('\n').length - 1,
-  });
+  vm.runInContext(registerThemes, context, { filename: path });
   context.registerThemes();
   assert.equal(registered.length, 3);
   for (const theme of registered) {
@@ -78,11 +72,9 @@ test('opening a book includes non-linear front matter before the first display',
     rememberReaderHighlights: noop, activeReaderHighlights: { words: [], marks: [] },
     reportLocation: noop, reportReaderStartupStage: stage => stages.push(stage),
   });
-  // Use the real front-matter function in this reader context too.
-  vm.runInContext(html.slice(start, end), context, { filename: path, lineOffset: html.slice(0, start).split('\n').length - 1 });
-  const openStart = html.indexOf('    function openBook(');
-  const openEnd = html.indexOf('    function cfiProgression(', openStart);
-  vm.runInContext(html.slice(openStart, openEnd), context, { filename: path, lineOffset: html.slice(0, openStart).split('\n').length - 1 });
+  // Use the real front-matter and open-book functions in this reader context too.
+  vm.runInContext(functionSource(html, 'includeOpeningSpineItems'), context, { filename: path });
+  vm.runInContext(functionSource(html, 'openBook'), context, { filename: path });
   await context.openBook('fixture', '', 'paper', '', 'opening');
   assert.deepEqual(calls, [{ target: undefined, included: true }]);
   assert.deepEqual(stages, ['parsing', 'rendering', 'ready']);
