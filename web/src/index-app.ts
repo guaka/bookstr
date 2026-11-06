@@ -1,14 +1,6 @@
 const FAVORITES_KEY = 'bookstr_nostr_favorites_v1';
 
-type DictionaryPack = {
-  id: string;
-  source: string;
-  target: string;
-  label: string;
-  bytes: ArrayBuffer;
-  size: number;
-  lastUsed: number;
-};
+import type { DictionaryPack } from './dictionary-store.js';
 type DictionarySqlRuntime = {
   Database: new (bytes?: Uint8Array) => {
     exec(sql: string): unknown;
@@ -229,7 +221,6 @@ type PageElements = {
         ? 'app://bookstr/api'
         : 'https://books-api.guaka.org/api';
       const WIKDICT_BASE = `${BOOKS_API_BASE}/dictionaries`;
-      const DICTIONARY_DB_NAME = 'bookstr_dictionaries_v1';
       const DICTIONARY_STORAGE_LIMIT = 250 * 1024 * 1024;
       const BOOK_CACHE_DB_NAME = 'bookstr_epub_cache_v1';
       const BOOK_CACHE_STORAGE_LIMIT = 300 * 1024 * 1024;
@@ -558,7 +549,7 @@ export type IndexAppPageBindings = {
       let activeSearchGeneration = 0;
       let libcatPage: { query: string; type: string; offset: number; generation: number } | null = null;
 
-      let dictionaryDbPromise: Promise<IDBDatabase> | undefined;
+      let dictionaryStorePromise: Promise<typeof import('./dictionary-store.js')> | undefined;
       let sqlRuntimePromise: Promise<DictionarySqlRuntime> | undefined;
       let opdsSourcesModule: Promise<typeof import('./opds-sources.js')> | undefined;
       let desktopNip46QrUri = '';
@@ -569,46 +560,21 @@ export type IndexAppPageBindings = {
         nip7Status.classList.add('hidden');
       }
 
-      function dictionaryDb(): Promise<IDBDatabase> {
-        if (dictionaryDbPromise) return dictionaryDbPromise;
-        dictionaryDbPromise = new Promise((resolve, reject) => {
-          const request = indexedDB.open(DICTIONARY_DB_NAME, 1);
-          request.onerror = () => reject(request.error);
-          request.onupgradeneeded = () => {
-            request.result.createObjectStore('packs', { keyPath: 'id' });
-          };
-          request.onsuccess = () => resolve(request.result);
-        });
-        return dictionaryDbPromise;
+      function dictionaryStore(): Promise<typeof import('./dictionary-store.js')> {
+        if (!dictionaryStorePromise) dictionaryStorePromise = import('./dictionary-store.js');
+        return dictionaryStorePromise;
       }
 
       async function dictionaryRecords(): Promise<DictionaryPack[]> {
-        const db = await dictionaryDb();
-        return new Promise((resolve, reject) => {
-          const request = db.transaction('packs').objectStore('packs').getAll();
-          request.onerror = () => reject(request.error);
-          request.onsuccess = () => resolve((request.result || []) as DictionaryPack[]);
-        });
+        return (await dictionaryStore()).openDictionaryStore().records();
       }
 
       async function dictionaryPut(record: DictionaryPack): Promise<void> {
-        const db = await dictionaryDb();
-        return new Promise((resolve, reject) => {
-          const transaction = db.transaction('packs', 'readwrite');
-          transaction.objectStore('packs').put(record);
-          transaction.onerror = () => reject(transaction.error);
-          transaction.oncomplete = () => resolve();
-        });
+        return (await dictionaryStore()).openDictionaryStore().put(record);
       }
 
       async function dictionaryDelete(id: string): Promise<void> {
-        const db = await dictionaryDb();
-        return new Promise((resolve, reject) => {
-          const transaction = db.transaction('packs', 'readwrite');
-          transaction.objectStore('packs').delete(id);
-          transaction.onerror = () => reject(transaction.error);
-          transaction.oncomplete = () => resolve();
-        });
+        return (await dictionaryStore()).openDictionaryStore().delete(id);
       }
 
       function sqlRuntime(): Promise<DictionarySqlRuntime> {

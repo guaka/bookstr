@@ -23,6 +23,7 @@
     "nip17-fetch",
     "device-pairing",
     "webtorrent-transfer",
+    "dictionary-store",
     "fb2",
     "pdf-reader"
   ],
