@@ -77,6 +77,15 @@ class SpeechSettingsTest {
         assertEquals("kokoro_en", restored.voice("en"))
     }
 
+    @Test fun portugalVoiceResolvesCatalogLanguageAliasesWithoutOverwritingBrazil() {
+        val prefs = RuntimeEnvironment.getApplication().getSharedPreferences("speech-portugal-test", Context.MODE_PRIVATE)
+        val settings = SpeechSettings(prefs)
+        settings.setVoice("pt_PT", "kokoro_pt_pt")
+        settings.setVoice("pt-BR", "brazil")
+        for (alias in listOf("por", "Portuguese", "pt", "pt-PT")) assertEquals("kokoro_pt_pt", settings.voice(alias))
+        assertEquals("brazil", settings.voice("pt-br"))
+    }
+
     @Test fun storesClampedReadingRatePerLanguageAcrossRepositoryRecreation() {
         val prefs = RuntimeEnvironment.getApplication().getSharedPreferences("speech-rate-test", Context.MODE_PRIVATE)
         val settings = SpeechSettings(prefs)

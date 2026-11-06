@@ -215,7 +215,7 @@ fun SettingsScreen(
                             Text(if (connectingAmber) "Connecting…" else "Connect phone signer")
                         }
                     }
-                    if (amberAvailable) {
+                    else if (amberAvailable) {
                         Button(
                             onClick = onConnectAmber,
                             enabled = !connectingAmber,

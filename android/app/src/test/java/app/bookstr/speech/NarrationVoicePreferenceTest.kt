@@ -22,9 +22,39 @@ class NarrationVoicePreferenceTest {
         var selectedLocale: Locale? = null
         override fun getVoices(): Set<Voice> = setOf(dutch)
         override fun setVoice(voice: Voice): Int { selected = voice; return SUCCESS }
+        override fun synthesizeToFile(text: CharSequence, params: android.os.Bundle, file: java.io.File, utteranceId: String): Int = SUCCESS
         override fun isLanguageAvailable(locale: Locale): Int = LANG_AVAILABLE
         override fun setLanguage(locale: Locale): Int { selectedLocale = locale; return LANG_AVAILABLE }
     }
+    @Test fun resumingAfterChangingVoiceDiscardsCachedAudioAndUsesTheCurrentPosition() {
+        for ((previous, selected) in listOf("" to "kokoro_pt_pt", "kokoro_pt_pt" to "", "device-old" to "Dutch device voice")) {
+            val controller = Robolectric.buildService(NarrationService::class.java).create()
+            val service = controller.get()
+            val engine = Engine(service)
+            fun field(name: String) = NarrationService::class.java.getDeclaredField(name).apply { isAccessible = true }
+            val settings = SpeechSettings(service.getSharedPreferences("bookstr_settings", Context.MODE_PRIVATE))
+            try {
+                field("textToSpeech").set(service, engine)
+                field("textToSpeechReady").set(service, true)
+                field("speechLanguage").set(service, "pt-pt")
+                field("speechText").set(service, "Antes. Depois da pausa.")
+                field("activeVoice").set(service, previous)
+                field("currentRangeStart").set(service, 7)
+                field("speechQueue").set(service, listOf(app.bookstr.NarrationChunk("old", "Antes.", "Antes.", 0, 0, 0, false)))
+                settings.setVoice("Portuguese", selected)
+                val play = NarrationService::class.java.getDeclaredMethod("playOrRequestText").apply { isAccessible = true }
+                play.invoke(service)
+                assertEquals(selected, field("activeVoice").get(service))
+                assertEquals(selected.takeIf { it == "kokoro_pt_pt" }, (field("neuralModel").get(service) as? SpeechModel)?.id)
+                val queue = field("speechQueue").get(service) as List<*>
+                assertEquals(7, (queue.first() as app.bookstr.NarrationChunk).offset)
+                val generation = field("generation").get(service)
+                play.invoke(service)
+                assertEquals("Resuming the same voice retains its audio queue", generation, field("generation").get(service))
+            } finally { settings.setVoice("pt-pt", ""); controller.destroy(); engine.shutdown() }
+        }
+    }
+
     @Test fun missingNeuralVoiceReportsAnErrorAndStoppedSynthesisCannotReportStaleErrors() {
         val controller = Robolectric.buildService(NarrationService::class.java).create()
         val service = controller.get()

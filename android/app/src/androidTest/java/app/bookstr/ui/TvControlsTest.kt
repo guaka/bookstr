@@ -118,6 +118,30 @@ class TvControlsTest {
         compose.onNodeWithTag("speech-language").assertIsFocused()
     }
 
+    @Test fun switchingFromFourPortugueseModelsToOneEnglishModelKeepsDownloadReachable() {
+        fun model(id: String, language: String) = SpeechModel(id, language, id, "fixture", "revision", "kokoro", "model",
+            listOf(SpeechModelFile("model", 1024)))
+        var requested = ""
+        television {
+            var language by remember { mutableStateOf("pt-pt") }
+            Column(Modifier.verticalScroll(rememberScrollState())) {
+                SpeechSettingsControls(listOf("en", "pt-pt"), language, "",
+                    (1..4).map { model("pt$it", "pt-pt") } + model("english", "en"),
+                    emptySet(), emptyList(), emptyMap(), emptyMap(), { language = it }, {}, { requested = it.id }, {})
+            }
+        }
+        compose.onNodeWithTag("speech-language").performKeyInput { pressKey(Key.DirectionCenter) }
+        compose.onNodeWithTag("speech-language-option-en")
+            .performSemanticsAction(androidx.compose.ui.semantics.SemanticsActions.RequestFocus)
+        compose.onNodeWithTag("speech-language-option-en").performKeyInput { pressKey(Key.DirectionCenter) }
+        compose.onNodeWithTag("speech-language").assertIsFocused().performKeyInput { pressKey(Key.DirectionDown) }
+        compose.onNodeWithTag("speech-model-english").assertIsFocused().performKeyInput { pressKey(Key.DirectionCenter) }
+        compose.runOnIdle { assertEquals("english", requested) }
+        compose.onNodeWithTag("speech-model-english").performKeyInput { pressKey(Key.DirectionDown) }
+        compose.onNodeWithTag("speech-voice").assertIsFocused().performKeyInput { pressKey(Key.DirectionUp) }
+        compose.onNodeWithTag("speech-model-english").assertIsFocused()
+    }
+
     @Test fun libraryRowsAndFiltersWorkWithDpad() {
         val book = CatalogBook("tv-fixture", "Remote book", "Author", "https://example.org/a.epub", null, format = BookFormat.Epub)
         var opened: CatalogBook? = null

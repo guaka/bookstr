@@ -97,6 +97,7 @@ class NarrationService : MediaBrowserServiceCompat(), TextToSpeech.OnInitListene
     private var speechText = ""
     private var automaticSpeechLanguage = "en"
     private var speechLanguage = "en"
+    private var activeVoice = ""
     private var speechChunkInputs: List<IncomingNarrationChunk> = emptyList()
     private var resumeOffset = 0
     private var currentRangeStart = 0
@@ -524,6 +525,10 @@ class NarrationService : MediaBrowserServiceCompat(), TextToSpeech.OnInitListene
         updatePlaybackState(PlaybackStateCompat.STATE_PLAYING)
         updateNotification()
         publishState()
+        if (speechQueue.isNotEmpty() && activeVoice != speechSettings.voice(speechLanguage)) {
+            startSpeakingAt(currentRangeStart)
+            return
+        }
         mediaPlayer?.let { player ->
             if (!player.isPlaying) {
                 player.start()
@@ -546,6 +551,7 @@ class NarrationService : MediaBrowserServiceCompat(), TextToSpeech.OnInitListene
         generation += 1
         val activeGeneration = generation
         resetAudioPipeline(cancelSynthesis = true)
+        activeVoice = speechSettings.voice(speechLanguage)
         neuralModel = selectedNeuralModel()
         val startOffset = offset.coerceIn(0, speechText.length)
         val chunkInputs = speechChunkInputs.takeIf { it.isNotEmpty() }?.map { it.text to it.pauseMillis }?.let { values ->
