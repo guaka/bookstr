@@ -296,6 +296,7 @@ struct LibraryView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .contextMenu {
             Button("Rights details") { showRightsDetails(for: favorite) }
+                .accessibilityIdentifier("library-favorite-rights-\(favorite.key)")
         }
     }
 
