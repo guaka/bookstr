@@ -5,8 +5,9 @@ each client unit-test floor. The ratchet requires the report to remain passing,
 retain at least the captured test count, contain every captured metric, and
 meet or exceed every percentage.
 
-Web and Electron were captured together after Electron reporting landed.
-Android uses the passing Robolectric coverage run cited in its baseline. The latest successful iOS
+Web, Electron, and Android use the passing unit coverage artifacts captured
+after repository-wide format cleanup; their source runs and merge commit are
+recorded in the baseline. The latest successful iOS
 artifact is retained until the next native run completes; raising a floor
 requires a newer passing artifact and its run URL and commit.
 

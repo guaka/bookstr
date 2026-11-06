@@ -100,7 +100,10 @@ class NarrationIslandOpenBookTest {
             ActivityScenario.launch<MainActivity>(intent).use { scenario ->
                 if (bookId == downloadedId) {
                     compose.waitUntil(10_000) {
-                        compose.onAllNodesWithTag("library.swipe.$bookId").fetchSemanticsNodes().isNotEmpty()
+                        runCatching {
+                            compose.onNode(hasScrollToNodeAction())
+                                .performScrollToNode(hasTestTag("library.swipe.$bookId"))
+                        }.isSuccess
                     }
                 } else {
                     compose.onNodeWithTag("library.swipe.$bookId").assertDoesNotExist()

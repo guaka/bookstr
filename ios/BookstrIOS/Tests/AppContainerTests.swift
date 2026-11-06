@@ -55,12 +55,12 @@ final class AppContainerTests: XCTestCase {
                 if refreshes == 1 { initialLoad.fulfill() }
             }
         var redrawRenderExpectation: XCTestExpectation?
+        let redraw = LibraryRedrawProbe()
         let host = UIHostingController(rootView: LibraryRedrawTestHost(
             container: container,
             viewModel: model,
-            onRedraw: { value in
-                if value.hasPrefix("Redraw ") { redrawRenderExpectation?.fulfill() }
-            }
+            redraw: redraw,
+            onRedraw: { _ in redrawRenderExpectation?.fulfill() }
         ))
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
         let window = UIWindow(windowScene: scene)
@@ -77,7 +77,7 @@ final class AppContainerTests: XCTestCase {
         for index in 0..<10 {
             let rendered = expectation(description: "Library rendered redraw \(index)")
             redrawRenderExpectation = rendered
-            model.debugText = "Redraw \(index)"
+            redraw.value = index + 1
             await fulfillment(of: [rendered], timeout: 5)
             redrawRenderExpectation = nil
         }
@@ -502,6 +502,58 @@ final class AppContainerTests: XCTestCase {
         XCTAssertEqual(ReaderHostView.openingMessage(for: blank), "Opening book…")
     }
 
+    func testSupportedOrphanDiscoveryAndDownloadValidation() async throws {
+        let directory = "bookstr-publication-validation-\(UUID().uuidString)"
+        let fileStore = JSONFileStore(subdirectory: directory)
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: directory))
+        let root = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent(directory)
+        defer {
+            defaults.removePersistentDomain(forName: directory)
+            try? FileManager.default.removeItem(at: root)
+        }
+        let nip46 = Nip46Service()
+        let catalog = CatalogRepository(fileStore: fileStore, settings: SettingsRepository(defaults: defaults),
+            signerStore: SignerStore(nip46Service: nip46), nip46Service: nip46)
+        let pdf = UIGraphicsPDFRenderer(bounds: CGRect(x: 0, y: 0, width: 300, height: 400)).pdfData {
+            $0.beginPage()
+        }
+        let orphanID = String(repeating: "a", count: 32)
+        try pdf.write(to: fileStore.bookFileURL(bookId: orphanID, format: .pdf))
+        let discovered = try XCTUnwrap(catalog.downloadedBooks().first { $0.id == orphanID })
+        XCTAssertEqual(discovered.title, "Downloaded PDF")
+        XCTAssertEqual(discovered.author, "Unknown")
+        XCTAssertEqual(discovered.format, .pdf)
+        let metadataOnly = BookSearchResult(id: "metadata", source: "fixture", title: "Metadata", author: "Author",
+            year: nil, publisher: nil, language: nil, format: nil, downloadUrl: nil,
+            coverUrl: nil, rating: 0, editionCount: 1)
+        do {
+            _ = try await catalog.prepareForOpening(result: metadataOnly)
+            XCTFail("Metadata-only results cannot be opened")
+        } catch {
+            XCTAssertTrue(error is PrivateCatalogError)
+        }
+        let server = try TorrentDownloadTests.SeedServer(files: ["valid.bin": pdf, "invalid.bin": Data("<document/>".utf8)])
+        let port = try await server.start()
+        defer { server.listener.cancel() }
+        let remote = BookSearchResult(id: String(repeating: "b", count: 32), source: "fixture", title: "Downloaded", author: "Author",
+            year: nil, publisher: nil, language: nil, format: .epub,
+            downloadUrl: "http://127.0.0.1:\(port)/valid.bin", coverUrl: nil, rating: 0, editionCount: 1)
+        let opened = try await catalog.prepareForOpening(result: remote)
+        XCTAssertEqual(opened.format, .pdf, "Detected bytes determine the stored and opened format")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: fileStore.bookFileURL(bookId: remote.id, format: .pdf).path))
+        let invalid = CatalogBook(id: String(repeating: "c", count: 32), title: "Invalid", author: "Author",
+            epubUrl: "http://127.0.0.1:\(port)/invalid.bin", coverUrl: nil, sourceUrl: nil,
+            isbn: nil, libvaultMd5: nil, format: .epub, year: nil)
+        do {
+            _ = try await catalog.ensureDownloaded(book: invalid)
+            XCTFail("Arbitrary XML is not a supported publication")
+        } catch {
+            XCTAssertEqual((error as NSError).code, 2)
+            XCTAssertEqual(error.localizedDescription, "The downloaded file is not a valid PDF, EPUB, CBR, or CBZ")
+        }
+    }
+
     /// `downloadedBooksLock` is not recursive. Remembering or removing a book
     /// while it is held used to re-enter it and hang the launch path forever,
     /// which showed up as a blank first frame. Time-box it so a regression
@@ -620,10 +672,16 @@ final class AppContainerTests: XCTestCase {
 }
 
 @MainActor
+private final class LibraryRedrawProbe: ObservableObject {
+    @Published var value = 0
+}
+
+@MainActor
 private struct LibraryRedrawTestHost: View {
     let container: AppContainer
     @ObservedObject var viewModel: LibraryViewModel
-    let onRedraw: (String) -> Void
+    @ObservedObject var redraw: LibraryRedrawProbe
+    let onRedraw: (Int) -> Void
 
     var body: some View {
         NavigationStack {
@@ -632,6 +690,10 @@ private struct LibraryRedrawTestHost: View {
         .environmentObject(container)
         .environmentObject(container.readerPlayback)
         .environmentObject(container.coverDiscovery)
-        .onChange(of: viewModel.debugText) { _, value in onRedraw(value) }
+        .onChange(of: redraw.value) { _, value in
+            // Acknowledge rendering after SwiftUI finishes its update callback. Resuming
+            // the test inline can feed the next redraw into the same update pass.
+            DispatchQueue.main.async { onRedraw(value) }
+        }
     }
 }

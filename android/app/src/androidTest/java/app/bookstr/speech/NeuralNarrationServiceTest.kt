@@ -49,7 +49,11 @@ class NeuralNarrationServiceTest {
                 assertTrue("An older stop discarded the newer narration request", started.await(10, TimeUnit.SECONDS))
                 Thread.sleep(12_000)
                 val notifications = app.getSystemService(android.app.NotificationManager::class.java).activeNotifications
-                assertTrue(notifications.any { it.notification.extras.getCharSequence(android.app.Notification.EXTRA_TITLE) == "Stop then start" })
+                assertTrue(
+                    "Expected the new session's foreground notification; found " +
+                        notifications.map { it.notification.extras.getCharSequence(android.app.Notification.EXTRA_TITLE) },
+                    notifications.any { it.notification.extras.getCharSequence(android.app.Notification.EXTRA_TITLE) == "Stop then start" },
+                )
             }
         } finally {
             app.unregisterReceiver(receiver)
