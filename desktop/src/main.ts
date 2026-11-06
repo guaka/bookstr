@@ -1,3 +1,36 @@
+import type { BrowserWindow as LibraryWindow, WebContents, Session, MenuItemConstructorOptions } from 'electron';
+import type { EventTemplate } from 'nostr-tools/pure' with { 'resolution-mode': 'import' };
+import type { BunkerSigner } from 'nostr-tools/nip46' with { 'resolution-mode': 'import' };
+import type { SimplePool } from 'nostr-tools/pool' with { 'resolution-mode': 'import' };
+import type { DesktopProgress } from './desktop-bridge';
+
+type UnknownRecord = Record<string, unknown>;
+interface DesktopState extends UnknownRecord {
+  desktopNostr?: { mode?: string; secret?: string; bunker?: string; pubkey?: string };
+  devicePairing?: { registryEvent?: UnknownRecord };
+  catalogInvitation?: { uri?: unknown };
+}
+interface NostrTools {
+  [key: string]: unknown;
+  finalizeEvent: typeof import('nostr-tools/pure', { with: { 'resolution-mode': 'import' } }).finalizeEvent;
+  generateSecretKey: typeof import('nostr-tools/pure', { with: { 'resolution-mode': 'import' } }).generateSecretKey;
+  getPublicKey: typeof import('nostr-tools/pure', { with: { 'resolution-mode': 'import' } }).getPublicKey;
+  verifyEvent: typeof import('nostr-tools/pure', { with: { 'resolution-mode': 'import' } }).verifyEvent;
+  nip19: typeof import('nostr-tools/nip19', { with: { 'resolution-mode': 'import' } });
+  nip44: typeof import('nostr-tools/nip44', { with: { 'resolution-mode': 'import' } });
+  nip46: typeof import('nostr-tools/nip46', { with: { 'resolution-mode': 'import' } });
+  SimplePool: typeof SimplePool;
+}
+interface QrSession {
+  status: string; uri: string; qrDataUrl: string; error: string;
+  abortController: AbortController; pool: SimplePool; relays: string[];
+  responseObserver: { close(): void }; responseReceived: boolean;
+}
+interface ReaderInput { book?: Record<string, unknown>; readUrl?: unknown }
+type ReaderPayload = { ok: false; error: string } | {
+  ok: true; kind: string; base64: string; theme: string; font: string;
+  alignment: string; readUrl: string; cfi: string; book: Record<string, unknown>;
+};
 const {
   app,
   BrowserWindow,
@@ -10,29 +43,29 @@ const {
   safeStorage,
   session,
   shell,
-} = require('electron');
-const crypto = require('node:crypto');
-const fs = require('node:fs/promises');
-const path = require('node:path');
-const QRCode = require('qrcode');
-const { normalizeProgressPayload } = require('../web/desktop-progress');
-const { proxyCatalogRequest } = require('./catalog-proxy');
-const { proxyDictionaryRequest } = require('./dictionary-proxy');
-const { appContentSecurityPolicy } = require('./security-policy');
-const { SpeechModelStore } = require('./speech-model-store');
-const { WebTorrentBridge, DEFAULT_DOWNLOAD_LIMIT, PUBLIC_UPLOAD_LIMIT } = require('./webtorrent-bridge');
-const { LibraryStore } = require('./library-store');
-const { LibraryImporter, hashFile, safeExtension } = require('./library-import');
-const { localBookCover, localBookMetadata, safeCoverID } = require('./library-cover');
-const { AcquisitionManager } = require('./acquisition-manager');
-const { DownloadQueue } = require('./download-queue');
-const { downloadsForRenderer } = require('./library-downloads');
-const { KindleSync, MountedKindles } = require('./kindle-sync');
-const { MtpKindles } = require('./kindle-mtp');
-const { ComicPdfConverter } = require('./comic-pdf');
-const { ElectronDevicePairing } = require('./device-pairing');
-const { CatalogInvitations } = require('./catalog-invitations');
-const { nip19: catalogNip19 } = require('nostr-tools');
+} = require('electron') as typeof import('electron');
+const crypto = require('node:crypto') as typeof import('node:crypto');
+const fs = require('node:fs/promises') as typeof import('node:fs/promises');
+const path = require('node:path') as typeof import('node:path');
+const QRCode = require('qrcode') as { toDataURL(text: string, options: { errorCorrectionLevel: string; margin: number; width: number }): Promise<string> };
+const { normalizeProgressPayload } = require('../web/desktop-progress') as { normalizeProgressPayload(payload: unknown, source: string): DesktopProgress | null };
+const { proxyCatalogRequest } = require('./catalog-proxy') as typeof import('./catalog-proxy');
+const { proxyDictionaryRequest } = require('./dictionary-proxy') as typeof import('./dictionary-proxy');
+const { appContentSecurityPolicy } = require('./security-policy') as typeof import('./security-policy');
+const { SpeechModelStore } = require('./speech-model-store') as typeof import('./speech-model-store');
+const { WebTorrentBridge, DEFAULT_DOWNLOAD_LIMIT, PUBLIC_UPLOAD_LIMIT } = require('./webtorrent-bridge') as typeof import('./webtorrent-bridge');
+const { LibraryStore } = require('./library-store') as typeof import('./library-store');
+const { LibraryImporter, hashFile, safeExtension } = require('./library-import') as typeof import('./library-import');
+const { localBookCover, localBookMetadata, safeCoverID } = require('./library-cover') as typeof import('./library-cover');
+const { AcquisitionManager } = require('./acquisition-manager') as typeof import('./acquisition-manager');
+const { DownloadQueue } = require('./download-queue') as typeof import('./download-queue');
+const { downloadsForRenderer } = require('./library-downloads') as typeof import('./library-downloads');
+const { KindleSync, MountedKindles } = require('./kindle-sync') as typeof import('./kindle-sync');
+const { MtpKindles } = require('./kindle-mtp') as typeof import('./kindle-mtp');
+const { ComicPdfConverter } = require('./comic-pdf') as typeof import('./comic-pdf');
+const { ElectronDevicePairing } = require('./device-pairing') as typeof import('./device-pairing');
+const { CatalogInvitations } = require('./catalog-invitations') as typeof import('./catalog-invitations');
+const { nip19: catalogNip19 } = require('nostr-tools') as typeof import('nostr-tools', { with: { 'resolution-mode': 'import' } });
 const catalogInvitations = new CatalogInvitations({ app, dialog, loadState, saveState, decodeNPub: catalogNip19.decode, getWindow: () => mainWindow });
 
 const PRELOAD_PATH = path.join(__dirname, 'preload.js');
@@ -88,16 +121,16 @@ const DICTIONARY_PROXY_BASE_URL = process.env.NODE_ENV === 'test'
   : undefined;
 
 // Packaged apps use immutable build metadata. Development uses the source date.
-let builtAt;
+let builtAt: Date;
 try {
-  builtAt = new Date(require('./build-info.json').builtAt);
+  builtAt = new Date((require('./build-info.json') as { builtAt: string }).builtAt);
   if (Number.isNaN(builtAt.getTime())) throw new Error('Invalid build timestamp');
 } catch {
-  builtAt = require('node:fs').statSync(path.join(WEB_ROOT, 'index.html')).mtime;
+  builtAt = (require('node:fs') as typeof import('node:fs')).statSync(path.join(WEB_ROOT, 'index.html')).mtime;
 }
 
 function timestampVersion(now = builtAt) {
-  const part = value => String(value).padStart(2, '0');
+  const part = (value: number) => String(value).padStart(2, '0');
   return `0.1-${now.getFullYear()}${part(now.getMonth() + 1)}${part(now.getDate())}-${part(now.getHours())}${part(now.getMinutes())}`;
 }
 
@@ -110,7 +143,7 @@ if (process.platform === 'win32') {
   app.setAppUserModelId(DESKTOP_APP_ID);
 }
 app.setName('libstr');
-app.setVersion(DESKTOP_VERSION);
+(app as typeof app & { setVersion(version: string): void }).setVersion(DESKTOP_VERSION);
 app.setAboutPanelOptions({
   applicationName: 'libstr',
   applicationVersion: DESKTOP_VERSION,
@@ -149,32 +182,29 @@ const MIME_TYPES = new Map([
   ['.txt', 'text/plain; charset=UTF-8'],
 ]);
 
-let mainWindow;
+let mainWindow: LibraryWindow;
 let readerNavigationId = 0;
-let cachedNostrTools = null;
-let cachedNostrSignerSecret = null;
-let cachedNostrSignerPublicKey = null;
-let cachedNostrNip44EncryptMode = null;
-let cachedNostrNip44DecryptMode = null;
+let cachedNostrTools: NostrTools | null = null;
+let cachedNostrSignerSecret: string | null = null;
+let cachedNostrSignerPublicKey: string | null = null;
 let cachedNostrAuthMode = '';
-let cachedNip46Signer = null;
-let cachedNip46BunkerUrl = '';
-let cachedNip46Pool = null;
-let nip46QrSession = null;
-let torrentBridge = null;
+let cachedNip46Signer: BunkerSigner | null = null;
+let cachedNip46Pool: { pool: SimplePool; relays: string[] } | null = null;
+let nip46QrSession: QrSession | null = null;
+let torrentBridge: InstanceType<typeof WebTorrentBridge> | null = null;
 let libraryDataDir = '';
-let libraryStore = null;
-let libraryImporter = null;
-let acquisitionManager = null;
-let downloadQueue = null;
-let kindleSync = null;
-let devicePairing = null;
+let libraryStore: InstanceType<typeof LibraryStore> | null = null;
+let libraryImporter: InstanceType<typeof LibraryImporter> | null = null;
+let acquisitionManager: InstanceType<typeof AcquisitionManager> | null = null;
+let downloadQueue: InstanceType<typeof DownloadQueue> | null = null;
+let kindleSync: InstanceType<typeof KindleSync> | null = null;
+let devicePairing: InstanceType<typeof ElectronDevicePairing> | null = null;
 
-function isRecord(value) {
-  return value && typeof value === 'object' && !Array.isArray(value);
+function isRecord(value: unknown): value is UnknownRecord {
+  return (value && typeof value === 'object' && !Array.isArray(value)) as boolean;
 }
 
-function ensureLibraryPath(value) {
+function ensureLibraryPath(value: unknown) {
   if (!libraryDataDir || typeof value !== 'string' || !value.trim() || value.includes('\0')) return '';
   const root = path.resolve(libraryDataDir);
   const candidate = path.resolve(value);
@@ -184,7 +214,7 @@ function ensureLibraryPath(value) {
     : '';
 }
 
-function libraryRelativePath(filePath) {
+function libraryRelativePath(filePath: unknown) {
   const candidate = ensureLibraryPath(filePath);
   if (!candidate) return '';
   return path.relative(path.resolve(libraryDataDir), candidate).replaceAll(path.sep, '/');
@@ -278,12 +308,12 @@ function getDevicePairing() {
   return devicePairing;
 }
 
-function insidePath(root, candidate) {
+function insidePath(root: string, candidate: string) {
   const relative = path.relative(path.resolve(root), path.resolve(candidate));
   return relative && relative !== '..' && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative);
 }
 
-async function resolveRegisteredLibraryFile(bookId) {
+async function resolveRegisteredLibraryFile(bookId: string) {
   const book = getLibraryStore().getBook(bookId);
   if (!book) throw new Error('Book is not present in the local library.');
   const registration = getLibraryStore().libraryFile(book.id);
@@ -317,7 +347,7 @@ async function loadTrustedDeviceRegistry() {
   return registry || { version: 1, devices: [] };
 }
 
-async function decryptAccountPayload(peer, ciphertext, tools = null) {
+async function decryptAccountPayload(peer: string, ciphertext: string, tools: NostrTools | null = null) {
   if (await resolveNostrAuthMode() === 'nip46') return (await resolveNip46Signer()).nip44Decrypt(peer, ciphertext);
   const nostrTools = tools || await loadNostrTools();
   return decryptWithNip44(nostrTools, ciphertext, await resolveNostrSignerSecret(), peer);
@@ -326,7 +356,7 @@ async function decryptAccountPayload(peer, ciphertext, tools = null) {
 // Registry ingestion stays in the main process. It verifies the account
 // signature and NIP-44 payload before persisting the event used by the loader;
 // there is intentionally no renderer-facing registry mutation API.
-async function ingestTrustedDeviceRegistryEvent(event) {
+async function ingestTrustedDeviceRegistryEvent(event: unknown) {
   if (!isRecord(event) || JSON.stringify(event).length > 64 * 1024) return false;
   const createdAt = Number(event.created_at);
   if (!Number.isSafeInteger(createdAt) || createdAt < 0) return false;
@@ -352,12 +382,12 @@ async function ingestTrustedDeviceRegistryEvent(event) {
   return true;
 }
 
-function normalizeHex(value) {
+function normalizeHex(value: unknown) {
   const raw = String(value || '').toLowerCase().trim();
   return /^[0-9a-f]{64}$/.test(raw) ? raw : '';
 }
 
-function normalizeNostrBytesOrHex(value) {
+function normalizeNostrBytesOrHex(value: unknown) {
   if (typeof value === 'string') {
     return value;
   }
@@ -372,7 +402,7 @@ function normalizeNostrBytesOrHex(value) {
   return '';
 }
 
-async function loadNostrTools() {
+async function loadNostrTools(): Promise<NostrTools> {
   if (cachedNostrTools) {
     return cachedNostrTools;
   }
@@ -396,7 +426,7 @@ async function loadNostrTools() {
   return cachedNostrTools;
 }
 
-function normalizeDesktopNostrSecret(raw, tools) {
+function normalizeDesktopNostrSecret(raw: unknown, tools: NostrTools) {
   const normalized = String(raw || '').trim();
   if (!normalized) {
     return '';
@@ -414,68 +444,21 @@ function normalizeDesktopNostrSecret(raw, tools) {
   return normalizeHex(normalized);
 }
 
-function makeNip44EncryptCandidates(plaintext, secret, pubkey) {
-  return [
-    ['pt-secret-pub', [plaintext, secret, pubkey]],
-    ['secret-pub-pt', [secret, pubkey, plaintext]],
-  ];
-}
-
-function makeNip44DecryptCandidates(ciphertext, secret, pubkey) {
-  return [
-    ['cipher-secret-pub', [ciphertext, secret, pubkey]],
-    ['secret-pub-cipher', [secret, pubkey, ciphertext]],
-  ];
-}
-
-function resolveCandidateArgsByMode(candidates, modeName) {
-  const found = candidates.find(([name]) => name === modeName);
-  return found ? found[1] : null;
-}
-
-async function callNip44WithFallback(tools, methodName, candidates, cachedMode) {
-  const orderedCandidates = [];
-  const seen = new Set();
-  const cachedArgs = cachedMode ? resolveCandidateArgsByMode(candidates, cachedMode) : null;
-  if (cachedArgs) {
-    seen.add(cachedMode);
-    orderedCandidates.push([cachedMode, cachedArgs]);
-  }
-  for (const candidate of candidates) {
-    if (seen.has(candidate[0])) {
-      continue;
-    }
-    orderedCandidates.push(candidate);
-  }
-  let lastError = null;
-  for (const [mode, args] of orderedCandidates) {
-    try {
-      const result = await tools.nip44[methodName](...args);
-      if (typeof result === 'string' && result.length > 0) {
-        return { mode, result };
-      }
-    } catch (error) {
-      lastError = error;
-    }
-  }
-  throw lastError || new Error(`Failed to run nip44.${methodName}.`);
-}
-
-async function encryptWithNip44(tools, plaintext, secret, pubkey) {
+async function encryptWithNip44(tools: NostrTools, plaintext: string, secret: string, pubkey: string) {
   const conversationKey = tools.nip44.getConversationKey(hexToBytes(secret), pubkey);
   return tools.nip44.encrypt(plaintext, conversationKey);
 }
 
-async function decryptWithNip44(tools, ciphertext, secret, pubkey) {
+async function decryptWithNip44(tools: NostrTools, ciphertext: string, secret: string, pubkey: string) {
   const conversationKey = tools.nip44.getConversationKey(hexToBytes(secret), pubkey);
   return tools.nip44.decrypt(ciphertext, conversationKey);
 }
 
-function hexToBytes(value) {
+function hexToBytes(value: string) {
   return Uint8Array.from(Buffer.from(value, 'hex'));
 }
 
-function resolveNostrSecretFromEnvironment(tools) {
+function resolveNostrSecretFromEnvironment(tools: NostrTools) {
   for (const key of NOSTR_SIGNER_ENV_KEYS) {
     const candidate = process.env[key];
     const secret = normalizeDesktopNostrSecret(candidate, tools);
@@ -486,7 +469,7 @@ function resolveNostrSecretFromEnvironment(tools) {
   return '';
 }
 
-async function resolveNostrSecretFromState(tools) {
+async function resolveNostrSecretFromState(tools: NostrTools) {
   if (!safeStorage.isEncryptionAvailable()) {
     return '';
   }
@@ -537,7 +520,7 @@ async function resolveNostrAuthMode() {
 function nip46SignerParams({ skipSwitchRelays = false } = {}) {
   return {
     skipSwitchRelays,
-    onauth(url) {
+    onauth(url: string) {
       if (isExternalUrlAllowed(url)) void shell.openExternal(url);
     },
   };
@@ -561,22 +544,20 @@ async function resolveNip46Signer() {
     bunkerPointer,
     nip46SignerParams(),
   );
-  cachedNip46BunkerUrl = signerState.bunker;
   return cachedNip46Signer;
 }
 
-function encryptedSecretForState(secret) {
+function encryptedSecretForState(secret: string) {
   if (!safeStorage.isEncryptionAvailable()) return '';
   return safeStorage.encryptString(secret).toString('base64');
 }
 
-async function configureLocalNsec(rawSecret) {
+async function configureLocalNsec(rawSecret: unknown) {
   const tools = await loadNostrTools();
   const secret = normalizeDesktopNostrSecret(rawSecret, tools);
   if (!secret) throw new Error('Invalid nsec. Paste an nsec1… key or 64-character hex key.');
   if (cachedNip46Signer) await cachedNip46Signer.close();
   cachedNip46Signer = null;
-  cachedNip46BunkerUrl = '';
   cachedNostrAuthMode = 'nsec';
   cachedNostrSignerSecret = secret;
   cachedNostrSignerPublicKey = tools.getPublicKey(hexToBytes(secret));
@@ -592,7 +573,7 @@ async function configureLocalNsec(rawSecret) {
   return desktopSignerStatus();
 }
 
-async function configureNip46(rawInput) {
+async function configureNip46(rawInput: unknown) {
   const input = String(rawInput || '').trim();
   const tools = await loadNostrTools();
   const bunkerPointer = await tools.nip46.parseBunkerInput(input);
@@ -609,7 +590,7 @@ async function configureNip46(rawInput) {
   return activateNip46Signer(signer, clientSecretBytes);
 }
 
-async function activateNip46Signer(signer, clientSecretBytes, pool = null) {
+async function activateNip46Signer(signer: BunkerSigner, clientSecretBytes: Uint8Array, pool: SimplePool | null = null) {
   const tools = await loadNostrTools();
   const pubkey = normalizeHex(await signer.getPublicKey());
   if (!pubkey) {
@@ -624,7 +605,6 @@ async function activateNip46Signer(signer, clientSecretBytes, pool = null) {
   const encryptedSecret = encryptedSecretForState(clientSecret);
   cachedNip46Signer = signer;
   cachedNip46Pool = pool ? { pool, relays: [...signer.bp.relays] } : null;
-  cachedNip46BunkerUrl = bunker;
   cachedNostrAuthMode = 'nip46';
   cachedNostrSignerSecret = clientSecret;
   cachedNostrSignerPublicKey = pubkey;
@@ -746,7 +726,6 @@ async function disconnectDesktopSigner() {
   if (cachedNip46Pool) cachedNip46Pool.pool.close(cachedNip46Pool.relays);
   cachedNip46Signer = null;
   cachedNip46Pool = null;
-  cachedNip46BunkerUrl = '';
   cachedNostrAuthMode = '';
   cachedNostrSignerSecret = null;
   cachedNostrSignerPublicKey = null;
@@ -786,7 +765,7 @@ async function resolveNostrSignerPublicKey() {
   return publicKey;
 }
 
-function normalizeNip44Payload(payload) {
+function normalizeNip44Payload(payload: unknown) {
   if (!isRecord(payload)) {
     return null;
   }
@@ -801,7 +780,7 @@ function normalizeNip44Payload(payload) {
   };
 }
 
-function normalizeNostrEventPayload(payload) {
+function normalizeNostrEventPayload(payload: unknown) {
   if (!isRecord(payload)) {
     return null;
   }
@@ -815,7 +794,7 @@ function normalizeNostrEventPayload(payload) {
   }
   const tags = Array.isArray(payload.tags) ? payload.tags : [];
   const content = String(payload.content || '');
-  const event = {
+  const event: EventTemplate & { pubkey: string; id?: string; sig?: string } = {
     kind,
     created_at: Math.floor(createdAt),
     content,
@@ -831,7 +810,7 @@ function normalizeNostrEventPayload(payload) {
   return event;
 }
 
-function safeJoin(base, route) {
+function safeJoin(base: string, route: string) {
   const normalized = path.posix.normalize(`/${route}`);
   const abs = path.normalize(path.join(base, normalized));
   if (!abs.startsWith(path.normalize(base + path.sep))) {
@@ -840,24 +819,24 @@ function safeJoin(base, route) {
   return abs;
 }
 
-function normalizePayload(payload) {
+function normalizePayload(payload: unknown): ReaderPayload {
   if (!payload || typeof payload !== 'object') {
     return { ok: false, error: 'Reader payload must be an object.' };
   }
-  const base64 = String(payload.base64 || '').trim();
+  const base64 = String((payload as UnknownRecord).base64 || '').trim();
   if (!isBase64Safe(base64)) {
     return { ok: false, error: 'Invalid reader payload.' };
   }
   return {
     ok: true,
-    kind: String(payload.kind || '').toLowerCase() === 'pdf' ? 'pdf' : 'epub',
+    kind: String((payload as UnknownRecord).kind || '').toLowerCase() === 'pdf' ? 'pdf' : 'epub',
     base64,
-    theme: String(payload.theme || 'paper').toLowerCase(),
-    font: String(payload.font || 'arial').toLowerCase(),
-    alignment: String(payload.alignment || 'justified').toLowerCase(),
-    readUrl: String(payload.readUrl || ''),
-    cfi: String(payload.cfi || ''),
-    book: payload.book && typeof payload.book === 'object' ? payload.book : {},
+    theme: String((payload as UnknownRecord).theme || 'paper').toLowerCase(),
+    font: String((payload as UnknownRecord).font || 'arial').toLowerCase(),
+    alignment: String((payload as UnknownRecord).alignment || 'justified').toLowerCase(),
+    readUrl: String((payload as UnknownRecord).readUrl || ''),
+    cfi: String((payload as UnknownRecord).cfi || ''),
+    book: (payload as UnknownRecord).book && typeof (payload as UnknownRecord).book === 'object' ? (payload as UnknownRecord).book as UnknownRecord : {},
   };
 }
 
@@ -868,19 +847,19 @@ function resolveFile(pathname = '/') {
   return safeJoin(WEB_ROOT, webPath);
 }
 
-function mimeType(filePath) {
+function mimeType(filePath: string) {
   const ext = path.extname(filePath).toLowerCase();
   return MIME_TYPES.get(ext) || 'application/octet-stream';
 }
 
-function nonceInlineScripts(html, nonce) {
+function nonceInlineScripts(html: string, nonce: string) {
   return html.replace(/<script(?![^>]*\bsrc\s*=)([^>]*)>/gi, (tag, attributes) => {
     if (/\bnonce\s*=/.test(attributes)) return tag;
     return `<script nonce="${nonce}"${attributes}>`;
   });
 }
 
-function isLocalBookstrUrl(urlString) {
+function isLocalBookstrUrl(urlString: string) {
   try {
     const parsed = new URL(urlString);
     return parsed.protocol === `${APP_PROTOCOL}:` && parsed.host === APP_HOST;
@@ -889,7 +868,7 @@ function isLocalBookstrUrl(urlString) {
   }
 }
 
-function normalizeReaderKey(payload) {
+function normalizeReaderKey(payload: ReaderInput) {
   const book = payload?.book || {};
   const md5 = String(book.md5 || '').trim().toLowerCase();
   const sourceUrl = String(payload.readUrl || book.readUrl || '').trim();
@@ -898,7 +877,7 @@ function normalizeReaderKey(payload) {
   return `anonymous:${Date.now().toString(36)}-${Math.random().toString(16).slice(2, 10)}`;
 }
 
-async function loadState() {
+async function loadState(): Promise<DesktopState> {
   try {
     const raw = await fs.readFile(STATE_FILE, 'utf8');
     const parsed = JSON.parse(raw);
@@ -911,7 +890,7 @@ async function loadState() {
   return {};
 }
 
-async function saveState(state) {
+async function saveState(state: object) {
   if (!isRecord(state)) {
     return;
   }
@@ -944,7 +923,7 @@ async function torrentPreferences() {
   };
 }
 
-function clampBounds(stored) {
+function clampBounds(stored: Record<string, unknown>) {
   const width = Number(stored?.width);
   const height = Number(stored?.height);
   if (!Number.isFinite(width) || !Number.isFinite(height)) {
@@ -960,7 +939,7 @@ function clampBounds(stored) {
 
 async function createLibraryWindow() {
   const state = await loadState();
-  const bounds = clampBounds(state.windowBounds || {});
+  const bounds = clampBounds((state.windowBounds || {}) as UnknownRecord);
   mainWindow = new BrowserWindow({
     ...bounds,
     minWidth: 950,
@@ -999,7 +978,7 @@ async function createLibraryWindow() {
   });
 }
 
-function attachSecurity(webContents) {
+function attachSecurity(webContents: WebContents) {
   webContents.on('before-input-event', (event, input) => {
     if ((input.meta || input.control) && !input.alt && (input.key === ',' || input.code === 'Comma')) {
       event.preventDefault();
@@ -1025,7 +1004,7 @@ function attachSecurity(webContents) {
   });
 }
 
-function ensureReaderWindowForPayload(payload) {
+function ensureReaderWindowForPayload(payload: unknown) {
   const normalized = normalizePayload(payload);
   if (!normalized?.ok) {
     return normalized;
@@ -1058,7 +1037,7 @@ function ensureReaderWindowForPayload(payload) {
   return { ok: true, key, reused: currentURL === readerURL, kind: requestedKind };
 }
 
-function isBase64Safe(value) {
+function isBase64Safe(value: unknown) {
   return typeof value === 'string' && value.length > 64;
 }
 
@@ -1099,7 +1078,7 @@ function openLibrarySettings() {
   return true;
 }
 
-function openLibraryPane(pane) {
+function openLibraryPane(pane: string) {
   if (!focusLibraryWindow()) return false;
   if (mainWindowPathname() === '/index.html') {
     mainWindow.webContents.send('bookstr-desktop-open-pane', pane);
@@ -1111,7 +1090,7 @@ function openLibraryPane(pane) {
   return true;
 }
 
-function isExternalUrlAllowed(url) {
+function isExternalUrlAllowed(url: string) {
   try {
     const parsed = new URL(url);
     return ALLOWED_EXTERNAL_URL_PROTOCOLS.includes(parsed.protocol);
@@ -1129,25 +1108,25 @@ function setupApplicationMenu() {
       void shell.openExternal(BOOKSTR_DESKTOP_RELEASES_URL);
     },
   };
-  const menuTemplate = [
+  const menuTemplate: MenuItemConstructorOptions[] = [
     ...(isMac ? [
       {
         label: app.name,
         submenu: [
-          { role: 'about' },
+          { role: 'about' as const },
           {
             label: 'Settings…',
             accelerator: 'CommandOrControl+,',
             click: () => void openLibrarySettings(),
           },
-          { type: 'separator' },
-          { role: 'services' },
-          { type: 'separator' },
-          { role: 'hide' },
-          { role: 'hideOthers' },
-          { role: 'unhide' },
-          { type: 'separator' },
-          { role: 'quit' },
+          { type: 'separator' as const },
+          { role: 'services' as const },
+          { type: 'separator' as const },
+          { role: 'hide' as const },
+          { role: 'hideOthers' as const },
+          { role: 'unhide' as const },
+          { type: 'separator' as const },
+          { role: 'quit' as const },
         ],
       },
     ] : []),
@@ -1159,7 +1138,7 @@ function setupApplicationMenu() {
           accelerator,
           click: () => void openLibraryPane(pane),
         })),
-        { type: 'separator' },
+        { type: 'separator' as const },
         {
           label: 'Show Library',
           accelerator: 'CmdOrCtrl+Shift+L',
@@ -1170,9 +1149,9 @@ function setupApplicationMenu() {
           accelerator: 'CommandOrControl+,',
           click: () => void openLibrarySettings(),
         }] : []),
-        { type: 'separator' },
+        { type: 'separator' as const },
         checkForUpdatesMenu,
-        isMac ? { role: 'close' } : { role: 'quit' },
+        isMac ? { role: 'close' } : { role: 'quit' as const },
       ],
     },
     {
@@ -1180,7 +1159,7 @@ function setupApplicationMenu() {
       submenu: [
         { role: 'undo' },
         { role: 'redo' },
-        { type: 'separator' },
+        { type: 'separator' as const },
         { role: 'cut' },
         { role: 'copy' },
         { role: 'paste' },
@@ -1303,7 +1282,7 @@ function setupIpcHandlers() {
   ipcMain.handle('bookstr-desktop-library-acquire', async (event, request) => {
     if (!isRecord(request) || !isRecord(request.record)) throw new Error('Invalid acquisition request.');
     const result = await getAcquisitionManager().acquire(request.record, {
-      format: request.format,
+      format: request.format as string | undefined,
       preferTorrent: request.preferTorrent !== false,
       includeRestricted: request.includeRestricted === true,
       onProgress: payload => {
@@ -1345,11 +1324,11 @@ function setupIpcHandlers() {
   ipcMain.handle('bookstr-desktop-device-announce', (_event, options) => getDevicePairing().announce(isRecord(options) ? options : {}));
   ipcMain.handle('bookstr-desktop-device-create-envelope', (_event, request) => {
     if (!isRecord(request) || !request.recipientPubkey || !isRecord(request.message)) throw new Error('Invalid device envelope request.');
-    return getDevicePairing().createEnvelope(request.recipientPubkey, request.message, { ttl: request.ttl });
+    return getDevicePairing().createEnvelope(request.recipientPubkey as string, request.message, { ttl: request.ttl as number | undefined });
   });
   ipcMain.handle('bookstr-desktop-device-open-envelope', (_event, request) => {
     if (!isRecord(request) || !isRecord(request.wrapped) || !request.senderPubkey) throw new Error('Invalid device envelope response.');
-    return getDevicePairing().openEnvelope(request.wrapped, { senderPubkey: request.senderPubkey });
+    return getDevicePairing().openEnvelope(request.wrapped, { senderPubkey: request.senderPubkey as string });
   });
   ipcMain.handle('bookstr-desktop-device-set-registry-event', (_event, event) => {
     return ingestTrustedDeviceRegistryEvent(event);
@@ -1551,7 +1530,7 @@ function setupIpcHandlers() {
   ipcMain.handle('bookstr-desktop-signer-disconnect', () => disconnectDesktopSigner());
 }
 
-function setupProtocol(targetSession) {
+function setupProtocol(targetSession: Session) {
   targetSession.protocol.handle(APP_PROTOCOL, async (request) => {
     const parsed = new URL(request.url);
     const libraryCoverMatch = parsed.pathname.match(/^\/api\/library-cover\/([a-f0-9]{32}(?:[a-f0-9]{32})?)$/i);
@@ -1565,7 +1544,7 @@ function setupProtocol(targetSession) {
           cacheDir: path.join(libraryDataDir, 'covers'),
         });
         if (!cover) return new Response('Not found', { status: 404 });
-        return new Response(cover.bytes, {
+        return new Response(cover.bytes as Uint8Array<ArrayBuffer>, {
           status: 200,
           headers: {
             'Content-Type': cover.mime,
@@ -1582,7 +1561,7 @@ function setupProtocol(targetSession) {
       const entry = getLibraryStore().resolveReaderToken(libraryFileMatch[1]);
       if (!entry) return new Response('Not found', { status: 404 });
       const file = await fs.readFile(entry.path);
-      return new Response(file, { headers: { 'Content-Type': MIME_TYPES.get(path.extname(entry.path).toLowerCase()) || 'application/octet-stream' } });
+      return new Response(file as Uint8Array<ArrayBuffer>, { headers: { 'Content-Type': MIME_TYPES.get(path.extname(entry.path).toLowerCase()) || 'application/octet-stream' } });
     }
     const catalogResponse = await proxyCatalogRequest(request, net.fetch);
     if (catalogResponse) return catalogResponse;
@@ -1599,7 +1578,7 @@ function setupProtocol(targetSession) {
     const isHtml = path.extname(filePath).toLowerCase() === '.html';
     const nonce = isHtml ? crypto.randomBytes(16).toString('base64') : '';
     const body = isHtml ? nonceInlineScripts(file.toString('utf8'), nonce) : file;
-    return new Response(body, {
+    return new Response(body as string | Uint8Array<ArrayBuffer>, {
       headers: {
         'Content-Type': mimeType(filePath),
         'Last-Modified': builtAt.toUTCString(),
@@ -1624,10 +1603,10 @@ async function bootstrap() {
   libraryDataDir = path.join(app.getPath('userData'), 'library');
   await fs.mkdir(path.join(libraryDataDir, 'torrents'), { recursive: true });
   if (process.platform === 'darwin') {
-    app.dock.setIcon(APP_ICON_PATH);
+    app.dock!.setIcon(APP_ICON_PATH);
   }
   if (process.platform === 'darwin') {
-    app.dock.setIcon(APP_ICON_PATH);
+    app.dock!.setIcon(APP_ICON_PATH);
   }
   if (!safeStorage.isEncryptionAvailable()) {
     console.warn('Safe storage unavailable; local desktop Nostr secrets cannot be persisted.');

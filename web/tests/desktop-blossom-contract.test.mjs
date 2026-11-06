@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 
 const html = await readFile(new URL('../index.html', import.meta.url), 'utf8');
-const desktopMain = await readFile(new URL('../../desktop/main.js', import.meta.url), 'utf8');
+const desktopMain = await readFile(new URL('../../desktop/src/main.ts', import.meta.url), 'utf8');
 const desktopPackage = JSON.parse(await readFile(new URL('../../desktop/package.json', import.meta.url), 'utf8'));
 
 test('Electron treats legacy Blossom references as metadata instead of network sources', () => {

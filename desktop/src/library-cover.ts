@@ -1,8 +1,19 @@
-'use strict';
-
-const fs = require('node:fs/promises');
-const path = require('node:path');
-const JSZip = require('../web/jszip.min.js');
+const fs = require('node:fs/promises') as typeof import('node:fs/promises');
+const path = require('node:path') as typeof import('node:path');
+interface ZipEntry {
+  dir?: boolean;
+  _data?: { uncompressedSize?: number };
+  async(type: 'string'): Promise<string>;
+  async(type: 'uint8array'): Promise<Uint8Array>;
+}
+interface ZipArchive {
+  files: Record<string, ZipEntry>;
+  file(name: string): ZipEntry | null;
+}
+interface ZipConstructor { loadAsync(bytes: Buffer, options: { checkCRC32: boolean; createFolders: boolean }): Promise<ZipArchive> }
+type ImageCover = { bytes: Buffer; mime: string; extension: string; path?: string; cached?: boolean };
+type Metadata = { title: string; authors: string; language: string; isbn: string };
+const JSZip = require('../web/jszip.min.js') as ZipConstructor;
 
 const MAX_BOOK_BYTES = 128 * 1024 * 1024;
 const MAX_COVER_BYTES = 10 * 1024 * 1024;
@@ -13,26 +24,27 @@ const IMAGE_TYPES = new Map([
   ['image/gif', '.gif'],
 ]);
 
-function safeCoverID(value) {
+export function safeCoverID(value: unknown): string {
   const id = String(value || '').trim().toLowerCase();
   return /^[a-f0-9]{32}(?:[a-f0-9]{32})?$/.test(id) ? id : '';
 }
 
-function detectImage(bytes) {
+export function detectImage(bytes: Buffer): ImageCover | null {
   if (!Buffer.isBuffer(bytes) || bytes.length < 32 || bytes.length > MAX_COVER_BYTES) return null;
   let mime = '';
   if (bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) mime = 'image/jpeg';
   else if (bytes.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) mime = 'image/png';
   else if (bytes.subarray(0, 4).toString('ascii') === 'GIF8') mime = 'image/gif';
   else if (bytes.subarray(0, 4).toString('ascii') === 'RIFF' && bytes.subarray(8, 12).toString('ascii') === 'WEBP') mime = 'image/webp';
-  return mime ? { bytes, mime, extension: IMAGE_TYPES.get(mime) } : null;
+  const extension = IMAGE_TYPES.get(mime);
+  return mime && extension ? { bytes, mime, extension } : null;
 }
 
-function xmlAttribute(tag, name) {
+function xmlAttribute(tag: string, name: string): string {
   return tag.match(new RegExp(`\\b${name}\\s*=\\s*["']([^"']+)["']`, 'i'))?.[1] || '';
 }
 
-function epubCandidateNames(zip, opfPath, opf) {
+function epubCandidateNames(zip: ZipArchive, opfPath: string, opf: string): string[] {
   const directory = path.posix.dirname(opfPath);
   const items = [...opf.matchAll(/<item\b[^>]*>/gi)].map(match => ({
     id: xmlAttribute(match[0], 'id'),
@@ -48,12 +60,12 @@ function epubCandidateNames(zip, opfPath, opf) {
   const likely = items.filter(item => IMAGE_TYPES.has(item.mediaType) && /cover|front/i.test(`${item.id} ${item.href}`));
   const hrefs = [...preferred, ...likely].map(item => item.href);
   if (guideHref && /\.(?:jpe?g|png|webp|gif)(?:$|[?#])/i.test(guideHref)) hrefs.push(guideHref);
-  const resolved = hrefs.map(href => path.posix.normalize(path.posix.join(directory, decodeURIComponent(href.split(/[?#]/, 1)[0]))));
+  const resolved = hrefs.map(href => path.posix.normalize(path.posix.join(directory, decodeURIComponent(href.split(/[?#]/, 1)[0]!))));
   const filenameFallbacks = Object.keys(zip.files).filter(name => /(?:^|\/)(?:cover|front)[^/]*\.(?:jpe?g|png|webp|gif)$/i.test(name));
   return [...new Set([...resolved, ...filenameFallbacks])];
 }
 
-async function epubPackage(bytes) {
+async function epubPackage(bytes: Buffer): Promise<{ zip: ZipArchive; opfPath: string; opf: string }> {
   const zip = await JSZip.loadAsync(bytes, { checkCRC32: true, createFolders: false });
   const containerEntry = zip.file('META-INF/container.xml');
   const container = containerEntry ? await containerEntry.async('string') : '';
@@ -65,7 +77,7 @@ async function epubPackage(bytes) {
   return { zip, opfPath, opf };
 }
 
-async function epubCover(bytes) {
+export async function epubCover(bytes: Buffer): Promise<ImageCover | null> {
   const { zip, opfPath, opf } = await epubPackage(bytes);
   for (const name of epubCandidateNames(zip, opfPath, opf)) {
     const entry = zip.file(name);
@@ -76,26 +88,26 @@ async function epubCover(bytes) {
   return null;
 }
 
-function decodeXMLText(value) {
-  const codePoint = (value, radix) => {
-    const numeric = parseInt(value, radix);
+function decodeXMLText(value: string): string {
+  const codePoint = (digits: string, radix: number): string => {
+    const numeric = parseInt(digits, radix);
     return Number.isInteger(numeric) && numeric > 0 && numeric <= 0x10ffff ? String.fromCodePoint(numeric) : '';
   };
   return String(value || '')
     .replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1')
     .replace(/<[^>]+>/g, ' ')
-    .replace(/&#(\d+);/g, (_match, code) => codePoint(code, 10))
-    .replace(/&#x([a-f0-9]+);/gi, (_match, code) => codePoint(code, 16))
+    .replace(/&#(\d+);/g, (_match, code: string) => codePoint(code, 10))
+    .replace(/&#x([a-f0-9]+);/gi, (_match, code: string) => codePoint(code, 16))
     .replace(/&amp;/gi, '&').replace(/&lt;/gi, '<').replace(/&gt;/gi, '>')
     .replace(/&quot;/gi, '"').replace(/&apos;/gi, "'")
     .replace(/\s+/g, ' ').trim();
 }
 
-function xmlElement(xml, name) {
+function xmlElement(xml: string, name: string): string {
   return decodeXMLText(xml.match(new RegExp(`<(?:[\\w.-]+:)?${name}\\b[^>]*>([\\s\\S]*?)<\\/(?:[\\w.-]+:)?${name}>`, 'i'))?.[1] || '');
 }
 
-async function epubMetadata(bytes) {
+export async function epubMetadata(bytes: Buffer): Promise<Metadata | null> {
   const { opf } = await epubPackage(bytes);
   if (!opf) return null;
   return {
@@ -103,12 +115,12 @@ async function epubMetadata(bytes) {
     authors: xmlElement(opf, 'creator'),
     language: xmlElement(opf, 'language'),
     isbn: [...opf.matchAll(/<(?:[\w.-]+:)?identifier\b[^>]*>([\s\S]*?)<\/(?:[\w.-]+:)?identifier>/gi)]
-      .map(match => decodeXMLText(match[1]).replace(/^urn:isbn:/i, ''))
+      .map(match => decodeXMLText(match[1] || '').replace(/^urn:isbn:/i, ''))
       .find(value => /(?:\d[\s-]*){9}[\dX]/i.test(value)) || '',
   };
 }
 
-async function localBookFormat(bytes, filenameExtension = '') {
+export async function localBookFormat(bytes: Buffer, filenameExtension = ''): Promise<string> {
   if (!Buffer.isBuffer(bytes) || !bytes.length) return '';
   if (bytes.subarray(0, 5).toString('ascii') === '%PDF-') return 'pdf';
   if (bytes.subarray(0, 4).toString('ascii') === 'Rar!') return 'cbr';
@@ -125,7 +137,7 @@ async function localBookFormat(bytes, filenameExtension = '') {
   return ['epub', 'fb2', 'pdf', 'cbz', 'cbr'].includes(fallback) ? fallback : '';
 }
 
-function fb2Metadata(bytes) {
+export function fb2Metadata(bytes: Buffer): Metadata {
   const xml = bytes.toString('utf8');
   const titleInfo = xml.match(/<title-info\b[^>]*>([\s\S]*?)<\/title-info>/i)?.[1] || xml;
   const firstName = xmlElement(titleInfo, 'first-name');
@@ -139,19 +151,19 @@ function fb2Metadata(bytes) {
   };
 }
 
-function fb2Cover(bytes) {
+export function fb2Cover(bytes: Buffer): ImageCover | null {
   const xml = bytes.toString('utf8');
   const coverID = xml.match(/<coverpage\b[^>]*>[\s\S]*?<image\b[^>]*(?:l:href|xlink:href|href)\s*=\s*["']#([^"']+)["']/i)?.[1] || '';
   const binaries = [...xml.matchAll(/<binary\b([^>]*)>([\s\S]*?)<\/binary>/gi)];
-  const selected = binaries.find(match => xmlAttribute(match[1], 'id') === coverID)
-    || binaries.find(match => /cover|front/i.test(xmlAttribute(match[1], 'id')));
+  const selected = binaries.find(match => xmlAttribute(match[1]!, 'id') === coverID)
+    || binaries.find(match => /cover|front/i.test(xmlAttribute(match[1]!, 'id')));
   if (!selected) return null;
-  const encoded = selected[2].replace(/\s+/g, '');
+  const encoded = selected[2]!.replace(/\s+/g, '');
   if (!encoded || encoded.length > Math.ceil(MAX_COVER_BYTES * 4 / 3) + 8) return null;
   return detectImage(Buffer.from(encoded, 'base64'));
 }
 
-async function existingCover(cacheDir, id) {
+async function existingCover(cacheDir: string, id: string): Promise<ImageCover | null> {
   for (const extension of IMAGE_TYPES.values()) {
     try {
       const filePath = path.join(cacheDir, `${id}${extension}`);
@@ -165,7 +177,8 @@ async function existingCover(cacheDir, id) {
   return null;
 }
 
-async function localBookCover({ bookId, bookPath, cacheDir }) {
+export async function localBookCover({ bookId, bookPath, cacheDir }:
+  { bookId: string; bookPath: string; cacheDir: string }): Promise<ImageCover | null> {
   const id = safeCoverID(bookId);
   if (!id || !bookPath || !cacheDir) return null;
   const cached = await existingCover(cacheDir, id);
@@ -182,7 +195,8 @@ async function localBookCover({ bookId, bookPath, cacheDir }) {
   return { ...cover, path: outputPath, cached: false };
 }
 
-async function localBookMetadata({ bookId, bookPath }) {
+export async function localBookMetadata({ bookId, bookPath }:
+  { bookId: string; bookPath: string }): Promise<Partial<Metadata> & { extension: string } | null> {
   if (!safeCoverID(bookId) || !bookPath) return null;
   const stat = await fs.stat(bookPath);
   if (!stat.isFile() || stat.size <= 0 || stat.size > MAX_BOOK_BYTES) return null;
@@ -195,17 +209,5 @@ async function localBookMetadata({ bookId, bookPath }) {
       : {};
   const useful = Object.fromEntries(Object.entries({ extension, ...(metadata || {}) })
     .filter(([, value]) => String(value || '').trim()));
-  return Object.keys(useful).length ? useful : null;
+  return Object.keys(useful).length ? useful as Partial<Metadata> & { extension: string } : null;
 }
-
-module.exports = {
-  detectImage,
-  epubCover,
-  epubMetadata,
-  fb2Cover,
-  fb2Metadata,
-  localBookCover,
-  localBookFormat,
-  localBookMetadata,
-  safeCoverID,
-};
