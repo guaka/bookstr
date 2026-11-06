@@ -59,7 +59,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
     def do_GET(self):  # noqa: N802
         if self.path == "/__webdev__/webtorrent.min.js":
             if not WEBTORRENT_BUNDLE.is_file():
-                return self.send_error(503, "Run npm install in desktop/ to enable browser WebTorrent")
+                return self.send_error(503, "Run pnpm install in desktop/ to enable browser WebTorrent")
             body = WEBTORRENT_BUNDLE.read_bytes()
             self.send_response(200)
             self.send_header("Content-Type", "application/javascript; charset=UTF-8")
