@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-const read = path => fs.readFileSync(new URL('../../'+path, import.meta.url),'utf8');
+const read = (path: string) => fs.readFileSync(new URL('../../'+path, import.meta.url),'utf8');
 test('iPhone torrent bridge is built reproducibly and packaged with notices',()=>{
   const build=read('scripts/build-ios-torrent.sh');
   assert.match(build,/9d7443f467147d1784fb7516d2a882db1abb5a8b/);

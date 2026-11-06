@@ -1,9 +1,10 @@
+import { present } from './test-values.mts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { inflateSync } from 'node:zlib';
 
-await import('../book-metadata.js');
+import '../book-metadata.js';
 
 const html = await readFile(new URL('../index.html', import.meta.url), 'utf8');
 const designTokens = await readFile(new URL('../design-tokens.css', import.meta.url), 'utf8');
@@ -361,7 +362,7 @@ test('the web client never turns Blossom response data into readable content', (
   assert.doesNotMatch(html, /book\?\.blossomUrl[\s\S]{0,80}bookCache/);
   assert.doesNotMatch(bookMetadata, /source\.blossomUrl/);
   // Legacy URLs remain valid for identity comparisons, never reader selection.
-  const canonicalReadUrl = bookMetadata.match(/function canonicalReadUrl\([\s\S]*?\n {4}}/)[0];
+  const canonicalReadUrl = present(bookMetadata.match(/function canonicalReadUrl\([\s\S]*?\n {4}}/))[0];
   assert.doesNotMatch(canonicalReadUrl, /blossomUrl/);
   assert.equal(globalThis.BookMetadata.canonicalReadUrl({ blossomUrl: 'https://blossom.example/book.epub' }), '');
 });
@@ -911,7 +912,7 @@ test('desktop mode proxies dictionaries and anchors the footer without changing 
 
 test('desktop content security policy permits secure Nostr relay sockets', async () => {
   const desktopPackage = JSON.parse(await readFile(new URL('../../desktop/package.json', import.meta.url), 'utf8'));
-  const desktopFiles = desktopPackage.build.files.flatMap(entry =>
+  const desktopFiles = desktopPackage.build.files.flatMap((entry: string | { to?: string; filter?: string[] }) =>
     typeof entry === 'string' ? [entry] : entry.to === 'desktop' ? entry.filter || [] : []);
   assert.match(desktopPolicy, /connect-src 'self' https: wss:;/);
   assert.ok(desktopFiles.includes('security-policy.js'));
