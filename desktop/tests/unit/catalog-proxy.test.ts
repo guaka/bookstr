@@ -1,10 +1,14 @@
-const test = require('node:test');
-const assert = require('node:assert/strict');
+const test = require('node:test') as typeof import('node:test');
+const assert: typeof import('node:assert/strict') = require('node:assert/strict');
 
 const {
   catalogUpstreamUrl,
   proxyCatalogRequest,
-} = require('../../catalog-proxy');
+} = require('../../catalog-proxy') as typeof import('../../src/catalog-proxy');
+
+type CatalogFetch = Parameters<typeof proxyCatalogRequest>[1];
+type CatalogFetchOptions = Parameters<CatalogFetch>[1];
+type CatalogFetchCall = { url: string; options: CatalogFetchOptions };
 
 test('catalog proxy allowlists only Bookstr search and acquisition routes', () => {
   const base = 'https://catalog.test/api';
@@ -91,7 +95,7 @@ test('catalog proxy allowlists only Bookstr search and acquisition routes', () =
 });
 
 test('catalog proxy forwards responses and preserves useful headers', async () => {
-  const calls = [];
+  const calls: CatalogFetchCall[] = [];
   const response = await proxyCatalogRequest(
     new Request('app://bookstr/api/search?q=paper', { headers: { Accept: 'application/json' } }),
     async (url, options) => {
@@ -102,7 +106,7 @@ test('catalog proxy forwards responses and preserves useful headers', async () =
       });
     },
     'https://catalog.test/api',
-  );
+  ) as Response;
   assert.deepEqual(calls, [{
     url: 'https://catalog.test/api/search?q=paper',
     options: { method: 'GET', headers: { Accept: 'application/json' } },
@@ -120,21 +124,21 @@ test('catalog proxy rejects mutations, ignores unrelated routes, and handles out
   const rejected = await proxyCatalogRequest(
     new Request('app://bookstr/api/search', { method: 'POST' }),
     noFetch,
-  );
+  ) as Response;
   assert.equal(rejected.status, 405);
   assert.equal(rejected.headers.get('allow'), 'GET, HEAD');
 
   const unavailable = await proxyCatalogRequest(
     new Request('app://bookstr/api/opds?query=paper'),
     async () => { throw new Error('offline'); },
-  );
+  ) as Response;
   assert.equal(unavailable.status, 502);
   assert.equal(await unavailable.text(), 'Catalog unavailable');
 });
 
 test('catalog proxy selects route-specific accepts, forwards all cache headers, and omits HEAD bodies', async () => {
-  const calls = [];
-  const fetchImpl = async (url, options) => {
+  const calls: CatalogFetchCall[] = [];
+  const fetchImpl: CatalogFetch = async (url, options) => {
     calls.push({ url, options });
     return new Response('payload', {
       status: 206,
@@ -147,23 +151,23 @@ test('catalog proxy selects route-specific accepts, forwards all cache headers, 
       },
     });
   };
-  const opds = await proxyCatalogRequest(new Request('app://bookstr/api/opds?query=paper'), fetchImpl);
-  assert.equal(calls[0].options.headers.Accept, 'application/atom+xml;profile=opds-catalog');
+  const opds = await proxyCatalogRequest(new Request('app://bookstr/api/opds?query=paper'), fetchImpl) as Response;
+  assert.equal(calls[0]!.options.headers.Accept, 'application/atom+xml;profile=opds-catalog');
   assert.equal(opds.headers.get('content-length'), '7');
   assert.equal(opds.headers.get('cache-control'), 'max-age=60');
   assert.equal(opds.headers.get('last-modified'), 'Sun, 30 Aug 2026 12:00:00 GMT');
 
-  const json = await proxyCatalogRequest(new Request('app://bookstr/api/oapen?query=paper'), fetchImpl);
-  assert.equal(calls[1].options.headers.Accept, 'application/json');
+  const json = await proxyCatalogRequest(new Request('app://bookstr/api/oapen?query=paper'), fetchImpl) as Response;
+  assert.equal(calls[1]!.options.headers.Accept, 'application/json');
   assert.equal(await json.text(), 'payload');
 
-  const head = await proxyCatalogRequest(new Request('app://bookstr/api/search?q=paper', { method: 'HEAD' }), fetchImpl);
-  assert.equal(calls[2].options.method, 'HEAD');
+  const head = await proxyCatalogRequest(new Request('app://bookstr/api/search?q=paper', { method: 'HEAD' }), fetchImpl) as Response;
+  assert.equal(calls[2]!.options.method, 'HEAD');
   assert.equal(await head.text(), '');
 
   await proxyCatalogRequest(new Request('app://bookstr/api/search?q=paper'), fetchImpl, 'https://catalog.test/api/');
-  assert.equal(calls[3].options.headers.Accept, '*/*');
-  assert.equal(calls[3].url, 'https://catalog.test/api/search?q=paper');
+  assert.equal(calls[3]!.options.headers.Accept, '*/*');
+  assert.equal(calls[3]!.url, 'https://catalog.test/api/search?q=paper');
 
   assert.equal(
     catalogUpstreamUrl('app://bookstr/api/opds?query=paper&order_by=popular', undefined, 'https://unglue.test/s.open/'),
@@ -172,7 +176,7 @@ test('catalog proxy selects route-specific accepts, forwards all cache headers, 
 });
 
 test('catalog proxy handles HEAD responses and route-specific accept headers', async () => {
-  const calls = [];
+  const calls: CatalogFetchCall[] = [];
   const response = await proxyCatalogRequest(
     new Request('app://bookstr/api/oapen?query=history', { method: 'HEAD' }),
     async (url, options) => {
@@ -186,7 +190,7 @@ test('catalog proxy handles HEAD responses and route-specific accept headers', a
         },
       });
     },
-  );
+  ) as Response;
 
   assert.deepEqual(calls, [{
     url: 'https://library.oapen.org/rest/search?query=history&expand=metadata%2Cbitstreams&limit=50',
@@ -201,7 +205,7 @@ test('catalog proxy handles HEAD responses and route-specific accept headers', a
 });
 
 test('catalog proxy preserves accept headers for ordinary catalog routes', async () => {
-  let received;
+  let received: { method: string; headers: { Accept: string } } | undefined;
   const response = await proxyCatalogRequest(
     new Request('app://bookstr/api/books/7', { headers: { Accept: 'application/custom' } }),
     async (_url, options) => {
@@ -209,7 +213,7 @@ test('catalog proxy preserves accept headers for ordinary catalog routes', async
       return new Response('ok', { status: 200 });
     },
     'https://catalog.test/api/',
-  );
+  ) as Response;
 
   assert.deepEqual(received, { method: 'GET', headers: { Accept: 'application/custom' } });
   assert.equal(await response.text(), 'ok');
@@ -226,7 +230,7 @@ test('catalog proxy rejects incomplete archive requests and defaults ordinary ac
   assert.equal(catalogUpstreamUrl(`app://bookstr/api/internet-archive/download?id=book&name=${'x'.repeat(513)}`), '');
   assert.equal(catalogUpstreamUrl('app://bookstr/api/internet-archive/download?id=book&name=dir%2Fbook.epub'), '');
 
-  let received;
+  let received: { method: string; headers: { Accept: string } } | undefined;
   await proxyCatalogRequest(
     new Request('app://bookstr/api/books/8'),
     async (_url, options) => {

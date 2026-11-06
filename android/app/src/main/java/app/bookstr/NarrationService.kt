@@ -95,6 +95,7 @@ class NarrationService : MediaBrowserServiceCompat(), TextToSpeech.OnInitListene
 
     private fun selectedNeuralModel() = speechModels.models.firstOrNull { it.id == speechSettings.voice(speechLanguage) && it.language == app.bookstr.speech.SpeechLanguages.tag(speechLanguage) }
     private var speechText = ""
+    private var automaticSpeechLanguage = "en"
     private var speechLanguage = "en"
     private var speechChunkInputs: List<IncomingNarrationChunk> = emptyList()
     private var resumeOffset = 0
@@ -303,8 +304,12 @@ class NarrationService : MediaBrowserServiceCompat(), TextToSpeech.OnInitListene
                 sessionActive = true
                 readBookMetadata(intent)
                 speechText = intent.getStringExtra(EXTRA_TEXT).orEmpty()
-                speechLanguage = intent.getStringExtra(EXTRA_LANGUAGE).orEmpty().ifBlank { "en" }
+                automaticSpeechLanguage = intent.getStringExtra(EXTRA_LANGUAGE).orEmpty().ifBlank { "en" }
+                speechLanguage = speechSettings.resolvedLanguage(bookId, automaticSpeechLanguage)
                 speechChunkInputs = parseIncomingSpeechChunks(intent.getStringExtra(EXTRA_CHUNKS).orEmpty())
+                if (app.bookstr.speech.SpeechLanguages.tag(speechLanguage) != app.bookstr.speech.SpeechLanguages.tag(automaticSpeechLanguage)) {
+                    speechChunkInputs = emptyList()
+                }
                 resumeOffset = 0
                 currentRangeStart = 0
                 currentParagraph = ""
@@ -390,6 +395,18 @@ class NarrationService : MediaBrowserServiceCompat(), TextToSpeech.OnInitListene
                 currentParagraph = intent.getStringExtra(EXTRA_PARAGRAPH).orEmpty().take(600)
                 updateMetadata()
                 updateNotification()
+            }
+            ACTION_LANGUAGE -> {
+                if (!sessionActive || intent.getStringExtra(EXTRA_BOOK_ID) != bookId) return Service.START_STICKY
+                speechSettings.setBookLanguage(bookId, intent.getStringExtra(EXTRA_LANGUAGE_OVERRIDE))
+                speechLanguage = speechSettings.resolvedLanguage(bookId, automaticSpeechLanguage)
+                generation += 1
+                resetAudioPipeline(cancelSynthesis = true)
+                speechChunkInputs = emptyList()
+                pendingPlay = false
+                resumeOffset = currentRangeStart
+                if (isPlaying) playOrRequestText()
+                publishState()
             }
             ACTION_RATE -> {
                 val language = intent.getStringExtra(EXTRA_LANGUAGE).orEmpty().ifBlank { speechLanguage }
@@ -1153,6 +1170,7 @@ class NarrationService : MediaBrowserServiceCompat(), TextToSpeech.OnInitListene
                 .putExtra(EXTRA_BOOK_TITLE, bookTitle)
                 .putExtra(EXTRA_BOOK_AUTHOR, bookAuthor)
                 .putExtra(EXTRA_COVER_URL, bookCoverUrl)
+                .putExtra(EXTRA_LANGUAGE_OVERRIDE, speechSettings.bookLanguage(bookId))
                 .putExtra(EXTRA_LANGUAGE, speechLanguage)
                 .putExtra(EXTRA_RATE, speechSettings.rate(speechLanguage)),
         )
@@ -1203,6 +1221,7 @@ class NarrationService : MediaBrowserServiceCompat(), TextToSpeech.OnInitListene
         const val EXTRA_COVER_URL = "cover_url"
         const val EXTRA_START_NARRATION = "app.bookstr.extra.START_NARRATION"
         const val EXTRA_LANGUAGE = "language"
+        const val EXTRA_LANGUAGE_OVERRIDE = "language_override"
         const val EXTRA_RATE = "rate"
 
         private const val ACTION_SPEAK = "app.bookstr.action.NARRATION_SPEAK"
@@ -1211,6 +1230,7 @@ class NarrationService : MediaBrowserServiceCompat(), TextToSpeech.OnInitListene
         private const val ACTION_STOP_IF_DIFFERENT_BOOK = "app.bookstr.action.NARRATION_STOP_IF_DIFFERENT_BOOK"
         private const val ACTION_SYNC = "app.bookstr.action.NARRATION_SYNC"
         private const val ACTION_PARAGRAPH = "app.bookstr.action.NARRATION_PARAGRAPH"
+        private const val ACTION_LANGUAGE = "app.bookstr.action.NARRATION_LANGUAGE"
         private const val ACTION_RATE = "app.bookstr.action.NARRATION_RATE"
         private const val ACTION_REQUEST_READER_TEXT = "app.bookstr.action.REQUEST_READER_TEXT"
         private const val EXTRA_TEXT = "text"
@@ -1329,6 +1349,15 @@ class NarrationService : MediaBrowserServiceCompat(), TextToSpeech.OnInitListene
                 Intent(context, NarrationService::class.java)
                     .setAction(ACTION_PARAGRAPH)
                     .putExtra(EXTRA_PARAGRAPH, paragraph),
+            )
+        }
+
+        fun setBookLanguage(context: Context, bookId: String, language: String?) {
+            context.startService(
+                Intent(context, NarrationService::class.java)
+                    .setAction(ACTION_LANGUAGE)
+                    .putExtra(EXTRA_BOOK_ID, bookId)
+                    .putExtra(EXTRA_LANGUAGE_OVERRIDE, language),
             )
         }
 

@@ -72,6 +72,24 @@ enum LibraryUITestFixtures {
             BookProgress(bookId: cbzID, progression: 0, cfi: "comic:0:3", updatedAt: 0),
             BookProgress(bookId: cbrID, progression: 0, cfi: "comic:0:4", updatedAt: 0),
         ])
+        if arguments.contains("--ui-testing-external-favorite") {
+            let pubkey = String(repeating: "f", count: 64)
+            settings.pubkeyHex = pubkey
+            let tags = [[
+                "bookstr", "ui-test-unreadable-remote", "Remote Favorite Fixture",
+                "Remote Author", "", "epub", "2026",
+            ], [
+                "bookstr", "ui-test-readable-remote", "Remote URL Fixture",
+                "", "http://127.0.0.1:9/remote.epub", "epub", "2026",
+            ], [
+                "bookstr", "ui-test-unreadable-unknown-author", "Unreadable Unknown Author Fixture",
+                "", "", "epub", "2026",
+            ]]
+            if let data = try? JSONSerialization.data(withJSONObject: tags),
+               let plaintext = String(data: data, encoding: .utf8) {
+                settings.cacheNostrFavorites(pubkey: pubkey, plaintext: plaintext)
+            }
+        }
     }
 
     private static func copyBundledFixture(named name: String, extension fileExtension: String, to target: URL) {

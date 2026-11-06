@@ -118,6 +118,13 @@ test('managed full JaCoCo report validates downloaded inputs without compiling o
   assert.match(guard, /Missing JVM JaCoCo execution data/);
   assert.match(guard, /Missing emulator JaCoCo execution data/);
   assert.match(guard, /Missing staged Android project class files/);
+  assert.doesNotMatch(guard.split('    doLast {')[1], /fileTree\(|managedJvmExecutionData\.get\(|managedDeviceExecutionData\.get\(|stagedManagedCoverageClasses\.get\(/,
+    'task action must not call Project APIs or resolve providers while executing');
+  const capturedInputs = guard.split('    doLast {')[0];
+  assert.match(capturedInputs, /managedJvmExecutionData\.get\(\)\.asFile/);
+  assert.match(capturedInputs, /managedDeviceExecutionData\.get\(\)\.asFile/);
+  assert.match(capturedInputs, /managedCoverageClassesDir = stagedManagedCoverageClasses\.get\(\)\.asFile/);
+  assert.match(capturedInputs, /managedCoverageClassFiles = fileTree\(managedCoverageClassesDir\)\.matching/);
   assert.doesNotMatch(report, /dependsOn\("testDebugUnitTest"|dependsOn\("compileDebug/,
     'the report task consumes downloaded inputs without running tests or compilers');
 
@@ -133,6 +140,8 @@ const coverageGuardCases = [
   { name: 'missing JVM execution data fails the report dependency', missing: 'jvm', message: 'Missing JVM JaCoCo execution data' },
   { name: 'missing emulator execution data fails the report dependency', missing: 'device', message: 'Missing emulator JaCoCo execution data' },
   { name: 'missing compiled classes fails the report dependency', missing: 'classes', message: 'Missing staged Android project class files' },
+  { name: 'empty JVM execution data fails the report dependency', missing: 'jvm', empty: true, message: 'Missing JVM JaCoCo execution data' },
+  { name: 'empty emulator execution data fails the report dependency', missing: 'device', empty: true, message: 'Missing emulator JaCoCo execution data' },
   { name: 'all placeholder inputs pass validation without running JaCoCo', missing: null },
 ];
 
@@ -145,13 +154,13 @@ for (const scenario of coverageGuardCases) {
       const jvmData = join(buildDirectory, 'outputs/unit_test_code_coverage/debugUnitTest/testDebugUnitTest.exec');
       const deviceData = join(buildDirectory, 'coverage/full.ec');
       mkdirSync(classes, { recursive: true });
-      if (scenario.missing !== 'jvm') {
+      if (scenario.missing !== 'jvm' || scenario.empty) {
         mkdirSync(join(buildDirectory, 'outputs/unit_test_code_coverage/debugUnitTest'), { recursive: true });
-        writeFileSync(jvmData, 'placeholder JVM bytes');
+        writeFileSync(jvmData, scenario.empty && scenario.missing === 'jvm' ? '' : 'placeholder JVM bytes');
       }
-      if (scenario.missing !== 'device') {
+      if (scenario.missing !== 'device' || scenario.empty) {
         mkdirSync(join(buildDirectory, 'coverage'), { recursive: true });
-        writeFileSync(deviceData, 'placeholder emulator bytes');
+        writeFileSync(deviceData, scenario.empty && scenario.missing === 'device' ? '' : 'placeholder emulator bytes');
       }
       if (scenario.missing !== 'classes') writeFileSync(join(classes, 'Example.class'), 'placeholder class bytes');
 
@@ -187,3 +196,52 @@ for (const scenario of coverageGuardCases) {
     }
   });
 }
+
+test('managed coverage input guard reuses the configuration cache', () => {
+  const directory = mkdtempSync(join(tmpdir(), 'bookstr-managed-coverage-cache-'));
+  try {
+    const buildDirectory = join(directory, 'build');
+    mkdirSync(join(buildDirectory, 'coverage/project-classes/example'), { recursive: true });
+    mkdirSync(join(buildDirectory, 'outputs/unit_test_code_coverage/debugUnitTest'), { recursive: true });
+    writeFileSync(join(buildDirectory, 'outputs/unit_test_code_coverage/debugUnitTest/testDebugUnitTest.exec'), 'placeholder JVM bytes');
+    writeFileSync(join(buildDirectory, 'coverage/full.ec'), 'placeholder emulator bytes');
+    writeFileSync(join(buildDirectory, 'coverage/project-classes/example/Example.class'), 'placeholder class bytes');
+
+    const init = join(directory, 'coverage-cache.gradle');
+    writeFileSync(init, `gradle.beforeProject { project ->
+  if (project.name == 'app') {
+    project.layout.buildDirectory.set(new File(gradle.startParameter.projectProperties['coverageTestBuildDir']))
+  }
+}
+`);
+    const command = [
+      process.platform === 'win32' ? 'gradlew.bat' : './gradlew',
+      process.env.GITHUB_ACTIONS === 'true' ? '--daemon' : '--no-daemon',
+      '--configuration-cache', '--max-workers=2',
+      '-Dorg.gradle.jvmargs=-Xmx1536m -Dfile.encoding=UTF-8',
+      '--init-script', init,
+      `-PcoverageTestBuildDir=${buildDirectory}`,
+      ':app:verifyManagedDebugCoverageInputs',
+    ];
+    const runGuard = () => spawnSync(command[0], command.slice(1), {
+      cwd: androidDirectory,
+      encoding: 'utf8',
+      timeout: 300_000,
+      maxBuffer: 4 * 1024 * 1024,
+    });
+
+    const first = runGuard();
+    const firstOutput = `${first.stdout}\n${first.stderr}`;
+    assert.equal(first.status, 0, firstOutput);
+    assert.match(firstOutput, /> Task :app:verifyManagedDebugCoverageInputs/);
+    assert.match(firstOutput, /Configuration cache entry stored/);
+
+    const second = runGuard();
+    const secondOutput = `${second.stdout}\n${second.stderr}`;
+    assert.equal(second.status, 0, secondOutput);
+    assert.match(secondOutput, /> Task :app:verifyManagedDebugCoverageInputs/);
+    assert.match(secondOutput, /Configuration cache entry reused/);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});

@@ -1,9 +1,56 @@
+import Combine
 import XCTest
 #if SWIFT_PACKAGE
 @testable import BookstrLogic
 #else
 @testable import BookstrIOS
 #endif
+
+@MainActor
+private final class ControlledReaderChromeSleeper {
+    private var continuations: [CheckedContinuation<Void, Never>?] = []
+    private var scheduleWaiters: [(count: Int, continuation: CheckedContinuation<Void, Never>)] = []
+    private var completionCount = 0
+    private var completionWaiters: [(count: Int, continuation: CheckedContinuation<Void, Never>)] = []
+    private(set) var requestedDurations: [Duration] = []
+
+    func sleep(_ duration: Duration) async throws {
+        requestedDurations.append(duration)
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            continuations.append(continuation)
+            let ready = scheduleWaiters.filter { $0.count <= continuations.count }
+            scheduleWaiters.removeAll { $0.count <= continuations.count }
+            ready.forEach { $0.continuation.resume() }
+        }
+        completionCount += 1
+        let ready = completionWaiters.filter { $0.count <= completionCount }
+        completionWaiters.removeAll { $0.count <= completionCount }
+        ready.forEach { $0.continuation.resume() }
+    }
+
+    func waitUntilScheduled(_ count: Int) async {
+        guard continuations.count < count else { return }
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            scheduleWaiters.append((count, continuation))
+        }
+    }
+
+    func waitUntilCompleted(_ count: Int) async {
+        guard completionCount < count else { return }
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            completionWaiters.append((count, continuation))
+        }
+    }
+
+    func resume(_ index: Int) {
+        guard continuations.indices.contains(index), let continuation = continuations[index] else {
+            XCTFail("Sleeper invocation \(index) was already resumed or not scheduled")
+            return
+        }
+        continuations[index] = nil
+        continuation.resume()
+    }
+}
 
 final class ReaderPlaybackSessionTests: XCTestCase {
     func testCarPlaySelectionUsesLocalFileAndConsumesAutoplayOnce() {
@@ -100,12 +147,16 @@ final class ReaderPlaybackSessionTests: XCTestCase {
     }
 
     @MainActor
-    func testCancelKeepsVisibleChromeUntilExplicitlyHidden() async throws {
-        let visibility = ReaderChromeVisibilityController(dismissalDelay: .milliseconds(20))
+    func testCancelKeepsVisibleChromeUntilExplicitlyHidden() async {
+        let sleeper = ControlledReaderChromeSleeper()
+        let visibility = ReaderChromeVisibilityController(dismissalDelay: .seconds(4), sleep: sleeper.sleep)
         visibility.reveal()
+        await sleeper.waitUntilScheduled(1)
+        XCTAssertEqual(sleeper.requestedDurations, [.seconds(4)])
         XCTAssertTrue(visibility.isButtonIslandVisible)
         visibility.cancel()
-        try await Task.sleep(for: .milliseconds(60))
+        sleeper.resume(0)
+        await sleeper.waitUntilCompleted(1)
         XCTAssertTrue(visibility.isButtonIslandVisible)
         visibility.hide()
         XCTAssertFalse(visibility.isButtonIslandVisible)
@@ -125,21 +176,46 @@ final class ReaderPlaybackSessionTests: XCTestCase {
     }
 
     @MainActor
-    func testButtonIslandVisibilityResetsAndExpiresIndependentlyOfReaderLayout() async throws {
-        let visibility = ReaderChromeVisibilityController(dismissalDelay: .milliseconds(20))
+    func testButtonIslandVisibilityResetsAndExpiresIndependentlyOfReaderLayout() async {
+        let sleeper = ControlledReaderChromeSleeper()
+        let visibility = ReaderChromeVisibilityController(dismissalDelay: .seconds(4), sleep: sleeper.sleep)
 
         visibility.reveal()
         XCTAssertTrue(visibility.isButtonIslandVisible)
-        try await Task.sleep(for: .milliseconds(10))
+        await sleeper.waitUntilScheduled(1)
         visibility.scheduleDismissal()
-        try await Task.sleep(for: .milliseconds(15))
+        await sleeper.waitUntilScheduled(2)
+        XCTAssertEqual(sleeper.requestedDurations, [.seconds(4), .seconds(4)])
+        sleeper.resume(0)
+        await sleeper.waitUntilCompleted(1)
         XCTAssertTrue(visibility.isButtonIslandVisible, "interaction should reset the dismissal timer")
-        try await Task.sleep(for: .milliseconds(15))
+        sleeper.resume(1)
+        await sleeper.waitUntilCompleted(2)
         XCTAssertFalse(visibility.isButtonIslandVisible)
 
         visibility.reveal()
+        await sleeper.waitUntilScheduled(3)
+        XCTAssertEqual(sleeper.requestedDurations, [.seconds(4), .seconds(4), .seconds(4)])
         visibility.hide()
+        sleeper.resume(2)
+        await sleeper.waitUntilCompleted(3)
         XCTAssertFalse(visibility.isButtonIslandVisible)
+    }
+
+    @MainActor
+    func testDefaultSleeperEventuallyExpiresVisibleChrome() async {
+        let visibility = ReaderChromeVisibilityController(dismissalDelay: .milliseconds(20))
+        let hidden = expectation(description: "default sleeper expires the button island")
+        let observation = visibility.$isButtonIslandVisible
+            .dropFirst()
+            .filter { !$0 }
+            .prefix(1)
+            .sink { _ in hidden.fulfill() }
+
+        visibility.reveal()
+        await fulfillment(of: [hidden], timeout: 2)
+        XCTAssertFalse(visibility.isButtonIslandVisible)
+        withExtendedLifetime(observation) { }
     }
 
     func testLegacyReaderSessionUsesNewestAvailableComicProgress() throws {
