@@ -1,58 +1,77 @@
-const test = require('node:test');
-const assert = require('node:assert/strict');
-const fs = require('node:fs');
-const path = require('node:path');
-const vm = require('node:vm');
+const test: typeof import('node:test') = require('node:test');
+const assert: typeof import('node:assert/strict') = require('node:assert/strict');
+const fs: typeof import('node:fs') = require('node:fs');
+const path: typeof import('node:path') = require('node:path');
+const vm: typeof import('node:vm') = require('node:vm');
 
 const root = path.resolve(__dirname, '../..');
 
+interface NativeCommandResult {
+  error?: Error;
+  status?: number | null;
+  stdout?: string;
+  stderr?: string;
+}
+interface NativeBuildResult {
+  commands: Array<[string, string[]]>;
+  copied: Set<string>;
+  stdout: string;
+  stderr: string;
+  exitCode: number | undefined;
+}
+interface StampContext {
+  module: { exports: () => Promise<void> };
+  __dirname: string;
+  require(name: string): { writeFile?: (...args: string[]) => Promise<void> } | typeof path;
+}
+
 test('packaging stamps one timestamp per invocation and propagates write failures', async () => {
-  const writes = [];
-  let writeError;
-  const context = {
-    module: { exports: {} }, __dirname: root,
-    require(name) {
+  const writes: string[][] = [];
+  let writeError: Error | undefined;
+  const context: StampContext = {
+    module: { exports: {} as () => Promise<void> }, __dirname: root,
+    require(name: string) {
       if (name === 'node:path') return path;
       assert.equal(name, 'node:fs/promises');
-      return { async writeFile(...args) { if (writeError) throw writeError; writes.push(args); } };
+      return { async writeFile(...args: string[]) { if (writeError) throw writeError; writes.push(args); } };
     },
   };
-  vm.runInNewContext(fs.readFileSync(path.join(root, 'stamp-build.js'), 'utf8'), context, { filename: path.join(root, 'stamp-build.js') });
+  vm.runInNewContext(fs.readFileSync(path.join(root, 'stamp-build.js'), 'utf8'), context as import('node:vm').Context, { filename: path.join(root, 'stamp-build.js') });
   assert.equal(writes.length, 0);
   await context.module.exports();
   await context.module.exports();
   assert.equal(writes.length, 2);
-  assert.equal(writes[0][0], path.join(root, 'build-info.json'));
-  assert.equal(writes[0][1], writes[1][1]);
-  assert.ok(writes[0][1].endsWith('\n'));
-  assert.equal(new Date(JSON.parse(writes[0][1]).builtAt).toISOString(), JSON.parse(writes[0][1]).builtAt);
+  assert.equal(writes[0]![0], path.join(root, 'build-info.json'));
+  assert.equal(writes[0]![1], writes[1]![1]);
+  assert.ok(writes[0]![1]!.endsWith('\n'));
+  assert.equal(new Date(JSON.parse(writes[0]![1]!).builtAt).toISOString(), JSON.parse(writes[0]![1]!).builtAt);
   writeError = new Error('disk full');
   await assert.rejects(context.module.exports(), writeError);
 });
 
-function nativeBuild(platform, failure) {
-  const commands = [];
-  const copied = new Set();
+function nativeBuild(platform: string, failure?: NativeCommandResult): NativeBuildResult {
+  const commands: Array<[string, string[]]> = [];
+  const copied = new Set<string>();
   let stdout = '';
   let stderr = '';
   const exited = new Error('exit');
   const context = {
     __dirname: path.join(root, 'native'), exports: {},
     process: {
-      platform, exit(code) { assert.equal(code, 0); throw exited; },
-      stdout: { write(value) { stdout += value; } },
-      stderr: { write(value) { stderr += value; } },
+      platform, exitCode: undefined as number | undefined, exit(code: number): never { assert.equal(code, 0); throw exited; },
+      stdout: { write(value: string) { stdout += value; } },
+      stderr: { write(value: string) { stderr += value; } },
     },
-    require(name) {
+    require(name: string) {
       if (name === 'node:path') return path;
       if (name === 'node:fs') return {
-        existsSync(file) { return copied.has(file); },
-        copyFileSync(_from, to) { copied.add(to); },
+        existsSync(file: string) { return copied.has(file); },
+        copyFileSync(_from: string, to: string) { copied.add(to); },
         rmSync() {}, mkdirSync() {},
         readdirSync() { return [...copied].map(file => path.basename(file)); },
       };
       assert.equal(name, 'node:child_process');
-      return { spawnSync(command, args, options) {
+        return { spawnSync(command: string, args: readonly string[], options: { encoding: string }): NativeCommandResult {
         commands.push([command, Array.from(args)]);
         assert.equal(options.encoding, 'utf8');
         if (failure) return failure;
@@ -64,7 +83,7 @@ function nativeBuild(platform, failure) {
     },
   };
   try {
-    vm.runInNewContext(fs.readFileSync(path.join(root, 'native/build-kindle-mtp.js'), 'utf8'), context, { filename: path.join(root, 'native/build-kindle-mtp.js') });
+    vm.runInNewContext(fs.readFileSync(path.join(root, 'native/build-kindle-mtp.js'), 'utf8'), context as import('node:vm').Context, { filename: path.join(root, 'native/build-kindle-mtp.js') });
   } catch (error) { if (error !== exited) throw error; }
   return { commands, copied, stdout, stderr, exitCode: context.process.exitCode };
 }

@@ -1,14 +1,14 @@
-const test = require('node:test');
-const assert = require('node:assert/strict');
-const fs = require('node:fs');
-const path = require('node:path');
+const test = require('node:test') as typeof import('node:test');
+const assert: typeof import('node:assert/strict') = require('node:assert/strict');
+const fs = require('node:fs') as typeof import('node:fs');
+const path = require('node:path') as typeof import('node:path');
 
 const desktopRoot = path.join(__dirname, '../..');
 const repositoryRoot = path.join(desktopRoot, '..');
 const dockerfile = fs.readFileSync(path.join(desktopRoot, 'Dockerfile.test'), 'utf8');
 const nodeVersion = fs.readFileSync(path.join(repositoryRoot, '.nvmrc'), 'utf8').trim();
 const dockerignore = fs.readFileSync(path.join(repositoryRoot, '.dockerignore'), 'utf8');
-const packageJson = JSON.parse(fs.readFileSync(path.join(desktopRoot, 'package.json'), 'utf8'));
+const packageJson = JSON.parse(fs.readFileSync(path.join(desktopRoot, 'package.json'), 'utf8')) as import('../types/package-manifest').DesktopPackageManifest;
 const readme = fs.readFileSync(path.join(desktopRoot, 'README.md'), 'utf8');
 const playwrightConfig = fs.readFileSync(path.join(desktopRoot, 'playwright.config.js'), 'utf8');
 

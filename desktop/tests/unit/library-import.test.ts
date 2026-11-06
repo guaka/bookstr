@@ -1,13 +1,12 @@
 'use strict';
 
-const assert = require('node:assert/strict');
-const fs = require('node:fs');
-const fsp = require('node:fs/promises');
-const path = require('node:path');
-const test = require('node:test');
-const { LibraryImporter, hashFile } = require('../../library-import');
+const assert: typeof import('node:assert/strict') = require('node:assert/strict');
+const fsp: typeof import('node:fs/promises') = require('node:fs/promises');
+const path: typeof import('node:path') = require('node:path');
+const test: typeof import('node:test') = require('node:test');
+const { LibraryImporter, hashFile } = require('../../library-import') as typeof import('../../src/library-import');
 
-async function withRoot(fn) {
+async function withRoot<T>(fn: (root: string) => Promise<T>): Promise<T> {
   const root = await fsp.mkdtemp(path.join(__dirname, '.bookstr-import-'));
   try { return await fn(root); } finally { await fsp.rm(root, { recursive: true, force: true }); }
 }
@@ -49,7 +48,7 @@ test('deduplicated imports discard staging files and resolve their registered pa
 }));
 
 test('import boundaries reject missing roots, invalid paths, directories and unsafe extensions', () => withRoot(async root => {
-  const { safeExtension } = require('../../library-import');
+  const { safeExtension } = require('../../library-import') as typeof import('../../src/library-import');
   assert.throws(() => new LibraryImporter(), /libraryRoot/);
   assert.throws(() => safeExtension('../pdf'), /extension/);
   assert.equal(safeExtension(' .PDF '), 'pdf');

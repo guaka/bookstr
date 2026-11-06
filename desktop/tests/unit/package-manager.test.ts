@@ -1,9 +1,16 @@
-const test = require('node:test');
-const assert = require('node:assert/strict');
-const fs = require('node:fs');
-const path = require('node:path');
+interface Collector {
+  isHoisted: { value: Promise<boolean> };
+  locateFromDepOrRoot(name: string, parent: string | undefined, version: string): Promise<{
+    packageDir: string;
+    packageJson: { version: string };
+  }>;
+}
+const test = require('node:test') as typeof import('node:test');
+const assert: typeof import('node:assert/strict') = require('node:assert/strict');
+const fs = require('node:fs') as typeof import('node:fs');
+const path = require('node:path') as typeof import('node:path');
 const root = path.resolve(__dirname, '../..');
-const manifest = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
+const manifest = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8')) as import('../types/package-manifest').DesktopPackageManifest;
 const settings = fs.readFileSync(path.join(root, 'pnpm-workspace.yaml'), 'utf8');
 
 test('desktop pins pnpm and keeps installation and lifecycle hooks reproducible', () => {
@@ -30,7 +37,7 @@ test('desktop pins pnpm and keeps installation and lifecycle hooks reproducible'
 
 test('desktop package contains every local runtime module required by its main process', () => {
   const main = fs.readFileSync(path.join(root, 'main.js'), 'utf8');
-  const bundled = manifest.build.files.find(entry => typeof entry === 'object' && entry.to === 'desktop').filter;
+  const bundled = manifest.build.files.find((entry): entry is import('../types/package-manifest').BundledDirectory => typeof entry === 'object' && entry.to === 'desktop')!.filter;
   for (const [, name] of main.matchAll(/require\('\.\/([a-z-]+)'\)/g)) {
     assert.ok(bundled.includes(`${name}.js`), `Missing packaged module: ${name}.js`);
   }
@@ -38,13 +45,13 @@ test('desktop package contains every local runtime module required by its main p
 
 
 test('packaging preserves exact nested dependency versions before accepting overrides', async t => {
-  const os = require('node:os');
-  const { createRequire } = require('node:module');
+  const os = require('node:os') as typeof import('node:os');
+  const { createRequire } = require('node:module') as typeof import('node:module');
   const builderRequire = createRequire(require.resolve('electron-builder/package.json'));
-  const { PnpmNodeModulesCollector } = builderRequire('app-builder-lib/out/node-module-collector/pnpmNodeModulesCollector');
+  const { PnpmNodeModulesCollector } = builderRequire('app-builder-lib/out/node-module-collector/pnpmNodeModulesCollector') as { PnpmNodeModulesCollector: new (root: string, options: Record<string, unknown>) => Collector };
   const fixture = fs.mkdtempSync(path.join(os.tmpdir(), 'bookstr-package-versions-'));
   t.after(() => fs.rmSync(fixture, { recursive: true, force: true }));
-  const writePackage = (relative, name, version) => {
+  const writePackage = (relative: string, name: string, version: string) => {
     const directory = path.join(fixture, relative);
     fs.mkdirSync(directory, { recursive: true });
     fs.writeFileSync(path.join(directory, 'package.json'), JSON.stringify({ name, version }));
@@ -65,10 +72,10 @@ test('packaging preserves exact nested dependency versions before accepting over
 });
 
 test('packaging still accepts an installed override when no exact version exists', async t => {
-  const os = require('node:os');
-  const { createRequire } = require('node:module');
+  const os = require('node:os') as typeof import('node:os');
+  const { createRequire } = require('node:module') as typeof import('node:module');
   const builderRequire = createRequire(require.resolve('electron-builder/package.json'));
-  const { PnpmNodeModulesCollector } = builderRequire('app-builder-lib/out/node-module-collector/pnpmNodeModulesCollector');
+  const { PnpmNodeModulesCollector } = builderRequire('app-builder-lib/out/node-module-collector/pnpmNodeModulesCollector') as { PnpmNodeModulesCollector: new (root: string, options: Record<string, unknown>) => Collector };
   const fixture = fs.mkdtempSync(path.join(os.tmpdir(), 'bookstr-package-override-'));
   t.after(() => fs.rmSync(fixture, { recursive: true, force: true }));
   const installed = path.join(fixture, 'node_modules/bencode');

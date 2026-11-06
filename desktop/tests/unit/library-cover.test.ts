@@ -1,9 +1,13 @@
-const test = require('node:test');
-const assert = require('node:assert/strict');
-const fs = require('node:fs');
-const os = require('node:os');
-const path = require('node:path');
-const JSZip = require('../../../web/jszip.min.js');
+const test: typeof import('node:test') = require('node:test');
+const assert: typeof import('node:assert/strict') = require('node:assert/strict');
+const fs: typeof import('node:fs') = require('node:fs');
+const os: typeof import('node:os') = require('node:os');
+const path: typeof import('node:path') = require('node:path');
+interface ZipFixture {
+  file(name: string, contents: string | Buffer): void;
+  generateAsync(options: { type: 'nodebuffer' }): Promise<Buffer>;
+}
+const JSZip: new () => ZipFixture = require('../../../web/jszip.min.js');
 
 const {
   detectImage,
@@ -15,7 +19,7 @@ const {
   localBookFormat,
   localBookMetadata,
   safeCoverID,
-} = require('../../library-cover');
+} = require('../../library-cover') as typeof import('../../src/library-cover');
 
 const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=', 'base64');
 
@@ -29,6 +33,7 @@ async function coveredEpub() {
 
 test('extracts the OPF-declared EPUB cover instead of guessing from the filename', async () => {
   const cover = await epubCover(await coveredEpub());
+  assert.ok(cover);
   assert.equal(cover.mime, 'image/png');
   assert.deepEqual(cover.bytes, PNG);
 });
@@ -79,6 +84,7 @@ test('finds an EPUB package document when container.xml is absent', async () => 
 test('extracts an FB2 coverpage binary', () => {
   const xml = Buffer.from(`<FictionBook xmlns:l="http://www.w3.org/1999/xlink"><description><title-info><coverpage><image l:href="#front-art"/></coverpage></title-info></description><binary id="front-art" content-type="image/png">${PNG.toString('base64')}</binary></FictionBook>`);
   const cover = fb2Cover(xml);
+  assert.ok(cover);
   assert.equal(cover.mime, 'image/png');
   assert.deepEqual(cover.bytes, PNG);
 });
@@ -118,6 +124,9 @@ test('caches a local cover by a filesystem-safe book digest', async t => {
   const first = await localBookCover({ bookId, bookPath, cacheDir });
   const second = await localBookCover({ bookId, bookPath, cacheDir });
   const metadata = await localBookMetadata({ bookId, bookPath });
+  assert.ok(metadata);
+  assert.ok(first);
+  assert.ok(second);
   assert.equal(metadata.extension, 'epub');
   assert.equal(first.cached, false);
   assert.equal(second.cached, true);
