@@ -1,12 +1,12 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import worker, { allowedPath } from './index.js';
+import worker, { allowedPath } from './index.ts';
 
 test('LitRes worker route uses only its configured fixed catalogue and filters lawful free FB2 records', async (t) => {
   const originalFetch = globalThis.fetch;
-  const calls = [];
+  const calls: { url: URL; init?: RequestInit }[] = [];
   globalThis.fetch = async (input, init) => {
-    calls.push({ url: new URL(input), init });
+    calls.push({ url: new URL(input instanceof Request ? input.url : input), init });
     return Response.json({
       results: [
         {
@@ -49,10 +49,11 @@ test('LitRes worker route uses only its configured fixed catalogue and filters l
     }],
   });
   assert.equal(calls.length, 1);
+  assert.ok(calls[0]?.init);
   assert.equal(calls[0].url.href, 'https://catalog.bookstr.example/litres-public-domain.json');
   assert.equal(calls[0].url.searchParams.has('url'), false);
   assert.equal(calls[0].init.redirect, 'error');
-  assert.equal(calls[0].init.headers.Accept, 'application/json');
+  assert.equal(new Headers(calls[0].init.headers).get('Accept'), 'application/json');
 });
 
 test('worker does not expose custom OPDS URLs and validates LitRes search input', async (t) => {
@@ -78,9 +79,9 @@ test('worker does not expose custom OPDS URLs and validates LitRes search input'
 
 test('worker handles CORS preflight, unsupported methods, and every public route shape', async (t) => {
   const originalFetch = globalThis.fetch;
-  const calls = [];
+  const calls: { url: URL; init?: RequestInit }[] = [];
   globalThis.fetch = async (input, init) => {
-    calls.push({ url: new URL(input), init });
+    calls.push({ url: new URL(input instanceof Request ? input.url : input), init });
     return new Response('upstream', {
       status: 206,
       headers: {
@@ -126,17 +127,17 @@ test('worker handles CORS preflight, unsupported methods, and every public route
   assert.equal(ordinary.headers.get('Access-Control-Allow-Origin'), 'http://localhost:11111');
   assert.equal(ordinary.headers.get('ETag'), 'etag');
   assert.equal(ordinary.headers.get('X-Ignored'), null);
-  assert.equal(calls.at(-1).url.href, 'https://all.books.party/api/search?q=book');
-  assert.equal(calls.at(-1).init.headers.Accept, 'application/json');
+  assert.equal(calls.at(-1)?.url.href, 'https://all.books.party/api/search?q=book');
+  assert.equal(new Headers(calls.at(-1)?.init?.headers).get('Accept'), 'application/json');
 
   const dictionary = await worker.fetch(new Request('https://books-api.guaka.org/api/dictionaries/en-ru.sqlite3', {
     method: 'HEAD',
   }));
   assert.equal(dictionary.status, 206);
   assert.equal(await dictionary.text(), '');
-  assert.equal(calls.at(-1).url.href, 'https://download.wikdict.com/dictionaries/sqlite/2/en-ru.sqlite3');
-  assert.equal(calls.at(-1).init.method, 'HEAD');
-  assert.equal(calls.at(-1).init.headers.Accept, '*/*');
+  assert.equal(calls.at(-1)?.url.href, 'https://download.wikdict.com/dictionaries/sqlite/2/en-ru.sqlite3');
+  assert.equal(calls.at(-1)?.init?.method, 'HEAD');
+  assert.equal(new Headers(calls.at(-1)?.init?.headers).get('Accept'), '*/*');
 });
 
 test('worker returns stable errors for upstream and LitRes failures', async (t) => {
@@ -176,4 +177,28 @@ test('worker returns stable errors for upstream and LitRes failures', async (t) 
   });
   assert.equal(invalidPayload.status, 502);
   assert.match((await invalidPayload.json()).error, /invalid response/);
+});
+
+
+test('LitRes HEAD searches match author terms and return headers without a body', async (t) => {
+  const originalFetch = globalThis.fetch;
+  t.after(() => { globalThis.fetch = originalFetch; });
+  globalThis.fetch = async () => Response.json({ results: [{
+    id: 'author-match', title: 'Collected works', authors: ['Leo Tolstoy'],
+    rights: 'Public Domain', free: true,
+    files: [{ format: 'fb2', url: 'https://download.litres.example/works.fb2' }],
+  }] });
+  const env = { LITRES_PUBLIC_DOMAIN_CATALOG_URL: 'https://catalog.bookstr.example/items.json' };
+  const url = 'https://books-api.guaka.org/api/litres/search?q=Leo%20Tolstoy';
+  const found = await worker.fetch(new Request(url), env);
+  assert.equal((await found.json()).records.length, 1);
+  const unmatched = await worker.fetch(new Request(url + '%20missing'), env);
+  assert.deepEqual((await unmatched.json()).records, []);
+  const head = await worker.fetch(new Request(url, {
+    method: 'HEAD', headers: { Origin: 'https://books.guaka.org' },
+  }), env);
+  assert.equal(head.status, 200);
+  assert.equal(await head.text(), '');
+  assert.equal(head.headers.get('Content-Type'), 'application/json; charset=utf-8');
+  assert.equal(head.headers.get('Access-Control-Allow-Origin'), 'https://books.guaka.org');
 });

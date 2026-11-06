@@ -1,5 +1,17 @@
 import { isPublicHTTPSURL, normalizeLitresPublicDomainRecords } from '../../shared/catalog/opds.js';
 
+export interface WorkerEnvironment {
+  LITRES_PUBLIC_DOMAIN_CATALOG_URL?: string;
+}
+
+interface SearchableRecord { title?: string; authors?: string[] }
+
+interface JSONResponseOptions {
+  request: Request;
+  status?: number;
+  extraHeaders?: Record<string, string>;
+}
+
 const UPSTREAM_ORIGIN = 'https://all.books.party';
 const WIKDICT_ORIGIN = 'https://download.wikdict.com/dictionaries/sqlite/2';
 const ALLOWED_ORIGINS = new Set([
@@ -7,7 +19,7 @@ const ALLOWED_ORIGINS = new Set([
   'http://localhost:11111',
 ]);
 
-function corsHeaders(request) {
+function corsHeaders(request: Request) {
   const origin = request.headers.get('Origin');
   const headers = new Headers({
     'Access-Control-Allow-Methods': 'GET, HEAD, OPTIONS',
@@ -21,7 +33,7 @@ function corsHeaders(request) {
   return headers;
 }
 
-export function allowedPath(pathname) {
+export function allowedPath(pathname: string) {
   return /^\/api\/search$/.test(pathname)
     || /^\/api\/books\/\d+$/.test(pathname)
     || /^\/api\/books\/\d+\/download$/.test(pathname)
@@ -29,7 +41,7 @@ export function allowedPath(pathname) {
     || /^\/api\/litres\/search$/.test(pathname);
 }
 
-function jsonResponse(value, { request, status = 200, extraHeaders = {} }) {
+function jsonResponse(value: unknown, { request, status = 200, extraHeaders = {} }: JSONResponseOptions) {
   const headers = new Headers(corsHeaders(request));
   headers.set('Content-Type', 'application/json; charset=utf-8');
   headers.set('Cache-Control', 'public, max-age=300');
@@ -37,7 +49,7 @@ function jsonResponse(value, { request, status = 200, extraHeaders = {} }) {
   return new Response(request.method === 'HEAD' ? null : JSON.stringify(value), { status, headers });
 }
 
-function litResSearchRequest(incoming, env) {
+function litResSearchRequest(incoming: URL, env: WorkerEnvironment) {
   const query = incoming.searchParams.get('q')?.trim() || '';
   if (!query || query.length > 160) return null;
   const limit = Math.min(50, Math.max(1, Number(incoming.searchParams.get('limit')) || 20));
@@ -46,13 +58,13 @@ function litResSearchRequest(incoming, env) {
   return { query, limit, catalogURL: new URL(catalogURL).href };
 }
 
-function matchesLitResQuery(record, query) {
+function matchesLitResQuery(record: SearchableRecord, query: string) {
   const terms = String(query || '').toLocaleLowerCase().match(/[\p{L}\p{N}]+/gu) || [];
   const searchable = [record?.title, ...(record?.authors || [])].join(' ').toLocaleLowerCase();
   return terms.every(term => searchable.includes(term));
 }
 
-async function fetchLitResPublicDomain(request, incoming, env) {
+async function fetchLitResPublicDomain(request: Request, incoming: URL, env: WorkerEnvironment) {
   const search = litResSearchRequest(incoming, env);
   if (!search) {
     return jsonResponse({ error: 'A search query of at most 160 characters is required.' }, { request, status: 400 });
@@ -83,13 +95,13 @@ async function fetchLitResPublicDomain(request, incoming, env) {
   // and a direct HTTPS FB2 file. A landing page or an ambiguous record is not
   // returned to Bookstr.
   const records = normalizeLitresPublicDomainRecords(payload)
-    .filter(record => matchesLitResQuery(record, search.query))
+    .filter((record: SearchableRecord) => matchesLitResQuery(record, search.query))
     .slice(0, search.limit);
   return jsonResponse({ records }, { request });
 }
 
 export default {
-  async fetch(request, env = {}) {
+  async fetch(request: Request, env: WorkerEnvironment = {}): Promise<Response> {
     const cors = corsHeaders(request);
     if (request.method === 'OPTIONS') {
       return new Response(null, { status: 204, headers: cors });
