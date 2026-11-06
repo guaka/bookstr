@@ -4,6 +4,8 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import androidx.compose.ui.test.*
+import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import android.app.Activity
 import android.app.Application
 import android.content.res.Configuration
@@ -15,6 +17,8 @@ import app.bookstr.NarrationService
 import app.bookstr.ReaderActivity
 import app.bookstr.data.ReaderTheme
 import org.junit.Assert.assertTrue
+import org.junit.Assert.assertFalse
+import org.junit.Rule
 import org.junit.Test
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
@@ -22,9 +26,46 @@ import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 
 class ReaderNarrationReadyTest {
+    @get:Rule val compose = createEmptyComposeRule()
+
     @Test fun openingReaderAnswersNarrationRequestMadeBeforeWebViewWasReady() = checkReaderReady(false)
 
     @Test fun televisionOpeningBookAutomaticallyRequestsNarrationWhenReaderIsReady() = checkReaderReady(true)
+
+    @Test fun missingPublicationShowsReaderErrorWithoutStartingNarration() {
+        val app = ApplicationProvider.getApplicationContext<BookstrApp>()
+        val bookId = "reader-error-fixture-${System.nanoTime()}"
+        val epub = app.catalogRepository.epubFile(bookId)
+        epub.delete()
+        app.settingsRepository.clearReaderSession()
+        val narrationStarted = java.util.concurrent.atomic.AtomicBoolean(false)
+        val receiver = object : BroadcastReceiver() {
+            override fun onReceive(context: Context, intent: Intent) {
+                if (intent.getStringExtra(NarrationService.EXTRA_BOOK_ID) == bookId &&
+                    intent.getBooleanExtra(NarrationService.EXTRA_SESSION_ACTIVE, false)
+                ) narrationStarted.set(true)
+            }
+        }
+        app.registerReceiver(receiver, IntentFilter(NarrationService.ACTION_EVENT), Context.RECEIVER_NOT_EXPORTED)
+        try {
+            ActivityScenario.launch<ReaderActivity>(
+                ReaderActivity.intent(app, bookId, "Missing fixture", null, null, null, ReaderTheme.Paper),
+            ).use {
+                compose.waitUntil(30_000) {
+                    compose.onAllNodesWithTag("reader.error").fetchSemanticsNodes().isNotEmpty()
+                }
+                compose.onNodeWithTag("reader.error").assertExists()
+                compose.onNodeWithTag("reader.loading").assertDoesNotExist()
+                compose.onNodeWithContentDescription("Read aloud").assertExists()
+                assertFalse("Opening an unreadable book must not start narration", narrationStarted.get())
+            }
+        } finally {
+            NarrationService.stop(app)
+            app.unregisterReceiver(receiver)
+            app.settingsRepository.clearReaderSession()
+            epub.delete()
+        }
+    }
 
     @Suppress("DEPRECATION")
     private fun checkReaderReady(television: Boolean) {

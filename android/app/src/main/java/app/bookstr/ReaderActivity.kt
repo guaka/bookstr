@@ -58,6 +58,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
@@ -511,12 +512,13 @@ class ReaderActivity : ComponentActivity() {
                             modifier = Modifier
                                 .align(Alignment.Center)
                                 .background(androidx.compose.material3.MaterialTheme.colorScheme.surface)
-                                .padding(24.dp),
+                                .padding(24.dp)
+                                .testTag("reader.error"),
                         )
                     }
 
                     if (readerLoading && readerError == null) {
-                        CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
+                        CircularProgressIndicator(modifier = Modifier.align(Alignment.Center).testTag("reader.loading"))
                     }
 
                     ReaderChrome(
