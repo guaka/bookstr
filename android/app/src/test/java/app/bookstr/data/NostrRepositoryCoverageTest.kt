@@ -246,6 +246,31 @@ class NostrRepositoryCoverageTest {
     }
 
     @Test
+    fun syncWithoutExplicitIdsPullsSavedReadingProgress() = runBlocking<Unit> {
+        database.bookProgressDao().upsert(BookProgress("saved-book", .2, "before", 1_000L, .4))
+        val queried = CopyOnWriteArrayList<String>()
+        val server = relay { socket, message ->
+            val request = JSONArray(message)
+            if (request.getString(0) == "REQ") {
+                request.getJSONObject(2).optJSONArray("#d")?.let { tags ->
+                    queried += tags.getString(0)
+                    val event = JSONObject().put("created_at", 2L)
+                        .put("content", progressContent("saved-book", .6, "after", .8, 2_000L))
+                    socket.send(JSONArray().put("EVENT").put(request.getString(1)).put(event).toString())
+                }
+                socket.send(JSONArray().put("EOSE").put(request.getString(1)).toString())
+            }
+        }
+        settings.connectNsec(PRIVATE_KEY, PUBKEY)
+        settings.relays = listOf(serverUrl(server))
+
+        repository().syncAllFromRelays()
+
+        assertEquals(listOf(NostrClient.progressDTag("saved-book")), queried)
+        assertEquals(BookProgress("saved-book", .6, "after", 2_000L, .8), database.bookProgressDao().get("saved-book"))
+    }
+
+    @Test
     fun localSignerVocabularyRoundTripsEncryptedContentThroughTheRelay() = runBlocking<Unit> {
         val published = AtomicReference<JSONObject?>()
         val server = relay { socket, message ->
