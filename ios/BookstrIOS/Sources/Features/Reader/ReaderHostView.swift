@@ -60,16 +60,16 @@ struct ReaderHostView: View {
         .frame(width: chromeMetrics.width, height: chromeMetrics.height)
         .accessibilityAction(.escape) { closeReader() }
         .onReceive(NotificationCenter.default.publisher(for: UIDevice.orientationDidChangeNotification)) { _ in
-            updateLayoutOrientation(UIDevice.current.orientation)
-            Task { @MainActor in
-                try? await Task.sleep(for: .milliseconds(100))
-                chromeMetrics = ReaderDeviceGeometry.metrics(fallback: layoutOrientation)
-            }
+            deviceOrientationDidChange()
         }
     }
 
-    @ViewBuilder
     private func readerBody(metrics: ReaderChromeMetrics) -> some View {
+        readerSettingsObservers(metrics: metrics)
+    }
+
+    @ViewBuilder
+    private func readerBaseContent(metrics: ReaderChromeMetrics) -> some View {
         Group {
             if loading {
                 ProgressView(Self.openingMessage(for: book))
@@ -135,6 +135,10 @@ struct ReaderHostView: View {
         .toolbar(showsReaderChrome ? .hidden : .automatic, for: .tabBar)
         .statusBarHidden(true)
         .persistentSystemOverlays(.hidden)
+    }
+
+    private func readerStatusOverlays(metrics: ReaderChromeMetrics) -> some View {
+        readerBaseContent(metrics: metrics)
         .overlay {
             if activeFormat == .epub, let readerError = epubController.errorMessage {
                 VStack(spacing: 12) {
@@ -174,6 +178,10 @@ struct ReaderHostView: View {
                     .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
             }
         }
+    }
+
+    private func readerChromeOverlays(metrics: ReaderChromeMetrics) -> some View {
+        readerStatusOverlays(metrics: metrics)
         .overlay {
             if (activeFormat == .cbr || activeFormat == .cbz), let readerError = comicController.errorMessage {
                 VStack(spacing: 12) {
@@ -214,71 +222,11 @@ struct ReaderHostView: View {
         .overlay(alignment: .bottom) { readerBottomBar(metrics: metrics) }
         .overlay(alignment: .bottom) { buttonIslandLayer(metrics: metrics) }
         .ignoresSafeArea(.all, edges: .all)
-        .sheet(isPresented: $showSections) {
-            NavigationStack {
-                Group {
-                    if !hasTableOfContents {
-                        ContentUnavailableView("No contents", systemImage: "list.bullet",
-                                               description: Text("This book does not provide a table of contents."))
-                    } else if activeFormat == .epub {
-                        List(epubController.sections) { section in
-                            Button {
-                                showSections = false
-                                epubController.display(section)
-                            } label: {
-                                HStack {
-                                    Text(section.label).foregroundStyle(.primary)
-                                    Spacer()
-                                    if section.index == epubController.sectionIndex {
-                                        Image(systemName: "checkmark").foregroundStyle(container.settingsRepository.theme.primary)
-                                    }
-                                }
-                            }
-                        }
-                    } else if activeFormat == .fb2 {
-                        List(fb2Controller.sections) { section in
-                            Button {
-                                showSections = false
-                                fb2Controller.requestedSectionID = section.id
-                            } label: {
-                                HStack {
-                                    Text(section.title.isEmpty ? "Section \(section.index + 1)" : section.title)
-                                        .foregroundStyle(.primary)
-                                    Spacer()
-                                    if section.index == fb2Controller.sectionIndex {
-                                        Image(systemName: "checkmark").foregroundStyle(container.settingsRepository.theme.primary)
-                                    }
-                                }
-                            }
-                        }
-                    } else {
-                        List(pdfController.tableOfContents) { section in
-                            Button {
-                                showSections = false
-                                pdfController.display(section)
-                            } label: {
-                                HStack {
-                                    Text(section.label)
-                                        .foregroundStyle(.primary)
-                                        .padding(.leading, CGFloat(section.depth) * 14)
-                                    Spacer()
-                                    Text("\(section.pageIndex + 1)")
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                }
-                            }
-                        }
-                    }
-                }
-                .navigationTitle("Contents")
-                .toolbar {
-                    ToolbarItem(placement: .confirmationAction) {
-                        Button("Done") { showSections = false }
-                    }
-                }
-            }
-            .preferredColorScheme(container.settingsRepository.theme.colorScheme)
-        }
+    }
+
+    private func readerPresentation(metrics: ReaderChromeMetrics) -> some View {
+        readerChromeOverlays(metrics: metrics)
+        .sheet(isPresented: $showSections) { readerContentsSheet }
         .sheet(isPresented: $showRightsDetails) {
             RightsDetailsView(item: RightsDetailsItem(
                 title: book.title, author: book.author, year: book.year,
@@ -290,13 +238,7 @@ struct ReaderHostView: View {
         }
         .sheet(isPresented: $showSearch) { readerSearchSheet }
         .task { await openBook() }
-        .onAppear {
-            dismissKeyboard()
-            updateIdleTimer()
-            syncPlaybackSpeech()
-            updateLayoutOrientation(UIDevice.current.orientation)
-            chromeMetrics = ReaderDeviceGeometry.metrics(fallback: layoutOrientation)
-        }
+        .onAppear(perform: readerDidAppear)
         .onDisappear {
             chromeVisibility.cancel()
             UIApplication.shared.isIdleTimerDisabled = false
@@ -305,6 +247,10 @@ struct ReaderHostView: View {
             epubController.endNowPlaying()
             fb2Controller.endNowPlaying()
         }
+    }
+
+    private func readerPlaybackObservers(metrics: ReaderChromeMetrics) -> some View {
+        readerPresentation(metrics: metrics)
         .onChange(of: showsReaderChrome) { _, _ in updateIdleTimer() }
         .onChange(of: epubController.isSpeechRetained) { _, _ in syncPlaybackSpeech() }
         .onChange(of: epubController.isSpeaking) { _, _ in syncPlaybackSpeech() }
@@ -317,6 +263,10 @@ struct ReaderHostView: View {
             guard let locator else { return }
             persistProgress(fb2Controller.progression, locator: locator, format: .fb2)
         }
+    }
+
+    private func readerSettingsObservers(metrics: ReaderChromeMetrics) -> some View {
+        readerPlaybackObservers(metrics: metrics)
         .onChange(of: playback.speechToggleToken) { _, _ in
             toggleActiveSpeech()
         }
@@ -349,6 +299,101 @@ struct ReaderHostView: View {
                 alignment: container.settingsRepository.readerAlignment
             )
         }
+    }
+
+    private var readerContentsSheet: some View {
+        NavigationStack {
+            readerContentsList
+                .navigationTitle("Contents")
+                .toolbar {
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("Done") { showSections = false }
+                    }
+                }
+        }
+        .preferredColorScheme(container.settingsRepository.theme.colorScheme)
+    }
+
+    @ViewBuilder
+    private var readerContentsList: some View {
+        if !hasTableOfContents {
+            ContentUnavailableView(
+                "No contents",
+                systemImage: "list.bullet",
+                description: Text("This book does not provide a table of contents.")
+            )
+        } else if activeFormat == .epub {
+            List(epubController.sections) { section in
+                Button {
+                    showSections = false
+                    epubController.display(section)
+                } label: {
+                    HStack {
+                        Text(section.label).foregroundStyle(.primary)
+                        Spacer()
+                        if section.index == epubController.sectionIndex {
+                            Image(systemName: "checkmark")
+                                .foregroundStyle(container.settingsRepository.theme.primary)
+                        }
+                    }
+                }
+            }
+        } else if activeFormat == .fb2 {
+            List(fb2Controller.sections) { section in
+                Button {
+                    showSections = false
+                    fb2Controller.requestedSectionID = section.id
+                } label: {
+                    HStack {
+                        Text(section.title.isEmpty ? "Section \(section.index + 1)" : section.title)
+                            .foregroundStyle(.primary)
+                        Spacer()
+                        if section.index == fb2Controller.sectionIndex {
+                            Image(systemName: "checkmark")
+                                .foregroundStyle(container.settingsRepository.theme.primary)
+                        }
+                    }
+                }
+            }
+        } else {
+            List(pdfController.tableOfContents) { section in
+                Button {
+                    showSections = false
+                    pdfController.display(section)
+                } label: {
+                    HStack {
+                        Text(section.label)
+                            .foregroundStyle(.primary)
+                            .padding(.leading, CGFloat(section.depth) * 14)
+                        Spacer()
+                        Text("\(section.pageIndex + 1)")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+        }
+    }
+
+    private func readerDidAppear() {
+        dismissKeyboard()
+        updateIdleTimer()
+        syncPlaybackSpeech()
+        updateLayoutOrientation(UIDevice.current.orientation)
+        refreshChromeMetrics()
+    }
+
+    private func deviceOrientationDidChange() {
+        updateLayoutOrientation(UIDevice.current.orientation)
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(100))
+            refreshChromeMetrics()
+        }
+    }
+
+    private func refreshChromeMetrics() {
+        let metrics = ReaderDeviceGeometry.metrics(fallback: layoutOrientation)
+        chromeMetrics = metrics
     }
 
     @ViewBuilder
