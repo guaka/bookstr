@@ -7,6 +7,7 @@ import org.gradle.testing.jacoco.tasks.JacocoReport
 import org.gradle.testing.jacoco.plugins.JacocoTaskExtension
 import org.gradle.api.tasks.Sync
 import org.gradle.api.tasks.testing.Test
+import org.gradle.api.tasks.compile.JavaCompile
 
 plugins {
     id("com.android.application")
@@ -45,8 +46,21 @@ val newestSourceChange = (
 )
     .maxOfOrNull(File::lastModified)
     ?: System.currentTimeMillis()
-val sourceChangeTime = Instant.ofEpochMilli(newestSourceChange)
-    .atZone(ZoneId.systemDefault())
+// CI can pin generated BuildConfig values across separate jobs; local builds keep
+// the existing source-mtime behavior unless SOURCE_DATE_EPOCH is explicitly set.
+val sourceDateEpochValue = providers.environmentVariable("SOURCE_DATE_EPOCH").orNull
+val sourceDateEpoch = sourceDateEpochValue?.let { value ->
+    val seconds = value.toLongOrNull()
+    require(seconds != null && seconds >= 0L) {
+        "SOURCE_DATE_EPOCH must be a non-negative integer when set"
+    }
+    seconds
+}
+val sourceChangeInstant = sourceDateEpoch?.let { Instant.ofEpochSecond(it) }
+    ?: Instant.ofEpochMilli(newestSourceChange)
+val sourceChangeTime = sourceChangeInstant.atZone(
+    if (sourceDateEpoch != null) ZoneOffset.UTC else ZoneId.systemDefault(),
+)
 val buildDate = sourceChangeTime.format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"))
 val versionTimestamp = sourceChangeTime.withZoneSameInstant(ZoneOffset.UTC)
     .format(DateTimeFormatter.ofPattern("yyyyMMdd-HHmm"))
@@ -232,6 +246,62 @@ tasks.register<JacocoReport>("jacocoDebugUnitTestReport") {
             "outputs/unit_test_code_coverage/debugUnitTest/testDebugUnitTest.exec",
         ),
     )
+}
+
+// Stage actual compiler outputs so the emulator job can report coverage against
+// the exact project classes packaged in the prebuilt APK, without recompiling.
+tasks.register<Sync>("stageDebugManagedCoverageClasses") {
+    group = "verification"
+    description = "Stage compiled debug project classes for the managed coverage report"
+    dependsOn("compileDebugKotlin", "compileDebugJavaWithJavac")
+    from(tasks.named("compileDebugKotlin").map { it.outputs.files }) { include("**/*.class") }
+    from(tasks.named<JavaCompile>("compileDebugJavaWithJavac").map { it.destinationDirectory }) {
+        include("**/*.class")
+    }
+    into(layout.buildDirectory.dir("coverage/project-classes"))
+}
+
+// This report deliberately has no test or compile dependencies. CI downloads
+// these three inputs from the existing JVM, APK packaging, and emulator jobs.
+val stagedManagedCoverageClasses = layout.buildDirectory.dir("coverage/project-classes")
+val managedJvmExecutionData = layout.buildDirectory.file(
+    "outputs/unit_test_code_coverage/debugUnitTest/testDebugUnitTest.exec",
+)
+val managedDeviceExecutionData = layout.buildDirectory.file("coverage/full.ec")
+
+tasks.register("verifyManagedDebugCoverageInputs") {
+    group = "verification"
+    description = "Fail if inputs for the managed Android coverage report are missing"
+    doLast {
+        val jvmData = managedJvmExecutionData.get().asFile
+        val deviceData = managedDeviceExecutionData.get().asFile
+        val classesDir = stagedManagedCoverageClasses.get().asFile
+        val compiledClasses = fileTree(classesDir).matching { include("**/*.class") }.files
+        check(jvmData.isFile && jvmData.length() > 0L) {
+            "Missing JVM JaCoCo execution data: ${jvmData.absolutePath}"
+        }
+        check(deviceData.isFile && deviceData.length() > 0L) {
+            "Missing emulator JaCoCo execution data: ${deviceData.absolutePath}"
+        }
+        check(compiledClasses.isNotEmpty()) {
+            "Missing staged Android project class files: ${classesDir.absolutePath}"
+        }
+    }
+}
+
+tasks.register<JacocoReport>("jacocoManagedFullDebugReport") {
+    group = "verification"
+    description = "Report managed Android source coverage from JVM and emulator runs"
+    dependsOn("verifyManagedDebugCoverageInputs")
+    reports {
+        xml.required.set(true)
+        html.required.set(true)
+        csv.required.set(false)
+    }
+
+    classDirectories.setFrom(fileTree(stagedManagedCoverageClasses))
+    sourceDirectories.setFrom(files("src/main/java", "src/main/kotlin"))
+    executionData.setFrom(managedJvmExecutionData, managedDeviceExecutionData)
 }
 
 dependencies {
