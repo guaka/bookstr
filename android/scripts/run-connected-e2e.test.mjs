@@ -130,7 +130,7 @@ test('prebuilt coverage succeeds, clears stale device data after installs, and a
     const appInstall = calls.indexOf(`install -r ${f.appApk}`);
     const testInstall = calls.indexOf(`install -r ${f.testApk}`);
     const clearCoverage = calls.indexOf('shell run-as app.bookstr rm -f files/bookstr-coverage.ec');
-    const instrument = calls.indexOf('shell am instrument -w -r -e coverage true -e coverageFile /data/user/0/app.bookstr/files/bookstr-coverage.ec app.bookstr.test/androidx.test.runner.AndroidJUnitRunner');
+    const instrument = calls.indexOf('shell am instrument -w -r -e coverage true -e coverageFile /data/user/0/app.bookstr/files/bookstr-coverage.ec app.bookstr.test/app.bookstr.BookstrTestRunner');
     const pullCoverage = calls.indexOf('exec-out run-as app.bookstr cat files/bookstr-coverage.ec');
     assert.ok(safety >= 0 && appInstall > safety && testInstall > appInstall);
     assert.ok(clearCoverage > testInstall, 'old device coverage is removed only after both APK installs');
@@ -148,6 +148,18 @@ test('test failures remain failures while fresh partial coverage is still collec
     const result = await f.run();
     assert.equal(result.status, 1);
     assert.match(await readFile(join(f.cwd, 'android/e2e-results/instrumentation.xml'), 'utf8'), /failures="1"/);
+    assert.equal(await readFile(f.coverageFile, 'utf8'), 'fresh-coverage');
+  } finally {
+    await f.cleanup();
+  }
+});
+
+test('nonzero instrumentation exit remains a failure despite a passing protocol and fresh coverage', async () => {
+  const f = await fixture();
+  try {
+    const result = await f.run({ FAKE_INSTRUMENT_STATUS: '7' });
+    assert.equal(result.status, 1);
+    assert.match(await readFile(join(f.cwd, 'android/e2e-results/instrumentation.xml'), 'utf8'), /failures="0"/);
     assert.equal(await readFile(f.coverageFile, 'utf8'), 'fresh-coverage');
   } finally {
     await f.cleanup();
@@ -240,7 +252,7 @@ test('prebuilt mode without coverage opt-in keeps instrumentation arguments and 
     const result = await f.run({ optIn: false });
     assert.equal(result.status, 0, result.stderr);
     const calls = await f.calls();
-    assert.ok(calls.includes('shell am instrument -w -r app.bookstr.test/androidx.test.runner.AndroidJUnitRunner'));
+    assert.ok(calls.includes('shell am instrument -w -r app.bookstr.test/app.bookstr.BookstrTestRunner'));
     assert.equal(calls.some(call => call.includes('coverageFile')), false);
     assert.equal(calls.some(call => call.startsWith('exec-out ')), false);
     assert.equal(calls.some(call => call.includes('run-as app.bookstr rm -f files/bookstr-coverage.ec')), false);

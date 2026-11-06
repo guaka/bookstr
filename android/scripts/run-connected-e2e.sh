@@ -91,9 +91,9 @@ if $prebuilt; then
     set +e
     if [[ -n "$coverage_file" ]]; then
       coverage_instrument_attempted=true
-      "$adb_path" shell am instrument -w -r -e coverage true -e coverageFile "$device_coverage_file" app.bookstr.test/androidx.test.runner.AndroidJUnitRunner 2>&1 | tee "$log_file"
+      "$adb_path" shell am instrument -w -r -e coverage true -e coverageFile "$device_coverage_file" app.bookstr.test/app.bookstr.BookstrTestRunner 2>&1 | tee "$log_file"
     else
-      "$adb_path" shell am instrument -w -r app.bookstr.test/androidx.test.runner.AndroidJUnitRunner 2>&1 | tee "$log_file"
+      "$adb_path" shell am instrument -w -r app.bookstr.test/app.bookstr.BookstrTestRunner 2>&1 | tee "$log_file"
     fi
     instrument_status=${PIPESTATUS[0]}
     node "$(dirname "$0")/instrumentation-results.mjs" "$log_file" "$junit_file"

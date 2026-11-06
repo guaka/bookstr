@@ -11,7 +11,7 @@ built from exact-version packages declared in `web/package.json` and pinned by
 | `epub.min.js` and `../shared/reader/epub.min.js` | `epubjs` 0.3.93 | Same upstream minified browser build. |
 | `vendor/sql-wasm.js`, `vendor/sql-wasm.wasm` | `sql.js` 1.13.0 | JavaScript glue and WebAssembly runtime. |
 | `vendor/libarchive.js`, `vendor/libarchive.wasm` | `libarchive-wasm` 1.2.0 | JavaScript glue and WebAssembly runtime. |
-| `vendor/pdfjs/pdf.mjs`, `vendor/pdfjs/pdf.worker.mjs` | `pdfjs-dist` 5.7.284 | ES modules for the PDF renderer and worker. |
+| `vendor/pdfjs/pdf.mjs`, `vendor/pdfjs/pdf.worker.mjs` | `pdfjs-dist` 6.2.108 | ES modules for the PDF renderer and worker. |
 | `vendor/nostr-tools.js` and its source map | `nostr-tools` 2.24.1 | Locally bundled for browsers with pinned `esbuild` 0.28.2; this replaces the former remote `esm.sh` bundle. |
 
 The generated Nostr bundle retains esbuild's upstream license comments at the
