@@ -78,6 +78,12 @@ enum LibraryUITestFixtures {
             let tags = [[
                 "bookstr", "ui-test-unreadable-remote", "Remote Favorite Fixture",
                 "Remote Author", "", "epub", "2026",
+            ], [
+                "bookstr", "ui-test-readable-remote", "Remote URL Fixture",
+                "", "http://127.0.0.1:9/remote.epub", "epub", "2026",
+            ], [
+                "bookstr", "ui-test-unreadable-unknown-author", "Unreadable Unknown Author Fixture",
+                "", "", "epub", "2026",
             ]]
             if let data = try? JSONSerialization.data(withJSONObject: tags),
                let plaintext = String(data: data, encoding: .utf8) {

@@ -75,24 +75,7 @@ struct LibraryView: View {
                         .foregroundStyle(.secondary)
                 } else {
                     ForEach(visibleReading) { book in
-                        Button { open(book) } label: {
-                            bookRow(book, showProgress: true)
-                        }
-                        .disabled(openingBookID != nil)
-                        .buttonStyle(.plain)
-                        .accessibilityIdentifier("library-book-\(book.id)")
-                        .bookstrListRow()
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                            Button("Delete", role: .destructive) {
-                                pendingDeletion = book
-                            }
-                            .accessibilityIdentifier("library-delete-\(book.id)")
-                        }
-                        .contextMenu {
-                            Button("Rights details") { rightsDetails = details(for: book) }
-                            Button("Delete", role: .destructive) { pendingDeletion = book }
-                        }
+                        catalogBookRow(book, showsProgress: true)
                     }
                 }
             }
@@ -106,24 +89,7 @@ struct LibraryView: View {
             } else {
                 Section("Favorites") {
                     ForEach(sortedFavorites) { book in
-                        Button { open(book) } label: {
-                            bookRow(book, showProgress: false)
-                        }
-                        .disabled(openingBookID != nil)
-                        .buttonStyle(.plain)
-                        .accessibilityIdentifier("library-book-\(book.id)")
-                        .bookstrListRow()
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                            Button("Delete", role: .destructive) {
-                                pendingDeletion = book
-                            }
-                            .accessibilityIdentifier("library-delete-\(book.id)")
-                        }
-                        .contextMenu {
-                            Button("Rights details") { rightsDetails = details(for: book) }
-                            Button("Delete", role: .destructive) { pendingDeletion = book }
-                        }
+                        catalogBookRow(book, showsProgress: false)
                     }
                     ForEach(sortedExternalFavorites) { favorite in
                         externalFavoriteRow(favorite)
@@ -285,8 +251,37 @@ struct LibraryView: View {
         .contentShape(Rectangle())
     }
 
+    private func catalogBookRow(_ book: CatalogBook, showsProgress: Bool) -> some View {
+        Button(action: { open(book) }, label: { catalogBookLabel(book, showsProgress: showsProgress) })
+            .disabled(openingBookID != nil)
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("library-book-\(book.id)")
+            .bookstrListRow()
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                deleteBookAction(book)
+            }
+            .contextMenu {
+                Button("Rights details") { rightsDetails = details(for: book) }
+                    .accessibilityIdentifier("library-book-rights-\(book.id)")
+                deleteBookAction(book)
+            }
+    }
+
+    private func catalogBookLabel(_ book: CatalogBook, showsProgress: Bool) -> some View {
+        bookRow(book, showProgress: showsProgress)
+    }
+
+    private func deleteBookAction(_ book: CatalogBook) -> some View {
+        Button("Delete", role: .destructive) {
+            pendingDeletion = book
+        }
+        .accessibilityIdentifier("library-delete-\(book.id)")
+    }
+
     private func externalFavoriteRow(_ favorite: ExternalFavorite) -> some View {
-        Button(action: { openExternalFavorite(favorite) }) {
+        // Readable URL favorites become catalog rows in LibraryViewModel.apply.
+        Button(action: { openError = "This favorite does not include a readable publication URL." }) {
             externalFavoriteDetails(favorite)
         }
         .buttonStyle(.plain)
@@ -300,25 +295,15 @@ struct LibraryView: View {
         }
     }
 
-    private func openExternalFavorite(_ favorite: ExternalFavorite) {
-        guard let book = CatalogRepository.fromExternalFavorite(favorite) else {
-            openError = "This favorite does not include a readable publication URL."
-            return
-        }
-        open(book)
-    }
-
     private func externalFavoriteDetails(_ favorite: ExternalFavorite) -> some View {
         let title = displayTitle(favorite)
         let author = favorite.author ?? "Unknown author"
-        let publisher: String? = favorite.url == nil ? nil : "Remote publication"
         return BookListDetails(
             title: title,
             author: author,
             year: favorite.year,
             format: favorite.format,
             language: nil,
-            publisher: publisher,
             coverURL: favorite.coverUrl,
             bookID: favorite.key,
             preferDiscoveredCover: true,
