@@ -58,6 +58,10 @@ import app.bookstr.ui.NarrationIsland
 import app.bookstr.ui.LibraryScreen
 import app.bookstr.ui.SearchScreen
 import app.bookstr.ui.SignerSetupDialog
+import app.bookstr.ui.Nip46PairingQrDialog
+import app.bookstr.nostr.Nip46Service
+import app.bookstr.nostr.Nip46Sessions
+import app.bookstr.isTelevision
 import app.bookstr.ui.SettingsScreen
 import app.bookstr.ui.WordsScreen
 import app.bookstr.ui.theme.BookstrThemeFromSettings
@@ -192,6 +196,9 @@ class MainActivity : ComponentActivity() {
                 var searchMessage by remember { mutableStateOf<String?>(null) }
                 var showSignerSetup by remember { mutableStateOf(false) }
                 var signerSetupError by remember { mutableStateOf<String?>(null) }
+                var nip46PairingUri by remember { mutableStateOf<String?>(null) }
+                var nip46Service by remember { mutableStateOf<Nip46Service?>(null) }
+                var nip46Error by remember { mutableStateOf<String?>(null) }
 
                 var authMode by remember { mutableStateOf(settings.authMode) }
                 var npubDisplay by remember { mutableStateOf(npubFromSettings(settings.pubkeyHex)) }
@@ -461,6 +468,53 @@ class MainActivity : ComponentActivity() {
                         }
                     }
                 }
+
+                fun beginNip46Pairing() {
+                    if (connectingAmber) return
+                    scope.launch {
+                        connectingAmber = true
+                        nip46Error = null
+                        nip46PairingUri = null
+                        val service = Nip46Sessions.newService()
+                        nip46Service?.resetSession()
+                        nip46Service = service
+                        try {
+                            val pairing = service.startPairing(
+                                relays = settings.relays,
+                                name = "Bookstr TV",
+                                url = "https://github.com/guaka/bookstr",
+                            )
+                            nip46PairingUri = pairing.uri
+                            val connection = service.awaitConnected()
+                            settings.connectNip46(
+                                pairing.clientSecretHex,
+                                connection.remoteSignerPubkey,
+                                connection.userPubkey,
+                                connection.relays,
+                            )
+                            Nip46Sessions.retain(pairing.clientSecretHex, service)
+                            nip46Service = null
+                            authMode = NostrAuthMode.Nip46
+                            npubDisplay = npubFromHex(connection.userPubkey)
+                            nsec = ""
+                            showNsec = false
+                            nip46PairingUri = null
+                            showSignerSetup = false
+                            signerSetupError = null
+                            syncMessage = "Connected via phone signer (NIP-46)."
+                            runSearch()
+                        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                            service.resetSession()
+                            throw cancelled
+                        } catch (e: Exception) {
+                            nip46Error = e.message ?: "Could not connect phone signer"
+                            if (nip46PairingUri == null) service.resetSession()
+                        } finally {
+                            connectingAmber = false
+                        }
+                    }
+                }
+
                 LaunchedEffect(requestedSearchQuery, requestedTabKey) {
                     requestedSearchQuery?.takeIf(String::isNotBlank)?.let { author ->
                         searchQuery = author
@@ -537,6 +591,27 @@ class MainActivity : ComponentActivity() {
                                     connectingAmber = false
                                 }
                             }
+                        },
+                        television = isTelevision(resources.configuration.uiMode),
+                        onConnectQr = {
+                            showSignerSetup = false
+                            beginNip46Pairing()
+                        },
+                    )
+                }
+                nip46PairingUri?.let { uri ->
+                    Nip46PairingQrDialog(
+                        uri = uri,
+                        connecting = connectingAmber,
+                        error = nip46Error,
+                        onDismiss = {
+                            if (connectingAmber) {
+                                nip46Service?.resetSession()
+                                nip46Service = null
+                                connectingAmber = false
+                            }
+                            nip46PairingUri = null
+                            nip46Error = null
                         },
                     )
                 }
@@ -713,6 +788,7 @@ class MainActivity : ComponentActivity() {
                             2 -> SettingsScreen(
                                 authMode = authMode,
                                 signerLabel = Nip55.signerLabel(this@MainActivity, settings.signerPackage),
+                                television = isTelevision(resources.configuration.uiMode),
                                 npubDisplay = npubDisplay,
                                 amberAvailable = amberAvailable,
                                 nsec = nsec,
@@ -757,6 +833,7 @@ class MainActivity : ComponentActivity() {
                                         }
                                     }
                                 },
+                                onConnectNip46 = { beginNip46Pairing() },
                                 onDisconnectNostr = {
                                     settings.disconnectNostr()
                                     authMode = NostrAuthMode.None

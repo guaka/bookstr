@@ -10,6 +10,7 @@ struct LibraryView: View {
     @State private var libraryFilter = ""
     @State private var pendingDeletion: CatalogBook?
     @State private var observedDownloadBookIDs: Set<String>?
+    @State private var initialLoadStarted = false
     @AppStorage("library_sort") private var selectedSort = LibrarySort.recent
     @AppStorage("library_filter_language") private var selectedLanguage = ""
     @AppStorage("library_filter_format") private var selectedFormat = ""
@@ -196,14 +197,22 @@ struct LibraryView: View {
         }
         .sheet(item: $rightsDetails) { RightsDetailsView(item: $0) }
         .task {
+            observedDownloadBookIDs = Set(container.downloads.jobs.compactMap { $0.book?.id })
+            initialLoadStarted = true
             viewModel.attach(container)
             await viewModel.load()
         }
         .onReceive(container.downloads.$jobs
             .map { Set($0.compactMap { $0.book?.id }) }
             .removeDuplicates()) { bookIDs in
+            guard initialLoadStarted else {
+                // The view task owns the initial load. A publisher's current-value
+                // emission before that task starts only seeds this comparison.
+                observedDownloadBookIDs = bookIDs
+                return
+            }
             // SwiftUI can recreate the publisher when this view redraws. Keep
-            // the last value in view state so its initial emission cannot loop.
+            // the last value in view state so unchanged emissions cannot loop.
             guard observedDownloadBookIDs != bookIDs else { return }
             observedDownloadBookIDs = bookIDs
             Task {

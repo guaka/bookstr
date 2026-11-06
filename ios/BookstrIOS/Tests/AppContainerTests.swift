@@ -47,13 +47,21 @@ final class AppContainerTests: XCTestCase {
         let container = AppContainer.bootstrap()
         let model = LibraryViewModel()
         var refreshes = 0
+        let initialLoad = expectation(description: "Library publishes its completed initial load")
         let observation = model.$debugText.dropFirst()
             .filter { $0.hasPrefix("=== library load ===") }
-            .sink { _ in refreshes += 1 }
-        let host = UIHostingController(rootView: NavigationStack {
-            LibraryView(viewModel: model)
-        }.environmentObject(container).environmentObject(container.readerPlayback)
-            .environmentObject(container.coverDiscovery))
+            .sink { _ in
+                refreshes += 1
+                if refreshes == 1 { initialLoad.fulfill() }
+            }
+        var redrawRenderExpectation: XCTestExpectation?
+        let host = UIHostingController(rootView: LibraryRedrawTestHost(
+            container: container,
+            viewModel: model,
+            onRedraw: { value in
+                if value.hasPrefix("Redraw ") { redrawRenderExpectation?.fulfill() }
+            }
+        ))
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
         let window = UIWindow(windowScene: scene)
         window.rootViewController = host
@@ -63,12 +71,15 @@ final class AppContainerTests: XCTestCase {
             observation.cancel()
             model.cancelPendingNetworkRefresh()
         }
-        try await Task.sleep(nanoseconds: 500_000_000)
+        await fulfillment(of: [initialLoad], timeout: 10)
         XCTAssertGreaterThan(refreshes, 0, "The hosted Library must perform its initial load")
         let initialRefreshes = refreshes
         for index in 0..<10 {
+            let rendered = expectation(description: "Library rendered redraw \(index)")
+            redrawRenderExpectation = rendered
             model.debugText = "Redraw \(index)"
-            try await Task.sleep(nanoseconds: 50_000_000)
+            await fulfillment(of: [rendered], timeout: 5)
+            redrawRenderExpectation = nil
         }
         XCTAssertEqual(refreshes, initialRefreshes, "Redraws must not restart Library loading")
     }
@@ -676,5 +687,22 @@ final class AppContainerTests: XCTestCase {
         XCTAssertTrue(fileStore.load("downloaded-books.json", as: [CatalogBook].self, fallback: []).isEmpty)
         XCTAssertEqual(progress.get(bookId: bookID).cfi, "")
         viewModel.cancelPendingNetworkRefresh()
+    }
+}
+
+@MainActor
+private struct LibraryRedrawTestHost: View {
+    let container: AppContainer
+    @ObservedObject var viewModel: LibraryViewModel
+    let onRedraw: (String) -> Void
+
+    var body: some View {
+        NavigationStack {
+            LibraryView(viewModel: viewModel)
+        }
+        .environmentObject(container)
+        .environmentObject(container.readerPlayback)
+        .environmentObject(container.coverDiscovery)
+        .onChange(of: viewModel.debugText) { _, value in onRedraw(value) }
     }
 }

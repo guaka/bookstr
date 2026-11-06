@@ -73,6 +73,7 @@ import app.bookstr.data.DictionaryPack
 fun SettingsScreen(
     authMode: NostrAuthMode,
     signerLabel: String = "External signer",
+    television: Boolean = false,
     npubDisplay: String,
     amberAvailable: Boolean,
     nsec: String,
@@ -93,6 +94,7 @@ fun SettingsScreen(
     initialDictionaryTarget: String,
     onDictionaryPairChange: (String, String) -> Unit,
     onConnectAmber: () -> Unit,
+    onConnectNip46: () -> Unit = {},
     onDisconnectNostr: () -> Unit,
     onShowNsecChange: (Boolean) -> Unit,
     onNsecChange: (String) -> Unit,
@@ -188,6 +190,13 @@ fun SettingsScreen(
                         Text("Disconnect")
                     }
                 }
+                NostrAuthMode.Nip46 -> {
+                    Text("Connected via phone signer (NIP-46)")
+                    if (npubDisplay.isNotEmpty()) Text(npubDisplay)
+                    OutlinedButton(onClick = onDisconnectNostr, modifier = Modifier.fillMaxWidth()) {
+                        Text("Disconnect")
+                    }
+                }
                 NostrAuthMode.Nsec -> {
                     Text("Connected with local nsec")
                     if (npubDisplay.isNotEmpty()) {
@@ -201,6 +210,11 @@ fun SettingsScreen(
                     }
                 }
                 NostrAuthMode.None -> {
+                    if (television) {
+                        Button(onClick = onConnectNip46, enabled = !connectingAmber, modifier = Modifier.fillMaxWidth().testTag("signer.connect-qr")) {
+                            Text(if (connectingAmber) "Connecting…" else "Connect phone signer")
+                        }
+                    }
                     if (amberAvailable) {
                         Button(
                             onClick = onConnectAmber,
@@ -216,7 +230,7 @@ fun SettingsScreen(
                 }
             }
 
-              if (authMode != NostrAuthMode.Amber) {
+              if (authMode != NostrAuthMode.Amber && authMode != NostrAuthMode.Nip46) {
                 if (!showNsec && authMode == NostrAuthMode.None) {
                     TextButton(onClick = { onShowNsecChange(true) }) {
                         Text("Use nsec instead (advanced)")
