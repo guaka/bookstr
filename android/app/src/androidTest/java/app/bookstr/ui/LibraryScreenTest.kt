@@ -32,6 +32,34 @@ class LibraryScreenTest {
     @get:Rule
     val rules: RuleChain = RuleChain.outerRule(composeRule).around(screenshots)
 
+    @Test fun sharesDownloadedBookFromDetails() {
+        val book = CatalogBook("share", "Shared book", "Author", "", null)
+        var shared: CatalogBook? = null
+        composeRule.setContent {
+            LibraryScreen(listOf(book), emptySet(), emptyList(), emptyMap(), false,
+                error = null, onRefresh = {}, onOpenBook = {}, onOpenExternal = {},
+                publicationSize = { 100L }, onShareBook = { shared = it })
+        }
+        composeRule.onNodeWithText(book.title).performTouchInput { longClick() }
+        composeRule.onNodeWithTag("library.share.share").performScrollTo().assertIsDisplayed().performClick()
+        composeRule.runOnIdle { assertEquals(book, shared) }
+        composeRule.onNodeWithText("Book details").assertDoesNotExist()
+    }
+
+    @Test fun detailsWithoutADownloadHaveNoShareOrDeleteAction() {
+        val book = CatalogBook("remote-progress", "Previously read book", "Author", "", null)
+        composeRule.setContent {
+            LibraryScreen(listOf(book), emptySet(), emptyList(),
+                mapOf(book.id to BookProgress(book.id, 0.4, "cfi", 1L)), false,
+                error = null, onRefresh = {}, onOpenBook = {}, onOpenExternal = {})
+        }
+        composeRule.onNodeWithText(book.title).performTouchInput { longClick() }
+        composeRule.onNodeWithText("Book details").assertIsDisplayed()
+        composeRule.onNodeWithTag("library.share.remote-progress").assertDoesNotExist()
+        composeRule.onNodeWithText("Delete download").assertDoesNotExist()
+        composeRule.onNodeWithText("Open book").assertIsDisplayed()
+    }
+
     @Test
     fun rendersBooksAndOpensOnClick() {
         val book = CatalogBook(
