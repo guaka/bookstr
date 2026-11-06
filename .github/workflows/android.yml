@@ -76,6 +76,8 @@ jobs:
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
+      - name: Use commit timestamp for generated Android constants
+        run: echo "SOURCE_DATE_EPOCH=$(git log -1 --format=%ct HEAD)" >> "$GITHUB_ENV"
       - uses: actions/setup-node@v4
         with:
           node-version-file: .nvmrc
@@ -85,6 +87,13 @@ jobs:
         run: node --test android/scripts/publish-obtainium-release.test.mjs
       - name: Test Android release version resolver
         run: node --test --experimental-test-coverage --test-coverage-lines=100 --test-coverage-branches=100 --test-coverage-functions=100 android/scripts/android-release-version.test.mjs
+      - name: Test connected Android runner
+        run: node --test android/scripts/run-connected-e2e.test.mjs
+      - name: Test native coverage tooling
+        run: |
+          node --test android/scripts/native-coverage.test.mjs
+          bash android/scripts/test-prepare-native-coverage.sh
+          bash android/scripts/test-collect-native-coverage.sh
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -139,6 +148,15 @@ jobs:
           if-no-files-found: ignore
           retention-days: 14
           overwrite: true
+      - name: Upload JVM JaCoCo execution data
+        if: always() && hashFiles('android/app/build/outputs/unit_test_code_coverage/debugUnitTest/testDebugUnitTest.exec') != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: bookstr-android-jvm-exec-${{ github.sha }}
+          path: android/app/build/outputs/unit_test_code_coverage/debugUnitTest/testDebugUnitTest.exec
+          if-no-files-found: error
+          retention-days: 14
+          overwrite: true
       - name: Upload unit test overview
         if: always() && hashFiles('test-overview/android.json') != ''
         uses: actions/upload-artifact@v4
@@ -159,6 +177,8 @@ jobs:
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
+      - name: Use commit timestamp for generated Android constants
+        run: echo "SOURCE_DATE_EPOCH=$(git log -1 --format=%ct HEAD)" >> "$GITHUB_ENV"
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -185,10 +205,36 @@ jobs:
         run: ccache --zero-stats
       - name: Build debug app APK
         working-directory: android
-        run: ./gradlew --no-daemon --max-workers=2 assembleDebug -Pbookstr.abis=x86_64 -Pbookstr.cxxCompilerLauncher=ccache
+        run: ./gradlew --no-daemon --max-workers=2 assembleDebug -Pbookstr.abis=x86_64 -Pbookstr.cxxCompilerLauncher=ccache -Pbookstr.nativeCoverage=true
       - name: Build instrumentation test APK
         working-directory: android
-        run: ./gradlew --no-daemon --max-workers=2 assembleDebugAndroidTest -Pbookstr.abis=x86_64 -Pbookstr.cxxCompilerLauncher=ccache
+        run: ./gradlew --no-daemon --max-workers=2 assembleDebugAndroidTest -Pbookstr.abis=x86_64 -Pbookstr.cxxCompilerLauncher=ccache -Pbookstr.nativeCoverage=true
+      - name: Stage compiled project classes for full coverage
+        working-directory: android
+        run: ./gradlew --no-daemon --max-workers=2 stageDebugManagedCoverageClasses -Pbookstr.abis=x86_64 -Pbookstr.cxxCompilerLauncher=ccache -Pbookstr.nativeCoverage=true
+      - name: Stage matching native coverage inputs
+        run: |
+          set -euo pipefail
+          input_dir=android/native-coverage-input
+          ndk_bin="$ANDROID_HOME/ndk/27.2.12479018/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          mkdir -p "$input_dir/bin"
+          mapfile -t objects < <(find android/app/build/intermediates/cxx/Debug -type f -path '*/obj/x86_64/libbookstr_torrent.so' -print)
+          if [ "${#objects[@]}" -ne 1 ]; then
+            echo "Expected one unstripped x86_64 JNI library, found ${#objects[@]}" >&2
+            printf '%s\n' "${objects[@]}" >&2
+            exit 1
+          fi
+          cp "${objects[0]}" "$input_dir/libbookstr_torrent.so"
+          cp "$ndk_bin/llvm-cov" "$ndk_bin/llvm-profdata" "$input_dir/bin/"
+          mkdir -p "$input_dir/lib"
+          for tool in llvm-cov llvm-profdata; do
+            while IFS= read -r dependency; do
+              case "$dependency" in
+                "$ANDROID_HOME/ndk/27.2.12479018"/*) cp "$dependency" "$input_dir/lib/" ;;
+              esac
+            done < <(ldd "$ndk_bin/$tool" | awk '$2 == "=>" && $3 ~ /^\// {print $3} $1 ~ /^\// {print $1}')
+          done
+          printf '%s\n' "$GITHUB_WORKSPACE/android/app/src/main/cpp" > "$input_dir/compiled-source-dir.txt"
       - name: Report native cache statistics
         if: always()
         run: ccache --show-stats
@@ -206,6 +252,22 @@ jobs:
           retention-days: 14
           overwrite: true
           compression-level: 0
+      - name: Upload compiled project classes
+        uses: actions/upload-artifact@v4
+        with:
+          name: bookstr-android-project-classes-${{ github.sha }}
+          path: android/app/build/coverage/project-classes/
+          if-no-files-found: error
+          retention-days: 14
+          overwrite: true
+      - name: Upload native coverage inputs
+        uses: actions/upload-artifact@v4
+        with:
+          name: bookstr-android-native-coverage-inputs-${{ github.sha }}
+          path: android/native-coverage-input/
+          if-no-files-found: error
+          retention-days: 14
+          overwrite: true
 
   emulator-tests:
     name: Emulator UI tests
@@ -225,6 +287,21 @@ jobs:
         with:
           name: bookstr-android-apks-${{ github.sha }}
           path: android/prebuilt-apks
+      - name: Download JVM JaCoCo execution data
+        uses: actions/download-artifact@v4
+        with:
+          name: bookstr-android-jvm-exec-${{ github.sha }}
+          path: android/app/build/outputs/unit_test_code_coverage/debugUnitTest
+      - name: Download compiled project classes
+        uses: actions/download-artifact@v4
+        with:
+          name: bookstr-android-project-classes-${{ github.sha }}
+          path: android/app/build/coverage/project-classes
+      - name: Download native coverage inputs
+        uses: actions/download-artifact@v4
+        with:
+          name: bookstr-android-native-coverage-inputs-${{ github.sha }}
+          path: android/native-coverage-input
       - name: Enable KVM
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
@@ -237,6 +314,9 @@ jobs:
         id: ui_tests
         continue-on-error: true
         uses: reactivecircus/android-emulator-runner@v2
+        env:
+          BOOKSTR_COVERAGE_FILE: android/app/build/coverage/full.ec
+          BOOKSTR_NATIVE_PROFILE_OUTPUT: android/app/build/coverage/native
         with:
           api-level: 30
           arch: x86_64
@@ -249,6 +329,66 @@ jobs:
             adb shell settings put global transition_animation_scale 0
             adb shell settings put global animator_duration_scale 0
             ./android/scripts/run-connected-e2e.sh --prebuilt android/prebuilt-apks/app-debug.apk android/prebuilt-apks/app-debug-androidTest.apk
+      - name: Generate native source coverage report
+        if: always() && hashFiles('android/app/build/coverage/native/native-coverage-collected.marker') != '' && hashFiles('android/app/build/coverage/native/raw/**/*.profraw') != ''
+        id: native_coverage
+        run: |
+          set -euo pipefail
+          chmod +x android/native-coverage-input/bin/llvm-cov android/native-coverage-input/bin/llvm-profdata
+          export LD_LIBRARY_PATH="$GITHUB_WORKSPACE/android/native-coverage-input/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+          ./android/scripts/native-coverage.mjs \
+            --profile-dir android/app/build/coverage/native/raw \
+            --object android/native-coverage-input/libbookstr_torrent.so \
+            --ndk-bin android/native-coverage-input/bin \
+            --compiled-source-dir "$(cat android/native-coverage-input/compiled-source-dir.txt)" \
+            --repo-root "$GITHUB_WORKSPACE" \
+            --output-dir android/app/build/reports/native-coverage
+      - name: Upload native source coverage report
+        if: always() && hashFiles('android/app/build/reports/native-coverage/native-coverage.json') != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: bookstr-android-native-coverage-${{ github.sha }}
+          path: |
+            android/app/build/reports/native-coverage/
+            android/app/build/coverage/native/raw/
+          if-no-files-found: error
+          retention-days: 14
+          overwrite: true
+      - name: Fail missing native source coverage report
+        if: always() && steps.ui_tests.outcome == 'success' && steps.native_coverage.outcome != 'success'
+        run: exit 1
+      - name: Set up Java for coverage reporting
+        if: always()
+        id: coverage_java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Set up Gradle for coverage reporting
+        if: always()
+        id: coverage_gradle
+        uses: gradle/actions/setup-gradle@v4
+      - name: Install Android platform for coverage reporting
+        if: always()
+        id: coverage_sdk
+        run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
+      - name: Generate full managed JaCoCo report
+        if: always() && steps.coverage_java.outcome == 'success' && steps.coverage_gradle.outcome == 'success' && steps.coverage_sdk.outcome == 'success'
+        id: full_coverage
+        working-directory: android
+        run: ./gradlew --no-daemon --max-workers=2 '-Dorg.gradle.jvmargs=-Xmx1536m -Dfile.encoding=UTF-8' jacocoManagedFullDebugReport
+      - name: Upload full managed JaCoCo report
+        if: always() && hashFiles('android/app/build/reports/jacoco/jacocoManagedFullDebugReport/jacocoManagedFullDebugReport.xml') != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: bookstr-android-full-managed-coverage-${{ github.sha }}
+          path: android/app/build/reports/jacoco/jacocoManagedFullDebugReport/
+          if-no-files-found: error
+          retention-days: 14
+          overwrite: true
+      - name: Fail missing full managed coverage report
+        if: always() && steps.full_coverage.outcome != 'success'
+        run: exit 1
       - name: Record Android UI test overview
         if: always() && hashFiles('android/e2e-results/instrumentation.started') != ''
         working-directory: .

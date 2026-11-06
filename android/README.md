@@ -56,8 +56,20 @@ sdkmanager 'platforms;android-35' 'build-tools;35.0.0' 'ndk;27.2.12479018' 'cmak
 ./gradlew --max-workers=2 connectedDebugAndroidTest createDebugAndroidTestCoverageReport
 ```
 
-For a combined JVM and emulator report, pull emulator coverage into
-`app/build/coverage/full.ec`, then run `./gradlew jacocoCombinedDebugReport`.
+For a combined JVM and emulator report, run the prebuilt instrumentation APKs
+on an emulator from the repository root and opt into a fresh coverage file:
+
+```sh
+BOOKSTR_COVERAGE_FILE=android/app/build/coverage/full.ec \
+  ./android/scripts/run-connected-e2e.sh --prebuilt \
+  android/prebuilt-apks/app-debug.apk android/prebuilt-apks/app-debug-androidTest.apk
+(cd android && ./gradlew jacocoCombinedDebugReport)
+```
+
+Coverage collection is opt-in and requires prebuilt mode. The script clears any
+previous host result at the requested path, clears old device coverage only
+after emulator validation and both APK installs, then atomically writes
+non-empty coverage to `BOOKSTR_COVERAGE_FILE`.
 The report is at
 `app/build/reports/jacoco/jacocoCombinedDebugReport/jacocoCombinedDebugReport.xml`.
 

@@ -40,6 +40,18 @@ std::string text(JNIEnv* env, jstring value) {
 void fail(JNIEnv* env, std::exception const& error) {
     env->ThrowNew(env->FindClass("java/lang/IllegalStateException"), error.what());
 }
+template <typename Result, typename Operation>
+Result with_exception_boundary(JNIEnv* env, Result fallback, Operation operation) {
+    try {
+        return operation();
+    } catch (std::exception const& error) {
+        fail(env, error);
+#ifdef BOOKSTR_NATIVE_COVERAGE
+        write_coverage_profile();
+#endif
+        return fallback;
+    }
+}
 struct Engine {
     std::unique_ptr<lt::session> session;
     lt::torrent_handle handle;
@@ -79,7 +91,7 @@ bool safe(std::string const& path) {
 }
 }
 extern "C" JNIEXPORT jlong JNICALL Java_app_bookstr_download_NativeTorrentEngine_create(JNIEnv* env, jobject, jstring root, jbyteArray metadata, jstring hash, jstring filename) {
-    try {
+    return with_exception_boundary(env, jlong{0}, [&]() -> jlong {
         auto engine = std::make_unique<Engine>();
         engine->root = text(env, root);
 #ifdef BOOKSTR_NATIVE_COVERAGE
@@ -139,17 +151,11 @@ extern "C" JNIEXPORT jlong JNICALL Java_app_bookstr_download_NativeTorrentEngine
         engine->handle = engine->session->add_torrent(params, ec);
         if (ec) throw std::runtime_error(ec.message());
         return reinterpret_cast<jlong>(engine.release());
-    } catch (std::exception const& error) {
-        fail(env, error);
-#ifdef BOOKSTR_NATIVE_COVERAGE
-        write_coverage_profile();
-#endif
-        return 0;
-    }
+    });
 }
 extern "C" JNIEXPORT jobjectArray JNICALL Java_app_bookstr_download_NativeTorrentEngine_snapshot(JNIEnv* env, jobject, jlong pointer) {
     auto* engine = reinterpret_cast<Engine*>(pointer);
-    try {
+    return with_exception_boundary<jobjectArray>(env, nullptr, [&]() -> jobjectArray {
         engine->collect(); auto status = engine->handle.status();
         bool ready = status.is_finished && status.state != lt::torrent_status::checking_files && status.state != lt::torrent_status::checking_resume_data;
         if (std::chrono::steady_clock::now() - engine->last_save > std::chrono::seconds(10)) {
@@ -163,13 +169,7 @@ extern "C" JNIEXPORT jobjectArray JNICALL Java_app_bookstr_download_NativeTorren
         auto result = env->NewObjectArray(5, env->FindClass("java/lang/String"), nullptr);
         for (int i = 0; i < 5; ++i) { auto value = env->NewStringUTF(values[i].c_str()); env->SetObjectArrayElement(result, i, value); env->DeleteLocalRef(value); }
         return result;
-    } catch (std::exception const& error) {
-        fail(env, error);
-#ifdef BOOKSTR_NATIVE_COVERAGE
-        write_coverage_profile();
-#endif
-        return nullptr;
-    }
+    });
 }
 extern "C" JNIEXPORT void JNICALL Java_app_bookstr_download_NativeTorrentEngine_destroy(JNIEnv*, jobject, jlong pointer) {
     delete reinterpret_cast<Engine*>(pointer);

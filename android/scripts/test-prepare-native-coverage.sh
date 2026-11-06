@@ -28,7 +28,14 @@ case "$command" in
       printf 'simulated listing failure\n' >&2
       exit 1
     fi
-    find "$DEVICE_ROOT/$directory" -type f -name 'bookstr-native-coverage-*.profraw' -print | sed "s#^$DEVICE_ROOT/##"
+    find "$DEVICE_ROOT/$directory" -type f -name 'bookstr-native-coverage-*.profraw' -print | sed "s#^$DEVICE_ROOT/##" | while IFS= read -r path; do
+      if [[ "${FAKE_CR:-}" == true ]]; then printf '%s\r\n' "$path"; else printf '%s\n' "$path"; fi
+    done
+    ;;
+  mkdir)
+    [[ "$1" == -p ]] || exit 96
+    shift
+    for directory in "$@"; do mkdir -p "$DEVICE_ROOT/$directory"; done
     ;;
   rm)
     [[ "$#" == 1 ]] || exit 93
@@ -45,11 +52,15 @@ touch "$root/device/cache/bookstr-native-coverage-1.profraw"
 touch "$root/device/files/torrent-downloads/bookstr-native-coverage-2.profraw"
 touch "$root/device/cache/default.profraw"
 touch "$root/device/files/torrent-downloads/book.epub"
-"$script_dir/prepare-native-coverage.sh" "$root/bin/adb" emulator-5554 app.bookstr
+FAKE_CR=true "$script_dir/prepare-native-coverage.sh" "$root/bin/adb" emulator-5554 app.bookstr
 [[ ! -e "$root/device/cache/bookstr-native-coverage-1.profraw" ]]
 [[ ! -e "$root/device/files/torrent-downloads/bookstr-native-coverage-2.profraw" ]]
 [[ -e "$root/device/cache/default.profraw" ]]
 [[ -e "$root/device/files/torrent-downloads/book.epub" ]]
+
+rm -rf "$root/device/cache" "$root/device/files/torrent-downloads"
+"$script_dir/prepare-native-coverage.sh" "$root/bin/adb" emulator-5554 app.bookstr >/dev/null
+[[ -d "$root/device/cache" && -d "$root/device/files/torrent-downloads" ]]
 
 touch "$root/device/cache/bookstr-native-coverage-3.profraw"
 if "$script_dir/prepare-native-coverage.sh" "$root/bin/adb" device-serial app.bookstr 2>/dev/null; then

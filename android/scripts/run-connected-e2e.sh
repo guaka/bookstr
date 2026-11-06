@@ -5,9 +5,11 @@ set -uo pipefail
 readonly device_screenshot_dir='/sdcard/e2e-screenshots'
 readonly host_screenshot_dir='android/e2e-screenshots'
 readonly results_dir='android/e2e-results'
+readonly device_coverage_file='/data/user/0/app.bookstr/files/bookstr-coverage.ec'
 
 usage() {
   echo 'Usage: run-connected-e2e.sh [--prebuilt APP_APK TEST_APK]' >&2
+  echo 'Set BOOKSTR_COVERAGE_FILE and/or BOOKSTR_NATIVE_PROFILE_OUTPUT to save fresh emulator coverage from prebuilt mode.' >&2
 }
 
 prebuilt=false
@@ -19,6 +21,40 @@ if [[ "${1:-}" == '--prebuilt' ]]; then
 elif [[ $# -ne 0 ]]; then
   usage
   exit 2
+fi
+coverage_file="${BOOKSTR_COVERAGE_FILE:-}"
+if [[ -n "$coverage_file" && "$prebuilt" != true ]]; then
+  echo 'BOOKSTR_COVERAGE_FILE requires --prebuilt APP_APK TEST_APK.' >&2
+  exit 2
+fi
+native_profile_output="${BOOKSTR_NATIVE_PROFILE_OUTPUT:-}"
+if [[ -n "$native_profile_output" && "$prebuilt" != true ]]; then
+  echo 'BOOKSTR_NATIVE_PROFILE_OUTPUT requires --prebuilt APP_APK TEST_APK.' >&2
+  exit 2
+fi
+native_profile_marker=''
+if [[ -n "$native_profile_output" ]]; then
+  if ! mkdir -p -- "$native_profile_output"; then
+    echo "Could not create native profile output directory: $native_profile_output" >&2
+    exit 1
+  fi
+  native_profile_marker="$native_profile_output/native-coverage-collected.marker"
+  if ! rm -f -- "$native_profile_marker"; then
+    echo "Could not clear native coverage collection marker: $native_profile_marker" >&2
+    exit 1
+  fi
+  if [[ -e "$native_profile_output/raw" ]]; then
+    echo "Refusing to overwrite existing native profiles: $native_profile_output/raw" >&2
+    exit 1
+  fi
+fi
+if [[ -n "$coverage_file" ]]; then
+  # A previous report at this caller-selected destination must never be
+  # mistaken for output from the current invocation when validation or pull fails.
+  if ! rm -f -- "$coverage_file"; then
+    echo "Could not clear previous coverage output: $coverage_file" >&2
+    exit 1
+  fi
 fi
 
 mkdir -p "$host_screenshot_dir" "$results_dir"
@@ -32,9 +68,27 @@ readonly adb_path="${ANDROID_HOME:+$ANDROID_HOME/platform-tools/}adb"
 # This check must happen before install: instrumentation can modify app-local data.
 bash "$(dirname "$0")/require-emulator.sh" "$adb_path" || exit $?
 
+native_device_serial=''
+if [[ -n "$native_profile_output" ]]; then
+  if [[ -n "${ANDROID_SERIAL:-}" ]]; then
+    native_device_serial=$ANDROID_SERIAL
+  else
+    native_device_serial=$("$adb_path" get-serialno)
+  fi
+  if [[ "$native_device_serial" != emulator-* ]]; then
+    echo "Native coverage requires the selected Android emulator; refusing serial: ${native_device_serial:-unknown}" >&2
+    exit 1
+  fi
+fi
+
 status=0
 instrument_status=0
 parser_status=0
+coverage_tmp=''
+coverage_prepared=false
+coverage_instrument_attempted=false
+native_coverage_prepared=false
+native_coverage_instrument_attempted=false
 if $prebuilt; then
   if [[ ! -f "$app_apk" || ! -f "$test_apk" ]]; then
     echo 'Both prebuilt app and instrumentation APKs must exist.' >&2
@@ -49,12 +103,42 @@ if $prebuilt; then
   if [[ $status -eq 0 ]]; then
     "$adb_path" shell rm -rf "$device_screenshot_dir" || status=1
   fi
+  if [[ $status -eq 0 && -n "$coverage_file" ]]; then
+    coverage_dir=$(dirname -- "$coverage_file")
+    if ! mkdir -p "$coverage_dir"; then
+      echo "Could not create coverage output directory: $coverage_dir" >&2
+      status=1
+    else
+      coverage_tmp=$(mktemp "${coverage_file}.tmp.XXXXXX") || status=1
+      if [[ $status -eq 0 ]]; then
+        if "$adb_path" shell run-as app.bookstr rm -f files/bookstr-coverage.ec; then
+          coverage_prepared=true
+        else
+          echo 'Could not clear old emulator coverage data.' >&2
+          status=1
+        fi
+      fi
+    fi
+  fi
+  if [[ $status -eq 0 && -n "$native_profile_output" ]]; then
+    if ! bash "$(dirname "$0")/prepare-native-coverage.sh" "$adb_path" "$native_device_serial" app.bookstr; then
+      status=1
+    else
+      native_coverage_prepared=true
+    fi
+  fi
   if [[ $status -eq 0 ]]; then
     log_file="$results_dir/instrumentation.log"
     junit_file="$results_dir/instrumentation.xml"
     : > "$results_dir/instrumentation.started"
     set +e
-    "$adb_path" shell am instrument -w -r app.bookstr.test/androidx.test.runner.AndroidJUnitRunner 2>&1 | tee "$log_file"
+    if [[ -n "$native_profile_output" ]]; then native_coverage_instrument_attempted=true; fi
+    if [[ -n "$coverage_file" ]]; then
+      coverage_instrument_attempted=true
+      "$adb_path" shell am instrument -w -r -e coverage true -e coverageFile "$device_coverage_file" app.bookstr.test/androidx.test.runner.AndroidJUnitRunner 2>&1 | tee "$log_file"
+    else
+      "$adb_path" shell am instrument -w -r app.bookstr.test/androidx.test.runner.AndroidJUnitRunner 2>&1 | tee "$log_file"
+    fi
     instrument_status=${PIPESTATUS[0]}
     node "$(dirname "$0")/instrumentation-results.mjs" "$log_file" "$junit_file"
     parser_status=$?
@@ -66,6 +150,46 @@ else
   (cd android && ./gradlew --no-daemon connectedDebugAndroidTest)
   status=$?
   set -e
+fi
+
+if [[ -n "$native_profile_output" && "$native_coverage_prepared" == true && "$native_coverage_instrument_attempted" == true ]]; then
+  if ! bash "$(dirname "$0")/collect-native-coverage.sh" "$adb_path" "$native_device_serial" app.bookstr "$native_profile_output"; then
+    echo 'Could not collect fresh native coverage profiles.' >&2
+    status=1
+  else
+    marker_status=0
+    marker_tmp=''
+    marker_tmp=$(mktemp "$native_profile_marker.tmp.XXXXXX") || marker_status=1
+    if [[ $marker_status -eq 0 ]] && printf 'collected\n' > "$marker_tmp" && mv -f -- "$marker_tmp" "$native_profile_marker"; then
+      :
+    else
+      echo 'Could not publish native coverage collection marker.' >&2
+      [[ -z "$marker_tmp" ]] || rm -f -- "$marker_tmp"
+      status=1
+    fi
+  fi
+fi
+
+# The device copy was removed after safety validation and APK installation. Pull
+# even after test/parser failures so partial coverage is retained, while keeping
+# those failures in status and rejecting failed or empty pulls.
+if [[ -n "$coverage_file" && "$coverage_prepared" == true && "$coverage_instrument_attempted" == true ]]; then
+  coverage_pull_status=0
+  set +e
+  "$adb_path" exec-out run-as app.bookstr cat files/bookstr-coverage.ec > "$coverage_tmp"
+  coverage_pull_status=$?
+  set -e
+  if [[ $coverage_pull_status -ne 0 ]]; then
+    echo 'Could not pull fresh emulator coverage data.' >&2
+    status=1
+  elif [[ ! -s "$coverage_tmp" ]]; then
+    echo 'Emulator produced an empty coverage file.' >&2
+    status=1
+  elif ! mv -f -- "$coverage_tmp" "$coverage_file"; then
+    echo "Could not atomically save emulator coverage to $coverage_file." >&2
+    status=1
+  fi
+  rm -f -- "$coverage_tmp"
 fi
 
 # Pull screenshots on passing and failing runs, even when installation or
