@@ -262,6 +262,8 @@ dependencies {
     testImplementation("org.robolectric:robolectric:4.14.1")
     testImplementation("fr.acinq.secp256k1:secp256k1-kmp-jni-jvm:0.15.0")
     testImplementation("com.squareup.okhttp3:mockwebserver:4.12.0")
+    androidTestImplementation("com.squareup.okhttp3:mockwebserver:4.12.0")
+    androidTestImplementation("com.squareup.okhttp3:okhttp-tls:4.12.0")
     testImplementation("com.squareup.okhttp3:okhttp-tls:4.12.0")
 
     implementation("androidx.security:security-crypto:1.1.0-alpha06")
