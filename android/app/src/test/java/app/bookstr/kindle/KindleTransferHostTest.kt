@@ -50,6 +50,8 @@ import org.robolectric.annotation.RealObject
 import org.robolectric.shadows.ShadowContentResolver
 import org.robolectric.shadows.ShadowLooper
 import org.robolectric.util.ReflectionHelpers
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 import java.io.File
 import java.io.FileNotFoundException
 import java.security.MessageDigest
@@ -237,12 +239,29 @@ class KindleTransferHostTest {
         compose.setContent { KindleTransferHost(app, KindleRequest(null, 1L)) {} }
         compose.onNodeWithTag("kindle.folder").performClick()
         waitForText("1 missing · 0 already there · 0 skipped")
-        compose.onNodeWithTag("kindle.transfer-all").performClick()
+        val copyStarted = CountDownLatch(1)
+        val allowCopy = CountDownLatch(1)
+        provider.beforeCreateDocument = {
+            copyStarted.countDown()
+            check(allowCopy.await(15, TimeUnit.SECONDS)) { "Copy fixture was not released" }
+        }
+        try {
+            compose.onNodeWithTag("kindle.transfer-all").performClick()
+            assertTrue("Storage copy did not start", copyStarted.await(5, TimeUnit.SECONDS))
+            compose.onNodeWithTag("kindle.folder").assertIsNotEnabled()
+            compose.onNodeWithTag("kindle.transfer-all").assertIsNotEnabled()
+        } finally {
+            allowCopy.countDown()
+        }
         waitForText("1 copied · 0 already there · 0 failed")
 
         val expectedName = kindleFilename(KindleBook(publication.first, "A Test Book", "An Author", publication.second, "pdf"), sha256(publication.second))
         val fileId = provider.names.entries.single { it.value == expectedName }.key
         assertEquals(publication.second.readBytes().toList(), provider.files.getValue(fileId).readBytes().toList())
+
+        compose.onNodeWithTag("kindle.folder").performClick()
+        waitForText("0 missing · 1 already there · 0 skipped")
+        compose.onNodeWithTag("kindle.transfer-all").assertIsNotEnabled()
     }
 
     private fun completedBook(): Pair<String, File> {
@@ -280,6 +299,7 @@ private class HostDocumentsProvider : DocumentsProvider() {
     val files = linkedMapOf<String, File>()
     val names = linkedMapOf<String, String>()
     private var nextId = 0
+    var beforeCreateDocument: (() -> Unit)? = null
 
     override fun onCreate() = true
     override fun isChildDocument(parentDocumentId: String, documentId: String) = parentDocumentId == "root" && documentId in files
@@ -316,6 +336,7 @@ private class HostDocumentsProvider : DocumentsProvider() {
         return ParcelFileDescriptor.open(file, flags)
     }
     override fun createDocument(parentDocumentId: String, mimeType: String, displayName: String): String {
+        beforeCreateDocument?.invoke()
         check(parentDocumentId == "root")
         val id = "copy-${nextId++}"
         files[id] = File.createTempFile("kindle-host-copy", ".pdf")

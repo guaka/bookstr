@@ -43,6 +43,20 @@ class MainActivityNewIntentTest {
 
     @get:Rule val rules: RuleChain = RuleChain.outerRule(clean).around(compose)
 
+    private fun withActivity(block: (ActivityScenario<MainActivity>) -> Unit) {
+        ActivityScenario.launch<MainActivity>(Intent(app, MainActivity::class.java)).use { scenario ->
+            lateinit var launchIntent: Intent
+            scenario.onActivity { launchIntent = it.intent }
+            try {
+                block(scenario)
+            } finally {
+                // ActivityScenario matches lifecycle events against its launch intent. The app
+                // correctly replaces that intent in onNewIntent; restore it only for teardown.
+                scenario.onActivity { it.intent = launchIntent }
+            }
+        }
+    }
+
     private fun deliverIntent(activity: MainActivity, intent: Intent) {
         activity.startActivity(
             intent.setClass(activity, MainActivity::class.java)
@@ -65,7 +79,7 @@ class MainActivityNewIntentTest {
         val invitation = "bookstr://catalog?v=1&npub=npub1zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zygse4sl3h" +
             "&name=Intent%20test%20catalog&relay=wss%3A%2F%2Frelay.example.test"
 
-        ActivityScenario.launch<MainActivity>(Intent(app, MainActivity::class.java)).use { scenario ->
+        withActivity { scenario ->
             scenario.onActivity { activity ->
                 deliverIntent(activity, Intent(Intent.ACTION_VIEW, Uri.parse(invitation)))
             }
@@ -89,7 +103,7 @@ class MainActivityNewIntentTest {
     fun invalidInvitationCanBeDismissedAndNonBookstrIntentClearsPendingInvite() {
         val invalidInvitation = "bookstr://catalog?v=1&unknown=value"
 
-        ActivityScenario.launch<MainActivity>(Intent(app, MainActivity::class.java)).use { scenario ->
+        withActivity { scenario ->
             scenario.onActivity { activity ->
                 deliverIntent(activity, Intent(Intent.ACTION_VIEW, Uri.parse(invalidInvitation)))
             }

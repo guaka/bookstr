@@ -214,8 +214,7 @@ fun SettingsScreen(
                         Button(onClick = onConnectNip46, enabled = !connectingAmber, modifier = Modifier.fillMaxWidth().testTag("signer.connect-qr")) {
                             Text(if (connectingAmber) "Connecting…" else "Connect phone signer")
                         }
-                    }
-                    if (amberAvailable) {
+                    } else if (amberAvailable) {
                         Button(
                             onClick = onConnectAmber,
                             enabled = !connectingAmber,

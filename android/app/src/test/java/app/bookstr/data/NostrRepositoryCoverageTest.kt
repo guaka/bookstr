@@ -8,25 +8,24 @@ import android.content.pm.ProviderInfo
 import android.database.Cursor
 import android.database.MatrixCursor
 import android.net.Uri
-import android.os.Looper
 import androidx.room.Room
 import app.bookstr.nostr.Nip55
 import app.bookstr.nostr.AmberIntentSession
 import app.bookstr.nostr.NostrCrypto
 import app.bookstr.nostr.NostrClient
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.async
-import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
-import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
+import kotlinx.coroutines.test.resetMain
+import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.test.setMain
 import okhttp3.WebSocket
 import okhttp3.WebSocketListener
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
 import org.json.JSONArray
 import org.json.JSONObject
-import org.robolectric.Shadows.shadowOf
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -247,13 +246,70 @@ class NostrRepositoryCoverageTest {
     }
 
     @Test
-    fun vocabularyIsAmberOnlyAndMissingEncryptionProviderFailsSafely() = runBlocking<Unit> {
-        withMainLooperPumped {
-            val repo = repository()
-            settings.connectNsec(PRIVATE_KEY, PUBKEY)
-            assertFalse(repo.publishVocabularyWord(word("local")))
-            assertEquals(0, repo.pullVocabulary())
+    fun syncWithoutExplicitIdsPullsSavedReadingProgress() = runBlocking<Unit> {
+        database.bookProgressDao().upsert(BookProgress("saved-book", .2, "before", 1_000L, .4))
+        val queried = CopyOnWriteArrayList<String>()
+        val server = relay { socket, message ->
+            val request = JSONArray(message)
+            if (request.getString(0) == "REQ") {
+                request.getJSONObject(2).optJSONArray("#d")?.let { tags ->
+                    queried += tags.getString(0)
+                    val event = JSONObject().put("created_at", 2L)
+                        .put("content", progressContent("saved-book", .6, "after", .8, 2_000L))
+                    socket.send(JSONArray().put("EVENT").put(request.getString(1)).put(event).toString())
+                }
+                socket.send(JSONArray().put("EOSE").put(request.getString(1)).toString())
+            }
+        }
+        settings.connectNsec(PRIVATE_KEY, PUBKEY)
+        settings.relays = listOf(serverUrl(server))
 
+        repository().syncAllFromRelays()
+
+        assertEquals(listOf(NostrClient.progressDTag("saved-book")), queried)
+        assertEquals(BookProgress("saved-book", .6, "after", 2_000L, .8), database.bookProgressDao().get("saved-book"))
+    }
+
+    @Test
+    fun localSignerVocabularyRoundTripsEncryptedContentThroughTheRelay() = runBlocking<Unit> {
+        val published = AtomicReference<JSONObject?>()
+        val server = relay { socket, message ->
+            val request = JSONArray(message)
+            when (request.getString(0)) {
+                "EVENT" -> {
+                    val event = request.getJSONObject(1)
+                    published.set(event)
+                    socket.send(JSONArray().put("OK").put(event.getString("id")).put(true).put("").toString())
+                }
+                "REQ" -> {
+                    published.get()?.let { event ->
+                        socket.send(JSONArray().put("EVENT").put(request.getString(1)).put(event).toString())
+                    }
+                    socket.send(JSONArray().put("EOSE").put(request.getString(1)).toString())
+                }
+            }
+        }
+        settings.connectNsec(PRIVATE_KEY, PUBKEY)
+        settings.relays = listOf(serverUrl(server))
+        val repo = repository()
+        val local = word("local")
+        assertEquals(0, repo.pullVocabulary())
+        assertTrue(repo.publishVocabularyWord(local))
+        val event = requireNotNull(published.get())
+        assertTrue(NostrCrypto.verifyEvent(event))
+        assertEquals(PUBKEY, event.getString("pubkey"))
+        assertFalse(event.getString("content") == VocabularyWire.encode(local).toString())
+        assertEquals(1, repo.pullVocabulary())
+        assertEquals(local.syncId, database.vocabularyWordDao().getByWord("en", local.word)?.syncId)
+        assertEquals(0, repo.pullVocabulary())
+    }
+
+    @Test
+    @OptIn(ExperimentalCoroutinesApi::class)
+    fun missingEncryptionProviderFailsSafelyWithoutChangingVocabulary() = runTest {
+        Dispatchers.setMain(UnconfinedTestDispatcher(testScheduler))
+        try {
+            val repo = repository()
             val existing = word("existing", lastSeenAt = 9_000L)
             database.vocabularyWordDao().upsert(existing)
             val server = relay { socket, message ->
@@ -277,21 +333,8 @@ class NostrRepositoryCoverageTest {
             assertEquals(0, repo.pullVocabulary())
             assertEquals(existing, database.vocabularyWordDao().get(existing.key))
             assertNull(database.vocabularyWordDao().getByWord("en", "unreadable"))
-        }
-    }
-
-    private suspend fun <T> withMainLooperPumped(timeoutMillis: Long = 15_000, operation: suspend () -> T): T = coroutineScope {
-        val result = async(Dispatchers.Default) { operation() }
-        try {
-            withTimeout(timeoutMillis) {
-                while (!result.isCompleted) {
-                    shadowOf(Looper.getMainLooper()).idleFor(100, TimeUnit.MILLISECONDS)
-                    delay(1)
-                }
-                result.await()
-            }
         } finally {
-            result.cancel()
+            Dispatchers.resetMain()
         }
     }
 
@@ -413,6 +456,6 @@ class NostrRepositoryCoverageTest {
 
     companion object {
         private val PRIVATE_KEY = "00".repeat(31) + "01"
-        private val PUBKEY = NostrCrypto.publicKeyHex(NostrCrypto.parsePrivateKey(PRIVATE_KEY))
+        private const val PUBKEY = "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798"
     }
 }

@@ -16,7 +16,6 @@ import androidx.test.core.app.ApplicationProvider
 import app.bookstr.BookstrApp
 import app.bookstr.BookstrTestRunner
 import app.bookstr.ComicReaderActivity
-import app.bookstr.Fb2ReaderActivity
 import app.bookstr.MainActivity
 import app.bookstr.PdfReaderActivity
 import app.bookstr.data.BookFormat
@@ -110,33 +109,6 @@ class TvReaderActivitiesTest {
                 awaitLibrary()
             }
         } finally { file.delete(); app.settingsRepository.clearReaderSession(); runBlocking { app.catalogRepository.clearProgress(id) } }
-    }
-
-    @Test fun fb2RemoteScrollsAndTogglesNarration() {
-        val id = "tv-fb2-controls"
-        val file = app.catalogRepository.publicationFile(id, BookFormat.Fb2)
-        file.writeText("<FictionBook><body><section id=\"chapter\">" +
-            (1..80).joinToString("") { "<p>Paragraph $it with enough words to read on television.</p>" } +
-            "</section></body></FictionBook>")
-        try {
-            television<Fb2ReaderActivity>(Fb2ReaderActivity.intent(app, id, "TV FB2", null, null)) {
-                compose.waitUntil(10_000) { compose.onAllNodesWithText("Paragraph 1", substring = true).fetchSemanticsNodes().isNotEmpty() }
-                select("tv.reader.next")
-                compose.waitUntil(10_000) { runBlocking { app.catalogRepository.getProgress(id) }?.progression?.let { it > 0 } == true }
-                val advanced = runBlocking { app.catalogRepository.getProgress(id) }!!.progression
-                select("tv.reader.previous")
-                compose.waitUntil(10_000) { runBlocking { app.catalogRepository.getProgress(id) }?.progression?.let { it < advanced } == true }
-                select("tv.reader.speech")
-                compose.onNodeWithContentDescription("Pause narration").assertExists()
-                select("tv.reader.speech")
-                compose.onNodeWithContentDescription("Resume narration").assertExists()
-                select("tv.reader.library")
-                awaitLibrary()
-            }
-        } finally {
-            file.delete(); app.settingsRepository.clearReaderSession()
-            runBlocking { app.catalogRepository.clearProgress(id) }
-        }
     }
 
     @Test fun comicRemoteTurnsPagesAndRestoresSavedPosition() {

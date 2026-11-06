@@ -15,6 +15,7 @@ import kotlinx.coroutines.runBlocking
 import org.junit.Assert.*
 import org.junit.Test
 import java.io.File
+import java.security.MessageDigest
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 
@@ -47,6 +48,8 @@ class OpenBookIntentTest {
                 Entry(epub, "application/epub+zip", ReaderActivity::class.java.name, BookFormat.Epub),
             )) {
                 val uri = FileProvider.getUriForFile(app, "${app.packageName}.books", file)
+                val expectedId = MessageDigest.getInstance("MD5").digest(file.readBytes())
+                    .joinToString("") { "%02x".format(it) }
                 val intent = Intent(Intent.ACTION_VIEW).setDataAndType(uri, mime)
                     .setClass(app, MainActivity::class.java).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                 val monitor = instrumentation.addMonitor(reader, null, false)
@@ -55,7 +58,8 @@ class OpenBookIntentTest {
                         val opened = instrumentation.waitForMonitorWithTimeout(monitor, 20_000)
                         assertNotNull("External file reached its reader", opened)
                         val book = runBlocking { app.catalogRepository.downloadedBooks(emptyList()) }
-                            .single { it.title == file.nameWithoutExtension && it.format == format }
+                            .single { it.id == expectedId && it.format == format }
+                        assertEquals(file.nameWithoutExtension, book.title)
                         assertTrue(app.catalogRepository.publicationFile(book.id, format).isFile)
                         instrumentation.runOnMainSync { opened.finish() }
                         instrumentation.waitForIdleSync()
