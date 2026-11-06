@@ -82,10 +82,17 @@ class NarrationLanguageTest {
             if (compose.onAllNodesWithContentDescription("Pause narration").fetchSemanticsNodes().isNotEmpty()) {
                 compose.onNodeWithTag("narration.toggle").performClick()
             }
+            compose.waitUntil(15_000) {
+                compose.onAllNodesWithContentDescription("Resume narration").fetchSemanticsNodes().isNotEmpty()
+            }
         }
         fun choose(tag: String) {
+            assertFalse("Narration must stay active while changing language", inactive.get())
             compose.onNodeWithTag("narration.language").performClick()
-            compose.onNodeWithTag("narration.language.$tag").performScrollTo().performClick()
+            compose.onNodeWithTag("narration.language.$tag").performScrollTo().assertIsDisplayed()
+                .performSemanticsAction(SemanticsActions.OnClick) { click ->
+                    assertTrue("Language option $tag must accept its accessibility action", click())
+                }
         }
         try {
             open().use {
