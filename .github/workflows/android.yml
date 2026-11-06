@@ -43,7 +43,7 @@ jobs:
       contents: read
       pull-requests: read
     outputs:
-      android: ${{ (github.event_name != 'pull_request' || steps.filter.outputs.android == 'true') && 'true' || 'false' }}
+      android: ${{ (github.event_name != 'pull_request' || steps.filter.outputs.android_code == 'true' || steps.baseline.outputs.android == 'true') && 'true' || 'false' }}
     steps:
       - uses: actions/checkout@v4
       - name: Filter Android paths
@@ -52,7 +52,7 @@ jobs:
         uses: dorny/paths-filter@0e4a8c6effa4802afeda77dc8d303f8176d7dfad
         with:
           filters: |
-            android:
+            android_code:
               - 'android/**'
               - 'shared/reader/**'
               - 'web/reader-speech.js'
@@ -61,12 +61,31 @@ jobs:
               - 'web/comic-reader.html'
               - 'web/vendor/libarchive.js'
               - 'web/vendor/libarchive.wasm'
-              - 'shared/coverage/**'
               - 'scripts/coverage-ratchet.mjs'
               - 'scripts/test-overview.mjs'
-              - '.github/workflows/android.yml'
               - 'scripts/workflows.test.mjs'
               - '.nvmrc'
+      - name: Compare Android coverage floor with pull request base
+        id: baseline
+        if: github.event_name == 'pull_request'
+        env:
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          if ! git fetch --no-tags --depth=1 origin "$PR_BASE_SHA"; then
+            echo 'android=true' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if ! git show "$PR_BASE_SHA:shared/coverage/baselines-v1.json" > "$RUNNER_TEMP/base-baselines.json"; then
+            echo 'android=true' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if ! git show "$PR_BASE_SHA:.github/workflows/android.yml" > "$RUNNER_TEMP/base-android.yml"; then
+            echo 'android=true' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          result=$(node scripts/platform-baseline-routing-cli.mjs --suite android --base "$RUNNER_TEMP/base-baselines.json" --head shared/coverage/baselines-v1.json --workflow-base "$RUNNER_TEMP/base-android.yml" --workflow-head .github/workflows/android.yml)
+          echo "android=$result" >> "$GITHUB_OUTPUT"
 
   unit-tests:
     name: Unit tests and coverage
