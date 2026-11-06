@@ -11,6 +11,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
@@ -55,6 +56,41 @@ class NostrSignerCoverageTest {
         val signer = NostrSignerFactory.create(context, settings)
 
         assertNull(signer)
+    }
+
+    @Test
+    fun nip46CredentialsAreSecurelyPersistedAndFactoryBuildsSigner() {
+        val clientSecret = "11".repeat(32)
+        val remoteSigner = "22".repeat(32)
+        val userPubkey = "33".repeat(32)
+        settings.connectNip46(clientSecret, remoteSigner, userPubkey, listOf("wss://relay.example/", "wss://relay.example/"))
+
+        assertEquals(NostrAuthMode.Nip46, settings.authMode)
+        assertTrue(settings.hasNostrIdentity())
+        assertEquals(clientSecret, settings.nip46ClientSecretHex)
+        assertEquals(remoteSigner, settings.nip46RemoteSignerPubkey)
+        assertEquals(listOf("wss://relay.example/"), settings.nip46Relays)
+        assertNull(settings.nsec)
+        assertTrue(NostrSignerFactory.create(context, settings) is NostrSigner)
+        assertEquals(userPubkey, kotlinx.coroutines.runBlocking { NostrSignerFactory.create(context, settings)!!.getPublicKey() })
+    }
+
+    @Test
+    fun switchingIdentityAndDisconnectClearNip46SecretAndSession() {
+        settings.connectNip46("11".repeat(32), "22".repeat(32), "33".repeat(32), listOf("wss://relay.example"))
+        settings.connectNsec("00".repeat(31) + "01", "44".repeat(32))
+        assertEquals(NostrAuthMode.Nsec, settings.authMode)
+        assertNull(settings.nip46ClientSecretHex)
+        assertNull(settings.nip46RemoteSignerPubkey)
+        assertTrue(settings.nip46Relays.isEmpty())
+
+        settings.connectNip46("11".repeat(32), "22".repeat(32), "33".repeat(32), listOf("wss://relay.example"))
+        settings.disconnectNostr()
+        assertEquals(NostrAuthMode.None, settings.authMode)
+        assertFalse(settings.hasNostrIdentity())
+        assertNull(settings.nip46ClientSecretHex)
+        assertNull(settings.nip46RemoteSignerPubkey)
+        assertTrue(settings.nip46Relays.isEmpty())
     }
 
     @Test

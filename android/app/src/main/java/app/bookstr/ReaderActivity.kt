@@ -223,10 +223,11 @@ class ReaderActivity : ComponentActivity() {
             finish()
             return
         }
-        startNarrationFromExternalRequest = intent.getBooleanExtra(
-            NarrationService.EXTRA_START_NARRATION,
-            false,
-        ) && savedInstanceState?.getBoolean(STATE_NARRATION_REQUEST_HANDLED) != true
+        startNarrationFromExternalRequest = shouldStartReaderNarration(
+            resources.configuration.uiMode,
+            intent.getBooleanExtra(NarrationService.EXTRA_START_NARRATION, false),
+            savedInstanceState?.getBoolean(STATE_NARRATION_REQUEST_HANDLED) == true,
+        )
         externalNarrationRequestToken = if (startNarrationFromExternalRequest) {
             intent.getStringExtra(EXTRA_EXTERNAL_NARRATION_TOKEN)
         } else {
@@ -563,6 +564,7 @@ class ReaderActivity : ComponentActivity() {
                         onPrevious = { webView?.evaluateJavascript("prevPage();", null) },
                         onNext = { webView?.evaluateJavascript("nextPage();", null) },
                         onSpeech = { toggleTextToSpeech() },
+                        isSpeaking = isSpeaking,
                         modifier = Modifier.align(Alignment.BottomCenter).zIndex(3f),
                     )
                     if (showSections) {

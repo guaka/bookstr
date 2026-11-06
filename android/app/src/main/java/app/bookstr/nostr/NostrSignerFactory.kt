@@ -16,5 +16,6 @@ object NostrSignerFactory {
                 } else {
                     ExternalSigner(context.applicationContext, settings)
                 }
+            NostrAuthMode.Nip46 -> Nip46Sessions.create(settings)
         }
 }

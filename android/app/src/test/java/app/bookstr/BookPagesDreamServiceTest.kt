@@ -1,0 +1,216 @@
+package app.bookstr
+
+import android.app.Activity
+import android.content.Intent
+import android.os.Looper
+import android.view.ViewGroup
+import android.webkit.WebView
+import android.widget.LinearLayout
+import app.bookstr.data.BookFormat
+import app.bookstr.data.BookProgress
+import app.bookstr.data.ReaderSession
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
+import org.junit.Rule
+import org.junit.Test
+import org.junit.runner.RunWith
+import org.junit.rules.TemporaryFolder
+import org.robolectric.Robolectric
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.Shadows
+import org.robolectric.annotation.Config
+import org.robolectric.util.ReflectionHelpers
+import org.robolectric.Shadows.shadowOf
+import java.io.File
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.TimeUnit
+import kotlinx.coroutines.runBlocking
+
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [35])
+class BookPagesDreamServiceTest {
+    @get:Rule val temporaryFolder = TemporaryFolder()
+
+    private val bookId = "0123456789abcdef0123456789abcdef"
+    private val session = ReaderSession(
+        bookId = bookId,
+        bookTitle = "Example book",
+        author = "Example author",
+        format = BookFormat.Epub,
+        locator = "session-cfi",
+    )
+
+    @Test
+    fun savedEpubSelectionUsesPersistedProgressThenSessionLocator() {
+        val file = temporaryFolder.newFile("$bookId.epub")
+
+        val progressSelection = selectDreamBook(session, file, "progress-cfi")
+        assertEquals("progress-cfi", progressSelection?.cfi)
+        assertEquals(session, progressSelection?.session)
+        assertEquals(file, progressSelection?.file)
+
+        val sessionSelection = selectDreamBook(session, file, "  ")
+        assertEquals("session-cfi", sessionSelection?.cfi)
+    }
+
+    @Test
+    fun missingSessionFileOrUnsupportedFormatSelectsFallback() {
+        val file = temporaryFolder.newFile("$bookId.epub")
+        assertNull(selectDreamBook(null, file, "progress-cfi"))
+        assertNull(selectDreamBook(session, null, "progress-cfi"))
+        assertNull(selectDreamBook(session, File(temporaryFolder.root, "missing.epub"), "progress-cfi"))
+        assertNull(selectDreamBook(session.copy(format = BookFormat.Pdf), file, "progress-cfi"))
+        assertNull(selectDreamBook(session.copy(bookId = "../outside"), file, "progress-cfi"))
+    }
+
+    @Test
+    fun narrationFollowRequiresActiveDreamPlayingStateAndMatchingBook() {
+        assertTrue(shouldFollowDreamNarration(true, true, bookId, bookId))
+        assertFalse(shouldFollowDreamNarration(false, true, bookId, bookId))
+        assertFalse(shouldFollowDreamNarration(true, false, bookId, bookId))
+        assertFalse(shouldFollowDreamNarration(true, true, bookId, "fedcba9876543210fedcba9876543210"))
+        assertFalse(shouldFollowDreamNarration(true, true, null, bookId))
+    }
+
+    @Test
+    fun serviceRequestsCurrentNarrationStateWithoutStartingPlayback() {
+        val app = org.robolectric.RuntimeEnvironment.getApplication<BookstrApp>()
+        val companion = NarrationService::class.java.getField("Companion").get(null)
+        val wasRunning = ReflectionHelpers.getField<Boolean>(companion, "running")
+        try {
+            ReflectionHelpers.setField(companion, "running", true)
+            syncDreamNarration(app, bookId)
+            val request = shadowOf(app).nextStartedService
+            assertEquals(NarrationService::class.java.name, request?.component?.className)
+            assertEquals(bookId, request?.getStringExtra(NarrationService.EXTRA_BOOK_ID))
+            assertTrue(request?.action?.endsWith("NARRATION_SYNC") == true)
+            assertFalse(request?.getBooleanExtra(NarrationService.EXTRA_START_NARRATION, false) == true)
+        } finally {
+            ReflectionHelpers.setField(companion, "running", wasRunning)
+        }
+    }
+
+    @Test
+    fun bookAssetResponseServesOnlyTheSelectedExistingEpub() {
+        val file = temporaryFolder.newFile("$bookId.epub").apply { writeText("bounded epub fixture") }
+        val response = requireNotNull(dreamBookResponse(bookId, file, "$bookId.epub"))
+        assertEquals("application/epub+zip", response.mimeType)
+        assertEquals(file.length().toString(), response.responseHeaders?.get("Content-Length"))
+        assertEquals("bounded epub fixture", response.data.bufferedReader().use { it.readText() })
+
+        assertNull(dreamBookResponse(bookId, file, "other.epub"))
+        assertNull(dreamBookResponse(null, file, "$bookId.epub"))
+        assertNull(dreamBookResponse(bookId, null, "$bookId.epub"))
+        file.delete()
+        assertNull(dreamBookResponse(bookId, file, "$bookId.epub"))
+    }
+
+    @Test
+    fun bootstrapUsesTheReaderAssetApiAndEscapesSavedLocation() {
+        val cfi = "epubcfi(/6/2[id]!/4/1:4)"
+        val script = dreamReaderBootstrap(session, cfi, "night", "georgia", "left")
+
+        assertTrue(script.contains("setReaderTheme(\"night\")"))
+        assertTrue(script.contains("setReaderTypography(\"georgia\", \"left\", 0)"))
+        assertTrue(script.contains("loadBookUrl(\"https://appassets.androidplatform.net/books/$bookId.epub\", \"$cfi\""))
+        assertTrue(script.contains("\"$bookId\")"))
+        assertFalse(script.contains("saveProgress"))
+        val readerHtml = File("../../shared/reader/reader.html").readText()
+        assertTrue(readerHtml.contains("window.loadBookUrl"))
+        assertTrue(readerHtml.contains("window.displaySearchResult = function(cfi)"))
+    }
+
+    @Test
+    fun missingSessionUsesFallbackAndLifecycleDoesNotMutateProgress() {
+        val activity = Robolectric.buildActivity(Activity::class.java).setup().get()
+        val controller = Robolectric.buildService(BookPagesDreamService::class.java).create()
+        val service = controller.get()
+        ReflectionHelpers.setField(service, "mWindow", activity.window)
+        service.onAttachedToWindow()
+        assertTrue(service.isFullscreen)
+        assertFalse(service.isInteractive)
+
+        val app = service.application as BookstrApp
+        app.settingsRepository.clearReaderSession()
+        val before = runBlocking { app.database.bookProgressDao().getAll() }
+        service.onDreamingStarted()
+        val queued = CountDownLatch(1)
+        ReflectionHelpers.getField<ExecutorService>(service, "io").execute { queued.countDown() }
+        assertTrue("Dream IO work should finish", queued.await(5, TimeUnit.SECONDS))
+        Shadows.shadowOf(Looper.getMainLooper()).idle()
+        val content = service.window?.decorView?.findViewById<ViewGroup>(android.R.id.content)
+        assertTrue(content?.getChildAt(0) is LinearLayout)
+        assertEquals(before, runBlocking { app.database.bookProgressDao().getAll() })
+
+        service.sendBroadcast(Intent(NarrationService.ACTION_EVENT).setPackage(service.packageName)
+            .putExtra(NarrationService.EXTRA_IS_PLAYING, true)
+            .putExtra(NarrationService.EXTRA_BOOK_ID, bookId))
+        Shadows.shadowOf(Looper.getMainLooper()).idle()
+        assertTrue(ReflectionHelpers.getField<Boolean>(service, "narrationPlaying"))
+        assertEquals(bookId, ReflectionHelpers.getField<String?>(service, "narrationBookId"))
+
+        service.onDreamingStopped()
+        service.onDetachedFromWindow()
+        controller.destroy()
+        activity.finish()
+        assertFalse(shouldFollowDreamNarration(false, true, bookId, bookId))
+    }
+
+    @Test
+    fun savedEpubRendersPersistedPageAndFollowsPlayingBookProgressWithoutWritingIt() {
+        val activity = Robolectric.buildActivity(Activity::class.java).setup().get()
+        val controller = Robolectric.buildService(BookPagesDreamService::class.java).create()
+        val service = controller.get()
+        ReflectionHelpers.setField(service, "mWindow", activity.window)
+        service.onAttachedToWindow()
+
+        val app = service.application as BookstrApp
+        val file = app.catalogRepository.epubFile(bookId).apply { writeText("fixture publication") }
+        val savedSession = session.copy(locator = "session-locator")
+        app.settingsRepository.saveReaderSession(savedSession)
+        val initialProgress = BookProgress(bookId, 0.25, "saved-progress-cfi", 10L)
+        runBlocking {
+            app.database.bookProgressDao().upsert(initialProgress)
+        }
+
+        service.onDreamingStarted()
+        awaitDreamIo(service)
+        Shadows.shadowOf(Looper.getMainLooper()).idle()
+
+        val webView = ReflectionHelpers.getField<WebView>(service, "webView")
+        val webShadow = Shadows.shadowOf(webView)
+        webShadow.webViewClient.onPageFinished(webView, "https://appassets.androidplatform.net/assets/reader.html")
+        val initialScript = requireNotNull(webShadow.lastEvaluatedJavascript)
+        assertTrue(initialScript.contains("loadBookUrl(\"https://appassets.androidplatform.net/books/$bookId.epub\", \"saved-progress-cfi\""))
+
+        service.sendBroadcast(Intent(NarrationService.ACTION_EVENT).setPackage(service.packageName)
+            .putExtra(NarrationService.EXTRA_IS_PLAYING, true)
+            .putExtra(NarrationService.EXTRA_BOOK_ID, bookId))
+        Shadows.shadowOf(Looper.getMainLooper()).idle()
+        val narrationProgress = initialProgress.copy(progression = 0.4, cfi = "narration-progress-cfi", updatedAt = 20L)
+        runBlocking { app.database.bookProgressDao().upsert(narrationProgress) }
+        Shadows.shadowOf(Looper.getMainLooper()).idleFor(2, TimeUnit.SECONDS)
+        awaitDreamIo(service)
+        Shadows.shadowOf(Looper.getMainLooper()).idle()
+
+        val followScript = requireNotNull(webShadow.lastEvaluatedJavascript)
+        assertTrue(followScript.contains("window.displaySearchResult(\"narration-progress-cfi\")"))
+        assertEquals(narrationProgress, runBlocking { app.database.bookProgressDao().get(bookId) })
+
+        service.onDreamingStopped()
+        service.onDetachedFromWindow()
+        controller.destroy()
+        activity.finish()
+        file.delete()
+        app.settingsRepository.clearReaderSession()
+    }
+
+    private fun awaitDreamIo(service: BookPagesDreamService) {
+        val queued = CountDownLatch(1)
+        ReflectionHelpers.getField<ExecutorService>(service, "io").execute { queued.countDown() }
+        assertTrue("Dream IO work should finish", queued.await(5, TimeUnit.SECONDS))
+    }
+}

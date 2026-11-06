@@ -24,9 +24,10 @@ fun ReaderBottomNavigation(
     onPrevious: () -> Unit = {},
     onNext: () -> Unit = {},
     onSpeech: (() -> Unit)? = null,
+    isSpeaking: Boolean = false,
 ) {
     if (isTelevision(LocalConfiguration.current.uiMode)) {
-        TvReaderControls(onPrevious, onNext, { onSelectTab(0) }, onSpeech, modifier)
+        TvReaderControls(onPrevious, onNext, { onSelectTab(0) }, onSpeech, modifier, isSpeaking)
         return
     }
     var visible by remember { mutableStateOf(false) }

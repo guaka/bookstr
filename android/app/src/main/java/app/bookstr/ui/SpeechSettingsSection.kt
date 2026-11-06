@@ -7,12 +7,17 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.focusProperties
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import app.bookstr.BookstrApp
+import app.bookstr.isTelevision
 import app.bookstr.speech.*
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -99,9 +104,17 @@ fun SpeechSettingsControls(
     systemVoices: List<Pair<String, String>>, downloads: Map<String, Float>, errors: Map<String, String>,
     onLanguage: (String) -> Unit, onVoice: (String) -> Unit, onInstall: (SpeechModel) -> Unit, onRemove: (SpeechModel) -> Unit,
 ) {
-    Text("Text-to-speech", style = MaterialTheme.typography.titleSmall)
-    SpeechPicker("Language", "speech-language", language, languages.map { it to SpeechLanguages.name(it) }, onLanguage)
+    val television = isTelevision(LocalConfiguration.current.uiMode)
+    val languageFocus = remember { FocusRequester() }
+    val voiceFocus = remember { FocusRequester() }
     val matching = models.filter { it.language == language }
+    val modelFocus = remember(matching.map { it.id }) { matching.associate { it.id to FocusRequester() } }
+    val available = matching.filter { it.id !in downloads }.map { it.id }
+    Text("Text-to-speech", style = MaterialTheme.typography.titleSmall)
+    SpeechPicker("Language", "speech-language", language, languages.map { it to SpeechLanguages.name(it) }, onLanguage,
+        Modifier.focusRequester(languageFocus).focusProperties {
+            if (television) down = available.firstOrNull()?.let { modelFocus.getValue(it) } ?: voiceFocus
+        })
     matching.forEach { model ->
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
             Column(Modifier.weight(1f).padding(vertical = 12.dp)) {
@@ -110,7 +123,14 @@ fun SpeechSettingsControls(
             }
             TextButton(
                 enabled = model.id !in downloads,
-                modifier = Modifier.testTag("speech-model-${model.id}"),
+                modifier = Modifier.testTag("speech-model-${model.id}").focusRequester(modelFocus.getValue(model.id))
+                    .focusProperties {
+                        if (television) {
+                            val index = available.indexOf(model.id)
+                            up = available.getOrNull(index - 1)?.let { modelFocus.getValue(it) } ?: languageFocus
+                            down = available.getOrNull(index + 1)?.let { modelFocus.getValue(it) } ?: voiceFocus
+                        }
+                    }.tvFocus(),
                 onClick = { if (model.id in installed) onRemove(model) else onInstall(model) },
             ) { Text(if (model.id in installed) "Remove" else "Download") }
         }
@@ -120,14 +140,18 @@ fun SpeechSettingsControls(
         errors[model.id]?.let { message -> Text(message, color = MaterialTheme.colorScheme.error, modifier = Modifier.testTag("speech-error-${model.id}")) }
     }
     val choices = listOf("" to "System default") + matching.filter { it.id in installed }.map { it.id to it.label } + systemVoices
-    SpeechPicker("Voice", "speech-voice", voice, choices, onVoice)
+    SpeechPicker("Voice", "speech-voice", voice, choices, onVoice,
+        Modifier.focusRequester(voiceFocus).focusProperties {
+            if (television) up = available.lastOrNull()?.let { modelFocus.getValue(it) } ?: languageFocus
+        })
+    LaunchedEffect(television) { if (television) languageFocus.requestFocus() }
 }
 
 @Composable
-private fun SpeechPicker(label: String, tag: String, selected: String, choices: List<Pair<String, String>>, onSelect: (String) -> Unit) {
+private fun SpeechPicker(label: String, tag: String, selected: String, choices: List<Pair<String, String>>, onSelect: (String) -> Unit, modifier: Modifier = Modifier) {
     var expanded by remember { mutableStateOf(false) }
     Box {
-        OutlinedButton(onClick = { expanded = true }, modifier = Modifier.fillMaxWidth().testTag(tag)) {
+        OutlinedButton(onClick = { expanded = true }, modifier = modifier.fillMaxWidth().testTag(tag).tvFocus()) {
             Text("$label: ${choices.firstOrNull { it.first == selected }?.second ?: "System default"}")
         }
         DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {

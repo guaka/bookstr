@@ -399,6 +399,7 @@ private fun Fb2ReaderScreen(title: String, author: String?, year: String?, right
             if (speaking) { tts.stop(); speaking = false }
             else { doc?.let { tts.speak(it.allParagraphs().joinToString(" ") { pair -> pair.second.text }, android.speech.tts.TextToSpeech.QUEUE_FLUSH, null, "fb2") }; speaking = true }
         },
+        isSpeaking = speaking,
     )
     }
     if (showContents && doc != null) AlertDialog(onDismissRequest = { showContents = false }, title = { Text("Contents") },

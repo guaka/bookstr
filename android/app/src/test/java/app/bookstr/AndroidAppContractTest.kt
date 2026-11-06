@@ -6,6 +6,24 @@ import org.junit.Test
 import java.io.File
 
 class AndroidAppContractTest {
+    @Test fun screensaverIsDiscoverableAndProtectedByTheSystemDreamPermission() {
+        val manifest = javax.xml.parsers.DocumentBuilderFactory.newInstance()
+            .newDocumentBuilder().parse(File("src/main/AndroidManifest.xml"))
+        val services = manifest.getElementsByTagName("service")
+        val dream = (0 until services.length).map { services.item(it) as org.w3c.dom.Element }
+            .single { it.getAttribute("android:name") == ".BookPagesDreamService" }
+        assertEquals("true", dream.getAttribute("android:exported"))
+        assertEquals("android.permission.BIND_DREAM_SERVICE", dream.getAttribute("android:permission"))
+        val action = dream.getElementsByTagName("action").item(0) as org.w3c.dom.Element
+        assertEquals("android.service.dreams.DreamService", action.getAttribute("android:name"))
+        val metadata = dream.getElementsByTagName("meta-data").item(0) as org.w3c.dom.Element
+        assertEquals("android.service.dream", metadata.getAttribute("android:name"))
+        assertEquals("@xml/bookstr_dream", metadata.getAttribute("android:resource"))
+        val descriptor = javax.xml.parsers.DocumentBuilderFactory.newInstance().newDocumentBuilder()
+            .parse(File("src/main/res/xml/bookstr_dream.xml")).documentElement
+        assertEquals("dream", descriptor.tagName)
+        assertEquals("@drawable/tv_banner", descriptor.getAttribute("android:previewImage"))
+    }
     @Test fun televisionLauncherDoesNotExcludePhonesOrRequireTouch() {
         val manifest = javax.xml.parsers.DocumentBuilderFactory.newInstance()
             .newDocumentBuilder().parse(File("src/main/AndroidManifest.xml"))

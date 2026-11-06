@@ -5,6 +5,16 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class TvModeTest {
+    @Test fun televisionAutoplaysOnOpenWithoutRestartingAfterRecreation() {
+        for (uiMode in listOf(Configuration.UI_MODE_TYPE_TELEVISION, Configuration.UI_MODE_TYPE_NORMAL)) {
+            for (requested in listOf(false, true)) {
+                for (handled in listOf(false, true)) {
+                    assertEquals(!handled && (uiMode == Configuration.UI_MODE_TYPE_TELEVISION || requested),
+                        shouldStartReaderNarration(uiMode, requested, handled))
+                }
+            }
+        }
+    }
     @Test fun televisionDetectionIgnoresNightMode() {
         assertTrue(isTelevision(Configuration.UI_MODE_TYPE_TELEVISION))
         assertTrue(isTelevision(Configuration.UI_MODE_TYPE_TELEVISION or Configuration.UI_MODE_NIGHT_YES))
