@@ -74,6 +74,16 @@ targets:
       properties:
         CFBundleDisplayName: Bookstr
         CFBundleIconName: AppIcon
+        LSSupportsOpeningDocumentsInPlace: true
+        CFBundleDocumentTypes:
+          - CFBundleTypeName: EPUB book
+            CFBundleTypeRole: Viewer
+            LSHandlerRank: Alternate
+            LSItemContentTypes: [org.idpf.epub-container]
+          - CFBundleTypeName: PDF document
+            CFBundleTypeRole: Viewer
+            LSHandlerRank: Alternate
+            LSItemContentTypes: [com.adobe.pdf]
         CFBundleURLTypes:
           - CFBundleTypeRole: Editor
             CFBundleURLName: app.bookstr.ios

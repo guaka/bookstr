@@ -61,8 +61,12 @@ import app.bookstr.ui.WordsScreen
 import app.bookstr.ui.theme.BookstrThemeFromSettings
 import app.bookstr.util.Bech32
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import app.bookstr.data.stageLocalBook
 
 class MainActivity : ComponentActivity() {
+    private var pendingBook by mutableStateOf<Intent?>(null)
     private var pendingInvitation by mutableStateOf<String?>(null)
     private var showDownloads by mutableStateOf(false)
     private lateinit var amberSession: AmberIntentSession
@@ -78,6 +82,7 @@ class MainActivity : ComponentActivity() {
         hideSystemUi()
 
         amberSession = AmberIntentSession(this)
+        pendingBook = intent.takeIf { it.action == Intent.ACTION_VIEW && it.data?.scheme in setOf("content", "file") }
         pendingInvitation = intent.dataString?.takeIf { it.startsWith("bookstr:") }
         showDownloads = intent.getBooleanExtra("open_downloads", false)
         requestedWord = intent.getStringExtra(EXTRA_OPEN_WORD)
@@ -99,7 +104,7 @@ class MainActivity : ComponentActivity() {
         if (shouldRestoreReaderOnLaunch(
                 isLocked = getSystemService(KeyguardManager::class.java)?.isKeyguardLocked == true,
                 isFreshLaunch = savedInstanceState == null,
-                hasInvitation = pendingInvitation != null,
+                hasInvitation = pendingInvitation != null || pendingBook != null,
                 openingDownloads = showDownloads,
                 requestedTab = requestedTab,
             )) {
@@ -385,6 +390,28 @@ class MainActivity : ComponentActivity() {
                             openingBookId = null
                         }
                     }
+                }
+
+                LaunchedEffect(pendingBook) {
+                    val request = pendingBook ?: return@LaunchedEffect
+                    try {
+                        val book = withContext(Dispatchers.IO) {
+                            val uri = requireNotNull(request.data)
+                            val name = contentResolver.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)?.use {
+                                if (it.moveToFirst()) it.getString(0) else null
+                            } ?: uri.lastPathSegment.orEmpty()
+                            val input = requireNotNull(contentResolver.openInputStream(uri))
+                            val (metadata, staged) = input.use { stageLocalBook(it, cacheDir, name, request.type) }
+                            try {
+                                val book = metadata.copy(epubUrl = catalog.publicationFile(metadata.id, metadata.format).toURI().toString())
+                                catalog.importVerified(book, staged)
+                                book
+                            } finally { staged.delete() }
+                        }
+                        openBook(book)
+                    } catch (failure: Exception) {
+                        error = failure.message ?: "Could not open book"
+                    } finally { pendingBook = null }
                 }
 
                 fun runSearch(loadMore: Boolean = false) {
@@ -993,6 +1020,7 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
+        pendingBook = intent.takeIf { it.action == Intent.ACTION_VIEW && it.data?.scheme in setOf("content", "file") }
         pendingInvitation = intent.dataString?.takeIf { it.startsWith("bookstr:") }
         showDownloads = intent.getBooleanExtra("open_downloads", false)
         requestedWord = intent.getStringExtra(EXTRA_OPEN_WORD)

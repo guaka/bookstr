@@ -67,6 +67,12 @@ const { ElectronDevicePairing } = require('./device-pairing') as typeof import('
 const { CatalogInvitations } = require('./catalog-invitations') as typeof import('./catalog-invitations');
 const { nip19: catalogNip19 } = require('nostr-tools') as typeof import('nostr-tools', { with: { 'resolution-mode': 'import' } });
 const catalogInvitations = new CatalogInvitations({ app, dialog, loadState, saveState, decodeNPub: catalogNip19.decode, getWindow: () => mainWindow });
+const { OpenBooks, importAndOpenBook } = require('./open-books') as typeof import('./open-books');
+const openBooks = new OpenBooks(app, file => importAndOpenBook(
+  file, getLibraryImporter(), getLibraryStore(), ensureReaderWindowForPayload,
+), error => {
+  dialog.showErrorBox('Could not open book', String(error));
+});
 
 const PRELOAD_PATH = path.join(__dirname, 'preload.js');
 const WEB_ROOT = path.join(__dirname, '..', 'web');
@@ -1618,6 +1624,7 @@ async function bootstrap() {
     console.warn('Could not register the Settings keyboard shortcut.');
   }
   await createLibraryWindow();
+  await openBooks.start(process.argv);
   await catalogInvitations.start(process.argv, process.execPath, process.defaultApp, app.getAppPath());
   const preferences = await torrentPreferences();
   await getTorrentBridge().setLimits(preferences);

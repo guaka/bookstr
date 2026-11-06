@@ -92,7 +92,8 @@
           "speech-model-store.js",
           "package.json",
           "catalog-invitations.js",
-          "*.js.map"
+          "*.js.map",
+          "open-books.js"
         ]
       },
       {
@@ -193,6 +194,20 @@
         "schemes": [
           "bookstr"
         ]
+      }
+    ],
+    "fileAssociations": [
+      {
+        "ext": "epub",
+        "name": "EPUB book",
+        "mimeType": "application/epub+zip",
+        "role": "Viewer"
+      },
+      {
+        "ext": "pdf",
+        "name": "PDF document",
+        "mimeType": "application/pdf",
+        "role": "Viewer"
       }
     ]
   },

@@ -1,6 +1,19 @@
 import XCTest
+import PDFKit
 
 final class AppShellUITests: XCTestCase {
+    func testOpenExternalPDFWhileRunningAndOnColdLaunch() throws {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("External-\(UUID().uuidString).pdf")
+        defer { try? FileManager.default.removeItem(at: url) }
+        let document = PDFDocument()
+        document.insert(PDFPage(), at: 0)
+        XCTAssertTrue(document.write(to: url))
+        app.open(url)
+        XCTAssertTrue(app.descendants(matching: .any)["pdf-reader"].waitForExistence(timeout: 15))
+        app.terminate()
+        app.open(url)
+        XCTAssertTrue(app.descendants(matching: .any)["pdf-reader"].waitForExistence(timeout: 15))
+    }
     private var app: XCUIApplication!
 
     override func setUpWithError() throws {
