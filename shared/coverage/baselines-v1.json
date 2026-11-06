@@ -8,7 +8,7 @@
       "commit": "4720fd682510343443cbf5b06bb14054954f222e",
       "metrics": {
         "Statements": 100,
-        "Branches": 88.56,
+        "Branches": 88.59,
         "Functions": 100,
         "Lines": 100
       }

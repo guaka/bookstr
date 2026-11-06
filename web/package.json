@@ -5,6 +5,7 @@
   "engines": { "node": ">=26.13.0" },
   "scripts": {
     "typecheck": "node --max-old-space-size=512 scripts/typescript.cts --noEmit",
+    "typecheck:worker": "node --max-old-space-size=512 node_modules/typescript/bin/tsc -p ../worker/tsconfig.json",
     "build": "node --max-old-space-size=512 scripts/typescript.cts",
     "build:site": "node --max-old-space-size=512 scripts/typescript.cts --site",
     "check:generated": "node --max-old-space-size=512 scripts/typescript.cts --check",

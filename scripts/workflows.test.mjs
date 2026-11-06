@@ -699,3 +699,19 @@ test('failed Android unit runs retain their JUnit exception reports per attempt'
   assert.ok(upload.includes('name: bookstr-android-unit-failures-${{ github.run_id }}-${{ github.run_attempt }}'));
   assert.ok(upload.includes(`path: ${reportPath}`));
 });
+
+
+test('Worker deployment and CI use the strict TypeScript source', async () => {
+  const workflow = await readWorkflow('ci.yml');
+  const config = await readFile(new URL('../worker/wrangler.toml', import.meta.url), 'utf8');
+  const types = JSON.parse(await readFile(new URL('../worker/tsconfig.json', import.meta.url), 'utf8'));
+  const web = JSON.parse(await readFile(new URL('../web/package.json', import.meta.url), 'utf8'));
+  assert.match(config, /main = "src\/index\.ts"/);
+  assert.equal(types.extends, '../web/tsconfig.json');
+  assert.equal(types.compilerOptions.noEmit, true);
+  assert.ok(types.include.includes('src/**/*.mts'));
+  assert.match(workflow, /worker\/src\/\*\.test\.mts/);
+  assert.match(web.scripts['typecheck:worker'], /tsc -p \.\.\/worker\/tsconfig\.json/);
+  assert.match(workflow, /pnpm --dir web run typecheck:worker/);
+  assert.match(workflow, /--extension=\.ts/);
+});

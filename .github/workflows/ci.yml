@@ -131,6 +131,7 @@ jobs:
         run: |
           pnpm --dir web install --frozen-lockfile --ignore-scripts
           pnpm --dir web run typecheck
+          pnpm --dir web run typecheck:worker
           pnpm --dir web run check:generated
           pnpm --dir web run check:vendor
       - name: Run static web tests
@@ -145,7 +146,7 @@ jobs:
           node shared/catalog/generate-provider-record-dtos.mjs --check
           node shared/contracts/generate-nostr-constants.mjs --check
           node --test --experimental-test-coverage --test-coverage-lines=100 --test-coverage-branches=100 --test-coverage-functions=100 scripts/coverage-ratchet.test.mjs
-          node --test --test-concurrency=1 --test-reporter=tap web/tests/*.test.mjs web/tests/*.test.mts worker/src/*.test.mjs scripts/*.test.mjs shared/catalog/*.test.mjs shared/contracts/*.test.mjs shared/design-tokens/*.test.mjs shared/reader/*.test.mjs | tee web-tests.tap
+          node --test --test-concurrency=1 --test-reporter=tap web/tests/*.test.mjs web/tests/*.test.mts worker/src/*.test.mts scripts/*.test.mjs shared/catalog/*.test.mjs shared/contracts/*.test.mjs shared/design-tokens/*.test.mjs shared/reader/*.test.mjs | tee web-tests.tap
           status=${PIPESTATUS[0]}
           echo "duration_ms=$((($(date +%s) - started) * 1000))" >> "$GITHUB_OUTPUT"
           exit "$status"
@@ -155,14 +156,14 @@ jobs:
         continue-on-error: true
         run: |
           node web/node_modules/c8/bin/c8.js \
-            --extension=.js --extension=.mjs --extension=.cts --extension=.mts \
+            --extension=.ts --extension=.js --extension=.mjs --extension=.cts --extension=.mts \
             --exclude='**/*.test.*' --exclude-after-remap \
             --report-dir web/coverage/web-tests \
             --reporter=html \
             --reporter=lcov \
             --reporter=json-summary \
             --reporter=text \
-            node --test --test-concurrency=1 web/tests/*.test.mjs web/tests/*.test.mts worker/src/*.test.mjs shared/catalog/*.test.mjs shared/contracts/*.test.mjs shared/design-tokens/*.test.mjs shared/reader/*.test.mjs
+            node --test --test-concurrency=1 web/tests/*.test.mjs web/tests/*.test.mts worker/src/*.test.mts shared/catalog/*.test.mjs shared/contracts/*.test.mjs shared/design-tokens/*.test.mjs shared/reader/*.test.mjs
       - name: Archive web coverage artifacts
         uses: actions/upload-artifact@v4
         with:
