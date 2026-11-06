@@ -29,14 +29,17 @@ test('unused iOS icon exports stay outside the app resource manifests', () => {
 });
 
 test('Android screenshots are ignored without hiding their tests or capture script', () => {
-  const screenshot = 'android/e2e-screenshots/example.png';
+  const screenshots = [
+    'android/e2e-screenshots/example.png',
+    ...Array.from({ length: 4 }, (_, index) => `android/e2e-screenshots/shard-${index}/example.png`),
+  ];
   const source = 'android/app/src/androidTest/java/app/bookstr/E2eScreenshotRule.kt';
   const script = 'android/scripts/run-connected-e2e.sh';
   const ignored = execFileSync('git', ['check-ignore', '--no-index', '--stdin'], {
-    cwd: root, input: [screenshot, source, script].join('\n') + '\n', encoding: 'utf8',
+    cwd: root, input: [...screenshots, source, script].join('\n') + '\n', encoding: 'utf8',
   });
-  assert.equal(ignored.trim(), screenshot);
-  assert.match(read(script), /host_screenshot_dir='android\/e2e-screenshots'/);
+  assert.deepEqual(ignored.trim().split('\n'), screenshots);
+  assert.match(read(script), /host_screenshot_dir="android\/e2e-screenshots\$shard_suffix"/);
   assert.match(read('.github/workflows/android.yml'), /path: android\/e2e-screenshots\/\*\*\/\*\.png/);
 });
 
