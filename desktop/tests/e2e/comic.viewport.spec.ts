@@ -1,6 +1,6 @@
-const { test, expect } = require('@playwright/test');
-const fs = require('node:fs/promises');
-const path = require('node:path');
+import { expect, test } from '@playwright/test';
+import * as fs from 'node:fs/promises';
+import * as path from 'node:path';
 
 test('comic pages recover from an Android zero-height viewport and remain visible after rotation', async ({ page }, testInfo) => {
   const source = path.resolve(__dirname, '../../../web/comic-reader.html');
@@ -15,19 +15,19 @@ test('comic pages recover from an Android zero-height viewport and remain visibl
   await page.evaluate(async () => {
     const canvas = document.createElement('canvas');
     canvas.width = 794; canvas.height = 1150;
-    const ctx = canvas.getContext('2d');
+    const ctx = canvas.getContext('2d')!;
     ctx.fillStyle = 'blue'; ctx.fillRect(0, 0, canvas.width, canvas.height);
     // The tablet decoded every page successfully, but its CSS containing block stayed at zero.
     document.documentElement.style.height = '0px';
     document.body.style.height = '0px';
-    await window.loadComic({ format: 'cbz', pages: [
+    await (window as unknown as Window & { loadComic(input: { format: string; pages: { name: string; url: string }[] }): Promise<void> }).loadComic({ format: 'cbz', pages: [
       { name: '1.png', url: canvas.toDataURL() },
       { name: '2.png', url: canvas.toDataURL() },
     ] });
   });
   const visiblePage = () => page.evaluate(() => {
-    const stage = document.getElementById('stage').getBoundingClientRect();
-    const image = document.querySelector('#stage img').getBoundingClientRect();
+    const stage = document.getElementById('stage')!.getBoundingClientRect();
+    const image = document.querySelector<HTMLImageElement>('#stage img')!.getBoundingClientRect();
     return stage.height > innerHeight * 0.7 && image.width > 100 && image.height > 100 &&
       image.top >= stage.top - 1 && image.bottom <= stage.bottom + 1;
   });
@@ -41,13 +41,13 @@ test('comic pages recover from an Android zero-height viewport and remain visibl
   await page.evaluate(() => {
     const previous = document.body.style.height;
     Object.defineProperty(window, 'innerHeight', { configurable: true, value: 0 });
-    syncComicViewport();
+    (window as unknown as Window & { syncComicViewport(): void }).syncComicViewport();
     if (document.body.style.height !== previous) throw new Error('Invalid viewport replaced valid size');
-    delete window.innerHeight;
+    delete (window as unknown as { innerHeight?: number }).innerHeight;
   });
   const coverage = await page.coverage.stopJSCoverage();
   await fs.writeFile(testInfo.outputPath('comic-coverage.json'), JSON.stringify(coverage));
   const reader = coverage.find(entry => entry.url.endsWith('/comic-reader.html'));
-  const viewport = reader.functions.find(fn => fn.functionName === 'syncComicViewport');
+  const viewport = reader!.functions.find(fn => fn.functionName === 'syncComicViewport')!;
   expect(viewport.ranges.every(range => range.count > 0)).toBe(true);
 });

@@ -36,6 +36,11 @@ Node.js heap at 512 MB; the TypeScript compiler also uses `GOMEMLIMIT=512MiB`
 and `GOMAXPROCS=2`. The compiler runs once per command and does not leave a
 watch process running.
 
+The compiler launcher and isolated UI test launcher in `scripts/*.cts` run with
+Node’s built-in TypeScript stripping. `pnpm run typecheck` also checks those
+launchers and the converted unit and UI tests. Unit commands run both the
+remaining JavaScript suites and the TypeScript suites.
+
 The test suite uses Playwright Electron mode to validate bootstrap, preload bridge,
 and reader read-aloud behavior.
 

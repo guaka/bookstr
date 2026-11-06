@@ -3,22 +3,23 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
+const { stripTypeScriptTypes } = require('node:module');
 
 const root = path.resolve(__dirname, '../..');
-const script = fs.readFileSync(path.join(root, 'scripts/typescript.cjs'), 'utf8');
+const script = fs.readFileSync(path.join(root, 'scripts/typescript.cts'), 'utf8');
 
 function compile(args, result) {
   const calls = [];
   const context = {
     __dirname: path.join(root, 'scripts'),
-    process: { argv: ['node', 'typescript.cjs', ...args], execPath: '/node', env: { KEEP: 'value' } },
+    process: { argv: ['node', 'typescript.cts', ...args], execPath: '/node', env: { KEEP: 'value' } },
     require(name) {
       if (name === 'node:path') return path;
       assert.equal(name, 'node:child_process');
       return { spawnSync(...parameters) { calls.push(parameters); return result; } };
     },
   };
-  vm.runInNewContext(script, context, { filename: 'typescript.cjs' });
+  vm.runInNewContext(stripTypeScriptTypes(script), context, { filename: path.join(root, 'scripts/typescript.cts') });
   return { calls, exitCode: context.process.exitCode };
 }
 
@@ -76,5 +77,22 @@ test('all packaged Electron modules and build helpers have TypeScript sources', 
   for (const file of ['stamp-build', 'playwright.config', 'native/build-kindle-mtp']) {
     assert.ok(fs.existsSync(path.join(root, 'src', `${file}.ts`)), file);
     assert.ok(ignored.includes(`/desktop/${file}.js`), file);
+  }
+});
+
+
+test('strict checks include native TypeScript launchers and converted tests', () => {
+  const config = JSON.parse(fs.readFileSync(path.join(root, 'tsconfig.type-tests.json'), 'utf8'));
+  for (const pattern of ['scripts/**/*.cts', 'tests/unit/*.test.ts', 'tests/e2e/*.spec.ts']) {
+    assert.ok(config.include.includes(pattern), pattern);
+  }
+  assert.equal(config.compilerOptions.noEmit, true);
+  assert.equal(config.compilerOptions.moduleDetection, 'force');
+  const manifest = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
+  for (const name of ['build:typescript', 'typecheck']) {
+    assert.match(manifest.scripts[name], /scripts\/typescript\.cts /);
+  }
+  for (const name of ['test:unit', 'test:coverage']) {
+    assert.match(manifest.scripts[name], /tests\/unit\/\*\.test\.js tests\/unit\/\*\.test\.ts/);
   }
 });
