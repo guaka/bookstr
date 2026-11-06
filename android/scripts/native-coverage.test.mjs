@@ -179,13 +179,36 @@ test("plans export preflight, exact maintained sources, and filtered LLVM report
       "ndk-bin": "/ndk/bin", object: "/build/lib.so", "repo-root": fixture.repoRoot,
       "output-dir": "/tmp/native-coverage-empty", profiles: [], sources,
     }), /At least one raw profile is required/);
+    assert.throws(() => buildNativeCoveragePlan({
+      "ndk-bin": "/ndk/bin", object: "/build/lib.so", "repo-root": fixture.repoRoot,
+      "output-dir": "/tmp/native-coverage-empty", profiles: ["/tmp/profiles/a.profraw"], sources: [],
+    }), /At least one maintained native source is required/);
+    const unmappedPlan = buildNativeCoveragePlan({
+      "ndk-bin": "/ndk/bin", object: "/build/lib.so", "repo-root": fixture.repoRoot,
+      "output-dir": "/tmp/native-coverage-unmapped", profiles: ["/tmp/profiles/a.profraw"], sources,
+    });
+    assert.deepEqual(unmappedPlan.report.args.filter((arg) => arg.startsWith("--path-equivalence=")), []);
+    const discoveredPlan = buildNativeCoveragePlan({
+      "ndk-bin": "/ndk/bin", object: "/build/lib.so", "repo-root": fixture.repoRoot,
+      "output-dir": "/tmp/native-coverage-discovered", profiles: ["/tmp/profiles/a.profraw"],
+    });
+    assert.deepEqual(discoveredPlan.sources, [fixture.source]);
+    assert.throws(() => buildNativeCoveragePlan({ object: "/build/lib.so" }), /Missing required option: --ndk-bin/);
+
+    const emptyRoot = join(root, "empty-repo");
+    mkdirSync(join(emptyRoot, "android/app/src/main/cpp"), { recursive: true });
+    assert.throws(() => findMaintainedNativeSources(emptyRoot), /No maintained native C\/C\+\+ sources found/);
+    const nestedSource = join(fixture.sourceRoot, "owned", "helper.c");
+    mkdirSync(dirname(nestedSource), { recursive: true });
+    writeFileSync(nestedSource, "// nested maintained source\n");
+    assert.ok(findMaintainedNativeSources(fixture.repoRoot).includes(nestedSource));
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
 });
 
 test("preflight matches every maintained source, discovers its real source root, and ignores only _deps", async () => {
-  const { findMaintainedNativeSources, validateNativeCoverageExport } = await import("./native-coverage.mjs");
+  const { buildNativeCoveragePlan, findMaintainedNativeSources, validateNativeCoverageExport } = await import("./native-coverage.mjs");
   const root = mkdtempSync(join(tmpdir(), "bookstr-native-export-"));
   try {
     const fixture = sourceFixture(root);
@@ -207,6 +230,12 @@ test("preflight matches every maintained source, discovers its real source root,
     writeFileSync(extraSource, "// new maintained source\n");
     writeFileSync(maintainedHeader, "// maintained inline implementation\n");
     const allSources = findMaintainedNativeSources(fixture.repoRoot);
+    const multiSourcePlan = buildNativeCoveragePlan({
+      "ndk-bin": "/ndk/bin", object: "/build/lib.so", "repo-root": fixture.repoRoot,
+      "output-dir": "/tmp/native-coverage-multi", profiles: ["/tmp/profiles/a.profraw"], sources: allSources,
+    });
+    assert.equal(multiSourcePlan.source, null);
+    assert.deepEqual(multiSourcePlan.sources, allSources);
     const exportWithExtra = exportJson({ extraFiles: [
       exportFile("/runner/work/bookstr/android/src/main/cpp/extra.cpp"),
       exportFile("/runner/work/bookstr/android/src/main/cpp/native_support.hpp", { lines: 4, coveredLines: 4, branches: 0, coveredBranches: 0, regions: 4, coveredRegions: 4 }),
@@ -226,7 +255,34 @@ test("fails closed on missing, ambiguous, mismatched, or unrecognized maintained
     assert.throws(() => validateNativeCoverageExport(exportJson({ files: [exportFile(vendorFilename)] }), sources, fixture.repoRoot), /Expected exactly one llvm-cov mapping/);
     assert.throws(() => validateNativeCoverageExport(exportJson({ target: exportFile("/runner/work/bookstr/wrong/path/torrent_jni.cpp") }), sources, fixture.repoRoot), /Expected exactly one llvm-cov mapping/);
     assert.throws(() => validateNativeCoverageExport(exportJson({ extraFiles: [exportFile("/runner/work/bookstr/android/src/main/cpp/generated.cpp")] }), sources, fixture.repoRoot), /Unrecognized non-vendored native coverage source/);
+    assert.throws(() => validateNativeCoverageExport(exportJson({ extraFiles: [{ summary: exportFile(targetFilename).summary }] }), sources, fixture.repoRoot), /Unrecognized non-vendored native coverage source/);
     assert.throws(() => validateNativeCoverageExport("not json", sources, fixture.repoRoot), /valid JSON/);
+    assert.throws(() => validateNativeCoverageExport("null", sources, fixture.repoRoot), /has no source files/);
+    assert.throws(() => validateNativeCoverageExport({ data: [{}] }, sources, fixture.repoRoot), /has no source files/);
+    assert.throws(() => validateNativeCoverageExport(exportJson(), [], fixture.repoRoot), /At least one maintained native source is required/);
+    assert.throws(() => validateNativeCoverageExport(exportJson({ target: { filename: targetFilename } }), sources, fixture.repoRoot), /has no summary/);
+    assert.throws(() => validateNativeCoverageExport(exportJson({ target: exportFile(targetFilename, { lines: -1 }) }), sources, fixture.repoRoot), /invalid coverage counters/);
+    const noExecutableStatements = validateNativeCoverageExport(
+      exportJson({ target: exportFile(targetFilename, { lines: 0, coveredLines: 0, branches: 0, coveredBranches: 0 }) }),
+      sources,
+      fixture.repoRoot,
+    );
+    assert.equal(noExecutableStatements.summary.lines, "100.00%");
+    assert.equal(noExecutableStatements.summary.branches, "100.00%");
+    const objectInput = validateNativeCoverageExport(
+      { data: [{ files: [exportFile(targetFilename)] }] }, sources, fixture.repoRoot,
+    );
+    assert.equal(objectInput.sources.length, 1);
+
+    const outsideSource = join(root, "outside.cpp");
+    writeFileSync(outsideSource, "// outside maintained root\n");
+    assert.throws(() => validateNativeCoverageExport(exportJson(), [outsideSource], fixture.repoRoot), /outside/);
+
+    const secondSource = join(fixture.sourceRoot, "second.cpp");
+    writeFileSync(secondSource, "// another source\n");
+    const twoSources = [fixture.source, secondSource];
+    assert.throws(() => validateNativeCoverageExport(exportJson({ extraFiles: [exportFile("relative/src/main/cpp/second.cpp")] }), twoSources, fixture.repoRoot), /not absolute/);
+    assert.throws(() => validateNativeCoverageExport(exportJson({ extraFiles: [exportFile("/different/checkout/android/src/main/cpp/second.cpp")] }), twoSources, fixture.repoRoot), /mismatched compiled source roots/);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -247,10 +303,19 @@ test("uses maintained source rows rather than a vendor-inflated TOTAL", async ()
         branches: { count: 104, covered: 79 },
       },
     });
+    assert.deepEqual(assertNativeCoverageComplete({ ...summary, lines: "100.00%", branches: "100.00%" }), {
+      ...summary, lines: "100.00%", branches: "100.00%",
+    });
     assert.throws(() => assertNativeCoverageComplete(summary), /branches 75\.96%/);
 
     const vendorInflated = [header, row(targetFilename), row(vendorFilename, { regions: 50, missedRegions: 47, lines: 50, missedLines: 46, branches: 8, missedBranches: 7 }), row("TOTAL", { regions: 184, missedRegions: 59, lines: 262, missedLines: 46, branches: 112, missedBranches: 32 })].join("\n");
     assert.throws(() => parseNativeCoverageSummary(vendorInflated, sources, fixture.repoRoot), /source-filter mismatch/);
+    const inconsistentTotal = [header, row(targetFilename), row("TOTAL", { regions: 134, missedRegions: 12, lines: 212, missedLines: 1, branches: 104, missedBranches: 25 })].join("\n");
+    assert.throws(() => parseNativeCoverageSummary(inconsistentTotal, sources, fixture.repoRoot), /TOTAL does not equal the maintained lines rows/);
+    const wrongSource = [header, row("other.cpp"), row("TOTAL")].join("\n");
+    assert.throws(() => parseNativeCoverageSummary(wrongSource, sources, fixture.repoRoot), /missing maintained source/);
+    const withMalformedLine = [header, "junk a b c d e f g h i j k l", row(targetFilename), row("TOTAL")].join("\n");
+    assert.equal(parseNativeCoverageSummary(withMalformedLine, sources, fixture.repoRoot).lines, "100.00%");
     assert.throws(() => parseNativeCoverageSummary(`${header}\n${row(targetFilename)}`, sources, fixture.repoRoot), /no TOTAL row/);
   } finally {
     rmSync(root, { recursive: true, force: true });
@@ -270,6 +335,7 @@ test("aggregates maintained source metrics and rejects invalid LLVM percentages"
     profileCount: 3,
     coverage: { regions: "91.04%", lines: "100.00%", branches: "75.96%", linePercent: 100, branchPercent: 75.96 },
   });
+  assert.equal(buildNativeCoverageMetrics(summary, [], 0).source, null);
   assert.throws(() => buildNativeCoverageMetrics({ ...summary, lines: "unknown" }, ["/src/a.cpp"], 1), /Unrecognized llvm-cov percentage/);
   assert.throws(() => assertNativeCoverageComplete({ ...summary, branches: "95.00%" }), /branches 95.00%/);
 });
@@ -358,6 +424,11 @@ test("CLI fails closed when report filtering returns vendor rows or export paths
     const mismatch = await invokeCli(coverageArgs(fixture.options), { report: fixture.report, exportData: mismatchedExport });
     assert.equal(mismatch.exitCode, 1);
     assert.match(mismatch.stderr, /Expected exactly one llvm-cov mapping/);
+
+    const disagreeingReport = [header, row(targetFilename, { lines: 212, missedLines: 1 }), row("TOTAL", { regions: 134, missedRegions: 12, lines: 212, missedLines: 1, branches: 104, missedBranches: 25 })].join("\n");
+    const disagreement = await invokeCli(coverageArgs(fixture.options), { report: disagreeingReport, exportData: fixture.exportData });
+    assert.equal(disagreement.exitCode, 1);
+    assert.match(disagreement.stderr, /report and export disagree for maintained lines/);
   } finally {
     rmSync(fixture.root, { recursive: true, force: true });
   }
