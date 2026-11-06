@@ -11,6 +11,15 @@ public domain, free, and directly downloadable as FB2. Custom OPDS feeds
 never use this worker: clients fetch their configured public HTTPS feed
 directly.
 
+The Worker is authored in `src/index.ts`; Wrangler compiles it during deployment.
+From the repository root, validate it with the pinned web TypeScript toolchain
+and run its dependency-free tests with coverage:
+
+```sh
+pnpm --dir web run typecheck:worker
+node --test --experimental-test-coverage worker/src/*.test.mts
+```
+
 Deploy from this directory with Wrangler after authenticating to the Cloudflare
 account that owns `guaka.org`:
 
