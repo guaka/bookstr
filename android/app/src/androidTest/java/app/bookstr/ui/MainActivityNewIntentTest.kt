@@ -4,11 +4,13 @@ import android.content.Intent
 import android.net.Uri
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
+import androidx.lifecycle.Lifecycle
 import androidx.test.core.app.ActivityScenario
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import app.bookstr.BookstrApp
 import app.bookstr.MainActivity
+import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.ExternalResource
@@ -43,8 +45,19 @@ class MainActivityNewIntentTest {
 
     private fun deliverIntent(activity: MainActivity, intent: Intent) {
         activity.startActivity(
-            intent.setClass(activity, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP),
+            intent.setClass(activity, MainActivity::class.java)
+                .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP),
         )
+    }
+
+    private fun assertIntentDeliveredToResumedActivity(
+        scenario: ActivityScenario<MainActivity>,
+        expectedUri: String,
+    ) {
+        scenario.onActivity { activity ->
+            assertEquals(expectedUri, activity.intent.dataString)
+            assertEquals(Lifecycle.State.RESUMED, activity.lifecycle.currentState)
+        }
     }
 
     @Test
@@ -61,10 +74,12 @@ class MainActivityNewIntentTest {
                 compose.onAllNodesWithTag("catalog.confirm").fetchSemanticsNodes().isNotEmpty()
             }
             compose.onNodeWithText("Intent test catalog").assertIsDisplayed()
+            assertIntentDeliveredToResumedActivity(scenario, invitation)
             compose.onNodeWithText("wss://relay.example.test", substring = true).assertIsDisplayed()
             compose.onNodeWithTag("catalog.confirm").performClick()
 
             compose.waitUntil(5_000) { app.settingsRepository.catalogConnection?.uri == invitation }
+            assertIntentDeliveredToResumedActivity(scenario, invitation)
             compose.onNodeWithTag("catalog.confirm").assertDoesNotExist()
             compose.onNodeWithTag("tab.search").assertIsSelected()
         }
@@ -83,6 +98,7 @@ class MainActivityNewIntentTest {
             }
             compose.onNodeWithText("Invalid catalog invitation").assertIsDisplayed()
             compose.onNodeWithText("This invitation cannot be opened.").assertIsDisplayed()
+            assertIntentDeliveredToResumedActivity(scenario, invalidInvitation)
             compose.onNodeWithText("Cancel").performClick()
             compose.onNodeWithText("Invalid catalog invitation").assertDoesNotExist()
 
