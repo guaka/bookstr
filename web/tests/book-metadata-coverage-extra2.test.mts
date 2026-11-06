@@ -1,7 +1,8 @@
+import { present } from './test-values.mts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-await import('../book-metadata.js');
+import '../book-metadata.js';
 const { dedupeLibraryBooks } = globalThis.BookMetadata;
 
 test('dedupeLibraryBooks prefers real titles and preserves existing author metadata', () => {
@@ -22,9 +23,9 @@ test('dedupeLibraryBooks prefers real titles and preserves existing author metad
     },
   ]);
 
-  assert.equal(book.md5, md5);
-  assert.equal(book.title, 'Known Title');
-  assert.equal(book.author, 'Known author');
+  assert.equal(present(book).md5, md5);
+  assert.equal(present(book).title, 'Known Title');
+  assert.equal(present(book).author, 'Known author');
 });
 
 test('dedupeLibraryBooks keeps the earliest favoriteAddedAt across matching entries', () => {
@@ -45,5 +46,5 @@ test('dedupeLibraryBooks keeps the earliest favoriteAddedAt across matching entr
   ]);
 
   assert.equal(books.length, 1);
-  assert.equal(books[0].favoriteAddedAt, 10);
+  assert.equal(present(books[0]).favoriteAddedAt, 10);
 });

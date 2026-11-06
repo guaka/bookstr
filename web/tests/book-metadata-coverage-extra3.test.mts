@@ -1,7 +1,8 @@
+import { present } from './test-values.mts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-await import('../book-metadata.js');
+import '../book-metadata.js';
 const { sameLibraryBook, dedupeLibraryBooks, availabilityForBook, mergeLibraryState } = globalThis.BookMetadata;
 
 test('sameLibraryBook preserves query distinctions when no stable IDs exist', () => {
@@ -31,8 +32,8 @@ test('dedupeLibraryBooks preserves real author when incoming title is placeholde
   ]);
 
   assert.equal(books.length, 1);
-  assert.equal(books[0].title, 'Primary title');
-  assert.equal(books[0].author, 'Real author');
+  assert.equal(present(books[0]).title, 'Primary title');
+  assert.equal(present(books[0]).author, 'Real author');
 });
 
 test('availabilityForBook keeps cached metadata precedence while ignoring retired Blossom tags', () => {
@@ -72,10 +73,10 @@ test('mergeLibraryState preserves real title and author while merging placeholde
   );
 
   assert.equal(merged.length, 1);
-  assert.equal(merged[0].title, 'First read');
-  assert.equal(merged[0].author, 'Author Name');
-  assert.equal(merged[0].isReading, true);
-  assert.equal(merged[0].isFavorite, true);
+  assert.equal(present(merged[0]).title, 'First read');
+  assert.equal(present(merged[0]).author, 'Author Name');
+  assert.equal(present(merged[0]).isReading, true);
+  assert.equal(present(merged[0]).isFavorite, true);
 });
 
 test('mergeLibraryState keeps freshest favoriteAddedAt while deduplicating same md5 favorite entries', () => {
@@ -88,6 +89,6 @@ test('mergeLibraryState keeps freshest favoriteAddedAt while deduplicating same 
   );
 
   assert.equal(merged.length, 1);
-  assert.equal(merged[0].favoriteAddedAt, 200);
-  assert.equal(merged[0].isFavorite, true);
+  assert.equal(present(merged[0]).favoriteAddedAt, 200);
+  assert.equal(present(merged[0]).isFavorite, true);
 });
