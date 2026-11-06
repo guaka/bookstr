@@ -106,9 +106,54 @@ test('Kindle progress updates the Library action and ignores late completion eve
 });
 function loadFunction(name, next, values) {
   const context = vm.createContext(values);
-  vm.runInContext(functionSource(html, name), context);
+  vm.runInContext(functionSource(html, name), context, { filename: `bookstr-function:${name}` });
   return context;
 }
+
+test('Library titles keep disabled formats as metadata across routing and callback modes', () => {
+  function node() {
+    return { ...element(), appendChild(child) { this.children.push(child); },
+      addEventListener() {}, querySelector() { return null; } };
+  }
+  const formats = loadFunction('isDisabledBookFormat', '', {});
+  const c = loadFunction('renderBookTable', '', {
+    document: { createElement: node }, cachedBookKeys: new Set(), bookCacheKey: () => '',
+    isDesktopMode: false, isDisabledBookFormat: formats.isDisabledBookFormat,
+    BookMetadata: globalThis.BookMetadata, authorSearchName: () => '',
+    torrentStatusForBook: () => '', torrentStatusClass: () => '',
+    isBookReadableNow: () => false, escapeHtml: String, DICTIONARY_LANGUAGES: {},
+    bookCoverUrls: () => [], CoverAssets: { placeholderCoverUrl: () => '', attachImageFallback() {} },
+    isLibraryBook: () => true, rightsMarkerMarkup: () => '', readRouteValue: () => 'book',
+  });
+  for (const options of [{ routeOnly: true }, { canOpen: () => true }, { onOpen() {} }, { canOpen: () => false }, {}]) {
+    for (const format of [{ extension: 'fb2' }, { extension: 'epub' }, { format: 'fb2' }, { format: 'epub' }]) {
+      const target = node();
+      c.renderBookTable(target, [{ title: 'Saved book', ...format }], options);
+      const markup = target.children[0].children[1].innerHTML;
+      const expectedLink = (format.extension || format.format) === 'epub' && Boolean(options.routeOnly || options.onOpen || options.canOpen?.());
+      assert.equal(markup.includes('data-action="open"'), expectedLink);
+      assert.ok(markup.includes('Saved book'));
+    }
+  }
+});
+
+test('legacy saved FB2 formats survive normalization without restoring guessed EPUB formats', () => {
+  const formats = loadFunction('isDisabledBookFormat', '', {});
+  const c = loadFunction('normalizeFavoriteFromRemote', '', {
+    isDisabledBookFormat: formats.isDisabledBookFormat, BookMetadata: globalThis.BookMetadata,
+    BOOKS_API_BASE: 'https://books.test', window: { location: { href: 'https://books.test' } },
+    normalizeSha256: () => '', isMd5: () => true,
+  });
+  for (const [ref, expected] of [
+    [{ extension: 'fb2' }, 'fb2'], [{ format: '.FB2' }, 'fb2'],
+    [{ extension: 'epub' }, ''],
+    [{ extension: 'pdf', metadataProvenance: { extension: 'detected-local' } }, 'pdf'],
+  ]) {
+    const normalized = c.normalizeFavoriteFromRemote({ ...ref, md5: 'a'.repeat(32), title: 'Saved' }, { trustExplicitFormat: false });
+    assert.equal(normalized.extension, expected);
+  }
+  assert.equal(c.normalizeFavoriteFromRemote({ md5: 'a'.repeat(32), extension: 'epub' }).extension, 'epub');
+});
 
 test('Electron library requires a verified readable local file', () => {
   const formatContext = loadFunction('isDisabledBookFormat', 'function normalizeSearchBooks', {});

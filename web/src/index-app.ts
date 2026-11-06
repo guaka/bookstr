@@ -1483,7 +1483,7 @@ export type IndexAppPageBindings = {
           .replace(/^\./, '')
           .toLowerCase();
         const formatProvenance = String(ref.metadataProvenance?.extension || '');
-        const normalizedFormat = trustExplicitFormat || formatProvenance ? explicitFormat : '';
+        const normalizedFormat = trustExplicitFormat || formatProvenance || isDisabledBookFormat(explicitFormat) ? explicitFormat : '';
         const readUrl = BookMetadata.canonicalReadUrl({
           ...ref,
           readUrl: ref.readUrl || ref.epubUrl || ref.downloadUrl || ref.url || '',
@@ -3590,7 +3590,8 @@ export type IndexAppPageBindings = {
         }
         table.appendChild(head);
         for (const book of visible as Array<PageBook & BrowserBook & {rating?:number;editionCount?:number}>) {
-          const canOpen = options.routeOnly || (options.canOpen ? options.canOpen(book) : Boolean(options.onOpen));
+          const canOpen = !isDisabledBookFormat(book.extension || book.format)
+            && (options.routeOnly || (options.canOpen ? options.canOpen(book) : Boolean(options.onOpen)));
           const readUrl = book.readUrl || book.url || '';
           const authorQuery = authorSearchName(book.authors);
           const availability = availabilityLabel(book);

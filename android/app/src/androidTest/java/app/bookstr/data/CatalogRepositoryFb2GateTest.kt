@@ -1,6 +1,8 @@
 package app.bookstr.data
 
 import android.content.ContextWrapper
+import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.platform.app.InstrumentationRegistry
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertThrows
@@ -9,16 +11,14 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.junit.rules.TemporaryFolder
-import org.robolectric.RobolectricTestRunner
-import org.robolectric.RuntimeEnvironment
 import java.io.File
 
-@RunWith(RobolectricTestRunner::class)
+@RunWith(AndroidJUnit4::class)
 class CatalogRepositoryFb2GateTest {
     @get:Rule val folder = TemporaryFolder()
 
     @Test fun importAndDownloadRejectFb2BeforeChangingExistingFileOrMetadata() {
-        val base = RuntimeEnvironment.getApplication()
+        val base = InstrumentationRegistry.getInstrumentation().targetContext
         val files = folder.newFolder("app-files")
         val context = object : ContextWrapper(base) {
             override fun getFilesDir(): File = files

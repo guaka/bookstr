@@ -341,7 +341,7 @@ test('Open Library result metadata links to its canonical record', () => {
 });
 
 test('every search result title links through the read hash route', () => {
-  assert.match(html, /const canOpen = options\.routeOnly/);
+  assert.match(html, /const canOpen = !isDisabledBookFormat\(book\.extension \|\| book\.format\)\s*&& \(options\.routeOnly/);
   assert.match(html, /const searchBook = searchResultBooks\.find/);
   assert.match(html, /label: 'Book search results',[\s\S]*?routeOnly: true/);
 });
@@ -466,7 +466,7 @@ test('octet-stream ZIPs with an EPUB container are not mistaken for comics just 
 
 test('library formats avoid an EPUB default and trust inspected local bytes', () => {
   assert.match(html, /const explicitFormat = String\(ref\.format \|\| ref\.extension \|\| ''\)/);
-  assert.match(html, /const normalizedFormat = trustExplicitFormat \|\| formatProvenance \? explicitFormat : ''/);
+  assert.match(html, /const normalizedFormat = trustExplicitFormat \|\| formatProvenance \|\| isDisabledBookFormat\(explicitFormat\) \? explicitFormat : ''/);
   assert.match(html, /extension: String\(payload\.extension \|\| payload\.format \|\| ''\)\.toLowerCase\(\)/);
   assert.match(html, /trustExplicitFormat && explicitFormat && !formatProvenance \? \{ extension: 'nostr' \}/);
   assert.match(html, /normalizeFavoriteFromRemote\(item, \{ trustExplicitFormat: false \}\)/);
