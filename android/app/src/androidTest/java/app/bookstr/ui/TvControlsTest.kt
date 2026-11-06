@@ -45,8 +45,8 @@ class TvControlsTest {
                 BookstrTheme {
                     // A phone emulator may inherit touch mode from another test.
                     // Mount controls only once the simulated TV window can accept focus.
-                    ready = LocalWindowInfo.current.isWindowFocused &&
-                        LocalInputModeManager.current.inputMode == InputMode.Keyboard
+                    ready = ready || (LocalWindowInfo.current.isWindowFocused &&
+                        LocalInputModeManager.current.inputMode == InputMode.Keyboard)
                     if (ready) content()
                 }
             }
