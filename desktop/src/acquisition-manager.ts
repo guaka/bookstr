@@ -1,4 +1,5 @@
 import type { Readable as NodeReadable } from 'node:stream';
+import { readBoundedResponse } from './bounded-response';
 import { isEnabledReaderFormat, requireEnabledReaderFormat } from './reader-formats';
 
 type Progress = { source?: string; bytes: number; totalBytes: number | null; bookId?: string };
@@ -449,9 +450,9 @@ class AcquisitionManager {
         const response = await this.fetch(metadataURL, { signal, redirect: 'error' });
         if (this.closed || signal?.aborted) break;
         if (!response?.ok) continue;
-        const metadata = Buffer.from(await response.arrayBuffer());
+        const metadata = await readBoundedResponse(response, MAX_TORRENT_METADATA_BYTES, signal);
         if (this.closed || signal?.aborted) break;
-        if (!metadata.length || metadata.length > MAX_TORRENT_METADATA_BYTES || metadata[0] !== 0x64) continue;
+        if (!metadata.length || metadata[0] !== 0x64) continue;
         const selected = await this.torrentBridge.downloadSelected(metadata, {
           path: seedRoot,
           fileName: md5,
@@ -561,11 +562,9 @@ class AcquisitionManager {
       const response = await this.fetch(metadataURL, { signal: lifecycleController.signal, redirect: 'error' });
       if (this.closed || lifecycleController.signal.aborted) throw lifecycleController.signal.reason || new Error('acquisition manager is closing');
       if (!response?.ok) throw new Error(`torrent metadata returned HTTP ${response?.status || 0}`);
-      const declaredLength = responseLength(response);
-      if (declaredLength !== null && declaredLength > MAX_TORRENT_METADATA_BYTES) throw new Error('torrent metadata is too large');
-      const metadata = Buffer.from(await response.arrayBuffer());
+      const metadata = await readBoundedResponse(response, MAX_TORRENT_METADATA_BYTES, lifecycleController.signal);
       if (this.closed || lifecycleController.signal.aborted) throw lifecycleController.signal.reason || new Error('acquisition manager is closing');
-      if (!metadata.length || metadata.length > MAX_TORRENT_METADATA_BYTES || metadata[0] !== 0x64) {
+      if (!metadata.length || metadata[0] !== 0x64) {
         throw new Error('torrent metadata is invalid');
       }
       const selected = await this.torrentBridge.downloadSelected(metadata, {

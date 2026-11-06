@@ -79,6 +79,8 @@ test('default downloader streams bytes and validates the HTTP response and size'
   await assert.rejects(store.download('https://example.test/bodyless', destination, 0, () => {}), /200/);
   global.fetch = async () => new Response('no', { status: 200 });
   await assert.rejects(store.download('https://example.test/short', destination, 4, () => {}), /expected 4/);
+  global.fetch = async () => new Response(new ReadableStream({ start(controller) { controller.error(new Error('broken stream')); } }), { status: 200 });
+  await assert.rejects(store.download('https://example.test/broken', destination, 4, () => {}), /broken stream/);
 });
 
 test('default downloader reports each streamed chunk and writes chunks in order', async t => {
@@ -99,6 +101,93 @@ test('default downloader reports each streamed chunk and writes chunks in order'
   await store.download('https://example.test/chunked', destination, 6, (received, total) => updates.push([received, total]));
   assert.equal(await fs.readFile(destination, 'utf8'), 'abcdef');
   assert.deepEqual(updates, [[3, 6], [6, 6]]);
+});
+
+test('default downloader handles partial file writes and rejects bytes beyond the declared size', async t => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'bookstr-speech-'));
+  t.after(() => fs.rm(root, { recursive: true, force: true }));
+  const destination = path.join(root, 'download.bin');
+  let writeMode: 'partial' | 'stalled' = 'partial';
+  const fileSystem = new Proxy(fs, {
+    get(target, property, receiver) {
+      if (property === 'open') return async (...args: Parameters<typeof fs.open>) => {
+        const handle = await fs.open(...args);
+        const write = handle.write.bind(handle);
+        return Object.assign(handle, {
+          write: (buffer: Uint8Array, offset: number, length: number, position: number) => writeMode === 'stalled'
+            ? Promise.resolve({ bytesWritten: 0, buffer })
+            : write(buffer, offset, Math.min(length, 1), position),
+        });
+      };
+      return Reflect.get(target, property, receiver);
+    },
+  }) as typeof fs;
+  const store = new SpeechModelStore(root, { fileSystem });
+  const originalFetch = global.fetch;
+  t.after(() => { global.fetch = originalFetch; });
+  global.fetch = async () => new Response('test', { status: 200 });
+  await store.download('https://example.test/partial', destination, 4, () => {});
+  assert.equal(await fs.readFile(destination, 'utf8'), 'test');
+  global.fetch = async () => new Response('too long', { status: 200 });
+  await assert.rejects(store.download('https://example.test/long', destination, 4, () => {}), /more than expected/);
+  assert.equal((await fs.stat(destination)).size, 0);
+  writeMode = 'stalled';
+  global.fetch = async () => new Response('test', { status: 200 });
+  await assert.rejects(store.download('https://example.test/stalled-write', destination, 4, () => {}), /Could not write/);
+});
+
+test('default downloader times out when a response stream stalls', async t => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'bookstr-speech-'));
+  t.after(() => fs.rm(root, { recursive: true, force: true }));
+  const store = new SpeechModelStore(root, { downloadTimeoutMs: 5 });
+  const originalFetch = global.fetch;
+  t.after(() => { global.fetch = originalFetch; });
+  const fetchSignals: AbortSignal[] = [];
+  global.fetch = async (_input, init) => {
+    if (init?.signal) fetchSignals.push(init.signal);
+    return new Promise<Response>(() => {});
+  };
+  await assert.rejects(store.download('https://example.test/stalled-fetch', path.join(root, 'fetch.bin'), 4, () => {}), /timed out/);
+  assert.equal(fetchSignals[0]?.aborted, true);
+  global.fetch = async () => new Response(new ReadableStream({ pull() {} }), { status: 200 });
+  await assert.rejects(store.download('https://example.test/stalled', path.join(root, 'stalled.bin'), 4, () => {}), /timed out/);
+});
+
+test('installation lock is claimed before installed-state checks await filesystem access', async t => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'bookstr-speech-'));
+  t.after(() => fs.rm(root, { recursive: true, force: true }));
+  const fixture = { ...SPEECH_MODELS[0]!, files: [{ path: 'model.bin', expectedBytes: 4 }] } satisfies SpeechModel;
+  let notifyStatStarted!: () => void;
+  let finishStat!: () => void;
+  const statStarted = new Promise<void>(resolve => { notifyStatStarted = resolve; });
+  const statGate = new Promise<void>(resolve => { finishStat = resolve; });
+  let waiting = true;
+  const fileSystem = new Proxy(fs, {
+    get(target, property, receiver) {
+      if (property === 'stat') return async (...args: Parameters<typeof fs.stat>) => {
+        if (waiting) {
+          waiting = false;
+          notifyStatStarted();
+          await statGate;
+        }
+        return fs.stat(...args);
+      };
+      return Reflect.get(target, property, receiver);
+    },
+  }) as typeof fs;
+  const store = new SpeechModelStore(root, {
+    models: [fixture, SPEECH_MODELS[1]!], fileSystem,
+    downloader: async (_url, destination) => fs.writeFile(destination, 'test'),
+  });
+  const firstInstall = store.install(fixture.id);
+  await statStarted;
+  await assert.rejects(store.install(fixture.id), /already downloading/);
+  finishStat();
+  await firstInstall;
+  assert.equal(await store.isInstalled(fixture), true);
+  assert.equal((await store.status())[0]!.installing, false);
+  await store.install(fixture.id);
+  assert.equal((await store.status())[0]!.installing, false);
 });
 
 test('default install dependencies and callback complete a verified download', async t => {

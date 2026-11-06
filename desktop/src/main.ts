@@ -82,6 +82,8 @@ const PRELOAD_PATH = path.join(__dirname, 'preload.js');
 const WEB_ROOT = path.join(__dirname, '..', 'web');
 const APP_ICON_PATH = path.join(__dirname, 'assets', 'icon-macos.png');
 const STATE_FILE = path.join(app.getPath('userData'), 'bookstr-desktop-state.json');
+const { DesktopStateStore } = require('./desktop-state') as typeof import('./desktop-state');
+const desktopStateStore = new DesktopStateStore(STATE_FILE);
 const speechModelStore = new SpeechModelStore(path.join(app.getPath('userData'), 'speech-models'));
 const DESKTOP_NOSTR_STATE_KEY = 'desktopNostr';
 const TORRENT_PREFERENCES_STATE_KEY = 'torrentPreferences';
@@ -888,38 +890,12 @@ function normalizeReaderKey(payload: ReaderInput) {
 }
 
 async function loadState(): Promise<DesktopState> {
-  try {
-    const raw = await fs.readFile(STATE_FILE, 'utf8');
-    const parsed = JSON.parse(raw);
-    if (isRecord(parsed)) {
-      return parsed;
-    }
-  } catch {
-    // ignore
-  }
-  return {};
+  return desktopStateStore.load();
 }
 
 async function saveState(state: object) {
-  if (!isRecord(state)) {
-    return;
-  }
-  try {
-    const existing = await loadState();
-    const next = {
-      ...existing,
-      ...state,
-    };
-    if (isRecord(existing?.[DESKTOP_NOSTR_STATE_KEY]) && isRecord(state?.[DESKTOP_NOSTR_STATE_KEY])) {
-      next[DESKTOP_NOSTR_STATE_KEY] = {
-        ...existing[DESKTOP_NOSTR_STATE_KEY],
-        ...state[DESKTOP_NOSTR_STATE_KEY],
-      };
-    }
-    await fs.writeFile(STATE_FILE, JSON.stringify(next), 'utf8');
-  } catch {
-    // ignore
-  }
+  if (!isRecord(state)) return;
+  await desktopStateStore.save(state);
 }
 
 async function torrentPreferences() {
@@ -977,14 +953,14 @@ async function createLibraryWindow() {
   });
   await mainWindow.loadURL(`${APP_ORIGIN}/index.html`);
 
-  mainWindow.on('resize', async () => {
+  mainWindow.on('resize', () => {
     if (!mainWindow || mainWindow.isMinimized() || mainWindow.isMaximized()) return;
-    await saveState({ windowBounds: mainWindow.getBounds() });
+    void saveState({ windowBounds: mainWindow.getBounds() }).catch(error => console.error('Could not save desktop window bounds', error));
   });
 
   mainWindow.on('close', () => {
     if (mainWindow?.isDestroyed()) return;
-    saveState({ windowBounds: mainWindow.getBounds() });
+    void saveState({ windowBounds: mainWindow.getBounds() }).catch(error => console.error('Could not save desktop window bounds', error));
   });
 }
 
@@ -1189,17 +1165,22 @@ function setupApplicationMenu() {
 }
 
 function setupIpcHandlers() {
-  ipcMain.handle('bookstr-desktop-catalog-current', () => catalogInvitations.current());
-  ipcMain.on('bookstr-desktop-pane-shortcut', (_event, pane) => {
+  const { createAuthorizedIpcMain } = require('./ipc-authorization') as typeof import('./ipc-authorization');
+  const authorizedIpcMain = createAuthorizedIpcMain(ipcMain, () => {
+    if (!mainWindow || mainWindow.isDestroyed() || mainWindow.webContents.isDestroyed()) return [];
+    return [mainWindow.webContents];
+  }, APP_ORIGIN);
+  authorizedIpcMain.handle('bookstr-desktop-catalog-current', () => catalogInvitations.current());
+  authorizedIpcMain.on('bookstr-desktop-pane-shortcut', (_event, pane) => {
     if (!LIBRARY_PANES.some(item => item.pane === pane)) return;
     openLibraryPane(pane);
   });
 
-  ipcMain.handle('bookstr-desktop-open-reader', (_, payload) => {
+  authorizedIpcMain.handle('bookstr-desktop-open-reader', (_, payload) => {
     return ensureReaderWindowForPayload(payload);
   });
 
-  ipcMain.on('bookstr-desktop-report-progress', (_, payload) => {
+  authorizedIpcMain.on('bookstr-desktop-report-progress', (_, payload) => {
     const safe = normalizeProgressPayload(payload, 'main');
     if (!safe || !mainWindow || mainWindow.isDestroyed()) {
       return;
@@ -1207,29 +1188,29 @@ function setupIpcHandlers() {
     mainWindow.webContents.send('bookstr-desktop-reader-progress', safe);
   });
 
-  ipcMain.handle('bookstr-desktop-focus-library', () => {
+  authorizedIpcMain.handle('bookstr-desktop-focus-library', () => {
     return focusLibraryWindow();
   });
 
-  ipcMain.handle('bookstr-desktop-open-settings', () => {
+  authorizedIpcMain.handle('bookstr-desktop-open-settings', () => {
     return openLibrarySettings();
   });
 
-  ipcMain.handle('bookstr-desktop-open-external', (_event, url) => {
+  authorizedIpcMain.handle('bookstr-desktop-open-external', (_event, url) => {
     if (typeof url !== 'string' || !isExternalUrlAllowed(url)) {
       return false;
     }
     return shell.openExternal(url);
   });
 
-  ipcMain.handle('bookstr-desktop-speech-model-status', () => speechModelStore.status());
-  ipcMain.handle('bookstr-desktop-speech-model-install', (event, id) => {
+  authorizedIpcMain.handle('bookstr-desktop-speech-model-status', () => speechModelStore.status());
+  authorizedIpcMain.handle('bookstr-desktop-speech-model-install', (event, id) => {
     return speechModelStore.install(id, progress => {
       if (!event.sender.isDestroyed()) event.sender.send('bookstr-desktop-speech-model-progress', progress);
     });
   });
-  ipcMain.handle('bookstr-desktop-speech-model-remove', (_event, id) => speechModelStore.remove(id));
-  ipcMain.handle('bookstr-desktop-library-search', (_event, request) => {
+  authorizedIpcMain.handle('bookstr-desktop-speech-model-remove', (_event, id) => speechModelStore.remove(id));
+  authorizedIpcMain.handle('bookstr-desktop-library-search', (_event, request) => {
     if (!isRecord(request)) throw new Error('Invalid library search request.');
     return getLibraryStore().search({
       query: String(request.query || ''),
@@ -1238,8 +1219,8 @@ function setupIpcHandlers() {
       offset: request.offset,
     });
   });
-  ipcMain.handle('bookstr-desktop-library-book', (_event, bookId) => getLibraryStore().getBook(bookId));
-  ipcMain.handle('bookstr-desktop-library-metadata', async (_event, bookId) => {
+  authorizedIpcMain.handle('bookstr-desktop-library-book', (_event, bookId) => getLibraryStore().getBook(bookId));
+  authorizedIpcMain.handle('bookstr-desktop-library-metadata', async (_event, bookId) => {
     const id = safeCoverID(bookId);
     if (!id) return null;
     try {
@@ -1249,7 +1230,7 @@ function setupIpcHandlers() {
       return null;
     }
   });
-  ipcMain.handle('bookstr-desktop-library-import', async (_event, request) => {
+  authorizedIpcMain.handle('bookstr-desktop-library-import', async (_event, request) => {
     if (!isRecord(request)) throw new Error('Invalid library import request.');
     const selection = await dialog.showOpenDialog({
       title: 'Import book into Bookstr',
@@ -1289,7 +1270,7 @@ function setupIpcHandlers() {
     });
     return { book, imported: { sha256: imported.sha256, size: imported.size, extension: imported.extension } };
   });
-  ipcMain.handle('bookstr-desktop-library-acquire', async (event, request) => {
+  authorizedIpcMain.handle('bookstr-desktop-library-acquire', async (event, request) => {
     if (!isRecord(request) || !isRecord(request.record)) throw new Error('Invalid acquisition request.');
     const result = await getAcquisitionManager().acquire(request.record, {
       format: request.format as string | undefined,
@@ -1301,7 +1282,7 @@ function setupIpcHandlers() {
     });
     return result;
   });
-  ipcMain.handle('bookstr-desktop-library-acquire-libgen', async (event, request) => {
+  authorizedIpcMain.handle('bookstr-desktop-library-acquire-libgen', async (event, request) => {
     if (!isRecord(request) || !isRecord(request.book)) throw new Error('Invalid LibGen torrent acquisition request.');
     const bookId = String(request.book.md5 || '').trim().toLowerCase();
     if (/^[a-f0-9]{32}$/.test(bookId)) {
@@ -1329,39 +1310,39 @@ function setupIpcHandlers() {
     if (!reader?.token) throw new Error('Downloaded torrent book could not be opened.');
     return { ...result, url: `${APP_ORIGIN}/api/library-file/${reader.token}` };
   });
-  ipcMain.handle('bookstr-desktop-device-status', () => getDevicePairing().status());
-  ipcMain.handle('bookstr-desktop-device-registry', () => loadTrustedDeviceRegistry());
-  ipcMain.handle('bookstr-desktop-device-announce', (_event, options) => getDevicePairing().announce(isRecord(options) ? options : {}));
-  ipcMain.handle('bookstr-desktop-device-create-envelope', (_event, request) => {
+  authorizedIpcMain.handle('bookstr-desktop-device-status', () => getDevicePairing().status());
+  authorizedIpcMain.handle('bookstr-desktop-device-registry', () => loadTrustedDeviceRegistry());
+  authorizedIpcMain.handle('bookstr-desktop-device-announce', (_event, options) => getDevicePairing().announce(isRecord(options) ? options : {}));
+  authorizedIpcMain.handle('bookstr-desktop-device-create-envelope', (_event, request) => {
     if (!isRecord(request) || !request.recipientPubkey || !isRecord(request.message)) throw new Error('Invalid device envelope request.');
     return getDevicePairing().createEnvelope(request.recipientPubkey as string, request.message, { ttl: request.ttl as number | undefined });
   });
-  ipcMain.handle('bookstr-desktop-device-open-envelope', (_event, request) => {
+  authorizedIpcMain.handle('bookstr-desktop-device-open-envelope', (_event, request) => {
     if (!isRecord(request) || !isRecord(request.wrapped) || !request.senderPubkey) throw new Error('Invalid device envelope response.');
     return getDevicePairing().openEnvelope(request.wrapped, { senderPubkey: request.senderPubkey as string });
   });
-  ipcMain.handle('bookstr-desktop-device-set-registry-event', (_event, event) => {
+  authorizedIpcMain.handle('bookstr-desktop-device-set-registry-event', (_event, event) => {
     return ingestTrustedDeviceRegistryEvent(event);
   });
-  ipcMain.handle('bookstr-desktop-library-downloads', () => downloadsForRenderer(
+  authorizedIpcMain.handle('bookstr-desktop-library-downloads', () => downloadsForRenderer(
     getLibraryStore().downloads(),
     resolveRegisteredLibraryFile,
   ));
-  ipcMain.handle('bookstr-desktop-library-enqueue', (_event, request) => getDownloadQueue().enqueue(request));
-  ipcMain.handle('bookstr-desktop-library-remove-download', (_event, bookId) => getDownloadQueue().remove(bookId));
-  ipcMain.handle('bookstr-desktop-library-retry-download', (_event, bookId) => getDownloadQueue().retry(bookId));
-  ipcMain.handle('bookstr-desktop-kindle-devices', () => getKindleSync().devices());
-  ipcMain.handle('bookstr-desktop-kindle-presence', (_event, id) => getKindleSync().presence(String(id || '')));
-  ipcMain.handle('bookstr-desktop-kindle-preview', (_event, id, bookId) => getKindleSync().preview(String(id || ''), bookId));
-  ipcMain.handle('bookstr-desktop-kindle-transfer', (_event, id, bookId) => getKindleSync().transfer(String(id || ''), bookId));
-  ipcMain.handle('bookstr-desktop-library-linked-folders', () => getLibraryStore().linkedFolders());
-  ipcMain.handle('bookstr-desktop-library-link-folder', (_event, folder) => getLibraryStore().linkFolder(folder));
-  ipcMain.handle('bookstr-desktop-library-open-reader', (_event, bookId) => getLibraryStore().openReader(bookId));
+  authorizedIpcMain.handle('bookstr-desktop-library-enqueue', (_event, request) => getDownloadQueue().enqueue(request));
+  authorizedIpcMain.handle('bookstr-desktop-library-remove-download', (_event, bookId) => getDownloadQueue().remove(bookId));
+  authorizedIpcMain.handle('bookstr-desktop-library-retry-download', (_event, bookId) => getDownloadQueue().retry(bookId));
+  authorizedIpcMain.handle('bookstr-desktop-kindle-devices', () => getKindleSync().devices());
+  authorizedIpcMain.handle('bookstr-desktop-kindle-presence', (_event, id) => getKindleSync().presence(String(id || '')));
+  authorizedIpcMain.handle('bookstr-desktop-kindle-preview', (_event, id, bookId) => getKindleSync().preview(String(id || ''), bookId));
+  authorizedIpcMain.handle('bookstr-desktop-kindle-transfer', (_event, id, bookId) => getKindleSync().transfer(String(id || ''), bookId));
+  authorizedIpcMain.handle('bookstr-desktop-library-linked-folders', () => getLibraryStore().linkedFolders());
+  authorizedIpcMain.handle('bookstr-desktop-library-link-folder', (_event, folder) => getLibraryStore().linkFolder(folder));
+  authorizedIpcMain.handle('bookstr-desktop-library-open-reader', (_event, bookId) => getLibraryStore().openReader(bookId));
 
-  ipcMain.handle('bookstr-desktop-transfer-status', async () => {
+  authorizedIpcMain.handle('bookstr-desktop-transfer-status', async () => {
     return getTorrentBridge().active();
   });
-  ipcMain.handle('bookstr-desktop-transfer-preferences', async (_event, request) => {
+  authorizedIpcMain.handle('bookstr-desktop-transfer-preferences', async (_event, request) => {
     const current = await torrentPreferences();
     if (!isRecord(request)) return current;
     const next = {
@@ -1380,7 +1361,7 @@ function setupIpcHandlers() {
     });
     return next;
   });
-  ipcMain.handle('bookstr-desktop-transfer-seed-public', async (_event, request) => {
+  authorizedIpcMain.handle('bookstr-desktop-transfer-seed-public', async (_event, request) => {
     if (!isRecord(request) || Object.keys(request).length !== 1 || typeof request.bookId !== 'string' || !request.bookId.trim()) {
       throw new Error('Public seed requests accept only a bookId.');
     }
@@ -1416,14 +1397,14 @@ function setupIpcHandlers() {
     });
     return result.summary || null;
   });
-  ipcMain.handle('bookstr-desktop-transfer-add-public', async (_event, request) => {
+  authorizedIpcMain.handle('bookstr-desktop-transfer-add-public', async (_event, request) => {
     if (!isRecord(request) || !request.torrentId) throw new Error('Invalid public transfer request.');
     const downloadPath = request.path ? ensureLibraryPath(request.path) : '';
     if (request.path && !downloadPath) throw new Error('Download path must be inside the Bookstr library.');
     const torrent = await getTorrentBridge().addPublic(String(request.torrentId), { path: downloadPath || undefined });
     return { infoHash: String(torrent.infoHash || '') };
   });
-  ipcMain.handle('bookstr-desktop-transfer-download-public', async (_event, request) => {
+  authorizedIpcMain.handle('bookstr-desktop-transfer-download-public', async (_event, request) => {
     if (!isRecord(request) || !request.torrentId || !request.bookId) {
       throw new Error('Invalid public torrent download request.');
     }
@@ -1454,7 +1435,7 @@ function setupIpcHandlers() {
     if (!stat.isFile() || stat.size !== Number(book.filesize_bytes || stat.size)) {
       throw new Error('Downloaded torrent file size does not match the catalog.');
     }
-    const fileDigest = crypto.createHash('sha256').update(await fs.readFile(path.join(libraryDataDir, relativePath)).then(bytes => bytes)).digest('hex');
+    const { sha256: fileDigest } = await hashFile(path.join(libraryDataDir, relativePath));
     if (fileDigest !== digest) throw new Error('Downloaded torrent file SHA-256 does not match the catalog.');
     getLibraryStore().registerLibraryFile({ bookId: book.id, relativePath, size: stat.size, sha256: fileDigest });
     const reader = getLibraryStore().openReader(book.id);
@@ -1462,7 +1443,7 @@ function setupIpcHandlers() {
     if (request.autoSeed === false) await getTorrentBridge().remove(torrent);
     return { url: `${APP_ORIGIN}/api/library-file/${reader.token}`, infoHash: String(torrent.infoHash || '') };
   });
-  ipcMain.handle('bookstr-desktop-transfer-add-private', async (_event, request) => {
+  authorizedIpcMain.handle('bookstr-desktop-transfer-add-private', async (_event, request) => {
     if (!isRecord(request) || !request.torrentId) throw new Error('Invalid private transfer request.');
     const downloadPath = request.path ? ensureLibraryPath(request.path) : '';
     if (request.path && !downloadPath) throw new Error('Download path must be inside the Bookstr library.');
@@ -1476,10 +1457,10 @@ function setupIpcHandlers() {
     return { infoHash: String(torrent.infoHash || '') };
   });
 
-  ipcMain.handle('bookstr-desktop-nostr-get-public-key', () => {
+  authorizedIpcMain.handle('bookstr-desktop-nostr-get-public-key', () => {
     return resolveNostrSignerPublicKey();
   });
-  ipcMain.handle('bookstr-desktop-nostr-sign-event', (_event, event) => {
+  authorizedIpcMain.handle('bookstr-desktop-nostr-sign-event', (_event, event) => {
     const payload = normalizeNostrEventPayload(event);
     if (!payload) {
       throw new Error('Invalid Nostr event payload.');
@@ -1493,7 +1474,7 @@ function setupIpcHandlers() {
       return tools.finalizeEvent(payload, hexToBytes(secret));
     })();
   });
-  ipcMain.handle('bookstr-desktop-nostr-nip44-encrypt', (_event, request) => {
+  authorizedIpcMain.handle('bookstr-desktop-nostr-nip44-encrypt', (_event, request) => {
     const payload = normalizeNip44Payload(request);
     if (!payload) {
       throw new Error('Invalid NIP-44 encryption payload.');
@@ -1507,7 +1488,7 @@ function setupIpcHandlers() {
       return encryptWithNip44(tools, payload.plaintext, secret, payload.pubkey);
     })();
   });
-  ipcMain.handle('bookstr-desktop-nostr-nip44-decrypt', (_event, request) => {
+  authorizedIpcMain.handle('bookstr-desktop-nostr-nip44-decrypt', (_event, request) => {
     const payload = normalizeNip44Payload(request);
     if (!payload || !payload.ciphertext) {
       throw new Error('Invalid NIP-44 decryption payload.');
@@ -1521,7 +1502,7 @@ function setupIpcHandlers() {
       return decryptWithNip44(tools, payload.ciphertext, secret, payload.pubkey);
     })();
   });
-  ipcMain.handle('bookstr-desktop-nostr-nip19-npub', (_event, _pubkey) => {
+  authorizedIpcMain.handle('bookstr-desktop-nostr-nip19-npub', (_event, _pubkey) => {
     const pubkey = normalizeHex(_pubkey);
     if (!pubkey) {
       throw new Error('Invalid pubkey.');
@@ -1531,13 +1512,13 @@ function setupIpcHandlers() {
       return tools.nip19.npubEncode(pubkey);
     })();
   });
-  ipcMain.handle('bookstr-desktop-signer-status', () => desktopSignerStatus());
-  ipcMain.handle('bookstr-desktop-signer-connect-nip46', (_event, input) => configureNip46(input));
-  ipcMain.handle('bookstr-desktop-signer-start-nip46-qr', () => startNip46QrSession());
-  ipcMain.handle('bookstr-desktop-signer-nip46-qr-status', () => nip46QrSessionStatus());
-  ipcMain.handle('bookstr-desktop-signer-cancel-nip46-qr', () => cancelNip46QrSession());
-  ipcMain.handle('bookstr-desktop-signer-set-nsec', (_event, secret) => configureLocalNsec(secret));
-  ipcMain.handle('bookstr-desktop-signer-disconnect', () => disconnectDesktopSigner());
+  authorizedIpcMain.handle('bookstr-desktop-signer-status', () => desktopSignerStatus());
+  authorizedIpcMain.handle('bookstr-desktop-signer-connect-nip46', (_event, input) => configureNip46(input));
+  authorizedIpcMain.handle('bookstr-desktop-signer-start-nip46-qr', () => startNip46QrSession());
+  authorizedIpcMain.handle('bookstr-desktop-signer-nip46-qr-status', () => nip46QrSessionStatus());
+  authorizedIpcMain.handle('bookstr-desktop-signer-cancel-nip46-qr', () => cancelNip46QrSession());
+  authorizedIpcMain.handle('bookstr-desktop-signer-set-nsec', (_event, secret) => configureLocalNsec(secret));
+  authorizedIpcMain.handle('bookstr-desktop-signer-disconnect', () => disconnectDesktopSigner());
 }
 
 function setupProtocol(targetSession: Session) {

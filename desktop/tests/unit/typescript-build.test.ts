@@ -68,7 +68,7 @@ test('TypeScript uses strict checks and emits beside existing Electron modules',
   }
   const ignored = fs.readFileSync(path.join(root, '../.gitignore'), 'utf8');
   const bundled = manifest.build.files.find((entry): entry is import('../types/package-manifest').BundledDirectory => typeof entry !== 'string' && entry.to === 'desktop')!.filter;
-  for (const name of ['preload', 'catalog-invitations', 'security-policy', 'dictionary-proxy', 'main', 'catalog-proxy', 'speech-model-store', 'webtorrent-bridge', 'library-store', 'library-import', 'library-cover', 'acquisition-manager', 'download-queue', 'library-downloads', 'kindle-sync', 'kindle-mtp', 'mtp-session', 'comic-pdf', 'comic-image', 'device-pairing']) {
+  for (const name of ['bounded-response', 'desktop-state', 'ipc-authorization', 'preload', 'catalog-invitations', 'security-policy', 'dictionary-proxy', 'main', 'catalog-proxy', 'speech-model-store', 'webtorrent-bridge', 'library-store', 'library-import', 'library-cover', 'acquisition-manager', 'download-queue', 'library-downloads', 'kindle-sync', 'kindle-mtp', 'mtp-session', 'comic-pdf', 'comic-image', 'device-pairing']) {
     assert.ok(ignored.includes(`/desktop/${name}.js`));
     assert.ok(bundled.includes(`${name}.js`));
     assert.ok(fs.existsSync(path.join(root, 'src', `${name}.ts`)));

@@ -1,37 +1,37 @@
 {
   "version": 1,
-  "capturedAt": "2026-11-06T22:26:36Z",
+  "capturedAt": "2026-11-06T22:43:16Z",
   "suites": {
     "web": {
-      "minimumTests": 982,
-      "source": "https://github.com/guaka/bookstr/actions/runs/42301439314",
-      "commit": "2621e887c25aa0ab3e3854874215f9728f9091f0",
+      "minimumTests": 990,
+      "source": "https://github.com/guaka/bookstr/actions/runs/42306449724",
+      "commit": "4fcf095410346d602a5705995881fd4fe190b508",
       "metrics": {
         "Statements": 100,
-        "Branches": 89.62,
+        "Branches": 89.63,
         "Functions": 100,
         "Lines": 100
       }
     },
     "electron": {
-      "minimumTests": 331,
-      "source": "https://github.com/guaka/bookstr/actions/runs/42301439314",
-      "commit": "2621e887c25aa0ab3e3854874215f9728f9091f0",
+      "minimumTests": 358,
+      "source": "https://github.com/guaka/bookstr/actions/runs/42306449724",
+      "commit": "4fcf095410346d602a5705995881fd4fe190b508",
       "metrics": {
         "Lines": 100,
-        "Branches": 91.98,
+        "Branches": 92.03,
         "Functions": 100
       }
     },
     "android": {
-      "minimumTests": 653,
-      "source": "https://github.com/guaka/bookstr/actions/runs/42286656490",
-      "commit": "ea40239c471356b171dbcc705c1f381bb0a0daa0",
+      "minimumTests": 630,
+      "source": "https://github.com/guaka/bookstr/actions/runs/42271243711",
+      "commit": "ae16eaf8f956a1d1950a3a7907be5ee7aefcd3e4",
       "metrics": {
-        "Instructions": 82.35,
-        "Branches": 69.11,
-        "Methods": 87.61,
-        "Lines": 85.29
+        "Instructions": 80.33,
+        "Branches": 66.81,
+        "Methods": 84.88,
+        "Lines": 82.9
       }
     },
     "ios": {

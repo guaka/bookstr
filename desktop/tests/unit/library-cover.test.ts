@@ -45,6 +45,31 @@ test('extracts language and identity metadata from an EPUB package', async () =>
   });
 });
 
+test('resolves EPUB 3 cover-image paths with encoded spaces and fragments', async () => {
+  const zip = new JSZip();
+  zip.file('OPS/book.opf', '<package><manifest><item id="art" href="images/title%20page.png#cover" media-type="image/png" properties="cover-image"/></manifest></package>');
+  zip.file('OPS/images/title page.png', PNG);
+  const cover = await epubCover(await zip.generateAsync({ type: 'nodebuffer' }));
+  assert.ok(cover);
+  assert.equal(cover.mime, 'image/png');
+  assert.deepEqual(cover.bytes, PNG);
+});
+
+test('replaces an invalid cached cover with the EPUB package image', async t => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'bookstr-invalid-cover-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const bookId = 'c'.repeat(32);
+  const bookPath = path.join(root, 'book.epub');
+  const cacheDir = path.join(root, 'covers');
+  fs.mkdirSync(cacheDir);
+  fs.writeFileSync(path.join(cacheDir, `${bookId}.png`), 'invalid cached image');
+  fs.writeFileSync(bookPath, await coveredEpub());
+  const cover = await localBookCover({ bookId, bookPath, cacheDir });
+  assert.ok(cover);
+  assert.equal(cover.cached, false);
+  assert.deepEqual(fs.readFileSync(path.join(cacheDir, `${bookId}.png`)), PNG);
+});
+
 test('detects EPUB and comic archive bytes independently of a misleading filename extension', async () => {
   assert.equal(await localBookFormat(await coveredEpub(), '.cbz'), 'epub');
   const comic = new JSZip();
