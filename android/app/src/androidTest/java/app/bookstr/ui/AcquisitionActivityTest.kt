@@ -4,6 +4,7 @@ import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.espresso.Espresso.closeSoftKeyboard
 import app.bookstr.BookstrApp
 import app.bookstr.MainActivity
 import app.bookstr.data.NostrAuthMode
@@ -53,12 +54,21 @@ class AcquisitionActivityTest {
         compose.onNodeWithContentDescription("Search").performClick()
         compose.onNodeWithTag("search.query").performTextInput("Alice")
         compose.onNodeWithTag("search.submit").performClick()
-        compose.onNodeWithTag("signer.choice.import").performClick()
+        compose.onNodeWithTag("signer.radio.import").performClick()
+        compose.onNodeWithTag("signer.radio.import").assertIsSelected()
         compose.onNodeWithTag("signer.import-key").performTextInput("not a key")
+        // IME insets animate outside Compose idling on the API 30 CI emulator.
+        // Close the keyboard before tapping a dialog button whose position moves.
+        closeSoftKeyboard()
         compose.onNodeWithTag("signer.setup-confirm").performClick()
-        compose.onNodeWithTag("signer.setup-error").assertExists()
+        compose.waitUntil(5_000) {
+            compose.onAllNodesWithTag("signer.setup-error").fetchSemanticsNodes().size == 1
+        }
+        compose.onNodeWithTag("signer.setup-error").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithTag("signer.setup").assertExists()
         assertEquals(NostrAuthMode.None, (compose.activity.application as BookstrApp).settingsRepository.authMode)
         compose.onNodeWithTag("signer.import-key").performTextReplacement(Bech32.encode("nsec", ByteArray(32) { 1 }))
+        closeSoftKeyboard()
         compose.onNodeWithTag("signer.setup-confirm").performClick()
         assertEquals(NostrAuthMode.Nsec, (compose.activity.application as BookstrApp).settingsRepository.authMode)
     }
