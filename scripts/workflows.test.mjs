@@ -123,6 +123,41 @@ test('every client enforces the shared coverage baseline', async () => {
   assert.match(ios, /bookstr-e2e-screenshots-ios-\$\{\{ github\.run_id \}\}/);
 });
 
+test('iOS e2e builds and runs the same selected tests from shared derived data within existing time limits', async () => {
+  const workflow = await readWorkflow('ios.yml');
+  const job = workflow.split('\n  ios:\n')[1];
+  assert.ok(job, 'iOS job exists');
+  assert.match(job, /^    timeout-minutes: 45$/m);
+
+  const build = job.match(/      - name: Build iOS e2e tests\n([\s\S]*?)(?=      - name:)/)?.[1];
+  const run = job.match(/      - name: Run iOS e2e tests\n([\s\S]*?)(?=      - name:)/)?.[1];
+  assert.ok(build, 'iOS e2e build step exists');
+  assert.ok(run, 'iOS e2e test step exists');
+  assert.match(build, /^        timeout-minutes: 15$/m);
+  assert.match(run, /^        timeout-minutes: 30$/m);
+  assert.match(run, /^        continue-on-error: true$/m);
+
+  const command = (step) => {
+    const raw = step.match(/xcodebuild ([\s\S]*?)\n\s+CODE_SIGNING_ALLOWED=NO/)?.[0];
+    assert.ok(raw, 'step has a complete xcodebuild command');
+    return raw
+      .replace(/^xcodebuild (?:build-for-testing|test-without-building|test)/, 'xcodebuild <phase>')
+      .replace(/\s*\\\n\s*/g, ' ')
+      .replace(/\s+/g, ' ')
+      .replace(' -resultBundlePath ios/E2EResults.xcresult', '')
+      .trim();
+  };
+  assert.match(build, /xcodebuild build-for-testing/);
+  assert.match(run, /xcodebuild test-without-building/);
+  assert.match(build, /CODE_SIGNING_ALLOWED=NO/);
+  assert.match(run, /CODE_SIGNING_ALLOWED=NO/);
+  assert.equal(command(build), command(run), 'build and test phases use identical project, destination, selection, and build settings');
+  assert.match(build, /-derivedDataPath "\$RUNNER_TEMP\/BookstrIOSDerivedData"/);
+  assert.match(run, /-derivedDataPath "\$RUNNER_TEMP\/BookstrIOSDerivedData"/);
+  assert.doesNotMatch(build, /-resultBundlePath/);
+  assert.match(run, /-resultBundlePath ios\/E2EResults\.xcresult/);
+});
+
 test('CodeQL workflow is disabled', async () => {
   const workflows = await readdir(new URL('../.github/workflows/', import.meta.url));
 
