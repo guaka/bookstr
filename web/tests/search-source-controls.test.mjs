@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
+import { functionSource } from './source-tools.mts';
 
 const filename = new URL('../index.html', import.meta.url).pathname;
 const html = fs.readFileSync(filename, 'utf8');
@@ -17,13 +18,8 @@ function setup() {
     SEARCH_RESULT_LIMIT: 200, dedupeBooks: books => books.filter((b, i) => books.findIndex(a => a.id === b.id) === i),
     cachedBookKeys: new Set(['cached']), bookCacheKey: b => b.id,
     BookMetadata: { canonicalReadUrl: b => b.readUrl }, BOOKS_API_BASE: '' });
-  for (const [start, end] of [
-    ['      function defaultSearchResultRank', '      let unglueItUnavailable'],
-    ['      function renderSearchSourceProgress', '      function searchOutcomeSummary'],
-  ]) {
-    const offset = html.indexOf(start);
-    vm.runInContext('\n'.repeat(html.slice(0, offset).split('\n').length - 1) + html.slice(offset, html.indexOf(end, offset)), context, { filename });
-  }
+  const functions = ['defaultSearchResultRank', 'rankSearchResults', 'renderSearchSourceProgress', 'searchAvailableBookSources'];
+  vm.runInContext(functions.map(name => functionSource(html, name)).join('\n'), context, { filename });
   return { context, disabled, inputs, target, sources };
 }
 
@@ -87,8 +83,7 @@ test('initial and additional Libcat pages retain their search origin', async () 
       books: [{ id: options.offset ? 'second' : 'first' }], next_offset: options.offset ? null : 50,
     }) }),
   });
-  const offset = html.indexOf('      async function searchLibcatSource');
-  vm.runInContext('\n'.repeat(html.slice(0, offset).split('\n').length - 1) + html.slice(offset, html.indexOf('      function searchSourceRegistry', offset)), c, { filename });
+  vm.runInContext(['searchLibcatSource', 'loadMoreLibcat'].map(name => functionSource(html, name)).join('\n'), c, { filename });
   const books = await c.searchLibcatSource('query');
   assert.equal(books[0].searchSourceId, 'libcat');
   c.searchResultBooks = books;

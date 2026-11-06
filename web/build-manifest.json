@@ -1,0 +1,67 @@
+{
+  "classic": [
+    "book-metadata",
+    "cover-assets",
+    "passage-results",
+    "favorite-references",
+    "vocabulary-wire",
+    "reader-typography",
+    "speech-settings",
+    "nostr-progress",
+    "nostr-social",
+    "desktop-progress",
+    "desktop-kindle",
+    "reader-chrome",
+    "fb2-validation",
+    "blossom-authorization",
+    "catalog-invitation",
+    "reader-speech"
+  ],
+  "modules": [
+    "opds-sources",
+    "public-lists",
+    "nip17-fetch",
+    "device-pairing",
+    "webtorrent-transfer",
+    "fb2",
+    "pdf-reader"
+  ],
+  "pages": [
+    {
+      "source": "index-app",
+      "template": "index-app.html",
+      "output": "index.html",
+      "mode": "classic"
+    },
+    {
+      "source": "reader-app",
+      "template": "reader-app.html",
+      "output": "reader.html",
+      "mode": "classic"
+    },
+    {
+      "source": "comic-reader-app",
+      "template": "comic-reader-app.html",
+      "output": "comic-reader.html",
+      "mode": "classic"
+    },
+    {
+      "source": "fb2-reader-app",
+      "template": "fb2-reader-app.html",
+      "output": "fb2-reader.html",
+      "mode": "module"
+    },
+    {
+      "source": "pdf-reader-app",
+      "template": "pdf-reader-app.html",
+      "output": "pdf-reader.html",
+      "mode": "classic"
+    },
+    {
+      "source": "shared-reader-app",
+      "template": "shared-reader-app.html",
+      "output": "../shared/reader/reader.html",
+      "mode": "classic"
+    }
+  ]
+}

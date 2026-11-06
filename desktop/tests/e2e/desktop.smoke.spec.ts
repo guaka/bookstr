@@ -11,7 +11,6 @@ import type { PublicSpeechModel } from '../../src/speech-model-store';
 type SignedEvent = Parameters<typeof verifyEvent>[0];
 declare global {
   var readableDownloadFixture: Record<string, unknown>[];
-  var state: { favorites: Record<string, unknown>[]; reading: Record<string, unknown>[] };
   function refreshSpeechVoiceMenus(): void;
   function refreshSpeechModels(models?: PublicSpeechModel[]): Promise<void>;
   function refreshDesktopDownloadStates(): Promise<void>;

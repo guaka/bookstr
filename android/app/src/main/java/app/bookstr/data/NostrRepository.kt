@@ -4,9 +4,6 @@ import android.content.Context
 import android.util.Log
 import app.bookstr.nostr.NostrClient
 import app.bookstr.nostr.NostrSignerFactory
-import app.bookstr.nostr.Nip55
-import app.bookstr.nostr.Nip55Exception
-import app.bookstr.nostr.AmberIntentSession
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
@@ -105,7 +102,6 @@ class NostrRepository(
 
     suspend fun publishVocabularyWord(word: VocabularyWord): Boolean = withContext(Dispatchers.IO) {
         val signer = NostrSignerFactory.create(context, settings) ?: return@withContext false
-        if (settings.authMode != NostrAuthMode.Amber) return@withContext false
         val relays = settings.relays
         if (relays.isEmpty()) return@withContext false
         try {
@@ -130,7 +126,6 @@ class NostrRepository(
 
     suspend fun pullVocabulary(): Int = withContext(Dispatchers.IO) {
         val signer = NostrSignerFactory.create(context, settings) ?: return@withContext 0
-        if (settings.authMode != NostrAuthMode.Amber) return@withContext 0
         val relays = settings.relays
         if (relays.isEmpty()) return@withContext 0
         var merged = 0
@@ -149,17 +144,13 @@ class NostrRepository(
     }
 
     private suspend fun encryptToSelf(pubkey: String, plaintext: String): String {
-        val pkg = settings.signerPackage ?: throw Nip55Exception("External signer is not connected")
-        return Nip55.encryptNip44ViaContentResolver(context, pkg, plaintext, pubkey, pubkey)
-            ?: AmberIntentSession.Host.session?.encryptNip44(plaintext, pubkey, pubkey, pkg)
-            ?: throw Nip55Exception("Reconnect your signer and remember private vocabulary encryption")
+        val signer = NostrSignerFactory.create(context, settings) ?: error("Connect Nostr to sync private vocabulary")
+        return signer.nip44Encrypt(plaintext, pubkey)
     }
 
     private suspend fun decryptFromSelf(pubkey: String, ciphertext: String): String {
-        val pkg = settings.signerPackage ?: throw Nip55Exception("External signer is not connected")
-        return Nip55.decryptNip44ViaContentResolver(context, pkg, ciphertext, pubkey, pubkey)
-            ?: AmberIntentSession.Host.session?.decryptNip44(ciphertext, pubkey, pubkey, pkg)
-            ?: throw Nip55Exception("Reconnect your signer and remember private vocabulary decryption")
+        val signer = NostrSignerFactory.create(context, settings) ?: error("Connect Nostr to sync private vocabulary")
+        return signer.nip44Decrypt(ciphertext, pubkey)
     }
 
     companion object {

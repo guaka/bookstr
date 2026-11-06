@@ -129,16 +129,17 @@ test('CodeQL workflow is disabled', async () => {
   assert.equal(workflows.includes('codeql.yml'), false);
 });
 
-test('Android APK builds have separate sequential steps on the same runner', async () => {
+test('Android APK builds share one bounded Gradle invocation without waiting for unit tests', async () => {
   const workflow = await readWorkflow('android.yml');
   const packaging = workflow.match(/^  package-apks:\n([\s\S]*?)(?=^  emulator-tests:)/m)[1];
   assert.match(packaging, /^    name: Build debug app and test APKs$/m);
   const builds = [...packaging.matchAll(/      - name: (Build[^\n]+)\n        working-directory: android\n        run: (.+)/g)];
   assert.deepEqual(builds.map(match => [match[1], match[2]]), [
-    ['Build debug app APK', './gradlew --no-daemon --max-workers=2 assembleDebug -Pbookstr.abis=x86_64 -Pbookstr.cxxCompilerLauncher=ccache'],
-    ['Build instrumentation test APK', './gradlew --no-daemon --max-workers=2 assembleDebugAndroidTest -Pbookstr.abis=x86_64 -Pbookstr.cxxCompilerLauncher=ccache'],
+    ['Build debug app and instrumentation APKs', "./gradlew --daemon --max-workers=2 '-Dorg.gradle.jvmargs=-Xmx1536m -Dfile.encoding=UTF-8' assembleDebug assembleDebugAndroidTest -Pbookstr.abis=x86_64 -Pbookstr.cxxCompilerLauncher=ccache"],
   ]);
-  assert.ok(packaging.indexOf('name: Stage prebuilt APKs') > builds[1].index);
+  assert.ok(packaging.indexOf('name: Stage prebuilt APKs') > builds[0].index);
+  assert.match(packaging, /needs: changes\n    if: needs.changes.outputs.android == 'true'/);
+  assert.doesNotMatch(packaging, /needs: unit-tests/);
   assert.match(packaging, /name: Upload prebuilt APKs[\s\S]*?compression-level: 0/);
 });
 
@@ -184,8 +185,7 @@ test('Android CI has four ordered jobs and the emulator consumes prebuilt APKs',
   ]);
   assert.match(workflow, /testDebugUnitTest jacocoDebugUnitTestReport/);
   assert.match(workflow, /node --test --experimental-test-coverage --test-coverage-lines=100 --test-coverage-branches=100 --test-coverage-functions=100 android\/scripts\/instrumentation-results\.test\.mjs/);
-  assert.match(workflow, /run: \.\/gradlew --no-daemon --max-workers=2 assembleDebug -Pbookstr.abis=x86_64 -Pbookstr.cxxCompilerLauncher=ccache\n/);
-  assert.match(workflow, /needs: unit-tests/);
+  assert.match(workflow, /assembleDebug assembleDebugAndroidTest -Pbookstr.abis=x86_64 -Pbookstr.cxxCompilerLauncher=ccache\n/);
   assert.match(workflow, /needs: package-apks/);
   assert.match(workflow, /needs: \[unit-tests, package-apks, emulator-tests\]/);
   const emulatorJob = workflow.match(/^  emulator-tests:\n([\s\S]*?)(?=^  release:)/m)[1];
@@ -197,7 +197,7 @@ test('Android CI has four ordered jobs and the emulator consumes prebuilt APKs',
   assert.match(e2eRunner, /require-emulator\.sh/);
   assert.match(e2eRunner, /install -r "\$app_apk"/);
   assert.match(e2eRunner, /install -r "\$test_apk"/);
-  assert.match(e2eRunner, /shell am instrument -w -r app\.bookstr\.test\/androidx\.test\.runner\.AndroidJUnitRunner/);
+  assert.match(e2eRunner, /shell am instrument -w -r app\.bookstr\.test\/app\.bookstr\.BookstrTestRunner/);
   assert.match(e2eRunner, /rm -f "\$results_dir\/instrumentation\.log"/);
   assert.match(ignore, /^\/android\/e2e-results\/$/m);
   assert.match(ignore, /^\/android\/e2e-screenshots\/$/m);

@@ -173,7 +173,8 @@ jobs:
 
   package-apks:
     name: Build debug app and test APKs
-    needs: unit-tests
+    needs: changes
+    if: needs.changes.outputs.android == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
@@ -202,12 +203,9 @@ jobs:
             ${{ runner.os }}-android-ccache-debug-x86_64-v1-${{ hashFiles('android/gradle/wrapper/gradle-wrapper.properties', 'android/app/build.gradle.kts', 'android/app/src/main/cpp/CMakeLists.txt') }}-
       - name: Reset native cache statistics
         run: ccache --zero-stats
-      - name: Build debug app APK
+      - name: Build debug app and instrumentation APKs
         working-directory: android
-        run: ./gradlew --no-daemon --max-workers=2 assembleDebug -Pbookstr.abis=x86_64 -Pbookstr.cxxCompilerLauncher=ccache
-      - name: Build instrumentation test APK
-        working-directory: android
-        run: ./gradlew --no-daemon --max-workers=2 assembleDebugAndroidTest -Pbookstr.abis=x86_64 -Pbookstr.cxxCompilerLauncher=ccache
+        run: ./gradlew --daemon --max-workers=2 '-Dorg.gradle.jvmargs=-Xmx1536m -Dfile.encoding=UTF-8' assembleDebug assembleDebugAndroidTest -Pbookstr.abis=x86_64 -Pbookstr.cxxCompilerLauncher=ccache
       - name: Report native cache statistics
         if: always()
         run: ccache --show-stats

@@ -1,0 +1,5 @@
+# Keep transitive authoring tools above the security advisory floors.
+overrides:
+  '@xmldom/xmldom': 0.8.15
+  minimatch: 11.0.4
+  glob: 14.0.2
