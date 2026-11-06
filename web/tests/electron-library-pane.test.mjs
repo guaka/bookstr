@@ -214,7 +214,7 @@ test('presence lookup is optional, coalesced and never lets an old device update
 
 
 test('Kindle presence IPC only forwards a normalized device ID', async () => {
-  const main = fs.readFileSync(new URL('../../desktop/main.js', import.meta.url), 'utf8');
+  const main = fs.readFileSync(new URL('../../desktop/src/main.ts', import.meta.url), 'utf8');
   const source = main.split('\n').find(line => line.includes("ipcMain.handle('bookstr-desktop-kindle-presence'"));
   let handler;
   const ids = [];

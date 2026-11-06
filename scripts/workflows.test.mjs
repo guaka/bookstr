@@ -84,7 +84,7 @@ test('Electron unit coverage and smoke results are published beside other client
 
 test('Playwright captures every web and Electron e2e test for PR artifacts', async () => {
   const web = await readFile(new URL('../web/playwright.config.mjs', import.meta.url), 'utf8');
-  const electron = await readFile(new URL('../desktop/playwright.config.js', import.meta.url), 'utf8');
+  const electron = await readFile(new URL('../desktop/src/playwright.config.ts', import.meta.url), 'utf8');
 
   assert.match(web, /outputDir: 'test-results'/);
   assert.match(web, /screenshot: 'on'/);

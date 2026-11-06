@@ -1,14 +1,33 @@
-'use strict';
+import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
+import { StringDecoder } from 'node:string_decoder';
 
-const { spawn } = require('node:child_process');
-const { StringDecoder } = require('node:string_decoder');
-
+type Progress = { phase?: unknown; percent?: unknown };
+type Pending = { resolve(value: unknown): void; reject(error: unknown): void };
+type SpawnProcess = (helper: string, args: string[], options: { stdio: ['pipe', 'pipe', 'pipe']; windowsHide: boolean }) => ChildProcessWithoutNullStreams;
 // One process owns one open PTP session. Closing between files can make a
 // Kindle leave USB mode, so preview, copy, and read-back share this process.
-class MtpSession {
-  constructor({ helper, deviceId, spawnProcess = spawn, onProgress = () => {}, timeout = 120000 } = {}) {
-    this.helper = helper;
-    this.deviceId = deviceId;
+export class MtpSession {
+  declare private readonly helper: string;
+  declare readonly deviceId: string;
+  declare private readonly spawnProcess: SpawnProcess;
+  declare private readonly onProgress: (progress: Progress) => void;
+  declare private readonly timeout: number;
+  declare private child: ChildProcessWithoutNullStreams | null;
+  declare private pending: Pending | null;
+  declare private chain: Promise<unknown>;
+  declare private stderr: string;
+  declare private buffer: string;
+  declare private readonly decoder: StringDecoder;
+  declare freeBytes: number | null;
+  declare private closed: boolean;
+  declare private closePromise: Promise<void> | null;
+  declare private exited: Promise<void> | undefined;
+  declare private value: unknown;
+
+  constructor({ helper, deviceId, spawnProcess = spawn as SpawnProcess, onProgress = () => {}, timeout = 120000 }:
+    { helper?: string; deviceId?: string; spawnProcess?: SpawnProcess; onProgress?: (progress: Progress) => void; timeout?: number } = {}) {
+    this.helper = helper!;
+    this.deviceId = deviceId!;
     this.spawnProcess = spawnProcess;
     this.onProgress = onProgress;
     this.timeout = timeout;
@@ -23,7 +42,7 @@ class MtpSession {
     this.closePromise = null;
   }
 
-  response(timeout = this.timeout) {
+  response(timeout = this.timeout): Promise<unknown> {
     if (this.closed) throw new Error('Kindle session is closed.');
     if (this.pending) throw new Error('Overlapping Kindle operation.');
     return new Promise((resolve, reject) => {
@@ -40,13 +59,13 @@ class MtpSession {
     });
   }
 
-  fail(error) {
+  fail(error: Error): void {
     this.closed = true;
     this.pending?.reject(error);
     this.child?.kill('SIGTERM');
   }
 
-  receive(bytes) {
+  receive(bytes: Uint8Array): void {
     this.buffer += this.decoder.write(bytes);
     if (Buffer.byteLength(this.buffer) > 16 * 1024 * 1024) {
       this.fail(new Error('Kindle response exceeds size limits.'));
@@ -58,7 +77,7 @@ class MtpSession {
       this.buffer = this.buffer.slice(newline + 1);
       // libmtp also prints discovery diagnostics to stdout.
       if (!/^[\[{]/.test(line)) continue;
-      let value;
+      let value: Record<string, unknown>;
       try { value = JSON.parse(line); }
       catch { this.fail(new Error('Invalid Kindle response.')); return; }
       if (value.progress === true) {
@@ -77,7 +96,7 @@ class MtpSession {
     }
   }
 
-  async start() {
+  async start(): Promise<void> {
     if (this.closed) throw new Error('Kindle session is closed.');
     const ready = this.response();
     let child;
@@ -85,7 +104,11 @@ class MtpSession {
       child = this.child = this.spawnProcess(this.helper, ['session', this.deviceId], {
         stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true,
       });
-    } catch (error) { this.pending?.reject(error); await ready.catch(() => {}); throw error; }
+    } catch (error) {
+      this.pending?.reject(error);
+      await ready.catch(() => {});
+      throw error;
+    }
     child.stdout.on('data', bytes => this.receive(bytes));
     child.stderr.on('data', bytes => { this.stderr = (this.stderr + bytes.toString()).slice(-4096); });
     child.stdin.on('error', error => this.fail(error));
@@ -96,7 +119,7 @@ class MtpSession {
       this.pending?.reject(new Error(`Kindle disconnected (${code ?? signal}). ${this.stderr}`.trim()));
       resolve();
     }));
-    const result = await ready;
+    const result = await ready as { ready?: boolean; freeBytes: number } | null | undefined;
     if (result?.ready !== true || !Number.isSafeInteger(result.freeBytes) || result.freeBytes < 0) {
       this.fail(new Error('Invalid Kindle session response.'));
       throw new Error('Invalid Kindle session response.');
@@ -104,7 +127,7 @@ class MtpSession {
     this.freeBytes = result.freeBytes;
   }
 
-  command(action, ...args) {
+  command(action: string, ...args: string[]): Promise<unknown> {
     const operation = this.chain.then(async () => {
       if (this.closed) throw new Error('Kindle session is closed.');
       if (!['files', 'get', 'put'].includes(action)
@@ -115,8 +138,8 @@ class MtpSession {
       if (!this.child) await this.start();
       this.value = null;
       const reply = this.response(action === 'files' ? this.timeout : Math.max(this.timeout, 600000));
-      this.child.stdin.write([action, ...args].join('\t') + '\n');
-      const result = await reply;
+      this.child!.stdin.write([action, ...args].join('\t') + '\n');
+      const result = await reply as { ok?: unknown; id?: unknown } | null | undefined;
       const valid = action === 'files' ? Array.isArray(result)
         : action === 'get' ? result?.ok === true
           : typeof result?.id === 'string' && /^[1-9]\d{0,9}$/.test(result.id) && Number(result.id) <= 0xffffffff;
@@ -127,7 +150,7 @@ class MtpSession {
     return operation;
   }
 
-  close() {
+  close(): Promise<void> {
     if (this.closePromise) return this.closePromise;
     this.closed = true;
     if (!this.child) return Promise.resolve();
@@ -135,8 +158,8 @@ class MtpSession {
     return this.closePromise;
   }
 
-  async closeChild() {
-    const child = this.child;
+  private async closeChild(): Promise<void> {
+    const child = this.child!;
     let forceTimer;
     let settleTimer;
     child.stdin.end();
@@ -153,5 +176,3 @@ class MtpSession {
     }
   }
 }
-
-module.exports = { MtpSession };

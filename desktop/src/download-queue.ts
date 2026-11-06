@@ -1,3 +1,33 @@
+type UnknownRecord = Record<string, unknown>;
+interface LibgenRecord extends UnknownRecord {
+  md5: string; libgenId: number; extension: string; resolutionError?: string;
+  title: string; authors: string; language: string; year: string; isbn: string;
+  filesize_bytes: number; source: string; collection: string; sourceUrl: string;
+  rights_status: string; license: string; license_url: string; rights_source: string;
+}
+interface DownloadRequest extends UnknownRecord { kind: string; record: UnknownRecord }
+interface DownloadRow extends UnknownRecord { bookId: string; status: string }
+interface QueueStore {
+  downloads(): DownloadRow[];
+  upsertBook(fields: UnknownRecord): unknown;
+  setDownload(fields: { bookId: string; status: string; source?: string; error?: string }): unknown;
+  saveDownloadRequest(bookId: string, request: DownloadRequest): unknown;
+  downloadRequest(bookId: string): DownloadRequest | null;
+  getBook?(bookId: string): UnknownRecord | null;
+  removeDownload(bookId: string): boolean;
+  resumableDownloads(): { bookId: string; request: DownloadRequest }[];
+}
+interface QueueAcquisitions {
+  acquireLibgen(record: UnknownRecord, options: { autoSeed: boolean; onProgress(): void }): Promise<unknown>;
+  acquire(record: UnknownRecord, options: { onProgress(): void; allowUnverifiedOpen: boolean }): Promise<unknown>;
+}
+interface QueueOptions {
+  store?: QueueStore; acquisitionManager?: QueueAcquisitions; onUpdate?: () => void;
+  autoSeed?: boolean; maxConcurrent?: number;
+}
+interface Prepared { bookId: string; fields: UnknownRecord; request: DownloadRequest }
+interface Job { bookId: string; request: DownloadRequest }
+
 'use strict';
 
 const ACTIVE = new Set(['queued', 'finding-peers', 'downloading', 'retrying']);
@@ -6,7 +36,7 @@ const MD5 = /^[a-f0-9]{32}$/;
 const FORMATS = new Set(['epub', 'pdf', 'fb2', 'cbz', 'cbr']);
 const MAX_CONCURRENT_ACQUISITIONS = 100;
 
-function libgenRequest(book, allowMissingEdition = false) {
+function libgenRequest(book: UnknownRecord | null | undefined, allowMissingEdition = false): LibgenRecord {
   const md5 = String(book?.md5 || '').trim().toLowerCase();
   const libgenId = allowMissingEdition ? 0 : Number(book?.libgenId || book?.libgen_id || book?.sourceNativeId || 0);
   const extension = String(book?.extension || book?.format || '').trim().toLowerCase();
@@ -15,24 +45,34 @@ function libgenRequest(book, allowMissingEdition = false) {
   }
   return {
     md5, libgenId, extension,
-    title: String(book.title || '').slice(0, 400),
-    authors: String(book.authors || book.author || '').slice(0, 400),
-    language: String(book.language || '').slice(0, 32),
-    year: String(book.year || '').slice(0, 32),
-    isbn: String(book.isbn || '').slice(0, 64),
-    filesize_bytes: Number(book.filesize_bytes || book.filesize || 0),
+    title: String(book!.title || '').slice(0, 400),
+    authors: String(book!.authors || book!.author || '').slice(0, 400),
+    language: String(book!.language || '').slice(0, 32),
+    year: String(book!.year || '').slice(0, 32),
+    isbn: String(book!.isbn || '').slice(0, 64),
+    filesize_bytes: Number(book!.filesize_bytes || book!.filesize || 0),
     source: 'libvault',
-    collection: String(book.collection || '').toLowerCase(),
-    sourceUrl: String(book.sourceUrl || book.source_url || '').slice(0, 2048),
-    rights_status: String(book.rights_status || book.rightsStatus || 'unknown'),
-    license: String(book.license || ''),
-    license_url: String(book.license_url || book.licenseUrl || ''),
-    rights_source: String(book.rights_source || book.rightsSource || ''),
+    collection: String(book!.collection || '').toLowerCase(),
+    sourceUrl: String(book!.sourceUrl || book!.source_url || '').slice(0, 2048),
+    rights_status: String(book!.rights_status || book!.rightsStatus || 'unknown'),
+    license: String(book!.license || ''),
+    license_url: String(book!.license_url || book!.licenseUrl || ''),
+    rights_source: String(book!.rights_source || book!.rightsSource || ''),
   };
 }
 
 class DownloadQueue {
-  constructor({ store, acquisitionManager, onUpdate = () => {}, autoSeed = true, maxConcurrent = MAX_CONCURRENT_ACQUISITIONS } = {}) {
+  declare readonly store: QueueStore;
+  declare readonly acquisitionManager: QueueAcquisitions;
+  declare readonly onUpdate: () => void;
+  declare readonly autoSeed: boolean;
+  declare readonly maxConcurrent: number;
+  declare readonly pending: Job[];
+  declare readonly activeJobs: Map<string, Promise<void>>;
+  declare drainPromise: Promise<void> | null;
+  declare resumePromise: Promise<void> | null;
+  declare closed: boolean;
+  constructor({ store, acquisitionManager, onUpdate = () => {}, autoSeed = true, maxConcurrent = MAX_CONCURRENT_ACQUISITIONS }: QueueOptions = {}) {
     if (!store || !acquisitionManager) throw new TypeError('store and acquisitionManager are required');
     if (!Number.isSafeInteger(maxConcurrent) || maxConcurrent < 1 || maxConcurrent > MAX_CONCURRENT_ACQUISITIONS) {
       throw new RangeError(`maxConcurrent must be an integer from 1 to ${MAX_CONCURRENT_ACQUISITIONS}`);
@@ -49,45 +89,45 @@ class DownloadQueue {
     this.closed = false;
   }
 
-  async prepare(request) {
+  async prepare(request: UnknownRecord | null | undefined): Promise<Prepared> {
     if (!request || typeof request !== 'object' || Array.isArray(request)) throw new TypeError('Invalid download request.');
     if (request.kind === 'catalog') {
-      const record = libgenRequest(request.record, true);
-      record.resolutionError = String(request.record.resolutionError || 'No downloadable edition is available for this catalog record.').slice(0, 1000);
+      const record = libgenRequest(request.record as UnknownRecord, true);
+      record.resolutionError = String((request.record as UnknownRecord).resolutionError || 'No downloadable edition is available for this catalog record.').slice(0, 1000);
       return { bookId: record.md5, fields: { ...record, id: record.md5 }, request: { kind: 'catalog', record } };
     }
     if (request.kind === 'libgen') {
-      const record = libgenRequest(request.record);
+      const record = libgenRequest(request.record as UnknownRecord);
       return { bookId: record.md5, fields: { ...record, id: record.md5 }, request: { kind: 'libgen', record } };
     }
     if (request.kind === 'provider') {
       const { listAcquisitions, providerBookFields } = await import('../shared/catalog/acquisition.mjs');
-      const record = request.record;
+      const record = request.record as UnknownRecord;
       const acquisitions = listAcquisitions(record).filter(candidate => !candidate.private);
       if (!acquisitions.length) throw new TypeError('This result has no downloadable file.');
       const fields = providerBookFields(record);
-      return { bookId: fields.id, fields, request: { kind: 'provider', record } };
+      return { bookId: fields.id as string, fields, request: { kind: 'provider', record } };
     }
     throw new TypeError('Unsupported download request.');
   }
 
-  async enqueue(request) {
+  async enqueue(request: unknown) {
     if (this.closed) throw new Error('download queue is closed');
-    const prepared = await this.prepare(request);
+    const prepared = await this.prepare(request as UnknownRecord);
     if (this.closed) throw new Error('download queue is closed');
     const existing = this.store.downloads().find(item => item.bookId === prepared.bookId);
     if (existing && (ACTIVE.has(existing.status) || COMPLETE.has(existing.status))) return existing;
     this.store.upsertBook(prepared.fields);
     const unavailable = prepared.request.kind === 'catalog';
     this.store.setDownload({ bookId: prepared.bookId, status: unavailable ? 'failed' : 'queued', source: prepared.request.kind,
-      error: unavailable ? prepared.request.record.resolutionError : '' });
+      error: unavailable ? prepared.request.record.resolutionError as string | undefined : '' });
     this.store.saveDownloadRequest(prepared.bookId, prepared.request);
     if (!unavailable) this.schedule(prepared.bookId, prepared.request);
     this.onUpdate();
     return this.store.downloads().find(item => item.bookId === prepared.bookId);
   }
 
-  remove(bookId) {
+  remove(bookId: string) {
     if (this.closed) throw new Error('download queue is closed');
     if (this.activeJobs.has(bookId) || this.pending.some(job => job.bookId === bookId)) {
       throw new Error('This download is still active.');
@@ -97,7 +137,7 @@ class DownloadQueue {
     return removed;
   }
 
-  async retry(bookId) {
+  async retry(bookId: string) {
     let request = this.store.downloadRequest(bookId);
     if (!request) {
       const book = this.store.getBook?.(bookId);
@@ -127,7 +167,7 @@ class DownloadQueue {
         this.schedule(job.bookId, job.request);
       } catch (error) {
         if (this.closed) break;
-        this.store.setDownload({ bookId: job.bookId, status: 'failed', error: error.message });
+        this.store.setDownload({ bookId: job.bookId, status: 'failed', error: (error as Error).message });
       }
     }
     this.notifyUpdate();
@@ -139,14 +179,14 @@ class DownloadQueue {
     await this.resumePromise;
   }
 
-  schedule(bookId, request) {
+  schedule(bookId: string, request: DownloadRequest) {
     if (this.closed) return;
     if (this.activeJobs.has(bookId) || this.pending.some(job => job.bookId === bookId)) return;
     this.pending.push({ bookId, request });
     void this.drain();
   }
 
-  async drain() {
+  async drain(): Promise<void> {
     if (this.drainPromise) {
       this.startPending();
       return this.drainPromise;
@@ -170,7 +210,7 @@ class DownloadQueue {
 
   startPending() {
     while (this.pending.length && this.activeJobs.size < this.maxConcurrent) {
-      const job = this.pending.shift();
+      const job = this.pending.shift()!;
       const task = this.runJob(job).finally(() => {
         this.activeJobs.delete(job.bookId);
         this.notifyUpdate();
@@ -179,9 +219,9 @@ class DownloadQueue {
     }
   }
 
-  async runJob({ bookId, request }) {
+  async runJob({ bookId, request }: Job) {
     try {
-      let lastProgressNoticeAt = null;
+      let lastProgressNoticeAt: number | null = null;
       const onProgress = () => {
         const now = Date.now();
         if (lastProgressNoticeAt !== null && now - lastProgressNoticeAt < 500) return;
@@ -196,7 +236,7 @@ class DownloadQueue {
     } catch (error) {
       if (this.closed) return;
       try {
-        this.store.setDownload({ bookId, status: 'failed', source: request.kind, error: error.message || String(error) });
+        this.store.setDownload({ bookId, status: 'failed', source: request.kind, error: (error as Error).message || String(error) });
       } catch {}
     }
   }
@@ -207,4 +247,4 @@ class DownloadQueue {
   }
 }
 
-module.exports = { DownloadQueue, libgenRequest };
+export = { DownloadQueue, libgenRequest };

@@ -1,3 +1,5 @@
+type CatalogFetch = (url: string, options: { method: string; headers: { Accept: string } }) => Promise<Response>;
+
 const CATALOG_BASE_URL = 'https://books-api.guaka.org/api';
 const UNGLUE_OPDS_BASE_URL = 'https://unglue.it/api/opds/s.open';
 const GUTENDEX_BASE_URL = 'https://gutendex.com/books/';
@@ -26,7 +28,7 @@ const CATALOG_PATHS = [
 ];
 
 function catalogUpstreamUrl(
-  url,
+  url: string,
   baseUrl = CATALOG_BASE_URL,
   unglueBaseUrl = UNGLUE_OPDS_BASE_URL,
   gutendexBaseUrl = GUTENDEX_BASE_URL,
@@ -125,7 +127,7 @@ function catalogUpstreamUrl(
   return upstream.href;
 }
 
-async function proxyCatalogRequest(request, fetchImpl, baseUrl = CATALOG_BASE_URL) {
+async function proxyCatalogRequest(request: Request, fetchImpl: CatalogFetch, baseUrl = CATALOG_BASE_URL): Promise<Response | null> {
   const upstreamUrl = catalogUpstreamUrl(request.url, baseUrl);
   if (!upstreamUrl) return null;
   if (!['GET', 'HEAD'].includes(request.method)) {
@@ -162,7 +164,7 @@ async function proxyCatalogRequest(request, fetchImpl, baseUrl = CATALOG_BASE_UR
   }
 }
 
-module.exports = {
+export = {
   CATALOG_BASE_URL,
   GUTENDEX_BASE_URL,
   OAPEN_BITSTREAM_BASE_URL,
