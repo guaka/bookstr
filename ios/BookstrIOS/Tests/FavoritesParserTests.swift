@@ -1533,6 +1533,13 @@ final class FavoritesParserTests: XCTestCase {
         XCTAssertEqual(book?.format, .pdf)
         XCTAssertEqual(book?.epubUrl, "HTTPS://example.test/book.pdf")
 
+        let legacyFB2 = ExternalFavorite(
+            key: "legacy-fb2", title: "Legacy", author: "Author", year: nil,
+            url: "https://example.test/book.fb2", isbn: nil, libvaultMd5: nil, format: "fb2"
+        )
+        XCTAssertNil(PublicationUtilities.fromExternalFavorite(legacyFB2),
+                     "FB2 favorite records remain parseable but cannot enter the iOS open flow")
+
         for invalidURL in [nil, "file:///tmp/book.epub", "javascript:alert(1)"] {
             let favorite = ExternalFavorite(
                 key: "invalid", title: "Invalid", author: "Author", year: nil,

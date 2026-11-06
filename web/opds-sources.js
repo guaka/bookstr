@@ -59,12 +59,12 @@ export async function searchOPDSFeed(feed, query, fetchImpl = globalThis.fetch) 
     }
     const searchURL = search ? resolveSearchURL(search.href, query, valid.url) : '';
     if (searchURL && searchURL !== valid.url) {
-        return (await fetchDocument(searchURL, context, fetchImpl)).records;
+        return filterRecords((await fetchDocument(searchURL, context, fetchImpl)).records, query);
     }
     return filterRecords(initial.records, query);
 }
 export function providerRecordToBook(record, sourceURL) {
-    const acquisition = record?.acquisitions?.find(item => item?.format === 'fb2' && item?.availability === 'open');
+    const acquisition = record?.acquisitions?.find(item => ['epub', 'pdf', 'cbz', 'cbr'].includes(item?.format) && item?.availability === 'open');
     if (!record || !acquisition)
         return null;
     return {
@@ -76,7 +76,7 @@ export function providerRecordToBook(record, sourceURL) {
         authors: record.authors.join(', '),
         language: record.languages[0] || '',
         year: record.publishedYear || '',
-        extension: 'fb2',
+        extension: acquisition.format,
         readUrl: acquisition.url,
         rights_status: record.rights.status,
         license: record.rights.license || '',
@@ -220,6 +220,7 @@ function resolveSearchURL(href, query, baseURL) {
         ? url.replace(/\{(?:searchTerms|query|q)\}/ig, encoded) : '';
 }
 function filterRecords(records, query) {
+    records = records.filter(record => record.acquisitions.some(item => ['epub', 'pdf', 'cbz', 'cbr'].includes(item.format)));
     const terms = String(query || '').toLocaleLowerCase().match(/[\p{L}\p{N}]+/gu) || [];
     return terms.length ? records.filter(record => {
         const searchable = [record.title, ...record.authors].join(' ').toLocaleLowerCase();

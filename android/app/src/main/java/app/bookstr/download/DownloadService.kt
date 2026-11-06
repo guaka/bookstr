@@ -21,6 +21,11 @@ class DownloadService : Service() {
     private val running = mutableMapOf<String, Job>()
     private val app get() = application as BookstrApp
     private val store get() = app.downloadStore
+    private val commands = DownloadCommandCoordinator(
+        find = { id -> store.find(id) },
+        update = { job -> store.update(job) },
+        cancelAndJoin = { id -> running.remove(id)?.cancelAndJoin() },
+    )
     override fun onBind(intent: Intent?): IBinder? = null
     override fun onCreate() {
         super.onCreate()
@@ -39,7 +44,14 @@ class DownloadService : Service() {
                     } else if (running[job.book.id]?.isActive != true) start(job)
                 }
                 getSystemService(NotificationManager::class.java).notify(1002, notification())
-                if (store.jobs.value.none { it.active } && running.values.none { it.isActive }) { stopForeground(STOP_FOREGROUND_DETACH); stopSelf(); break }
+                val stopped = commands.stopIfIdle(
+                    hasActiveJobs = store.jobs.value.any { it.active } || running.values.any { it.isActive },
+                ) { latestStartId ->
+                    val accepted = stopSelfResult(latestStartId)
+                    if (accepted) stopForeground(STOP_FOREGROUND_DETACH)
+                    accepted
+                }
+                if (stopped) break
                 delay(1500)
             }
         }
@@ -53,18 +65,9 @@ class DownloadService : Service() {
         }
     }
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        commands.onStart(startId)
         val id = intent?.getStringExtra("id")
-        if (id != null) scope.launch {
-            val job = store.find(id) ?: return@launch
-            when (intent.action) {
-                "pause", "cancel" -> {
-                    store.update(job.copy(state = if (intent.action == "pause") "paused" else "cancelled"))
-                    running.remove(id)?.cancelAndJoin()
-                    store.update((store.find(id) ?: job).copy(state = if (intent.action == "pause") "paused" else "cancelled"))
-                }
-                "resume" -> if (!job.active && job.state != "complete") store.update(job.copy(state = "queued", error = null))
-            }
-        }
+        if (id != null) scope.launch { commands.handle(intent.action, id) }
         return START_STICKY
     }
     override fun onTimeout(startId: Int, fgsType: Int) {

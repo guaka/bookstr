@@ -35,6 +35,9 @@ final class BookRightsV1ContractTests: XCTestCase {
         XCTAssertEqual(BookFormat.from(format: nil, url: "book.cbr"), .cbr)
         XCTAssertEqual(BookFormat.from(format: nil, url: "book.cbz"), .cbz)
         XCTAssertEqual(BookFormat.from(format: "unknown", url: "book.bin"), .epub)
+        XCTAssertEqual(BookFormat.from(format: "FB2"), .fb2, "Legacy FB2 metadata must still decode")
+        XCTAssertFalse(BookFormat.fb2.isAvailableOnIOS)
+        XCTAssertTrue(BookFormat.epub.isAvailableOnIOS)
     }
 
     func testRightsLabelsAndBookAdaptersExposeAllComputedProperties() throws {
@@ -64,6 +67,15 @@ final class BookRightsV1ContractTests: XCTestCase {
         XCTAssertEqual(readable.rights.status, .publicDomain)
         XCTAssertEqual(try XCTUnwrap(readable.asCatalogBook()).format, .cbr)
         XCTAssertEqual(readable.asFavoriteBook().language, "pt")
+
+        let unavailableFB2 = BookSearchResult(
+            id: "fb2-result", source: "catalog", title: "Legacy", author: "Author", year: nil,
+            publisher: nil, language: nil, format: .fb2, downloadUrl: "https://example.test/book.fb2",
+            coverUrl: nil, rating: 0, editionCount: 1
+        )
+        XCTAssertFalse(unavailableFB2.isReadable)
+        XCTAssertNil(unavailableFB2.asCatalogBook())
+        XCTAssertEqual(unavailableFB2.asFavoriteBook().format, .fb2, "Stored favorite metadata remains intact")
 
         let unavailable = BookSearchResult(
             id: "missing", source: "test", title: "Missing", author: "", year: nil,

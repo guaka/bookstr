@@ -322,7 +322,7 @@ struct DownloadsPane: View {
                         Text(job.result.title).font(.subheadline.weight(.semibold)).accessibilityIdentifier("downloads.book.\(job.id)")
                         Text(job.result.author).font(.footnote).foregroundStyle(.secondary)
                         Text(job.status).font(.caption).accessibilityIdentifier("downloads.status.\(job.id)")
-                        if let book = job.book {
+                        if let book = job.book, book.format.isAvailableOnIOS {
                             Button("Open") { dismiss(); playback.present(book: book) }
                                 .accessibilityIdentifier("downloads.open.\(job.id)")
                         } else if job.failed {

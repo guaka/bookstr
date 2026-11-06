@@ -46,7 +46,8 @@ test('renderer downloads expose actual registered reader formats as readable', a
     if (!filePath) throw new Error('missing');
     return { filePath, book: { extension: bookId } };
   });
-  assert.deepEqual(results.map(item => item.readable), [true, true, true, true, true, false, false]);
+  assert.deepEqual(results.map(item => item.readable), [true, true, false, true, true, false, false]);
+  assert.equal(results[2]!.extension, undefined);
   assert.equal(Object.hasOwn(results[0]!, 'filePath'), false);
 });
 

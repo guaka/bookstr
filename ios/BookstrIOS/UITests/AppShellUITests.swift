@@ -1,6 +1,24 @@
 import XCTest
+import PDFKit
 
 final class AppShellUITests: XCTestCase {
+    func testOpenExternalDocumentsWhileRunningAndOnColdLaunch() throws {
+        let pdf = FileManager.default.temporaryDirectory.appendingPathComponent("External-\(UUID().uuidString).pdf")
+        let epub = pdf.deletingPathExtension().appendingPathExtension("epub")
+        defer { try? FileManager.default.removeItem(at: pdf); try? FileManager.default.removeItem(at: epub) }
+        let document = PDFDocument()
+        document.insert(PDFPage(), at: 0)
+        XCTAssertTrue(document.write(to: pdf))
+        // A complete, single-chapter EPUB fixture with a stored mimetype entry.
+        try XCTUnwrap(Data(base64Encoded: "UEsDBBQAAAAAAAAAIVBvYassFAAAABQAAAAIAAAAbWltZXR5cGVhcHBsaWNhdGlvbi9lcHViK3ppcFBLAwQUAAAACAAAACFQ6vhN4oYAAADCAAAAFgAAAE1FVEEtSU5GL2NvbnRhaW5lci54bWxNjUESwiAMRa/CZOu06JYpvUukqTJCwkDa0duLLqq7v/jvvSkIK0amap45cfOwVXaCLTbHmKk5DU4K8SJhy8Tqvjd3YGB2qi0Ke7iMZ5inKqJrTNR+06xbSkNBvXv4gF0zSlnBZFoiDvoq5AFLSTGgdpUVupbWgfDAG516Eew82T+zPfrzG1BLAwQUAAAACAAAACFQPHuInO8AAACWAQAACwAAAGNvbnRlbnQub3BmVZFBboQwDEWvEmVbDWbaRSUELCrNvpsewEoMWA0hDabQ2zcTKG2Xzv9+33bqgOYde1Lb6Pzc6EEkVADruhZsQ1dMsYfHsnyGKXRafVKcefKNfipKrRbPHwtd2JIX7phio9nqth5J0KLgzqysObFhiS4jrQFyNKbGGa7FFVKXNdUvSbHdYbQJRY+uhn96tguLo/Z2ONTt9e0l2/b3u8Oh75e0XUs+K2ddw8+QaVz03NEsbc1CY042A4ZE1WqI1J1lsQ0yOq1GsowX+QrUaAzBsUFJV4EsP6SlNdwDTuwc2NNOT7gU8BeavYcDjs9ovwFQSwMEFAAAAAgAAAAhUGxStAJsAAAAhgAAAA0AAABjaGFwdGVyLnhodG1sRcw9CoQwEEDhqwQPkEG2ioxTLNhvswfwJxgxZoIOJN5eJYXt4+Ohk82rvPlwtJUTiQ1ASkmnj+Z9htoYA/kxFaGz/UQoi3hLXRa7h96r7vf/IpSIUMjA00kYXzQwr2rkIDbIoRHiTQuC500XUEsBAhQDFAAAAAAAAAAhUG9hqywUAAAAFAAAAAgAAAAAAAAAAAAAAIABAAAAAG1pbWV0eXBlUEsBAhQDFAAAAAgAAAAhUOr4TeKGAAAAwgAAABYAAAAAAAAAAAAAAIABOgAAAE1FVEEtSU5GL2NvbnRhaW5lci54bWxQSwECFAMUAAAACAAAACFQPHuInO8AAACWAQAACwAAAAAAAAAAAAAAgAH0AAAAY29udGVudC5vcGZQSwECFAMUAAAACAAAACFQbFK0AmwAAACGAAAADQAAAAAAAAAAAAAAgAEMAgAAY2hhcHRlci54aHRtbFBLBQYAAAAABAAEAO4AAACjAgAAAAA=")).write(to: epub)
+        for (url, identifier) in [(pdf, "pdf-reader"), (epub, "epub-reader-webview")] {
+            app.open(url)
+            XCTAssertTrue(app.descendants(matching: .any)[identifier].waitForExistence(timeout: 15))
+            app.terminate()
+            app.open(url)
+            XCTAssertTrue(app.descendants(matching: .any)[identifier].waitForExistence(timeout: 15))
+        }
+    }
     private var app: XCUIApplication!
 
     override func setUpWithError() throws {

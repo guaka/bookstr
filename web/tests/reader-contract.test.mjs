@@ -91,7 +91,8 @@ test('Bookstr routes CBZ and CBR files to the comic reader', () => {
   assert.match(comicReader, /options\.archiveBlob\.arrayBuffer\(\)/);
   assert.match(app, /id = 'read-comic-opening-progress'/);
   assert.match(app, /format === 'cbz' \|\| format === 'cbr'/);
-  assert.match(app, /Only EPUB, PDF, FB2, CBZ, and CBR book files can be opened/);
+  assert.match(app, /Only EPUB, PDF, CBZ, and CBR book files can be opened/);
+  assert.match(app, /if \(format === 'fb2'\)\s*throw new Error\('The downloaded book format is not supported\.'\)/);
 });
 
 test('EPUB reader uses continuous vertical scrolling', () => {
