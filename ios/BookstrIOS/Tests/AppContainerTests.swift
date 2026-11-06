@@ -7,6 +7,42 @@ import SwiftUI
 
 @MainActor
 final class AppContainerTests: XCTestCase {
+    func testSpeechChunkFallbackUsesSelectedLanguage() throws {
+        let controller = EPUBReaderController()
+        let payload: [[String: Any]] = [["text": "200", "offset": 4]]
+        let english = try XCTUnwrap(controller.parseSpeechChunks(payload, languageTag: "en").first)
+        let portuguese = try XCTUnwrap(controller.parseSpeechChunks(payload, languageTag: "pt-PT").first)
+        XCTAssertEqual(english.speak, "two hundred")
+        XCTAssertEqual(portuguese.speak, "duzentos")
+        XCTAssertEqual(portuguese.text, "200")
+        XCTAssertEqual(portuguese.offset, 4)
+    }
+
+    func testSpeechChunkPayloadPreservesSpokenTextAndTiming() throws {
+        let controller = EPUBReaderController()
+        let payload: [[String: Any]] = [
+            ["text": " 200 ", "spoken": " already prepared ", "start": -3, "pauseMs": 250],
+            ["text": "word", "offset": 8, "pauseMs": -10],
+        ]
+        let chunks = controller.parseSpeechChunks(payload, languageTag: "pt-PT")
+        XCTAssertEqual(chunks.count, 2)
+        let first = try XCTUnwrap(chunks.first)
+        XCTAssertEqual(first.text, "200")
+        XCTAssertEqual(first.speak, "already prepared")
+        XCTAssertEqual(first.offset, 0)
+        XCTAssertEqual(first.pauseSeconds, 0.25)
+        XCTAssertEqual(chunks[1].offset, 8)
+        XCTAssertEqual(chunks[1].pauseSeconds, 0)
+    }
+
+    func testSpeechChunksRejectMissingEmptyAndMalformedPayloads() {
+        let controller = EPUBReaderController()
+        XCTAssertTrue(controller.parseSpeechChunks(nil, languageTag: "en").isEmpty)
+        XCTAssertTrue(controller.parseSpeechChunks("invalid", languageTag: "en").isEmpty)
+        let payload: [Any] = ["invalid", ["offset": 1], ["text": " \n "]]
+        XCTAssertTrue(controller.parseSpeechChunks(payload, languageTag: "en").isEmpty)
+    }
+
     func testLibraryRedrawDoesNotReloadUnchangedDownloads() async throws {
         let container = AppContainer.bootstrap()
         let model = LibraryViewModel()
