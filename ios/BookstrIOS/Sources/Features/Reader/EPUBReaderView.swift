@@ -641,7 +641,7 @@ final class EPUBReaderController: NSObject, ObservableObject, AVSpeechSynthesize
         NativeSpeechFallback.chunks(text, maximumLength: maximumLength)
     }
 
-    fileprivate func parseSpeechChunks(_ value: Any?) -> [(text: String, offset: Int, pauseSeconds: Double, speak: String)] {
+    func parseSpeechChunks(_ value: Any?, languageTag: String) -> [(text: String, offset: Int, pauseSeconds: Double, speak: String)] {
         let chunks = (value as? [[String: Any]]) ?? (value as? [Any] ?? [])
             .compactMap { $0 as? [String: Any] }
         var parsed: [(text: String, offset: Int, pauseSeconds: Double, speak: String)] = []
@@ -667,7 +667,7 @@ final class EPUBReaderController: NSObject, ObservableObject, AVSpeechSynthesize
                 text: trimmed,
                 offset: max(0, offset),
                 pauseSeconds: pauseSeconds,
-                speak: spoken.isEmpty ? SpeechSpokenText.normalize(trimmed, languageTag: playback.languageTag) : spoken
+                speak: spoken.isEmpty ? SpeechSpokenText.normalize(trimmed, languageTag: languageTag) : spoken
             ))
         }
         if !parsed.isEmpty {
@@ -1669,12 +1669,13 @@ struct EPUBReaderView: UIViewRepresentable {
 
         private func handleSpeech(_ json: String?) {
             guard let item = object(from: json), let text = item["text"] as? String else { return }
-            let chunks = controller.parseSpeechChunks(item["chunks"])
             let contentLanguage = item["language"] as? String ?? "en"
+            let playback = controller.playbackChoiceProvider?(contentLanguage)
+                ?? container.settingsRepository.speechChoice(for: contentLanguage)
+            let chunks = controller.parseSpeechChunks(item["chunks"], languageTag: playback.languageTag)
             controller.speak(
                 text: text,
-                playback: controller.playbackChoiceProvider?(contentLanguage)
-                    ?? container.settingsRepository.speechChoice(for: contentLanguage),
+                playback: playback,
                 chunks: chunks.isEmpty ? nil : chunks,
                 requestID: item["requestID"] as? String,
                 exhausted: item["exhausted"] as? Bool ?? false

@@ -55,3 +55,15 @@ test('desktop speech player queues system utterances and rejects stale completio
   stale.onend!();
   assert.equal(spoken.length, 2);
 });
+
+
+test('EPUB and PDF speech tests disable native speech and mute Electron before launch', () => {
+  const fs: typeof import('node:fs') = require('node:fs');
+  const path: typeof import('node:path') = require('node:path');
+  const source = fs.readFileSync(path.resolve(__dirname, '../e2e/desktop.reader.spec.ts'), 'utf8');
+  const launches = [...source.matchAll(/electron\.launch\(\{([\s\S]*?)\}\)/g)];
+  assert.equal(launches.length, 2);
+  for (const [, options] of launches) {
+    assert.match(options!, /args: \[\s*'--mute-audio',\s*'--disable-speech-api',/);
+  }
+});
