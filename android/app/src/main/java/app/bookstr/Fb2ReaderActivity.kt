@@ -40,6 +40,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.lifecycleScope
@@ -146,7 +147,8 @@ object Fb2Parser {
         var title: String? = null
         var author: String? = null
         var language: String? = null
-        while (parser.next() != XmlPullParser.END_DOCUMENT && parser.depth > depth) {
+        while (parser.next() != XmlPullParser.END_DOCUMENT) {
+            if (parser.eventType == XmlPullParser.END_TAG && parser.depth == depth) break
             if (parser.eventType != XmlPullParser.START_TAG) continue
             when (parser.name.substringAfterLast(':')) {
                 "book-title" -> title = text(parser)
@@ -164,7 +166,8 @@ object Fb2Parser {
         val depth = parser.depth
         val sections = mutableListOf<Fb2Section>()
         val paragraphs = mutableListOf<Fb2Paragraph>()
-        while (parser.next() != XmlPullParser.END_DOCUMENT && parser.depth > depth) {
+        while (parser.next() != XmlPullParser.END_DOCUMENT) {
+            if (parser.eventType == XmlPullParser.END_TAG && parser.depth == depth) break
             if (parser.eventType != XmlPullParser.START_TAG) continue
             when (parser.name.substringAfterLast(':')) {
                 "section" -> sections += readSection(parser, "section-${sections.size + 1}")
@@ -183,7 +186,8 @@ object Fb2Parser {
         var title = ""
         val paragraphs = mutableListOf<Fb2Paragraph>()
         val children = mutableListOf<Fb2Section>()
-        while (parser.next() != XmlPullParser.END_DOCUMENT && parser.depth > depth) {
+        while (parser.next() != XmlPullParser.END_DOCUMENT) {
+            if (parser.eventType == XmlPullParser.END_TAG && parser.depth == depth) break
             if (parser.eventType != XmlPullParser.START_TAG) continue
             when (parser.name.substringAfterLast(':')) {
                 "title" -> title = blockText(parser)
@@ -199,7 +203,8 @@ object Fb2Parser {
     private fun blockText(parser: XmlPullParser): String {
         val depth = parser.depth
         val out = StringBuilder()
-        while (parser.next() != XmlPullParser.END_DOCUMENT && parser.depth > depth) {
+        while (parser.next() != XmlPullParser.END_DOCUMENT) {
+            if (parser.eventType == XmlPullParser.END_TAG && parser.depth == depth) break
             when (parser.eventType) {
                 XmlPullParser.TEXT, XmlPullParser.CDSECT -> out.append(parser.text)
                 XmlPullParser.START_TAG -> if (parser.name.substringAfterLast(':') == "v") {
@@ -210,8 +215,8 @@ object Fb2Parser {
             }
         }
         return out.toString()
-            .replace(Regex("[ \\t\\r\\f]+"), " ")
-            .replace(Regex("\\n\\s*"), "\\n")
+            .replace(Regex("""[ \t\r\f]+"""), " ")
+            .replace(Regex("""\n\s*"""), "\n")
             .trim()
     }
 
@@ -392,7 +397,7 @@ private fun Fb2ReaderScreen(title: String, author: String?, year: String?, right
     app.bookstr.ui.ReaderBottomNavigation(onSelectTab, Modifier.align(Alignment.BottomCenter))
     }
     if (showContents && doc != null) AlertDialog(onDismissRequest = { showContents = false }, title = { Text("Contents") },
-        text = { LazyColumn { itemsIndexed(doc.flatSections()) { index, section -> Text(section.title.ifBlank { "Section ${index + 1}" }, Modifier.fillMaxWidth().clickable {
+        text = { LazyColumn { itemsIndexed(doc.flatSections()) { index, section -> Text(section.title.ifBlank { "Section ${index + 1}" }, Modifier.fillMaxWidth().testTag("fb2.contents.section.${section.id}").clickable {
             showContents = false
             blocks.indexOfFirst { it.sectionID == section.id }.takeIf { it >= 0 }?.let { target -> scope.launch { listState.animateScrollToItem(target) } }
         }) } } },
