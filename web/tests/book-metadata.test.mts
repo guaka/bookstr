@@ -1,7 +1,8 @@
+import { present, record } from './test-values.mts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-await import('../book-metadata.js');
+import '../book-metadata.js';
 const {
   metadataObject,
   isPlaceholderTitle,
@@ -243,20 +244,20 @@ test('rejects placeholders and derives a useful filename title', () => {
 });
 
 test('merges repeated favorite tags without losing the real title', () => {
-  const entries = [];
+  const entries: Record<string, unknown>[] = [];
   mergeFavoriteEntry(entries, { md5: 'A'.repeat(32), title: 'Untitled book', url: 'https://example.test/book.epub', favoriteAddedAt: 1_700_000_100 });
   mergeFavoriteEntry(entries, { md5: 'a'.repeat(32), title: 'Ensaio sobre a Cegueira', author: 'José Saramago', favoriteAddedAt: 1_700_000_000 });
   mergeFavoriteEntry(entries, { md5: 'a'.repeat(32), title: '', format: 'epub' });
 
   assert.equal(entries.length, 1);
-  assert.equal(entries[0].title, 'Ensaio sobre a Cegueira');
-  assert.equal(entries[0].author, 'José Saramago');
-  assert.equal(entries[0].format, 'epub');
-  assert.equal(entries[0].favoriteAddedAt, 1_700_000_000);
+  assert.equal(present(entries[0]).title, 'Ensaio sobre a Cegueira');
+  assert.equal(present(entries[0]).author, 'José Saramago');
+  assert.equal(present(entries[0]).format, 'epub');
+  assert.equal(present(entries[0]).favoriteAddedAt, 1_700_000_000);
 });
 
 test('mergeFavoriteEntry keeps the established title and URL when incoming metadata is placeholder-only', () => {
-  const entries = [];
+  const entries: Record<string, unknown>[] = [];
   mergeFavoriteEntry(entries, {
     md5: 'A'.repeat(32),
     title: 'A Casa',
@@ -272,10 +273,10 @@ test('mergeFavoriteEntry keeps the established title and URL when incoming metad
   });
 
   assert.equal(entries.length, 1);
-  assert.equal(entries[0].title, 'A Casa');
-  assert.equal(entries[0].url, 'https://books-api.guaka.org/api/books/48320/download');
-  assert.equal(entries[0].format, 'pdf');
-  assert.equal(entries[0].favoriteAddedAt, 1_700_000_000);
+  assert.equal(present(entries[0]).title, 'A Casa');
+  assert.equal(present(entries[0]).url, 'https://books-api.guaka.org/api/books/48320/download');
+  assert.equal(present(entries[0]).format, 'pdf');
+  assert.equal(present(entries[0]).favoriteAddedAt, 1_700_000_000);
 });
 
 test('favoriteAddedTag rejects invalid ids and timestamps', () => {
@@ -557,11 +558,11 @@ test('sorts availability by usefulness instead of alphabetically', () => {
     ['Unknown', '—'],
   ]);
   assert.deepEqual(
-    sortBooks(books, 'availability', 'asc', () => false, book => labels.get(book.title)).map(book => book.title),
+    sortBooks(books, 'availability', 'asc', () => false, book => present(labels.get(String(book.title)))).map(book => book.title),
     ['Seeding', 'Ready', 'Downloading', 'Finding', 'Available', 'Unknown', 'Unavailable'],
   );
   assert.deepEqual(
-    sortBooks(books, 'availability', 'desc', () => false, book => labels.get(book.title)).map(book => book.title),
+    sortBooks(books, 'availability', 'desc', () => false, book => present(labels.get(String(book.title)))).map(book => book.title),
     ['Unavailable', 'Unknown', 'Available', 'Finding', 'Downloading', 'Ready', 'Seeding'],
   );
 });
@@ -607,10 +608,10 @@ test('deduplicates stale Untitled rows and preserves the real metadata', () => {
     { md5, title: 'LibVault favorite', authors: 'Wrong placeholder author', language: 'pt' },
   ]);
   assert.equal(books.length, 1);
-  assert.equal(books[0].title, 'Aparição');
-  assert.equal(books[0].authors, 'Vergílio Ferreira');
-  assert.equal(books[0].year, '1959');
-  assert.equal(books[0].language, 'pt');
+  assert.equal(present(books[0]).title, 'Aparição');
+  assert.equal(present(books[0]).authors, 'Vergílio Ferreira');
+  assert.equal(present(books[0]).year, '1959');
+  assert.equal(present(books[0]).language, 'pt');
 });
 
 test('does not truncate libraries larger than fifty books', () => {
@@ -625,7 +626,7 @@ test('ordinary library deduplication skips Gutenberg URL parsing and refreshes m
   const OriginalURL = globalThis.URL;
   let urlConstructions = 0;
   globalThis.URL = class CountingURL extends OriginalURL {
-    constructor(...args) { urlConstructions++; super(...args); }
+    constructor(...args: ConstructorParameters<typeof URL>) { urlConstructions++; super(...args); }
   };
   try {
     const books = Array.from({ length: 60 }, (_, index) => ({
@@ -683,13 +684,13 @@ test('merges a cached Gutenberg copy with its catalog record while preserving lo
   };
   assert.equal(sameLibraryBook(cached, catalog), true);
   const [merged] = mergeLibraryState([cached], [catalog]);
-  assert.equal(merged.md5, cached.md5);
-  assert.equal(merged.readUrl, cached.readUrl);
-  assert.equal(merged.progression, 0.42);
-  assert.equal(merged.cfi, cached.cfi);
-  assert.equal(merged.coverId, 6717853);
-  assert.equal(merged.isReading, true);
-  assert.equal(merged.isFavorite, true);
+  assert.equal(present(merged).md5, cached.md5);
+  assert.equal(present(merged).readUrl, cached.readUrl);
+  assert.equal(present(merged).progression, 0.42);
+  assert.equal(present(merged).cfi, cached.cfi);
+  assert.equal(present(merged).coverId, 6717853);
+  assert.equal(present(merged).isReading, true);
+  assert.equal(present(merged).isFavorite, true);
   assert.equal(dedupeLibraryBooks([cached, catalog]).length, 1);
   assert.equal(sameLibraryBook(cached, { ...catalog, md5: 'gutenberg:48320', readUrl: 'https://books-api.guaka.org/api/books/48320/download' }), false);
 });
@@ -711,7 +712,7 @@ test('dedupeLibraryBooks merges records without IDs when ISBN matches', () => {
     { isbn13: sharedIsbn, title: 'LibVault favorite', year: '2024' },
   ]);
   assert.equal(books.length, 1);
-  assert.equal(books[0].title, 'Edition A');
+  assert.equal(present(books[0]).title, 'Edition A');
 });
 
 test('keeps a known read URL when a partial duplicate omits it', () => {
@@ -720,8 +721,8 @@ test('keeps a known read URL when a partial duplicate omits it', () => {
     { md5, title: 'Walkaway', readUrl: 'https://example.test/walkaway.epub' },
     { md5, title: 'Walkaway', language: 'en' },
   ]);
-  assert.equal(book.readUrl, 'https://example.test/walkaway.epub');
-  assert.equal(book.language, 'en');
+  assert.equal(present(book).readUrl, 'https://example.test/walkaway.epub');
+  assert.equal(present(book).language, 'en');
 });
 
 test('shows every availability source when several source hints exist', () => {
@@ -743,11 +744,11 @@ test('merges reading and favorite status into one library row', () => {
     [{ md5, title: 'Untitled book', favoriteAddedAt: 100, language: 'en' }],
   );
   assert.equal(library.length, 1);
-  assert.equal(library[0].title, 'Walkaway');
-  assert.equal(library[0].authors, 'Cory Doctorow');
-  assert.equal(library[0].language, 'en');
-  assert.equal(library[0].isReading, true);
-  assert.equal(library[0].isFavorite, true);
+  assert.equal(present(library[0]).title, 'Walkaway');
+  assert.equal(present(library[0]).authors, 'Cory Doctorow');
+  assert.equal(present(library[0]).language, 'en');
+  assert.equal(present(library[0]).isReading, true);
+  assert.equal(present(library[0]).isFavorite, true);
 });
 
 test('merges reading and favorite rows by URL when no stable IDs exist', () => {
@@ -769,11 +770,11 @@ test('merges reading and favorite rows by URL when no stable IDs exist', () => {
   );
 
   assert.equal(library.length, 1);
-  assert.equal(library[0].title, 'Reading title');
-  assert.equal(library[0].isReading, true);
-  assert.equal(library[0].isFavorite, true);
-  assert.equal(library[0].readingUpdatedAt, 150);
-  assert.equal(library[0].favoriteAddedAt, 400);
+  assert.equal(present(library[0]).title, 'Reading title');
+  assert.equal(present(library[0]).isReading, true);
+  assert.equal(present(library[0]).isFavorite, true);
+  assert.equal(present(library[0]).readingUpdatedAt, 150);
+  assert.equal(present(library[0]).favoriteAddedAt, 400);
 });
 
 test('orders recently read books before favorite-only books', () => {
@@ -805,7 +806,7 @@ test('enriches missing fields while tracking their source', () => {
   assert.equal(enriched.language, 'en');
   assert.equal(enriched.coverUrl, 'https://blossom.example/cover.jpg');
   assert.equal(enriched.coverSha256, 'c'.repeat(64));
-  assert.equal(enriched.metadataProvenance.authors, 'gutenberg:30142');
+  assert.equal(record(enriched.metadataProvenance).authors, 'gutenberg:30142');
 });
 
 test('does not overwrite established metadata with a different edition', () => {
@@ -841,8 +842,8 @@ test('enriches placeholder metadata with remote values and tracks provenance', (
   assert.equal(merged.extension, 'epub');
   assert.equal(merged.readUrl, 'https://books.guaka.org/books/123');
   assert.equal(merged.metadataLookupComplete, true);
-  assert.equal(merged.metadataProvenance.title, 'private-search');
-  assert.equal(merged.metadataProvenance.readUrl, undefined);
+  assert.equal(record(merged.metadataProvenance).title, 'private-search');
+  assert.equal(record(merged.metadataProvenance).readUrl, undefined);
 });
 
 test('matches books by normalized URLs and ISBN', () => {
@@ -867,11 +868,11 @@ test('merges reading and favorites into one row while preserving reading title',
   );
 
   assert.equal(merged.length, 1);
-  assert.equal(merged[0].title, 'Reading title');
-  assert.equal(merged[0].isReading, true);
-  assert.equal(merged[0].isFavorite, true);
-  assert.equal(merged[0].readingUpdatedAt, 111);
-  assert.equal(merged[0].favoriteAddedAt, 222);
+  assert.equal(present(merged[0]).title, 'Reading title');
+  assert.equal(present(merged[0]).isReading, true);
+  assert.equal(present(merged[0]).isFavorite, true);
+  assert.equal(present(merged[0]).readingUpdatedAt, 111);
+  assert.equal(present(merged[0]).favoriteAddedAt, 222);
 });
 
 test('bookIdentity prefers readUrl fallback only when no canonical IDs exist', () => {
@@ -891,7 +892,7 @@ test('enrichBookMetadata does not replace a real title with a placeholder payloa
 
   assert.equal(merged.title, 'Real Title');
   assert.equal(merged.authors, 'Remote Author');
-  assert.equal(merged.metadataProvenance?.title, undefined);
+  assert.equal(metadataObject(merged.metadataProvenance).title, undefined);
 });
 
 test('sortBooks handles non-numeric years deterministically', () => {
@@ -901,9 +902,9 @@ test('sortBooks handles non-numeric years deterministically', () => {
     { title: 'C', year: '' },
   ];
   const sorted = sortBooks(books, 'year');
-  assert.equal(sorted[0].title, 'A');
-  assert.equal(sorted[1].title, 'C');
-  assert.equal(sorted[2].title, 'B');
+  assert.equal(present(sorted[0]).title, 'A');
+  assert.equal(present(sorted[1]).title, 'C');
+  assert.equal(present(sorted[2]).title, 'B');
 });
 
 test('bookIdentity prioritizes canonical source IDs before URL fallback', () => {
@@ -939,8 +940,8 @@ test('sortBooks places cached entries after non-cached when sorting cached ascen
     { title: 'Remote' },
   ];
   const sorted = sortBooks(books, 'cached', 'asc', book => book.md5 === 'a'.repeat(32));
-  assert.equal(sorted[0].title, 'Remote');
-  assert.equal(sorted[1].title, 'Local');
+  assert.equal(present(sorted[0]).title, 'Remote');
+  assert.equal(present(sorted[1]).title, 'Local');
 });
 
 test('title derivation decodes encoded URL paths', () => {
@@ -978,8 +979,8 @@ test('sorts by format and supports uncached flags without crashing', () => {
     { title: 'Second', extension: 'epub' },
     { title: 'First', extension: 'pdf' },
   ];
-  assert.equal(sortBooks(books, 'format')[0].title, 'Second');
-  assert.equal(sortBooks(books, 'cached', 'asc', () => false)[1].title, 'Second');
+  assert.equal(present(sortBooks(books, 'format')[0]).title, 'Second');
+  assert.equal(present(sortBooks(books, 'cached', 'asc', () => false)[1]).title, 'Second');
 });
 
 test('reading favorites from mixed metadata and ISBN keys are deduplicated', () => {
@@ -1007,7 +1008,7 @@ test('matches identical books by normalized URL plus cached flag in sort', () =>
     { title: 'Remote one', readUrl: sameUrl },
   ];
   const sorted = sortBooks(books, 'cached', 'desc', book => book.md5 === 'a'.repeat(32));
-  assert.equal(sorted[0].title, 'Cached one');
+  assert.equal(present(sorted[0]).title, 'Cached one');
 });
 
 test('canonical catalog ids only accept openlibrary sources', () => {
@@ -1083,11 +1084,11 @@ test('merges library rows across reading and favorite sources using normalized I
     [{ isbn: sharedIsbn, readUrl: 'https://example.test/book.epub', title: 'Untitled book', language: 'pt' }],
   );
   assert.equal(library.length, 1);
-  assert.equal(library[0].title, 'Read by ISBN');
-  assert.equal(library[0].authors, 'Canonical Author');
-  assert.equal(library[0].isReading, true);
-  assert.equal(library[0].isFavorite, true);
-  assert.equal(library[0].language, 'pt');
+  assert.equal(present(library[0]).title, 'Read by ISBN');
+  assert.equal(present(library[0]).authors, 'Canonical Author');
+  assert.equal(present(library[0]).isReading, true);
+  assert.equal(present(library[0]).isFavorite, true);
+  assert.equal(present(library[0]).language, 'pt');
 });
 
 test('extracts ISBN metadata from identifier arrays and normalizes it', () => {
@@ -1117,8 +1118,8 @@ test('keeps tracked read URL when incoming read URL is merely a placeholder titl
   assert.equal(enriched.readUrlSource, 'existing');
   assert.equal(enriched.language, 'en');
   assert.equal(enriched.year, '2024');
-  assert.equal(enriched.metadataProvenance.language, 'private-search');
-  assert.equal(enriched.metadataProvenance.readUrl, undefined);
+  assert.equal(record(enriched.metadataProvenance).language, 'private-search');
+  assert.equal(record(enriched.metadataProvenance).readUrl, undefined);
 });
 
 test('normalizeFavoriteAddedAt handles empty and malformed inputs', () => {
@@ -1175,8 +1176,8 @@ test('sortBooks supports descending cached ordering', () => {
   ];
 
   const ordered = sortBooks(books, 'cached', 'desc', book => book?.isCached === true);
-  assert.equal(ordered[0].title, 'Cached old');
-  assert.equal(ordered[1].title, 'Fresh favorite');
+  assert.equal(present(ordered[0]).title, 'Cached old');
+  assert.equal(present(ordered[1]).title, 'Fresh favorite');
 });
 
 test('sortBooks uses an uncached default when no cache lookup is provided', () => {
@@ -1245,8 +1246,8 @@ test('dedupeLibraryBooks keeps a real author when duplicate has placeholder titl
   ]);
 
   assert.equal(deduped.length, 1);
-  assert.equal(deduped[0].title, 'Real title');
-  assert.equal(deduped[0].author, 'Real Author');
+  assert.equal(present(deduped[0]).title, 'Real title');
+  assert.equal(present(deduped[0]).author, 'Real Author');
 });
 
 test('findBookByReadUrl ignores blossom URL entries', () => {
@@ -1320,9 +1321,9 @@ test('a downloaded LibGen record merges with a legacy SHA-addressed favorite', (
   assert.equal(dedupeLibraryBooks([legacyFavorite, downloaded]).length, 1);
   const library = mergeLibraryState([downloaded], [legacyFavorite]);
   assert.equal(library.length, 1);
-  assert.equal(library[0].md5, md5, 'the real repository MD5 must remain the status key');
-  assert.equal(library[0].isReading, true);
-  assert.equal(library[0].isFavorite, true);
+  assert.equal(present(library[0]).md5, md5, 'the real repository MD5 must remain the status key');
+  assert.equal(present(library[0]).isReading, true);
+  assert.equal(present(library[0]).isFavorite, true);
 });
 
 test('sameLibraryBook does not fall back to URL when both sides have distinct stable IDs', () => {
@@ -1452,7 +1453,7 @@ test('enrichBookMetadata resolves Gutenberg read URL from source-native metadata
 
   assert.equal(merged.readUrl, 'https://books-api.guaka.org/api/books/30142/download');
   assert.equal(merged.source, 'gutenberg');
-  assert.equal(merged.metadataProvenance.readUrl, 'gutenberg-search');
+  assert.equal(record(merged.metadataProvenance).readUrl, 'gutenberg-search');
 });
 
 test('bookIdentity supports source_native_id alias when source is present', () => {
@@ -1538,9 +1539,9 @@ test('mergeLibraryState uses lastReadAt when updatedAt is not present', () => {
     [],
   );
 
-  assert.equal(entry.title, 'Last read only');
-  assert.equal(entry.isReading, true);
-  assert.equal(entry.readingUpdatedAt, 777);
+  assert.equal(present(entry).title, 'Last read only');
+  assert.equal(present(entry).isReading, true);
+  assert.equal(present(entry).readingUpdatedAt, 777);
 });
 
 test('findBookByReadUrl resolves from the first matching collection', () => {
@@ -1589,8 +1590,8 @@ test('mergeLibraryState preserves a real author when incoming favorite title is 
   );
 
   assert.equal(merged.length, 1);
-  assert.equal(merged[0].title, 'Real title');
-  assert.equal(merged[0].authors, 'Real Author');
+  assert.equal(present(merged[0]).title, 'Real title');
+  assert.equal(present(merged[0]).authors, 'Real Author');
 });
 
 test('metadataEndpointForReadUrl returns empty on parse errors', () => {
@@ -1720,7 +1721,7 @@ test('enrichBookMetadata preserves an existing readUrl when incoming readUrl is 
   assert.equal(enriched.readUrlSource, 'existing');
   assert.equal(enriched.extension, 'epub');
   assert.equal(enriched.title, 'Existing readUrl');
-  assert.equal(enriched.metadataProvenance.title, undefined);
+  assert.equal(record(enriched.metadataProvenance).title, undefined);
 });
 
 test('sameLibraryBook ignores URL mismatch when stable identifiers are present', () => {
@@ -1781,7 +1782,6 @@ test('availabilitySourcesForBook returns unique source list for readUrl with que
   );
 });
 
-
 test('language labels resolve catalog codes to English names', () => {
   for (const [code, name] of [['CAT', 'Catalan'], ['ca', 'Catalan'], ['EN', 'English'], ['eng', 'English'], ['FR', 'French'], ['fre', 'French'], ['pt_BR', 'Brazilian Portuguese'], ['english', 'English']]) {
     assert.equal(globalThis.BookMetadata.languageLabel(code), name);
@@ -1790,22 +1790,20 @@ test('language labels resolve catalog codes to English names', () => {
   assert.equal(globalThis.BookMetadata.languageLabel('Klingon language'), 'Klingon language');
 });
 
-
 test('deduplicated library metadata retains locally detected reader formats', () => {
   const id = 'a'.repeat(32);
   const [book] = globalThis.BookMetadata.dedupeLibraryBooks([
     { md5: id, title: 'Comic', extension: 'cbz', format: 'cbz', metadataProvenance: { extension: 'detected-local' } },
     { md5: id, title: 'Comic', extension: 'epub', format: 'epub' },
   ]);
-  assert.equal(book.extension, 'cbz');
-  assert.equal(book.format, 'cbz');
+  assert.equal(present(book).extension, 'cbz');
+  assert.equal(present(book).format, 'cbz');
   const [updated] = globalThis.BookMetadata.dedupeLibraryBooks([
-    book, { md5: id, extension: 'cbr', format: 'cbr', metadataProvenance: { extension: 'detected-local' } },
+    present(book), { md5: id, extension: 'cbr', format: 'cbr', metadataProvenance: { extension: 'detected-local' } },
   ]);
-  assert.equal(updated.extension, 'cbr');
-  assert.equal(updated.format, 'cbr');
+  assert.equal(present(updated).extension, 'cbr');
+  assert.equal(present(updated).format, 'cbr');
 });
-
 
 test('library matching tolerates malformed absolute URLs after its scheme fast path', () => {
   assert.equal(globalThis.BookMetadata.sameLibraryBook({ readUrl: 'https://[' }, {}), false);
@@ -1815,4 +1813,13 @@ test('language sorting falls back to raw catalog values when display names rejec
   const books = [{ id: 'last', language: 'invalid_z' }, { id: 'first', language: 'invalid_a' }];
   assert.deepEqual(sortBooks(books, 'language').map(book => book.id), ['first', 'last']);
   assert.deepEqual(sortBooks(books, 'language', 'desc').map(book => book.id), ['last', 'first']);
+});
+
+test('rights labels retain Creative Commons derivative restrictions and reject malformed license links', () => {
+  assert.equal(rightsLabel({ license: 'Creative Commons Attribution No Derivatives 4.0' }), 'CC BY-ND 4.0');
+  assert.equal(rightsLabel({ license: 'Creative Commons' }), 'CC');
+  const normalized = normalizeRights({ license: 'CC BY 4.0', license_url: 'https://[' });
+  assert.equal(normalized.rights_status, 'open_license');
+  assert.equal(normalized.license, 'CC BY 4.0');
+  assert.equal(normalized.license_url, '');
 });
