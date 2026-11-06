@@ -1,12 +1,22 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 
 const androidDirectory = fileURLToPath(new URL('../', import.meta.url));
+
+test('Compose test dependencies stay in the JVM test scope', () => {
+  const buildFile = readFileSync(join(androidDirectory, 'app/build.gradle.kts'), 'utf8');
+  const dependencies = buildFile.match(/dependencies\s*\{([\s\S]*?)\n\}/)?.[1];
+  assert.ok(dependencies, 'Android app dependencies block exists');
+  assert.match(dependencies, /testImplementation\(composeBom\)/);
+  assert.match(dependencies, /testImplementation\("androidx\.compose\.ui:ui-test-junit4"\)/);
+  assert.doesNotMatch(dependencies, /^\s*implementation\([^\n]*ui-test-junit4/m);
+});
+
 const cases = [
   { name: 'release and local builds retain every supported ABI without a compiler launcher', properties: [], abis: ['arm64-v8a', 'armeabi-v7a', 'x86_64'], cmake: [] },
   { name: 'CI builds only the emulator ABI and enables the requested compiler cache', properties: ['-Pbookstr.abis=x86_64', '-Pbookstr.cxxCompilerLauncher=ccache'], abis: ['x86_64'], cmake: ['-DCMAKE_CXX_COMPILER_LAUNCHER=ccache'] },
