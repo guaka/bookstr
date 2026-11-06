@@ -79,6 +79,11 @@ android {
                 providers.gradleProperty("bookstr.cxxCompilerLauncher").orNull?.let {
                     arguments += "-DCMAKE_CXX_COMPILER_LAUNCHER=$it"
                 }
+                val nativeCoverage = providers.gradleProperty("bookstr.nativeCoverage").orElse("false").get()
+                require(nativeCoverage == "true" || nativeCoverage == "false") {
+                    "bookstr.nativeCoverage must be true or false"
+                }
+                arguments += "-DBOOKSTR_NATIVE_COVERAGE=${if (nativeCoverage == "true") "ON" else "OFF"}"
             }
         }
         targetSdk = 35
