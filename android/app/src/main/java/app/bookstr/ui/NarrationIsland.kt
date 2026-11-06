@@ -4,6 +4,11 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import androidx.compose.foundation.layout.Box
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import app.bookstr.speech.SpeechLanguages
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -55,6 +60,7 @@ private data class IslandState(
     val author: String = "",
     val bookId: String = "",
     val language: String = "en",
+    val languageOverride: String? = null,
     val rate: Float = SpeechSettings.DEFAULT_RATE,
     val message: String? = null,
 )
@@ -82,6 +88,7 @@ fun NarrationIsland(
                     author = intent.getStringExtra(NarrationService.EXTRA_BOOK_AUTHOR).orEmpty(),
                     bookId = intent.getStringExtra(NarrationService.EXTRA_BOOK_ID).orEmpty(),
                     language = intent.getStringExtra(NarrationService.EXTRA_LANGUAGE).orEmpty().ifBlank { "en" },
+                    languageOverride = intent.getStringExtra(NarrationService.EXTRA_LANGUAGE_OVERRIDE),
                     rate = intent.getFloatExtra(NarrationService.EXTRA_RATE, SpeechSettings.DEFAULT_RATE)
                         .coerceIn(SpeechSettings.MINIMUM_RATE, SpeechSettings.MAXIMUM_RATE),
                     message = intent.getStringExtra(NarrationService.EXTRA_MESSAGE),
@@ -180,20 +187,43 @@ fun NarrationIsland(
                       modifier = Modifier.testTag("narration.error"),
                   )
               }
-              Slider(
-                  value = state.rate,
-                  onValueChange = { rate ->
-                      state = state.copy(rate = rate)
-                      if (onSpeedChange != null) onSpeedChange(state.language, rate)
-                      else NarrationService.setSpeechRate(context, state.language, rate)
-                  },
-                  valueRange = SpeechSettings.MINIMUM_RATE..SpeechSettings.MAXIMUM_RATE,
-                  modifier = Modifier.fillMaxWidth().testTag("narration.speed")
-                      .semantics {
-                          contentDescription = "Reading speed"
-                          progressBarRangeInfo = ProgressBarRangeInfo(state.rate, SpeechSettings.MINIMUM_RATE..SpeechSettings.MAXIMUM_RATE)
+              Row(verticalAlignment = Alignment.CenterVertically) {
+                  Box {
+                      var languageMenu by remember(state.bookId) { mutableStateOf(false) }
+                      TextButton(
+                          onClick = { languageMenu = true },
+                          modifier = Modifier.testTag("narration.language").semantics {
+                              contentDescription = "Narration language"
+                          },
+                      ) { Text(state.languageOverride?.let(SpeechLanguages::name) ?: "Auto") }
+                      DropdownMenu(expanded = languageMenu, onDismissRequest = { languageMenu = false }) {
+                          (listOf<String?>(null) + SpeechLanguages.available(listOf(state.language))).forEach { language ->
+                              DropdownMenuItem(
+                                  text = { Text(language?.let(SpeechLanguages::name) ?: "Auto") },
+                                  modifier = Modifier.testTag("narration.language.${language ?: "auto"}"),
+                                  onClick = {
+                                      languageMenu = false
+                                      NarrationService.setBookLanguage(context, state.bookId, language)
+                                  },
+                              )
+                          }
+                      }
+                  }
+                  Slider(
+                      value = state.rate,
+                      onValueChange = { rate ->
+                          state = state.copy(rate = rate)
+                          if (onSpeedChange != null) onSpeedChange(state.language, rate)
+                          else NarrationService.setSpeechRate(context, state.language, rate)
                       },
-              )
+                      valueRange = SpeechSettings.MINIMUM_RATE..SpeechSettings.MAXIMUM_RATE,
+                      modifier = Modifier.weight(1f).testTag("narration.speed")
+                          .semantics {
+                              contentDescription = "Reading speed"
+                              progressBarRangeInfo = ProgressBarRangeInfo(state.rate, SpeechSettings.MINIMUM_RATE..SpeechSettings.MAXIMUM_RATE)
+                          },
+                  )
+              }
             }
         }
     }
