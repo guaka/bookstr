@@ -11,11 +11,11 @@ import app.bookstr.MainActivity
 import app.bookstr.PdfReaderActivity
 import app.bookstr.ReaderActivity
 import app.bookstr.data.BookFormat
-import app.bookstr.util.Sha256
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.*
 import org.junit.Test
 import java.io.File
+import java.security.MessageDigest
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 
@@ -48,7 +48,8 @@ class OpenBookIntentTest {
                 Entry(epub, "application/epub+zip", ReaderActivity::class.java.name, BookFormat.Epub),
             )) {
                 val uri = FileProvider.getUriForFile(app, "${app.packageName}.books", file)
-                val expectedId = Sha256.hash(file)
+                val expectedId = MessageDigest.getInstance("MD5").digest(file.readBytes())
+                    .joinToString("") { "%02x".format(it) }
                 val intent = Intent(Intent.ACTION_VIEW).setDataAndType(uri, mime)
                     .setClass(app, MainActivity::class.java).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                 val monitor = instrumentation.addMonitor(reader, null, false)
