@@ -1,41 +1,72 @@
-'use strict';
-
-const fs = require('node:fs');
-const fsp = require('node:fs/promises');
-const os = require('node:os');
-const path = require('node:path');
-const crypto = require('node:crypto');
-const { hashFile } = require('./library-import');
+import fs = require('node:fs');
+import fsp = require('node:fs/promises');
+import os = require('node:os');
+import path = require('node:path');
+import crypto = require('node:crypto');
+type HashFile = (filePath: string) => Promise<{ size: number; sha256: string }>;
+const { hashFile } = require('./library-import') as { hashFile: HashFile };
 
 const FORMATS = new Set(['pdf', 'txt']);
 const MAX_WALK_DEPTH = 8;
 
-function inside(root, candidate) {
+type Device = { id: string; name: string; kind: 'mounted' | 'mtp'; root?: string; documents?: string; helperId?: string };
+type DownloadJob = {
+  bookId: string; status: string; extension?: string; title?: string; authors?: string; sha256?: string;
+  totalBytes?: number; bytes?: number; [key: string]: unknown;
+};
+type LocalBook = DownloadJob & { extension: string; path: string; sha256: string; size: number };
+type RemoteFile = { name: string; size: number; path?: string; id?: string; deviceId?: string };
+interface Transport {
+  devices(): Promise<Device[]>;
+  files(device: Device, allowedSizes: Set<number>): Promise<RemoteFile[]>;
+  hash(file: RemoteFile, device?: Device): Promise<string>;
+  copy(device: Device, book: LocalBook, name: string): Promise<void>;
+  withSession?<T>(device: Device, operation: () => Promise<T>): Promise<T>;
+  ensureSpace?(bytes: number): void;
+  close?(): Promise<void>;
+}
+type Store = {
+  downloads(): DownloadJob[];
+  libraryFile?(bookId: string): { sha256?: string; sizeBytes?: number } | null;
+};
+type ComicConverter = {
+  cached?(sha256: string): Promise<{ size: number; sha256: string } | null>;
+  convert(source: string, sha256: string, onProgress?: (progress: { page: number; pages: number }) => void): Promise<{ path: string; size: number; sha256: string }>;
+};
+type Progress = Record<string, unknown>;
+type Presence = { bookIds: Set<string>; expiresAt: number; scanned: boolean };
+type PreviewResult = { device: { id: string; name: string; kind: string }; missing: Array<{ bookId: string; title: string; size: number }>; alreadyPresent: number; skipped: Array<{ title: string; reason: string }> };
+
+function inside(root: string, candidate: string): string | boolean {
   const relative = path.relative(root, candidate);
   return relative && relative !== '..' && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative);
 }
 
-function safeFilename(book, sha256) {
+export function safeFilename(book: Pick<LocalBook, 'title' | 'authors' | 'extension'>, sha256: string): string {
   const label = `${book.title || 'Book'} - ${book.authors || 'Unknown author'}`
     .normalize('NFKC').replace(/[<>:"/\\|?*\u0000-\u001f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 120) || 'Book';
   return `${label} - ${sha256.slice(0, 16)}.${book.extension}`;
 }
 
-function defaultRoots(platform = process.platform) {
+export function defaultRoots(platform = process.platform): string[] {
   if (platform === 'darwin') return ['/Volumes'];
   if (platform === 'linux') return [`/media/${os.userInfo().username}`, `/run/media/${os.userInfo().username}`, '/media', '/mnt'];
   if (platform === 'win32') return Array.from({ length: 23 }, (_, index) => `${String.fromCharCode(68 + index)}:\\`);
   return [];
 }
 
-class MountedKindles {
-  constructor({ roots = defaultRoots(), platform = process.platform, statfs = fsp.statfs } = {}) {
+export class MountedKindles implements Transport {
+  declare private readonly roots: string[];
+  declare private readonly platform: string;
+  declare private readonly statfs: typeof fsp.statfs;
+  constructor({ roots = defaultRoots(), platform = process.platform, statfs = fsp.statfs }:
+    { roots?: string[]; platform?: string; statfs?: typeof fsp.statfs } = {}) {
     this.roots = roots;
     this.platform = platform;
     this.statfs = statfs;
   }
 
-  async devices() {
+  async devices(): Promise<Device[]> {
     const candidates = [];
     for (const base of this.roots) {
       if (this.platform === 'win32') {
@@ -45,7 +76,7 @@ class MountedKindles {
         for (const entry of entries) if (entry.isDirectory() && /^kindle(?:\b|[_ -])/i.test(entry.name)) candidates.push(path.join(base, entry.name));
       }
     }
-    const devices = [];
+    const devices: Device[] = [];
     for (const root of candidates) {
       try {
         const realRoot = await fsp.realpath(root);
@@ -59,11 +90,11 @@ class MountedKindles {
     return devices;
   }
 
-  async isWindowsKindleVolume(root) {
+  async isWindowsKindleVolume(root: string): Promise<boolean> {
     // Windows MTP devices use the portable-device adapter; drive-letter devices
     // must have a Kindle volume label before they can be offered for writes.
-    const { execFile } = require('node:child_process');
-    const { promisify } = require('node:util');
+    const { execFile } = require('node:child_process') as typeof import('node:child_process');
+    const { promisify } = require('node:util') as typeof import('node:util');
     const drive = root.slice(0, 2);
     const script = `(Get-Volume -DriveLetter '${drive[0]}' -ErrorAction Stop).FileSystemLabel`;
     try {
@@ -72,9 +103,9 @@ class MountedKindles {
     } catch { return false; }
   }
 
-  async files(device, allowedSizes) {
-    const results = [];
-    const walk = async (directory, depth) => {
+  async files(device: Device, allowedSizes: Set<number>): Promise<RemoteFile[]> {
+    const results: RemoteFile[] = [];
+    const walk = async (directory: string, depth: number): Promise<void> => {
       if (depth > MAX_WALK_DEPTH) return;
       for (const entry of await fsp.readdir(directory, { withFileTypes: true })) {
         const child = path.join(directory, entry.name);
@@ -86,18 +117,18 @@ class MountedKindles {
         }
       }
     };
-    await walk(device.documents, 0);
+    await walk(device.documents!, 0);
     return results;
   }
 
-  async hash(file) { return (await hashFile(file.path)).sha256; }
+  async hash(file: RemoteFile): Promise<string> { return (await hashFile(file.path!)).sha256; }
 
-  async copy(device, book, name) {
-    const destination = path.join(device.documents, name);
-    if (!inside(device.documents, destination)) throw new Error('Invalid Kindle destination.');
-    const space = await this.statfs(device.documents).catch(() => null);
+  async copy(device: Device, book: LocalBook, name: string): Promise<void> {
+    const destination = path.join(device.documents!, name);
+    if (!inside(device.documents!, destination)) throw new Error('Invalid Kindle destination.');
+    const space = await this.statfs(device.documents!).catch(() => null);
     if (space && Number(space.bavail) * Number(space.bsize) < book.size * 2) throw new Error('Kindle is out of space.');
-    const temporary = path.join(device.documents, `.bookstr-${crypto.randomUUID()}.part`);
+    const temporary = path.join(device.documents!, `.bookstr-${crypto.randomUUID()}.part`);
     try {
       await fsp.copyFile(book.path, temporary, fs.constants.COPYFILE_EXCL);
       if ((await hashFile(temporary)).sha256 !== book.sha256) throw new Error('Kindle copy verification failed.');
@@ -109,9 +140,22 @@ class MountedKindles {
   }
 }
 
-class KindleSync {
+export class KindleSync {
+  declare private readonly store: Store;
+  declare private readonly resolveFile: (bookId: string) => Promise<{ filePath: string }>;
+  declare private readonly transports: Transport[];
+  declare private readonly comicConverter: ComicConverter | null;
+  declare private readonly onProgress: (progress: Progress) => void;
+  declare private readonly now: () => number;
+  declare private readonly presenceTtlMs: number;
+  declare private readonly presenceByDevice: Map<string, Presence>;
+  declare syncing: boolean;
+  declare private operationChain: Promise<unknown>;
+  declare private closed: boolean;
   constructor({ store, resolveFile, transports = [new MountedKindles()], comicConverter = null,
-    onProgress = () => {}, now = Date.now, presenceTtlMs = 60_000 } = {}) {
+    onProgress = () => {}, now = Date.now, presenceTtlMs = 60_000 }:
+    { store?: Store; resolveFile?: (bookId: string) => Promise<{ filePath: string }>; transports?: Transport[];
+      comicConverter?: ComicConverter | null; onProgress?: (progress: Progress) => void; now?: () => number; presenceTtlMs?: number } = {}) {
     if (!store || !resolveFile) throw new TypeError('store and resolveFile are required');
     this.store = store;
     this.resolveFile = resolveFile;
@@ -126,7 +170,7 @@ class KindleSync {
     this.closed = false;
   }
 
-  async devices() {
+  async devices(): Promise<Array<{ id: string; name: string; kind: string }>> {
     const groups = await Promise.all(this.transports.map(transport => transport.devices()));
     const devices = groups.flat().map(({ id, name, kind }) => ({ id, name, kind }));
     const connected = new Set(devices.map(device => device.id));
@@ -136,7 +180,7 @@ class KindleSync {
     return devices;
   }
 
-  async findDevice(id) {
+  async findDevice(id: string): Promise<{ transport: Transport; device: Device }> {
     for (const transport of this.transports) {
       const device = (await transport.devices()).find(item => item.id === id);
       if (device) return { transport, device };
@@ -145,10 +189,10 @@ class KindleSync {
     throw new Error('Kindle is disconnected.');
   }
 
-  rememberPresence(deviceId, bookIds, replace = false, scanned = false) {
+  rememberPresence(deviceId: string, bookIds: Iterable<string>, replace = false, scanned = false): void {
     const current = this.presenceByDevice.get(deviceId);
     const ids = replace || !current || current.expiresAt <= this.now()
-      ? new Set() : new Set(current.bookIds);
+      ? new Set<string>() : new Set(current.bookIds);
     for (const bookId of bookIds) ids.add(bookId);
     this.presenceByDevice.set(deviceId, {
       bookIds: ids,
@@ -157,7 +201,7 @@ class KindleSync {
     });
   }
 
-  async presenceBooks() {
+  async presenceBooks(): Promise<Array<{ bookId: string; title?: string; authors?: string; extension: string; sha256: string; size: number }>> {
     const books = [];
     for (const job of this.store.downloads()) {
       if (!['ready', 'seeding'].includes(job.status)) continue;
@@ -187,7 +231,7 @@ class KindleSync {
     return books;
   }
 
-  async presence(id) {
+  async presence(id: string): Promise<{ deviceId: string; bookIds: string[] }> {
     return this.serialize(async () => {
       const cached = this.presenceByDevice.get(id);
       if (cached && cached.expiresAt > this.now() && cached.scanned) {
@@ -195,7 +239,7 @@ class KindleSync {
       }
       const { transport, device } = await this.findDevice(id);
       const books = await this.presenceBooks();
-      const expected = new Map();
+      const expected = new Map<string, string[]>();
       for (const book of books) {
         const name = `${book.sha256.slice(0, 16)}.${book.extension}`.toLowerCase();
         const key = `${book.size}:${name}`;
@@ -204,26 +248,26 @@ class KindleSync {
         expected.set(key, ids);
       }
       const sizes = new Set(books.map(book => book.size));
-      const inspect = async () => {
+      const inspect = async (): Promise<Set<string>> => {
         const files = await transport.files(device, sizes);
-        const present = new Set();
+        const present = new Set<string>();
         for (const file of files) {
           if (!sizes.has(Number(file.size))) continue;
           const suffix = / - ([a-f0-9]{16})\.(pdf|txt)$/i.exec(String(file.name));
           if (!suffix) continue;
-          const key = `${Number(file.size)}:${suffix[1].toLowerCase()}.${suffix[2].toLowerCase()}`;
+          const key = `${Number(file.size)}:${suffix[1]!.toLowerCase()}.${suffix[2]!.toLowerCase()}`;
           for (const bookId of expected.get(key) || []) present.add(bookId);
         }
         return present;
       };
       const present = await (transport.withSession ? transport.withSession(device, inspect) : inspect());
       this.rememberPresence(id, present, false, true);
-      return { deviceId: id, bookIds: [...this.presenceByDevice.get(id).bookIds] };
+      return { deviceId: id, bookIds: [...this.presenceByDevice.get(id)!.bookIds] };
     });
   }
 
-  async localBooks(bookId) {
-    const books = [];
+  async localBooks(bookId?: string | string[]): Promise<{ books: LocalBook[]; skipped: Array<{ title: string; reason: string }> }> {
+    const books: LocalBook[] = [];
     const skipped = [];
     const jobs = this.store.downloads();
     const selection = bookId === undefined ? null : new Set(Array.isArray(bookId) ? bookId : [bookId]);
@@ -260,18 +304,18 @@ class KindleSync {
           books.push({ ...job, extension, path: filePath, sha256: digest.sha256, size: digest.size });
         }
       } catch (error) {
-        skipped.push({ title: job.title || job.bookId, reason: error.message || String(error) });
+        skipped.push({ title: job.title || job.bookId, reason: (error as Error).message || String(error) });
       }
     }
-    if (selection?.size === 1 && skipped.length) throw new Error(skipped[0].reason);
+    if (selection?.size === 1 && skipped.length) throw new Error(skipped[0]!.reason);
     return { books, skipped };
   }
 
-  async preview(id, bookId) {
+  async preview(id: string, bookId?: string | string[]): Promise<PreviewResult> {
     return this.serialize(() => this.previewOperation(id, bookId));
   }
 
-  serialize(operation) {
+  serialize<T>(operation: () => Promise<T>): Promise<T> {
     const run = this.operationChain.then(() => {
       if (this.closed) throw new Error('Kindle sync is closed.');
       return operation();
@@ -280,7 +324,8 @@ class KindleSync {
     return run;
   }
 
-  async previewOperation(id, bookId, knownDevice = null, sessionHeld = false) {
+  async previewOperation(id: string, bookId?: string | string[],
+    knownDevice: { transport: Transport; device: Device } | null = null, sessionHeld = false): Promise<PreviewResult> {
     const { transport, device } = knownDevice || await this.findDevice(id);
     const { books, skipped } = await this.localBooks(bookId);
     const sizes = new Set(books.map(book => book.size));
@@ -303,7 +348,7 @@ class KindleSync {
     return !sessionHeld && transport.withSession ? transport.withSession(device, inspect) : inspect();
   }
 
-  async transfer(id, bookId) {
+  async transfer(id: string, bookId?: string | string[]): Promise<{ transferred: string[]; alreadyPresent: number; skipped: Array<{ title: string; reason: string }>; errors: Array<{ bookId: string; title?: string; error: string }> }> {
     return this.serialize(async () => {
       this.syncing = true;
       try {
@@ -324,8 +369,8 @@ class KindleSync {
             this.rememberPresence(id, [book.bookId]);
             this.onProgress({ deviceId: id, phase: 'copied', bookId: book.bookId, title: book.title, completed: transferred.length, total: missingIds.size });
           } catch (error) {
-            errors.push({ bookId: book.bookId, title: book.title, error: error.message || String(error) });
-            this.onProgress({ deviceId: id, phase: 'failed', bookId: book.bookId, title: book.title, error: error.message || String(error), completed: transferred.length, total: missingIds.size });
+            errors.push({ bookId: book.bookId, title: book.title, error: (error as Error).message || String(error) });
+            this.onProgress({ deviceId: id, phase: 'failed', bookId: book.bookId, title: book.title, error: (error as Error).message || String(error), completed: transferred.length, total: missingIds.size });
           }
         }
         this.onProgress({ deviceId: id, completed: transferred.length, total: missingIds.size, done: true });
@@ -336,7 +381,7 @@ class KindleSync {
     });
   }
 
-  async close() {
+  async close(): Promise<void> {
     this.closed = true;
     await Promise.allSettled(this.transports.map(transport => transport.close?.()));
     let timer;
@@ -345,5 +390,3 @@ class KindleSync {
     } finally { clearTimeout(timer); }
   }
 }
-
-module.exports = { KindleSync, MountedKindles, safeFilename, defaultRoots };

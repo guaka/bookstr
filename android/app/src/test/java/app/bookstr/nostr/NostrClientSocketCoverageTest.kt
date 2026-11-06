@@ -13,6 +13,7 @@ import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.util.concurrent.CountDownLatch
+import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicReference
 
@@ -115,20 +116,39 @@ class NostrClientSocketCoverageTest {
         val server = MockWebServer()
         val requestText = AtomicReference<String?>(null)
         val requestReceived = CountDownLatch(1)
+        val sockets = CopyOnWriteArrayList<WebSocket>()
+        val socketsClosed = CountDownLatch(1)
         server.enqueue(
             MockResponse().withWebSocketUpgrade(
                 object : WebSocketListener() {
+                    override fun onOpen(webSocket: WebSocket, response: okhttp3.Response) {
+                        sockets += webSocket
+                    }
+
                     override fun onMessage(webSocket: WebSocket, text: String) {
+                        if (webSocket !in sockets) sockets += webSocket
                         requestText.set(text)
                         requestReceived.countDown()
                         replies.forEach { reply -> webSocket.send(reply) }
+                    }
+
+                    override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
+                        webSocket.close(code, reason)
+                    }
+
+                    override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
+                        socketsClosed.countDown()
+                    }
+
+                    override fun onFailure(webSocket: WebSocket, t: Throwable, response: okhttp3.Response?) {
+                        socketsClosed.countDown()
                     }
                 },
             ),
         )
         server.start()
         val wsUrl = server.url("/").toString().replaceFirst("http", "ws")
-        return ScriptedRelay(server, wsUrl, requestText, requestReceived)
+        return ScriptedRelay(server, wsUrl, requestText, requestReceived, sockets, socketsClosed)
     }
 
     private class ScriptedRelay(
@@ -136,12 +156,21 @@ class NostrClientSocketCoverageTest {
         val url: String,
         private val requestText: AtomicReference<String?>,
         private val requestReceived: CountDownLatch,
+        private val sockets: List<WebSocket>,
+        private val socketsClosed: CountDownLatch,
     ) {
         fun awaitRequest(): String {
             assertTrue("NostrClient did not send a relay request", requestReceived.await(3, TimeUnit.SECONDS))
             return requireNotNull(requestText.get())
         }
 
-        fun close() = server.shutdown()
+        fun close() {
+            sockets.forEach { it.close(1000, "test teardown") }
+            try {
+                assertTrue("Relay WebSocket did not complete its close handshake", socketsClosed.await(3, TimeUnit.SECONDS))
+            } finally {
+                server.shutdown()
+            }
+        }
     }
 }

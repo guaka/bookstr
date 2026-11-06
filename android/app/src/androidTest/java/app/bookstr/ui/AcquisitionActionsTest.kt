@@ -6,6 +6,7 @@ import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.test.core.app.ApplicationProvider
 import app.bookstr.BookstrApp
 import app.bookstr.MainActivity
+import app.bookstr.PdfReaderActivity
 import app.bookstr.data.*
 import app.bookstr.download.*
 import app.bookstr.nostr.NostrCrypto
@@ -79,7 +80,17 @@ class AcquisitionActionsTest {
     }
 
     private fun pressSystemBack() {
-        val automation = androidx.test.platform.app.InstrumentationRegistry.getInstrumentation().uiAutomation
+        val instrumentation = androidx.test.platform.app.InstrumentationRegistry.getInstrumentation()
+        val automation = instrumentation.uiAutomation
+        compose.waitUntil(5000) {
+            var readerFocused = false
+            instrumentation.runOnMainSync {
+                readerFocused = androidx.test.runner.lifecycle.ActivityLifecycleMonitorRegistry.getInstance()
+                    .getActivitiesInStage(androidx.test.runner.lifecycle.Stage.RESUMED)
+                    .any { it is PdfReaderActivity && it.hasWindowFocus() }
+            }
+            readerFocused
+        }
         assertTrue(automation.performGlobalAction(android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_BACK))
         compose.waitUntil(5000) { compose.activity.hasWindowFocus() }
     }

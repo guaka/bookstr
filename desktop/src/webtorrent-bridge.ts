@@ -1,7 +1,27 @@
+import type { Torrent, ClientOptions, TorrentClient, WebRTC, IceServer, SeedOptions } from './torrent-types';
+
+interface BridgeOptions {
+  clientFactory?: (options: ClientOptions) => Promise<TorrentClient>;
+  webRTCFactory?: (() => Promise<WebRTC | null>) | null;
+  dataDir?: string; trackers?: readonly string[]; iceServers?: readonly IceServer[];
+  downloadLimit?: unknown; uploadLimit?: unknown;
+}
+
+interface SeedResult {
+  torrent?: Torrent;
+  descriptor: { version: number; privacy: string; announce: string[]; info: { name: string; 'piece length': number; source: string; length?: number } };
+  summary: ReturnType<typeof torrentSummary>;
+}
+interface AddOptions { path?: string; announce?: string[]; deselect?: boolean; bookId?: string }
+interface SelectedOptions extends AddOptions {
+  fileName?: string; signal?: AbortSignal; maxBytes?: number;
+  onProgress?(progress: { bytes: number; totalBytes: number; peers: number }): void;
+}
+
 'use strict';
 
-const path = require('node:path');
-const net = require('node:net');
+const path = require('node:path') as typeof import('node:path');
+const net = require('node:net') as typeof import('node:net');
 
 const PUBLIC_TRACKERS = Object.freeze([
   'wss://tracker.openwebtorrent.com',
@@ -18,36 +38,36 @@ const MAX_ACTIVE_TORRENTS = 100;
 const MAX_CONNECTIONS_PER_TORRENT = 16;
 const PIECE_LENGTH = 256 * 1024;
 
-function safeDigest(value) {
+function safeDigest(value: unknown) {
   const digest = String(value || '').trim().toLowerCase();
   if (!/^[a-f0-9]{64}$/.test(digest)) throw new TypeError('sha256 must be a 64-character hexadecimal digest');
   return digest;
 }
 
-function safeExtension(value) {
+function safeExtension(value: unknown) {
   const extension = String(value || 'epub').trim().toLowerCase().replace(/^\./, '');
   if (!/^[a-z0-9][a-z0-9+.-]{0,15}$/.test(extension)) throw new TypeError('extension must be a short safe file extension');
   return extension;
 }
 
-function safePath(value) {
+function safePath(value: unknown) {
   if (typeof value !== 'string' || !value.trim() || value.includes('\0')) throw new TypeError('filePath must be a valid local path');
   return path.resolve(value);
 }
 
-function safeCounter(value) {
+function safeCounter(value: unknown) {
   const number = Number(value);
   return Number.isFinite(number) ? Math.max(0, number) : 0;
 }
 
-function safeTransferLimit(value, fallback) {
+function safeTransferLimit(value: unknown, fallback: number) {
   const rate = Number(value);
   if (rate === -1) return -1;
   if (!Number.isFinite(rate) || rate < 16 * 1000 || rate > MAX_TRANSFER_LIMIT) return fallback;
   return Math.round(rate);
 }
 
-function safePeerAddress(value) {
+function safePeerAddress(value: unknown) {
   const peer = String(value || '').trim();
   // WebTorrent accepts an address string for Node/TCP peers. Do not accept
   // hostnames here: this value can arrive through the renderer IPC boundary,
@@ -59,13 +79,13 @@ function safePeerAddress(value) {
   const match = ipv4Match || ipv6Match;
   const port = Number(match?.[ipv4Match ? 1 : 2]);
   const host = ipv4Match ? peer.slice(0, peer.lastIndexOf(':')) : ipv6Match?.[1];
-  if (!match || !net.isIP(host) || port < 1 || port > 65535) {
+  if (!match || !net.isIP(host!) || port < 1 || port > 65535) {
     throw new TypeError('private peer handoff must be an IP address and port');
   }
   return peer;
 }
 
-function seedOptions({ sha256, extension, trackers }) {
+function seedOptions({ sha256, extension, trackers }: { sha256: unknown; extension: unknown; trackers: string[] }): SeedOptions {
   const digest = safeDigest(sha256);
   const ext = safeExtension(extension);
   return {
@@ -78,7 +98,7 @@ function seedOptions({ sha256, extension, trackers }) {
   };
 }
 
-function torrentSummary(torrent, privacy) {
+function torrentSummary(torrent: Torrent | null | undefined, privacy: 'private' | 'public') {
   if (!torrent) return null;
   const seededBookIds = torrent.bookstrSeedingBookIds instanceof Set
     ? [...torrent.bookstrSeedingBookIds].map(value => String(value || '')).filter(Boolean)
@@ -109,7 +129,19 @@ function torrentSummary(torrent, privacy) {
 }
 
 class WebTorrentBridge {
-  constructor({ clientFactory, webRTCFactory, dataDir, trackers = PUBLIC_TRACKERS, iceServers = PUBLIC_ICE_SERVERS, downloadLimit = DEFAULT_DOWNLOAD_LIMIT, uploadLimit = PUBLIC_UPLOAD_LIMIT } = {}) {
+  declare readonly clientFactory: (options: ClientOptions) => Promise<TorrentClient>;
+  declare readonly webRTCFactory: (() => Promise<WebRTC | null>) | null;
+  declare readonly dataDir: string | undefined;
+  declare trackers: string[];
+  declare readonly iceServers: readonly IceServer[];
+  declare downloadLimit: number;
+  declare uploadLimit: number;
+  declare client: TorrentClient | null;
+  declare startPromise: Promise<TorrentClient> | null;
+  declare webRTCEnabled: boolean;
+  declare pendingTorrentAdds: number;
+  declare capacityMutex: Promise<void>;
+  constructor({ clientFactory, webRTCFactory, dataDir, trackers = PUBLIC_TRACKERS, iceServers = PUBLIC_ICE_SERVERS, downloadLimit = DEFAULT_DOWNLOAD_LIMIT, uploadLimit = PUBLIC_UPLOAD_LIMIT }: BridgeOptions = {}) {
     this.clientFactory = clientFactory || (async options => {
       const module = await import('webtorrent');
       const Client = module.default || module;
@@ -117,9 +149,9 @@ class WebTorrentBridge {
     });
     this.webRTCFactory = webRTCFactory || (clientFactory ? null : async () => {
       try {
-        return require('@roamhq/wrtc');
+        return require('@roamhq/wrtc') as WebRTC;
       } catch (error) {
-        console.warn(`WebRTC torrent peers are unavailable: ${error?.message || error}`);
+        console.warn(`WebRTC torrent peers are unavailable: ${(error as Error)?.message || error}`);
         return null;
       }
     });
@@ -138,7 +170,7 @@ class WebTorrentBridge {
     this.capacityMutex = Promise.resolve();
   }
 
-  async start() {
+  async start(): Promise<TorrentClient> {
     if (this.client) return this.client;
     if (this.startPromise) return this.startPromise;
     this.startPromise = (async () => {
@@ -163,7 +195,7 @@ class WebTorrentBridge {
     return this.startPromise;
   }
 
-  async setLimits({ downloadLimit, uploadLimit } = {}) {
+  async setLimits({ downloadLimit, uploadLimit }: { downloadLimit?: unknown; uploadLimit?: unknown } = {}) {
     this.downloadLimit = safeTransferLimit(downloadLimit, this.downloadLimit);
     this.uploadLimit = safeTransferLimit(uploadLimit, this.uploadLimit);
     if (this.client) {
@@ -173,16 +205,16 @@ class WebTorrentBridge {
     return { downloadLimit: this.downloadLimit, uploadLimit: this.uploadLimit };
   }
 
-  async seedPublic(filePath, { sha256, extension = 'epub', size, publicSeedAllowed = true, bookId, onSeed } = {}) {
+  async seedPublic(filePath: unknown, { sha256, extension = 'epub', size, publicSeedAllowed = true, bookId, onSeed }: { sha256?: unknown; extension?: unknown; size?: unknown; publicSeedAllowed?: boolean; bookId?: string; onSeed?: (result: SeedResult) => void } = {}): Promise<SeedResult> {
     if (!publicSeedAllowed) throw new Error('rights policy does not allow public seeding');
     const input = safePath(filePath);
     const client = await this.start();
     const opts = seedOptions({ sha256, extension, trackers: this.trackers });
     if (this.dataDir) opts.path = this.dataDir;
     await this.#reserveCapacity(client);
-    return new Promise((resolve, reject) => {
+    return new Promise<SeedResult>((resolve, reject) => {
       let settled = false;
-      const finish = torrent => {
+      const finish = (torrent?: Torrent) => {
         if (settled) return;
         settled = true;
         if (torrent && bookId) torrent.bookstrBookId = String(bookId);
@@ -217,7 +249,7 @@ class WebTorrentBridge {
     });
   }
 
-  async addPublic(torrentId, { path: downloadPath, announce, deselect = false, bookId } = {}) {
+  async addPublic(torrentId: string | Buffer, { path: downloadPath, announce, deselect = false, bookId }: AddOptions = {}) {
     const client = await this.start();
     const existing = typeof client.get === 'function' ? await client.get(torrentId).catch(() => null) : null;
     if (existing && !existing.destroyed) {
@@ -249,7 +281,7 @@ class WebTorrentBridge {
     return torrent;
   }
 
-  async downloadSelected(torrentId, { path: downloadPath, fileName, bookId, signal, maxBytes, onProgress } = {}) {
+  async downloadSelected(torrentId: string | Buffer, { path: downloadPath, fileName, bookId, signal, maxBytes, onProgress }: SelectedOptions = {}) {
     const wantedName = String(fileName || '').trim().toLowerCase();
     if (!wantedName || wantedName.includes('/') || wantedName.includes('\\')) {
       throw new TypeError('selected torrent file name is invalid');
@@ -260,8 +292,8 @@ class WebTorrentBridge {
       const waitForMetadata = async () => {
         if (Array.isArray(torrent.files) && torrent.files.length) return;
         if (typeof torrent.once !== 'function') throw new Error('torrent did not expose metadata events');
-        await new Promise((resolve, reject) => {
-          const finish = error => {
+        await new Promise<void>((resolve, reject) => {
+          const finish = (error?: unknown) => {
             signal?.removeEventListener?.('abort', abort);
             if (error) reject(error); else resolve();
           };
@@ -293,9 +325,9 @@ class WebTorrentBridge {
       });
       report();
       if (!file.done) {
-        await new Promise((resolve, reject) => {
+        await new Promise<void>((resolve, reject) => {
           let settled = false;
-          const finish = error => {
+          const finish = (error?: unknown) => {
             if (settled) return;
             settled = true;
             torrent.removeListener?.('download', report);
@@ -323,7 +355,7 @@ class WebTorrentBridge {
     }
   }
 
-  async remove(torrent) {
+  async remove(torrent: Torrent | null | undefined) {
     if (!torrent) return;
     if (this.client && typeof this.client.remove === 'function') {
       try {
@@ -334,16 +366,16 @@ class WebTorrentBridge {
     try { torrent.destroy?.(); } catch { /* best effort cleanup */ }
   }
 
-  async downloadPublic(torrentId, options = {}) {
+  async downloadPublic(torrentId: string | Buffer, options: AddOptions = {}) {
     const torrent = await this.addPublic(torrentId, options);
     if (torrent.done) return torrent;
     if (typeof torrent.once !== 'function') throw new Error('Public torrent does not expose completion events.');
-    await new Promise((resolve, reject) => {
+    await new Promise<void>((resolve, reject) => {
       const finish = () => {
         torrent.removeListener?.('error', fail);
         resolve();
       };
-      const fail = error => {
+      const fail = (error: unknown) => {
         torrent.removeListener?.('done', finish);
         reject(error);
       };
@@ -353,7 +385,7 @@ class WebTorrentBridge {
     return torrent;
   }
 
-  async addPrivate(torrentId, { path: downloadPath, peer } = {}) {
+  async addPrivate(torrentId: string | Buffer, { path: downloadPath, peer }: { path?: string; peer?: unknown } = {}) {
     const peerAddress = safePeerAddress(peer);
     const client = await this.start();
     await this.#reserveCapacity(client);
@@ -378,7 +410,7 @@ class WebTorrentBridge {
     if (torrent.infoHash) {
       this.addPeer(torrent, peerAddress);
     } else if (typeof torrent.once === 'function') {
-      await new Promise((resolve, reject) => {
+      await new Promise<void>((resolve, reject) => {
         const onInfoHash = () => {
           try {
             this.addPeer(torrent, peerAddress);
@@ -396,10 +428,10 @@ class WebTorrentBridge {
     return torrent;
   }
 
-  async #reserveCapacity(client) {
-    let release;
+  async #reserveCapacity(client: TorrentClient) {
+    let release!: () => void;
     const previous = this.capacityMutex;
-    this.capacityMutex = new Promise(resolve => { release = resolve; });
+    this.capacityMutex = new Promise<void>(resolve => { release = resolve; });
     await previous;
     try {
       while (Array.isArray(client.torrents)
@@ -423,7 +455,7 @@ class WebTorrentBridge {
     this.pendingTorrentAdds = Math.max(0, this.pendingTorrentAdds - 1);
   }
 
-  addPeer(torrent, peer) {
+  addPeer(torrent: Torrent | null | undefined, peer: string) {
     if (!torrent || typeof torrent.addPeer !== 'function') throw new TypeError('torrent does not support peer connections');
     if (!peer) throw new TypeError('peer is required');
     return torrent.addPeer(peer);
@@ -450,7 +482,7 @@ class WebTorrentBridge {
     if (!this.client) return;
     const client = this.client;
     this.client = null;
-    await new Promise(resolve => {
+    await new Promise<void>(resolve => {
       try {
         client.destroy(() => resolve());
       } catch {
@@ -460,7 +492,7 @@ class WebTorrentBridge {
   }
 }
 
-module.exports = {
+export = {
   WebTorrentBridge,
   PUBLIC_TRACKERS,
   PUBLIC_ICE_SERVERS,

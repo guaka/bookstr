@@ -76,6 +76,26 @@ test('default downloader streams bytes and validates the HTTP response and size'
   await assert.rejects(store.download('https://example.test/short', destination, 4, () => {}), /expected 4/);
 });
 
+test('default downloader reports each streamed chunk and writes chunks in order', async t => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'bookstr-speech-'));
+  t.after(() => fs.rm(root, { recursive: true, force: true }));
+  const destination = path.join(root, 'download.bin');
+  const store = new SpeechModelStore(root);
+  const originalFetch = global.fetch;
+  t.after(() => { global.fetch = originalFetch; });
+  global.fetch = async () => new Response(new ReadableStream({
+    start(controller) {
+      controller.enqueue(new TextEncoder().encode('abc'));
+      controller.enqueue(new TextEncoder().encode('def'));
+      controller.close();
+    },
+  }), { status: 200 });
+  const updates = [];
+  await store.download('https://example.test/chunked', destination, 6, (received, total) => updates.push([received, total]));
+  assert.equal(await fs.readFile(destination, 'utf8'), 'abcdef');
+  assert.deepEqual(updates, [[3, 6], [6, 6]]);
+});
+
 test('default install dependencies and callback complete a verified download', async t => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'bookstr-speech-'));
   t.after(() => fs.rm(root, { recursive: true, force: true }));

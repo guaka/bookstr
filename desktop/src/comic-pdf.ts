@@ -1,14 +1,32 @@
-'use strict';
-
-const fs = require('node:fs');
-const fsp = require('node:fs/promises');
-const path = require('node:path');
-const { promisify } = require('node:util');
-const { execFile } = require('node:child_process');
-const { finished } = require('node:stream/promises');
-const { hashFile } = require('./library-import');
-
-const run = promisify(execFile);
+import fs = require('node:fs');
+import fsp = require('node:fs/promises');
+import path = require('node:path');
+import { execFile, type ExecFileOptions } from 'node:child_process';
+import { promisify } from 'node:util';
+import { finished } from 'node:stream/promises';
+interface ExecOptions extends ExecFileOptions { encoding?: BufferEncoding | 'buffer' }
+interface ComicPage { name: string; size: number }
+interface ComicProgress { page: number; pages: number }
+interface ComicDigest { size: number; sha256: string }
+interface CachedResult extends ComicDigest { path: string }
+interface CachedFile { fingerprint: string; result: CachedResult }
+interface PdfImage { width: number; height: number }
+interface PdfDocument {
+  pipe(output: NodeJS.WritableStream): void;
+  openImage(bytes: Buffer): PdfImage;
+  addPage(options: { size: [number, number]; margin: number }): void;
+  image(image: PdfImage, x: number, y: number, options: { width: number; height: number }): void;
+  end(): void;
+  destroy(): void;
+}
+interface PdfConstructor { new(options: Record<string, unknown>): PdfDocument }
+interface HashFile { (filePath: string): Promise<ComicDigest> }
+const { hashFile } = require('./library-import') as { hashFile: HashFile };
+interface Run {
+  (file: string, args: string[], options: ExecOptions & { encoding: 'buffer' }): Promise<{ stdout: Buffer }>;
+  (file: string, args: string[], options: ExecOptions & { encoding?: BufferEncoding }): Promise<{ stdout: string }>;
+}
+const run = promisify(execFile) as Run;
 const MAX_ARCHIVE_BYTES = 512 * 1024 * 1024;
 const MAX_PAGE_BYTES = 24 * 1024 * 1024;
 const MAX_TOTAL_BYTES = 512 * 1024 * 1024;
@@ -19,24 +37,24 @@ const otherImageName = /\.(?:webp|avif|tiff?)$/i;
 
 function archiveToolPath() {
   // Electron's executable dependencies live beside app.asar after packaging.
-  const { path7z } = require('7zip-bin-full');
+  const { path7z } = require('7zip-bin-full') as { path7z: string };
   return path7z.replace(/app\.asar(?=[\\/])/, 'app.asar.unpacked');
 }
 
-function pdfDocument(...args) {
-  const PDFDocument = require('pdfkit');
+function pdfDocument(...args: [Record<string, unknown>]): PdfDocument {
+  const PDFDocument = require('pdfkit') as PdfConstructor;
   return new PDFDocument(...args);
 }
 
-function comicPages(listing) {
+export function comicPages(listing: string): ComicPage[] {
   const entries = String(listing).split(/\r?\n\s*\r?\n/);
-  const pages = [];
+  const pages: ComicPage[] = [];
   let totalBytes = 0;
   let epubPackage = false;
   for (const block of entries) {
-    const values = Object.fromEntries(block.split(/\r?\n/).map(line => {
+    const values: Record<string, string> = Object.fromEntries(block.split(/\r?\n/).map(line => {
       const match = /^([^=]+) = (.*)$/.exec(line);
-      return match ? [match[1].trim(), match[2]] : [];
+      return match ? [match[1]!.trim(), match[2]!] : [];
     }).filter(pair => pair.length));
     if (!values.Path || values.Folder === '+') continue;
     const name = values.Path.replaceAll('\\', '/');
@@ -60,7 +78,8 @@ function comicPages(listing) {
   return pages;
 }
 
-async function renderComic(source, destination, sourceSha256, archiveTool, onProgress = () => {}) {
+async function renderComic(source: string, destination: string, sourceSha256: string, archiveTool: string,
+  onProgress: (progress: ComicProgress) => void = () => {}): Promise<void> {
   const { stdout } = await run(archiveTool, ['l', '-slt', '-ba', '--', source], {
     timeout: 120_000, maxBuffer: 8 * 1024 * 1024, windowsHide: true,
   });
@@ -74,7 +93,7 @@ async function renderComic(source, destination, sourceSha256, archiveTool, onPro
   const completion = finished(output);
   completion.catch(() => {});
   let renderedPages=0, renderedBytes=0;
-  async function appendImage(bytes, pageName, depth=0) {
+  async function appendImage(bytes: Buffer, pageName: string, depth = 0): Promise<void> {
       if (bytes.subarray(0,4).equals(Buffer.from([0x50,0x4b,0x03,0x04]))) {
         if (depth) throw new Error('Comic nested archive depth exceeded');
         const temporary=await fsp.mkdtemp(path.join(path.dirname(destination),'nested-page-'));
@@ -93,10 +112,10 @@ async function renderComic(source, destination, sourceSha256, archiveTool, onPro
       renderedPages++; renderedBytes+=bytes.length;
       if (renderedPages>MAX_PAGES || renderedBytes>MAX_TOTAL_BYTES) throw new Error('Comic exceeds conversion limits.');
       const legacyFormat = /^GIF8[79]a$/.test(bytes.toString('ascii',0,6)) ? 'gif' : bytes.toString('ascii',0,2)==='BM' ? 'bmp' : '';
-      if (legacyFormat) bytes = require('./comic-image').legacyImagePng(bytes, MAX_PIXELS, MAX_PAGE_BYTES);
-      let image;
+      if (legacyFormat) bytes = (require('./comic-image') as typeof import('./comic-image')).legacyImagePng(bytes, MAX_PIXELS, MAX_PAGE_BYTES);
+      let image: PdfImage;
       try { image = document.openImage(bytes); }
-      catch(error) { throw new Error(`${error.message}: ${pageName}`); }
+      catch(error) { throw new Error(`${(error as Error).message}: ${pageName}`); }
       if (!image.width || !image.height || image.width * image.height > MAX_PIXELS) {
         throw new Error('Comic page dimensions exceed conversion limits.');
       }
@@ -123,8 +142,14 @@ async function renderComic(source, destination, sourceSha256, archiveTool, onPro
   }
 }
 
-class ComicPdfConverter {
-  constructor({ cacheRoot, archiveTool = archiveToolPath() } = {}) {
+export class ComicPdfConverter {
+  declare private readonly cacheRoot: string;
+  declare private readonly archiveTool: string;
+  declare private readonly inFlight: Map<string, Promise<CachedResult>>;
+  declare private readonly cachedFiles: Map<string, CachedFile>;
+  declare private queue: Promise<unknown>;
+
+  constructor({ cacheRoot, archiveTool = archiveToolPath() }: { cacheRoot?: string; archiveTool?: string } = {}) {
     if (!cacheRoot) throw new TypeError('cacheRoot is required');
     this.cacheRoot = cacheRoot;
     this.archiveTool = archiveTool;
@@ -133,7 +158,7 @@ class ComicPdfConverter {
     this.queue = Promise.resolve();
   }
 
-  async cached(sourceSha256) {
+  async cached(sourceSha256: string): Promise<CachedResult | null> {
     if (!/^[a-f0-9]{64}$/i.test(sourceSha256)) return null;
     const key = sourceSha256.toLowerCase();
     const target = path.join(this.cacheRoot, `${key}.pdf`);
@@ -151,7 +176,7 @@ class ComicPdfConverter {
     return result;
   }
 
-  async rememberCached(sourceSha256, target, digest) {
+  async rememberCached(sourceSha256: string, target: string, digest: ComicDigest): Promise<void> {
     const stat = await fsp.stat(target);
     const fingerprint = `${stat.dev}:${stat.ino}:${stat.size}:${stat.mtimeMs}:${stat.ctimeMs}`;
     this.cachedFiles.set(sourceSha256, {
@@ -160,7 +185,7 @@ class ComicPdfConverter {
     });
   }
 
-  async convert(source, sourceSha256, onProgress) {
+  async convert(source: string, sourceSha256: string, onProgress?: (progress: ComicProgress) => void): Promise<CachedResult> {
     if (!/^[a-f0-9]{64}$/i.test(sourceSha256)) throw new TypeError('sourceSha256 is invalid');
     const key = sourceSha256.toLowerCase();
     if (!this.inFlight.has(key)) {
@@ -168,10 +193,10 @@ class ComicPdfConverter {
       this.queue = pending.catch(() => {});
       this.inFlight.set(key, pending);
     }
-    return this.inFlight.get(key);
+    return this.inFlight.get(key)!;
   }
 
-  async convertOnce(source, sourceSha256, onProgress) {
+  async convertOnce(source: string, sourceSha256: string, onProgress?: (progress: ComicProgress) => void): Promise<CachedResult> {
     const target = path.join(this.cacheRoot, `${sourceSha256}.pdf`);
     const existing = await this.cached(sourceSha256);
     if (existing) return existing;
@@ -190,5 +215,3 @@ class ComicPdfConverter {
     }
   }
 }
-
-module.exports = { ComicPdfConverter, comicPages };

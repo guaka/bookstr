@@ -257,3 +257,30 @@ test('MTP withSession retains successful sessions, enforces free space, and clos
     await fs.rm(root, { recursive: true, force: true });
   }
 });
+
+test('session rejects malformed JSON and structurally invalid command replies', async () => {
+  for (const [action, args, reply, expected] of [
+    ['files', [], '{"broken":\n', /Invalid Kindle response/],
+    ['files', [], '{"ok":true}\n{"complete":true}\n', /Invalid Kindle operation response/],
+    ['get', ['1', '/tmp/out.pdf'], '{"ok":false}\n{"complete":true}\n', /Invalid Kindle operation response/],
+    ['put', ['/tmp/in.pdf', 'in.pdf'], '{"id":"0"}\n{"complete":true}\n', /Invalid Kindle operation response/],
+  ]) {
+    const session = new MtpSession({ helper: '/tmp/kindle-mtp', deviceId: '1-2', timeout: 2000,
+      spawnProcess: fakeSpawn((_line, child) => child.stdout.emit('data', Buffer.from(reply))) });
+    await assert.rejects(session.command(action, ...args), expected);
+    await session.close();
+  }
+  const session = new MtpSession({ helper: '/tmp/kindle-mtp', deviceId: '1-2', timeout: 2000,
+    spawnProcess: fakeSpawn((_line, child) => child.stdout.emit('data', Buffer.from('{"ok":true}\n{"complete":true}\n'))) });
+  assert.deepEqual(await session.command('get', '1', '/tmp/out.pdf'), { ok: true });
+  await session.close();
+});
+
+test('MTP commands report a missing adapter before starting a helper', async t => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'bookstr-missing-mtp-'));
+  t.after(() => fs.rm(root, { recursive: true, force: true }));
+  const transport = new MtpKindles({ platform: 'linux', resourcesPath: root, stagingRoot: path.join(root, 'staging'),
+    runner: async () => { assert.fail('missing adapters must not start'); } });
+  await assert.rejects(transport.command('devices'), /adapter is unavailable/);
+  await transport.close();
+});

@@ -33,6 +33,8 @@ import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
 import org.robolectric.shadows.ShadowContentResolver
 import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicReference
 
 @RunWith(RobolectricTestRunner::class)
@@ -47,7 +49,7 @@ class NostrRepositoryCoverageTest {
     private lateinit var settings: SettingsRepository
     private lateinit var database: AppDatabase
     private lateinit var vocabulary: VocabularyRepository
-    private val servers = mutableListOf<MockWebServer>()
+    private val servers = mutableListOf<RelayFixture>()
 
     @Before
     fun setUp() {
@@ -64,8 +66,8 @@ class NostrRepositoryCoverageTest {
     @After
     fun tearDown() {
         AmberIntentSession.Host.session = null
+        servers.forEach(RelayFixture::close)
         database.close()
-        servers.forEach(MockWebServer::shutdown)
     }
 
     @Test
@@ -271,18 +273,65 @@ class NostrRepositoryCoverageTest {
 
     private fun repository() = NostrRepository(context, settings, database.bookProgressDao(), vocabulary)
 
-    private fun relay(handler: (WebSocket, String) -> Unit): MockWebServer = MockWebServer().also { server ->
-        server.dispatcher = object : okhttp3.mockwebserver.Dispatcher() {
-            override fun dispatch(request: okhttp3.mockwebserver.RecordedRequest): MockResponse =
-                MockResponse().withWebSocketUpgrade(object : WebSocketListener() {
-                    override fun onMessage(webSocket: WebSocket, text: String) = handler(webSocket, text)
-                })
+    private fun relay(handler: (WebSocket, String) -> Unit): RelayFixture {
+        val sockets = CopyOnWriteArrayList<RelaySocket>()
+        val server = MockWebServer().also { mockServer ->
+            mockServer.dispatcher = object : okhttp3.mockwebserver.Dispatcher() {
+                override fun dispatch(request: okhttp3.mockwebserver.RecordedRequest): MockResponse =
+                    MockResponse().withWebSocketUpgrade(object : WebSocketListener() {
+                        private fun track(webSocket: WebSocket): RelaySocket = synchronized(sockets) {
+                            sockets.firstOrNull { it.socket === webSocket }
+                                ?: RelaySocket(webSocket, CountDownLatch(1)).also { sockets.add(it) }
+                        }
+
+                        override fun onOpen(webSocket: WebSocket, response: okhttp3.Response) {
+                            track(webSocket)
+                        }
+
+                        override fun onMessage(webSocket: WebSocket, text: String) {
+                            track(webSocket)
+                            handler(webSocket, text)
+                        }
+
+                        override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
+                            webSocket.close(code, reason)
+                        }
+
+                        override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
+                            track(webSocket).closed.countDown()
+                        }
+
+                        override fun onFailure(webSocket: WebSocket, t: Throwable, response: okhttp3.Response?) {
+                            track(webSocket).closed.countDown()
+                        }
+                    })
+            }
+            mockServer.start()
         }
-        server.start()
-        servers += server
+        val fixture = RelayFixture(server, sockets)
+        servers += fixture
+        return fixture
     }
 
-    private fun serverUrl(server: MockWebServer): String = server.url("/").toString().replaceFirst("http", "ws")
+    private fun serverUrl(server: RelayFixture): String = server.server.url("/").toString().replaceFirst("http", "ws")
+
+    private class RelaySocket(val socket: WebSocket, val closed: CountDownLatch)
+
+    private class RelayFixture(
+        val server: MockWebServer,
+        private val sockets: List<RelaySocket>,
+    ) {
+        fun close() {
+            sockets.forEach { it.socket.close(1000, "test teardown") }
+            try {
+                sockets.forEach {
+                    assertTrue("Relay WebSocket did not complete its close lifecycle", it.closed.await(3, TimeUnit.SECONDS))
+                }
+            } finally {
+                server.shutdown()
+            }
+        }
+    }
 
     private fun progressContent(bookId: String, progression: Double, cfi: String, furthest: Double, updatedAt: Long) =
         NostrClient.progressContent(bookId, progression, cfi, furthest, updatedAt = updatedAt)
