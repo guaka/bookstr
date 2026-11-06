@@ -26,6 +26,8 @@ import androidx.compose.foundation.gestures.calculateCentroid
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -100,6 +102,22 @@ private data class PdfHighlightData(
     val pageWidth: Float = 1f,
     val pageHeight: Float = 1f,
 )
+
+internal class PdfPositionReporter(private val onPositionChanged: (Int, Int) -> Unit) {
+    private var lastReportedPosition: Pair<Int, Int>? = null
+
+    fun report(page: Int, offset: Int) {
+        val position = page to offset
+        if (lastReportedPosition == position) return
+        lastReportedPosition = position
+        onPositionChanged(page, offset)
+    }
+}
+
+internal fun pdfTrailingPaddingPx(viewportHeightPx: Int, pageWidthPx: Int, pageHeightRatio: Float, zoom: Float): Int {
+    val renderedPageHeightPx = (pageWidthPx * pageHeightRatio * zoom).roundToInt()
+    return (viewportHeightPx - renderedPageHeightPx).coerceAtLeast(0)
+}
 
 class PdfReaderActivity : ComponentActivity() {
     private var descriptor: ParcelFileDescriptor? = null
@@ -436,6 +454,7 @@ private fun PdfDocument(
         initialFirstVisibleItemIndex = initialPage,
         initialFirstVisibleItemScrollOffset = initialPageOffset,
     )
+    val positionReporter = remember(onPositionChanged) { PdfPositionReporter(onPositionChanged) }
     val gestureScope = rememberCoroutineScope()
     var zoom by remember { mutableFloatStateOf(initialZoom.coerceIn(1f, 5f)) }
     var horizontalPan by remember { mutableFloatStateOf(0f) }
@@ -448,12 +467,22 @@ private fun PdfDocument(
         androidx.compose.runtime.snapshotFlow {
             listState.firstVisibleItemIndex to listState.firstVisibleItemScrollOffset
         }.distinctUntilChanged().debounce(300).collect { (page, offset) ->
-            onPositionChanged(page, offset)
+            positionReporter.report(page, offset)
         }
     }
-    Box(modifier = Modifier.fillMaxSize()) {
+    BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+        val density = LocalDensity.current
+        val pageWidthPx = with(density) { LocalConfiguration.current.screenWidthDp.dp.roundToPx() }
+        val viewportHeightPx = with(density) { maxHeight.roundToPx() }
+        val trailingPaddingPx = pdfTrailingPaddingPx(
+            viewportHeightPx = viewportHeightPx,
+            pageWidthPx = pageWidthPx,
+            pageHeightRatio = pageRatios.lastOrNull() ?: 0f,
+            zoom = zoom,
+        )
         LazyColumn(
             state = listState,
+            contentPadding = PaddingValues(bottom = with(density) { trailingPaddingPx.toDp() }),
             modifier = Modifier
                 .fillMaxSize()
                 .background(
@@ -525,6 +554,7 @@ private fun PdfDocument(
                                             horizontalDrag = value
                                         }
                                         listState.scrollToItem(target)
+                                        positionReporter.report(target, 0)
                                         val incoming = -outgoing
                                         horizontalDrag = incoming
                                         Animatable(incoming).animateTo(0f, tween(105)) {
