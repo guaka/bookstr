@@ -472,17 +472,17 @@ final class ReaderAssetContractTests: XCTestCase {
     func testPageCommandsMoveTheViewportInOppositeDirections() throws {
         let html = try bundledReaderHTML()
 
-        XCTAssertTrue(html.contains("window.nextPage = function() {\n      moveViewportPage(1);"))
-        XCTAssertTrue(html.contains("window.prevPage = function() {\n      moveViewportPage(-1);"))
-        XCTAssertTrue(html.contains("container.scrollBy({ top: direction * distance, behavior: \"auto\" })"))
+        assertReaderCode(html, contains: "window.nextPage = function() { moveViewportPage(1);")
+        assertReaderCode(html, contains: "window.prevPage = function() { moveViewportPage(-1);")
+        assertReaderCode(html, contains: "container.scrollBy({ top: direction * distance, behavior: \"auto\" })")
     }
 
     func testPageMovementFallsBackToTheNextSpineSectionOnlyWhenScrollingDidNotMove() throws {
         let html = try bundledReaderHTML()
 
-        XCTAssertTrue(html.contains("Math.abs(container.scrollTop - before) > 2"))
-        XCTAssertTrue(html.contains("direction > 0 ? rendition.next() : rendition.prev()"))
-        XCTAssertTrue(html.contains("if (direction < 0 && container && container.scrollTop <= 2) return"))
+        assertReaderCode(html, contains: "Math.abs(container.scrollTop - before) > 2")
+        assertReaderCode(html, contains: "direction > 0 ? rendition.next() : rendition.prev()")
+        assertReaderCode(html, contains: "if (direction < 0 && container && container.scrollTop <= 2) return")
     }
 
     func testReaderForwardsKnownWordTapToNativeBridge() throws {
@@ -500,7 +500,7 @@ final class ReaderAssetContractTests: XCTestCase {
         XCTAssertTrue(html.contains("savedHighlightAtPoint(contentDocument, event.clientX, event.clientY)"))
         XCTAssertTrue(html.contains("window.activateSavedHighlightAtViewportPoint(event.clientX, event.clientY)"))
         XCTAssertTrue(html.contains("x - rect.left, y - rect.top"))
-        XCTAssertTrue(html.contains("window.activateSavedHighlightAtViewportPoint = function(x, y)"))
+        assertReaderCode(html, contains: "window.activateSavedHighlightAtViewportPoint = function(x, y)")
         XCTAssertTrue(html.contains("lastSavedHighlightActivation"))
         XCTAssertTrue(html.contains("const range = contents.range(cfi);"))
         XCTAssertTrue(html.contains(#"{ kind: "mark", values: activeReaderHighlights.marks }"#))
@@ -538,10 +538,10 @@ final class ReaderAssetContractTests: XCTestCase {
     func testReaderSwipeNavigationUsesHorizontalSwipeThresholds() throws {
         let html = try bundledReaderHTML()
 
-        XCTAssertTrue(html.contains("if (!gestureAxis && Math.max(absX, absY) > 8) {"))
-        XCTAssertTrue(html.contains("else if (absX > 14 && absX > absY * 1.35) gestureAxis = \"horizontal\";"))
-        XCTAssertTrue(html.contains("if (gestureAxis !== \"horizontal\" || Math.abs(dx) < 72) {"))
-        XCTAssertTrue(html.contains("if (dx < 0) nextPage(); else prevPage();"))
+        assertReaderCode(html, contains: "if (!gestureAxis && Math.max(absX, absY) > 8) {")
+        assertReaderCode(html, contains: "else if (absX > 14 && absX > absY * 1.35) gestureAxis = \"horizontal\";")
+        assertReaderCode(html, contains: "if (gestureAxis !== \"horizontal\" || Math.abs(dx) < 72) {")
+        assertReaderCode(html, contains: "if (dx < 0) nextPage(); else prevPage();")
     }
 
     func testReaderDoesNotDisableNativePinchByForcingTouchActionPanYInScript() throws {
@@ -550,24 +550,24 @@ final class ReaderAssetContractTests: XCTestCase {
         XCTAssertFalse(html.contains("target.documentElement.style.touchAction = \"pan-y\""))
         XCTAssertFalse(html.contains("target.body.style.touchAction = \"pan-y\""))
         XCTAssertTrue(html.contains("event.preventDefault();"))
-        XCTAssertTrue(html.contains("target.addEventListener(\"touchend\", function(event)"))
+        assertReaderCode(html, contains: "target.addEventListener(\"touchend\", function(event)")
     }
 
     func testReaderZoomAPICapsFontPercentRange() throws {
         let html = try bundledReaderHTML()
 
-        XCTAssertTrue(html.contains("window.adjustReaderFont = function(delta) {"))
-        XCTAssertTrue(html.contains("readerFontPercent = Math.max(75, Math.min(180, readerFontPercent + Number(delta || 0)));"))
+        assertReaderCode(html, contains: "window.adjustReaderFont = function(delta) {")
+        assertReaderCode(html, contains: "readerFontPercent = Math.max(75, Math.min(180, readerFontPercent + Number(delta || 0)));")
         XCTAssertTrue(html.contains("localStorage.setItem(\"bookstr-reader-font-percent\", String(readerFontPercent));"))
     }
 
     func testKnownWordSetIsBuiltFromInputJSON() throws {
         let html = try bundledReaderHTML()
 
-        XCTAssertTrue(html.contains("window.setKnownWords = function(wordsJson) {"))
-        XCTAssertTrue(html.contains("window.highlightReaderCfi = function(cfi, kind)"))
-        XCTAssertTrue(html.contains("window.highlightCurrentSelection = function(kind)"))
-        XCTAssertTrue(html.contains("window.setReaderHighlights = function(highlightsJson)"))
+        assertReaderCode(html, contains: "window.setKnownWords = function(wordsJson) {")
+        assertReaderCode(html, contains: "window.highlightReaderCfi = function(cfi, kind)")
+        assertReaderCode(html, contains: "window.highlightCurrentSelection = function(kind)")
+        assertReaderCode(html, contains: "window.setReaderHighlights = function(highlightsJson)")
         XCTAssertTrue(html.contains("\"bookstr-\" + resolvedKind + \"-highlight\""))
         XCTAssertTrue(html.contains("::highlight(bookstr-mark)"))
         XCTAssertTrue(html.contains("word: { background: \"#e7c766\""))
@@ -578,18 +578,18 @@ final class ReaderAssetContractTests: XCTestCase {
         XCTAssertTrue(html.contains("rendition.annotations.remove(cfi, \"highlight\")"))
         XCTAssertTrue(html.contains("function captureLiveTextSelection()"))
         XCTAssertTrue(html.contains("function paintCurrentSelectionHighlight(kind)"))
-        XCTAssertTrue(html.contains("knownWordSet = new Set(words.map(function(word) {"))
-        XCTAssertTrue(html.contains("return String(word || \"\").normalize(\"NFC\").toLocaleLowerCase();"))
-        XCTAssertTrue(html.contains("if (rendition && rendition.getContents) {"))
+        assertReaderCode(html, contains: "knownWordSet = new Set(words.map(function(word) {")
+        assertReaderCode(html, contains: "return String(word || \"\").normalize(\"NFC\").toLocaleLowerCase();")
+        assertReaderCode(html, contains: "if (rendition) { rendition.getContents().forEach(function(contents) { highlightKnownWords(contents.document); }); }")
     }
 
     func testKnownWordNavigationIsGuardedAndCapturesClicks() throws {
         let html = try bundledReaderHTML()
 
-        XCTAssertTrue(html.contains("function installKnownWordNavigation(contentDocument) {"))
-        XCTAssertTrue(html.contains("if (contentDocument.__bookstrKnownWordNavigation) return;"))
-        XCTAssertTrue(html.contains("contentDocument.addEventListener(\"click\", function(event)"))
-        XCTAssertTrue(html.contains("}, true);"))
+        assertReaderCode(html, contains: "function installKnownWordNavigation(contentDocument) {")
+        assertReaderCode(html, contains: "if (contentDocument.__bookstrKnownWordNavigation) return;")
+        assertReaderCode(html, contains: "contentDocument.addEventListener(\"click\", function(event)")
+        assertReaderCode(html, contains: "}, true);")
     }
 
     func testKnownWordTapRequiresExactKnownWordMatchInContent() throws {
@@ -621,7 +621,7 @@ final class ReaderAssetContractTests: XCTestCase {
         XCTAssertTrue(html.contains("function installSelectionBridge(contentDocument)"))
         XCTAssertTrue(html.contains("text: cleanDictionaryText(selection).slice(0, 2000)"))
         XCTAssertTrue(html.contains("contextSentence: selectionContext(selectedRange)"))
-        XCTAssertTrue(html.contains("if (window.bookstrNativeSwipeNavigation) return"))
+        assertReaderCode(html, contains: "if (window.bookstrNativeSwipeNavigation) { gestureAxis = null; return; }")
         XCTAssertTrue(html.contains("event.preventDefault();"))
         XCTAssertTrue(html.contains("event.stopPropagation();"))
         XCTAssertFalse(html.contains("id=\"selection-actions\""))
@@ -734,31 +734,37 @@ final class ReaderAssetContractTests: XCTestCase {
     func testReaderSearchesEverySpineSectionAndCanOpenAResult() throws {
         let html = try bundledReaderHTML()
 
-        XCTAssertTrue(html.contains("window.searchBook = async function(query) {"))
+        assertReaderCode(html, contains: "window.searchBook = async function(query) {")
         XCTAssertTrue(html.contains("const sections = (book.spine && book.spine.spineItems) || [];"))
         XCTAssertTrue(html.contains("const matches = section.find(needle) || [];"))
         XCTAssertTrue(html.contains("AndroidBridge.onSearchResults(JSON.stringify(results));"))
-        XCTAssertTrue(html.contains("window.displaySearchResult = function(cfi) {"))
+        assertReaderCode(html, contains: "window.displaySearchResult = function(cfi) {")
         XCTAssertTrue(html.contains("window.persistSpeechLocation"))
         XCTAssertTrue(html.contains("window.setSpeechResumeCfi"))
         XCTAssertTrue(html.contains("locatorSkipDecision"))
-        XCTAssertTrue(html.contains("payload.source = \"speech\""))
-        XCTAssertTrue(html.contains("window.requestSpeechText = function(notifyNative, requestID, fromCfi)"))
+        assertReaderCode(html, contains: "if (!publishRemote) Object.assign(payload, { source: \"speech\" });")
+        assertReaderCode(html, contains: "window.requestSpeechText = function(notifyNative, requestID, fromCfi)")
         XCTAssertTrue(html.contains("window.BookstrSpeech.speakableBlocks"))
-        XCTAssertTrue(html.contains("window.BookstrSpeech.isOpeningNavigationDocument"))
-        XCTAssertTrue(html.contains("window.refreshSpeechBlocks = function()"))
+        let speech = try bundledAsset(named: "reader-speech", extension: "js")
+        assertReaderCode(html, contains: "<script src=\"reader-speech.js\"></script>")
+        assertReaderCode(speech, contains: "root.BookstrSpeech = api")
+        assertReaderCode(html, contains: "const speechFeatures = window.BookstrSpeech;")
+        assertReaderCode(html, contains: "speechFeatures?.isOpeningNavigationDocument")
+        assertReaderCode(html, contains: "speechFeatures.isOpeningNavigationDocument(contentDocument")
+        assertReaderCode(html, contains: "window.refreshSpeechBlocks = function()")
         XCTAssertTrue(html.contains("function collectSpeechParts(activeResumeCfi)"))
         XCTAssertTrue(html.contains("if (!collected.parts.length && resumeCfi)"))
         XCTAssertTrue(html.contains("collected = collectSpeechParts(\"\")"))
-        XCTAssertTrue(html.contains("window.continueSpeechAfterSection = function(notifyNative, requestID, attempts)"))
+        assertReaderCode(html, contains: "window.continueSpeechAfterSection = function(notifyNative, requestID, attempts)")
         XCTAssertTrue(html.contains("exhausted: true"))
-        XCTAssertTrue(html.contains("if (speechActive) return"))
+        assertReaderCode(html, contains: "if (speechActive) return")
         XCTAssertTrue(html.contains("function reportRestoredLocation()"))
         XCTAssertTrue(html.contains("if (speechActive) {"))
         XCTAssertTrue(html.contains("reportSpeechLocator(lastSpeechCfi, false);"))
-        XCTAssertTrue(html.contains("BookstrSpeech.relocationProgression"))
-        XCTAssertTrue(html.contains("rangeToCfi(spokenRange) || elementBoundaryCfi(block.element, false)"))
-        XCTAssertTrue(html.contains("if (!restore) reportLocation(rendition.currentLocation())"))
+        assertReaderCode(html, contains: "const speechFeatures = window.BookstrSpeech;")
+        assertReaderCode(html, contains: "speechFeatures && speechFeatures.relocationProgression ? speechFeatures.relocationProgression(")
+        assertReaderCode(html, contains: "rangeToCfi(spokenRange) || elementBoundaryCfi(block.element, false)")
+        assertReaderCode(html, contains: "if (!restore) reportLocation(rendition.currentLocation())")
         XCTAssertTrue(html.contains("function spinePositionForCfi(cfi, fallbackIndex)"))
         XCTAssertTrue(html.contains("sectionCount: spine.sectionCount"))
         XCTAssertTrue(html.contains("box-shadow:inset 3px 0 0 #7fb8a7"))
@@ -841,9 +847,9 @@ final class ReaderAssetContractTests: XCTestCase {
         XCTAssertTrue(source.contains("preferWeb: true"))
         XCTAssertTrue(source.contains("highlightCurrentSelectionInReader"))
         let html = try bundledReaderHTML()
-        XCTAssertTrue(html.contains("window.bookstrCurrentTextSelection = function()"))
+        assertReaderCode(html, contains: "window.bookstrCurrentTextSelection = function()")
         XCTAssertTrue(html.contains("captureLiveTextSelection()"))
-        XCTAssertTrue(html.contains("window.highlightCurrentSelection = function(kind)"))
+        assertReaderCode(html, contains: "window.highlightCurrentSelection = function(kind)")
         XCTAssertTrue(html.contains("window.__bookstrTextSelection = payload"))
         let hostURL = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
@@ -1244,6 +1250,18 @@ final class ReaderAssetContractTests: XCTestCase {
 
     private func bundledReaderHTML() throws -> String {
         try bundledAsset(named: "reader", extension: "html")
+    }
+
+    private func assertReaderCode(_ html: String, contains code: String, file: StaticString = #filePath, line: UInt = #line) {
+        let compact: (String) -> String = { value in
+            value.filter { $0.isWhitespace == false }
+        }
+        XCTAssertTrue(
+            compact(html).contains(compact(code)),
+            "Bundled reader code is missing: \(code)",
+            file: file,
+            line: line
+        )
     }
 
     private func bundledAsset(named name: String, extension fileExtension: String) throws -> String {
