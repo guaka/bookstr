@@ -78,7 +78,7 @@ test('search retains synced public OPDS sources without exposing feed editing in
   assert.match(html, /async function searchCustomOPDSFeed\(feed, query\)/);
   assert.match(html, /getOPDSSourcesModule\(\)/);
   assert.match(html, /opds-/);
-  assert.match(html, /deliveries: \['Metadata', 'FB2'\]/);
+  assert.match(html, /deliveries: \['Metadata'\]/);
   assert.doesNotMatch(html, /id="opds-feeds"|Public OPDS feeds|settings-opds|opds-feed-input/);
   assert.match(html, /function normalizePublicOPDSFeedSettings\(value\)/);
   assert.match(html, /bookstr-opds-feeds/);
@@ -401,6 +401,8 @@ test('table authors are green and only unavailable titles are red', () => {
   assert.match(html, /\.result-title\.unavailable:visited[\s\S]*?color: var\(--link-hover\)/);
   assert.match(html, /Boolean\(BookMetadata\.canonicalReadUrl\(book, BOOKS_API_BASE\)\)/);
   assert.match(html, /const readableNow = isBookReadableNow\(book\)/);
+  assert.match(html, /function isDisabledBookFormat\(value\)/);
+  assert.match(html, /if \(isDisabledBookFormat\(book\.extension \|\| book\.format\)\)\s*return false/);
   assert.match(html, /titleAvailabilityClass = readableNow \? 'readable' : 'unavailable'/);
   assert.match(html, /<span class="result-author" title="\$\{escapeHtml\(fullAuthors\)\}" aria-label="\$\{escapeHtml\(fullAuthors\)\}">\$\{escapeHtml\(fullAuthors\)\}<\/span>/);
   assert.match(html, /\.result-author:focus-visible[\s\S]*?color: var\(--reading-progress\)/);
@@ -678,6 +680,7 @@ test('Home shows the deduplicated library book count inline after its heading', 
 
 test('Home readable count uses the same availability rule as title coloring', () => {
   assert.match(html, /function isBookReadableNow\(book\)/);
+  assert.match(html, /if \(isDisabledBookFormat\(book\.extension \|\| book\.format\)\)\s*return false/);
   assert.match(html, /cachedBookKeys\.has\(bookCacheKey\(book,\s*\(?book\.readUrl \|\| book\.url\)?\)\)/);
   assert.match(html, /String\(download\?\.status \|\| ''\)\.toLowerCase\(\) === 'ready'/);
   assert.match(html, /Boolean\(BookMetadata\.canonicalReadUrl\(book, BOOKS_API_BASE\)\)/);
@@ -1194,7 +1197,7 @@ test('reader-open route always updates hash with encoded book identity', () => {
 
 test('reader never navigates its iframe to an untrusted book URL', () => {
   assert.doesNotMatch(html, /readerFrame\.src\s*=\s*readPath/);
-  assert.match(html, /throw new Error\('Only EPUB, PDF, FB2, CBZ, and CBR book files can be opened\.'\)/);
+  assert.match(html, /throw new Error\('Only EPUB, PDF, CBZ, and CBR book files can be opened\.'\)/);
 });
 
 

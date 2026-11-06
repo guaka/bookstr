@@ -50,6 +50,7 @@ class LibraryImporter {
     const stat = await fsp.stat(source);
     if (!stat.isFile()) throw new TypeError('sourcePath must be a regular file');
     const ext = safeExtension(extension, path.extname(source).slice(1) || 'bin');
+    if (ext === 'fb2') throw new TypeError('unsupported import format');
     await fsp.mkdir(this.booksRoot, { recursive: true });
     const tempPath = path.join(this.booksRoot, `.import-${process.pid}-${crypto.randomBytes(8).toString('hex')}.part`);
     const hash = crypto.createHash('sha256');

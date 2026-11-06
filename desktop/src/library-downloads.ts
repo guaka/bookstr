@@ -1,8 +1,8 @@
 'use strict';
 
 const fs = require('node:fs/promises') as typeof import('node:fs/promises');
+import { isEnabledReaderFormat } from './reader-formats';
 
-const READER_FORMATS = new Set(['epub', 'pdf', 'fb2', 'cbz', 'cbr']);
 const ZIP_SIGNATURE = 0x04034b50;
 const ZIP_CENTRAL_SIGNATURE = 0x02014b50;
 const ZIP_EOCD_SIGNATURE = 0x06054b50;
@@ -111,7 +111,7 @@ async function downloadsForRenderer(downloads: unknown, resolveRegisteredFile: (
       try {
         const resolved = await resolveRegisteredFile(download.bookId);
         format = await detectedFormat(resolved.filePath);
-        readable = READER_FORMATS.has(format);
+        readable = isEnabledReaderFormat(format);
       } catch {
         // Missing, invalid, or out-of-library registrations are not local copies.
       }

@@ -113,6 +113,39 @@ class AcquisitionScreenTest {
         compose.onNodeWithTag("search.submit").performClick()
         compose.onNodeWithTag("search.query").assertIsNotFocused()
     }
+
+    @Test fun fb2SearchResultIsNotPresentedAsReadableOrOpenable() {
+        val fb2 = BookSearchResult(
+            id = "archive:fb2-fixture",
+            source = "archive",
+            title = "Legacy FB2",
+            author = "Fixture Author",
+            format = BookFormat.Fb2,
+            downloadUrl = "https://example.test/legacy.fb2",
+        )
+        var opened = false
+        compose.setContent {
+            SearchScreen(
+                query = "legacy",
+                results = listOf(fb2),
+                searching = false,
+                openingBookId = null,
+                message = null,
+                isFavorite = { false },
+                readingProgress = { null },
+                onQueryChange = {},
+                onSearch = {},
+                onOpen = { opened = true },
+                onToggleFavorite = {},
+            )
+        }
+
+        compose.onNodeWithTag("search.metadata-only.heading").assertTextContains("1")
+        compose.onNodeWithTag("search.open.archive:fb2-fixture").assertDoesNotExist()
+        compose.onNodeWithText("All formats").assertExists()
+        assertFalse(opened)
+    }
+
     @Test fun unavailableZlibMetadataIsCountedWithoutShowingItsRow() {
         val readable = BookSearchResult(hash, "libcat", "Readable", "Author", format = BookFormat.Epub, libvaultMd5 = hash)
         val unavailable = readable.copy(id = "zlib-missing", title = "Matilda", author = "Roald Dahl",
@@ -143,6 +176,21 @@ class AcquisitionScreenTest {
         compose.runOnIdle { job.value = job.value.copy(state = "complete", size = 100, bytes = 100) }
         compose.onNodeWithTag("download.open.$hash").performClick(); assertTrue(read)
         compose.onNodeWithTag("download.kindle.$hash").performClick(); assertTrue(sent)
+    }
+    @Test fun downloadsHideUnavailableLegacyFb2JobsAndTheirFormatFacet() {
+        val pdf = CatalogBook(hash, "Fixture", "Bookstr", "", null, format = BookFormat.Pdf, libvaultMd5 = hash)
+        val fb2Id = "b".repeat(32)
+        val fb2 = pdf.copy(id = fb2Id, title = "Legacy", format = BookFormat.Fb2)
+        val jobs = listOf(
+            DownloadJob(pdf, TorrentEdition(hash, 1, "fiction", 100), state = "complete"),
+            DownloadJob(fb2, TorrentEdition(fb2Id, 2, "fiction", 100), state = "paused"),
+        )
+        compose.setContent { DownloadsSheet(jobs, {}, { _, _ -> fail("unavailable job action") }, {}, {}) }
+
+        compose.onNodeWithTag("download.$hash").assertExists()
+        compose.onNodeWithTag("download.$fb2Id").assertDoesNotExist()
+        compose.onNodeWithTag("downloads.format").performClick()
+        compose.onNodeWithTag("downloads.format.fb2").assertDoesNotExist()
     }
 
     @Test fun searchFacetsCombineAndUnknownAuthorsAndHeartsAreHidden() {

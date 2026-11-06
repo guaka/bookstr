@@ -45,6 +45,8 @@ import app.bookstr.data.matchingDownloadedBook
 import app.bookstr.data.SharedFavoriteRef
 import app.bookstr.data.CatalogRepository
 import app.bookstr.data.BookFormat
+import app.bookstr.data.availableCatalogBooks
+import app.bookstr.data.availableExternalFavorites
 import app.bookstr.data.NostrAuthMode
 import app.bookstr.data.RIGHTS_UNKNOWN
 import app.bookstr.nostr.AmberIntentSession
@@ -105,7 +107,7 @@ class MainActivity : ComponentActivity() {
             )) {
             settings.readerSession()?.let { session ->
                 val publication = catalog.publicationFile(session.bookId, session.format)
-                if (publication.isFile) {
+                if (canRestoreReaderSession(session, publication.isFile)) {
                     startActivity(
                         if (session.format == BookFormat.Cbr || session.format == BookFormat.Cbz) {
                             ComicReaderActivity.intent(this@MainActivity, session.bookId, session.format, session.bookTitle)
@@ -223,6 +225,7 @@ class MainActivity : ComponentActivity() {
                 ) {
                     val blossomBooks = shared.external
                         .mapNotNull(CatalogRepository::fromBlossomFavorite)
+                        .filter { it.format.isAvailable }
                         .associateBy { it.libvaultMd5 }
                     val downloadedBooks = catalog.downloadedBooks(shared.external)
                     val downloadedFavoriteIds = downloadedBooks.filter { downloaded ->
@@ -233,9 +236,10 @@ class MainActivity : ComponentActivity() {
                                     downloaded.format.extension.equals(favorite.format, ignoreCase = true))
                         }
                     }.map { it.id }.toSet()
-                    books = (knownBooks + blossomBooks.values + downloadedBooks).distinctBy { it.id }
+                    books = availableCatalogBooks(knownBooks + blossomBooks.values + downloadedBooks)
+                        .distinctBy { it.id }
                     favoriteIds = shared.bookIds + blossomBooks.values.map { it.id } + downloadedFavoriteIds
-                    externalFavorites = shared.external.filter { favorite ->
+                    externalFavorites = availableExternalFavorites(shared.external).filter { favorite ->
                         favorite.libvaultMd5 !in blossomBooks && downloadedBooks.none { downloaded ->
                             (!downloaded.libvaultMd5.isNullOrBlank() &&
                                 downloaded.libvaultMd5.equals(favorite.libvaultMd5, ignoreCase = true)) ||
@@ -615,7 +619,9 @@ class MainActivity : ComponentActivity() {
                                         else -> BookFormat.Epub
                                     }
                                     val publication = catalog.publicationFile(word.bookId, format)
-                                    if (!publication.isFile) {
+                                    if (!format.isAvailable) {
+                                        error = "Unsupported publication format"
+                                    } else if (!publication.isFile) {
                                         error = "This book is no longer downloaded. Open it from Library first."
                                     } else {
                                         val book = books.firstOrNull { it.id == word.bookId }
@@ -929,7 +935,11 @@ class MainActivity : ComponentActivity() {
                                     openBook(book)
                                 } else {
                                     val session = settings.readerSession()?.takeIf { it.bookId == bookId }
-                                    if (session != null && catalog.publicationFile(session.bookId, session.format).isFile) {
+                                    if (session != null && canRestoreReaderSession(
+                                            session,
+                                            catalog.publicationFile(session.bookId, session.format).isFile,
+                                        )
+                                    ) {
                                         startActivity(
                                             when (session.format) {
                                                 BookFormat.Cbr, BookFormat.Cbz -> ComicReaderActivity.intent(
@@ -1057,3 +1067,6 @@ internal fun shouldRestoreReaderOnLaunch(
     openingDownloads: Boolean,
     requestedTab: Int?,
 ): Boolean = isLocked && isFreshLaunch && !hasInvitation && !openingDownloads && requestedTab == null
+
+internal fun canRestoreReaderSession(session: app.bookstr.data.ReaderSession, publicationExists: Boolean): Boolean =
+    publicationExists && session.format.isAvailable

@@ -111,13 +111,16 @@ function loadFunction(name, next, values) {
 }
 
 test('Electron library requires a verified readable local file', () => {
+  const formatContext = loadFunction('isDisabledBookFormat', 'function normalizeSearchBooks', {});
   const c = loadFunction('isBookReadableNow', 'function isBookSeeded', {
     isDesktopMode: true, cachedBookKeys: new Set(), bookCacheKey: () => 'cached',
     desktopDownloadForBook: book => book.job, BookMetadata: globalThis.BookMetadata,
     isBookSeeded: () => true, BOOKS_API_BASE: 'https://books.test',
+    isDisabledBookFormat: formatContext.isDisabledBookFormat,
   });
   assert.equal(c.isBookReadableNow({ job: { status: 'ready', readable: false } }), false);
   assert.equal(c.isBookReadableNow({ job: { status: 'failed', readable: true } }), true);
+  assert.equal(c.isBookReadableNow({ extension: 'fb2', job: { readable: true } }), false);
   assert.equal(c.isBookReadableNow({ readUrl: 'https://books.test/book.epub' }), false);
   c.isDesktopMode = false;
   assert.equal(c.isBookReadableNow({}), true);

@@ -272,6 +272,7 @@ final class CatalogRepository {
         for file in fileStore.publicationFiles() {
             let ext = file.pathExtension.lowercased()
             guard let storedFormat = BookFormat(rawValue: ext) else { continue }
+            guard storedFormat.isAvailableOnIOS else { continue }
             let embedded = ext == "fb2" ? PublicationUtilities.fb2Metadata(fileURL: file) : nil
             let id = file.deletingPathExtension().lastPathComponent.lowercased()
             // Preserve existing hash-named local files as opaque local identities.
@@ -518,7 +519,9 @@ final class CatalogRepository {
     }
 
     func prepareForOpening(result: BookSearchResult, progress: @escaping (String) -> Void = { _ in }) async throws -> CatalogBook {
-        guard let book = result.asCatalogBook() else { throw PrivateCatalogError.rejected("This edition has no supported download") }
+        guard let book = result.asCatalogBook(), book.format.isAvailableOnIOS else {
+            throw PrivateCatalogError.rejected("This edition has no supported download")
+        }
         if localPublication(for: book) != nil { return try await prepareForOpening(book: book) }
         if book.epubUrl.isEmpty, let md5 = result.libvaultMd5 {
             guard CatalogSearchPage.validHash(md5, length: 32) else { throw TorrentDownloadError.invalidEdition }
@@ -537,6 +540,9 @@ final class CatalogRepository {
             }
             let staging = try await ForegroundTorrentDownloader.shared.download(edition!, progress: progress)
             guard let format = Self.detectedFormat(fileURL: staging) else { throw TorrentDownloadError.verification }
+            guard format.isAvailableOnIOS else {
+                throw PrivateCatalogError.rejected("This edition has no supported download")
+            }
             let corrected = replacingFormat(of: book, with: format)
             guard isValidCachedFile(book: corrected, fileURL: staging) else { throw TorrentDownloadError.verification }
             fileStore.ensureBooksDirectory()
@@ -551,6 +557,9 @@ final class CatalogRepository {
     }
 
     func ensureDownloaded(book: CatalogBook) async throws -> URL {
+        guard book.format.isAvailableOnIOS else {
+            throw PrivateCatalogError.rejected("This edition has no supported download")
+        }
         if let local = localPublication(for: book) {
             rememberDownloaded(local.book)
             return local.url
@@ -583,6 +592,9 @@ final class CatalogRepository {
             throw NSError(domain: "CatalogRepository", code: 2,
                           userInfo: [NSLocalizedDescriptionKey: "The downloaded file is not a valid PDF, EPUB, FB2, CBR, or CBZ"])
         }
+        guard actual.isAvailableOnIOS else {
+            throw PrivateCatalogError.rejected("This edition has no supported download")
+        }
         let corrected = replacingFormat(of: book, with: actual)
         guard isValidCachedFile(book: corrected, fileURL: tempURL) else {
             throw NSError(domain: "CatalogRepository", code: 2,
@@ -596,6 +608,9 @@ final class CatalogRepository {
     }
 
     func prepareForOpening(book: CatalogBook) async throws -> CatalogBook {
+        guard book.format.isAvailableOnIOS else {
+            throw PrivateCatalogError.rejected("This edition has no supported download")
+        }
         if let local = localPublication(for: book) {
             rememberDownloaded(local.book)
             return await ensureEmbeddedCover(for: local.book)
@@ -605,6 +620,9 @@ final class CatalogRepository {
         guard let actual = Self.detectedFormat(fileURL: fileURL) else {
             throw NSError(domain: "CatalogRepository", code: 10,
                           userInfo: [NSLocalizedDescriptionKey: "This publication is not a readable PDF, EPUB, FB2, CBR, or CBZ"])
+        }
+        guard actual.isAvailableOnIOS else {
+            throw PrivateCatalogError.rejected("This edition has no supported download")
         }
         let corrected = replacingFormat(of: book, with: actual)
         guard isValidCachedFile(book: corrected, fileURL: fileURL) else {
@@ -624,9 +642,11 @@ final class CatalogRepository {
     func localPublication(for book: CatalogBook) -> (book: CatalogBook, url: URL)? {
         for id in Self.publicationIdentityCandidates(for: book) {
             for format in [book.format] + BookFormat.allCases.filter({ $0 != book.format }) {
+                guard format.isAvailableOnIOS else { continue }
                 let url = fileStore.bookFileURL(bookId: id, format: format)
                 guard FileManager.default.fileExists(atPath: url.path),
                       let actual = Self.detectedFormat(fileURL: url),
+                      actual.isAvailableOnIOS,
                       isValidatedPublication(fileURL: url, format: actual)
                 else { continue }
 
@@ -668,7 +688,7 @@ final class CatalogRepository {
     func removeFromLibrary(_ book: CatalogBook) {
         let ids = Self.publicationIdentityCandidates(for: book)
         for id in ids {
-            for format in BookFormat.allCases {
+            for format in BookFormat.allCases where format.isAvailableOnIOS {
                 let url = fileStore.bookFileURL(bookId: id, format: format)
                 if FileManager.default.fileExists(atPath: url.path) {
                     try? FileManager.default.removeItem(at: url)

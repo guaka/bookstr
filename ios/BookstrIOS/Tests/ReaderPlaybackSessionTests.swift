@@ -70,6 +70,26 @@ final class ReaderPlaybackSessionTests: XCTestCase {
         XCTAssertFalse(session.isCarPlayPlayback)
     }
 
+    func testDisabledFB2CannotBePresentedAndDoesNotReplaceCurrentReader() {
+        let session = ReaderPlaybackSession()
+        let epub = CatalogBook(id: "epub", title: "EPUB", author: "Author",
+            epubUrl: "", coverUrl: nil, sourceUrl: nil, isbn: nil, libvaultMd5: nil,
+            format: .epub, year: nil)
+        let fb2 = CatalogBook(id: "fb2", title: "Legacy", author: "Author",
+            epubUrl: "", coverUrl: nil, sourceUrl: nil, isbn: nil, libvaultMd5: nil,
+            format: .fb2, year: nil)
+
+        session.present(book: epub)
+        let nonce = session.presentationNonce
+        session.present(book: fb2, preparedURL: URL(fileURLWithPath: "/tmp/legacy.fb2"))
+        session.presentForCarPlay(book: fb2, localURL: URL(fileURLWithPath: "/tmp/legacy.fb2"), locator: "fb2:section:0:0")
+
+        XCTAssertEqual(session.item?.book.id, epub.id)
+        XCTAssertEqual(session.presentationNonce, nonce)
+        XCTAssertFalse(session.isCarPlayPlayback)
+        XCTAssertNil(session.pendingCarPlayBookID)
+    }
+
     func testDynamicIslandPortraitChromeUsesTopSafeArea() {
         let metrics = ReaderChromeMetrics(
             width: 393, height: 852,

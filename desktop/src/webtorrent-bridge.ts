@@ -286,6 +286,7 @@ class WebTorrentBridge {
     if (!wantedName || wantedName.includes('/') || wantedName.includes('\\')) {
       throw new TypeError('selected torrent file name is invalid');
     }
+    if (/\.fb2(?:\.zip)?$/.test(wantedName)) throw new TypeError('unsupported acquisition format');
     const torrent = await this.addPublic(torrentId, { path: downloadPath, deselect: true, bookId });
     try {
       if (signal?.aborted) throw new Error('torrent download aborted');
@@ -308,7 +309,7 @@ class WebTorrentBridge {
       const file = torrent.files.find(candidate => {
         const name = path.basename(String(candidate.path || candidate.name || '')).toLowerCase();
         return name === wantedName || /^[a-f0-9]{32}$/.test(wantedName)
-          && name.replace(/\.(?:epub|pdf|fb2|cbz|cbr)$/, '') === wantedName;
+          && name.replace(/\.(?:epub|pdf|cbz|cbr)$/, '') === wantedName;
       });
       if (!file) throw new Error(`${wantedName} is absent from the repository torrent`);
       const limit = Number(maxBytes);

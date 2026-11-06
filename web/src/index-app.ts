@@ -2090,6 +2090,11 @@ export type IndexAppPageBindings = {
           .toLocaleLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
       }
 
+      function isDisabledBookFormat(value: unknown): boolean {
+        const format = String(value || '').trim().toLowerCase().replace(/^\./, '');
+        return format === 'fb2' || format.includes('fictionbook') || format.includes('application/fb2');
+      }
+
       function normalizeSearchBooks(payload: unknown, source: string): PageBook[] {
         const value = payload as { books?: unknown; results?: unknown } | null | undefined;
         const results = Array.isArray(value?.books)
@@ -2098,7 +2103,7 @@ export type IndexAppPageBindings = {
             ? value.results as SearchRecord[]
             : [];
 
-        return results.map(item => {
+        return results.filter(item => !isDisabledBookFormat(item.extension || item.format || item.media_type || item.type)).map(item => {
           const torrent = item.torrent as SearchRecord | null | undefined;
           const duplicatePublisherKey: string = 'publisher';
           const rawId = String(item.md5 || item.id || item.source_native_id || item.sourceNativeId || item.sha256 || item.libvaultMd5 || '').trim().toLowerCase();
@@ -3366,6 +3371,7 @@ export type IndexAppPageBindings = {
       }
 
       function isBookReadableNow(book: PageBook) {
+        if (isDisabledBookFormat(book.extension || book.format)) return false;
         const cached = cachedBookKeys.has(bookCacheKey(book, (book.readUrl || book.url) as string | undefined));
         const download = desktopDownloadForBook(book);
         if (isDesktopMode) return download?.readable === true;
@@ -6008,6 +6014,11 @@ export type IndexAppPageBindings = {
           status.textContent = `${(book as PageBook | null | undefined)?.title || 'This book'} has metadata only; no readable copy is available.`;
           return;
         }
+        if (isDisabledBookFormat(book.extension || book.format)
+          || /\.fb2(?:\.zip)?(?:[?#]|$)/i.test(String(book.readUrl || book.url || ''))) {
+          status.textContent = `Could not open ${book.title || 'book'}: The downloaded book format is not supported.`;
+          return;
+        }
 
         const previousBookId = String(activeReadingBook?.md5 || '').trim().toLowerCase();
         const nextBookId = String(book.md5 || '').trim().toLowerCase();
@@ -6041,6 +6052,7 @@ export type IndexAppPageBindings = {
           }
           if (torrentBlob) {
             const torrentFormat = await bookFormatForBlob(torrentBlob) || String(book.extension || '').toLowerCase();
+            if (torrentFormat === 'fb2') throw new Error('The downloaded book format is not supported.');
             rememberDetectedBookFormat(book, torrentFormat);
             if (torrentFormat === 'pdf') await displayPdf(torrentBlob, book, readPath, openGeneration);
             else if (torrentFormat === 'fb2') await displayFB2(torrentBlob, book, readPath, openGeneration);
@@ -6101,6 +6113,7 @@ export type IndexAppPageBindings = {
               void cacheBookBlob(book, readPath, blob).catch(() => {});
             }
             const format = await bookFormatForBlob(blob);
+            if (format === 'fb2') throw new Error('The downloaded book format is not supported.');
             if (format === 'pdf') await displayPdf(blob, book, readPath, openGeneration);
             else await displayEpub(blob, book, readPath, openGeneration);
             } else if (/\/api\/files\/[a-f0-9]{32}(?:\?|$)/i.test(readPath)) {
@@ -6111,14 +6124,15 @@ export type IndexAppPageBindings = {
             await enforceBlobSha256(book, blob);
             if (openGeneration !== readerOpenGeneration) return;
             const format = await bookFormatForBlob(blob);
+            if (format === 'fb2') throw new Error('The downloaded book format is not supported.');
             if (format === 'pdf') await displayPdf(blob, book, readPath, openGeneration);
             else if (format === 'epub') await displayEpub(blob, book, readPath, openGeneration);
-            else if (format === 'fb2') await displayFB2(blob, book, readPath, openGeneration);
+            else if (format === 'fb2') throw new Error('The downloaded book format is not supported.');
             else if (format === 'cbz' || format === 'cbr') await displayComic(blob, book, readPath, openGeneration, format);
             else throw new Error('The downloaded book format is not supported.');
             void cacheBookBlob(book, readPath, blob).catch(() => {});
           } else {
-            throw new Error('Only EPUB, PDF, FB2, CBZ, and CBR book files can be opened.');
+            throw new Error('Only EPUB, PDF, CBZ, and CBR book files can be opened.');
             }
           }
         } catch (error) {
@@ -6291,7 +6305,7 @@ export type IndexAppPageBindings = {
             id: `opds-${feed.url}`,
             name: feed.name,
             coverage: 'Your public OPDS catalogue',
-            deliveries: ['Metadata', 'FB2'],
+            deliveries: ['Metadata'],
             access: 'Public',
             search: query => searchCustomOPDSFeed(feed, query),
           });

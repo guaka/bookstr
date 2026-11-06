@@ -528,6 +528,77 @@ final class AppContainerTests: XCTestCase {
         XCTAssertTrue(fileStore.load("downloaded-books.json", as: [CatalogBook].self, fallback: []).isEmpty)
     }
 
+    func testDisabledFB2RemainsOnDiskWithProgressButIsHiddenAndCannotOpen() async throws {
+        let subdirectory = "bookstr-disabled-fb2-\(UUID().uuidString)"
+        let fileStore = JSONFileStore(subdirectory: subdirectory)
+        fileStore.ensureBooksDirectory()
+        defer { try? FileManager.default.removeItem(at: FileManager.default.urls(
+            for: .applicationSupportDirectory, in: .userDomainMask
+        ).first!.appendingPathComponent(subdirectory, isDirectory: true)) }
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: subdirectory))
+        defer { defaults.removePersistentDomain(forName: subdirectory) }
+        let settings = SettingsRepository(defaults: defaults)
+        let nip46 = Nip46Service()
+        let catalog = CatalogRepository(
+            fileStore: fileStore, settings: settings,
+            signerStore: SignerStore(nip46Service: nip46), nip46Service: nip46
+        )
+        let progress = ProgressRepository(fileStore: fileStore)
+        let id = String(repeating: "d", count: 64)
+        let book = CatalogBook(
+            id: id, title: "Legacy FB2", author: "Author", epubUrl: "",
+            coverUrl: nil, sourceUrl: nil, isbn: nil, libvaultMd5: nil, format: .fb2, year: nil
+        )
+        let publication = fileStore.bookFileURL(bookId: id, format: .fb2)
+        let disguisedPublication = fileStore.bookFileURL(bookId: id, format: .pdf)
+        let xml = """
+            <FictionBook xmlns="http://www.gribuser.ru/xml/fictionbook/2.0"><description><title-info><book-title>Legacy</book-title></title-info></description><body><section><p>Text</p></section></body></FictionBook>
+            """
+        try Data(xml.utf8).write(to: publication)
+        try Data(xml.utf8).write(to: disguisedPublication)
+        fileStore.save("downloaded-books.json", value: [book])
+        progress.save(bookId: id, progression: 0.4, cfi: "fb2:section:0:1")
+
+        XCTAssertNil(catalog.localPublication(for: book))
+        let mislabeled = CatalogBook(
+            id: id, title: "Legacy FB2", author: "Author", epubUrl: "",
+            coverUrl: nil, sourceUrl: nil, isbn: nil, libvaultMd5: nil, format: .pdf, year: nil
+        )
+        XCTAssertNil(catalog.localPublication(for: mislabeled), "A file mislabeled as PDF must not bypass format detection")
+        XCTAssertFalse(catalog.downloadedBooks().contains { $0.id == id })
+        do {
+            _ = try await catalog.prepareForOpening(book: book)
+            XCTFail("Disabled FB2 must not open through the repository")
+        } catch {
+            XCTAssertTrue(error.localizedDescription.contains("supported download"))
+        }
+        do {
+            _ = try await catalog.ensureDownloaded(book: book)
+            XCTFail("Disabled FB2 must not download through the repository")
+        } catch {
+            XCTAssertTrue(error.localizedDescription.contains("supported download"))
+        }
+        let remote = BookSearchResult(
+            id: id, source: "test", title: book.title, author: book.author, year: nil,
+            publisher: nil, language: nil, format: .fb2,
+            downloadUrl: "https://example.test/book.fb2", coverUrl: nil, rating: 0, editionCount: 1
+        )
+        do {
+            _ = try await catalog.prepareForOpening(result: remote)
+            XCTFail("FB2 discovery results must not be imported")
+        } catch {
+            XCTAssertTrue(error.localizedDescription.contains("supported download"))
+        }
+        XCTAssertTrue(FileManager.default.fileExists(atPath: publication.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: disguisedPublication.path))
+        XCTAssertEqual(progress.get(bookId: id).cfi, "fb2:section:0:1")
+        XCTAssertEqual(fileStore.load("downloaded-books.json", as: [CatalogBook].self, fallback: []).map(\.id), [id])
+
+        catalog.removeFromLibrary(mislabeled)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: publication.path), "Removing another format must leave FB2 data untouched")
+        XCTAssertEqual(progress.get(bookId: id).cfi, "fb2:section:0:1")
+    }
+
     @MainActor
     func testLibraryDeleteRemovesLocalPublicationAndProgress() async throws {
         let subdirectory = "bookstr-library-delete-\(UUID().uuidString)"

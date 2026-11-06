@@ -4253,6 +4253,10 @@ function authorMatchKey(value) {
     return ordered.normalize('NFKD').replace(/[\u0300-\u036f]/g, '')
         .toLocaleLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
 }
+function isDisabledBookFormat(value) {
+    const format = String(value || '').trim().toLowerCase().replace(/^\./, '');
+    return format === 'fb2' || format.includes('fictionbook') || format.includes('application/fb2');
+}
 function normalizeSearchBooks(payload, source) {
     const value = payload;
     const results = Array.isArray(value?.books)
@@ -4260,7 +4264,7 @@ function normalizeSearchBooks(payload, source) {
         : Array.isArray(value?.results)
             ? value.results
             : [];
-    return results.map(item => {
+    return results.filter(item => !isDisabledBookFormat(item.extension || item.format || item.media_type || item.type)).map(item => {
         const torrent = item.torrent;
         const duplicatePublisherKey = 'publisher';
         const rawId = String(item.md5 || item.id || item.source_native_id || item.sourceNativeId || item.sha256 || item.libvaultMd5 || '').trim().toLowerCase();
@@ -5532,6 +5536,8 @@ function desktopDownloadingBookCount() {
         .filter(Boolean)).size;
 }
 function isBookReadableNow(book) {
+    if (isDisabledBookFormat(book.extension || book.format))
+        return false;
     const cached = cachedBookKeys.has(bookCacheKey(book, (book.readUrl || book.url)));
     const download = desktopDownloadForBook(book);
     if (isDesktopMode)
@@ -8286,6 +8292,11 @@ async function openBook(book, { updateHash = true, addToReading = true } = {}) {
         status.textContent = `${book?.title || 'This book'} has metadata only; no readable copy is available.`;
         return;
     }
+    if (isDisabledBookFormat(book.extension || book.format)
+        || /\.fb2(?:\.zip)?(?:[?#]|$)/i.test(String(book.readUrl || book.url || ''))) {
+        status.textContent = `Could not open ${book.title || 'book'}: The downloaded book format is not supported.`;
+        return;
+    }
     const previousBookId = String(activeReadingBook?.md5 || '').trim().toLowerCase();
     const nextBookId = String(book.md5 || '').trim().toLowerCase();
     if (previousBookId && previousBookId !== nextBookId)
@@ -8319,6 +8330,8 @@ async function openBook(book, { updateHash = true, addToReading = true } = {}) {
         }
         if (torrentBlob) {
             const torrentFormat = await bookFormatForBlob(torrentBlob) || String(book.extension || '').toLowerCase();
+            if (torrentFormat === 'fb2')
+                throw new Error('The downloaded book format is not supported.');
             rememberDetectedBookFormat(book, torrentFormat);
             if (torrentFormat === 'pdf')
                 await displayPdf(torrentBlob, book, readPath, openGeneration);
@@ -8400,6 +8413,8 @@ async function openBook(book, { updateHash = true, addToReading = true } = {}) {
                     void cacheBookBlob(book, readPath, blob).catch(() => { });
                 }
                 const format = await bookFormatForBlob(blob);
+                if (format === 'fb2')
+                    throw new Error('The downloaded book format is not supported.');
                 if (format === 'pdf')
                     await displayPdf(blob, book, readPath, openGeneration);
                 else
@@ -8415,12 +8430,14 @@ async function openBook(book, { updateHash = true, addToReading = true } = {}) {
                 if (openGeneration !== readerOpenGeneration)
                     return;
                 const format = await bookFormatForBlob(blob);
+                if (format === 'fb2')
+                    throw new Error('The downloaded book format is not supported.');
                 if (format === 'pdf')
                     await displayPdf(blob, book, readPath, openGeneration);
                 else if (format === 'epub')
                     await displayEpub(blob, book, readPath, openGeneration);
                 else if (format === 'fb2')
-                    await displayFB2(blob, book, readPath, openGeneration);
+                    throw new Error('The downloaded book format is not supported.');
                 else if (format === 'cbz' || format === 'cbr')
                     await displayComic(blob, book, readPath, openGeneration, format);
                 else
@@ -8428,7 +8445,7 @@ async function openBook(book, { updateHash = true, addToReading = true } = {}) {
                 void cacheBookBlob(book, readPath, blob).catch(() => { });
             }
             else {
-                throw new Error('Only EPUB, PDF, FB2, CBZ, and CBR book files can be opened.');
+                throw new Error('Only EPUB, PDF, CBZ, and CBR book files can be opened.');
             }
         }
     }
@@ -8607,7 +8624,7 @@ function searchSourceRegistry() {
             id: `opds-${feed.url}`,
             name: feed.name,
             coverage: 'Your public OPDS catalogue',
-            deliveries: ['Metadata', 'FB2'],
+            deliveries: ['Metadata'],
             access: 'Public',
             search: query => searchCustomOPDSFeed(feed, query),
         });

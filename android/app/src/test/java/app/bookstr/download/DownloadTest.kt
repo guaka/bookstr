@@ -108,6 +108,20 @@ class DownloadTest {
         assertThrows(Exception::class.java) { DownloadStore(root) }
         assertEquals("broken", File(root, "jobs.json").readText())
     }
+    @Test fun unavailableLegacyFb2JobsArePreservedButCannotRunOrBeEnqueued() {
+        val root = folder.newFolder()
+        val store = DownloadStore(root)
+        val fb2Book = book.copy(format = BookFormat.Fb2)
+        val legacy = DownloadJob(fb2Book, edition, state = "queued", bytes = 42)
+
+        assertFalse(legacy.active)
+        assertThrows(IllegalArgumentException::class.java) { store.enqueue(fb2Book, edition) }
+        store.update(legacy)
+        val restored = DownloadStore(root).find(hash)
+        assertNotNull(restored)
+        assertEquals(42L, restored?.bytes)
+        assertFalse(restored!!.active)
+    }
     @Test fun downloadsVerifiesAndImportsOnlyAfterClosingEngine() = runBlocking<Unit> {
         val root = folder.newFolder(); val engine = Engine(root, content)
         val states = mutableListOf<String>(); var imported = false

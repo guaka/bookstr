@@ -153,6 +153,50 @@ class CatalogRepositoryTest {
     }
 
     @Test
+    fun keepsFb2FormatParsingForSavedDataButMarksItUnavailableAndUnreadable() {
+        val fb2 = CatalogRepository.parseSearchResponse(
+            """{"results":[{"id":"old-fb2","source":"archive","title":"Saved FB2","format":"fb2","url":"https://example.org/book.fb2"}]}""",
+        ).single()
+
+        assertEquals(BookFormat.Fb2, fb2.format)
+        assertEquals(BookFormat.Fb2, BookFormat.from("fb2"))
+        assertFalse(BookFormat.Fb2.isAvailable)
+        try {
+            BookFormat.Fb2.requireAvailable()
+            throw AssertionError("FB2 must not pass the availability gate")
+        } catch (expected: IllegalArgumentException) {
+            assertEquals("Unsupported publication format", expected.message)
+        }
+        BookFormat.Epub.requireAvailable()
+        assertFalse(fb2.isReadable)
+        assertTrue(BookFormat.Epub.isAvailable)
+        assertTrue(BookFormat.Pdf.isAvailable)
+        assertTrue(BookFormat.Cbr.isAvailable)
+        assertTrue(BookFormat.Cbz.isAvailable)
+    }
+
+    @Test
+    fun filtersFb2FromAvailableLibraryWithoutMutatingSavedBookMetadata() {
+        val epub = CatalogBook("a".repeat(32), "Available", "Author", "", null)
+        val fb2 = CatalogBook("b".repeat(32), "Preserved", "Author", "", null, format = BookFormat.Fb2)
+        val savedMetadata = listOf(epub, fb2)
+
+        assertEquals(listOf(epub), availableCatalogBooks(savedMetadata))
+        assertEquals(BookFormat.Fb2, savedMetadata.last().format)
+        assertEquals("b".repeat(32), savedMetadata.last().id)
+    }
+
+    @Test
+    fun hidesFb2ExternalFavoritesWithoutChangingTheirStoredFormat() {
+        val epub = ExternalFavorite("epub", "Current", "Author", url = null, isbn = null, libvaultMd5 = null, format = "epub")
+        val fb2 = ExternalFavorite("fb2", "Legacy", "Author", url = null, isbn = null, libvaultMd5 = null, format = "fb2")
+        val saved = listOf(epub, fb2)
+
+        assertEquals(listOf(epub), availableExternalFavorites(saved))
+        assertEquals("fb2", saved.last().format)
+    }
+
+    @Test
     fun infersPdfFromUnknownFormatWhenUrlIsPdfWithQueryAndFragment() {
         assertEquals(BookFormat.Pdf, BookFormat.from("mobi", "https://example.org/file.PDF?download=1#a"))
     }

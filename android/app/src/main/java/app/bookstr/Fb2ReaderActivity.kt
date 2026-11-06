@@ -238,6 +238,10 @@ class Fb2ReaderActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        if (!BookFormat.Fb2.isAvailable) {
+            finish()
+            return
+        }
         bookId = intent.getStringExtra(EXTRA_BOOK_ID) ?: return finish()
         bookTitle = intent.getStringExtra(EXTRA_BOOK_TITLE) ?: "FB2"
         bookAuthor = intent.getStringExtra(EXTRA_BOOK_AUTHOR)
