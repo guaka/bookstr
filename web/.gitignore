@@ -22,3 +22,7 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Reproducible compiler staging and deployment output
+.typescript-output/
+site-dist/

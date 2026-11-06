@@ -3,17 +3,21 @@ import fs from 'node:fs';
 import vm from 'node:vm';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
+import { functionSource } from './source-tools.mts';
 
 const html = fs.readFileSync(new URL('../index.html', import.meta.url), 'utf8');
 
 function loadPreferenceCode(desktopBridge = null, warnings = []) {
-  const start = html.indexOf('      function createSerializedPreferenceWriter(');
-  const end = html.indexOf('\n      const state =', start);
+  const writerFunction = functionSource(html, 'createSerializedPreferenceWriter');
+  const start = html.indexOf(writerFunction);
   assert.notEqual(start, -1, 'preference writer exists in the desktop app');
-  assert.notEqual(end, -1, 'preference writer has an isolated end marker');
+  const writerDeclaration = html.match(/^[ \t]*const\s+desktopTransferPreferenceWriter\s*=[^\n]*;$/m)?.[0];
+  assert.ok(writerDeclaration, 'desktop preference writer is initialized from the serialized writer');
   const context = vm.createContext({ Promise, desktopBridge, console: { warn: (...args) => warnings.push(args) } });
   const prefix = html.slice(0, start).replace(/[^\n]/g, ' ');
-  vm.runInContext(prefix + html.slice(start, end), context, { filename: fileURLToPath(new URL('../index.html', import.meta.url)) });
+  const code = [functionSource(html, 'createSerializedPreferenceWriter'), writerDeclaration,
+    functionSource(html, 'syncDesktopTransferPreferences')].join('\n');
+  vm.runInContext(prefix + code, context, { filename: fileURLToPath(new URL('../index.html', import.meta.url)) });
   return context;
 }
 
@@ -75,9 +79,12 @@ test('a failed preference write does not block later settings changes', async ()
 });
 
 test('desktop preference initialization and controls use the serialized writer', () => {
-  const writer = html.indexOf('      const desktopTransferPreferenceWriter = createSerializedPreferenceWriter(');
-  const initialization = html.indexOf('          syncDesktopTransferPreferences({', html.indexOf('function loadState()'));
-  const controls = html.slice(html.indexOf("torrentAutoDownloadInput.addEventListener('change'"), html.indexOf("speechLanguageInput.addEventListener('change'"));
+  const writer = html.search(/^[ \t]*const\s+desktopTransferPreferenceWriter\s*=\s*createSerializedPreferenceWriter\(/m);
+  const loadState = html.search(/function\s+loadState\s*\(\)/);
+  const initialization = html.indexOf('syncDesktopTransferPreferences({', loadState);
+  const controlsStart = html.indexOf("torrentAutoDownloadInput.addEventListener('change'");
+  const controlsEnd = html.indexOf("speechLanguageInput.addEventListener('change'", controlsStart);
+  const controls = html.slice(controlsStart, controlsEnd);
 
   assert.notEqual(writer, -1);
   assert.notEqual(initialization, -1);

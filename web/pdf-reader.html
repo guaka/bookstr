@@ -36,19 +36,20 @@
     <main id="pages" aria-label="PDF pages"></main>
     <p id="message" role="status">Opening PDF…</p>
     <script>
-      const readerDesktopBridge = window.bookstrDesktop || null;
-      document.getElementById('back-to-library').addEventListener('click', () => readerDesktopBridge?.focusLibrary?.());
-      const readerMenuToggle = document.getElementById('reader-menu-toggle');
-      const readerMenu = document.getElementById('reader-menu');
-      readerMenuToggle.addEventListener('click', () => {
-        const open = readerMenu.hidden;
-        readerMenu.hidden = !open;
-        readerMenuToggle.setAttribute('aria-expanded', String(open));
-      });
-      readerMenu.querySelectorAll('[data-reader-pane]').forEach(button => {
-        button.addEventListener('click', () => readerDesktopBridge?.openPane?.(button.dataset.readerPane));
-      });
-    </script>
+// Generated from src/pdf-reader-app.ts by pnpm --dir web build.
+const readerDesktopBridge = window.bookstrDesktop || null;
+document.getElementById('back-to-library').addEventListener('click', () => readerDesktopBridge?.focusLibrary?.());
+const readerMenuToggle = document.getElementById('reader-menu-toggle');
+const readerMenu = document.getElementById('reader-menu');
+readerMenuToggle.addEventListener('click', () => {
+    const open = readerMenu.hidden;
+    readerMenu.hidden = !open;
+    readerMenuToggle.setAttribute('aria-expanded', String(open));
+});
+readerMenu.querySelectorAll('[data-reader-pane]').forEach(button => {
+    button.addEventListener('click', () => readerDesktopBridge?.openPane?.(button.dataset.readerPane));
+});
+</script>
     <script src="reader-speech.js"></script>
     <script type="module" src="pdf-reader.js"></script>
   </body>

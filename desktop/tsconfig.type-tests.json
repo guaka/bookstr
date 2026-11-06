@@ -10,7 +10,8 @@
     "tests/types/**/*.ts",
     "scripts/**/*.cts",
     "tests/unit/*.test.ts",
-    "tests/e2e/*.spec.ts"
+    "tests/e2e/**/*.ts",
+    "tests/packaged/*.cts"
   ],
   "exclude": [
     "node_modules",
