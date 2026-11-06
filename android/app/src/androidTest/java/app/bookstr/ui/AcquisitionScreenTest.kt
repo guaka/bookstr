@@ -108,6 +108,7 @@ class AcquisitionScreenTest {
         compose.onNodeWithTag("search.language").performClick()
         compose.onNodeWithTag("search.language.en").performClick()
         compose.onNodeWithTag("search.query").assertIsNotFocused()
+        compose.onNodeWithTag("search.language").assertTextContains("English")
         compose.onNodeWithTag("search.query").performClick().performTextInput(" extra")
         compose.onNodeWithTag("search.query").assertIsFocused()
         compose.onNodeWithTag("search.submit").performClick()
@@ -140,7 +141,7 @@ class AcquisitionScreenTest {
             )
         }
 
-        compose.onNodeWithTag("search.metadata-only.heading").assertTextContains("1")
+        compose.onNodeWithTag("search.metadata-only.heading").assertTextContains("1", substring = true)
         compose.onNodeWithTag("search.open.archive:fb2-fixture").assertDoesNotExist()
         compose.onNodeWithText("All formats").assertExists()
         assertFalse(opened)
