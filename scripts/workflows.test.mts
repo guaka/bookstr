@@ -222,7 +222,7 @@ test('Android CI caches Gradle and native compilation while preserving universal
   assert.doesNotMatch(release, /-Pbookstr\.abis/);
 });
 
-test('Android CI has four ordered jobs and the emulator consumes prebuilt APKs', async () => {
+test('Android CI separates sharded execution from combined coverage and release', async () => {
   const workflow = await readWorkflow('android.yml');
   const ignore = await readFile(new URL('../.gitignore', import.meta.url), 'utf8');
   const properties = await readFile(new URL('../android/gradle.properties', import.meta.url), 'utf8');
@@ -238,15 +238,15 @@ test('Android CI has four ordered jobs and the emulator consumes prebuilt APKs',
 
   assert.match(properties, /^org\.gradle\.configuration-cache=true$/m);
   assert.deepEqual([...workflow.matchAll(/^  ([a-z-]+):\n    name:/gm)].map((match) => match[1]).filter((name) => name !== 'changes'), [
-    'unit-tests', 'package-apks', 'emulator-tests', 'release',
+    'unit-tests', 'package-apks', 'emulator-shards', 'emulator-tests', 'release',
   ]);
   assert.match(workflow, /testDebugUnitTest jacocoDebugUnitTestReport/);
   assert.match(workflow, /node --test --experimental-test-coverage --test-coverage-lines=100 --test-coverage-branches=100 --test-coverage-functions=100 android\/scripts\/instrumentation-results\.test\.mts/);
   assert.match(workflow, /assembleDebug assembleDebugAndroidTest -Pbookstr.abis=x86_64 -Pbookstr.cxxCompilerLauncher=ccache -Pbookstr.nativeCoverage=true\n/);
-  assert.match(workflow, /needs: \[unit-tests, package-apks\]/);
+  assert.match(workflow, /needs: \[changes, unit-tests, package-apks, emulator-shards\]/);
   assert.match(workflow, /needs: \[unit-tests, package-apks, emulator-tests\]/);
   const emulatorJob = present(present(workflow.match(/^  emulator-tests:\n([\s\S]*?)(?=^  release:)/m))[1]);
-  assert.match(emulatorJob, /script: \|\n[\s\S]*\.\/android\/scripts\/run-connected-e2e\.sh --prebuilt android\/prebuilt-apks\/app-debug\.apk android\/prebuilt-apks\/app-debug-androidTest\.apk/);
+  assert.match(workflow, /script: \|\n[\s\S]*\.\/android\/scripts\/run-connected-e2e\.sh --prebuilt android\/prebuilt-apks\/app-debug\.apk android\/prebuilt-apks\/app-debug-androidTest\.apk/);
   assert.match(workflow, /profile: pixel_2/);
   assert.match(workflow, /-memory 2048 -cores 2/);
   assert.match(workflow, /window_animation_scale 0/);
@@ -258,17 +258,17 @@ test('Android CI has four ordered jobs and the emulator consumes prebuilt APKs',
   assert.match(e2eRunner, /require-emulator\.sh/);
   assert.match(e2eRunner, /install -r "\$app_apk"/);
   assert.match(e2eRunner, /install -r "\$test_apk"/);
-  assert.match(e2eRunner, /shell am instrument -w -r app\.bookstr\.test\/app\.bookstr\.BookstrTestRunner/);
+  assert.match(e2eRunner, /shell am instrument -w -r .*app\.bookstr\.test\/app\.bookstr\.BookstrTestRunner/);
   assert.match(e2eRunner, /rm -f "\$results_dir\/instrumentation\.log"/);
   assert.match(ignore, /^\/android\/e2e-results\/$/m);
   assert.match(ignore, /^\/android\/e2e-screenshots\/$/m);
   assert.match(e2eRunner, /instrumentation-results\.mjs/);
   assert.match(e2eRunner, /instrumentation\.started/);
-  assert.match(emulatorJob, /hashFiles\('android\/e2e-results\/instrumentation\.started'\) != ''/);
+  assert.match(emulatorJob, /hashFiles\('android\/e2e-results\/shard-\*\/instrumentation\.started'\) != ''/);
   assert.match(workflow, /name: Record Android unit test overview\n        if: always\(\) && hashFiles\('android\/app\/build\/test-results\/testDebugUnitTest\/TEST-\*\.xml'\) != ''/);
   assert.match(emulatorJob, /name: Upload Android UI results[\s\S]*?path: android\/e2e-results\//);
   const uploads = [...workflow.matchAll(/uses: actions\/upload-artifact@v4\n([\s\S]*?)(?=\n      - |\n  [a-z-]+:|$)/g)];
-  assert.equal(uploads.length, 12);
+  assert.equal(uploads.length, 13);
   for (const upload of uploads) assert.match(present(upload[1]), /overwrite: true/);
   assert.match(e2eRunner, /\$adb_path" pull "\$device_screenshot_dir\/\." "\$host_screenshot_dir"/);
   assert.match(e2eRunner, /Android e2e tests produced no screenshots/);
@@ -483,6 +483,8 @@ test('Android build documentation describes the CI artifact and signing constrai
   const readme = await readFile(new URL('../README.md', import.meta.url), 'utf8');
 
   assert.match(documentation, /actions\/workflows\/android\.yml/);
+  assert.match(documentation, /four parallel emulator shards/);
+  assert.match(documentation, /Rerun failed jobs/);
   assert.match(documentation, /bookstr-android-apks-<commit>/);
   assert.match(documentation, /14 days/);
   assert.match(documentation, /runner's debug signing key/);
@@ -525,7 +527,7 @@ test('signed Android releases only run after checks on trusted main builds', asy
 test('Android setup only requests SDK packages still available from Google', async () => {
   const workflow = await readWorkflow('android.yml');
   const setups = [...workflow.matchAll(/uses: android-actions\/setup-android@v3\n([\s\S]*?)(?=      - )/g)];
-  assert.equal(setups.length, 4);
+  assert.equal(setups.length, 5);
   for (const setup of setups) {
     assert.match(present(setup[1]), /with:\n          packages: platform-tools/);
     assert.doesNotMatch(present(setup[1]), /packages:.*\btools platform-tools\b/);
@@ -555,7 +557,7 @@ test('Android emulator waits for every artifact producer before downloading cove
   const needs = present(present(emulator.match(/^    needs: (.+)$/m))[1]);
   const dependencies = needs.replace(/^\[|\]$/g, '').split(',').map(name => name.trim());
   const downloads = [...emulator.matchAll(/uses: actions\/download-artifact@v4\n        with:\n          name: (.+)/g)];
-  assert.equal(downloads.length, 4);
+  assert.equal(downloads.length, 3);
   for (const [, artifact] of downloads) {
     const producers = jobs.filter(([, , source]) =>
       [...present(source).matchAll(/uses: actions\/upload-artifact@v4\n        with:\n          name: (.+)/g)]
@@ -589,12 +591,12 @@ test('Android jobs combine JVM and emulator coverage from staged project classes
   assert.match(packageApks, /Upload native coverage inputs/);
   assert.match(emulator, /name: bookstr-android-jvm-exec-\$\{\{ github\.sha \}\}/);
   assert.match(emulator, /name: bookstr-android-project-classes-\$\{\{ github\.sha \}\}/);
-  assert.match(emulator, /BOOKSTR_COVERAGE_FILE: android\/app\/build\/coverage\/full\.ec/);
-  assert.match(emulator, /BOOKSTR_NATIVE_PROFILE_OUTPUT: android\/app\/build\/coverage\/native/);
+  assert.match(workflow, /BOOKSTR_COVERAGE_FILE: android\/app\/build\/coverage\/shard-\$\{\{ matrix\.shard \}\}\/full\.ec/);
+  assert.match(workflow, /BOOKSTR_NATIVE_PROFILE_OUTPUT: android\/app\/build\/coverage\/shard-\$\{\{ matrix\.shard \}\}\/native/);
   assert.match(emulator, /Download native coverage inputs/);
   assert.match(emulator, /name: Generate native source coverage report/);
   assert.match(emulator, /chmod \+x android\/native-coverage-input\/bin\/llvm-cov android\/native-coverage-input\/bin\/llvm-profdata/);
-  assert.match(emulator, /hashFiles\('android\/app\/build\/coverage\/native\/native-coverage-collected\.marker'\) != ''/);
+  assert.match(emulator, /hashFiles\('android\/app\/build\/coverage\/shard-\*\/native\/raw\/\*\*\/\*\.profraw'\) != ''/);
   assert.match(emulator, /native-coverage\.json/);
   assert.match(emulator, /name: bookstr-android-native-coverage-\$\{\{ github\.sha \}\}/);
   assert.match(emulator, /sdkmanager "platforms;android-35" "build-tools;35\.0\.0"/);
@@ -690,7 +692,7 @@ test('Node.js runtime pin is shared by local development and every workflow', as
   const setupNodeSteps = workflows.flatMap((workflow) =>
     [...workflow.matchAll(/- uses: actions\/setup-node@v4([\s\S]*?)(?=\n      - uses:|\n      - name:|$)/g)].map((match) => match[1]),
   );
-  assert.equal(setupNodeSteps.length, 7);
+  assert.equal(setupNodeSteps.length, 8);
   for (const step of setupNodeSteps) {
     assert.match(present(step), /node-version-file: \.nvmrc/);
     assert.doesNotMatch(present(step), /node-version:\s*\d/);
@@ -736,4 +738,29 @@ test('Worker deployment and CI use the strict TypeScript source', async () => {
   assert.match(web.scripts['typecheck:worker'], /tsc -p \.\.\/worker\/tsconfig\.json/);
   assert.match(workflow, /pnpm --dir web run typecheck:worker/);
   assert.match(workflow, /--extension=\.ts/);
+});
+
+
+test('four Android shards finish independently and the existing required check gates their combined outputs', async () => {
+  const workflow = await readWorkflow('android.yml');
+  const shards = present(workflow.split('  emulator-shards:\n')[1]?.split('  emulator-tests:\n')[0]);
+  const aggregate = present(workflow.split('  emulator-tests:\n')[1]?.split('  release:\n')[0]);
+  assert.match(shards, /needs: package-apks/);
+  assert.match(shards, /timeout-minutes: 25/);
+  assert.match(shards, /fail-fast: false/);
+  assert.match(shards, /shard: \[0, 1, 2, 3\]/);
+  assert.match(shards, /BOOKSTR_SHARD_COUNT: 4/);
+  assert.match(shards, /timeout-minutes: 20/);
+  assert.doesNotMatch(shards, /gradlew|setup-java|setup-gradle/);
+  assert.match(shards, /name: Upload shard results and coverage\n        if: always\(\)/);
+  assert.match(shards, /name: bookstr-android-shard-.*github\.run_id/);
+  assert.doesNotMatch(shards, /github\.run_attempt/, 'rerunning only failed shards must reuse successful shard artifacts');
+  assert.match(shards, /overwrite: true/);
+  assert.match(aggregate, /name: Emulator UI tests/);
+  assert.match(aggregate, /if: always\(\) && needs\.changes\.outputs\.android == 'true'/);
+  assert.match(aggregate, /merge-multiple: true/);
+  assert.match(aggregate, /combine-shard-coverage\.sh 4/);
+  assert.match(aggregate, /needs\.emulator-shards\.result != 'success'/);
+  assert.match(aggregate, /steps\.native_coverage\.outcome != 'success'/);
+  assert.match(aggregate, /steps\.full_coverage\.outcome != 'success'/);
 });

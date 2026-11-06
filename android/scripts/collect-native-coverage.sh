@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-if [[ $# -ne 4 ]]; then
-    echo "Usage: $0 <adb> <emulator-serial> <application-id> <empty-output-directory>" >&2
+if [[ $# -ne 4 && ( $# -ne 5 || "${5:-}" != --allow-empty ) ]]; then
+    echo "Usage: $0 <adb> <emulator-serial> <application-id> <empty-output-directory> [--allow-empty]" >&2
     exit 2
 fi
 
@@ -64,7 +64,7 @@ for remote_dir in cache files/torrent-downloads; do
     done <<< "$remote_paths"
 done
 
-if [[ $count -eq 0 ]]; then
+if [[ $count -eq 0 && "${5:-}" != --allow-empty ]]; then
     echo "No Bookstr native profiles found for $package on $serial" >&2
     exit 1
 fi

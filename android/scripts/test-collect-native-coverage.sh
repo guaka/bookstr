@@ -86,3 +86,15 @@ if FAKE_APP=$fake_app FAKE_FAIL_PULL=files/torrent-downloads/bookstr-native-cove
 fi
 [[ ! -e "$failed_pull/raw" ]]
 [[ -z "$(find "$failed_pull" -maxdepth 1 -name '.raw-staging.*' -print -quit)" ]]
+
+# A shard with no JNI tests may be empty; the combined native report is mandatory.
+FAKE_APP=$empty bash "$script_dir/collect-native-coverage.sh" "$fake_adb" emulator-5554 app.bookstr "$temporary/empty-shard" --allow-empty
+[[ -d "$temporary/empty-shard/raw" ]]
+if FAKE_APP=$fake_app FAKE_FAIL_FIND=cache bash "$script_dir/collect-native-coverage.sh" "$fake_adb" emulator-5554 app.bookstr "$temporary/broken-empty-shard" --allow-empty; then
+    echo 'An empty shard must not hide failed adb operations' >&2
+    exit 1
+fi
+if bash "$script_dir/collect-native-coverage.sh" "$fake_adb" emulator-5554 app.bookstr "$temporary/invalid" --typo; then
+    echo 'Unknown collection options must fail' >&2
+    exit 1
+fi
