@@ -109,6 +109,9 @@ class Fb2ReaderActivityTest {
             repeat(14) { index -> append("<p>First chapter paragraph ${index + 1} with enough text to fill the reader and scroll.</p>") }
             append("</section><section id='chapter-two'><title><p>Chapter Two</p></title>")
             append("<p>Second chapter destination is the location selected from the contents list.</p>")
+            repeat(20) { index ->
+                append("<p>Second chapter continuation ${index + 1} has enough text to fill the reader viewport after navigating from the contents list.</p>")
+            }
             append("</section></body></FictionBook>")
         }
     }
