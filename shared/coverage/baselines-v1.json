@@ -24,14 +24,14 @@
       }
     },
     "android": {
-      "minimumTests": 515,
+      "minimumTests": 522,
       "source": "https://github.com/guaka/bookstr/actions/runs/33211395263",
       "commit": "335eeb26a301edb47f83f7146deb81d6506dc979",
       "metrics": {
-        "Instructions": 56.97,
-        "Branches": 50.71,
-        "Methods": 60,
-        "Lines": 57.58
+        "Instructions": 57.11,
+        "Branches": 50.85,
+        "Methods": 60.22,
+        "Lines": 57.74
       }
     },
     "ios": {
