@@ -201,13 +201,15 @@
         "ext": "epub",
         "name": "EPUB book",
         "mimeType": "application/epub+zip",
-        "role": "Viewer"
+        "role": "Viewer",
+        "rank": "Alternate"
       },
       {
         "ext": "pdf",
         "name": "PDF document",
         "mimeType": "application/pdf",
-        "role": "Viewer"
+        "role": "Viewer",
+        "rank": "Alternate"
       }
     ]
   },

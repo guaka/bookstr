@@ -14,9 +14,20 @@ test('OS file opens import EPUB on launch and PDF into the running reader', asyn
   fs.writeFileSync(pdf, minimalPdf('External PDF contents.'));
   const app = await electron.launch({ args: ['--mute-audio', '--disable-speech-api', path.join(__dirname, '../..'), `--user-data-dir=${root}/profile`, epub] });
   try {
-    const page = await app.firstWindow();
+    let page = await app.firstWindow();
     await page.waitForURL('app://bookstr/reader.html');
     await expect(page.locator('#viewer iframe').first()).toBeVisible({ timeout: 45_000 });
+    const restored = app.waitForEvent('window');
+    await app.evaluate(({ app, BrowserWindow }, file) => {
+      app.removeAllListeners('window-all-closed');
+      app.on('window-all-closed', () => {});
+      BrowserWindow.getAllWindows()[0]!.destroy();
+      app.emit('open-file', { preventDefault() {} } as Electron.Event, file);
+    }, path.join(root, 'profile/library/books', fs.readdirSync(path.join(root, 'profile/library/books')).find(file => file.endsWith('.epub'))!));
+    const reopened = await restored;
+    await reopened.waitForURL('app://bookstr/reader.html');
+    await expect(reopened.locator('#viewer iframe').first()).toBeVisible({ timeout: 45_000 });
+    page = reopened;
     await app.evaluate(({ app }, file) => {
       app.emit('open-file', { preventDefault() {} } as Electron.Event, file);
     }, pdf);

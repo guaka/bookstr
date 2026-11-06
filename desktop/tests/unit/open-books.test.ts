@@ -15,7 +15,7 @@ test('external books are persisted, deduplicated and opened without overwriting 
   const importer = new LibraryImporter({ libraryRoot });
   try {
     for (const extension of ['epub', 'pdf']) {
-      const source = path.join(root, `External Book.${extension}`);
+      const source = path.join(root, `External Book.${extension.toUpperCase()}`);
       fs.writeFileSync(source, `external ${extension} bytes`);
       let payload: unknown;
       await importAndOpenBook(source, importer, store, value => { payload = value; });
@@ -74,9 +74,10 @@ test('serializes overlapping opens and continues after import failure', async ()
 });
 
 test('packaging registers both document types on all desktop targets and includes the handler', () => {
-  const config = require('../../package.json') as { build: { fileAssociations: { ext: string; mimeType: string; role: string }[]; files: (string | { filter: string[] })[] } };
+  const config = require('../../package.json') as { build: { fileAssociations: { ext: string; mimeType: string; role: string; rank: string }[]; files: (string | { filter: string[] })[] } };
   assert.deepEqual(config.build.fileAssociations.map(item => [item.ext, item.mimeType, item.role]), [
     ['epub', 'application/epub+zip', 'Viewer'], ['pdf', 'application/pdf', 'Viewer'],
   ]);
   assert.ok(config.build.files.some(item => typeof item !== 'string' && item.filter.includes('open-books.js')));
+  assert.ok(config.build.fileAssociations.every(item => item.rank === 'Alternate'));
 });

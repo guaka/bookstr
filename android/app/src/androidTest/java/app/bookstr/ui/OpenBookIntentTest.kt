@@ -58,11 +58,16 @@ class OpenBookIntentTest {
                             .single { it.title == file.nameWithoutExtension && it.format == format }
                         assertTrue(app.catalogRepository.publicationFile(book.id, format).isFile)
                         instrumentation.runOnMainSync { opened.finish() }
+                        instrumentation.waitForIdleSync()
                         // Reusing the foreground main activity must deliver onNewIntent.
-                        scenario.onActivity { it.startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP)) }
-                        val reopened = instrumentation.waitForMonitorWithTimeout(monitor, 20_000)
-                        assertNotNull("Warm file request reached its reader", reopened)
-                        instrumentation.runOnMainSync { reopened.finish() }
+                        val warmMonitor = instrumentation.addMonitor(reader, null, false)
+                        try {
+                            val warm = Intent(intent).setFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                            scenario.onActivity { it.startActivity(warm) }
+                            val reopened = instrumentation.waitForMonitorWithTimeout(warmMonitor, 20_000)
+                            assertNotNull("Warm file request reached its reader", reopened)
+                            instrumentation.runOnMainSync { reopened.finish() }
+                        } finally { instrumentation.removeMonitor(warmMonitor) }
                     }
                 } finally { instrumentation.removeMonitor(monitor) }
             }

@@ -68,9 +68,13 @@ const { CatalogInvitations } = require('./catalog-invitations') as typeof import
 const { nip19: catalogNip19 } = require('nostr-tools') as typeof import('nostr-tools', { with: { 'resolution-mode': 'import' } });
 const catalogInvitations = new CatalogInvitations({ app, dialog, loadState, saveState, decodeNPub: catalogNip19.decode, getWindow: () => mainWindow });
 const { OpenBooks, importAndOpenBook } = require('./open-books') as typeof import('./open-books');
-const openBooks = new OpenBooks(app, file => importAndOpenBook(
-  file, getLibraryImporter(), getLibraryStore(), ensureReaderWindowForPayload,
-), error => {
+const openBooks = new OpenBooks(app, async file => {
+  if (!mainWindow || mainWindow.isDestroyed()) await createLibraryWindow();
+  await importAndOpenBook(file, getLibraryImporter(), getLibraryStore(), payload => {
+    const result = ensureReaderWindowForPayload(payload);
+    if (!result.ok) throw new Error(result.error);
+  });
+}, error => {
   dialog.showErrorBox('Could not open book', String(error));
 });
 
