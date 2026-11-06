@@ -79,7 +79,7 @@ test('TypeScript uses strict checks and emits beside existing Electron modules',
   for (const directory of ['tests', 'node_modules', 'src', 'templates', 'scripts', 'types', 'site-dist', 'coverage']) {
     assert.ok(webFiles.includes(`!${directory}/**/*`), directory);
   }
-  for (const file of ['package.json', 'pnpm-lock.yaml', 'tsconfig*.json', 'build-manifest.json']) {
+  for (const file of ['package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml', 'tsconfig*.json', 'build-manifest.json']) {
     assert.ok(webFiles.includes(`!${file}`), file);
   }
 });

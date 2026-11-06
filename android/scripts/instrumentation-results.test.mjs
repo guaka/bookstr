@@ -9,6 +9,16 @@ import { parseJUnit } from '../../scripts/test-overview.mjs';
 
 const node = process.execPath;
 const cli = resolve('android/scripts/instrumentation-results.mjs');
+
+test('connected Android tests invoke the configured Bookstr instrumentation runner', async () => {
+  const [gradle, connectedScript] = await Promise.all([
+    readFile(resolve('android/app/build.gradle.kts'), 'utf8'),
+    readFile(resolve('android/scripts/run-connected-e2e.sh'), 'utf8'),
+  ]);
+  assert.match(gradle, /testInstrumentationRunner\s*=\s*"app\.bookstr\.BookstrTestRunner"/);
+  assert.match(connectedScript, /app\.bookstr\.test\/app\.bookstr\.BookstrTestRunner/);
+});
+
 const successLog = [
   'INSTRUMENTATION_STATUS: class=org.example.BookTest',
   'INSTRUMENTATION_STATUS: test=reads & writes <books> "today" \'quietly\'',
