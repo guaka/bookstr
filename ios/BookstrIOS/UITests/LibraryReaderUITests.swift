@@ -22,6 +22,32 @@ final class LibraryReaderUITests: XCTestCase {
         add(attachment)
     }
 
+    func testExternalFavoriteRendersMetadataAndShowsMissingPublicationAlert() {
+        app.terminate()
+        app.launchArguments = ["--ui-testing-library-fixtures", "--ui-testing-external-favorite"]
+        app.launch()
+        let library = app.tabBars.buttons["Library"]
+        XCTAssertTrue(library.waitForExistence(timeout: 12))
+        library.tap()
+
+        let filter = app.searchFields["Filter books"]
+        if !filter.isHittable { app.swipeDown() }
+        XCTAssertTrue(filter.waitForExistence(timeout: 5))
+        filter.tap()
+        filter.typeText("Remote Favorite Fixture")
+
+        let favorite = app.buttons["library-favorite-ui-test-unreadable-remote"]
+        XCTAssertTrue(favorite.waitForExistence(timeout: 8), app.debugDescription)
+        XCTAssertTrue(favorite.staticTexts["Remote Favorite Fixture"].exists)
+        XCTAssertTrue(favorite.staticTexts["Remote Author"].exists)
+        XCTAssertTrue(favorite.staticTexts["EPUB"].exists)
+
+        favorite.tap()
+        let alert = app.alerts["Can't open book"]
+        XCTAssertTrue(alert.waitForExistence(timeout: 5))
+        XCTAssertTrue(alert.staticTexts["This favorite does not include a readable publication URL."].exists)
+    }
+
     func testEPUBTimeoutRecoversOnceWithFreshReader() {
         app.terminate()
         app.launchArguments = ["--ui-testing-library-fixtures", "--ui-testing-epub-timeout-once"]
