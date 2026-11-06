@@ -1,8 +1,10 @@
-const fs = require('node:fs');
-const path = require('node:path');
-const { _electron: electron, test, expect } = require('@playwright/test');
+declare global { interface Window { __gutenbergDownloads: number } }
+const fs: typeof import('node:fs') = require('node:fs');
+const path: typeof import('node:path') = require('node:path');
+const { _electron: electron, test, expect } = require('@playwright/test') as typeof import('@playwright/test');
 
-const JSZip = require('../../../web/jszip.min.js');
+interface ZipFixture { file(name: string, contents: string, options?: { compression: string }): void; generateAsync(options: {type: 'nodebuffer'; mimeType: string}): Promise<Buffer> }
+const JSZip = require('../../../web/jszip.min.js') as new () => ZipFixture;
 
 async function minimalEpub() {
   const zip = new JSZip();
@@ -42,7 +44,7 @@ test('a Gutenberg library row opens its EPUB through the Electron catalog route'
       const originalFetch = window.fetch.bind(window);
       window.__gutenbergDownloads = 0;
       window.fetch = async (input, init) => {
-        const rawUrl = typeof input === 'string' ? input : input?.url;
+        const rawUrl = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
         const url = new URL(rawUrl, location.href);
         if (url.href === 'app://bookstr/api/books/999001/download') {
           window.__gutenbergDownloads += 1;

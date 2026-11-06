@@ -92,9 +92,11 @@ test('all packaged Electron modules and build helpers have TypeScript sources', 
 
 test('strict checks include native TypeScript launchers and converted tests', () => {
   const config = JSON.parse(fs.readFileSync(path.join(root, 'tsconfig.type-tests.json'), 'utf8'));
-  for (const pattern of ['scripts/**/*.cts', 'tests/unit/*.test.ts', 'tests/e2e/*.spec.ts']) {
+  for (const pattern of ['scripts/**/*.cts', 'tests/unit/*.test.ts', 'tests/e2e/**/*.ts', 'tests/packaged/*.cts']) {
     assert.ok(config.include.includes(pattern), pattern);
   }
+  const testFiles = fs.readdirSync(path.join(root, 'tests'), {recursive:true});
+  assert.deepEqual(testFiles.filter(file => /\.(?:js|cjs)$/.test(String(file))), []);
   assert.equal(config.compilerOptions.noEmit, true);
   assert.equal(config.compilerOptions.moduleDetection, 'force');
   const manifest = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
@@ -102,6 +104,7 @@ test('strict checks include native TypeScript launchers and converted tests', ()
     assert.match(manifest.scripts[name], /scripts\/typescript\.cts /);
   }
   for (const name of ['test:unit', 'test:coverage']) {
-    assert.match(manifest.scripts[name], /tests\/unit\/\*\.test\.js tests\/unit\/\*\.test\.ts/);
+    assert.match(manifest.scripts[name], /tests\/unit\/\*\.test\.ts/);
+    assert.doesNotMatch(manifest.scripts[name], /tests\/unit\/\*\.test\.js/);
   }
 });

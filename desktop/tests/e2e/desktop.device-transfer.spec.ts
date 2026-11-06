@@ -1,6 +1,18 @@
-const fs = require('node:fs');
-const path = require('node:path');
-const { _electron: electron, test, expect } = require('@playwright/test');
+import type { MessageBoxOptions } from 'electron';
+type KindleResult = { transferred: string[]; alreadyPresent: number; skipped?: Array<{title:string;reason:string}>; errors:Array<{bookId:string;error:string}> };
+declare global {
+ var invitationQuestions: MessageBoxOptions[];
+ var kindlePresenceFixture: string[];
+ var kindleCalls: Array<{deviceId:string;bookId:string}>;
+ var finishKindle: {resolve(value: KindleResult):void;reject(error: Error):void};
+ var presenceKindleConnected: boolean;
+ var presenceReads: number;
+ var finishOverview: (value: KindleResult)=>void;
+ function refreshKindleOffer(): Promise<void>;
+}
+const fs: typeof import('node:fs') = require('node:fs');
+const path: typeof import('node:path') = require('node:path');
+const { _electron: electron, test, expect } = require('@playwright/test') as typeof import('@playwright/test');
 
 function electronArgs() {
   const output = path.join(__dirname, '../../test-results');
@@ -65,7 +77,7 @@ test('Library sends one manga to Kindle and shows progress, duplicates and error
     await expect(send).toBeDisabled();
     await expect.poll(() => app.evaluate(() => globalThis.kindleCalls.length)).toBe(1);
     await app.evaluate(({ BrowserWindow }) => {
-      BrowserWindow.getAllWindows()[0].webContents.send('bookstr-desktop-kindle-progress', {
+      BrowserWindow.getAllWindows()[0]!.webContents.send('bookstr-desktop-kindle-progress', {
         phase: 'converting', bookId: '3'.repeat(32), page: 1, pages: 20,
       });
     });
@@ -163,7 +175,7 @@ test('Kindle bulk overview shows per-book results and keeps progress when naviga
     await expect(window.locator('#kindle-transfer-overview')).toBeVisible();
     await expect(window.locator('#kindle-transfer-count')).toHaveText('0 / 4 copied');
     await expect.poll(() => app.evaluate(() => typeof globalThis.finishOverview)).toBe('function');
-    await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].webContents.send('bookstr-desktop-kindle-progress', {
+    await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]!.webContents.send('bookstr-desktop-kindle-progress', {
       phase: 'copying', title: 'Book failed', bookId: 'failed', percent: 42, completed: 1, total: 2,
     }));
     await expect(window.locator('#kindle-transfer-count')).toHaveText('1 / 4 copied');

@@ -1,8 +1,8 @@
-const fs = require('node:fs');
-const path = require('node:path');
-const { _electron: electron } = require('@playwright/test');
-const { test, expect } = require('@playwright/test');
-const { createNip46Fixture } = require('./nip46.fixture');
+const fs: typeof import('node:fs') = require('node:fs');
+const path: typeof import('node:path') = require('node:path');
+const { _electron: electron } = require('@playwright/test') as typeof import('@playwright/test');
+const { test, expect } = require('@playwright/test') as typeof import('@playwright/test');
+const { createNip46Fixture } = require('./nip46.fixture.ts') as typeof import('./nip46.fixture');
 
 function newUserData() {
   const output = path.join(__dirname, '../../test-results');
@@ -10,11 +10,11 @@ function newUserData() {
   return fs.mkdtempSync(path.join(output, 'nip46-user-data-'));
 }
 
-function launchArgs(userData) {
+function launchArgs(userData: string) {
   return [path.join(__dirname, '../..'), `--user-data-dir=${userData}`];
 }
 
-function launchEnvironment(relayUrl) {
+function launchEnvironment(relayUrl: string) {
   return {
     ...process.env,
     NODE_ENV: 'test',
@@ -42,19 +42,19 @@ test('approved NIP-46 QR signer becomes active, updates settings, and persists w
     expect(parsedInvitation.searchParams.get('perms')).toContain('sign_event:22242');
 
     await fixture.approve(invitationUri);
-    await expect.poll(() => library.evaluate(() => window.bookstrDesktop.signer.nip46QrStatus()))
+    await expect.poll(() => library.evaluate(() => window.bookstrDesktop!.signer.nip46QrStatus()))
       .toMatchObject({ status: 'connected', responseReceived: true, relays: [fixture.relayUrl] });
 
     const connected = await library.evaluate(async fixturePeerPubkey => ({
-      status: await window.bookstrDesktop.signer.status(),
-      pubkey: await window.bookstrDesktop.signer.getPublicKey(),
-      signed: await window.bookstrDesktop.signer.signEvent({
+      status: await window.bookstrDesktop!.signer.status() as {persistent:boolean},
+      pubkey: await window.bookstrDesktop!.signer.getPublicKey(),
+      signed: await window.bookstrDesktop!.signer.signEvent({
         kind: 30078,
         created_at: 1_700_000_000,
         tags: [['d', 'nip46-test']],
         content: 'signed by the fixture',
       }),
-      encrypted: await window.bookstrDesktop.signer.nip44.encrypt(
+      encrypted: await window.bookstrDesktop!.signer.nip44.encrypt(
         fixturePeerPubkey,
         'encrypted by the fixture',
       ),
@@ -62,10 +62,10 @@ test('approved NIP-46 QR signer becomes active, updates settings, and persists w
     expect(connected.status).toMatchObject({ mode: 'nip46', configured: true, pubkey: fixture.userPubkey });
     expect(connected.pubkey).toBe(fixture.userPubkey);
     expect(connected.signed).toMatchObject({ pubkey: fixture.userPubkey, kind: 30078, content: 'signed by the fixture' });
-    expect(fixture.decryptFromUser(connected.encrypted)).toBe('encrypted by the fixture');
+    expect(fixture.decryptFromUser(connected.encrypted as string)).toBe('encrypted by the fixture');
     const encryptedForUser = fixture.encryptForUser('decrypted by Electron');
     await expect(library.evaluate(
-      ({ peerPubkey, ciphertext }) => window.bookstrDesktop.signer.nip44.decrypt(peerPubkey, ciphertext),
+      ({ peerPubkey, ciphertext }) => window.bookstrDesktop!.signer.nip44.decrypt(peerPubkey, ciphertext),
       { peerPubkey: fixture.peerPubkey, ciphertext: encryptedForUser },
     )).resolves.toBe('decrypted by Electron');
     const signerStatus = library.locator('#desktop-signer-status');
@@ -86,10 +86,10 @@ test('approved NIP-46 QR signer becomes active, updates settings, and persists w
       env: launchEnvironment(fixture.relayUrl),
     });
     library = await electronApp.firstWindow();
-    const restartedStatus = await library.evaluate(() => window.bookstrDesktop.signer.status());
+    const restartedStatus = await library.evaluate(() => window.bookstrDesktop!.signer.status());
     if (connected.status.persistent) {
       expect(restartedStatus).toMatchObject({ mode: 'nip46', configured: true, pubkey: fixture.userPubkey });
-      await expect(library.evaluate(() => window.bookstrDesktop.signer.getPublicKey())).resolves.toBe(fixture.userPubkey);
+      await expect(library.evaluate(() => window.bookstrDesktop!.signer.getPublicKey())).resolves.toBe(fixture.userPubkey);
     } else {
       expect(restartedStatus).toMatchObject({ mode: '', configured: false, pubkey: '' });
     }

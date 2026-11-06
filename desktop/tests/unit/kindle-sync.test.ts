@@ -1,16 +1,28 @@
 'use strict';
 
-const assert = require('node:assert/strict');
-const crypto = require('node:crypto');
-const fs = require('node:fs/promises');
-const os = require('node:os');
-const path = require('node:path');
-const test = require('node:test');
-const { LibraryStore } = require('../../library-store');
-const { KindleSync, MountedKindles, safeFilename, defaultRoots } = require('../../kindle-sync');
-const { MtpKindles } = require('../../kindle-mtp');
+const assert: typeof import('node:assert/strict') = require('node:assert/strict');
+const crypto: typeof import('node:crypto') = require('node:crypto');
+const fs: typeof import('node:fs/promises') = require('node:fs/promises');
+const os: typeof import('node:os') = require('node:os');
+const path: typeof import('node:path') = require('node:path');
+const test: typeof import('node:test') = require('node:test');
+const { LibraryStore } = require('../../library-store') as typeof import('../../src/library-store');
+const { KindleSync, MountedKindles, safeFilename, defaultRoots } = require('../../kindle-sync') as typeof import('../../src/kindle-sync');
+const { MtpKindles } = require('../../kindle-mtp') as typeof import('../../src/kindle-mtp');
 
-function digest(bytes) { return crypto.createHash('sha256').update(bytes).digest('hex'); }
+type KindleDependencies = NonNullable<ConstructorParameters<typeof KindleSync>[0]>;
+type KindleTransport = NonNullable<KindleDependencies['transports']>[number];
+function testTransport<T extends Partial<KindleTransport>>(transport: T): Omit<T, keyof KindleTransport> & KindleTransport {
+  return transport as unknown as Omit<T, keyof KindleTransport> & KindleTransport;
+}
+type LocalBook = Parameters<KindleTransport['copy']>[1];
+function testBook(book: Partial<LocalBook>): LocalBook {return book as LocalBook;}
+type MtpOptions = NonNullable<ConstructorParameters<typeof MtpKindles>[0]>;
+type MtpRunner = NonNullable<MtpOptions['runner']>;
+const mtpState = (transport: InstanceType<typeof MtpKindles>) => transport as unknown as {runner: MtpRunner;discovery:Promise<unknown>|null};
+
+
+function digest(bytes: string | Buffer) { return crypto.createHash('sha256').update(bytes).digest('hex'); }
 
 test('Kindle preview hashes existing files and transfer copies only missing supported books', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'bookstr-kindle-'));
@@ -19,13 +31,13 @@ test('Kindle preview hashes existing files and transfer copies only missing supp
   await fs.mkdir(documents, { recursive: true });
   await fs.mkdir(library);
   const store = new LibraryStore({ dbPath: path.join(library, 'library.sqlite'), libraryRoot: library });
-  const files = new Map();
+  const files = new Map<string,string>();
   try {
     for (const [id, title, extension, bytes] of [
       ['a', 'Already There', 'pdf', 'existing PDF bytes'],
       ['b', 'New PDF', 'pdf', 'different PDF bytes'],
       ['c', 'EPUB skipped', 'epub', 'an EPUB'],
-    ]) {
+    ] as const) {
       const filePath = path.join(library, `${id}.${extension}`);
       await fs.writeFile(filePath, bytes);
       files.set(id, filePath);
@@ -35,13 +47,13 @@ test('Kindle preview hashes existing files and transfer copies only missing supp
     }
     await fs.writeFile(path.join(documents, 'renamed-existing.pdf'), 'existing PDF bytes');
     const transport = new MountedKindles({ roots: [root], platform: 'darwin' });
-    const sync = new KindleSync({ store, resolveFile: async id => ({ filePath: files.get(id) }), transports: [transport] });
-    const [device] = await sync.devices();
+    const sync = new KindleSync({ store, resolveFile: async id => ({ filePath: files.get(id)! }), transports: [transport] });
+    const device = (await sync.devices())[0]!;
     assert.equal(device.name, 'Kindle');
     const plan = await sync.preview(device.id);
     assert.deepEqual(plan.missing.map(item => item.title), ['New PDF']);
     assert.equal(plan.alreadyPresent, 1);
-    assert.match(plan.skipped[0].reason, /epub is not supported/);
+    assert.match(plan.skipped[0]!.reason, /epub is not supported/);
     assert.deepEqual((await sync.preview(device.id, 'b')).missing.map(item => item.bookId), ['b']);
     assert.equal((await sync.preview(device.id, 'a')).alreadyPresent, 1);
     await assert.rejects(() => sync.preview(device.id, 'c'), /epub is not supported/);
@@ -75,10 +87,10 @@ test('Kindle presence scans export names once, caches per device, expires, and c
   let fileScans = 0;
   let sessions = 0;
   let now = 1_000;
-  const store = { downloads: () => [job, wrongSizeJob], libraryFile: id => id === 'book'
+  const store = { downloads: () => [job, wrongSizeJob], libraryFile: (id: string) => id === 'book'
     ? ({ sha256, sizeBytes: bytes.length }) : ({ sha256: wrongSizeSha, sizeBytes: wrongSizeBytes.length }) };
-  const transport = {
-    devices: async () => connected ? [{ id: 'device', name: 'Kindle', kind: 'test' }] : [],
+  const transport = testTransport({
+    devices: async () => connected ? [{ id: 'device', name: 'Kindle', kind: 'mounted' }] : [],
     files: async (_device, sizes) => {
       fileScans++;
       assert.deepEqual([...sizes].sort((a, b) => a - b), [bytes.length, wrongSizeBytes.length].sort((a, b) => a - b));
@@ -88,7 +100,7 @@ test('Kindle presence scans export names once, caches per device, expires, and c
       ];
     },
     async withSession(_device, operation) { sessions++; return operation(); },
-  };
+  });
   const sync = new KindleSync({ store, resolveFile: async () => assert.fail('presence must use stored metadata'),
     transports: [transport], now: () => now, presenceTtlMs: 60_000 });
   const first = await sync.presence('device');
@@ -119,12 +131,12 @@ test('preview and successful transfers retain verified IDs but still perform the
   let transferFilesCalls = 0;
   let copies = 0;
   let hashes = 0;
-  const transport = {
-    devices: async () => [{ id: 'device', name: 'Kindle', kind: 'test' }],
+  const transport = testTransport({
+    devices: async () => [{ id: 'device', name: 'Kindle', kind: 'mounted' }],
     files: async () => { filesCalls++; return [{ id: 'remote', name: 'renamed.pdf', size: bytes.length }]; },
     hash: async () => { hashes++; return sha256; },
     copy: async () => { copies++; },
-  };
+  });
   try {
     const sync = new KindleSync({ store, resolveFile: async () => ({ filePath: source }), transports: [transport] });
     await sync.preview('device');
@@ -132,7 +144,7 @@ test('preview and successful transfers retain verified IDs but still perform the
     assert.equal(filesCalls, 2, 'verified preview results must not suppress the first complete inventory');
     assert.equal(hashes, 1);
 
-    const absentTransport = { ...transport, files: async () => { transferFilesCalls++; return []; }, hash: async () => '', copy: async () => { copies++; } };
+    const absentTransport = testTransport({ ...transport, files: async () => { transferFilesCalls++; return []; }, hash: async () => '', copy: async () => { copies++; } });
     const transferred = new KindleSync({ store, resolveFile: async () => ({ filePath: source }), transports: [absentTransport] });
     assert.deepEqual((await transferred.transfer('device')).transferred, ['verified']);
     assert.deepEqual((await transferred.presence('device')).bookIds, ['verified']);
@@ -152,20 +164,20 @@ test('presence uses only existing cached comic PDFs and ignores uncached comics'
   let cacheLookups = 0;
   let scans = 0;
   const comicConverter = {
-    cached: async sourceSha => {
+    cached: async (sourceSha: string) => {
       cacheLookups++;
       return sourceSha === comicSha ? { path: '/cache/comic.pdf', sha256: cachedSha, size: 10 } : null;
     },
     convert: async () => assert.fail('presence must never convert a comic'),
   };
-  const transport = {
-    devices: async () => [{ id: 'device', name: 'Kindle', kind: 'test' }],
+  const transport = testTransport({
+    devices: async () => [{ id: 'device', name: 'Kindle', kind: 'mounted' }],
     files: async (_device, sizes) => {
       scans++;
       assert.deepEqual([...sizes], [10]);
-      return [{ id: 'remote', name: safeFilename({ ...jobs[0], extension: 'pdf' }, cachedSha), size: 10 }];
+      return [{ id: 'remote', name: safeFilename({ ...jobs[0]!, extension: 'pdf' }, cachedSha), size: 10 }];
     },
-  };
+  });
   const sync = new KindleSync({ store, resolveFile: async () => assert.fail('presence must not resolve comics'),
     transports: [transport], comicConverter });
   assert.deepEqual((await sync.presence('device')).bookIds, ['cached-comic']);
@@ -180,11 +192,11 @@ test('MTP transfer keeps its session when the first candidate is already present
   await fs.mkdir(library);
   await fs.writeFile(helper, 'fixture');
   const store = new LibraryStore({ dbPath: path.join(library, 'library.sqlite'), libraryRoot: library });
-  const contents = new Map();
-  const localFiles = new Map();
+  const contents = new Map<string,Buffer>();
+  const localFiles = new Map<string,string>();
   let sessionOpens = 0;
   try {
-    for (const [bookId, bytes] of [['already', 'already present bytes'], ['next', 'copy this next']]) {
+    for (const [bookId, bytes] of [['already', 'already present bytes'], ['next', 'copy this next']] as const) {
       const filePath = path.join(library, `${bookId}.pdf`);
       await fs.writeFile(filePath, bytes);
       localFiles.set(bookId, filePath);
@@ -204,10 +216,10 @@ test('MTP transfer keeps its session when the first candidate is already present
           freeBytes: 10000,
           command: async (action, ...args) => {
             if (action === 'files') return [...contents].map(([id, bytes]) => ({ id, name: `${id}.pdf`, size: bytes.length }));
-            if (action === 'get') { await fs.writeFile(args[1], contents.get(args[0])); return { ok: true }; }
+            if (action === 'get') { await fs.writeFile(args[1]!, contents.get(args[0]!)!); return { ok: true }; }
             if (action === 'put') {
               const id = '12';
-              contents.set(id, await fs.readFile(args[0]));
+              contents.set(id, await fs.readFile(args[0]!));
               return { id };
             }
             throw new Error(`unexpected ${action}`);
@@ -216,13 +228,13 @@ test('MTP transfer keeps its session when the first candidate is already present
         };
       },
     });
-    const sync = new KindleSync({ store, resolveFile: async id => ({ filePath: localFiles.get(id) }), transports: [transport] });
-    const [device] = await sync.devices();
+    const sync = new KindleSync({ store, resolveFile: async id => ({ filePath: localFiles.get(id)! }), transports: [transport] });
+    const device = (await sync.devices())[0]!;
     const result = await sync.transfer(device.id);
     assert.deepEqual(result.transferred, ['next']);
     assert.equal(result.alreadyPresent, 1);
     assert.equal(sessionOpens, 1);
-    assert.equal(contents.get('12').toString(), 'copy this next');
+    assert.equal(contents.get('12')!.toString(), 'copy this next');
     await sync.close();
   } finally { store.close(); await fs.rm(root, { recursive: true, force: true }); }
 });
@@ -232,25 +244,25 @@ test('MTP transport uses its packaged helper and verifies copied bytes', async (
   const helper = path.join(root, 'kindle-mtp');
   await fs.writeFile(helper, 'fixture');
   const remote = new Map([['17', Buffer.from('remote PDF')]]);
-  const calls = [];
-  const runner = async (_executable, args) => {
+  const calls: string[][] = [];
+  const runner: MtpRunner = async (_executable, args) => {
     calls.push(args);
     if (args[0] === 'devices') return { stdout: 'Device 0 is a Kindle Scribe.\n[{"id":"1-2","name":"Kindle Scribe"}]\n' };
     if (args[0] === 'files') return { stdout: 'Device 0 is a Kindle Scribe.\n[{"id":"17","name":"old.pdf","size":10}]\n' };
-    if (args[0] === 'get') { await fs.writeFile(args[3], remote.get(args[2])); return { stdout: '{"ok":true}' }; }
-    if (args[0] === 'put') { remote.set('18', await fs.readFile(args[2])); return { stdout: '{"id":"18"}' }; }
+    if (args[0] === 'get') { await fs.writeFile(args[3]!, remote.get(args[2]!)!); return { stdout: '{"ok":true}' }; }
+    if (args[0] === 'put') { remote.set('18', await fs.readFile(args[2]!)); return { stdout: '{"id":"18"}' }; }
     throw new Error('unexpected command');
   };
   try {
     const transport = new MtpKindles({ platform: 'darwin', resourcesPath: root, stagingRoot: path.join(root, 'staging'), runner });
-    const [device] = await transport.devices();
+    const device = (await transport.devices())[0]!;
     assert.equal(device.kind, 'mtp');
-    const [file] = await transport.files(device, new Set([10]));
+    const file = (await transport.files(device, new Set([10])))[0]!;
     assert.equal(await transport.hash(file), digest('remote PDF'));
     const source = path.join(root, 'new.pdf');
     await fs.writeFile(source, 'new PDF');
-    await transport.copy(device, { path: source, sha256: digest('new PDF') }, 'new.pdf');
-    assert.equal(remote.get('18').toString(), 'new PDF');
+    await transport.copy(device, testBook({ path: source, sha256: digest('new PDF') }), 'new.pdf');
+    assert.equal(remote.get('18')!.toString(), 'new PDF');
     assert.ok(calls.some(call => call[0] === 'put'));
   } finally { await fs.rm(root, { recursive: true, force: true }); }
 });
@@ -268,7 +280,7 @@ test('MTP discovery reports bounded adapter diagnostics without hiding the devic
       [Object.assign(new Error('helper failed'), { code: 'ETIMEDOUT' }), /ETIMEDOUT/],
       [new Error('helper failed'), /adapter error/],
       [Object.assign(new Error('helper failed'), { stderr: 'x'.repeat(300) }), /x{200}/],
-    ]) {
+    ] as const) {
       diagnostics = '';
       const transport = new MtpKindles({ platform: 'darwin', resourcesPath: root, stagingRoot: path.join(root, 'staging'),
         runner: async () => { throw error; } });
@@ -304,14 +316,14 @@ test('refreshing Kindle devices never opens a preview or starts a transfer', asy
 
 test('overlapping refreshes share discovery and a later refresh sees fresh devices', { timeout: 2000 }, async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'bookstr-mtp-refresh-'));
-  let release;
+  let release: (()=>void) | undefined;
   let calls = 0;
   try {
     await fs.writeFile(path.join(root, 'kindle-mtp'), 'fixture');
     const transport = new MtpKindles({ platform: 'darwin', resourcesPath: root, stagingRoot: root,
       runner: async () => {
         calls++;
-        if (calls === 1) await new Promise(resolve => { release = resolve; });
+        if (calls === 1) await new Promise<void>(resolve => { release = resolve; });
         return { stdout: calls === 1 ? '[{"id":"1-2","name":"Kindle"}]' : '[]' };
       } });
     const first = transport.devices();
@@ -323,14 +335,14 @@ test('overlapping refreshes share discovery and a later refresh sees fresh devic
     assert.equal(calls, 1);
     assert.deepEqual(await transport.devices(), []);
     assert.equal(calls, 2);
-    transport.runner = async () => { calls++; throw new Error('disconnected'); };
+    mtpState(transport).runner = async () => { calls++; throw new Error('disconnected'); };
     const originalWrite = process.stderr.write;
     process.stderr.write = () => true;
     try { assert.deepEqual(await transport.devices(), []); }
     finally { process.stderr.write = originalWrite; }
-    assert.equal(transport.discovery, null);
-    transport.runner = async () => { calls++; return { stdout: '[{"id":"1-3"}]' }; };
-    assert.equal((await transport.devices())[0].helperId, '1-3');
+    assert.equal(mtpState(transport).discovery, null);
+    mtpState(transport).runner = async () => { calls++; return { stdout: '[{"id":"1-3"}]' }; };
+    assert.equal((await transport.devices())[0]!.helperId, '1-3');
     assert.equal(calls, 4);
   } finally { await fs.rm(root, { recursive: true, force: true }); }
 });
@@ -341,10 +353,10 @@ test('mounted Kindle refuses low space and never overwrites a destination', asyn
   await fs.mkdir(documents, { recursive: true });
   const source = path.join(root, 'source.pdf');
   await fs.writeFile(source, 'PDF bytes');
-  const book = { path: source, size: 9, sha256: digest('PDF bytes') };
+  const book = testBook({ path: source, size: 9, sha256: digest('PDF bytes') });
   try {
-    const lowSpace = new MountedKindles({ roots: [root], platform: 'darwin', statfs: async () => ({ bavail: 1, bsize: 1 }) });
-    const [device] = await lowSpace.devices();
+    const lowSpace = new MountedKindles({ roots: [root], platform: 'darwin', statfs: (async () => ({ bavail: 1, bsize: 1 })) as unknown as typeof fs.statfs });
+    const device = (await lowSpace.devices())[0]!;
     await assert.rejects(() => lowSpace.copy(device, book, 'book.pdf'), /out of space/);
     assert.deepEqual(await fs.readdir(documents), []);
     const unavailableStats = new MountedKindles({ roots: [root], platform: 'darwin', statfs: async () => { throw new Error('statfs unavailable'); } });
@@ -388,21 +400,20 @@ test('mounted Kindle covers platform roots, volume labels, and bounded document 
   await fs.writeFile(path.join(deepest, 'too-deep.pdf'), 'four');
   try {
     const mounted = new MountedKindles({ roots: [root, path.join(root, 'missing')], platform: 'darwin' });
-    const [device] = await mounted.devices();
+    const device = (await mounted.devices())[0]!;
     assert.equal((await mounted.files(device, new Set([4]))).map(file => file.name).sort().join(','), 'book.PDF,note.txt');
 
-    const childProcess = require('node:child_process');
-    const util = require('node:util');
+    const childProcess = require('node:child_process') as typeof import('node:child_process');
+    const util = require('node:util') as typeof import('node:util');
     const originalExecFile = childProcess.execFile;
     const originalCustom = Object.getOwnPropertyDescriptor(originalExecFile, util.promisify.custom);
     const labels = ['Kindle Scribe', 'USB drive', 'failed'];
-    const stubExecFile = (...args) => {
+    const stubExecFile = Object.assign(() => {
       const label = labels.shift();
       if (label === 'failed') throw Object.assign(new Error('failed'), { code: 'EIO' });
       return { stdout: label, stderr: '' };
-    };
-    stubExecFile[util.promisify.custom] = async (...args) => stubExecFile(...args);
-    childProcess.execFile = stubExecFile;
+    }, { [util.promisify.custom]: async () => stubExecFile() });
+    childProcess.execFile = stubExecFile as unknown as typeof childProcess.execFile;
     try {
       const windows = new MountedKindles({ roots: ['D:\\'], platform: 'win32' });
       assert.equal(await windows.isWindowsKindleVolume('D:\\'), true);
@@ -424,39 +435,39 @@ test('comic transfer conversion and transfer copy outcomes are reported', async 
   await fs.writeFile(converted, 'converted PDF');
   const job = { bookId: 'comic', title: 'Comic.cbz', extension: 'epub', status: 'ready', sha256: digest('comic archive') };
   const store = { downloads: () => [job] };
-  const transferProgress = [];
-  const transport = { devices: async () => [{ id: 'device', name: 'Kindle', kind: 'test' }],
+  const transferProgress: Array<Record<string,unknown>> = [];
+  const transport = testTransport({ devices: async () => [{ id: 'device', name: 'Kindle', kind: 'mounted' }],
     files: async () => [], hash: async () => '',
-    copy: async () => { throw new Error('copy rejected'); } };
+    copy: async () => { throw new Error('copy rejected'); } });
   try {
     const missingConverter = new KindleSync({ store, resolveFile: async () => ({ filePath: source }), transports: [transport] });
-    assert.match((await missingConverter.localBooks()).skipped[0].reason, /Comic PDF conversion is unavailable/);
+    assert.match((await missingConverter.localBooks()).skipped[0]!.reason, /Comic PDF conversion is unavailable/);
     await assert.rejects(() => missingConverter.localBooks('comic'), /Comic PDF conversion is unavailable/);
 
-    const conversionProgress = [];
+    const conversionProgress: Array<Record<string,unknown>> = [];
     const sync = new KindleSync({ store, resolveFile: async () => ({ filePath: source }), transports: [transport],
       comicConverter: { convert: async (_filePath, _sha256, onProgress) => {
-        onProgress({ percent: 50 });
+        (onProgress as unknown as ((progress: {percent:number})=>void))({ percent: 50 });
         return { path: converted, sha256: digest('converted PDF'), size: 13 };
       } },
       onProgress: progress => { conversionProgress.push(progress); transferProgress.push(progress); } });
     const local = await sync.localBooks();
-    assert.equal(local.books[0].extension, 'pdf');
-    assert.equal(local.books[0].path, converted);
+    assert.equal(local.books[0]!.extension, 'pdf');
+    assert.equal(local.books[0]!.path, converted);
     assert.deepEqual(conversionProgress, [
       { phase: 'converting', bookId: 'comic', title: 'Comic.cbz' },
       { percent: 50, phase: 'converting', bookId: 'comic', title: 'Comic.cbz' },
     ]);
     const transfer = await sync.transfer('device');
     assert.deepEqual(transfer.errors, [{ bookId: 'comic', title: 'Comic.cbz', error: 'copy rejected' }]);
-    assert.deepEqual(transferProgress.filter(progress => ['copying', 'failed'].includes(progress.phase)), [
+    assert.deepEqual(transferProgress.filter(progress => ['copying', 'failed'].includes(String(progress.phase))), [
       { deviceId: 'device', phase: 'copying', bookId: 'comic', title: 'Comic.cbz', completed: 0, total: 1 },
       { deviceId: 'device', phase: 'failed', bookId: 'comic', title: 'Comic.cbz', error: 'copy rejected', completed: 0, total: 1 },
     ]);
     transport.copy = async () => {};
     const successfulTransfer = await sync.transfer('device');
     assert.deepEqual(successfulTransfer.transferred, ['comic']);
-    assert.deepEqual(transferProgress.filter(progress => ['copying', 'copied'].includes(progress.phase)).slice(-2), [
+    assert.deepEqual(transferProgress.filter(progress => ['copying', 'copied'].includes(String(progress.phase))).slice(-2), [
       { deviceId: 'device', phase: 'copying', bookId: 'comic', title: 'Comic.cbz', completed: 0, total: 1 },
       { deviceId: 'device', phase: 'copied', bookId: 'comic', title: 'Comic.cbz', completed: 1, total: 1 },
     ]);
@@ -471,7 +482,7 @@ test('comic conversion checksum failures are skipped for all books and rejected 
   const sync = new KindleSync({ store, resolveFile: async () => ({ filePath: source }), transports: [],
     comicConverter: { convert: async () => assert.fail('converter must not receive a mismatched archive') } });
   try {
-    assert.match((await sync.localBooks()).skipped[0].reason, /checksum mismatch/);
+    assert.match((await sync.localBooks()).skipped[0]!.reason, /checksum mismatch/);
     await assert.rejects(() => sync.localBooks('comic'), /checksum mismatch/);
   } finally { await fs.rm(root, { recursive: true, force: true }); }
 });
@@ -486,11 +497,12 @@ test('selected Kindle book IDs are validated and transfer uses one session lease
   ] };
   let sessionDepth = 0;
   let maxDepth = 0;
-  const transport = {
-    devices: async () => [{ id: 'device', name: 'Kindle', kind: 'test' }],
+  const transport = testTransport({
+    devices: async () => [{ id: 'device', name: 'Kindle', kind: 'mounted' }],
     files: async () => [],
     hash: async () => '',
-    copied: [],
+    copied: [] as string[],
+    requiredSpace: 0,
     async withSession(_device, operation) {
       sessionDepth += 1;
       maxDepth = Math.max(maxDepth, sessionDepth);
@@ -498,7 +510,7 @@ test('selected Kindle book IDs are validated and transfer uses one session lease
     },
     ensureSpace(bytes) { this.requiredSpace = bytes; },
     async copy(_device, book) { this.copied.push(book.bookId); },
-  };
+  });
   try {
     const sync = new KindleSync({ store, resolveFile: async () => ({ filePath: source }), transports: [transport] });
     await assert.rejects(() => sync.localBooks(['']), /Invalid Kindle book selection/);
@@ -512,10 +524,10 @@ test('selected Kindle book IDs are validated and transfer uses one session lease
 });
 
 test('Kindle operations serialize and normalize non-Error copy failures', async () => {
-  const sync = new KindleSync({ store: { downloads: () => [] }, resolveFile: async () => ({}), transports: [] });
+  const sync = new KindleSync({ store: { downloads: () => [] }, resolveFile: async () => ({} as {filePath:string}), transports: [] });
   let active = 0;
   let maximum = 0;
-  let order = [];
+  const order: string[] = [];
   const first = sync.serialize(async () => {
     active++;
     maximum = Math.max(maximum, active);
@@ -538,8 +550,8 @@ test('Kindle operations serialize and normalize non-Error copy failures', async 
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'bookstr-kindle-copy-error-'));
   const source = path.join(root, 'book.pdf');
   await fs.writeFile(source, 'book');
-  const transport = { devices: async () => [{ id: 'device', name: 'Kindle', kind: 'test' }], files: async () => [], hash: async () => '',
-    copy: async () => { throw {}; } };
+  const transport = testTransport({ devices: async () => [{ id: 'device', name: 'Kindle', kind: 'mounted' }], files: async () => [], hash: async () => '',
+    copy: async () => { throw {}; } });
   try {
     const syncWithCopyError = new KindleSync({ store, resolveFile: async () => ({ filePath: source }), transports: [transport] });
     const result = await syncWithCopyError.transfer('device');
@@ -549,8 +561,8 @@ test('Kindle operations serialize and normalize non-Error copy failures', async 
 
 test('Kindle sync shutdown closes every transport and rejects later actions', async () => {
   let closed = 0;
-  const sync = new KindleSync({ store: { downloads: () => [] }, resolveFile: async () => ({}),
-    transports: [{ close: async () => { closed++; } }, { close: async () => { closed++; } }] });
+  const sync = new KindleSync({ store: { downloads: () => [] }, resolveFile: async () => ({} as {filePath:string}),
+    transports: [testTransport({ close: async () => { closed++; } }), testTransport({ close: async () => { closed++; } })] });
   await sync.close();
   assert.equal(closed, 2);
   await assert.rejects(() => sync.preview('device'), /sync is closed/);
@@ -569,20 +581,20 @@ test('Windows MTP copies through a temporary staged file and removes the staging
   const stagingRoot = path.join(root, 'staging');
   await fs.writeFile(helper, 'fixture');
   await fs.writeFile(source, 'new PDF');
-  let stagedPath;
+  let stagedPath = "";
   let remote = Buffer.from('new PDF');
-  const runner = async (_executable, args) => {
+  const runner: MtpRunner = async (_executable, args) => {
     const action = args[6];
-    if (action === 'put') { stagedPath = args[8]; assert.equal(await fs.readFile(stagedPath, 'utf8'), 'new PDF'); return { stdout: '{"id":"18"}' }; }
-    if (action === 'get') { await fs.writeFile(args[9], remote); return { stdout: '{"ok":true}' }; }
+    if (action === 'put') { stagedPath = args[8]!; assert.equal(await fs.readFile(stagedPath, 'utf8'), 'new PDF'); return { stdout: '{"id":"18"}' }; }
+    if (action === 'get') { await fs.writeFile(args[9]!, remote); return { stdout: '{"ok":true}' }; }
     throw new Error(`unexpected action ${action}`);
   };
   try {
     const transport = new MtpKindles({ platform: 'win32', resourcesPath: root, stagingRoot, runner });
-    const device = { helperId: '1-2' };
-    await transport.copy(device, { path: source, sha256: digest('new PDF') }, 'new.pdf');
+    const device = { id:'fixture', name:'Kindle', kind:'mtp' as const, helperId: '1-2' };
+    await transport.copy(device, testBook({ path: source, sha256: digest('new PDF') }), 'new.pdf');
     await assert.rejects(() => fs.stat(stagedPath), { code: 'ENOENT' });
     remote = Buffer.from('wrong bytes');
-    await assert.rejects(() => transport.copy(device, { path: source, sha256: digest('new PDF') }, 'bad.pdf'), /verification failed/);
+    await assert.rejects(() => transport.copy(device, testBook({ path: source, sha256: digest('new PDF') }), 'bad.pdf'), /verification failed/);
   } finally { await fs.rm(root, { recursive: true, force: true }); }
 });

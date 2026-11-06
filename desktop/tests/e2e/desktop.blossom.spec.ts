@@ -1,6 +1,6 @@
-const fs = require('node:fs');
-const path = require('node:path');
-const { _electron: electron, test, expect } = require('@playwright/test');
+const fs: typeof import('node:fs') = require('node:fs');
+const path: typeof import('node:path') = require('node:path');
+const { _electron: electron, test, expect } = require('@playwright/test') as typeof import('@playwright/test');
 
 test('legacy Blossom-only records stay metadata-only without contacting Blossom', async () => {
   const output = path.join(__dirname, '../../test-results');
@@ -16,7 +16,7 @@ test('legacy Blossom-only records stay metadata-only without contacting Blossom'
 
   try {
     const library = await electronApp.firstWindow();
-    const blossomFileRequests = [];
+    const blossomFileRequests: string[] = [];
     await library.route('https://blossom.bfr.ee/**', async route => {
       const url = new URL(route.request().url());
       if (!url.pathname.startsWith('/.well-known/')) blossomFileRequests.push(url.toString());
