@@ -96,6 +96,44 @@ class Fb2ReaderActivityTest {
         }
     }
 
+    @Test
+    fun blankParentContentsEntryDismissesWithoutChangingChildProgress() {
+        writeBook(buildString {
+            append("<FictionBook><body><section id='empty-parent'><section id='child'>")
+            append("<title><p>Child chapter</p></title>")
+            repeat(20) { index -> append("<p>Child paragraph ${index + 1} remains readable while the empty parent entry has no reader location.</p>") }
+            append("</section></section></body></FictionBook>")
+        })
+
+        ActivityScenario.launch<Fb2ReaderActivity>(
+            Fb2ReaderActivity.intent(app, bookId, "FB2 empty section fixture", null, null),
+        ).use {
+            compose.waitUntil(10_000) {
+                compose.onAllNodesWithText("Child paragraph 1 remains readable while the empty parent entry has no reader location.")
+                    .fetchSemanticsNodes().isNotEmpty()
+            }
+            var initialLocator: String? = null
+            compose.waitUntil(10_000) {
+                initialLocator = runBlocking { app.catalogRepository.getProgress(bookId)?.cfi }
+                initialLocator?.startsWith("fb2:child:") == true
+            }
+            val savedLocator = requireNotNull(initialLocator)
+
+            compose.onNodeWithContentDescription("Table of contents").performClick()
+            compose.onNodeWithText("Contents").assertIsDisplayed()
+            compose.onNodeWithText("Section 1").assertIsDisplayed()
+            compose.onNodeWithTag("fb2.contents.section.empty-parent").performClick()
+            compose.waitUntil(5_000) {
+                compose.onAllNodesWithText("Contents").fetchSemanticsNodes().isEmpty()
+            }
+
+            compose.onNodeWithText("Child chapter").assertIsDisplayed()
+            compose.onNodeWithText("Child paragraph 1 remains readable while the empty parent entry has no reader location.")
+                .assertIsDisplayed()
+            assertEquals(savedLocator, runBlocking { app.catalogRepository.getProgress(bookId)?.cfi })
+        }
+    }
+
     private fun writeBook(xml: String): File = app.catalogRepository.publicationFile(bookId, BookFormat.Fb2).also {
         it.parentFile?.mkdirs()
         it.writeText(xml)
