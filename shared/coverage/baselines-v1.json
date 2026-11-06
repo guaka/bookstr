@@ -16,7 +16,7 @@
     "electron": {
       "minimumTests": 329,
       "source": "https://github.com/guaka/bookstr/pull/224",
-      "commit": "93494b2d",
+      "commit": "93494b2d37451c5a1b5555994891beec10ee7a3e",
       "metrics": {
         "Lines": 100,
         "Branches": 91.66,
@@ -26,7 +26,7 @@
     "android": {
       "minimumTests": 545,
       "source": "https://github.com/guaka/bookstr/pull/224",
-      "commit": "93494b2d",
+      "commit": "93494b2d37451c5a1b5555994891beec10ee7a3e",
       "metrics": {
         "Instructions": 57.83,
         "Branches": 51.49,
