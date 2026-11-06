@@ -7,6 +7,7 @@ interface LibgenRecord extends UnknownRecord {
 }
 interface DownloadRequest extends UnknownRecord { kind: string; record: UnknownRecord }
 interface DownloadRow extends UnknownRecord { bookId: string; status: string }
+import { isEnabledReaderFormat } from './reader-formats';
 interface QueueStore {
   downloads(): DownloadRow[];
   upsertBook(fields: UnknownRecord): unknown;
@@ -33,14 +34,13 @@ interface Job { bookId: string; request: DownloadRequest }
 const ACTIVE = new Set(['queued', 'finding-peers', 'downloading', 'retrying']);
 const COMPLETE = new Set(['ready', 'seeding']);
 const MD5 = /^[a-f0-9]{32}$/;
-const FORMATS = new Set(['epub', 'pdf', 'fb2', 'cbz', 'cbr']);
 const MAX_CONCURRENT_ACQUISITIONS = 100;
 
 function libgenRequest(book: UnknownRecord | null | undefined, allowMissingEdition = false): LibgenRecord {
   const md5 = String(book?.md5 || '').trim().toLowerCase();
   const libgenId = allowMissingEdition ? 0 : Number(book?.libgenId || book?.libgen_id || book?.sourceNativeId || 0);
   const extension = String(book?.extension || book?.format || '').trim().toLowerCase();
-  if (!MD5.test(md5) || !Number.isSafeInteger(libgenId) || libgenId < 0 || (!allowMissingEdition && libgenId === 0) || !FORMATS.has(extension)) {
+  if (!MD5.test(md5) || !Number.isSafeInteger(libgenId) || libgenId < 0 || (!allowMissingEdition && libgenId === 0) || !isEnabledReaderFormat(extension)) {
     throw new TypeError('A Libcat download requires an MD5, edition number, and supported format.');
   }
   return {

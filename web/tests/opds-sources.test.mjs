@@ -22,7 +22,7 @@ test('custom-feed settings retain only public credential-free HTTPS feeds', () =
   assert.match(providerForOPDSFeed({ name: 'Public catalogue', url: 'https://books.example/opds' }), /^opds-[a-z0-9]+$/);
 });
 
-test('searches OPDS 2 directly from the configured feed and maps its FB2 acquisition', async () => {
+test('OPDS search omits disabled FB2 acquisitions from discovery results', async () => {
   const feed = { name: 'Example OPDS', url: 'https://books.example/catalog.json' };
   const calls = [];
   const fetchImpl = async (url) => {
@@ -54,31 +54,8 @@ test('searches OPDS 2 directly from the configured feed and maps its FB2 acquisi
   const records = await searchOPDSFeed(feed, 'Идиот', fetchImpl);
   assert.equal(calls.length, 2);
   assert.equal(calls.every(url => url.startsWith('https://books.example/')), true);
-  assert.deepEqual(records, [{
-    provider: providerForOPDSFeed(feed),
-    recordId: 'idiot',
-    publicationId: providerForOPDSFeed(feed) + ':idiot',
-    title: 'Идиот',
-    authors: ['Фёдор Достоевский'],
-    languages: ['ru'],
-    rights: { status: 'public_domain', license: 'Public Domain', source: providerForOPDSFeed(feed) },
-    acquisitions: [{ format: 'fb2', url: 'https://downloads.example/idiot.fb2', availability: 'open' }],
-  }]);
-  assert.deepEqual(providerRecordToBook(records[0], feed.url), {
-    id: providerForOPDSFeed(feed) + ':idiot',
-    source: providerForOPDSFeed(feed),
-    sourceNativeId: 'idiot',
-    sourceUrl: feed.url,
-    title: 'Идиот',
-    authors: 'Фёдор Достоевский',
-    language: 'ru',
-    year: '',
-    extension: 'fb2',
-    readUrl: 'https://downloads.example/idiot.fb2',
-    rights_status: 'public_domain',
-    license: 'Public Domain',
-    rights_source: providerForOPDSFeed(feed),
-  });
+  assert.deepEqual(records, []);
+  assert.equal(providerRecordToBook({ acquisitions: [{ format: 'fb2', availability: 'open' }] }, feed.url), null);
 });
 
 test('discovers an OPDS 1 OpenSearch descriptor without proxying it through the worker', async () => {
@@ -96,17 +73,14 @@ test('discovers an OPDS 1 OpenSearch descriptor without proxying it through the 
   };
   const records = await searchOPDSFeed(feed, 'open', fetchImpl);
   assert.deepEqual(calls, [feed.url, 'https://atom.example/open.xml', 'https://atom.example/find?q=open']);
-  assert.equal(records.length, 1);
-  assert.equal(records[0].acquisitions[0].url, 'https://atom.example/books/open.fb2');
-  assert.equal(records[0].rights.status, 'open_license');
+  assert.deepEqual(records, []);
 });
 
 test('neutralizes encoded markup in directly fetched OPDS metadata', async () => {
   const feed = { name: 'Atom', url: 'https://atom.example/catalog' };
   const hostile = '<feed><entry><id>a-1</id><title>&lt;script&gt;alert(1)&lt;/script&gt;Open book</title><dc:rights>Public Domain</dc:rights><link rel="http://opds-spec.org/acquisition/open-access" type="application/x-fictionbook+xml" href="/books/open.fb2"/></entry></feed>';
   const records = await searchOPDSFeed(feed, '', async url => response(url, hostile));
-  assert.equal(records[0].title, 'alert(1)Open book');
-  assert.doesNotMatch(records[0].title, /[<>]/);
+  assert.deepEqual(records, []);
 });
 
 test('reports custom OPDS request failures to the caller for per-source status handling', async () => {

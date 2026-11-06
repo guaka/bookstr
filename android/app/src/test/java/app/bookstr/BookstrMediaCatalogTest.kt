@@ -18,7 +18,7 @@ class BookstrMediaCatalogTest {
     )
 
     @Test
-    fun catalogIncludesAllDownloadedMetadataInTitleOrderButOnlyMarksEpubPlayable() {
+    fun catalogExcludesUnavailableFb2AndOnlyMarksEpubPlayable() {
         val epubId = "a".repeat(64)
         val pdfId = "b".repeat(32)
         val fb2Id = "c".repeat(64)
@@ -30,8 +30,8 @@ class BookstrMediaCatalogTest {
             ),
         ) { true }
 
-        assertEquals(listOf("alpha", "Middle", "Zebra"), entries.map { it.book.title })
-        assertEquals(listOf(true, false, false), entries.map { it.playable })
+        assertEquals(listOf("alpha", "Middle"), entries.map { it.book.title })
+        assertEquals(listOf(true, false), entries.map { it.playable })
         assertEquals("bookstr-downloaded-books", BookstrMediaCatalog.ROOT_ID)
         assertEquals("app.bookstr.extra.OPEN_READER", BookstrMediaCatalog.EXTRA_OPEN_READER)
         assertEquals("app.bookstr.extra.PLAYABLE", BookstrMediaCatalog.EXTRA_PLAYABLE)

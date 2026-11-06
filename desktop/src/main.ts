@@ -67,6 +67,16 @@ const { ElectronDevicePairing } = require('./device-pairing') as typeof import('
 const { CatalogInvitations } = require('./catalog-invitations') as typeof import('./catalog-invitations');
 const { nip19: catalogNip19 } = require('nostr-tools') as typeof import('nostr-tools', { with: { 'resolution-mode': 'import' } });
 const catalogInvitations = new CatalogInvitations({ app, dialog, loadState, saveState, decodeNPub: catalogNip19.decode, getWindow: () => mainWindow });
+const { OpenBooks, importAndOpenBook } = require('./open-books') as typeof import('./open-books');
+const openBooks = new OpenBooks(app, async file => {
+  if (!mainWindow || mainWindow.isDestroyed()) await createLibraryWindow();
+  await importAndOpenBook(file, getLibraryImporter(), getLibraryStore(), payload => {
+    const result = ensureReaderWindowForPayload(payload);
+    if (!result.ok) throw new Error(result.error);
+  });
+}, error => {
+  dialog.showErrorBox('Could not open book', String(error));
+});
 
 const PRELOAD_PATH = path.join(__dirname, 'preload.js');
 const WEB_ROOT = path.join(__dirname, '..', 'web');
@@ -1245,12 +1255,16 @@ function setupIpcHandlers() {
       title: 'Import book into Bookstr',
       defaultPath: libraryDataDir,
       properties: ['openFile'],
-      filters: [{ name: 'Books', extensions: ['epub', 'pdf', 'fb2', 'txt'] }, { name: 'All files', extensions: ['*'] }],
+      filters: [{ name: 'Books', extensions: ['epub', 'pdf', 'txt'] }, { name: 'All files', extensions: ['*'] }],
     });
     if (selection.canceled || !selection.filePaths?.[0]) return null;
     const expectedSha256 = /^[a-f0-9]{64}$/i.test(String(request.expectedSha256 || ''))
       ? String(request.expectedSha256).toLowerCase()
       : undefined;
+    if (String(request.extension || path.extname(selection.filePaths[0]).slice(1)).toLowerCase() === 'fb2'
+      || path.extname(selection.filePaths[0]).toLowerCase() === '.fb2') {
+      throw new Error('The selected book format is not supported.');
+    }
     const imported = await getLibraryImporter().importFile(selection.filePaths[0], {
       extension: request.extension,
       expectedSha256,
@@ -1389,8 +1403,8 @@ function setupIpcHandlers() {
       throw new Error('Registered library file checksum does not match the stored edition.');
     }
     const fileExtension = path.extname(filePath).slice(1).toLowerCase();
-    if (!['epub', 'pdf', 'fb2'].includes(fileExtension)) {
-      throw new Error('Only EPUB, PDF, and FB2 files may be publicly seeded.');
+    if (!['epub', 'pdf'].includes(fileExtension)) {
+      throw new Error('Only EPUB and PDF files may be publicly seeded.');
     }
     const storedExtension = String(book.extension || '').trim().toLowerCase().replace(/^\./, '');
     if (storedExtension && storedExtension !== fileExtension) {
@@ -1618,6 +1632,7 @@ async function bootstrap() {
     console.warn('Could not register the Settings keyboard shortcut.');
   }
   await createLibraryWindow();
+  await openBooks.start(process.argv);
   await catalogInvitations.start(process.argv, process.execPath, process.defaultApp, app.getAppPath());
   const preferences = await torrentPreferences();
   await getTorrentBridge().setLimits(preferences);

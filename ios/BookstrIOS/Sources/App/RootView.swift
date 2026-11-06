@@ -173,6 +173,16 @@ struct RootView: View {
             playback.requestClose()
         }
         .onOpenURL { url in
+            if url.isFileURL {
+                attemptedInitialContinuation = true
+                Task {
+                    do {
+                        let book = try await container.catalogRepository.importLocalBook(url)
+                        presentLocalIfAvailable(book, origin: .user, reportMissing: true)
+                    } catch { continueError = error.localizedDescription }
+                }
+                return
+            }
             guard let connection = CatalogConnection(url: url, decodeNPub: NostrIdentity.hexPublicKey(from:)) else { return }
             guard settings.catalogConnection != connection else { return }
             pendingCatalog = connection

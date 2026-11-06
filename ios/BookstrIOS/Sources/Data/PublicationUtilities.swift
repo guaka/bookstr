@@ -451,6 +451,8 @@ enum PublicationUtilities {
               ["http", "https"].contains(parsed.scheme?.lowercased() ?? "") else {
             return nil
         }
+        let format = BookFormat.from(format: favorite.format, url: parsed.absoluteString)
+        guard format.isAvailableOnIOS else { return nil }
         return CatalogBook(
             id: favorite.key,
             title: favorite.title,
@@ -460,7 +462,7 @@ enum PublicationUtilities {
             sourceUrl: favorite.url,
             isbn: favorite.isbn,
             libvaultMd5: favorite.libvaultMd5,
-            format: BookFormat.from(format: favorite.format, url: parsed.absoluteString),
+            format: format,
             year: favorite.year,
             rightsStatus: favorite.rightsStatus,
             license: favorite.license,

@@ -44,7 +44,8 @@ final class CatalogSearchPageTests: XCTestCase {
         }
         for ext in ["epub", "fb2", "cbr", "cbz", "mobi"] {
             let item = CatalogSearchPage.libcat(["books": [["md5": md5, "extension": ext]]], offset: 0).books[0]
-            XCTAssertEqual(item.isReadable, ext != "mobi")
+            XCTAssertEqual(item.isReadable, ext != "mobi" && ext != "fb2")
+            if ext == "fb2" { XCTAssertEqual(item.format, .fb2, "Keep decoding metadata for stored records") }
         }
     }
 

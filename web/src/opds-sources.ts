@@ -83,13 +83,13 @@ export async function searchOPDSFeed(feed: unknown, query: string, fetchImpl: ty
   }
   const searchURL = search ? resolveSearchURL(search.href, query, valid.url) : '';
   if (searchURL && searchURL !== valid.url) {
-    return (await fetchDocument(searchURL, context, fetchImpl)).records;
+    return filterRecords((await fetchDocument(searchURL, context, fetchImpl)).records, query);
   }
   return filterRecords(initial.records, query);
 }
 
 export function providerRecordToBook(record: ProviderRecord, sourceURL: string): Record<string, unknown> | null {
-  const acquisition = record?.acquisitions?.find(item => item?.format === 'fb2' && item?.availability === 'open');
+  const acquisition = record?.acquisitions?.find(item => ['epub', 'pdf', 'cbz', 'cbr'].includes(item?.format) && item?.availability === 'open');
   if (!record || !acquisition) return null;
   return {
     id: record.publicationId,
@@ -100,7 +100,7 @@ export function providerRecordToBook(record: ProviderRecord, sourceURL: string):
     authors: record.authors.join(', '),
     language: record.languages[0] || '',
     year: record.publishedYear || '',
-    extension: 'fb2',
+    extension: acquisition.format,
     readUrl: acquisition.url,
     rights_status: record.rights.status,
     license: record.rights.license || '',
@@ -247,6 +247,7 @@ function resolveSearchURL(href: string, query: string, baseURL: string): string 
 }
 
 function filterRecords(records: ProviderRecord[], query: string): ProviderRecord[] {
+  records = records.filter(record => record.acquisitions.some(item => ['epub', 'pdf', 'cbz', 'cbr'].includes(item.format)));
   const terms = String(query || '').toLocaleLowerCase().match(/[\p{L}\p{N}]+/gu) || [];
   return terms.length ? records.filter(record => {
     const searchable = [record.title, ...record.authors].join(' ').toLocaleLowerCase();

@@ -7,6 +7,7 @@ import app.bookstr.data.TorrentEdition
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.withTimeoutOrNull
 import org.junit.Assert.*
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -127,6 +128,11 @@ class NativeTorrentEngineTest {
                     while (books.any { application.downloadStore.find(it.id)?.state != "finding-peers" }) delay(100)
                 }
                 assertTrue(books.all { application.downloadStore.find(it.id)?.active == true })
+                books.forEach { DownloadService.dispatch(application, "resume", it.id) }
+                withTimeout(5000) {
+                    while (books.any { application.downloadStore.find(it.id)?.state != "finding-peers" }) delay(50)
+                }
+                assertTrue(books.all { application.downloadStore.find(it.id)?.active == true })
                 books.forEach { DownloadService.dispatch(application, "cancel", it.id) }
                 withTimeout(10000) { while (books.any { application.downloadStore.find(it.id)?.state != "cancelled" }) delay(100) }
             }
@@ -153,13 +159,19 @@ class NativeTorrentEngineTest {
             withTimeout(10000) { while (application.downloadStore.find(md5)?.state != "cancelled") delay(100) }
             assertArrayEquals(content, File(root, "payload").readBytes())
             DownloadService.dispatch(application, "resume", md5)
-            withTimeout(30000) {
+            val completed = withTimeoutOrNull(30000) {
                 while (application.downloadStore.find(md5)?.state != "complete") {
                     val job = application.downloadStore.find(md5)!!
                     assertNotEquals(job.error, "failed", job.state)
                     delay(100)
                 }
+                true
             }
+            val finalJob = requireNotNull(application.downloadStore.find(md5))
+            assertTrue(
+                "Timed out waiting for cached import; state=${finalJob.state}, error=${finalJob.error}",
+                completed == true,
+            )
             assertArrayEquals(content, application.catalogRepository.publicationFile(md5, book.format).readBytes())
             assertEquals("pt-BR", application.catalogRepository.downloadedBooks(emptyList()).first { it.id == md5 }.language)
             DownloadService.dispatch(application, "pause", md5)

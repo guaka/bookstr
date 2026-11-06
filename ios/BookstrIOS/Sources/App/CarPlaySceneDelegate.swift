@@ -23,7 +23,7 @@ final class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegat
 
     private func reload() {
         let books = container.catalogRepository.downloadedBooks().filter {
-            $0.format == .epub || $0.format == .fb2
+            $0.format == .epub
         }
         let byID = Dictionary(uniqueKeysWithValues: books.map { ($0.id, $0) })
         let recent = container.progressRepository.all().compactMap { byID[$0.bookId] }
@@ -40,7 +40,7 @@ final class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegat
             sections.append(CPListSection(items: otherBooks.map(makeItem), header: "Downloaded Books", sectionIndexTitle: nil))
         }
         if sections.isEmpty {
-            let empty = CPListItem(text: "No downloaded EPUB or FB2 books", detailText: "Download books on your iPhone first")
+            let empty = CPListItem(text: "No downloaded EPUB books", detailText: "Download books on your iPhone first")
             sections = [CPListSection(items: [empty])]
         }
         let list = CPListTemplate(title: "Bookstr", sections: sections)
@@ -59,7 +59,7 @@ final class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegat
 
     private func play(_ book: CatalogBook) {
         guard let local = container.catalogRepository.localPublication(for: book),
-              local.book.format == .epub || local.book.format == .fb2 else {
+              local.book.format == .epub else {
             reload()
             return
         }

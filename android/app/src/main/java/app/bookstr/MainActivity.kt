@@ -45,6 +45,8 @@ import app.bookstr.data.matchingDownloadedBook
 import app.bookstr.data.SharedFavoriteRef
 import app.bookstr.data.CatalogRepository
 import app.bookstr.data.BookFormat
+import app.bookstr.data.availableCatalogBooks
+import app.bookstr.data.availableExternalFavorites
 import app.bookstr.data.NostrAuthMode
 import app.bookstr.data.RIGHTS_UNKNOWN
 import app.bookstr.nostr.AmberIntentSession
@@ -65,8 +67,12 @@ import app.bookstr.ui.WordsScreen
 import app.bookstr.ui.theme.BookstrThemeFromSettings
 import app.bookstr.util.Bech32
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import app.bookstr.data.stageLocalBook
 
 class MainActivity : ComponentActivity() {
+    private var pendingBook by mutableStateOf<Intent?>(null)
     private var pendingInvitation by mutableStateOf<String?>(null)
     private var showDownloads by mutableStateOf(false)
     private lateinit var amberSession: AmberIntentSession
@@ -82,6 +88,7 @@ class MainActivity : ComponentActivity() {
         hideSystemUi()
 
         amberSession = AmberIntentSession(this)
+        pendingBook = intent.takeIf { it.action == Intent.ACTION_VIEW && it.data?.scheme in setOf("content", "file") }
         pendingInvitation = intent.dataString?.takeIf { it.startsWith("bookstr:") }
         showDownloads = intent.getBooleanExtra("open_downloads", false)
         requestedWord = intent.getStringExtra(EXTRA_OPEN_WORD)
@@ -103,13 +110,13 @@ class MainActivity : ComponentActivity() {
         if (shouldRestoreReaderOnLaunch(
                 isLocked = getSystemService(KeyguardManager::class.java)?.isKeyguardLocked == true,
                 isFreshLaunch = savedInstanceState == null,
-                hasInvitation = pendingInvitation != null,
+                hasInvitation = pendingInvitation != null || pendingBook != null,
                 openingDownloads = showDownloads,
                 requestedTab = requestedTab,
             )) {
             settings.readerSession()?.let { session ->
                 val publication = catalog.publicationFile(session.bookId, session.format)
-                if (publication.isFile) {
+                if (canRestoreReaderSession(session, publication.isFile)) {
                     startActivity(
                         if (session.format == BookFormat.Cbr || session.format == BookFormat.Cbz) {
                             ComicReaderActivity.intent(this@MainActivity, session.bookId, session.format, session.bookTitle)
@@ -233,6 +240,7 @@ class MainActivity : ComponentActivity() {
                 ) {
                     val blossomBooks = shared.external
                         .mapNotNull(CatalogRepository::fromBlossomFavorite)
+                        .filter { it.format.isAvailable }
                         .associateBy { it.libvaultMd5 }
                     val downloadedBooks = catalog.downloadedBooks(shared.external)
                     val downloadedFavoriteIds = downloadedBooks.filter { downloaded ->
@@ -243,9 +251,10 @@ class MainActivity : ComponentActivity() {
                                     downloaded.format.extension.equals(favorite.format, ignoreCase = true))
                         }
                     }.map { it.id }.toSet()
-                    books = (knownBooks + blossomBooks.values + downloadedBooks).distinctBy { it.id }
+                    books = availableCatalogBooks(knownBooks + blossomBooks.values + downloadedBooks)
+                        .distinctBy { it.id }
                     favoriteIds = shared.bookIds + blossomBooks.values.map { it.id } + downloadedFavoriteIds
-                    externalFavorites = shared.external.filter { favorite ->
+                    externalFavorites = availableExternalFavorites(shared.external).filter { favorite ->
                         favorite.libvaultMd5 !in blossomBooks && downloadedBooks.none { downloaded ->
                             (!downloaded.libvaultMd5.isNullOrBlank() &&
                                 downloaded.libvaultMd5.equals(favorite.libvaultMd5, ignoreCase = true)) ||
@@ -395,6 +404,28 @@ class MainActivity : ComponentActivity() {
                             openingBookId = null
                         }
                     }
+                }
+
+                LaunchedEffect(pendingBook) {
+                    val request = pendingBook ?: return@LaunchedEffect
+                    try {
+                        val book = withContext(Dispatchers.IO) {
+                            val uri = requireNotNull(request.data)
+                            val name = contentResolver.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)?.use {
+                                if (it.moveToFirst()) it.getString(0) else null
+                            } ?: uri.lastPathSegment.orEmpty()
+                            val input = requireNotNull(contentResolver.openInputStream(uri))
+                            val (metadata, staged) = input.use { stageLocalBook(it, cacheDir, name, request.type) }
+                            try {
+                                val book = metadata.copy(epubUrl = catalog.publicationFile(metadata.id, metadata.format).toURI().toString())
+                                catalog.importVerified(book, staged)
+                                book
+                            } finally { staged.delete() }
+                        }
+                        openBook(book)
+                    } catch (failure: Exception) {
+                        error = failure.message ?: "Could not open book"
+                    } finally { pendingBook = null }
                 }
 
                 fun runSearch(loadMore: Boolean = false) {
@@ -693,7 +724,9 @@ class MainActivity : ComponentActivity() {
                                         else -> BookFormat.Epub
                                     }
                                     val publication = catalog.publicationFile(word.bookId, format)
-                                    if (!publication.isFile) {
+                                    if (!format.isAvailable) {
+                                        error = "Unsupported publication format"
+                                    } else if (!publication.isFile) {
                                         error = "This book is no longer downloaded. Open it from Library first."
                                     } else {
                                         val book = books.firstOrNull { it.id == word.bookId }
@@ -1009,7 +1042,11 @@ class MainActivity : ComponentActivity() {
                                     openBook(book)
                                 } else {
                                     val session = settings.readerSession()?.takeIf { it.bookId == bookId }
-                                    if (session != null && catalog.publicationFile(session.bookId, session.format).isFile) {
+                                    if (session != null && canRestoreReaderSession(
+                                            session,
+                                            catalog.publicationFile(session.bookId, session.format).isFile,
+                                        )
+                                    ) {
                                         startActivity(
                                             when (session.format) {
                                                 BookFormat.Cbr, BookFormat.Cbz -> ComicReaderActivity.intent(
@@ -1073,6 +1110,7 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
+        pendingBook = intent.takeIf { it.action == Intent.ACTION_VIEW && it.data?.scheme in setOf("content", "file") }
         pendingInvitation = intent.dataString?.takeIf { it.startsWith("bookstr:") }
         showDownloads = intent.getBooleanExtra("open_downloads", false)
         requestedWord = intent.getStringExtra(EXTRA_OPEN_WORD)
@@ -1137,3 +1175,6 @@ internal fun shouldRestoreReaderOnLaunch(
     openingDownloads: Boolean,
     requestedTab: Int?,
 ): Boolean = isLocked && isFreshLaunch && !hasInvitation && !openingDownloads && requestedTab == null
+
+internal fun canRestoreReaderSession(session: app.bookstr.data.ReaderSession, publicationExists: Boolean): Boolean =
+    publicationExists && session.format.isAvailable

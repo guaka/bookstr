@@ -275,7 +275,7 @@ final class BookDownloadQueue: ObservableObject {
 
     @MainActor func resume(prepare: @escaping Prepare) {
         pruneCompleted()
-        for job in jobs where job.book == nil && !job.failed {
+        for job in jobs where job.book == nil && !job.failed && job.result.isReadable {
             start(job.result, prepare: prepare)
         }
     }
@@ -296,6 +296,7 @@ final class BookDownloadQueue: ObservableObject {
     }
 
     @MainActor func enqueue(_ result: BookSearchResult, prepare: @escaping Prepare) {
+        guard result.isReadable else { return }
         pruneCompleted()
         if let index = jobs.firstIndex(where: { $0.id == result.id }) {
             guard tasks[result.id] == nil, jobs[index].book == nil else { return }

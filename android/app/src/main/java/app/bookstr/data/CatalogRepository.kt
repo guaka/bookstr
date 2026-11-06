@@ -35,6 +35,9 @@ enum class BookFormat(val extension: String) {
     Cbz("cbz"),
     ;
 
+    /** Formats currently offered to users in the Android app. Keep enum/parser support for saved data. */
+    val isAvailable: Boolean get() = this != Fb2
+
     companion object {
         fun from(value: String?, url: String = ""): BookFormat {
             val normalized = value?.trim()?.lowercase()
@@ -55,6 +58,10 @@ enum class BookFormat(val extension: String) {
     }
 }
 
+internal fun BookFormat.requireAvailable() {
+    require(isAvailable) { "Unsupported publication format" }
+}
+
 data class CatalogBook(
     val id: String,
     val title: String,
@@ -73,6 +80,12 @@ data class CatalogBook(
     val rightsSource: String? = null,
     val language: String? = null,
 )
+
+internal fun availableCatalogBooks(books: List<CatalogBook>): List<CatalogBook> =
+    books.filter { it.format.isAvailable }
+
+internal fun availableExternalFavorites(favorites: List<ExternalFavorite>): List<ExternalFavorite> =
+    favorites.filter { BookFormat.from(it.format).isAvailable }
 
 data class BookSearchResult(
     val id: String,
@@ -95,7 +108,8 @@ data class BookSearchResult(
     val torrentEdition: TorrentEdition? = null,
     val unavailableReason: String? = null,
 ) {
-    val isReadable: Boolean get() = unavailableReason == null && (!downloadUrl.isNullOrBlank() || libvaultMd5 != null) && format != null
+    val isReadable: Boolean get() = unavailableReason == null && format?.isAvailable == true &&
+        (!downloadUrl.isNullOrBlank() || libvaultMd5 != null)
 
     fun asCatalogBook(): CatalogBook? {
         if (unavailableReason != null) return null
@@ -186,7 +200,7 @@ open class CatalogRepository(
                 }
             val merged = (cached.values + discovered).distinctBy { it.id }
             saveDownloadedBookMetadata(merged)
-            merged
+            availableCatalogBooks(merged)
         } }
 
     private val privateCatalog = app.bookstr.nostr.PrivateCatalogClient()
@@ -211,6 +225,7 @@ open class CatalogRepository(
 
     suspend fun importVerified(book: CatalogBook, source: File): File = withContext(Dispatchers.IO) {
         require(Regex("[0-9a-f]{32}").matches(book.id))
+        book.format.requireAvailable()
         require(isValidCachedFile(book, source)) { "Unsupported or invalid publication" }
         val target = publicationFile(book.id, book.format)
         val temporary = File(target.parentFile, target.name + ".importing")
@@ -237,6 +252,7 @@ open class CatalogRepository(
         }
 
     suspend fun ensureDownloaded(book: CatalogBook): File = withContext(Dispatchers.IO) {
+        book.format.requireAvailable()
         val target = publicationFile(book.id, book.format)
         if (target.exists() && isValidCachedFile(book, target)) {
             rememberDownloadedBook(withEmbeddedRights(book, target))

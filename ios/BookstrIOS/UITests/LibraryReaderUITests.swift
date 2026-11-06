@@ -57,6 +57,32 @@ final class LibraryReaderUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Remote Author"].exists)
     }
 
+    func testFB2FavoriteKeepsItsMetadataButCannotOpenTheReader() {
+        app.terminate()
+        app.launchArguments = ["--ui-testing-library-fixtures", "--ui-testing-external-favorite"]
+        app.launch()
+        let library = app.tabBars.buttons["Library"]
+        XCTAssertTrue(library.waitForExistence(timeout: 12))
+        library.tap()
+
+        let filter = app.searchFields["Filter books"]
+        if !filter.isHittable { app.swipeDown() }
+        XCTAssertTrue(filter.waitForExistence(timeout: 5))
+        filter.tap()
+        filter.typeText("Legacy FB2 Fixture")
+
+        let favorite = app.buttons["library-favorite-ui-test-disabled-fb2"]
+        XCTAssertTrue(favorite.waitForExistence(timeout: 8), app.debugDescription)
+        XCTAssertTrue(favorite.staticTexts["Legacy FB2 Fixture"].exists)
+        XCTAssertTrue(favorite.staticTexts["FB2"].exists)
+        favorite.tap()
+
+        let alert = app.alerts["Can't open book"]
+        XCTAssertTrue(alert.waitForExistence(timeout: 5))
+        alert.buttons["OK"].tap()
+        XCTAssertFalse(app.buttons["reader-book-details"].exists)
+    }
+
     func testExternalFavoriteWithURLOpensReaderAndShowsUnknownAuthor() {
         app.terminate()
         app.launchArguments = ["--ui-testing-library-fixtures", "--ui-testing-external-favorite"]

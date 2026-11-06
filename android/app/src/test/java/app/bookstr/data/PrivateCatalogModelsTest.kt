@@ -43,12 +43,13 @@ class PrivateCatalogModelsTest {
         assertTrue(CatalogSearchPage.parse(JSONObject(), 0).books.isEmpty())
         assertThrows(Exception::class.java) { CatalogSearchPage.parse(JSONObject().put("books", "bad"), 0) }
     }
-    @Test fun acceptsFb2ZipAsReadableLibcatEdition() {
+    @Test fun retainsFb2ZipMetadataWithoutOfferingAReadableLibcatEdition() {
         val page = CatalogSearchPage.parse(JSONObject("""{"books":[{"md5":"$hash","title":"Matilda","authors":"Roald Dahl","extension":"fb2.zip"}]}"""), 0)
         val book = page.books.single()
         assertEquals(BookFormat.Fb2, book.format)
+        assertEquals(hash, book.libvaultMd5)
+        assertFalse(book.isReadable)
         assertEquals(hash, book.asCatalogBook()?.libvaultMd5)
-        assertTrue(book.isReadable)
     }
     @Test fun carriesValidatedTorrentMetadataForEpubAndPdfSearchResults() {
         for (extension in listOf("epub", "pdf")) {
