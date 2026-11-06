@@ -82,3 +82,6 @@ web/shared/contracts/device-pairing-client.mjs linguist-generated=true
 web/shared/contracts/device-pairing-nip17.mjs linguist-generated=true
 web/shared/contracts/device-pairing-v1.mjs linguist-generated=true
 web/shared/contracts/device-transfer-v1.mjs linguist-generated=true
+
+# Desktop runtime modules are emitted from TypeScript sources.
+desktop/reader-formats.js linguist-generated=true
