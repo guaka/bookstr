@@ -315,6 +315,7 @@ dependencies {
     implementation("com.google.zxing:core:3.5.4")
     val composeBom = platform("androidx.compose:compose-bom:2024.10.01")
     implementation(composeBom)
+    testImplementation(composeBom)
     androidTestImplementation(composeBom)
 
     implementation("com.k2fsa.sherpa:sherpa-onnx:1.13.8@aar")
@@ -340,6 +341,7 @@ dependencies {
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("org.bouncycastle:bcprov-jdk18on:1.80")
     testImplementation("org.robolectric:robolectric:4.14.1")
+    testImplementation("androidx.compose.ui:ui-test-junit4")
     testImplementation("fr.acinq.secp256k1:secp256k1-kmp-jni-jvm:0.15.0")
     testImplementation("com.squareup.okhttp3:mockwebserver:4.12.0")
     androidTestImplementation("com.squareup.okhttp3:mockwebserver:4.12.0")
