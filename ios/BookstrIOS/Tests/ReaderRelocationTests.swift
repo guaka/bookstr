@@ -40,6 +40,12 @@ final class ReaderRelocationTests: XCTestCase {
         XCTAssertNil(ReaderRelocation.parse(#"{"cfi":"  "}"#))
     }
 
+    func testMissingProgressionDefaultsToZeroAndOutOfRangeValuesAreClamped() {
+        XCTAssertEqual(ReaderRelocation.parse(#"{"cfi":"epubcfi(/6/2)"}"#)?.progression, 0)
+        XCTAssertEqual(ReaderRelocation.parse(#"{"cfi":"epubcfi(/6/2)","progression":-0.5}"#)?.progression, 0)
+        XCTAssertEqual(ReaderRelocation.parse(#"{"cfi":"epubcfi(/6/2)","progression":1.5}"#)?.progression, 1)
+    }
+
     func testJSONHelpersIgnoreBooleansAndInvalidStrings() throws {
         XCTAssertNil(ReaderRelocation.jsonDouble(true))
         XCTAssertNil(ReaderRelocation.jsonDouble(false))
@@ -59,17 +65,77 @@ final class ReaderRelocationTests: XCTestCase {
     }
 
     @MainActor
-    func testProgressSyncDebouncerPublishesOnlyLatestRelocation() async throws {
-        let debouncer = ReaderProgressSyncDebouncer(delayNanoseconds: 20_000_000)
+    func testProgressSyncDebouncerPublishesOnlyLatestRelocationAndCancelsPendingWork() async {
+        let sleeper = ReaderDebouncerTestSleeper()
+        let debouncer = ReaderProgressSyncDebouncer(
+            delayNanoseconds: 123,
+            sleep: { nanoseconds in try await sleeper.sleep(nanoseconds) }
+        )
         var published: [Int] = []
-        debouncer.schedule { published.append(1) }
-        debouncer.schedule { published.append(2) }
-        try await Task.sleep(nanoseconds: 80_000_000)
-        XCTAssertEqual(published, [2])
+        let discardedWorkPublished = expectation(description: "discarded work must not publish")
+        discardedWorkPublished.isInverted = true
+        let firstSleepStarted = expectation(description: "first debounce wait started")
+        debouncer.schedule {
+            published.append(1)
+            discardedWorkPublished.fulfill()
+        }
+        sleeper.onWaitStarted = { firstSleepStarted.fulfill() }
+        await fulfillment(of: [firstSleepStarted], timeout: 1)
 
-        debouncer.schedule { published.append(3) }
+        let replacementSleepStarted = expectation(description: "replacement debounce wait started")
+        sleeper.onWaitStarted = { replacementSleepStarted.fulfill() }
+        let replacementPublished = expectation(description: "replacement operation published")
+        debouncer.schedule {
+            published.append(2)
+            replacementPublished.fulfill()
+        }
+        await fulfillment(of: [replacementSleepStarted], timeout: 1)
+        XCTAssertEqual(sleeper.requestedDelays, [123, 123])
+
+        sleeper.releaseAll()
+        await fulfillment(of: [replacementPublished], timeout: 1)
+        XCTAssertEqual(published, [2], "replaced work must not publish")
+
+        let cancelledSleepStarted = expectation(description: "cancelled debounce wait started")
+        sleeper.onWaitStarted = { cancelledSleepStarted.fulfill() }
+        debouncer.schedule {
+            published.append(3)
+            discardedWorkPublished.fulfill()
+        }
+        await fulfillment(of: [cancelledSleepStarted], timeout: 1)
         debouncer.cancel()
-        try await Task.sleep(nanoseconds: 40_000_000)
+        sleeper.releaseAll()
+        await fulfillment(of: [discardedWorkPublished], timeout: 1)
         XCTAssertEqual(published, [2])
+    }
+
+    @MainActor
+    func testProgressSyncDebouncerDefaultSleeperPublishesAfterConfiguredWait() async {
+        let debouncer = ReaderProgressSyncDebouncer(delayNanoseconds: 0)
+        let published = expectation(description: "default sleeper publishes")
+        debouncer.schedule { published.fulfill() }
+        await fulfillment(of: [published], timeout: 1)
+    }
+}
+
+@MainActor
+private final class ReaderDebouncerTestSleeper {
+    private var continuations: [CheckedContinuation<Void, Error>] = []
+    private(set) var requestedDelays: [UInt64] = []
+    var onWaitStarted: (() -> Void)?
+
+    func sleep(_ nanoseconds: UInt64) async throws {
+        requestedDelays.append(nanoseconds)
+        onWaitStarted?()
+        try await withCheckedThrowingContinuation { continuation in
+            continuations.append(continuation)
+        }
+        try Task.checkCancellation()
+    }
+
+    func releaseAll() {
+        let pending = continuations
+        continuations.removeAll()
+        pending.forEach { $0.resume() }
     }
 }
