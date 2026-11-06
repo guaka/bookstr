@@ -103,20 +103,23 @@ export class SpeechModelStore {
   declare private readonly fs: FileSystem;
   private readonly randomId: () => string;
   declare private readonly downloader: Downloader;
+  private readonly downloadTimeoutMs: number;
   declare private readonly models: readonly SpeechModel[];
   declare private active: ActiveInstall | null;
   declare private readonly lastError: Map<string, string>;
 
-  constructor(root: string, { downloader, fileSystem = fs, models = SPEECH_MODELS, randomId = () => crypto.randomUUID() }: {
+  constructor(root: string, { downloader, fileSystem = fs, models = SPEECH_MODELS, randomId = () => crypto.randomUUID(), downloadTimeoutMs = 30_000 }: {
     downloader?: Downloader;
     fileSystem?: FileSystem;
     models?: readonly SpeechModel[];
     randomId?: () => string;
+    downloadTimeoutMs?: number;
   } = {}) {
     this.root = root;
     this.fs = fileSystem;
     this.randomId = randomId;
     this.downloader = downloader || this.download.bind(this);
+    this.downloadTimeoutMs = downloadTimeoutMs;
     this.models = models;
     this.active = null;
     this.lastError = new Map();
@@ -149,17 +152,44 @@ export class SpeechModelStore {
   }
 
   async download(url: string, destination: string, expectedBytes: number, onBytes: (received: number, total: number) => void): Promise<void> {
-    const response = await fetch(url);
+    const controller = new AbortController();
+    const withTimeout = async <T>(operation: Promise<T>): Promise<T> => {
+      let timeout!: ReturnType<typeof setTimeout>;
+      return Promise.race([
+        operation,
+        new Promise<never>((_resolve, reject) => {
+          timeout = setTimeout(() => {
+            controller.abort();
+            reject(new Error('Speech model download timed out.'));
+          }, this.downloadTimeoutMs);
+        }),
+      ]).finally(() => clearTimeout(timeout));
+    };
+    const response = await withTimeout(fetch(url, { signal: controller.signal }));
     if (!response.ok || !response.body) throw new Error(`Download failed (${response.status})`);
     const handle = await this.fs.open(destination, 'w');
+    const reader = response.body.getReader();
     let received = 0;
     try {
-      for await (const chunk of response.body) {
-        await handle.write(chunk);
+      while (true) {
+        const next = await withTimeout(reader.read());
+        if (next.done) break;
+        const chunk = next.value;
+        if (received + chunk.byteLength > expectedBytes) throw new Error(`Downloaded more than expected ${expectedBytes} bytes`);
+        let offset = 0;
+        while (offset < chunk.byteLength) {
+          const { bytesWritten } = await handle.write(chunk, offset, chunk.byteLength - offset, received + offset);
+          if (bytesWritten <= 0) throw new Error('Could not write speech model download.');
+          offset += bytesWritten;
+        }
         received += chunk.byteLength;
         onBytes(received, expectedBytes);
       }
+    } catch (error) {
+      await reader.cancel().catch(() => {});
+      throw error;
     } finally {
+      reader.releaseLock();
       await handle.close();
     }
     if (received !== expectedBytes) throw new Error(`Downloaded ${received} bytes; expected ${expectedBytes}`);
@@ -169,30 +199,36 @@ export class SpeechModelStore {
     const model = this.model(id);
     if (!model) throw new Error('Unknown speech model.');
     if (this.active) throw new Error('Another speech model is already downloading.');
-    if (await this.isInstalled(model)) return this.status();
-    const staging = path.join(this.root, `.install-${this.randomId()}`);
     this.active = { id, completedFiles: 0 };
-    this.lastError.delete(id);
     try {
-      await this.fs.mkdir(staging, { recursive: true });
-      for (const file of model.files) {
-        const destination = path.join(staging, file.path);
-        await this.fs.mkdir(path.dirname(destination), { recursive: true });
-        await this.downloader(sourceUrl(model, file), destination, file.expectedBytes, (receivedBytes, totalBytes) => {
-          onProgress({ id, completedFiles: this.active!.completedFiles, fileCount: model.files.length, file: file.path, receivedBytes, totalBytes });
-        });
-        const stat = await this.fs.stat(destination);
-        if (!stat.isFile() || stat.size !== file.expectedBytes) throw new Error(`${file.path} failed verification.`);
-        this.active.completedFiles += 1;
-        onProgress({ id, completedFiles: this.active.completedFiles, fileCount: model.files.length, file: file.path, receivedBytes: file.expectedBytes, totalBytes: file.expectedBytes });
+      if (await this.isInstalled(model)) {
+        return (await this.status()).map(item => item.id === id
+          ? { ...item, installing: false, completedFiles: 0 }
+          : item);
       }
-      await this.fs.mkdir(this.root, { recursive: true });
-      await this.fs.rm(path.join(this.root, id), { recursive: true, force: true });
-      await this.fs.rename(staging, path.join(this.root, id));
-    } catch (error: unknown) {
-      await this.fs.rm(staging, { recursive: true, force: true });
-      this.lastError.set(id, (error as Error)?.message || String(error));
-      throw error;
+      const staging = path.join(this.root, `.install-${this.randomId()}`);
+      this.lastError.delete(id);
+      try {
+        await this.fs.mkdir(staging, { recursive: true });
+        for (const file of model.files) {
+          const destination = path.join(staging, file.path);
+          await this.fs.mkdir(path.dirname(destination), { recursive: true });
+          await this.downloader(sourceUrl(model, file), destination, file.expectedBytes, (receivedBytes, totalBytes) => {
+            onProgress({ id, completedFiles: this.active!.completedFiles, fileCount: model.files.length, file: file.path, receivedBytes, totalBytes });
+          });
+          const stat = await this.fs.stat(destination);
+          if (!stat.isFile() || stat.size !== file.expectedBytes) throw new Error(`${file.path} failed verification.`);
+          this.active.completedFiles += 1;
+          onProgress({ id, completedFiles: this.active.completedFiles, fileCount: model.files.length, file: file.path, receivedBytes: file.expectedBytes, totalBytes: file.expectedBytes });
+        }
+        await this.fs.mkdir(this.root, { recursive: true });
+        await this.fs.rm(path.join(this.root, id), { recursive: true, force: true });
+        await this.fs.rename(staging, path.join(this.root, id));
+      } catch (error: unknown) {
+        await this.fs.rm(staging, { recursive: true, force: true });
+        this.lastError.set(id, (error as Error)?.message || String(error));
+        throw error;
+      }
     } finally {
       this.active = null;
     }

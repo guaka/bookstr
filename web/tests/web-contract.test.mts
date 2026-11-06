@@ -536,11 +536,11 @@ test('desktop main process enforces reader payloads and returns explicit open re
   assert.match(desktopMain, /async function resolveNostrSignerPublicKey\(\)/);
   assert.match(desktopMain, /function normalizeNostrEventPayload\(payload: unknown\)/);
   assert.match(desktopMain, /function normalizeNip44Payload\(payload: unknown\)/);
-  assert.match(desktopMain, /ipcMain\.handle\('bookstr-desktop-nostr-get-public-key'/);
-  assert.match(desktopMain, /ipcMain\.handle\('bookstr-desktop-nostr-sign-event'/);
-  assert.match(desktopMain, /ipcMain\.handle\('bookstr-desktop-nostr-nip44-encrypt'/);
-  assert.match(desktopMain, /ipcMain\.handle\('bookstr-desktop-nostr-nip44-decrypt'/);
-  assert.match(desktopMain, /ipcMain\.handle\('bookstr-desktop-nostr-nip19-npub'/);
+  assert.match(desktopMain, /authorizedIpcMain\.handle\('bookstr-desktop-nostr-get-public-key'/);
+  assert.match(desktopMain, /authorizedIpcMain\.handle\('bookstr-desktop-nostr-sign-event'/);
+  assert.match(desktopMain, /authorizedIpcMain\.handle\('bookstr-desktop-nostr-nip44-encrypt'/);
+  assert.match(desktopMain, /authorizedIpcMain\.handle\('bookstr-desktop-nostr-nip44-decrypt'/);
+  assert.match(desktopMain, /authorizedIpcMain\.handle\('bookstr-desktop-nostr-nip19-npub'/);
   assert.doesNotMatch(desktopMain, /Nostr signer is not configured\./);
 });
 

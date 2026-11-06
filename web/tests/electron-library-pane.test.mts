@@ -332,10 +332,10 @@ test('presence lookup is optional, coalesced and never lets an old device update
 
 test('Kindle presence IPC only forwards a normalized device ID', async () => {
   const main = fs.readFileSync(new URL('../../desktop/src/main.ts', import.meta.url), 'utf8');
-  const source = present(main.split('\n').find(line => line.includes("ipcMain.handle('bookstr-desktop-kindle-presence'")));
+  const source = present(main.split('\n').find(line => line.includes("authorizedIpcMain.handle('bookstr-desktop-kindle-presence'")));
   let handler: ((event: unknown, id?: string) => unknown) | undefined;
   const ids: string[] = [];
-  vm.runInNewContext(source, { ipcMain: { handle(name: string, callback: (event: unknown, id?: string) => unknown) { assert.equal(name, 'bookstr-desktop-kindle-presence'); handler = callback; } }, getKindleSync: () => ({ presence: (id: string) => { ids.push(id); return Promise.resolve({ bookIds: [] }); } }) });
+  vm.runInNewContext(source, { authorizedIpcMain: { handle(name: string, callback: (event: unknown, id?: string) => unknown) { assert.equal(name, 'bookstr-desktop-kindle-presence'); handler = callback; } }, getKindleSync: () => ({ presence: (id: string) => { ids.push(id); return Promise.resolve({ bookIds: [] }); } }) });
   await present(handler)({}, 'kindle');
   await present(handler)({}, undefined);
   assert.deepEqual(ids, ['kindle', '']);

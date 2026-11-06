@@ -83,3 +83,8 @@ android/.kotlin/
 
 # Generated Electron build metadata
 desktop/build-info.json
+
+/desktop/bounded-response.js
+/desktop/desktop-state.js
+
+/desktop/ipc-authorization.js
