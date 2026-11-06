@@ -24,6 +24,8 @@ concurrency:
 jobs:
   changes:
     name: Route iOS checks
+    # iOS work is paused. Keep required checks visible without allocating runners.
+    if: ${{ false }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
