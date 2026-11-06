@@ -27,6 +27,7 @@ import org.junit.runner.RunWith
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.util.UUID
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicReference
 
 @RunWith(AndroidJUnit4::class)
@@ -70,6 +71,7 @@ class PdfReaderActivityTest {
                 assertEquals(0, initialSession?.pageIndex)
 
                 compose.onNodeWithContentDescription("Page 1").performTouchInput { swipeLeft() }
+                val progressDeadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(15)
                 try {
                     compose.waitUntil(15_000) { hasPage("Page 2") }
                 } catch (timeout: androidx.compose.ui.test.ComposeTimeoutException) {
@@ -83,7 +85,8 @@ class PdfReaderActivityTest {
                 compose.onNodeWithContentDescription("Page 2").assertIsDisplayed()
 
                 try {
-                    compose.waitUntil(15_000) {
+                    val remainingMillis = TimeUnit.NANOSECONDS.toMillis(progressDeadline - System.nanoTime()).coerceAtLeast(1)
+                    compose.waitUntil(remainingMillis) {
                         runBlocking { app.catalogRepository.getProgress(bookId)?.cfi?.startsWith("pdf:1:") == true }
                     }
                 } catch (timeout: androidx.compose.ui.test.ComposeTimeoutException) {
