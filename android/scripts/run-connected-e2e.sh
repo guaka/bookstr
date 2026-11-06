@@ -54,7 +54,7 @@ if $prebuilt; then
     junit_file="$results_dir/instrumentation.xml"
     : > "$results_dir/instrumentation.started"
     set +e
-    "$adb_path" shell am instrument -w -r app.bookstr.test/androidx.test.runner.AndroidJUnitRunner 2>&1 | tee "$log_file"
+    "$adb_path" shell am instrument -w -r app.bookstr.test/app.bookstr.BookstrTestRunner 2>&1 | tee "$log_file"
     instrument_status=${PIPESTATUS[0]}
     node "$(dirname "$0")/instrumentation-results.mjs" "$log_file" "$junit_file"
     parser_status=$?
