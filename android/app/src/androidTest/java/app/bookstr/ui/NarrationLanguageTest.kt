@@ -78,6 +78,12 @@ class NarrationLanguageTest {
             }
             compose.waitUntil(45_000) { playbackLanguage.get() != null }
         }
+        fun waitForReaderReady() {
+            compose.waitUntil(15_000) {
+                compose.onAllNodesWithTag("reader.loading").fetchSemanticsNodes().isEmpty()
+            }
+            compose.onNodeWithTag("reader.error").assertDoesNotExist()
+        }
         fun pause() {
             if (compose.onAllNodesWithContentDescription("Pause narration").fetchSemanticsNodes().isNotEmpty()) {
                 compose.onNodeWithTag("narration.toggle").performClick()
@@ -96,6 +102,7 @@ class NarrationLanguageTest {
         }
         try {
             open().use {
+                waitForReaderReady()
                 compose.onNodeWithContentDescription("Read aloud").performClick()
                 waitForIsland()
                 pause()
@@ -115,6 +122,7 @@ class NarrationLanguageTest {
             }
             playbackLanguage.set(null)
             open().use {
+                waitForReaderReady()
                 compose.onNodeWithContentDescription("Read aloud").performClick()
                 waitForIsland()
                 pause()

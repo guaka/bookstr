@@ -16,11 +16,21 @@ import org.junit.runner.RunWith
 class AcquisitionScreenTest {
     @get:Rule val compose = createComposeRule()
     private val hash = "a".repeat(32)
+    private fun touchContent(content: @androidx.compose.runtime.Composable () -> Unit) {
+        compose.setContent {
+            val inputMode = androidx.compose.ui.platform.LocalInputModeManager.current
+            androidx.compose.runtime.LaunchedEffect(inputMode) {
+                // Remote-navigation tests can leave the process in keyboard mode.
+                inputMode.requestInputMode(androidx.compose.ui.input.InputMode.Touch)
+            }
+            content()
+        }
+    }
     @Test fun privateSearchSupportsPaginationEditionSelectionAndDownloadNavigation() {
         var searched = false; var more = false; var downloads = false; var opened = false
         val query = mutableStateOf("")
         val result = BookSearchResult(hash, "libcat", "Fixture edition", "Bookstr", format = BookFormat.Pdf, libvaultMd5 = hash)
-        compose.setContent {
+        touchContent {
             SearchScreen(query = query.value, results = listOf(result), searching = false, openingBookId = null,
                 message = null, isFavorite = { false }, readingProgress = { null }, onQueryChange = { query.value = it },
                 onSearch = { searched = true }, onOpen = { opened = it.id == hash }, onToggleFavorite = {},
@@ -45,7 +55,7 @@ class AcquisitionScreenTest {
     @Test fun searchHasClearControlAndProminentButtonOutsideTheField() {
         val query = mutableStateOf("fixture query")
         var searched = false
-        compose.setContent {
+        touchContent {
             SearchScreen(query = query.value, results = emptyList(), searching = false, openingBookId = null,
                 message = null, isFavorite = { false }, readingProgress = { null }, onQueryChange = { query.value = it },
                 onSearch = { searched = true }, onOpen = {}, onToggleFavorite = {})
@@ -70,7 +80,7 @@ class AcquisitionScreenTest {
             BookSearchResult(id, "libcat", "Fixture $index", "Bookstr", format = BookFormat.Pdf,
                 libvaultMd5 = id)
         }
-        compose.setContent {
+        touchContent {
             SearchScreen(query = "fixture", results = results, searching = searching.value,
                 openingBookId = null, message = null, isFavorite = { false }, readingProgress = { null },
                 onQueryChange = {}, onSearch = {}, onOpen = {}, onToggleFavorite = {},
@@ -91,7 +101,7 @@ class AcquisitionScreenTest {
         val metadata = readable.copy(id = "metadata", title = "Metadata", format = null, libvaultMd5 = null)
         val metadata2 = readable.copy(id = "metadata2", title = "Metadata 2", format = null, libvaultMd5 = null)
         val query = mutableStateOf("books")
-        compose.setContent {
+        touchContent {
             SearchScreen(query.value, results = listOf(readable, metadata, metadata2), searching = false,
                 openingBookId = null, message = null, isFavorite = { false }, readingProgress = { null },
                 onQueryChange = { query.value = it }, onSearch = {}, onOpen = {}, onToggleFavorite = {})
@@ -118,7 +128,7 @@ class AcquisitionScreenTest {
         val unavailable = readable.copy(id = "zlib-missing", title = "Matilda", author = "Roald Dahl",
             unavailableReason = "Torrent unavailable")
         var opened = false
-        compose.setContent {
+        touchContent {
             SearchScreen("Dahl", results = listOf(unavailable, readable), searching = false, openingBookId = null,
                 message = null, isFavorite = { false }, readingProgress = { null }, onQueryChange = {},
                 onSearch = {}, onOpen = { opened = true }, onToggleFavorite = {})
@@ -132,7 +142,7 @@ class AcquisitionScreenTest {
         val book = CatalogBook(hash, "Fixture", "Bookstr", "", null, format = BookFormat.Pdf, libvaultMd5 = hash)
         val job = mutableStateOf(DownloadJob(book, TorrentEdition(hash, 1, "fiction", 100)))
         var action = ""; var read = false; var sent = false
-        compose.setContent {
+        touchContent {
             DownloadsSheet(listOf(job.value), {}, { a, id -> assertEquals(hash, id); action = a }, { read = true },
                 { sent = it.book.id == hash })
         }
@@ -150,7 +160,7 @@ class AcquisitionScreenTest {
         val pt = en.copy(id = "pt", title = "Portuguese PDF", language = "pt-BR", format = BookFormat.Pdf)
         val ptEpub = en.copy(id = "pt-epub", title = "Portuguese EPUB", language = "Portuguese")
         var opened = ""
-        compose.setContent {
+        touchContent {
             SearchScreen(query = "books", results = listOf(en, pt, ptEpub), searching = false, openingBookId = null,
                 message = null, isFavorite = { true }, readingProgress = { null }, onQueryChange = {}, onSearch = {},
                 onOpen = { opened = it.id }, onToggleFavorite = {})
@@ -185,7 +195,7 @@ class AcquisitionScreenTest {
         store.enqueue(second, TorrentEdition(second.id, 2, "fiction", 100))
         assertEquals(listOf(second.id, first.id), store.jobs.value.map { it.book.id })
         store.update(store.find(hash)!!.copy(size = 100, state = "downloading"))
-        compose.setContent {
+        touchContent {
             val jobs = store.jobs.collectAsState()
             DownloadsSheet(jobs.value, {}, { _, _ -> }, {})
         }
@@ -217,7 +227,7 @@ class AcquisitionScreenTest {
         val en = CatalogBook(hash, "English EPUB", "Author", "", null, language = "en")
         val pt = en.copy(id = "b".repeat(32), title = "Portuguese PDF", language = "pt", format = BookFormat.Pdf)
         val jobs = listOf(en, pt).map { DownloadJob(it, TorrentEdition(it.id, 1, "fiction", 100)) }
-        compose.setContent { DownloadsSheet(jobs, {}, { _, _ -> }, {}) }
+        touchContent { DownloadsSheet(jobs, {}, { _, _ -> }, {}) }
         compose.onNodeWithTag("downloads.language").performClick()
         compose.onNodeWithTag("downloads.language.pt").performClick()
         compose.onNodeWithText("English EPUB").assertDoesNotExist()

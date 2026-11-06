@@ -12,11 +12,24 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.platform.LocalConfiguration
+import app.bookstr.isTelevision
 import androidx.compose.ui.unit.dp
 
 /** A quiet bottom touch target brings the four app destinations back while reading. */
 @Composable
-fun ReaderBottomNavigation(onSelectTab: (Int) -> Unit, modifier: Modifier = Modifier) {
+fun ReaderBottomNavigation(
+    onSelectTab: (Int) -> Unit,
+    modifier: Modifier = Modifier,
+    onPrevious: () -> Unit = {},
+    onNext: () -> Unit = {},
+    onSpeech: (() -> Unit)? = null,
+    isSpeaking: Boolean = false,
+) {
+    if (isTelevision(LocalConfiguration.current.uiMode)) {
+        TvReaderControls(onPrevious, onNext, { onSelectTab(0) }, onSpeech, modifier, isSpeaking)
+        return
+    }
     var visible by remember { mutableStateOf(false) }
     Box(modifier = modifier.fillMaxWidth(), contentAlignment = Alignment.BottomCenter) {
         if (visible) {

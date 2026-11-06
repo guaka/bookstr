@@ -22,6 +22,8 @@ import androidx.lifecycle.lifecycleScope
 import androidx.webkit.WebViewAssetLoader
 import app.bookstr.data.BookFormat
 import app.bookstr.ui.ReaderBottomNavigation
+import app.bookstr.ui.tvReaderInset
+import app.bookstr.ui.theme.BookstrTheme
 import kotlinx.coroutines.launch
 import java.io.File
 
@@ -72,13 +74,17 @@ class ComicReaderActivity : ComponentActivity() {
             }
         }
         setContent {
+            BookstrTheme {
             Box(Modifier.fillMaxSize()) {
-                AndroidView(factory = { web }, modifier = Modifier.fillMaxSize())
+                AndroidView(factory = { web }, modifier = Modifier.fillMaxSize().tvReaderInset())
                 ReaderBottomNavigation(
                     onSelectTab = { tab -> openMainTab(tab) },
+                    onPrevious = { web.evaluateJavascript("turn(-1);", null) },
+                    onNext = { web.evaluateJavascript("turn(1);", null) },
                     modifier = Modifier.align(Alignment.BottomCenter),
                 )
             }
+        }
         }
         web.loadUrl("https://appassets.androidplatform.net/assets/comic-reader.html")
     }
