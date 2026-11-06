@@ -1,7 +1,7 @@
 import Foundation
 
 private func isSupportedBookFormat(_ value: String) -> Bool {
-    ["pdf", "epub", "cbr", "cbz"].contains(value.lowercased())
+    ["pdf", "epub", "fb2", "cbr", "cbz"].contains(value.lowercased())
 }
 
 struct SharedFavoriteRef: Codable, Equatable {

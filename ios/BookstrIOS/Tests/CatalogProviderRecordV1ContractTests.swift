@@ -14,7 +14,7 @@ final class CatalogProviderRecordV1ContractTests: XCTestCase {
         XCTAssertEqual(document.version, catalogProviderRecordVersion)
         XCTAssertEqual(document.records.count, 6)
         XCTAssertTrue(document.records.contains { record in
-            record.acquisitions.contains { $0.format == "epub" }
+            record.acquisitions.contains { $0.format == "fb2" }
         })
         for record in document.records {
             XCTAssertEqual(try JSONDecoder().decode(

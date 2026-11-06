@@ -21,7 +21,7 @@ final class BookListFacetFiltersTests: XCTestCase {
         XCTAssertEqual(BookListFacetFilters.normalizedLanguage("pt-BR"), "pt")
         XCTAssertEqual(BookListFacetFilters.normalizedLanguage(nil), "")
         XCTAssertEqual(BookListFacetFilters.normalizedFormat(".EPUB"), "epub")
-        XCTAssertEqual(BookListFacetFilters.normalizedFormat(".CBZ"), "cbz")
+        XCTAssertEqual(BookListFacetFilters.normalizedFormat("FB2.ZIP"), "fb2")
         XCTAssertEqual(BookListFacetFilters.normalizedFormat(nil), "")
     }
 
@@ -52,8 +52,8 @@ final class BookListFacetFiltersTests: XCTestCase {
             ["en", "pt"]
         )
         XCTAssertEqual(
-            BookListFacetFilters.formats(from: ["EPUB", ".pdf", "epub", nil, "cbz"]),
-            ["cbz", "epub", "pdf"]
+            BookListFacetFilters.formats(from: ["EPUB", ".pdf", "epub", nil, "fb2.zip"]),
+            ["epub", "fb2", "pdf"]
         )
     }
 

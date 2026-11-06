@@ -183,6 +183,10 @@ class MainActivityNewIntentTest {
                 )
             }
 
+            compose.waitUntil(5_000) {
+                compose.onAllNodesWithText("Invalid catalog invitation").fetchSemanticsNodes().isEmpty()
+            }
+            assertIntentDeliveredToResumedActivity(scenario, "https://example.test/not-a-bookstr-invitation")
             compose.onNodeWithText("Invalid catalog invitation").assertDoesNotExist()
             compose.onNodeWithTag("tab.settings").assertIsSelected()
         }

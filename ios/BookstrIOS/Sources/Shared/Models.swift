@@ -3,17 +3,24 @@ import Foundation
 enum BookFormat: String, Codable, CaseIterable, Sendable {
     case epub
     case pdf
+    case fb2
     case cbr
     case cbz
+
+    /// Formats currently available through iOS discovery and the reader entry points.
+    /// Keep the enum and decoding support intact so existing FB2 records and files remain valid.
+    var isAvailableOnIOS: Bool { self != .fb2 }
 
     static func from(format: String?, url: String = "") -> BookFormat {
         let normalized = format?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         if normalized == "pdf" { return .pdf }
         if normalized == "epub" { return .epub }
+        if normalized == "fb2" || normalized == "fb2.zip" { return .fb2 }
         if normalized == "cbr" { return .cbr }
         if normalized == "cbz" { return .cbz }
         let path = url.lowercased()
         if path.contains(".pdf") { return .pdf }
+        if path.contains(".fb2") { return .fb2 }
         if path.contains(".cbr") { return .cbr }
         if path.contains(".cbz") { return .cbz }
         return .epub
@@ -188,7 +195,7 @@ struct BookSearchResult: Identifiable, Hashable, Codable {
     }
 
     var isReadable: Bool {
-        (downloadUrl?.isEmpty == false || libvaultMd5 != nil) && format != nil
+        (downloadUrl?.isEmpty == false || libvaultMd5 != nil) && format?.isAvailableOnIOS == true
     }
 
     func asCatalogBook() -> CatalogBook? {

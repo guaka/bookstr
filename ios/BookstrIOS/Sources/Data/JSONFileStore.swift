@@ -20,22 +20,6 @@ final class JSONFileStore {
         return value
     }
 
-    /// One unsupported or malformed record must not hide the other saved books.
-    func loadArray<T: Decodable>(_ filename: String, as type: T.Type) -> [T] {
-        load(filename, as: [ArrayEntry<T>].self, fallback: []).compactMap(\.value)
-    }
-
-    static func decodeArray<T: Decodable>(_ data: Data, as type: T.Type) throws -> [T] {
-        try JSONDecoder().decode([ArrayEntry<T>].self, from: data).compactMap(\.value)
-    }
-
-    private struct ArrayEntry<T: Decodable>: Decodable {
-        let value: T?
-        init(from decoder: Decoder) throws {
-            value = try? T(from: decoder)
-        }
-    }
-
     func save<T: Encodable>(_ filename: String, value: T) {
         let url = root.appendingPathComponent(filename)
         guard let data = try? encoder.encode(value) else { return }

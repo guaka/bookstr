@@ -155,6 +155,7 @@ final class FavoritesParserTests: XCTestCase {
         XCTAssertEqual(legacy.first?.rights.status, .unknown)
     }
 
+
     func testCompactItemTagsFallsBackToCollectionTimestampForInvalidAddedAt() {
         let tags = FavoritesParser.compactItemTags(
             refs: [SharedFavoriteRef(isbn: "978-0-123456-78-9", addedAt: 0)],
@@ -179,6 +180,8 @@ final class FavoritesParserTests: XCTestCase {
 
         XCTAssertEqual(FavoritesParser.splitItemTags(tag, limit: limit), [tag])
     }
+
+
 
     func testMatchesPortableISBNsAndKeepsUnmatchedEditions() {
         let tags: [Any] = [
@@ -209,6 +212,20 @@ final class FavoritesParserTests: XCTestCase {
         XCTAssertEqual(result.external.count, 1)
         XCTAssertEqual(result.external[0].libvaultMd5, "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")
     }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
     func testParsesWrappedTagsObject() {
         let md5 = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
@@ -310,6 +327,10 @@ final class FavoritesParserTests: XCTestCase {
         ])
         XCTAssertEqual(refs, [SharedFavoriteRef(libvaultMd5: md5, addedAt: 1_700_000_000)])
     }
+
+
+
+
 
     func testCompactIsbnSkipsInvalidValueAndKeepsValidOne() {
         let refs = FavoritesParser.parseSharedFavoriteTags([
@@ -414,6 +435,10 @@ final class FavoritesParserTests: XCTestCase {
         XCTAssertEqual(refs[0].url, "https://example.org/book")
         XCTAssertEqual(refs[0].addedAt, 1_700_000_001)
     }
+
+
+
+
 
     func testLegacyBookstrMetadataEmptyFieldsDoNotOverwriteExisting() {
         let md5 = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
@@ -532,6 +557,8 @@ final class FavoritesParserTests: XCTestCase {
         XCTAssertEqual(refs[0].year, "2026")
     }
 
+
+
     func testLibvaultAddedWithUppercaseIdentifierMatchesExistingFavorite() {
         let md5 = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
         let refs = FavoritesParser.parseSharedFavoriteTags([
@@ -556,6 +583,8 @@ final class FavoritesParserTests: XCTestCase {
         XCTAssertEqual(refs[0].title, "Unsupported format")
         XCTAssertEqual(refs[0].year, "2024")
     }
+
+
 
     func testParseSharedFavoriteTagsRejectsNonJsonInput() {
         XCTAssertTrue(FavoritesParser.parseSharedFavoriteTags("null").isEmpty)
@@ -644,6 +673,8 @@ final class FavoritesParserTests: XCTestCase {
         XCTAssertEqual(refs[0].url, existingUrl)
         XCTAssertEqual(refs[0].isbn, "9780123456789")
     }
+
+
 
     func testMatchSharedFavoritesMatchesBySourceUrl() {
         let sourceUrl = "https://example.com/book.epub"
@@ -751,6 +782,12 @@ final class FavoritesParserTests: XCTestCase {
         XCTAssertEqual(result.external[0].author, "Legacy author")
         XCTAssertEqual(result.external[0].addedAt, 11)
     }
+
+
+
+
+
+
 
     func testMixedTypeCompactTagsSkipInvalidEntriesAndParseValidOne() {
         let refs = FavoritesParser.parseSharedFavoriteTags([
@@ -908,6 +945,8 @@ final class FavoritesParserTests: XCTestCase {
         XCTAssertEqual(result.external[0].libvaultMd5, md5)
     }
 
+
+
     func testMatchSharedFavoritesPrefersLatestMetadataForDuplicateUrlKey() {
         let source = "https://example.org/duplicate.epub"
         let result = FavoritesParser.matchSharedFavorites(
@@ -970,6 +1009,8 @@ final class FavoritesParserTests: XCTestCase {
         XCTAssertEqual(result.bookIds, ["source:42"])
         XCTAssertEqual(result.external.count, 0)
     }
+
+
 
     func testPendingUrlSurvivesUnknownCompactTagUntilKnownConsumesIt() {
         let url = "https://example.org/books/123"
@@ -1113,6 +1154,8 @@ final class FavoritesParserTests: XCTestCase {
         XCTAssertNil(refs[0].title)
         XCTAssertNil(refs[0].author)
     }
+
+
 
     func testCompactItemTagsFallsBackToProvidedAddedAt() {
         let tags = FavoritesParser.compactItemTags(
@@ -1387,6 +1430,87 @@ final class FavoritesParserTests: XCTestCase {
         XCTAssertFalse(PublicationUtilities.isStructurallyValidPublication(fileURL: url, format: .epub))
     }
 
+    func testNativeFB2MetadataAndValidationRejectUnsafeXML() throws {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".fb2")
+        defer { try? FileManager.default.removeItem(at: url) }
+        let fb2 = """
+            <FictionBook xmlns="http://www.gribuser.ru/xml/fictionbook/2.0">
+              <description><title-info><book-title>Тест</book-title><author><first-name>Ada</first-name><last-name>Writer</last-name></author><date>2024-01-01</date></title-info></description>
+              <body><section><title><p>Глава</p></title><p>Текст</p></section></body>
+            </FictionBook>
+            """
+        try Data(fb2.utf8).write(to: url)
+        XCTAssertEqual(PublicationUtilities.detectedFormat(fileURL: url), .fb2)
+        XCTAssertTrue(PublicationUtilities.isStructurallyValidPublication(fileURL: url, format: .fb2))
+        XCTAssertEqual(PublicationUtilities.fb2Metadata(fileURL: url)?.title, "Тест")
+        XCTAssertEqual(PublicationUtilities.fb2Metadata(fileURL: url)?.author, "Ada Writer")
+        XCTAssertEqual(PublicationUtilities.fb2Metadata(fileURL: url)?.year, "2024")
+
+        let unsafe = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".fb2")
+        defer { try? FileManager.default.removeItem(at: unsafe) }
+        try Data("<!DOCTYPE FictionBook [<!ENTITY x SYSTEM 'https://example.test/x'>]><FictionBook><body><section><p>&x;</p></section></body></FictionBook>".utf8).write(to: unsafe)
+        XCTAssertFalse(PublicationUtilities.isStructurallyValidPublication(fileURL: unsafe, format: .fb2))
+    }
+
+    func testSingleStoredFB2ZipIsAcceptedAndMultiEntryZipRejected() throws {
+        let valid = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".fb2")
+        defer { try? FileManager.default.removeItem(at: valid) }
+        let xml = #"<FictionBook><description><title-info><book-title>Stored</book-title></title-info></description><body><section><p>Text</p></section></body></FictionBook>"#
+        try makeStoredZip([("book.fb2", xml)]).write(to: valid)
+        XCTAssertEqual(PublicationUtilities.detectedFormat(fileURL: valid), .fb2)
+        XCTAssertTrue(PublicationUtilities.isStructurallyValidPublication(fileURL: valid, format: .fb2))
+
+        let multiple = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".fb2")
+        defer { try? FileManager.default.removeItem(at: multiple) }
+        try makeStoredZip([("one.fb2", xml), ("two.fb2", xml)]).write(to: multiple)
+        XCTAssertFalse(PublicationUtilities.isStructurallyValidPublication(fileURL: multiple, format: .fb2))
+
+        let traversal = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".fb2")
+        defer { try? FileManager.default.removeItem(at: traversal) }
+        try makeStoredZip([("../book.fb2", xml)]).write(to: traversal)
+        XCTAssertFalse(PublicationUtilities.isStructurallyValidPublication(fileURL: traversal, format: .fb2))
+    }
+
+    func testSingleDeflatedFB2ZipIsAccepted() throws {
+        let valid = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".fb2.zip")
+        defer { try? FileManager.default.removeItem(at: valid) }
+        // ZIP_DEFLATED archive containing exactly one safe FB2 entry.
+        let encoded = "UEsDBBQAAAAIAI+eHF2swOoxXQAAAJsAAAAIAAAAYm9vay5mYjJVjkEKgDAMBF9U8oGQg4gv8AO2jRAsTbE56O+tClKPOzssi5MEE82D6kYYuYZdyg0ITSyxk7wqoW+1ewCNvKbFOCJ0EKG34bfjNZ6ElcMbC818GEJp3gfhlaB/cwFQSwECFAMUAAAACACPnhxdrMDqMV0AAACbAAAACAAAAAAAAAAAAAAAgAEAAAAAYm9vay5mYjJQSwUGAAAAAAEAAQA2AAAAgwAAAAAA"
+        guard let data = Data(base64Encoded: encoded) else { return XCTFail("invalid fixture") }
+        try data.write(to: valid)
+        XCTAssertTrue(PublicationUtilities.isStructurallyValidPublication(fileURL: valid, format: .fb2))
+    }
+
+    func testFB2CoverUsesTheReferencedBinaryAndRejectsBrokenPayloads() throws {
+        let image = Data([
+            0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52,
+            0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x06, 0x00, 0x00, 0x00, 0x1F, 0x15, 0xC4,
+            0x89, 0x00, 0x00, 0x00, 0x0A, 0x49, 0x44, 0x41, 0x54, 0x78, 0x9C, 0x63, 0x00, 0x01, 0x00, 0x00,
+            0x05, 0x00, 0x01, 0x0D, 0x0A, 0x2D, 0xB4, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4E, 0x44, 0xAE,
+            0x42, 0x60, 0x82,
+        ])
+        let xml = """
+            <FictionBook xmlns:l="http://www.w3.org/1999/xlink">
+              <description><title-info><coverpage><image l:href="#jacket"/></coverpage></title-info></description>
+              <binary id="other">bm90IGFuIGltYWdl</binary>
+              <binary id="jacket">\(image.base64EncodedString())</binary>
+              <body><section><p>Text</p></section></body>
+            </FictionBook>
+            """
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".fb2")
+        defer { try? FileManager.default.removeItem(at: url) }
+        try Data(xml.utf8).write(to: url)
+
+        let cover = try XCTUnwrap(PublicationUtilities.fb2Cover(fileURL: url))
+        XCTAssertEqual(cover.data, image)
+        XCTAssertEqual(cover.pathExtension, "png")
+
+        let broken = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".fb2")
+        defer { try? FileManager.default.removeItem(at: broken) }
+        try Data(xml.replacingOccurrences(of: image.base64EncodedString(), with: "%%%invalid%%%").utf8).write(to: broken)
+        XCTAssertNil(PublicationUtilities.fb2Cover(fileURL: broken))
+    }
+
     func testPublicationIdentityCandidatesAreNormalizedAndUnique() {
         let book = CatalogBook(
             id: "  Book-ABC  ", title: "Title", author: "Author", epubUrl: "book.epub",
@@ -1408,6 +1532,13 @@ final class FavoritesParserTests: XCTestCase {
         XCTAssertEqual(book?.author, "Unknown")
         XCTAssertEqual(book?.format, .pdf)
         XCTAssertEqual(book?.epubUrl, "HTTPS://example.test/book.pdf")
+
+        let legacyFB2 = ExternalFavorite(
+            key: "legacy-fb2", title: "Legacy", author: "Author", year: nil,
+            url: "https://example.test/book.fb2", isbn: nil, libvaultMd5: nil, format: "fb2"
+        )
+        XCTAssertNil(PublicationUtilities.fromExternalFavorite(legacyFB2),
+                     "FB2 favorite records remain parseable but cannot enter the iOS open flow")
 
         for invalidURL in [nil, "file:///tmp/book.epub", "javascript:alert(1)"] {
             let favorite = ExternalFavorite(
@@ -1485,6 +1616,10 @@ final class FavoritesParserTests: XCTestCase {
 
         XCTAssertNil(PublicationUtilities.comicMetadata(fileURL: url, format: .cbz))
     }
+
+
+
+
 
     func testFavoriteModelsExposeRightsIdentityAndEmptyDefaults() {
         let favorite = ExternalFavorite(
@@ -1844,6 +1979,10 @@ final class FavoritesParserTests: XCTestCase {
         XCTAssertEqual(result.external[0].author, "New")
     }
 
+
+
+
+
     func testParseSharedFavoriteTagsKeepsEarliestAddedAtFromLaterUrlMembership() {
         let md5 = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
         let refs = FavoritesParser.parseSharedFavoriteTags([
@@ -1994,6 +2133,10 @@ final class FavoritesParserTests: XCTestCase {
         XCTAssertTrue(result.bookIds.isEmpty)
         XCTAssertEqual(result.external.first?.key, "source:expected")
     }
+
+
+
+
 
     func testReadsChunkManifestWithNoiseInStringPayload() {
         let manifest = FavoritesParser.chunkManifest(
@@ -2146,6 +2289,8 @@ final class FavoritesParserTests: XCTestCase {
         XCTAssertEqual(refs[0].addedAt, 1_700_000_010)
     }
 
+
+
     func testParseSharedFavoriteTagsSkipsInvalidLibvaultAddedTagWhenValidOneComesLater() {
         let md5 = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
         let refs = FavoritesParser.parseSharedFavoriteTags([
@@ -2159,6 +2304,12 @@ final class FavoritesParserTests: XCTestCase {
         XCTAssertEqual(refs[0].url, "https://example.org/book.epub")
         XCTAssertEqual(refs[0].addedAt, 1_700_000_003)
     }
+
+
+
+
+
+
 
     func testMatchSharedFavoritesMatchesByDuplicateSourceUrlRefs() {
         let sourceUrl = "https://catalogue.example.com/books/123"
@@ -2243,6 +2394,8 @@ final class FavoritesParserTests: XCTestCase {
 
         XCTAssertNil(collection)
     }
+
+
 
     func testCollectionIndexTagsIncludesTombstonesAndDescription() {
         let snapshot = CollectionSnapshot(
@@ -2412,6 +2565,8 @@ final class FavoritesParserTests: XCTestCase {
         XCTAssertEqual(refs[0].addedAt, 1_700_000_001)
     }
 
+
+
     func testFavoriteConvenienceSerializationUsesCurrentTimestampFallback() throws {
         let ref = SharedFavoriteRef(bookstrId: "book", title: "Comic", format: "cbz", addedAt: 0)
         let serialized = FavoritesParser.serializeSharedFavoriteTags([ref])
@@ -2421,5 +2576,8 @@ final class FavoritesParserTests: XCTestCase {
         XCTAssertGreaterThan(Int64(tags.first { $0.first == "book" }?[3] ?? "0") ?? 0, 0)
         XCTAssertEqual(FavoritesParser.parseSharedFavoriteTags(serialized).first?.bookstrId, "book")
     }
+
+
+
 
 }
