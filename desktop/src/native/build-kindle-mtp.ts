@@ -1,8 +1,8 @@
 'use strict';
 
-const fs = require('node:fs');
-const path = require('node:path');
-const { spawnSync } = require('node:child_process');
+const fs = require('node:fs') as typeof import('node:fs');
+const path = require('node:path') as typeof import('node:path');
+const { spawnSync } = require('node:child_process') as typeof import('node:child_process');
 
 if (process.platform === 'win32') process.exit(0);
 
@@ -10,7 +10,7 @@ const root = __dirname;
 const output = path.join(root, 'kindle-mtp');
 const libRoot = path.join(root, 'lib');
 
-function run(command, args) {
+function run(command: string, args: string[]): string {
   const result = spawnSync(command, args, { encoding: 'utf8' });
   if (result.error || result.status !== 0) {
     throw new Error(`${command} failed: ${result.error?.message || result.stderr || result.stdout || result.status}`);
@@ -18,7 +18,7 @@ function run(command, args) {
   return result.stdout;
 }
 
-function dependencies(file) {
+function dependencies(file: string): string[] {
   const output = process.platform === 'darwin' ? run('otool', ['-L', file]) : run('ldd', [file]);
   return output.split('\n').map(line => {
     if (process.platform === 'darwin') return line.match(/^\s+(\/[^\s]+)\s+\(/)?.[1] || '';
@@ -26,7 +26,7 @@ function dependencies(file) {
   }).filter(Boolean);
 }
 
-function bundleDependency(file) {
+function bundleDependency(file: string): void {
   if (process.platform === 'darwin' && (file.startsWith('/System/') || file.startsWith('/usr/lib/'))) return;
   if (process.platform === 'linux' && /\/lib(?:c|m|dl|pthread|rt|resolv|gcc_s|stdc\+\+|z)\.so|\/ld-linux/.test(file)) return;
   const target = path.join(libRoot, path.basename(file));
@@ -57,6 +57,8 @@ try {
   }
   process.stdout.write(`Built Kindle MTP adapter: ${output}\n`);
 } catch (error) {
-  process.stderr.write(`${error.message}\nInstall libmtp, pkg-config, and (on Linux) patchelf to package Kindle USB support.\n`);
+  process.stderr.write(`${(error as Error).message}\nInstall libmtp, pkg-config, and (on Linux) patchelf to package Kindle USB support.\n`);
   process.exitCode = 1;
 }
+
+export {};

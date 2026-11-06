@@ -35,3 +35,37 @@ test('relative paths cannot escape the library root', () => withRoot(async root 
   const importer = new LibraryImporter({ libraryRoot: path.join(root, 'library') });
   assert.throws(() => importer.resolveRelativePath('../outside.epub'), /relative path/);
 }));
+
+test('deduplicated imports discard staging files and resolve their registered paths', () => withRoot(async root => {
+  const source = path.join(root, 'source');
+  await fsp.writeFile(source, 'duplicate');
+  const importer = new LibraryImporter({ libraryRoot: path.join(root, 'library') });
+  const first = await importer.importFile(source);
+  const second = await importer.importFile(source, { expectedSha256: first.sha256.toUpperCase() });
+  assert.deepEqual(second, first);
+  assert.equal(first.extension, 'bin');
+  assert.equal(importer.resolveRelativePath(first.relativePath.replaceAll('/', '\\')), path.join(importer.libraryRoot, first.relativePath));
+  assert.deepEqual(await fsp.readdir(importer.booksRoot), [`${first.sha256}.bin`]);
+}));
+
+test('import boundaries reject missing roots, invalid paths, directories and unsafe extensions', () => withRoot(async root => {
+  const { safeExtension } = require('../../library-import');
+  assert.throws(() => new LibraryImporter(), /libraryRoot/);
+  assert.throws(() => safeExtension('../pdf'), /extension/);
+  assert.equal(safeExtension(' .PDF '), 'pdf');
+  const importer = new LibraryImporter({ libraryRoot: path.join(root, 'library') });
+  for (const source of [null, '', ' ', '\0']) await assert.rejects(importer.importFile(source), /sourcePath/);
+  await assert.rejects(importer.importFile(root), /regular file/);
+  await assert.rejects(hashFile(path.join(root, 'absent')), { code: 'ENOENT' });
+  for (const relative of ['', '/outside', 'book\0.pdf', '.']) assert.throws(() => importer.resolveRelativePath(relative), /relative path/);
+}));
+
+test('import storage errors preserve the failure and clean partial files', t => withRoot(async root => {
+  const source = path.join(root, 'source.pdf');
+  await fsp.writeFile(source, 'book');
+  const importer = new LibraryImporter({ libraryRoot: path.join(root, 'library') });
+  const failure = Object.assign(new Error('access denied'), { code: 'EACCES' });
+  t.mock.method(fsp, 'access', async () => { throw failure; });
+  await assert.rejects(importer.importFile(source), failure);
+  assert.deepEqual(await fsp.readdir(importer.booksRoot), []);
+}));

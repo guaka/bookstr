@@ -16,7 +16,7 @@ test('Electron Docker tests use the pinned Playwright image and an unprivileged 
   assert.match(dockerfile, new RegExp(`^FROM node:${nodeVersion.replaceAll('.', '\\.')}\\-bookworm-slim AS node-runtime$`, 'm'));
   assert.match(dockerfile, /^FROM mcr\.microsoft\.com\/playwright:v1\.62\.1-noble$/m);
   assert.match(dockerfile, /^COPY --from=node-runtime \/usr\/local\/bin\/node \/usr\/bin\/node$/m);
-  assert.match(dockerfile, /apt-get install -y --no-install-recommends build-essential libatomic1 python3/);
+  assert.match(dockerfile, /apt-get install -y --no-install-recommends build-essential libatomic1 python3 zip/);
   assert.match(dockerfile, /^COPY --chown=pwuser:pwuser desktop\/package\.json desktop\/pnpm-lock\.yaml desktop\/pnpm-workspace\.yaml \.\/$/m);
   assert.match(dockerfile, /^COPY --chown=pwuser:pwuser desktop\/patches\/ \.\/patches\/$/m);
   assert.match(dockerfile, /^RUN chown -R pwuser:pwuser \/workspace$/m);
@@ -44,7 +44,7 @@ test('Electron Docker test command builds from the repository root with a dispos
   assert.match(dockerignore, /^!web\/\*\*$/m);
   assert.match(dockerignore, /^desktop\/\.tmp\/$/m);
   assert.match(readme, /pnpm run test:e2e:docker/);
-  assert.match(readme, /src\/\*\.ts` compile to JavaScript in the matching paths/);
+  assert.match(readme, /src\/\*\*\/\*\.ts`/);
   assert.match(readme, /pnpm run build:typescript/);
   assert.match(readme, /pnpm run typecheck/);
   assert.match(readme, /512 MB/);

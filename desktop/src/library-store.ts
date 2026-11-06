@@ -1,23 +1,45 @@
+type UnknownRecord = Record<string, unknown>;
+type BookText = 'id' | 'sha256' | 'md5' | 'title' | 'authors' | 'language' | 'year' |
+  'extension' | 'isbn' | 'source' | 'source_native_id' | 'source_url' | 'rights_status' |
+  'license' | 'license_url' | 'rights_source' | 'jurisdiction' | 'redistribution' | 'evidence_url' | 'attribution';
+type Book = UnknownRecord & Record<BookText, string> & { public_seed_allowed: boolean; filesize_bytes: number };
+type SqlRow = Record<string, import('node:sqlite').SQLOutputValue>;
+type SqlBook = SqlRow & Record<BookText, string> & { public_seed_allowed: number; filesize_bytes: number };
+interface DownloadRow extends UnknownRecord {
+  bookId: string; status: string; bytes: number; totalBytes: number; source: string; error: string;
+  sha256: string; md5: string; title: string; authors: string; language: string; year: string;
+  extension: string; isbn: string; sourceNativeId: string; queuedFromSearch: number;
+  updatedAt: number; completedAt: number | null;
+}
+interface StoredRequest extends UnknownRecord { kind: string; record: UnknownRecord }
+interface ResumableDownload { bookId: string; status: string; request: StoredRequest }
+interface RegisteredFile extends SqlRow { bookId: string; relativePath: string; sizeBytes: number; modTimeUnix: number; sha256: string }
+interface SourceHealth extends SqlRow {
+  sourceId: string; successes: number; failures: number; consecutiveFailures: number;
+  lastSuccessAt: number; lastFailureAt: number; cooldownUntil: number; latencyMs: number; updatedAt: number;
+}
+interface ReaderToken { relativePath: string; bookId: string; expiresAt: number }
+
 'use strict';
 
-const fs = require('node:fs');
-const path = require('node:path');
-const crypto = require('node:crypto');
-const { DatabaseSync } = require('node:sqlite');
+const fs = require('node:fs') as typeof import('node:fs');
+const path = require('node:path') as typeof import('node:path');
+const crypto = require('node:crypto') as typeof import('node:crypto');
+const { DatabaseSync } = require('node:sqlite') as typeof import('node:sqlite');
 
 const MAX_SEARCH_LIMIT = 100;
 
-function text(value) {
+function text(value: unknown) {
   return String(value ?? '').trim();
 }
 
-function safeID(value) {
+function safeID(value: unknown) {
   const id = text(value);
   if (!id || id.length > 256 || /[\u0000-\u001f]/.test(id)) throw new TypeError('book id is invalid');
   return id;
 }
 
-function safeRelativePath(value) {
+function safeRelativePath(value: unknown) {
   const relative = text(value).replaceAll('\\', '/');
   if (!relative || relative.startsWith('/') || relative.split('/').includes('..') || /[\u0000-\u001f]/.test(relative)) {
     throw new TypeError('relative path is invalid');
@@ -25,11 +47,11 @@ function safeRelativePath(value) {
   return relative;
 }
 
-function searchTokens(value) {
+function searchTokens(value: unknown) {
   return text(value).match(/[\p{L}\p{N}]+/gu)?.slice(0, 12) || [];
 }
 
-function redistributionFor(book, status) {
+function redistributionFor(book: UnknownRecord, status: string) {
   const explicit = text(book.redistribution || book.redistribution_policy).toLowerCase().replace(/[ -]+/g, '_');
   if (['allowed', 'noncommercial', 'forbidden', 'unknown'].includes(explicit)) return explicit;
   const evidence = `${text(book.license)} ${text(book.license_url || book.licenseUrl)}`.toLowerCase();
@@ -126,7 +148,11 @@ CREATE TABLE IF NOT EXISTS source_health (
 `;
 
 class LibraryStore {
-  constructor({ dbPath, libraryRoot } = {}) {
+  declare readonly dbPath: string;
+  declare readonly libraryRoot: string;
+  declare readonly db: InstanceType<typeof DatabaseSync>;
+  declare readonly readerTokens: Map<string, ReaderToken>;
+  constructor({ dbPath, libraryRoot }: { dbPath?: string; libraryRoot?: string } = {}) {
     if (!dbPath || !libraryRoot) throw new TypeError('dbPath and libraryRoot are required');
     this.dbPath = path.resolve(dbPath);
     this.libraryRoot = path.resolve(libraryRoot);
@@ -149,7 +175,7 @@ class LibraryStore {
     this.readerTokens = new Map();
   }
 
-  upsertBook(book = {}) {
+  upsertBook(book: UnknownRecord = {}) {
     const id = safeID(book.id || book.bookId || book.md5 || book.sha256);
     const fields = {
       sha256: text(book.sha256), md5: text(book.md5), title: text(book.title),
@@ -178,22 +204,22 @@ class LibraryStore {
         evidence_url=excluded.evidence_url, attribution=excluded.attribution, public_seed_allowed=excluded.public_seed_allowed,
         filesize_bytes=excluded.filesize_bytes, updated_at=unixepoch()
     `).run(id, ...Object.values(fields));
-    return this.getBook(id);
+    return this.getBook(id)!;
   }
 
-  getBook(id) {
-    const row = this.db.prepare(`SELECT id, sha256, md5, title, authors, language, year, extension, isbn, source, source_native_id, source_url, rights_status, license, license_url, rights_source, jurisdiction, redistribution, evidence_url, attribution, public_seed_allowed, filesize_bytes FROM books WHERE id = ?`).get(safeID(id));
-    return row ? { ...row, public_seed_allowed: Boolean(row.public_seed_allowed) } : null;
+  getBook(id: unknown): Book | null {
+    const row = this.db.prepare(`SELECT id, sha256, md5, title, authors, language, year, extension, isbn, source, source_native_id, source_url, rights_status, license, license_url, rights_source, jurisdiction, redistribution, evidence_url, attribution, public_seed_allowed, filesize_bytes FROM books WHERE id = ?`).get(safeID(id)) as SqlBook | undefined;
+    return row ? { ...row, public_seed_allowed: Boolean(row.public_seed_allowed) } as Book : null;
   }
 
-  search({ query = '', language = '', limit = 25, offset = 0 } = {}) {
+  search({ query = '', language = '', limit = 25, offset = 0 }: { query?: unknown; language?: unknown; limit?: unknown; offset?: unknown } = {}) {
     const tokens = searchTokens(query);
     if (!tokens.length) return { total: 0, books: [] };
     const safeLimit = Math.max(1, Math.min(MAX_SEARCH_LIMIT, Number(limit) || 25));
     const safeOffset = Math.max(0, Number(offset) || 0);
     const hasCJK = tokens.some(token => /[\u3040-\u30ff\u3400-\u9fff\uf900-\ufaff]/u.test(token));
-    const args = [];
-    const where = [];
+    const args: string[] = [];
+    const where: string[] = [];
     if (hasCJK) {
       for (const token of tokens) {
         where.push('(books.title LIKE ? OR books.authors LIKE ? OR books.language LIKE ? OR books.isbn LIKE ?)');
@@ -208,12 +234,12 @@ class LibraryStore {
       args.push(text(language));
     }
     const clause = where.join(' AND ');
-    const total = this.db.prepare(`SELECT COUNT(*) AS total FROM books_fts JOIN books ON books.rowid = books_fts.rowid WHERE ${clause}`).get(...args).total;
-    const rows = this.db.prepare(`SELECT books.id, books.sha256, books.md5, books.title, books.authors, books.language, books.year, books.extension, books.isbn, books.source, books.source_native_id, books.source_url, books.rights_status, books.license, books.license_url, books.rights_source, books.jurisdiction, books.redistribution, books.evidence_url, books.attribution, books.public_seed_allowed, books.filesize_bytes FROM books_fts JOIN books ON books.rowid = books_fts.rowid WHERE ${clause} ORDER BY bm25(books_fts), books.rowid LIMIT ? OFFSET ?`).all(...args, safeLimit, safeOffset);
+    const total = this.db.prepare(`SELECT COUNT(*) AS total FROM books_fts JOIN books ON books.rowid = books_fts.rowid WHERE ${clause}`).get(...args)!.total;
+    const rows = this.db.prepare(`SELECT books.id, books.sha256, books.md5, books.title, books.authors, books.language, books.year, books.extension, books.isbn, books.source, books.source_native_id, books.source_url, books.rights_status, books.license, books.license_url, books.rights_source, books.jurisdiction, books.redistribution, books.evidence_url, books.attribution, books.public_seed_allowed, books.filesize_bytes FROM books_fts JOIN books ON books.rowid = books_fts.rowid WHERE ${clause} ORDER BY bm25(books_fts), books.rowid LIMIT ? OFFSET ?`).all(...args, safeLimit, safeOffset) as SqlBook[];
     return { total: Number(total), books: rows.map(row => ({ ...row, public_seed_allowed: Boolean(row.public_seed_allowed) })) };
   }
 
-  setDownload(download = {}) {
+  setDownload(download: UnknownRecord = {}) {
     const bookId = safeID(download.bookId || download.id);
     const status = text(download.status) || 'queued';
     const relativePath = download.relativePath ? safeRelativePath(download.relativePath) : '';
@@ -227,16 +253,16 @@ class LibraryStore {
     return this.downloads().find(item => item.bookId === bookId) || null;
   }
 
-  removeDownload(bookId) {
+  removeDownload(bookId: unknown) {
     const id = safeID(bookId);
     const job = this.db.prepare('SELECT status FROM downloads WHERE book_id = ?').get(id);
     if (!job) return false;
-    if (!['failed', 'stopped'].includes(job.status)) throw new Error('Only failed or stopped downloads can be deleted.');
+    if (!['failed', 'stopped'].includes(job.status as string)) throw new Error('Only failed or stopped downloads can be deleted.');
     this.db.prepare('DELETE FROM downloads WHERE book_id = ?').run(id);
     return true;
   }
 
-  saveDownloadRequest(bookId, request) {
+  saveDownloadRequest(bookId: unknown, request: StoredRequest) {
     const id = safeID(bookId);
     const json = JSON.stringify(request);
     if (json.length > 16 * 1024) throw new TypeError('download request is too large');
@@ -244,20 +270,20 @@ class LibraryStore {
     return this.downloadRequest(id);
   }
 
-  downloadRequest(bookId) {
+  downloadRequest(bookId: unknown): StoredRequest | null {
     const row = this.db.prepare('SELECT request_json FROM downloads WHERE book_id = ?').get(safeID(bookId));
     if (!row?.request_json) return null;
-    try { return JSON.parse(row.request_json); } catch { return null; }
+    try { return JSON.parse(row.request_json as string) as StoredRequest; } catch { return null; }
   }
 
-  resumableDownloads() {
+  resumableDownloads(): ResumableDownload[] {
     return this.db.prepare("SELECT book_id AS bookId, status, request_json AS requestJson FROM downloads WHERE status IN ('queued', 'finding-peers', 'downloading', 'retrying') AND request_json != '' ORDER BY updated_at ASC").all().map(row => {
-      try { return { bookId: row.bookId, status: row.status, request: JSON.parse(row.requestJson) }; }
+      try { return { bookId: row.bookId as string, status: row.status as string, request: JSON.parse(row.requestJson as string) as StoredRequest }; }
       catch { return null; }
-    }).filter(Boolean);
+    }).filter(Boolean) as ResumableDownload[];
   }
 
-  downloads() {
+  downloads(): DownloadRow[] {
     return this.db.prepare(`
       SELECT downloads.book_id AS bookId, downloads.status, downloads.bytes,
         downloads.total_bytes AS totalBytes, downloads.source, downloads.error,
@@ -269,10 +295,10 @@ class LibraryStore {
       FROM downloads
       LEFT JOIN books ON books.id = downloads.book_id
       ORDER BY downloads.updated_at DESC
-    `).all().map(row => ({ ...row }));
+    `).all().map(row => ({ ...row })) as DownloadRow[];
   }
 
-  registerLibraryFile(file = {}) {
+  registerLibraryFile(file: UnknownRecord = {}) {
     const bookId = safeID(file.bookId || file.id);
     const relativePath = safeRelativePath(file.relativePath);
     this.db.prepare(`
@@ -287,13 +313,13 @@ class LibraryStore {
   // Internal main-process lookup.  Keep the relative path out of the values
   // returned through the renderer-facing download/library APIs; callers must
   // resolve it against libraryRoot before touching the filesystem.
-  libraryFile(bookId) {
+  libraryFile(bookId: unknown): RegisteredFile | null {
     const id = safeID(bookId);
     const row = this.db.prepare(`SELECT book_id AS bookId, relative_path AS relativePath, size_bytes AS sizeBytes, mod_time_unix AS modTimeUnix, sha256 FROM library_files WHERE book_id = ? ORDER BY relative_path LIMIT 1`).get(id);
-    return row ? { ...row } : null;
+    return row ? { ...row } as RegisteredFile : null;
   }
 
-  linkFolder(folder = {}) {
+  linkFolder(folder: UnknownRecord = {}) {
     const relativePath = safeRelativePath(folder.relativePath);
     const id = text(folder.id) || crypto.randomUUID();
     this.db.prepare(`INSERT INTO linked_folders (id, relative_path, label, enabled) VALUES (?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET relative_path=excluded.relative_path, label=excluded.label, enabled=excluded.enabled, updated_at=unixepoch()`).run(id, relativePath, text(folder.label), folder.enabled === false ? 0 : 1);
@@ -304,17 +330,17 @@ class LibraryStore {
     return this.db.prepare('SELECT id, label, enabled = 1 AS enabled FROM linked_folders ORDER BY label, id').all().map(row => ({ id: row.id, label: row.label, enabled: Boolean(row.enabled) }));
   }
 
-  sourceHealth(sourceId) {
+  sourceHealth(sourceId: unknown): SourceHealth | null {
     const id = safeID(sourceId);
     const row = this.db.prepare('SELECT source_id AS sourceId, successes, failures, consecutive_failures AS consecutiveFailures, last_success_at AS lastSuccessAt, last_failure_at AS lastFailureAt, cooldown_until AS cooldownUntil, latency_ms AS latencyMs, updated_at AS updatedAt FROM source_health WHERE source_id = ?').get(id);
-    return row ? { ...row } : null;
+    return row ? { ...row } as SourceHealth : null;
   }
 
   sourceHealthAll() {
-    return this.db.prepare('SELECT source_id AS sourceId, successes, failures, consecutive_failures AS consecutiveFailures, last_success_at AS lastSuccessAt, last_failure_at AS lastFailureAt, cooldown_until AS cooldownUntil, latency_ms AS latencyMs, updated_at AS updatedAt FROM source_health ORDER BY source_id').all().map(row => ({ ...row }));
+    return this.db.prepare('SELECT source_id AS sourceId, successes, failures, consecutive_failures AS consecutiveFailures, last_success_at AS lastSuccessAt, last_failure_at AS lastFailureAt, cooldown_until AS cooldownUntil, latency_ms AS latencyMs, updated_at AS updatedAt FROM source_health ORDER BY source_id').all().map(row => ({ ...row })) as SourceHealth[];
   }
 
-  recordSourceHealth({ source, success = false, latencyMs = 0, now } = {}) {
+  recordSourceHealth({ source, success = false, latencyMs = 0, now }: { source?: unknown; success?: unknown; latencyMs?: unknown; now?: unknown } = {}) {
     const sourceId = safeID(source);
     const timestamp = Number.isSafeInteger(Number(now)) && Number(now) > 0
       ? Math.floor(Number(now))
@@ -356,18 +382,18 @@ class LibraryStore {
     return this.sourceHealth(sourceId);
   }
 
-  openReader(bookId) {
+  openReader(bookId: unknown) {
     const id = safeID(bookId);
     const book = this.getBook(id);
     if (!book) return null;
     const file = this.db.prepare('SELECT relative_path AS relativePath FROM library_files WHERE book_id = ? ORDER BY relative_path LIMIT 1').get(id);
     if (!file) return { bookId: id, format: book.extension || '', token: '' };
     const token = crypto.randomBytes(24).toString('base64url');
-    this.readerTokens.set(token, { relativePath: file.relativePath, bookId: id, expiresAt: Date.now() + 10 * 60 * 1000 });
+    this.readerTokens.set(token, { relativePath: file.relativePath as string, bookId: id, expiresAt: Date.now() + 10 * 60 * 1000 });
     return { bookId: id, format: book.extension || '', token };
   }
 
-  resolveReaderToken(token) {
+  resolveReaderToken(token: unknown) {
     const entry = this.readerTokens.get(text(token));
     if (!entry || entry.expiresAt < Date.now()) {
       this.readerTokens.delete(text(token));
@@ -385,4 +411,4 @@ class LibraryStore {
   }
 }
 
-module.exports = { LibraryStore, safeRelativePath };
+export = { LibraryStore, safeRelativePath };
