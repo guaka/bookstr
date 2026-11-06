@@ -189,7 +189,7 @@ test('native coverage prepares after installs and collects a fresh profile after
     const appInstall = calls.indexOf(`install -r ${f.appApk}`);
     const testInstall = calls.indexOf(`install -r ${f.testApk}`);
     const prepare = calls.findIndex(call => call.includes('shell run-as app.bookstr mkdir -p cache files/torrent-downloads'));
-    const instrument = calls.indexOf('shell am instrument -w -r -e coverage true -e coverageFile /data/user/0/app.bookstr/files/bookstr-coverage.ec app.bookstr.test/androidx.test.runner.AndroidJUnitRunner');
+    const instrument = calls.indexOf('shell am instrument -w -r -e coverage true -e coverageFile /data/user/0/app.bookstr/files/bookstr-coverage.ec app.bookstr.test/app.bookstr.BookstrTestRunner');
     const listProfiles = calls.map((call, index) => call.includes('find cache -type f -name bookstr-native-coverage-*.profraw') ? index : -1).filter(index => index >= 0).at(-1);
     const pullProfile = calls.findIndex(call => call.includes('cat cache/bookstr-native-coverage-1.profraw'));
     assert.ok(safety >= 0 && appInstall > safety && testInstall > appInstall);
