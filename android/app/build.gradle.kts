@@ -270,21 +270,21 @@ val managedJvmExecutionData = layout.buildDirectory.file(
 val managedDeviceExecutionData = layout.buildDirectory.file("coverage/full.ec")
 
 tasks.register("verifyManagedDebugCoverageInputs") {
+    val managedJvmExecutionFile = managedJvmExecutionData.get().asFile
+    val managedDeviceExecutionFile = managedDeviceExecutionData.get().asFile
+    val managedCoverageClassesDir = stagedManagedCoverageClasses.get().asFile
+    val managedCoverageClassFiles = fileTree(managedCoverageClassesDir).matching { include("**/*.class") }
     group = "verification"
     description = "Fail if inputs for the managed Android coverage report are missing"
     doLast {
-        val jvmData = managedJvmExecutionData.get().asFile
-        val deviceData = managedDeviceExecutionData.get().asFile
-        val classesDir = stagedManagedCoverageClasses.get().asFile
-        val compiledClasses = fileTree(classesDir).matching { include("**/*.class") }.files
-        check(jvmData.isFile && jvmData.length() > 0L) {
-            "Missing JVM JaCoCo execution data: ${jvmData.absolutePath}"
+        check(managedJvmExecutionFile.isFile && managedJvmExecutionFile.length() > 0L) {
+            "Missing JVM JaCoCo execution data: ${managedJvmExecutionFile.absolutePath}"
         }
-        check(deviceData.isFile && deviceData.length() > 0L) {
-            "Missing emulator JaCoCo execution data: ${deviceData.absolutePath}"
+        check(managedDeviceExecutionFile.isFile && managedDeviceExecutionFile.length() > 0L) {
+            "Missing emulator JaCoCo execution data: ${managedDeviceExecutionFile.absolutePath}"
         }
-        check(compiledClasses.isNotEmpty()) {
-            "Missing staged Android project class files: ${classesDir.absolutePath}"
+        check(managedCoverageClassFiles.files.isNotEmpty()) {
+            "Missing staged Android project class files: ${managedCoverageClassesDir.absolutePath}"
         }
     }
 }
