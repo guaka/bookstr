@@ -132,7 +132,7 @@ test('closing acquisition manager cancels trailing progress and drains torrent j
     store: store as unknown as ManagerOptions['store'],
     importer,
     stagingRoot: path.join(root, 'staging'),
-    fetchImpl: mockFetch(async () => ({ ok: true, headers: new Headers({ 'content-length': '14' }), arrayBuffer: async () => Buffer.from('d4:test4:datae') })),
+    fetchImpl: mockFetch(async () => ({ ok: true, headers: new Headers({ 'content-length': '14' }), body: new Response('d4:test4:datae').body })),
     torrentBridge: {
       downloadSelected(_metadata, { signal, onProgress } = {}) {
         onProgress?.({ bytes: 1, totalBytes: 10, peers: 0 });
@@ -216,7 +216,7 @@ test('LibGen acquisition resolves the repository batch and imports only the sele
       ok: true,
       status: 200,
       headers: new Headers({ 'content-length': '14' }),
-      arrayBuffer: async () => Buffer.from('d4:test4:datae'),
+      body: new Response('d4:test4:datae').body,
     };
   };
   let requestedFile = '';
@@ -260,7 +260,7 @@ test('a LibGen download remains one background job when another view requests th
     ok: true,
     status: 200,
     headers: new Headers({ 'content-length': '14' }),
-    arrayBuffer: async () => Buffer.from('d4:test4:datae'),
+    body: new Response('d4:test4:datae').body,
   });
   let beginDownload!: () => void;
   const downloadStarted = new Promise<void>(resolve => { beginDownload = resolve; });
@@ -302,7 +302,7 @@ test('opening Electron can resume completed LibGen seeds from persistent torrent
   await fsp.writeFile(seedFile, 'seed bytes');
   store.upsertBook({ id: md5, md5, title: 'Persistent Seed', extension: 'epub', sourceNativeId: String(libgenId) });
   store.setDownload({ bookId: md5, status: 'ready', source: 'torrent', bytes: 10, totalBytes: 10 });
-  manager.fetch = async () => ({ ok: true, arrayBuffer: async () => Buffer.from('d4:test4:datae') });
+  manager.fetch = async () => ({ ok: true, body: new Response('d4:test4:datae').body });
   const torrent: TestTorrent = {};
   let options: SelectedOptions | undefined;
   manager.torrentBridge = {
@@ -332,7 +332,7 @@ test('startup reconstructs missing retained torrent payloads from verified libra
   store.upsertBook({ id: md5, md5, title: 'Rebuilt Seed', extension: 'epub', sourceNativeId: String(libgenId) });
   store.registerLibraryFile({ bookId: md5, relativePath, sizeBytes: bytes.length });
   store.setDownload({ bookId: md5, status: 'ready', source: 'torrent', bytes: bytes.length, totalBytes: bytes.length });
-  manager.fetch = async () => ({ ok: true, arrayBuffer: async () => Buffer.from('d4:test4:datae') });
+  manager.fetch = async () => ({ ok: true, body: new Response('d4:test4:datae').body });
   manager.torrentBridge = {
     async downloadSelected() {
       return { filePath: seedFile, torrent: {} };
@@ -351,7 +351,7 @@ test('startup resumes interrupted LibGen downloads in the background', () => wit
   store.upsertBook({ id: md5, md5, title: 'Interrupted Download', extension: 'epub', sourceNativeId: String(libgenId) });
   store.setDownload({ bookId: md5, status: 'downloading', source: 'torrent', bytes: 4, totalBytes: bytes.length });
   manager.seedResumeIntervalMs = 0;
-  manager.fetch = async () => ({ ok: true, arrayBuffer: async () => Buffer.from('d4:test4:datae') });
+  manager.fetch = async () => ({ ok: true, body: new Response('d4:test4:datae').body });
   let started!: (options: SelectedOptions) => void;
   const downloadStarted = new Promise<SelectedOptions>(resolve => { started = resolve; });
   manager.torrentBridge = {
@@ -386,7 +386,7 @@ test('startup resumes eligible LibGen seeds gradually instead of all at once', (
     store.upsertBook({ id: record.md5, md5: record.md5, title: 'Persistent Seed', extension: 'epub', sourceNativeId: String(record.libgenId) });
     store.setDownload({ bookId: record.md5, status: 'ready', source: 'torrent', bytes: 10, totalBytes: 10 });
   }
-  manager.fetch = async () => ({ ok: true, arrayBuffer: async () => Buffer.from('d4:test4:datae') });
+  manager.fetch = async () => ({ ok: true, body: new Response('d4:test4:datae').body });
   const waits: number[] = [];
   manager.sleep = async milliseconds => { waits.push(milliseconds); };
   manager.torrentBridge = {
@@ -408,7 +408,7 @@ test('manager shutdown cancels gradual seed resume before it reads or starts lat
     store.upsertBook({ id: record.md5, md5: record.md5, title: 'Interrupted', extension: 'epub', sourceNativeId: String(record.libgenId) });
     store.setDownload({ bookId: record.md5, status: 'queued', source: 'torrent' });
   }
-  manager.fetch = async () => ({ ok: true, arrayBuffer: async () => Buffer.from('d4:test4:datae') });
+  manager.fetch = async () => ({ ok: true, body: new Response('d4:test4:datae').body });
   let waitForSecond: () => void = () => {};
   const secondWait = new Promise<void>(resolve => { waitForSecond = resolve; });
   manager.sleep = (_milliseconds, signal) => new Promise(resolve => {
@@ -449,7 +449,7 @@ test('manager default seed delay clears its timer when shutdown aborts resume', 
   }
   manager.fetch = async (_url, { signal } = {}) => {
     if (signal?.aborted) throw signal.reason;
-    return { ok: true, arrayBuffer: async () => Buffer.from('d4:test4:datae') };
+    return { ok: true, body: new Response('d4:test4:datae').body };
   };
   manager.torrentBridge = {
     downloadSelected(_metadata, { signal }) {
@@ -474,7 +474,7 @@ test('manager removes a seed returned after shutdown instead of retaining it', (
   await fsp.writeFile(seedFile, 'seed bytes');
   store.upsertBook({ id: md5, md5, title: 'Persistent Seed', extension: 'epub', sourceNativeId: '2412930' });
   store.setDownload({ bookId: md5, status: 'ready', source: 'torrent', bytes: 10, totalBytes: 10 });
-  manager.fetch = async () => ({ ok: true, arrayBuffer: async () => Buffer.from('d4:test4:datae') });
+  manager.fetch = async () => ({ ok: true, body: new Response('d4:test4:datae').body });
   let finishSelection!: (selection: { filePath: string; torrent: TestTorrent }) => void;
   const selected = new Promise<{ filePath: string; torrent: TestTorrent }>(resolve => { finishSelection = resolve; });
   let selectionStarted!: () => void;
@@ -500,7 +500,7 @@ test('LibGen acquisition removes torrent data when automatic seeding is disabled
   const body = Buffer.from('epub bytes');
   let removed = 0;
   let stageDir = '';
-  manager.fetch = async () => ({ ok: true, headers: new Headers(), arrayBuffer: async () => Buffer.from('d4:test4:datae') });
+  manager.fetch = async () => ({ ok: true, headers: new Headers(), body: new Response('d4:test4:datae').body });
   manager.torrentBridge = {
     async downloadSelected(_metadata, options) {
       stageDir = options.path;
@@ -522,6 +522,45 @@ test('LibGen torrent metadata uses the containing 1,000-book batch', () => {
   assert.match(libgenTorrentMetadataURL(2412930), /\/r_2412000\.torrent$/);
   assert.throws(() => libgenTorrentMetadataURL(0), /positive integer/);
 });
+
+test('LibGen metadata streams reject excess bytes before starting a torrent', () => withManager(async ({ manager }) => {
+  let cancelled = false;
+  manager.fetch = async () => new Response(new ReadableStream({
+    start(controller) {
+      controller.enqueue(Buffer.alloc(8 * 1024 * 1024, 0x64));
+      controller.enqueue(Buffer.from('extra'));
+    },
+    cancel() { cancelled = true; },
+  }), { headers: { 'content-length': '1' } });
+  manager.torrentBridge = { async downloadSelected() { throw new Error('torrent must not start'); } };
+  await assert.rejects(manager.acquireLibgen({ md5: 'a'.repeat(32), id: 2412930, extension: 'pdf' }, { autoSeed: false }), /metadata is too large/);
+  assert.equal(cancelled, true);
+}));
+
+test('LibGen acquisition rejects empty and non-bencoded metadata', () => withManager(async ({ manager }) => {
+  manager.torrentBridge = { async downloadSelected() { throw new Error('torrent must not start'); } };
+  for (const body of ['', '<html>upstream error</html>']) {
+    manager.fetch = async () => new Response(body);
+    await assert.rejects(manager.acquireLibgen({ md5: 'a'.repeat(32), id: 2412930, extension: 'pdf' }, { autoSeed: false }), /metadata is invalid/);
+  }
+}));
+
+test('startup refuses oversized seed metadata and preserves the retained payload', () => withManager(async ({ manager, store, root }) => {
+  const md5 = 'c'.repeat(32);
+  const seedFile = path.join(root, 'staging', 'libgen-seeds', '2412000', md5);
+  await fsp.mkdir(path.dirname(seedFile), { recursive: true });
+  await fsp.writeFile(seedFile, 'seed bytes');
+  store.upsertBook({ id: md5, md5, extension: 'epub', sourceNativeId: '2412930' });
+  store.setDownload({ bookId: md5, status: 'ready', source: 'torrent', bytes: 10, totalBytes: 10 });
+  let cancelled = false;
+  manager.fetch = async () => new Response(new ReadableStream({
+    cancel() { cancelled = true; },
+  }), { headers: { 'content-length': String(8 * 1024 * 1024 + 1) } });
+  manager.torrentBridge = { async downloadSelected() { throw new Error('torrent must not start'); } };
+  assert.deepEqual(await manager.resumeLibgenSeeds(), { seeded: 0, resumed: 0 });
+  assert.equal(cancelled, true);
+  assert.equal(await fsp.readFile(seedFile, 'utf8'), 'seed bytes');
+}));
 
 test('acquisition retries the next eligible source after a checksum failure', () => withManager(async ({ manager, store }) => {
   let calls = 0;
@@ -719,7 +758,7 @@ test('a failed comic acquisition uses the comics repository and preserves shared
   let requested = '';
   manager.fetch = async url => {
     requested = url;
-    return { ok: true, headers: new Headers(), arrayBuffer: async () => Buffer.from('d4:test4:datae') };
+    return { ok: true, headers: new Headers(), body: new Response('d4:test4:datae').body };
   };
   manager.torrentBridge = { async downloadSelected() { throw new Error('no peers yet'); } };
   await assert.rejects(() => manager.acquireLibgen({ md5: 'a'.repeat(32), libgenId: 2521871, extension: 'cbr' }), /no peers yet/);

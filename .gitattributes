@@ -85,3 +85,5 @@ web/shared/contracts/device-transfer-v1.mjs linguist-generated=true
 
 # Desktop runtime modules are emitted from TypeScript sources.
 desktop/reader-formats.js linguist-generated=true
+
+web/dictionary-store.js linguist-generated=true
