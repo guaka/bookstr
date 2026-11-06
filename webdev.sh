@@ -3,7 +3,7 @@ set -euo pipefail
 
 root_dir="$(cd "$(dirname "$0")" && pwd)"
 
-node "$root_dir/web/webtorrent-dev-bridge.mjs" &
+node "$root_dir/web/webtorrent-dev-bridge.mts" &
 bridge_pid=$!
 
 cleanup() {

@@ -63,7 +63,7 @@ Use Node.js 26.13.0 with `nvm use` at the repository root.
 The development server opens Bookstr at `http://localhost:11111`. Run the web tests with:
 
 ```bash
-node --test web/tests/*.test.mjs scripts/*.test.mjs shared/catalog/*.test.mjs shared/design-tokens/*.test.mjs
+node --test web/tests/*.test.mts scripts/*.test.mts shared/catalog/*.test.mts shared/contracts/*.test.mts shared/design-tokens/*.test.mts shared/reader/*.test.mts
 ```
 
 ### Android

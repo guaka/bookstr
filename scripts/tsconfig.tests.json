@@ -1,0 +1,12 @@
+{
+  "extends": "../web/tsconfig.tools.json",
+  "compilerOptions": {
+    "typeRoots": [
+      "../web/node_modules/@types"
+    ]
+  },
+  "include": [
+    "*.test.mts",
+    "*.cts"
+  ]
+}

@@ -2,7 +2,7 @@ import { present, record } from './test-values.mts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import '../book-metadata.js';
+import { bookMetadata } from './book-metadata-api.mts';
 const {
   metadataObject,
   isPlaceholderTitle,
@@ -39,7 +39,7 @@ const {
   mergeLibraryState,
   enrichBookMetadata,
   isbnForBook,
-} = globalThis.BookMetadata;
+} = bookMetadata;
 
 test('compiled book filter parses query terms once and preserves multi-term matching', () => {
   let cacheChecks = 0;
@@ -1784,21 +1784,21 @@ test('availabilitySourcesForBook returns unique source list for readUrl with que
 
 test('language labels resolve catalog codes to English names', () => {
   for (const [code, name] of [['CAT', 'Catalan'], ['ca', 'Catalan'], ['EN', 'English'], ['eng', 'English'], ['FR', 'French'], ['fre', 'French'], ['pt_BR', 'Brazilian Portuguese'], ['english', 'English']]) {
-    assert.equal(globalThis.BookMetadata.languageLabel(code), name);
+    assert.equal(bookMetadata.languageLabel(code), name);
   }
-  assert.equal(globalThis.BookMetadata.languageLabel('unknown'), '');
-  assert.equal(globalThis.BookMetadata.languageLabel('Klingon language'), 'Klingon language');
+  assert.equal(bookMetadata.languageLabel('unknown'), '');
+  assert.equal(bookMetadata.languageLabel('Klingon language'), 'Klingon language');
 });
 
 test('deduplicated library metadata retains locally detected reader formats', () => {
   const id = 'a'.repeat(32);
-  const [book] = globalThis.BookMetadata.dedupeLibraryBooks([
+  const [book] = bookMetadata.dedupeLibraryBooks([
     { md5: id, title: 'Comic', extension: 'cbz', format: 'cbz', metadataProvenance: { extension: 'detected-local' } },
     { md5: id, title: 'Comic', extension: 'epub', format: 'epub' },
   ]);
   assert.equal(present(book).extension, 'cbz');
   assert.equal(present(book).format, 'cbz');
-  const [updated] = globalThis.BookMetadata.dedupeLibraryBooks([
+  const [updated] = bookMetadata.dedupeLibraryBooks([
     present(book), { md5: id, extension: 'cbr', format: 'cbr', metadataProvenance: { extension: 'detected-local' } },
   ]);
   assert.equal(present(updated).extension, 'cbr');
@@ -1806,7 +1806,7 @@ test('deduplicated library metadata retains locally detected reader formats', ()
 });
 
 test('library matching tolerates malformed absolute URLs after its scheme fast path', () => {
-  assert.equal(globalThis.BookMetadata.sameLibraryBook({ readUrl: 'https://[' }, {}), false);
+  assert.equal(bookMetadata.sameLibraryBook({ readUrl: 'https://[' }, {}), false);
 });
 
 test('language sorting falls back to raw catalog values when display names reject a code', () => {

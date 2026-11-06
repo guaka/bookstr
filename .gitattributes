@@ -28,3 +28,60 @@ web/comic-reader.html linguist-generated=true
 web/fb2-reader.html linguist-generated=true
 web/pdf-reader.html linguist-generated=true
 shared/reader/reader.html linguist-generated=true
+
+# Tool runtime entrypoints and declarations are generated from strict TypeScript.
+scripts/ci-timings.mjs linguist-generated=true
+scripts/ci-timings.d.mts linguist-generated=true
+scripts/coverage-ratchet.mjs linguist-generated=true
+scripts/coverage-ratchet.d.mts linguist-generated=true
+scripts/generate-client-overview.mjs linguist-generated=true
+scripts/generate-client-overview.d.mts linguist-generated=true
+scripts/junit.mjs linguist-generated=true
+scripts/junit.d.mts linguist-generated=true
+scripts/platform-baseline-routing-cli.mjs linguist-generated=true
+scripts/platform-baseline-routing-cli.d.mts linguist-generated=true
+scripts/platform-baseline-routing.mjs linguist-generated=true
+scripts/platform-baseline-routing.d.mts linguist-generated=true
+scripts/pr-coverage-report.mjs linguist-generated=true
+scripts/pr-coverage-report.d.mts linguist-generated=true
+scripts/pr-screenshot-gallery.mjs linguist-generated=true
+scripts/pr-screenshot-gallery.d.mts linguist-generated=true
+scripts/report-types.mjs linguist-generated=true
+scripts/report-types.d.mts linguist-generated=true
+scripts/test-overview.mjs linguist-generated=true
+scripts/test-overview.d.mts linguist-generated=true
+android/scripts/android-release-version.mjs linguist-generated=true
+android/scripts/android-release-version.d.mts linguist-generated=true
+android/scripts/instrumentation-results.mjs linguist-generated=true
+android/scripts/instrumentation-results.d.mts linguist-generated=true
+android/scripts/native-coverage.mjs linguist-generated=true
+android/scripts/native-coverage.d.mts linguist-generated=true
+
+# Shared runtime artifacts are generated from adjacent TypeScript sources.
+shared/catalog/acquisition.mjs linguist-generated=true
+shared/catalog/generate-provider-record-dtos.mjs linguist-generated=true
+shared/catalog/opds.js linguist-generated=true
+shared/catalog/source-registry.mjs linguist-generated=true
+shared/catalog/validate-provider-records.mjs linguist-generated=true
+shared/contracts/device-pairing-client.mjs linguist-generated=true
+shared/contracts/device-pairing-nip17.mjs linguist-generated=true
+shared/contracts/device-pairing-v1.mjs linguist-generated=true
+shared/contracts/device-registry-nip78.mjs linguist-generated=true
+shared/contracts/device-transfer-v1.mjs linguist-generated=true
+shared/contracts/generate-nostr-constants.mjs linguist-generated=true
+shared/contracts/publication-nip94-v1.mjs linguist-generated=true
+shared/design-tokens/generate.mjs linguist-generated=true
+shared/reader/generate-web-assets.mjs linguist-generated=true
+shared/rights/rights.mjs linguist-generated=true
+shared/torrent/metadata.mjs linguist-generated=true
+web/generated/catalog-provider-record-v1.js linguist-generated=true
+web/generated/nostr-constants-v1.js linguist-generated=true
+
+# Browser deployment mirrors use the generated canonical shared contracts.
+web/shared/contracts/device-pairing-client.mjs linguist-generated=true
+web/shared/contracts/device-pairing-nip17.mjs linguist-generated=true
+web/shared/contracts/device-pairing-v1.mjs linguist-generated=true
+web/shared/contracts/device-transfer-v1.mjs linguist-generated=true
+
+# Desktop runtime modules are emitted from TypeScript sources.
+desktop/reader-formats.js linguist-generated=true

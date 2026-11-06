@@ -5,18 +5,6 @@
 })(globalThis as typeof globalThis & { BookstrDesktopProgress?: unknown }, function() {
   'use strict';
 
-  interface ProgressPayload {
-    [key: string]: unknown;
-    progression?: unknown; furthestProgression?: unknown; md5?: unknown; bookId?: unknown;
-    readUrl?: unknown; cfi?: unknown; title?: unknown; authors?: unknown; year?: unknown;
-    extension?: unknown; source?: unknown; sourceNativeId?: unknown; sourceUrl?: unknown;
-    blossomUrl?: unknown; blossomSha256?: unknown; rights_status?: unknown; rightsStatus?: unknown;
-    license?: unknown; rights?: unknown; license_url?: unknown; licenseUrl?: unknown;
-    rights_source?: unknown; rightsSource?: unknown; language?: unknown; author?: unknown; format?: unknown;
-    url?: unknown; source_native_id?: unknown; source_url?: unknown; blossom_url?: unknown; blossom_sha256?: unknown;
-    locator?: { progression?: unknown; furthestProgression?: unknown; href?: unknown; locations?: { cfi?: unknown } };
-    book?: { md5?: unknown };
-  }
   interface ProgressProfile {
     requireId: boolean; trimReadUrl?: boolean; webAliases?: boolean; rejectInvalidProgress?: boolean;
     preserveWebFurthest?: boolean; lowerCaseExtension?: boolean; lowerCaseLanguage?: boolean; includeLanguage?: boolean;
@@ -28,7 +16,7 @@
     return Math.max(0, Math.min(1, numericValue));
   }
 
-  function progressPosition(payload: ProgressPayload | null | undefined) {
+  function progressPosition(payload: ProgressInput | null | undefined) {
     const progression = clampProgress(payload?.progression ?? payload?.locator?.progression);
     const furthestProgression = Math.max(
       progression,
@@ -37,7 +25,7 @@
     return { progression, furthestProgression };
   }
 
-  function isProgressAhead(candidate: ProgressPayload | null | undefined, baseline: ProgressPayload | null | undefined): boolean {
+  function isProgressAhead(candidate: ProgressInput | null | undefined, baseline: ProgressInput | null | undefined): boolean {
     const next = progressPosition(candidate);
     const current = progressPosition(baseline);
     return next.furthestProgression > current.furthestProgression
@@ -58,7 +46,7 @@
     },
   };
 
-  function normalizeProgressPayload(payload: ProgressPayload | null | undefined, profile = 'main') {
+  function normalizeProgressPayload(payload: ProgressInput | null | undefined, profile = 'main') {
     const settings = profiles[profile] || profiles.main!;
     if (!payload || typeof payload !== 'object') return null;
     const webAliases = Boolean(settings.webAliases);
@@ -125,9 +113,20 @@ export interface ProgressPayload {
   rights_source: string;
   language?: string;
 }
+export interface ProgressInput {
+  progression?: unknown; furthestProgression?: unknown; md5?: unknown; bookId?: unknown;
+  readUrl?: unknown; cfi?: unknown; title?: unknown; authors?: unknown; year?: unknown;
+  extension?: unknown; source?: unknown; sourceNativeId?: unknown; sourceUrl?: unknown;
+  blossomUrl?: unknown; blossomSha256?: unknown; rights_status?: unknown; rightsStatus?: unknown;
+  license?: unknown; rights?: unknown; license_url?: unknown; licenseUrl?: unknown;
+  rights_source?: unknown; rightsSource?: unknown; language?: unknown; author?: unknown; format?: unknown;
+  url?: unknown; source_native_id?: unknown; source_url?: unknown; blossom_url?: unknown; blossom_sha256?: unknown;
+  locator?: { progression?: unknown; furthestProgression?: unknown; href?: unknown; locations?: { cfi?: unknown } };
+  book?: { md5?: unknown };
+}
 export interface DesktopProgressApi {
   clampProgress(value: unknown): number;
-  progressPosition(payload: ProgressPayload | null | undefined): { progression: number; furthestProgression: number };
-  isProgressAhead(candidate: ProgressPayload | null | undefined, baseline: ProgressPayload | null | undefined): boolean;
-  normalizeProgressPayload(payload: ProgressPayload | null | undefined, profile?: string): ProgressPayload | null;
+  progressPosition(payload: ProgressInput | null | undefined): { progression: number; furthestProgression: number };
+  isProgressAhead(candidate: ProgressInput | null | undefined, baseline: ProgressInput | null | undefined): boolean;
+  normalizeProgressPayload(payload: ProgressInput | null | undefined, profile?: string): ProgressPayload | null;
 }

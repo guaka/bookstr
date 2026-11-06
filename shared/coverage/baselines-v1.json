@@ -1,20 +1,20 @@
 {
   "version": 1,
-  "capturedAt": "2026-11-06T20:33:48Z",
+  "capturedAt": "2026-11-06T20:39:31Z",
   "suites": {
     "web": {
-      "minimumTests": 944,
-      "source": "https://github.com/guaka/bookstr/actions/runs/42286656315",
-      "commit": "ea40239c471356b171dbcc705c1f381bb0a0daa0",
+      "minimumTests": 969,
+      "source": "https://github.com/guaka/bookstr/actions/runs/42289950718",
+      "commit": "d45c57b1f76b70beaefcac2f94a0bf3dedfe9de7",
       "metrics": {
         "Statements": 100,
-        "Branches": 88.89,
+        "Branches": 88.93,
         "Functions": 100,
         "Lines": 100
       }
     },
     "electron": {
-      "minimumTests": 325,
+      "minimumTests": 331,
       "source": "https://github.com/guaka/bookstr/actions/runs/42286656315",
       "commit": "ea40239c471356b171dbcc705c1f381bb0a0daa0",
       "metrics": {

@@ -1,4 +1,4 @@
-export interface SocialEvent {kind?:number;pubkey?:unknown;created_at?:number;id?:unknown;tags?:string[][];content?:unknown}
+export interface SocialEvent { [key: string]: unknown; kind?:number;pubkey?:unknown;created_at?:number;id?:unknown;tags?:string[][];content?:unknown }
 const __bookstrNostrSocialApi = (function (root: typeof globalThis) {
   'use strict';
 
@@ -161,9 +161,10 @@ const __bookstrNostrSocialApi = (function (root: typeof globalThis) {
     };
   }
 
-  function nip05Matches(document: {names?:Record<string,unknown>} | null | undefined, name: unknown, pubkey: unknown) {
+  function nip05Matches(document: unknown, name: unknown, pubkey: unknown) {
     const expected = normalizedPubkey(pubkey);
-    if (!expected || !document?.names || typeof document.names !== 'object') return false;
+    if (!expected || !document || typeof document !== 'object' || !('names' in document)
+      || !document.names || typeof document.names !== 'object') return false;
     const names = Object.entries(document.names);
     const match = names.find(([candidate]) => String(candidate).toLowerCase() === String(name).toLowerCase());
     return normalizedPubkey(match?.[1]) === expected;

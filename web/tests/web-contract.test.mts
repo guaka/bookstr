@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { inflateSync } from 'node:zlib';
 
-import '../book-metadata.js';
+import { bookMetadata as bookMetadataApi } from './book-metadata-api.mts';
 
 const html = await readFile(new URL('../index.html', import.meta.url), 'utf8');
 const designTokens = await readFile(new URL('../design-tokens.css', import.meta.url), 'utf8');
@@ -16,7 +16,7 @@ const desktopMain = await readFile(new URL('../../desktop/src/main.ts', import.m
 const desktopPreload = await readFile(new URL('../../desktop/src/preload.ts', import.meta.url), 'utf8');
 const desktopPolicy = await readFile(new URL('../../desktop/src/security-policy.ts', import.meta.url), 'utf8');
 const desktopWebTorrent = await readFile(new URL('../../desktop/src/webtorrent-bridge.ts', import.meta.url), 'utf8');
-const webtorrentDevBridge = await readFile(new URL('../webtorrent-dev-bridge.mjs', import.meta.url), 'utf8');
+const webtorrentDevBridge = await readFile(new URL('../webtorrent-dev-bridge.mts', import.meta.url), 'utf8');
 const coverAssets = await readFile(new URL('../cover-assets.js', import.meta.url), 'utf8');
 const bookMetadata = await readFile(new URL('../book-metadata.js', import.meta.url), 'utf8');
 const webdev = await readFile(new URL('../../webdev.py', import.meta.url), 'utf8');
@@ -364,7 +364,7 @@ test('the web client never turns Blossom response data into readable content', (
   // Legacy URLs remain valid for identity comparisons, never reader selection.
   const canonicalReadUrl = present(bookMetadata.match(/function canonicalReadUrl\([\s\S]*?\n {4}}/))[0];
   assert.doesNotMatch(canonicalReadUrl, /blossomUrl/);
-  assert.equal(globalThis.BookMetadata.canonicalReadUrl({ blossomUrl: 'https://blossom.example/book.epub' }), '');
+  assert.equal(bookMetadataApi.canonicalReadUrl({ blossomUrl: 'https://blossom.example/book.epub' }), '');
 });
 
 test('read links remain addressable when a book has no MD5', () => {
@@ -1107,8 +1107,8 @@ test('the browser reader downloads a selected repository book with visible WebTo
   assert.match(webdev, /WEBTORRENT_BUNDLE = .*webtorrent\/dist\/webtorrent\.min\.js/);
   assert.match(webdev, /parsed\.path in \("\/api\/libgen-torrent", "\/api\/libgen-file"\)/);
   assert.match(webdev, /WEBTORRENT_DOWNLOAD_BRIDGE = "http:\/\/127\.0\.0\.1:11112\/download"/);
-  assert.match(webtorrentDevBridge, /url\.pathname === '\/download'/);
-  assert.match(webtorrentDevBridge, /bridge\.downloadSelected\(torrentBytes/);
+  assert.match(webtorrentDevBridge, /export function createBridgeRequestHandler[\s\S]*?url\.pathname === '\/download'/);
+  assert.match(webtorrentDevBridge, /export function createBridgeRequestHandler[\s\S]*?bridge\.downloadSelected\(torrentBytes/);
   assert.match(webdev, /r_\{batch\}\.torrent/);
   assert.match(webdev, /subprocess\.run\([\s\S]*?"curl"[\s\S]*?check=False[\s\S]*?capture_output=True/);
 });
