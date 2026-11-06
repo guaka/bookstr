@@ -67,7 +67,10 @@ class NostrSignerCoverageTest {
 
         assertEquals(NostrAuthMode.Nip46, settings.authMode)
         assertTrue(settings.hasNostrIdentity())
+        assertFalse(context.getSharedPreferences("bookstr_settings", Context.MODE_PRIVATE).all.values
+            .filterIsInstance<String>().any { it.contains(clientSecret) })
         assertEquals(clientSecret, settings.nip46ClientSecretHex)
+        assertEquals(clientSecret, SettingsRepository(context).nip46ClientSecretHex)
         assertEquals(remoteSigner, settings.nip46RemoteSignerPubkey)
         assertEquals(listOf("wss://relay.example/"), settings.nip46Relays)
         assertNull(settings.nsec)
@@ -91,6 +94,29 @@ class NostrSignerCoverageTest {
         assertNull(settings.nip46ClientSecretHex)
         assertNull(settings.nip46RemoteSignerPubkey)
         assertTrue(settings.nip46Relays.isEmpty())
+    }
+
+    @Test
+    fun oldNip46SignerCannotRestoreAfterDisconnect() {
+        val userPubkey = "33".repeat(32)
+        settings.connectNip46("11".repeat(32), "22".repeat(32), userPubkey, listOf("wss://relay.example"))
+        val signer = NostrSignerFactory.create(context, settings)!!
+        assertTrue(signer.isConfigured())
+
+        settings.disconnectNostr()
+
+        assertFalse(signer.isConfigured())
+        assertThrows(Nip46Exception::class.java) {
+            kotlinx.coroutines.runBlocking { signer.getPublicKey() }
+        }
+        assertThrows(Nip46Exception::class.java) {
+            kotlinx.coroutines.runBlocking { signer.nip44Encrypt("secret", userPubkey) }
+        }
+        assertThrows(Nip46Exception::class.java) {
+            kotlinx.coroutines.runBlocking {
+                signer.signEvent(JSONObject().put("kind", 1).put("created_at", 1L).put("tags", JSONArray()).put("content", "x"))
+            }
+        }
     }
 
     @Test

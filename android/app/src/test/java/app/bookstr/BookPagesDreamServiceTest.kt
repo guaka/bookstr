@@ -2,10 +2,15 @@ package app.bookstr
 
 import android.app.Activity
 import android.content.Intent
+import android.content.Context
+import android.content.SharedPreferences
 import android.os.Looper
+import android.security.keystore.KeyGenParameterSpec
 import android.view.ViewGroup
 import android.webkit.WebView
 import android.widget.LinearLayout
+import androidx.security.crypto.EncryptedSharedPreferences
+import androidx.security.crypto.MasterKey
 import app.bookstr.data.BookFormat
 import app.bookstr.data.BookProgress
 import app.bookstr.data.ReaderSession
@@ -22,6 +27,8 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows
 import org.robolectric.annotation.Config
 import org.robolectric.util.ReflectionHelpers
+import org.robolectric.annotation.Implementation
+import org.robolectric.annotation.Implements
 import org.robolectric.Shadows.shadowOf
 import java.io.File
 import java.util.concurrent.CountDownLatch
@@ -30,7 +37,11 @@ import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.runBlocking
 
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [35])
+@Config(
+    sdk = [35],
+    shadows = [ShadowMasterKeyBuilder::class, ShadowEncryptedPreferences::class],
+    instrumentedPackages = ["androidx.security.crypto"],
+)
 class BookPagesDreamServiceTest {
     @get:Rule val temporaryFolder = TemporaryFolder()
 
@@ -77,11 +88,10 @@ class BookPagesDreamServiceTest {
 
     @Test
     fun serviceRequestsCurrentNarrationStateWithoutStartingPlayback() {
-        val app = org.robolectric.RuntimeEnvironment.getApplication<BookstrApp>()
-        val companion = NarrationService::class.java.getField("Companion").get(null)
-        val wasRunning = ReflectionHelpers.getField<Boolean>(companion, "running")
+        val app = org.robolectric.RuntimeEnvironment.getApplication() as BookstrApp
+        val wasRunning = ReflectionHelpers.getStaticField<Boolean>(NarrationService::class.java, "running")
         try {
-            ReflectionHelpers.setField(companion, "running", true)
+            ReflectionHelpers.setStaticField(NarrationService::class.java, "running", true)
             syncDreamNarration(app, bookId)
             val request = shadowOf(app).nextStartedService
             assertEquals(NarrationService::class.java.name, request?.component?.className)
@@ -89,7 +99,7 @@ class BookPagesDreamServiceTest {
             assertTrue(request?.action?.endsWith("NARRATION_SYNC") == true)
             assertFalse(request?.getBooleanExtra(NarrationService.EXTRA_START_NARRATION, false) == true)
         } finally {
-            ReflectionHelpers.setField(companion, "running", wasRunning)
+            ReflectionHelpers.setStaticField(NarrationService::class.java, "running", wasRunning)
         }
     }
 
@@ -115,7 +125,9 @@ class BookPagesDreamServiceTest {
 
         assertTrue(script.contains("setReaderTheme(\"night\")"))
         assertTrue(script.contains("setReaderTypography(\"georgia\", \"left\", 0)"))
-        assertTrue(script.contains("loadBookUrl(\"https://appassets.androidplatform.net/books/$bookId.epub\", \"$cfi\""))
+        val arguments = loadBookArguments(script)
+        assertEquals("https://appassets.androidplatform.net/books/$bookId.epub", arguments.getString(0))
+        assertEquals(cfi, arguments.getString(1))
         assertTrue(script.contains("\"$bookId\")"))
         assertFalse(script.contains("saveProgress"))
         val readerHtml = File("../../shared/reader/reader.html").readText()
@@ -184,7 +196,9 @@ class BookPagesDreamServiceTest {
         val webShadow = Shadows.shadowOf(webView)
         webShadow.webViewClient.onPageFinished(webView, "https://appassets.androidplatform.net/assets/reader.html")
         val initialScript = requireNotNull(webShadow.lastEvaluatedJavascript)
-        assertTrue(initialScript.contains("loadBookUrl(\"https://appassets.androidplatform.net/books/$bookId.epub\", \"saved-progress-cfi\""))
+        val arguments = loadBookArguments(initialScript)
+        assertEquals("https://appassets.androidplatform.net/books/$bookId.epub", arguments.getString(0))
+        assertEquals("saved-progress-cfi", arguments.getString(1))
 
         service.sendBroadcast(Intent(NarrationService.ACTION_EVENT).setPackage(service.packageName)
             .putExtra(NarrationService.EXTRA_IS_PLAYING, true)
@@ -208,9 +222,39 @@ class BookPagesDreamServiceTest {
         app.settingsRepository.clearReaderSession()
     }
 
+    private fun loadBookArguments(script: String): org.json.JSONArray =
+        org.json.JSONArray("[" + script.substringAfter("loadBookUrl(").substringBeforeLast(");") + "]")
+
     private fun awaitDreamIo(service: BookPagesDreamService) {
         val queued = CountDownLatch(1)
         ReflectionHelpers.getField<ExecutorService>(service, "io").execute { queued.countDown() }
         assertTrue("Dream IO work should finish", queued.await(5, TimeUnit.SECONDS))
+    }
+}
+
+/** Robolectric does not provide AndroidKeyStore; app instrumentation tests retain real crypto coverage. */
+@Implements(MasterKey.Builder::class)
+class ShadowMasterKeyBuilder {
+    @Implementation
+    fun build(): MasterKey = ReflectionHelpers.callConstructor(
+        MasterKey::class.java,
+        ReflectionHelpers.ClassParameter.from(String::class.java, "bookstr-robolectric-test-key"),
+        ReflectionHelpers.ClassParameter.from(Any::class.java, null),
+    )
+}
+
+/** Use sandbox preferences only for these service lifecycle tests. */
+@Implements(EncryptedSharedPreferences::class)
+class ShadowEncryptedPreferences {
+    companion object {
+        @JvmStatic
+        @Implementation
+        fun create(
+            context: Context,
+            fileName: String,
+            masterKey: MasterKey,
+            keyScheme: EncryptedSharedPreferences.PrefKeyEncryptionScheme,
+            valueScheme: EncryptedSharedPreferences.PrefValueEncryptionScheme,
+        ): SharedPreferences = context.getSharedPreferences(fileName, Context.MODE_PRIVATE)
     }
 }

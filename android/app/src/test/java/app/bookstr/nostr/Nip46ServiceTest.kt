@@ -1,6 +1,7 @@
 package app.bookstr.nostr
 
 import kotlinx.coroutines.async
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
@@ -20,6 +21,7 @@ import org.junit.Test
 import java.net.URLDecoder
 import java.nio.charset.StandardCharsets
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
 
 class Nip46ServiceTest {
     @Test fun invitationContainsEncodedRelaySecretAndRequestedScopes() {
@@ -50,6 +52,10 @@ class Nip46ServiceTest {
         var clientSocket: WebSocket? = null
         val service = Nip46Service(OkHttpClient.Builder().readTimeout(0, TimeUnit.MILLISECONDS).build())
         server.enqueue(MockResponse().withWebSocketUpgrade(object : WebSocketListener() {
+            override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
+                webSocket.close(code, reason)
+            }
+
             override fun onMessage(webSocket: WebSocket, text: String) {
                 val message = JSONArray(text)
                 when (message.optString(0)) {
@@ -127,6 +133,10 @@ class Nip46ServiceTest {
         var pairingPubkey = ""
         var clientSocket: WebSocket? = null
         server.enqueue(MockResponse().withWebSocketUpgrade(object : WebSocketListener() {
+            override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
+                webSocket.close(code, reason)
+            }
+
             override fun onMessage(webSocket: WebSocket, text: String) {
                 val message = JSONArray(text)
                 if (message.optString(0) == "REQ") {
@@ -163,7 +173,11 @@ class Nip46ServiceTest {
 
     @Test fun resetSessionCancelsPendingPairingAndClearsInMemoryIdentity() = runBlocking {
         val server = MockWebServer()
-        server.enqueue(MockResponse().withWebSocketUpgrade(object : WebSocketListener() {}))
+        server.enqueue(MockResponse().withWebSocketUpgrade(object : WebSocketListener() {
+            override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
+                webSocket.close(code, reason)
+            }
+        }))
         server.start()
         val service = Nip46Service()
         try {
@@ -190,6 +204,10 @@ class Nip46ServiceTest {
         val server = MockWebServer()
         var sawSubscription = false
         server.enqueue(MockResponse().withWebSocketUpgrade(object : WebSocketListener() {
+            override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
+                webSocket.close(code, reason)
+            }
+
             override fun onMessage(webSocket: WebSocket, text: String) {
                 val frame = JSONArray(text)
                 when (frame.optString(0)) {
@@ -220,6 +238,89 @@ class Nip46ServiceTest {
         }
     }
 
+    @Test fun lostRelayTransportRestoresOnceAndServesRequestsOnNewSocket() = runBlocking {
+        val clientSecret = secret(9)
+        val clientPubkey = NostrCrypto.publicKeyHex(clientSecret)
+        val remoteSecret = secret(10)
+        val remotePubkey = NostrCrypto.publicKeyHex(remoteSecret)
+        val userPubkey = NostrCrypto.publicKeyHex(secret(11))
+        val server = MockWebServer()
+        val subscriptions = AtomicInteger()
+        server.enqueue(MockResponse().withWebSocketUpgrade(object : WebSocketListener() {
+            override fun onClosing(webSocket: WebSocket, code: Int, reason: String) { webSocket.close(code, reason) }
+            override fun onMessage(webSocket: WebSocket, text: String) {
+                val frame = JSONArray(text)
+                when (frame.optString(0)) {
+                    "REQ" -> subscriptions.incrementAndGet()
+                    "EVENT" -> {
+                        sendRpcResult(webSocket, frame.getJSONObject(1), clientPubkey, remoteSecret, "before-drop")
+                        webSocket.close(1000, "simulated relay restart")
+                    }
+                }
+            }
+        }))
+        server.enqueue(MockResponse().withWebSocketUpgrade(object : WebSocketListener() {
+            override fun onClosing(webSocket: WebSocket, code: Int, reason: String) { webSocket.close(code, reason) }
+            override fun onMessage(webSocket: WebSocket, text: String) {
+                val frame = JSONArray(text)
+                when (frame.optString(0)) {
+                    "REQ" -> subscriptions.incrementAndGet()
+                    "EVENT" -> sendRpcResult(webSocket, frame.getJSONObject(1), clientPubkey, remoteSecret, "after-restore")
+                }
+            }
+        }))
+        server.start()
+        val service = Nip46Service()
+        try {
+            val relay = server.url("/").toString().replace("http://", "ws://")
+            service.restore(clientSecret.toHex(), remotePubkey, listOf(relay), userPubkey)
+            assertTrue(service.hasRelayTransport())
+            assertEquals("before-drop", service.nip44Encrypt("a", userPubkey))
+            withTimeout(3_000) { while (service.hasRelayTransport()) delay(10) }
+            assertFalse(service.hasRelayTransport())
+
+            service.restore(clientSecret.toHex(), remotePubkey, listOf(relay), userPubkey)
+            assertTrue(service.hasRelayTransport())
+            assertEquals("after-restore", service.nip44Encrypt("b", userPubkey))
+            assertEquals(2, subscriptions.get())
+        } finally {
+            service.resetSession()
+            server.shutdown()
+        }
+    }
+
+    @Test fun canceledSigningRequestPreservesCoroutineCancellation() = runBlocking {
+        val clientSecret = secret(12)
+        val clientPubkey = NostrCrypto.publicKeyHex(clientSecret)
+        val remoteSecret = secret(13)
+        val remotePubkey = NostrCrypto.publicKeyHex(remoteSecret)
+        val userPubkey = NostrCrypto.publicKeyHex(secret(14))
+        val server = MockWebServer()
+        val signingObserved = kotlinx.coroutines.CompletableDeferred<Unit>()
+        server.enqueue(MockResponse().withWebSocketUpgrade(object : WebSocketListener() {
+            override fun onClosing(webSocket: WebSocket, code: Int, reason: String) { webSocket.close(code, reason) }
+            override fun onMessage(webSocket: WebSocket, text: String) {
+                val frame = JSONArray(text)
+                if (frame.optString(0) == "EVENT") signingObserved.complete(Unit)
+            }
+        }))
+        server.start()
+        val service = Nip46Service()
+        try {
+            val relay = server.url("/").toString().replace("http://", "ws://")
+            service.restore(clientSecret.toHex(), remotePubkey, listOf(relay), userPubkey)
+            val unsigned = JSONObject().put("created_at", 10).put("kind", 30078)
+                .put("tags", JSONArray()).put("content", "data")
+            val signing = async { runCatching { service.signEvent(unsigned) }.exceptionOrNull() }
+            withTimeout(3_000) { signingObserved.await() }
+            service.resetSession()
+            assertTrue(signing.await() is CancellationException)
+        } finally {
+            service.resetSession()
+            server.shutdown()
+        }
+    }
+
     private fun secret(suffix: Int): ByteArray = ByteArray(32).also { it[31] = suffix.toByte() }
 
     private fun query(uri: String, name: String): String = uri.substringAfter('?').split('&')
@@ -227,4 +328,21 @@ class Nip46ServiceTest {
         .first().let { URLDecoder.decode(it, StandardCharsets.UTF_8.name()) }
 
     private fun ByteArray.toHex() = joinToString("") { "%02x".format(it) }
+
+    private fun sendRpcResult(
+        webSocket: WebSocket,
+        requestEvent: JSONObject,
+        clientPubkey: String,
+        remoteSecret: ByteArray,
+        result: String,
+    ) {
+        val rpc = JSONObject(Nip44.decrypt(remoteSecret, clientPubkey, requestEvent.getString("content")))
+        val response = JSONObject().put("id", rpc.getString("id")).put("result", result)
+        val reply = JSONObject()
+            .put("kind", Nip46Service.KIND_NOSTR_CONNECT)
+            .put("created_at", System.currentTimeMillis() / 1000)
+            .put("tags", JSONArray().put(JSONArray().put("p").put(clientPubkey)))
+            .put("content", Nip44.encrypt(remoteSecret, clientPubkey, response.toString()))
+        webSocket.send(JSONArray().put("EVENT").put("bookstr-nip46").put(NostrCrypto.signEvent(remoteSecret, reply)).toString())
+    }
 }

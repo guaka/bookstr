@@ -207,7 +207,8 @@ tasks.register<JacocoReport>("jacocoDebugUnitTestReport") {
         // These are exercised by the separate Android e2e suite, not JVM unit tests.
         "**/ui/**",
         "**/*Activity*",
-        "**/*Service*",
+        "**/NarrationService*",
+        "**/download/DownloadService*",
         "**/BookstrApp*",
         "**/ComposableSingletons*",
     )

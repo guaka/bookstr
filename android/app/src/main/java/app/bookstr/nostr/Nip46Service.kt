@@ -33,9 +33,10 @@ class Nip46Service(
 
     private val lock = Any()
     private val sockets = ConcurrentHashMap<String, WebSocket>()
+    private val openRelays = ConcurrentHashMap.newKeySet<String>()
     @Volatile private var relayReady = CompletableDeferred<Unit>()
     private val pending = ConcurrentHashMap<String, Pending>()
-    private val seenEvents = ConcurrentHashMap.newKeySet<String>()
+    private val seenEvents = LinkedHashMap<String, Unit>()
     private var clientSecret: ByteArray? = null
     private var clientPubkey: String? = null
     private var remoteSignerPubkey: String? = null
@@ -130,6 +131,13 @@ class Nip46Service(
             closed.set(false)
         }
         validRelays.forEach(::openRelay)
+        try {
+            withTimeout(RELAY_CONNECT_TIMEOUT_MILLIS) { relayReady.await() }
+        } catch (error: Exception) {
+            reset()
+            if (error is CancellationException) throw error
+            throw Nip46Exception("Could not restore NIP-46 relay connection", error)
+        }
     }
 
     fun currentConnection(): Nip46Connection? = synchronized(lock) {
@@ -138,12 +146,18 @@ class Nip46Service(
         Nip46Connection(remote, user, sessionRelays)
     }
 
+    /** True only after a WebSocket opened in the current session and before it closes. */
+    fun hasRelayTransport(): Boolean = !closed.get() && openRelays.isNotEmpty()
+
     suspend fun signEvent(unsigned: JSONObject): JSONObject {
         val user = userPubkey ?: throw Nip46Exception("NIP-46 signer is not connected")
         val requested = JSONObject(unsigned.toString())
         requested.remove("id"); requested.remove("pubkey"); requested.remove("sig")
         val signed = try { JSONObject(request("sign_event", JSONArray().put(requested.toString()))) }
-        catch (error: Exception) { throw Nip46Exception("Remote signer returned an invalid event", error) }
+        catch (error: Exception) {
+            if (error is CancellationException) throw error
+            throw Nip46Exception("Remote signer returned an invalid event", error)
+        }
         require(signed.optString("pubkey").equals(user, true)) { "Remote signer signed with a different account" }
         require(NostrCrypto.verifyEvent(signed)) { "Remote signer returned an invalid event signature" }
         for (field in listOf("created_at", "kind", "content")) {
@@ -209,6 +223,7 @@ class Nip46Service(
                     return
                 }
                 sockets[relay] = webSocket
+                openRelays.add(relay)
                 webSocket.send(JSONArray().put("REQ").put("bookstr-nip46").put(
                     JSONObject().put("kinds", JSONArray().put(KIND_NOSTR_CONNECT)).put("#p", JSONArray().put(pubkey)),
                 ).toString())
@@ -223,12 +238,22 @@ class Nip46Service(
                 }
             }
 
+            override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
+                if (generation == sessionGeneration.get() && !closed.get()) webSocket.close(code, reason)
+            }
+
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
-                sockets.remove(relay, webSocket)
+                if (generation == sessionGeneration.get()) {
+                    sockets.remove(relay, webSocket)
+                    openRelays.remove(relay)
+                }
             }
 
             override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
-                sockets.remove(relay, webSocket)
+                if (generation == sessionGeneration.get()) {
+                    sockets.remove(relay, webSocket)
+                    openRelays.remove(relay)
+                }
             }
         })
         if (generation == sessionGeneration.get() && !closed.get()) sockets[relay] = socket else socket.cancel()
@@ -238,21 +263,23 @@ class Nip46Service(
         try {
             require(event.optInt("kind") == KIND_NOSTR_CONNECT && NostrCrypto.verifyEvent(event))
             val eventId = event.getString("id")
-            if (!seenEvents.add(eventId)) return
             val author = normalizeHex(event.getString("pubkey"))
             val recipient = event.optJSONArray("tags")?.let(::pTag) ?: return
             if (recipient != clientPubkey) return
             val secret = clientSecret ?: return
+            val expectedRemote = remoteSignerPubkey
+            if (expectedRemote != null && author != expectedRemote) return
             val message = JSONObject(Nip44.decrypt(secret, author, event.getString("content")))
             val id = message.optString("id")
-            if (remoteSignerPubkey == null) {
+            if (expectedRemote == null) {
                 if (message.optString("result") == pairingSecret && pairingResult?.isCompleted == false) {
+                    if (!rememberEvent(eventId)) return
                     pairingResult?.complete(author)
                 }
                 return
             }
-            if (author != remoteSignerPubkey) return
             val deferred = pending[id]?.result ?: return
+            if (!rememberEvent(eventId)) return
             if (message.optString("result") == "auth_url") {
                 message.optString("error").takeIf(::isHttpUrl)?.let(onAuthChallenge)
                 return // signer will send a second response using the same id
@@ -270,13 +297,14 @@ class Nip46Service(
     private fun reset() {
         sessionGeneration.incrementAndGet()
         closed.set(true)
-        sockets.values.forEach { it.close(1000, "session reset") }
+        sockets.values.forEach(WebSocket::cancel)
         sockets.clear()
+        openRelays.clear()
         relayReady.cancel()
         relayReady = CompletableDeferred()
         pending.values.forEach { it.result.cancel() }
         pending.clear()
-        seenEvents.clear()
+        synchronized(seenEvents) { seenEvents.clear() }
         synchronized(lock) {
             clientSecret?.fill(0)
             clientSecret = null; clientPubkey = null; remoteSignerPubkey = null; userPubkey = null
@@ -285,11 +313,25 @@ class Nip46Service(
         }
     }
 
+    private fun rememberEvent(id: String): Boolean = synchronized(seenEvents) {
+        if (seenEvents.containsKey(id)) return@synchronized false
+        seenEvents[id] = Unit
+        if (seenEvents.size > MAX_SEEN_EVENTS) {
+            val oldest = seenEvents.keys.iterator()
+            if (oldest.hasNext()) {
+                oldest.next()
+                oldest.remove()
+            }
+        }
+        true
+    }
+
     companion object {
         const val KIND_NOSTR_CONNECT = 24133
         const val HANDSHAKE_TIMEOUT_MILLIS = 300_000L
         const val RELAY_CONNECT_TIMEOUT_MILLIS = 15_000L
         const val REQUEST_TIMEOUT_MILLIS = 30_000L
+        private const val MAX_SEEN_EVENTS = 1024
         val DEFAULT_PERMISSIONS = listOf("get_public_key", "sign_event", "nip44_encrypt", "nip44_decrypt")
 
         fun createNostrConnectUri(

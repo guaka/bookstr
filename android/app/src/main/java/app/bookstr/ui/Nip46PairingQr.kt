@@ -26,7 +26,7 @@ internal fun nip46QrBitmap(uri: String, size: Int = 640): Bitmap {
     require(uri.startsWith("nostrconnect://") && uri.length <= 4096) { "Invalid NIP-46 pairing URI" }
     require(size in 128..2048) { "QR size must be between 128 and 2048 pixels" }
     val hints = EnumMap<EncodeHintType, Any>(EncodeHintType::class.java).apply {
-        put(EncodeHintType.MARGIN, 2)
+        put(EncodeHintType.MARGIN, 4)
         put(EncodeHintType.ERROR_CORRECTION, com.google.zxing.qrcode.decoder.ErrorCorrectionLevel.M)
     }
     val matrix = QRCodeWriter().encode(uri, BarcodeFormat.QR_CODE, size, size, hints)
