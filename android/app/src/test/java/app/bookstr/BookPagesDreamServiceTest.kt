@@ -135,7 +135,7 @@ class BookPagesDreamServiceTest {
         assertFalse(script.contains("saveProgress"))
         val readerHtml = File("../../shared/reader/reader.html").readText()
         assertTrue(readerHtml.contains("window.loadBookUrl"))
-        assertTrue(readerHtml.contains("window.displaySearchResult = function(cfi)"))
+        assertTrue(readerHtml.contains(Regex("""window\.displaySearchResult\s*=\s*function\s*\(cfi\)""")))
     }
 
     @Test
