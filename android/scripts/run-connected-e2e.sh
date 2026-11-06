@@ -3,8 +3,6 @@
 set -uo pipefail
 
 readonly device_screenshot_dir='/sdcard/e2e-screenshots'
-readonly host_screenshot_dir='android/e2e-screenshots'
-readonly results_dir='android/e2e-results'
 readonly device_coverage_file='/data/user/0/app.bookstr/files/bookstr-coverage.ec'
 
 usage() {
@@ -22,6 +20,22 @@ elif [[ $# -ne 0 ]]; then
   usage
   exit 2
 fi
+# AndroidJUnitRunner partitions the discovered suite, including newly added tests.
+shard_args=()
+shard_suffix=''
+native_collection_args=()
+if [[ -n "${BOOKSTR_SHARD_INDEX:-}${BOOKSTR_SHARD_COUNT:-}" ]]; then
+  if [[ "$prebuilt" != true || ! "${BOOKSTR_SHARD_COUNT:-}" =~ ^[1-9][0-9]?$ || ! "${BOOKSTR_SHARD_INDEX:-}" =~ ^(0|[1-9][0-9]?)$ ]] || (( BOOKSTR_SHARD_INDEX >= BOOKSTR_SHARD_COUNT )); then
+    echo 'Sharding requires prebuilt mode, a count from 1 to 99, and an index from 0 to count-1.' >&2
+    exit 2
+  fi
+  shard_args=(-e numShards "$BOOKSTR_SHARD_COUNT" -e shardIndex "$BOOKSTR_SHARD_INDEX")
+  shard_suffix="/shard-$BOOKSTR_SHARD_INDEX"
+  # Some shards never load the JNI library. The aggregate report still requires profiles.
+  native_collection_args=(--allow-empty)
+fi
+readonly host_screenshot_dir="android/e2e-screenshots$shard_suffix"
+readonly results_dir="android/e2e-results$shard_suffix"
 coverage_file="${BOOKSTR_COVERAGE_FILE:-}"
 if [[ -n "$coverage_file" && "$prebuilt" != true ]]; then
   echo 'BOOKSTR_COVERAGE_FILE requires --prebuilt APP_APK TEST_APK.' >&2
@@ -34,7 +48,7 @@ if [[ -n "$native_profile_output" && "$prebuilt" != true ]]; then
 fi
 native_profile_marker=''
 if [[ -n "$native_profile_output" ]]; then
-  if ! mkdir -p -- "$native_profile_output"; then
+  if ! mkdir -p -- "$native_profile_output" ${native_collection_args[@]+"${native_collection_args[@]}"}; then
     echo "Could not create native profile output directory: $native_profile_output" >&2
     exit 1
   fi
@@ -135,9 +149,9 @@ if $prebuilt; then
     if [[ -n "$native_profile_output" ]]; then native_coverage_instrument_attempted=true; fi
     if [[ -n "$coverage_file" ]]; then
       coverage_instrument_attempted=true
-      "$adb_path" shell am instrument -w -r -e coverage true -e coverageFile "$device_coverage_file" app.bookstr.test/app.bookstr.BookstrTestRunner 2>&1 | tee "$log_file"
+      "$adb_path" shell am instrument -w -r -e coverage true -e coverageFile "$device_coverage_file" ${shard_args[@]+"${shard_args[@]}"} app.bookstr.test/app.bookstr.BookstrTestRunner 2>&1 | tee "$log_file"
     else
-      "$adb_path" shell am instrument -w -r app.bookstr.test/app.bookstr.BookstrTestRunner 2>&1 | tee "$log_file"
+      "$adb_path" shell am instrument -w -r ${shard_args[@]+"${shard_args[@]}"} app.bookstr.test/app.bookstr.BookstrTestRunner 2>&1 | tee "$log_file"
     fi
     instrument_status=${PIPESTATUS[0]}
     node "$(dirname "$0")/instrumentation-results.mjs" "$log_file" "$junit_file"
@@ -153,7 +167,7 @@ else
 fi
 
 if [[ -n "$native_profile_output" && "$native_coverage_prepared" == true && "$native_coverage_instrument_attempted" == true ]]; then
-  if ! bash "$(dirname "$0")/collect-native-coverage.sh" "$adb_path" "$native_device_serial" app.bookstr "$native_profile_output"; then
+  if ! bash "$(dirname "$0")/collect-native-coverage.sh" "$adb_path" "$native_device_serial" app.bookstr "$native_profile_output" ${native_collection_args[@]+"${native_collection_args[@]}"}; then
     echo 'Could not collect fresh native coverage profiles.' >&2
     status=1
   else
@@ -195,7 +209,7 @@ fi
 # Pull screenshots on passing and failing runs, even when installation or
 # instrumentation fails. Screenshot errors must not hide the original status.
 "$adb_path" pull "$device_screenshot_dir/." "$host_screenshot_dir" || true
-if ! find "$host_screenshot_dir" -type f -name '*.png' -print -quit | grep -q .; then
+if [[ -z "$shard_suffix" ]] && ! find "$host_screenshot_dir" -type f -name '*.png' -print -quit | grep -q .; then
   echo 'Android e2e tests produced no screenshots' >&2
   status=1
 fi
