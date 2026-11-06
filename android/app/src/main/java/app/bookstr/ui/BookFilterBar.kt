@@ -51,7 +51,7 @@ private fun FilterMenu(tag: String, all: String, options: List<String>, selectio
                        onSelect: (String) -> Unit, modifier: Modifier = Modifier) {
     var expanded by remember { mutableStateOf(false) }
     Box(modifier) {
-        TextButton(onClick = { expanded = true }, modifier = Modifier.fillMaxWidth().testTag(tag)) {
+        TextButton(onClick = { expanded = true }, modifier = Modifier.fillMaxWidth().testTag(tag).tvFocus()) {
             Icon(icon, contentDescription = null, modifier = Modifier.size(18.dp))
             Spacer(Modifier.width(5.dp))
             Text(if (selection.isEmpty()) all else display(selection), maxLines = 1)

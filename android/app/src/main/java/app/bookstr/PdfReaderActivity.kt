@@ -12,6 +12,8 @@ import android.os.ParcelFileDescriptor
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.foundation.gestures.animateScrollBy
+import app.bookstr.ui.tvReaderInset
 import androidx.lifecycle.lifecycleScope
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
@@ -456,6 +458,7 @@ private fun PdfDocument(
             state = listState,
             modifier = Modifier
                 .fillMaxSize()
+                .tvReaderInset()
                 .background(
                     if (nightMode) androidx.compose.ui.graphics.Color.Black
                     else androidx.compose.ui.graphics.Color(0xFF525659),
@@ -565,6 +568,8 @@ private fun PdfDocument(
         )
         app.bookstr.ui.ReaderBottomNavigation(
             onSelectTab = onSelectTab,
+            onPrevious = { gestureScope.launch { listState.animateScrollBy(-listState.layoutInfo.viewportSize.height * 0.8f) } },
+            onNext = { gestureScope.launch { listState.animateScrollBy(listState.layoutInfo.viewportSize.height * 0.8f) } },
             modifier = Modifier.align(Alignment.BottomCenter),
         )
         dictionary?.let { state ->

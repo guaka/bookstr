@@ -1,5 +1,22 @@
 # Android build and validation
 
+The same APK supports phones, tablets, and Android TV / Google TV, including
+Chromecast with Google TV. TV installations have a home-screen banner and do
+not require a touchscreen. On TV, use the remote D-pad and Select to navigate
+the library, filters, and app destinations. Readers keep Previous page, Next
+page, and Library controls visible; EPUB and FB2 also provide Speech. Back
+returns from an app destination to Library before leaving the app. TV text is
+scaled for viewing at a distance.
+
+TV control regression tests are in `TvControlsTest`; run them only on a
+disposable emulator, never a personal Chromecast:
+
+```sh
+cd android
+./gradlew --max-workers=2 connectedDebugAndroidTest createDebugAndroidTestCoverageReport \
+  -Pandroid.testInstrumentationRunnerArguments.class=app.bookstr.ui.TvControlsTest
+```
+
 Android CI runs as four jobs: JVM unit tests with JaCoCo and the shared coverage
 baseline, APK packaging, emulator UI tests, and signed release publishing.
 Pull requests and pushes to `main` that change Android code or bundled reader

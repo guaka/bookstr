@@ -80,6 +80,7 @@ import app.bookstr.nostr.AmberIntentSession
 import app.bookstr.ui.theme.BookstrThemeFromSettings
 import app.bookstr.ui.RightsMarker
 import app.bookstr.ui.ReaderBottomNavigation
+import app.bookstr.ui.tvReaderInset
 import app.bookstr.ui.ReaderHeaderText
 import app.bookstr.ui.NarrationIsland
 import kotlinx.coroutines.delay
@@ -559,6 +560,9 @@ class ReaderActivity : ComponentActivity() {
                     )
                     ReaderBottomNavigation(
                         onSelectTab = { tab -> openMainTab(tab) },
+                        onPrevious = { webView?.evaluateJavascript("prevPage();", null) },
+                        onNext = { webView?.evaluateJavascript("nextPage();", null) },
+                        onSpeech = { toggleTextToSpeech() },
                         modifier = Modifier.align(Alignment.BottomCenter).zIndex(3f),
                     )
                     if (showSections) {
@@ -1264,6 +1268,7 @@ private fun ReaderWebView(
     AndroidView(
         modifier = Modifier
             .fillMaxSize()
+            .tvReaderInset()
             .padding(top = 24.dp, bottom = 5.dp),
         factory = { ctx ->
             val epubFile = app.catalogRepository.epubFile(bookId)
@@ -1350,6 +1355,7 @@ private fun ReaderWebView(
                         view.evaluateJavascript(
                             "setReaderTheme($themeJs); " +
                                 "setReaderTypography($fontJs, $alignmentJs, 0); " +
+                                (if (isTelevision(ctx.resources.configuration.uiMode)) "adjustReaderFont(Math.max(0, 150 - window.readerFontPercent)); " else "") +
                                 "setKnownWords($knownWordsJs); " +
                                 "loadBookUrl($bookUrlJs, $cfiJs, $themeJs, $highlightCfiJs, $bookIdJs);",
                             null,

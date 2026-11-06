@@ -8,7 +8,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Density
-import app.bookstr.tabletFontMultiplier
+import app.bookstr.appFontMultiplier
 import app.bookstr.data.ReaderTheme
 
 private val WhiteColorScheme = lightColorScheme(
@@ -53,7 +53,8 @@ fun BookstrTheme(
     }
 
     val density = LocalDensity.current
-    val multiplier = tabletFontMultiplier(LocalConfiguration.current.smallestScreenWidthDp)
+    val configuration = LocalConfiguration.current
+    val multiplier = appFontMultiplier(configuration.uiMode, configuration.smallestScreenWidthDp)
     CompositionLocalProvider(LocalDensity provides Density(density.density, density.fontScale * multiplier)) {
         MaterialTheme(
             colorScheme = colorScheme,
