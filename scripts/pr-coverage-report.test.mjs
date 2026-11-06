@@ -53,6 +53,7 @@ test('parses required CLI options and writes the report file', async () => {
     input: 'in', output: 'out', workflow: 'CI',
   });
   assert.throws(() => parseArgs(['node', 'script', '--input']), /Usage/);
+  assert.throws(() => parseArgs(['node', 'script', '--input', '--output']), /Usage/);
   assert.throws(() => parseArgs(['node', 'script', '--bad', 'value']), /Usage/);
   assert.throws(() => parseArgs(['node', 'script', '--input', 'in']), /required/);
 
