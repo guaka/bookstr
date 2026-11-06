@@ -75,15 +75,15 @@ final class AppShellUITests: XCTestCase {
         let portuguese = pickerChoice("Portuguese")
         XCTAssertTrue(portuguese.waitForExistence(timeout: 5))
         portuguese.tap()
-        let voice = app.descendants(matching: .any)["speech-voice-pt"]
-        reveal(voice)
-        XCTAssertTrue(voice.waitForExistence(timeout: 5))
         let brazil = app.buttons["speech-model-kokoro_pt_br"]
         let portugal = app.buttons["speech-model-piper_pt_pt"]
         reveal(brazil)
         XCTAssertTrue(brazil.waitForExistence(timeout: 5))
         reveal(portugal)
         XCTAssertTrue(portugal.waitForExistence(timeout: 5))
+        let voice = app.descendants(matching: .any)["speech-voice-pt"]
+        reveal(voice)
+        XCTAssertTrue(voice.waitForExistence(timeout: 5))
     }
 
     func testDownloadedDutchVoiceIsAutomaticallySelected() throws {
