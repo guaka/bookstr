@@ -7,6 +7,7 @@ const { getPublicKey, verifyEvent } = require('nostr-tools/pure') as typeof impo
 
 import initSqlJs from '../../../web/vendor/sql-wasm.js';
 import type { PublicSpeechModel } from '../../src/speech-model-store';
+import { createNip46Fixture } from './nip46.fixture';
 
 type SignedEvent = Parameters<typeof verifyEvent>[0];
 declare global {
@@ -70,11 +71,17 @@ async function setReadableDownloadFixture(electronApp: ElectronApplication, down
 }
 
 test('libstr desktop app opens with preload bridge', async () => {
-  const electronApp = await electron.launch({
-    args: electronArgs(),
-  });
-
+  const fixture = await createNip46Fixture();
+  let electronApp: ElectronApplication | undefined;
   try {
+    electronApp = await electron.launch({
+      args: electronArgs(),
+      env: {
+        ...process.env,
+        NODE_ENV: 'test',
+        BOOKSTR_DESKTOP_TEST_NIP46_RELAY_URL: fixture.relayUrl,
+      },
+    });
     const firstWindow = await electronApp.firstWindow();
     await expect(firstWindow).toHaveTitle('libstr');
     const appVersion = await electronApp.evaluate(({ app }) => app.getVersion());
@@ -313,7 +320,13 @@ test('libstr desktop app opens with preload bridge', async () => {
 
     await firstWindow.getByRole('button', { name: 'Connect with QR code' }).click();
     await expect(firstWindow.getByAltText('NIP-46 connection QR code')).toHaveAttribute('src', /^data:image\/png;base64,/);
+    await firstWindow.getByRole('button', { name: 'Copy connection link' }).click();
+    const invitation = new URL(await firstWindow.evaluate(() => navigator.clipboard.readText()));
+    expect(invitation.searchParams.getAll('relay')).toEqual([fixture.relayUrl]);
     await firstWindow.getByRole('button', { name: 'Cancel' }).click();
+    await expect(firstWindow.getByAltText('NIP-46 connection QR code')).toBeHidden();
+    await expect(firstWindow.evaluate(() => window.bookstrDesktop!.signer.nip46QrStatus()))
+      .resolves.toMatchObject({ status: 'idle' });
 
     await firstWindow.getByText('Use a local nsec instead').click();
     await electronApp.evaluate(({ clipboard }) => clipboard.writeText('1'.repeat(64)));
@@ -343,7 +356,11 @@ test('libstr desktop app opens with preload bridge', async () => {
     expect(localSigner.signed.pubkey).toBe(expectedPubkey);
     expect(verifyEvent(localSigner.signed)).toBe(true);
   } finally {
-    await electronApp.close();
+    try {
+      await electronApp?.close();
+    } finally {
+      await fixture.close();
+    }
   }
 });
 

@@ -221,7 +221,7 @@ test('Android CI has four ordered jobs and the emulator consumes prebuilt APKs',
   assert.match(workflow, /testDebugUnitTest jacocoDebugUnitTestReport/);
   assert.match(workflow, /node --test --experimental-test-coverage --test-coverage-lines=100 --test-coverage-branches=100 --test-coverage-functions=100 android\/scripts\/instrumentation-results\.test\.mjs/);
   assert.match(workflow, /assembleDebug assembleDebugAndroidTest -Pbookstr.abis=x86_64 -Pbookstr.cxxCompilerLauncher=ccache -Pbookstr.nativeCoverage=true\n/);
-  assert.match(workflow, /needs: package-apks/);
+  assert.match(workflow, /needs: \[unit-tests, package-apks\]/);
   assert.match(workflow, /needs: \[unit-tests, package-apks, emulator-tests\]/);
   const emulatorJob = workflow.match(/^  emulator-tests:\n([\s\S]*?)(?=^  release:)/m)[1];
   assert.match(emulatorJob, /script: \|\n[\s\S]*\.\/android\/scripts\/run-connected-e2e\.sh --prebuilt android\/prebuilt-apks\/app-debug\.apk android\/prebuilt-apks\/app-debug-androidTest\.apk/);
@@ -524,6 +524,23 @@ test('Android jobs expose installed host Boost headers to NDK CMake builds', asy
     assert.match(source, /cp -R \/usr\/include\/boost "\$BOOST_ROOT\/include\/"/);
   }
   assert.match(cmake, /set\(Boost_INCLUDE_DIR "\$ENV\{BOOST_ROOT\}\/include" CACHE PATH "Boost headers"\)/);
+});
+
+test('Android emulator waits for every artifact producer before downloading coverage inputs', async () => {
+  const workflow = await readWorkflow('android.yml');
+  const jobs = [...workflow.matchAll(/^  ([a-z-]+):\n([\s\S]*?)(?=^  [a-z-]+:\n|$(?![\s\S]))/gm)];
+  const emulator = jobs.find(([, name]) => name === 'emulator-tests')[2];
+  const needs = emulator.match(/^    needs: (.+)$/m)[1];
+  const dependencies = needs.replace(/^\[|\]$/g, '').split(',').map(name => name.trim());
+  const downloads = [...emulator.matchAll(/uses: actions\/download-artifact@v4\n        with:\n          name: (.+)/g)];
+  assert.equal(downloads.length, 4);
+  for (const [, artifact] of downloads) {
+    const producers = jobs.filter(([, , source]) =>
+      [...source.matchAll(/uses: actions\/upload-artifact@v4\n        with:\n          name: (.+)/g)]
+        .some(([, name]) => name === artifact));
+    assert.equal(producers.length, 1, `Expected one producer for ${artifact}`);
+    assert.ok(dependencies.includes(producers[0][1]), `${artifact} must wait for ${producers[0][1]}`);
+  }
 });
 
 test('Android jobs combine JVM and emulator coverage from staged project classes', async () => {
