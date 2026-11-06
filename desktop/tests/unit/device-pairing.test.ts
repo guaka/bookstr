@@ -1,22 +1,29 @@
 'use strict';
 
-const assert = require('node:assert/strict');
-const test = require('node:test');
-const nostrTools = require('../../../web/vendor/nostr-tools.js');
-const { ElectronDevicePairing } = require('../../device-pairing');
+const assert: typeof import('node:assert/strict') = require('node:assert/strict');
+const test: typeof import('node:test') = require('node:test');
+interface NostrTools {
+  [key: string]: unknown;
+  generateSecretKey(): Uint8Array;
+  getPublicKey(secret: Uint8Array): string;
+  nip44: { v2: { decrypt(ciphertext: string, key: Uint8Array): Promise<string>; utils: { getConversationKey(secret: Uint8Array, peer: string): Uint8Array } } };
+}
+const nostrTools = require('../../../web/vendor/nostr-tools.js') as NostrTools;
+const { ElectronDevicePairing } = require('../../device-pairing') as typeof import('../../src/device-pairing');
 
-function fakeStorage(available) {
+interface TestState { [key: string]: unknown; devicePairing?: { secret?: string; pubkey?: string; device_id?: string; name?: string; registry?: object } }
+function fakeStorage(available: boolean) {
   return {
     isEncryptionAvailable: () => available,
-    encryptString: value => Buffer.from(`encrypted:${value}`),
-    decryptString: value => Buffer.from(value).toString().replace(/^encrypted:/, ''),
+    encryptString: (value: string) => Buffer.from(`encrypted:${value}`),
+    decryptString: (value: Buffer) => Buffer.from(value).toString().replace(/^encrypted:/, ''),
   };
 }
 
-function adapter(state, available) {
+function adapter(state: TestState, available: boolean) {
   return new ElectronDevicePairing({
     loadState: async () => state,
-    saveState: async next => Object.assign(state, next),
+    saveState: async next => { Object.assign(state, next); },
     safeStorage: fakeStorage(available),
     loadTools: async () => nostrTools,
     accountPublicKey: async () => 'a'.repeat(64),
@@ -26,18 +33,18 @@ function adapter(state, available) {
 }
 
 test('uses encrypted persistent device storage when Linux keyring is available', async () => {
-  const state = {};
+  const state: TestState = {};
   const first = adapter(state, true);
   const firstStatus = await first.status();
   assert.equal(firstStatus.persistent, true);
-  assert.match(state.devicePairing.secret, /^[A-Za-z0-9+/]+=*$/);
-  assert.equal(state.devicePairing.pubkey, firstStatus.devicePubkey);
+  assert.match(state.devicePairing!.secret!, /^[A-Za-z0-9+/]+=*$/);
+  assert.equal(state.devicePairing!.pubkey, firstStatus.devicePubkey);
   const secondStatus = await adapter(state, true).status();
   assert.equal(secondStatus.devicePubkey, firstStatus.devicePubkey);
 });
 
 test('falls back to session-only device identity without plaintext persistence', async () => {
-  const state = {};
+  const state: TestState = {};
   const pairing = adapter(state, false);
   const status = await pairing.status();
   assert.equal(status.persistent, false);
@@ -54,8 +61,8 @@ test('builds an encrypted device announce envelope without exposing the device s
     device_id: 'ignored-by-envelope',
     expires_at: Math.floor(Date.now() / 1000) + 120,
   });
-  assert.equal(wrapped.kind, 1059);
-  assert.equal(Object.hasOwn(wrapped, 'deviceSecret'), false);
+  assert.equal((wrapped as { kind: number }).kind, 1059);
+  assert.equal(Object.hasOwn(wrapped as object, 'deviceSecret'), false);
 });
 
 test('opens envelopes against the main-process registry and clock', async () => {
@@ -91,7 +98,7 @@ test('opens envelopes against the main-process registry and clock', async () => 
     clock: () => 100,
   });
   const senderStatus = await sender.status();
-  const recipientPubkey = await recipient.accountPublicKey();
+  const recipientPubkey = nostrTools.getPublicKey(recipientAccount);
   const wrapped = await sender.createEnvelope(recipientPubkey, {
     type: 'bookstr.library.manifest.request',
     request_id: 'trusted-registry',
@@ -101,16 +108,16 @@ test('opens envelopes against the main-process registry and clock', async () => 
     // These renderer-controlled values are intentionally ignored.
     registry: { devices: [{ device_id: 'attacker', pubkey: 'b'.repeat(64), platform: 'web' }] },
     now: 9999999999,
-  });
-  assert.equal(opened?.request_id, 'trusted-registry');
+  } as { senderPubkey?: string });
+  assert.equal((opened as { request_id?: string } | null)?.request_id, 'trusted-registry');
 });
 
 test('guards construction and remains usable without an account signer', async () => {
   assert.throws(() => new ElectronDevicePairing(), /loadState/);
-  assert.throws(() => new ElectronDevicePairing({ loadState: async () => {}, saveState: async () => {} }), /safeStorage/);
+  assert.throws(() => new ElectronDevicePairing({ loadState: async () => ({}), saveState: async () => {} } as never), /safeStorage/);
   const pairing = new ElectronDevicePairing({
     loadState: async () => ({}), saveState: async () => {}, safeStorage: fakeStorage(false), loadTools: async () => nostrTools,
-    accountPublicKey: async () => { throw new Error('not connected'); }, decryptForAccount: async () => {},
+    accountPublicKey: async () => { throw new Error('not connected'); }, decryptForAccount: async () => '',
   });
   assert.equal((await pairing.status()).accountPubkey, '');
 });
@@ -133,7 +140,7 @@ test('uses valid stored device details and safely falls back when persistence fa
 
   const fallback = new ElectronDevicePairing({
     loadState: async () => ({}), saveState: async () => { throw new Error('disk full'); }, safeStorage: fakeStorage(true),
-    loadTools: async () => nostrTools, accountPublicKey: async () => 'b'.repeat(64), decryptForAccount: async () => {},
+    loadTools: async () => nostrTools, accountPublicKey: async () => 'b'.repeat(64), decryptForAccount: async () => '',
   });
   assert.equal((await fallback.status()).persistent, false);
 });

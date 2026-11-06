@@ -1,6 +1,44 @@
-const fs = require('node:fs');
-const path = require('node:path');
-const { _electron: electron, test, expect } = require('@playwright/test');
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+import { _electron as electron, test, expect } from '@playwright/test';
+
+type SearchBook = Record<string, unknown>;
+type QueueRequest = { kind: string; record: { md5: string; title?: string; [key: string]: unknown } };
+type DownloadFixture = { bookId: string; md5: string; title: string; status: string; [key: string]: unknown };
+type Nip7Signer = {
+  signEvent(event: Record<string, unknown>): Promise<Record<string, unknown>>;
+  nip44: { encrypt(...args: unknown[]): Promise<string> };
+  getPublicKey(): Promise<string>;
+};
+
+declare global {
+  var nip17FetchModule: Promise<{ searchLibcat(query: string): Promise<{ books: SearchBook[] }> }>;
+  var queuedBooks: QueueRequest[];
+  var progressDownload: DownloadFixture;
+  var downloadRows: DownloadFixture[];
+  var libraryDownloadsFixture: DownloadFixture[];
+  var kindleTransferCalls: number;
+  var singleKindleTransfer: { deviceId: string; bookId: string } | null;
+  var state: {
+    favorites: SearchBook[];
+    reading: SearchBook[];
+    settings: { useNip7: boolean };
+    nip7: { pubkey: string };
+  };
+  var nostrSigner: Nip7Signer;
+    var READING_KEY: string;
+  function renderHome(): void;
+  var pullNostrFavorites: () => Promise<SearchBook[]>;
+  var pullNostrReading: () => Promise<SearchBook[]>;
+  var pullNostrWords: () => Promise<SearchBook[]>;
+  function syncNostrLibraryFromNip7(options: { useCache: boolean }): Promise<void>;
+  function refreshDesktopDownloadStates(): Promise<void>;
+  var queryInput: HTMLInputElement;
+  function normalizeSearchBooks(input: unknown, source?: string): SearchBook[];
+  function renderResults(books: SearchBook[]): void;
+  function activateTab(tab: string): void;
+  interface Window { favoriteSigningCalls: number }
+}
 
 function electronArgs() {
   const output = path.join(__dirname, '../../test-results');
@@ -158,7 +196,9 @@ test('Libcat search plus opens Downloads while the heart stays a separate action
     expect(favoritePulls).toBe(0);
     const requests = await app.evaluate(() => globalThis.queuedBooks);
     expect(requests).toHaveLength(1);
-    expect(requests[0].kind).toBe('libgen');
+    const [request] = requests;
+    if (!request) throw new Error('Expected one queued request');
+    expect(request.kind).toBe('libgen');
     await page.evaluate(() => localStorage.setItem(READING_KEY, JSON.stringify([{
       md5: 'b'.repeat(32), title: 'Reading only', authors: 'Fixture Author', updatedAt: Date.now(),
     }])));
@@ -185,7 +225,7 @@ test('download progress appears in Downloads without adding a book to Library', 
       ipcMain.removeHandler('bookstr-desktop-library-downloads');
       ipcMain.handle('bookstr-desktop-library-downloads', () => [globalThis.progressDownload]);
     });
-    await page.evaluate(id => {
+    await page.evaluate(_id => {
       state.reading = [];
       state.favorites = Array.from({ length: 80 }, (_, index) => ({
         md5: index.toString(16).padStart(32, '0'),
@@ -200,6 +240,7 @@ test('download progress appears in Downloads without adding a book to Library', 
     await app.evaluate(({ BrowserWindow }) => {
       globalThis.progressDownload.bytes = 100 * 1024;
       const window = BrowserWindow.getAllWindows().find(item => !item.isDestroyed());
+      if (!window) throw new Error('Expected an open Electron window');
       for (let index = 0; index < 100; index += 1) {
         window.webContents.send('bookstr-desktop-acquisition-progress', {
           bookId: 'd'.repeat(32), bytes: index * 1024, totalBytes: 102400,
@@ -237,6 +278,7 @@ test('a download completed while Downloads is open is visible until the next ent
         queuedFromSearch: true, readable: true, completedAt: 123,
       }];
       const window = BrowserWindow.getAllWindows().find(item => !item.isDestroyed());
+      if (!window) throw new Error('Expected an open Electron window');
       window.webContents.send('bookstr-desktop-downloads-changed');
     });
     await expect(page.locator('#desktop-downloads-list')).toContainText('Finishing download');

@@ -1,18 +1,32 @@
-const fs = require('node:fs');
-const path = require('node:path');
-const { _electron: electron, test, expect } = require('@playwright/test');
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+import type { Page } from '@playwright/test';
+import { _electron as electron, test, expect } from '@playwright/test';
 
-const JSZip = require('../../../web/jszip.min.js');
-const { LibraryStore } = require('../../library-store');
+type FixtureBook = { md5: string; title: string; authors: string | string[]; extension?: string; body?: string; sha256?: string; [key: string]: unknown };
+type FixtureDownload = { bookId?: string; id?: string; status: string; [key: string]: unknown };
+type Zip = { file(path: string, data: string | Buffer, options?: { compression?: string }): void; generateAsync(options: { type: 'nodebuffer'; mimeType?: string }): Promise<Buffer> };
+type Store = {
+  upsertBook(book: Record<string, unknown>): void;
+  registerLibraryFile(file: { bookId: string; relativePath: string; sizeBytes: number }): void;
+  setDownload(download: Record<string, unknown>): void;
+  close(): void;
+};
+const JSZip = require('../../../web/jszip.min.js') as new () => Zip;
+const { LibraryStore } = require('../../library-store') as { LibraryStore: new(options: { dbPath: string; libraryRoot: string }) => Store };
 
-function electronArgs(label) {
+declare global {
+  function bookFormatForBlob(blob: Blob): Promise<string> | string;
+}
+
+function electronArgs(label: string): { args: string[]; userData: string } {
   const output = path.join(__dirname, '../../test-results');
   fs.mkdirSync(output, { recursive: true });
   const userData = fs.mkdtempSync(path.join(output, `${label}-`));
   return { args: [path.join(__dirname, '../..'), `--user-data-dir=${userData}`], userData };
 }
 
-async function localFormatBytes(book) {
+async function localFormatBytes(book: FixtureBook): Promise<Buffer> {
   const extension = String(book.extension || 'epub').toLowerCase();
   if (extension === 'epub') return minimalEpub(book.title || 'Local fixture', book.body || book.title || 'Local fixture');
   if (extension === 'fb2') return minimalFB2(book.title || 'Local fixture');
@@ -22,13 +36,13 @@ async function localFormatBytes(book) {
   return Buffer.from(String(book.title || 'Local fixture'));
 }
 
-async function seedDesktopStore(userData, books, downloads = []) {
+async function seedDesktopStore(userData: string, books: FixtureBook[], downloads: FixtureDownload[] = []): Promise<void> {
   const libraryRoot = path.join(userData, 'library');
   const store = new LibraryStore({ dbPath: path.join(libraryRoot, 'library.sqlite'), libraryRoot });
   try {
     for (const book of books) store.upsertBook({ id: book.md5, ...book });
     for (const download of downloads) {
-      const bookId = download.bookId || download.id;
+      const bookId = download.bookId ?? download.id ?? '';
       const book = books.find(item => item.md5 === bookId || item.sha256 === bookId);
       if (book && ['ready', 'seeding'].includes(download.status)) {
         const extension = String(book.extension || 'epub').toLowerCase();
@@ -50,7 +64,7 @@ async function seedDesktopStore(userData, books, downloads = []) {
 
 const COVER_PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=', 'base64');
 
-async function minimalEpub(title, body = title, { cover = false, inlineImage = false } = {}) {
+async function minimalEpub(title: string, body = title, { cover = false, inlineImage = false }: { cover?: boolean; inlineImage?: boolean } = {}): Promise<Buffer> {
   const zip = new JSZip();
   zip.file('mimetype', 'application/epub+zip', { compression: 'STORE' });
   zip.file('META-INF/container.xml', `<?xml version="1.0"?>
@@ -69,18 +83,18 @@ async function minimalEpub(title, body = title, { cover = false, inlineImage = f
   return zip.generateAsync({ type: 'nodebuffer', mimeType: 'application/epub+zip' });
 }
 
-function minimalFB2(title) {
+function minimalFB2(title: string): Buffer {
   return Buffer.from(`<?xml version="1.0" encoding="utf-8"?>
     <FictionBook xmlns="http://www.gribuser.ru/xml/fictionbook/2.0"><description><title-info><book-title>${title}</book-title><author><first-name>Test</first-name><last-name>Author</last-name></author></title-info></description><body><section><title><p>${title}</p></title><p>Distinct FB2 contents.</p></section></body></FictionBook>`);
 }
 
-async function minimalCBZ() {
+async function minimalCBZ(): Promise<Buffer> {
   const zip = new JSZip();
   zip.file('001.png', Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=', 'base64'));
   return zip.generateAsync({ type: 'nodebuffer' });
 }
 
-async function seedLibrary(page, books) {
+async function seedLibrary(page: Page, books: FixtureBook[]): Promise<void> {
   await page.evaluate(items => {
     localStorage.setItem('bookstr_reader_settings_v1', JSON.stringify({
       autoReading: false,
@@ -92,20 +106,20 @@ async function seedLibrary(page, books) {
   }, books);
 }
 
-function libraryRow(page, title) {
+function libraryRow(page: Page, title: string) {
   return page.locator('.book-table-row').filter({ has: page.getByRole('link', { name: title, exact: true }) });
 }
 
 test('Library reports useful local torrent states', async () => {
   const launch = electronArgs('availability-user-data');
-  const books = [
+  const books: FixtureBook[] = ([
     ['a'.repeat(32), 'Metadata-only Book'],
     ['b'.repeat(32), 'Finding Book'],
     ['c'.repeat(32), 'Downloading Book'],
     ['d'.repeat(32), 'Ready Book'],
     ['e'.repeat(32), 'Unavailable Book'],
-  ].map(([md5, title]) => ({ md5, title, authors: 'Fixture Author', extension: 'epub' }));
-  books[3].authors = Array.from({ length: 80 }, (_, index) => `Fixture Author ${index + 1}`).join(', ');
+  ] as const).map(([md5, title]) => ({ md5, title, authors: 'Fixture Author', extension: 'epub' }));
+  books[3]!.authors = Array.from({ length: 80 }, (_, index) => `Fixture Author ${index + 1}`).join(', ');
   books.push({
     md5: 'f'.repeat(32),
     libgenId: 1234,
@@ -118,11 +132,11 @@ test('Library reports useful local torrent states', async () => {
   // Seed before Electron opens its long-lived SQLite connection. This also
   // catches startup hydration, which is the path used by a real library.
   await seedDesktopStore(launch.userData, books, [
-    { bookId: books[1].md5, status: 'finding-peers', source: 'torrent' },
-    { bookId: books[2].md5, status: 'downloading', bytes: -84, totalBytes: 100, source: 'torrent' },
-    { bookId: books[3].md5, status: 'ready', bytes: 100, totalBytes: 100, source: 'torrent' },
-    { bookId: books[4].md5, status: 'failed', source: 'torrent', error: 'fixture unavailable' },
-    { bookId: books[6].md5, status: 'seeding', bytes: 100, totalBytes: 100, source: 'torrent' },
+    { bookId: books[1]!.md5, status: 'finding-peers', source: 'torrent' },
+    { bookId: books[2]!.md5, status: 'downloading', bytes: -84, totalBytes: 100, source: 'torrent' },
+    { bookId: books[3]!.md5, status: 'ready', bytes: 100, totalBytes: 100, source: 'torrent' },
+    { bookId: books[4]!.md5, status: 'failed', source: 'torrent', error: 'fixture unavailable' },
+    { bookId: books[6]!.md5, status: 'seeding', bytes: 100, totalBytes: 100, source: 'torrent' },
   ]);
   const app = await electron.launch({ args: launch.args });
   try {
@@ -131,26 +145,26 @@ test('Library reports useful local torrent states', async () => {
     await page.reload();
 
     await expect(page.locator('.library-book-count')).toHaveText('2 books');
-    await expect(libraryRow(page, books[0].title)).toHaveCount(0);
-    await expect(libraryRow(page, books[4].title)).toHaveCount(0);
-    await expect(libraryRow(page, books[5].title)).toHaveCount(0);
-    const compactAuthors = libraryRow(page, books[3].title).locator('.result-author');
-    await expect(compactAuthors).toHaveAttribute('title', books[3].authors);
-    await expect(compactAuthors).toHaveAttribute('aria-label', books[3].authors);
+    await expect(libraryRow(page, books[0]!.title)).toHaveCount(0);
+    await expect(libraryRow(page, books[4]!.title)).toHaveCount(0);
+    await expect(libraryRow(page, books[5]!.title)).toHaveCount(0);
+    const compactAuthors = libraryRow(page, books[3]!.title).locator('.result-author');
+    await expect(compactAuthors).toHaveAttribute('title', books[3]!.authors);
+    await expect(compactAuthors).toHaveAttribute('aria-label', books[3]!.authors);
     await expect.poll(() => compactAuthors.evaluate(element => ({
       clipped: element.scrollWidth > element.clientWidth,
       whiteSpace: getComputedStyle(element).whiteSpace,
     }))).toEqual({ clipped: true, whiteSpace: 'nowrap' });
-    await expect.poll(() => libraryRow(page, books[3].title).evaluate(element => element.getBoundingClientRect().height)).toBeLessThan(70);
-    await expect(libraryRow(page, books[3].title).locator('.result-availability')).toHaveText('Available');
-    await expect(libraryRow(page, books[3].title).locator('.availability-primary')).toHaveClass(/status-dot-success/);
-    await expect(libraryRow(page, books[6].title).locator('.result-availability')).toHaveText('Available');
-    await expect(libraryRow(page, books[3].title).locator('.result-cover-slot')).not.toHaveClass(/has-real-cover/);
+    await expect.poll(() => libraryRow(page, books[3]!.title).evaluate(element => element.getBoundingClientRect().height)).toBeLessThan(70);
+    await expect(libraryRow(page, books[3]!.title).locator('.result-availability')).toHaveText('Available');
+    await expect(libraryRow(page, books[3]!.title).locator('.availability-primary')).toHaveClass(/status-dot-success/);
+    await expect(libraryRow(page, books[6]!.title).locator('.result-availability')).toHaveText('Available');
+    await expect(libraryRow(page, books[3]!.title).locator('.result-cover-slot')).not.toHaveClass(/has-real-cover/);
     await page.getByRole('button', { name: 'Downloads' }).click();
     const downloads = page.locator('#desktop-downloads-list');
-    await expect(downloads.locator(`[data-download-id="${books[1].md5}"]`)).toContainText('Finding peers');
-    await expect(downloads.locator(`[data-download-id="${books[2].md5}"]`)).toContainText('0 B of 100 B');
-    await expect(downloads.locator(`[data-download-id="${books[4].md5}"]`)).toContainText('fixture unavailable');
+    await expect(downloads.locator(`[data-download-id="${books[1]!.md5}"]`)).toContainText('Finding peers');
+    await expect(downloads.locator(`[data-download-id="${books[2]!.md5}"]`)).toContainText('0 B of 100 B');
+    await expect(downloads.locator(`[data-download-id="${books[4]!.md5}"]`)).toContainText('fixture unavailable');
   } finally {
     await app.close();
   }
@@ -240,13 +254,13 @@ test('Electron drops IndexedDB book files while a registered EPUB remains in Lib
     const page = await app.firstWindow();
     await seedLibrary(page, [book]);
     await page.evaluate(async item => {
-      const database = await new Promise((resolve, reject) => {
+      const database = await new Promise<IDBDatabase>((resolve, reject) => {
         const request = indexedDB.open('bookstr_epub_cache_v1', 1);
         request.onupgradeneeded = () => request.result.createObjectStore('books', { keyPath: 'key' });
         request.onsuccess = () => resolve(request.result);
         request.onerror = () => reject(request.error);
       });
-      await new Promise((resolve, reject) => {
+      await new Promise<IDBValidKey>((resolve, reject) => {
         const request = database.transaction('books', 'readwrite').objectStore('books').put({
           key: item.md5,
           md5: item.md5,
@@ -255,7 +269,7 @@ test('Electron drops IndexedDB book files while a registered EPUB remains in Lib
           blob: new Blob(['legacy cached bytes'], { type: 'application/epub+zip' }),
           size: 19,
         });
-        request.onsuccess = resolve;
+        request.onsuccess = () => resolve(request.result);
         request.onerror = () => reject(request.error);
       });
       database.close();
@@ -265,13 +279,13 @@ test('Electron drops IndexedDB book files while a registered EPUB remains in Lib
     await expect(libraryRow(page, book.title)).toBeVisible();
     await expect(libraryRow(page, book.title).locator('.result-availability')).toHaveText('Available');
     await expect.poll(() => page.evaluate(async () => {
-      const database = await new Promise((resolve, reject) => {
+      const database = await new Promise<IDBDatabase>((resolve, reject) => {
         const request = indexedDB.open('bookstr_epub_cache_v1', 1);
         request.onupgradeneeded = () => request.result.createObjectStore('books', { keyPath: 'key' });
         request.onsuccess = () => resolve(request.result);
         request.onerror = () => reject(request.error);
       });
-      const count = await new Promise((resolve, reject) => {
+      const count = await new Promise<number>((resolve, reject) => {
         const request = database.transaction('books').objectStore('books').count();
         request.onsuccess = () => resolve(request.result);
         request.onerror = () => reject(request.error);
@@ -289,8 +303,8 @@ test('metadata-only Open Library records resolve subtitle and contributor varian
   const app = await electron.launch({ args: launch.args });
   try {
     const page = await app.firstWindow();
-    await page.waitForFunction(() => Boolean(globalThis.BookMetadata?.matchingTorrentCatalogRecord));
-    const selected = await page.evaluate(() => window.BookMetadata.matchingTorrentCatalogRecord({
+    await page.waitForFunction(() => Boolean((globalThis.BookMetadata as typeof globalThis.BookMetadata & { matchingTorrentCatalogRecord?: unknown } | undefined)?.matchingTorrentCatalogRecord));
+    const selected = await page.evaluate(() => (window as unknown as Window & { BookMetadata: { matchingTorrentCatalogRecord(book: Record<string, unknown>, books: Record<string, unknown>[]): unknown } }).BookMetadata.matchingTorrentCatalogRecord({
       md5: 'openlibrary:116726829',
       title: 'Antifragile',
       authors: 'Nassim Nicholas Taleb Genís Sánchez Barberán Albino Santos Mosquera',
@@ -480,11 +494,11 @@ test('Library extracts and displays a downloaded EPUB cover inside Electron', as
     await expect(cover).toHaveClass(/is-loaded/);
     await expect(cover).toHaveClass(/is-real-cover/);
     await expect(row.locator('.result-cover-slot')).toHaveClass(/has-real-cover/);
-    await expect.poll(() => cover.evaluate(image => image.naturalWidth > 0)).toBe(true);
+    await expect.poll(() => cover.evaluate(image => (image as HTMLImageElement).naturalWidth > 0)).toBe(true);
     await expect(row.locator('.result-cell').nth(6)).toHaveText('EN');
     await expect.poll(() => page.evaluate(async bookId => {
-      const reader = await window.bookstrDesktop.library.openReader(bookId);
-      const response = await fetch(`app://bookstr/api/library-file/${reader.token}`);
+      const reader = await window.bookstrDesktop!.library.openReader(bookId);
+      const response = await fetch(`app://bookstr/api/library-file/${(reader as { token: string }).token}`);
       return bookFormatForBlob(await response.blob());
     }, md5)).toBe('epub');
   } finally {
@@ -685,7 +699,7 @@ test('EPUB reader resolves and displays images embedded in the archive', async (
   const app = await electron.launch({ args: launch.args });
   try {
     const page = await app.firstWindow();
-    await page.evaluate(payload => { void window.bookstrDesktop.openReader(payload); }, {
+    await page.evaluate(payload => { void window.bookstrDesktop!.openReader(payload); }, {
       kind: 'epub',
       base64: bytes.toString('base64'),
       book: { md5, title, extension: 'epub' },
@@ -695,9 +709,9 @@ test('EPUB reader resolves and displays images embedded in the archive', async (
     const image = page.frameLocator('#viewer iframe').locator('#embedded-illustration');
     await expect(image).toBeVisible();
     await expect.poll(() => image.evaluate(node => ({
-      complete: node.complete,
-      width: node.naturalWidth,
-      height: node.naturalHeight,
+      complete: (node as HTMLImageElement).complete,
+      width: (node as HTMLImageElement).naturalWidth,
+      height: (node as HTMLImageElement).naturalHeight,
     }))).toEqual({ complete: true, width: 1, height: 1 });
   } finally {
     await app.close();

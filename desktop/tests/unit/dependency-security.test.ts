@@ -1,9 +1,25 @@
-const test = require('node:test');
-const assert = require('node:assert/strict');
-const fs = require('node:fs');
-const path = require('node:path');
-const os = require('node:os');
-const { pathToFileURL } = require('node:url');
+const test: typeof import('node:test') = require('node:test');
+const assert: typeof import('node:assert/strict') = require('node:assert/strict');
+const fs: typeof import('node:fs') = require('node:fs');
+const path: typeof import('node:path') = require('node:path');
+const os: typeof import('node:os') = require('node:os');
+const { pathToFileURL } = require('node:url') as typeof import('node:url');
+
+interface GlobOptions {cwd:string;noprocess?:boolean}
+interface GlobFixture {
+ minimatch:{negate:boolean;set:unknown[]};matches:Array<Record<string,boolean>>;
+ _process(pattern:unknown,index:number,inGlobStar:boolean,callback?:(error?:Error|null)=>void):void;
+}
+interface GlobApi {
+ (pattern:string,options:GlobOptions,callback:(error:Error|null,matches:string[])=>void):void;
+ sync(pattern:string,options:GlobOptions):string[];
+ GlobSync:new(pattern:string,options:GlobOptions)=>GlobFixture;
+ Glob:new(pattern:string,options:GlobOptions)=>GlobFixture;
+}
+const glob = require('glob') as GlobApi;
+const {FileList} = require('filelist') as {FileList:new(pattern:string)=>{toArray():string[];exclude(pattern:RegExp):void}};
+const dirCompare = require('dir-compare') as {compareSync(left:string,right:string,options:{includeFilter:string}):{equalFiles:number}};
+const asar = require('@electron/asar') as typeof import('@electron/asar', {with:{'resolution-mode':'import'}});
 
 test('locked dependency graph contains only patched minimatch and no ip package', () => {
   const lock = fs.readFileSync(path.resolve(__dirname, '../../pnpm-lock.yaml'), 'utf8');
@@ -15,7 +31,7 @@ test('locked dependency graph contains only patched minimatch and no ip package'
 
 test('UDP tracker decodes explicit IPv4 bytes and defaults to the sender address', async () => {
   const root = path.resolve(__dirname, '../../node_modules/bittorrent-tracker');
-  const { default: parse } = await import(pathToFileURL(path.join(root, 'lib/server/parse-udp.js')));
+  const { default: parse } = await import(pathToFileURL(path.join(root, 'lib/server/parse-udp.js')).href) as {default(packet:Buffer,sender:{address:string;port:number}):{ip:string;port:number}};
   const packet = Buffer.alloc(98);
   Buffer.from('0000041727101980', 'hex').copy(packet);
   packet.writeUInt32BE(1, 8);
@@ -35,31 +51,29 @@ test('legacy glob, filelist, directory filters and asar unpacking use modern min
   fs.mkdirSync(path.join(source, 'native'), { recursive: true });
   fs.writeFileSync(path.join(source, 'native', 'binding.node'), 'fixture');
   fs.writeFileSync(path.join(source, '.hidden'), 'hidden');
-  assert.equal(require('glob').sync('**/*.node', { cwd: source }).length, 1);
-  assert.deepEqual(await new Promise((resolve, reject) => require('glob')('**/*.node', { cwd: source },
+  assert.equal(glob.sync('**/*.node', { cwd: source }).length, 1);
+  assert.deepEqual(await new Promise<string[]>((resolve, reject) => glob('**/*.node', { cwd: source },
     (error, matches) => error ? reject(error) : resolve(matches))), ['native/binding.node']);
   // glob disables negation by default; exercise its retained negated matcher path too.
-  const syncGlob = new (require('glob').GlobSync)('*.node', { cwd: source, noprocess: true });
+  const syncGlob = new glob.GlobSync('*.node', { cwd: source, noprocess: true });
   syncGlob.minimatch.negate = true;
   syncGlob.matches = [];
   syncGlob._process(syncGlob.minimatch.set[0], 0, false);
-  assert.deepEqual(Object.keys(syncGlob.matches[0]), ['native']);
-  const asyncGlob = new (require('glob').Glob)('*.node', { cwd: source, noprocess: true });
+  assert.deepEqual(Object.keys(syncGlob.matches[0]!), ['native']);
+  const asyncGlob = new glob.Glob('*.node', { cwd: source, noprocess: true });
   asyncGlob.minimatch.negate = true;
   asyncGlob.matches = [];
-  await new Promise((resolve, reject) => asyncGlob._process(asyncGlob.minimatch.set[0], 0, false,
+  await new Promise<void>((resolve, reject) => asyncGlob._process(asyncGlob.minimatch.set[0], 0, false,
     error => error ? reject(error) : resolve()));
-  assert.deepEqual(Object.keys(asyncGlob.matches[0]), ['native']);
-  const { FileList } = require('filelist');
+  assert.deepEqual(Object.keys(asyncGlob.matches[0]!), ['native']);
   const files = new FileList(path.join(source, '**/*'));
   assert.ok(files.toArray().some(file => file.endsWith('.node')));
   files.exclude(/\.node$/);
   assert.ok(!files.toArray().some(file => file.endsWith('.node')));
-  const comparison = require('dir-compare').compareSync(source, source, { includeFilter: '*.node' });
+  const comparison = dirCompare.compareSync(source, source, { includeFilter: '*.node' });
   assert.equal(comparison.equalFiles, 1);
-  const asar = require('@electron/asar');
   const archive = path.join(root, 'fixture.asar');
   await asar.createPackageWithOptions(source, archive, { unpack: '*.node', unpackDir: '**/native' });
-  assert.equal(asar.statFile(archive, 'native/binding.node').unpacked, true);
+  assert.equal((asar.statFile(archive, 'native/binding.node') as {unpacked?:boolean}).unpacked, true);
   assert.equal(asar.extractFile(archive, '.hidden').toString(), 'hidden');
 });

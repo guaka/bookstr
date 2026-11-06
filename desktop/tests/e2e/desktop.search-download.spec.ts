@@ -1,6 +1,18 @@
-const fs = require('node:fs');
-const path = require('node:path');
-const { _electron: electron, test, expect } = require('@playwright/test');
+import type LibraryStoreType = require('../../src/library-store');
+declare global {
+ var searchDownloadStore: InstanceType<typeof LibraryStoreType.LibraryStore>;
+ var searchDownloadStarts: unknown[];
+ var releaseSearchDownloads: Array<()=>void>;
+ var delayNextDownloads: boolean;
+ var releaseOlderSnapshot: ()=>void;
+ var catalogResolveAttempts: number;
+ var resolvePrivateTorrentBook: (...args: unknown[])=>Promise<never>;
+ function renderDesktopDownloads(): Promise<void>;
+ interface Window { pendingDownloadsRender: Promise<void> }
+}
+const fs: typeof import('node:fs') = require('node:fs');
+const path: typeof import('node:path') = require('node:path');
+const { _electron: electron, test, expect } = require('@playwright/test') as typeof import('@playwright/test');
 
 for (const action of ['title', 'plus']) {
   test(`search ${action} click shows a download, including a previously hidden completed book`, async () => {
@@ -14,8 +26,8 @@ for (const action of ['title', 'plus']) {
       await page.waitForFunction(() => typeof renderResults === 'function');
       await app.evaluate(({ app, ipcMain }) => {
         const requireRuntime = process.getBuiltinModule('node:module').createRequire(`${app.getAppPath()}/main.js`);
-        const { AcquisitionManager } = requireRuntime('./acquisition-manager');
-        const { LibraryStore } = requireRuntime('./library-store');
+        const { AcquisitionManager } = requireRuntime('./acquisition-manager') as typeof import('../../src/acquisition-manager');
+        const { LibraryStore } = requireRuntime('./library-store') as typeof import('../../src/library-store');
         const root = `${app.getPath('userData')}/library`;
         const store = new LibraryStore({ dbPath: `${root}/library.sqlite`, libraryRoot: root });
         globalThis.searchDownloadStore = store;
@@ -36,8 +48,8 @@ for (const action of ['title', 'plus']) {
         globalThis.releaseSearchDownloads = [];
         AcquisitionManager.prototype.acquireLibgen = function(record) {
           globalThis.searchDownloadStarts.push(record.md5);
-          this.store.setDownload({ bookId: record.md5, status: 'downloading', totalBytes: 100 });
-          return new Promise(resolve => globalThis.releaseSearchDownloads.push(resolve));
+          (this as unknown as {store: InstanceType<typeof LibraryStore>}).store.setDownload({ bookId: record.md5, status: 'downloading', totalBytes: 100 });
+          return new Promise<Awaited<ReturnType<typeof AcquisitionManager.prototype.acquireLibgen>>>(resolve => globalThis.releaseSearchDownloads.push(() => resolve(undefined as never)));
         };
       });
       const renderSearch = () => page.evaluate(() => {
@@ -48,7 +60,7 @@ for (const action of ['title', 'plus']) {
           { md5: 'b'.repeat(32), libgen_id: 12346, title: 'Existing fixture', extension: 'pdf', collection: 'nonfiction' },
         ] }, 'libvault'));
       });
-      const clickBook = title => action === 'title'
+      const clickBook = (title: string) => action === 'title'
         ? page.locator('#results [data-action="open"]').filter({ hasText: title }).click()
         : page.getByRole('button', { name: `Add ${title} to downloads`, exact: true }).click();
       await renderSearch();
@@ -104,7 +116,7 @@ test('a real-shaped Libcat record without a torrent edition remains in Downloads
     await row.getByRole('button', { name: 'Retry Jujutsu Kaisen vol. 12', exact: true }).click();
     await expect.poll(() => page.evaluate(() => globalThis.catalogResolveAttempts)).toBe(2);
     await expect(row).toContainText('No downloadable edition matched this book.');
-    expect(await page.evaluate(async () => (await bookstrDesktop.library.downloads()).find(row => row.bookId === 'e14c173dc198a3524d3fe65e92572ac9').status)).toBe('failed');
+    expect(await page.evaluate(async () => (await window.bookstrDesktop!.library.downloads() as Array<{bookId:string;status:string}>).find(row => row.bookId === 'e14c173dc198a3524d3fe65e92572ac9')!.status)).toBe('failed');
     await row.getByRole('button', { name: 'Delete Jujutsu Kaisen vol. 12 from Downloads', exact: true }).click();
     await expect(row).toHaveCount(0);
   } finally { await app.close(); }

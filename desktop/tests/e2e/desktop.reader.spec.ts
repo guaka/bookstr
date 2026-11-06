@@ -1,11 +1,24 @@
-const path = require('node:path');
-const { _electron: electron } = require('@playwright/test');
-const { test, expect } = require('@playwright/test');
+import * as path from 'node:path';
+import type { Page } from '@playwright/test';
+import { _electron as electron, expect, test } from '@playwright/test';
 
-const JSZip = require('../../../web/jszip.min.js');
+type SpeechUtterance = { text: string; lang?: string; rate?: number; voice?: { voiceURI: string }; onend: (() => void) | null; onerror: (() => void) | null };
+type SpeechHarnessState = { calls: number; latestUtterance: SpeechUtterance | null; utterances: SpeechUtterance[]; canceled: number; paused: boolean };
+type Zip = { file(path: string, data: string | Buffer, options?: { compression?: string }): void; generateAsync(options: { type: 'nodebuffer'; mimeType?: string }): Promise<Buffer> };
+const JSZip = require('../../../web/jszip.min.js') as new () => Zip;
+
+declare global {
+  interface Window {
+    __bookstrSpeechTestState: SpeechHarnessState;
+    BookstrSpeech: unknown;
+    SpeechSynthesisUtterance: typeof SpeechSynthesisUtterance;
+  }
+  function hasSpeechSupport(): boolean;
+  var readerSpeechPlayer: unknown;
+}
 
 function installReaderSpeechHarness() {
-  const state = {
+  const state: SpeechHarnessState = {
     calls: 0,
     latestUtterance: null,
     utterances: [],
@@ -14,7 +27,13 @@ function installReaderSpeechHarness() {
   };
 
   class MockSpeechSynthesisUtterance {
-    constructor(text) {
+    text: string;
+    onend: (() => void) | null;
+    onerror: (() => void) | null;
+    lang?: string;
+    rate?: number;
+    voice?: { voiceURI: string };
+    constructor(text: string) {
       this.text = text;
       this.onend = null;
       this.onerror = null;
@@ -22,7 +41,7 @@ function installReaderSpeechHarness() {
   }
 
   const mockSpeechSynthesis = {
-    speak(utterance) {
+    speak(utterance: SpeechUtterance) {
       state.calls += 1;
       state.latestUtterance = utterance;
       state.utterances.push(utterance);
@@ -41,10 +60,10 @@ function installReaderSpeechHarness() {
     paused: false,
   };
 
-  const defineOrAssign = (property, value) => {
+  const defineOrAssign = (property: string, value: unknown) => {
     try {
       Object.defineProperty(window, property, { configurable: true, value });
-    } catch (error) {
+    } catch {
       Object.defineProperty(window, property, {
         configurable: true,
         writable: true,
@@ -58,7 +77,7 @@ function installReaderSpeechHarness() {
   window.__bookstrSpeechTestState = state;
 }
 
-async function minimalEpub(title) {
+async function minimalEpub(title: string) {
   const zip = new JSZip();
   zip.file('mimetype', 'application/epub+zip', { compression: 'STORE' });
   zip.file('META-INF/container.xml', `<?xml version="1.0"?>\n    <container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">\n      <rootfiles><rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/></rootfiles>\n    </container>`);
@@ -67,7 +86,7 @@ async function minimalEpub(title) {
   return zip.generateAsync({ type: 'nodebuffer', mimeType: 'application/epub+zip' });
 }
 
-function minimalPdf(text, secondPageText = 'Second PDF page.') {
+function minimalPdf(text: string, secondPageText = 'Second PDF page.') {
   const escaped = String(text).replace(/([\\()])/g, '\\$1');
   const escapedSecondPage = String(secondPageText).replace(/([\\()])/g, '\\$1');
   const stream = `BT /F1 24 Tf 72 720 Td (${escaped}) Tj ET`;
@@ -94,7 +113,7 @@ function minimalPdf(text, secondPageText = 'Second PDF page.') {
   return Buffer.from(body);
 }
 
-async function ensureReaderControls(reader, selectors) {
+async function ensureReaderControls(reader: Page, selectors: { playId: string; pauseId: string; stopId: string }) {
   const { playId, pauseId, stopId } = selectors;
   const play = reader.locator(`#${playId}`);
   const pause = reader.locator(`#${pauseId}`);
@@ -114,16 +133,16 @@ async function ensureReaderControls(reader, selectors) {
   await expect(pause).toHaveText('▮▮');
 
   const firstUtterance = await reader.locator('body').evaluate(() => ({
-    text: window.__bookstrSpeechTestState.latestUtterance.text,
-    language: window.__bookstrSpeechTestState.latestUtterance.lang,
-    rate: window.__bookstrSpeechTestState.latestUtterance.rate,
-    voiceURI: window.__bookstrSpeechTestState.latestUtterance.voice?.voiceURI || '',
+    text: window.__bookstrSpeechTestState.latestUtterance!.text,
+    language: window.__bookstrSpeechTestState.latestUtterance!.lang,
+    rate: window.__bookstrSpeechTestState.latestUtterance!.rate,
+    voiceURI: window.__bookstrSpeechTestState.latestUtterance!.voice?.voiceURI || '',
   }));
   expect(firstUtterance.text.length).toBeLessThanOrEqual(240);
   expect(firstUtterance.language).toBe('en');
   expect(firstUtterance.rate).toBe(1.1);
   expect(firstUtterance.voiceURI).toBe('kokoro-heart');
-  await reader.locator('body').evaluate(() => window.__bookstrSpeechTestState.latestUtterance.onend());
+  await reader.locator('body').evaluate(() => window.__bookstrSpeechTestState.latestUtterance!.onend!());
   await expect.poll(() => reader.locator('body').evaluate(() => window.__bookstrSpeechTestState.calls)).toBeGreaterThan(1);
 
   await stop.click();
@@ -135,10 +154,10 @@ async function ensureReaderControls(reader, selectors) {
   await play.click();
   for (let index = 0; index < 20 && await play.isDisabled(); index += 1) {
     const before = await reader.locator('body').evaluate(() => window.__bookstrSpeechTestState.calls);
-    await reader.locator('body').evaluate(() => window.__bookstrSpeechTestState.latestUtterance.onend());
+    await reader.locator('body').evaluate(() => window.__bookstrSpeechTestState.latestUtterance!.onend!());
     await expect.poll(() => reader.locator('body').evaluate((_body, { currentCalls, currentPlayId }) => (
       window.__bookstrSpeechTestState.calls > currentCalls
-      || !document.getElementById(currentPlayId).disabled
+      || !(document.getElementById(currentPlayId) as HTMLButtonElement).disabled
     ), { currentCalls: before, currentPlayId: playId })).toBe(true);
   }
   await expect(play).toBeEnabled();
@@ -165,7 +184,7 @@ test('Desktop EPUB reader supports speech control transitions', async () => {
       readerAlignment: 'justified',
       readerFontPercent: 125,
     })));
-    await firstWindow.evaluate(payload => { void window.bookstrDesktop.openReader(payload); }, {
+    await firstWindow.evaluate(payload => { void window.bookstrDesktop!.openReader(payload); }, {
       kind: 'epub',
       base64: epub.toString('base64'),
       readUrl,
@@ -224,7 +243,7 @@ test('Desktop PDF reader supports speech control transitions', async () => {
       speechRate: 1.1,
     })));
     const pdf = minimalPdf(Array.from({ length: 55 }, (_, index) => 'pdfword' + index).join(' ') + '.');
-    await firstWindow.evaluate(payload => { void window.bookstrDesktop.openReader(payload); }, {
+    await firstWindow.evaluate(payload => { void window.bookstrDesktop!.openReader(payload); }, {
       kind: 'pdf',
       base64: pdf.toString('base64'),
       readUrl: pdfUrl,
