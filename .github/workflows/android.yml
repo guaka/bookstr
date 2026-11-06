@@ -288,7 +288,7 @@ jobs:
 
   emulator-tests:
     name: Emulator UI tests
-    needs: package-apks
+    needs: [unit-tests, package-apks]
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
