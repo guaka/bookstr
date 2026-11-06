@@ -48,7 +48,12 @@ class NativeTorrentEngineEdgeCoverageTest {
 
     private fun newRoot(label: String): File = File(cacheDir, "torrent-edge-$label-${System.nanoTime()}").also { it.mkdirs() }
 
-    private fun assertCreateFails(root: File, metadata: ByteArray, torrentEdition: TorrentEdition, expected: String) {
+    private fun assertCreateFails(
+        root: File,
+        metadata: ByteArray,
+        torrentEdition: TorrentEdition,
+        expected: String,
+    ) {
         try {
             val error = assertThrows(IllegalStateException::class.java) {
                 NativeTorrentEngine().use { it.start(root, metadata, torrentEdition) }
@@ -105,7 +110,7 @@ class NativeTorrentEngineEdgeCoverageTest {
     }
 
     @Test
-    fun unsafeTorrentPathComponentsAreRejectedBeforeCreatingPayload() {
+    fun untrustedTorrentPathComponentsStayWithinPayloadRootOrAreRejected() {
         val content = "unsafe path".toByteArray()
         val hash = md5(content)
         val unsafePaths = listOf(
@@ -123,16 +128,61 @@ class NativeTorrentEngineEdgeCoverageTest {
                 "pieces" to sha1(content),
                 "private" to 1,
             )))
-            assertCreateFails(newRoot("unsafe-$index"), metadata, TorrentEdition(hash, 1, "fiction", content.size.toLong()), "Unsafe torrent path")
+            val sandbox = newRoot("unsafe-$index")
+            val root = File(sandbox, "download").also { it.mkdirs() }
+            try {
+                NativeTorrentEngine().use { engine ->
+                    try {
+                        engine.start(root, metadata, TorrentEdition(hash, 1, "fiction", content.size.toLong()))
+                        val snapshot = engine.poll()
+                        assertTrue(
+                            "Torrent output must stay at the local payload path",
+                            File(snapshot.path).canonicalPath == File(root, "payload").canonicalPath,
+                        )
+                    } catch (error: IllegalStateException) {
+                        val reason = error.message.orEmpty()
+                        assertTrue(
+                            "Unexpected rejection for sanitized metainfo path: $reason",
+                            reason.contains("Unsafe torrent path") ||
+                                reason.contains("Edition absent from torrent") ||
+                                reason.contains("invalid length of torrent"),
+                        )
+                    }
+                }
+                val coverageProfile = File(sandbox, "bookstr-native-coverage-${android.os.Process.myPid()}.profraw")
+                assertTrue(
+                    "Untrusted metainfo must not create sibling files outside its download root",
+                    sandbox.listFiles().orEmpty().all {
+                        it.canonicalFile == root.canonicalFile ||
+                            (it.isFile && it.canonicalFile == coverageProfile.canonicalFile)
+                    },
+                )
+            } finally {
+                sandbox.deleteRecursively()
+            }
         }
     }
 
     @Test
     fun zeroLengthAndOverEightGibEditionsAreRejectedFromMetadataOnly() {
-        val empty = byteArrayOf()
-        assertCreateFails(newRoot("empty-edition"), singleFile(md5(empty), empty), edition(empty), "Unsupported edition size")
+        val sibling = "valid piece".toByteArray()
+        val emptyHash = md5(byteArrayOf())
+        val zeroLengthMetadata = bencode(mapOf("info" to mapOf(
+            "name" to "bundle",
+            "piece length" to 16_384,
+            "files" to listOf(
+                mapOf("length" to 0, "path" to listOf("$emptyHash.pdf")),
+                mapOf("length" to sibling.size, "path" to listOf("sibling.bin")),
+            ),
+            "pieces" to sha1(sibling),
+            "private" to 1,
+        )))
+        assertCreateFails(
+            newRoot("empty-edition"), zeroLengthMetadata,
+            TorrentEdition(emptyHash, 1, "fiction", 0), "Unsupported edition size",
+        )
 
-        val pieceLength = 1_048_576
+        val pieceLength = 16 * 1024 * 1024
         val fileSize = 8L * 1024 * 1024 * 1024 + 1
         val pieceCount = ((fileSize + pieceLength - 1) / pieceLength).toInt()
         val metadata = bencode(mapOf("info" to mapOf(
