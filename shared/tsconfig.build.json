@@ -1,0 +1,13 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "allowImportingTsExtensions": false,
+    "outDir": ".build/typescript",
+    "rootDir": ".",
+    "declaration": false,
+    "sourceMap": false
+  },
+  "include": ["**/*.mts", "**/*.ts"],
+  "exclude": ["**/*.test.mts", "build-typescript.mts", ".build/**"]
+}

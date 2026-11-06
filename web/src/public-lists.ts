@@ -85,3 +85,4 @@ function parseEvents(events: unknown): PublicList[] {
 
 const BookstrPublicLists = { parseEvent, parseEvents };
 Object.assign(globalThis, { BookstrPublicLists });
+export type PublicListsApi = typeof BookstrPublicLists;

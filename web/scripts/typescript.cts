@@ -42,7 +42,7 @@ function pageSource(template: string, name: string, javascript: string): string 
 function stageSite(directory = root): void {
   const destination = path.join(directory, 'site-dist');
   const excluded = new Set(['node_modules', 'src', 'types', 'templates', 'scripts', 'coverage', 'test-results', 'playwright-report', 'site-dist', '.typescript-output']);
-  const sourceFiles = new Set(['package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml', 'build-manifest.json', 'playwright.config.mjs', 'webtorrent-dev-bridge.mjs', 'tsconfig.json', 'tsconfig.tools.json', 'tsconfig.tests.json']);
+  const sourceFiles = new Set(['package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml', 'build-manifest.json', 'playwright.config.mts', 'webtorrent-dev-bridge.mts', 'tsconfig.json', 'tsconfig.tools.json', 'tsconfig.tests.json', 'tsconfig.dev.json']);
   fs.rmSync(destination, { recursive: true, force: true });
   fs.mkdirSync(destination, { recursive: true });
   function copy(relative: string): void {
@@ -81,6 +81,7 @@ function compiler(configuration: string, args: string[], directory = root): void
 function main(args: string[], directory = root): void {
   if (args.some(argument => argument !== '--check' && argument !== '--noEmit' && argument !== '--site')) throw new Error('Expected --check, --noEmit or --site');
   compiler('tsconfig.tests.json', ['--noEmit'], directory);
+  compiler('tsconfig.dev.json', ['--noEmit'], directory);
   if (args.includes('--noEmit')) {
     compiler('tsconfig.json', ['--noEmit'], directory);
     return;

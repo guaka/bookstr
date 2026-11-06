@@ -2,7 +2,7 @@ import { present, record } from './test-values.mts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import '../book-metadata.js';
+import { bookMetadata } from './book-metadata-api.mts';
 const {
   metadataObject,
   canonicalReadUrl,
@@ -27,7 +27,7 @@ const {
   mergeFavoriteEntry,
   earliestFavoriteAddedAt,
   favoriteAddedTag,
-} = globalThis.BookMetadata;
+} = bookMetadata;
 
 test('authorSearchName strips lifespan annotations from bibliographic names', () => {
   assert.equal(authorSearchName('Doyle, Arthur Conan, 1859-1930'), 'Doyle, Arthur Conan');

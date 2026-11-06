@@ -1,0 +1,357 @@
+#!/usr/bin/env node
+import { parseJUnit } from './junit.mjs';
+export { parseJUnit } from './junit.mjs';
+import type { SuiteReport, CoverageMetric, IstanbulReport, XCResultCount, XCCovReport, LLVMReport } from './report-types.mjs';
+
+import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
+import { basename, dirname, extname, join, resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
+
+function argumentsMap(values: string[]) {
+  const result: Record<string, string> = {};
+  for (let index = 0; index < values.length; index += 2) {
+    result[(values[index] as string).replace(/^--/, '')] = values[index + 1] as string;
+  }
+  return result;
+}
+
+function number(value: unknown) {
+  const parsed = Number((value as {_value?: unknown} | null | undefined)?._value ?? (value as {value?: unknown} | null | undefined)?.value ?? value);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function percent(covered: number | undefined, total: number) {
+  return total ? Number((((covered as number) / total) * 100).toFixed(2)) : 0;
+}
+
+async function filesBelow(path: string | undefined, extension: string): Promise<string[]> {
+  if (!path) return [];
+  try {
+    const entries = await readdir(path, { withFileTypes: true });
+    const nested = await Promise.all(entries.map(entry => {
+      const child = join(path, entry.name);
+      return entry.isDirectory() ? filesBelow(child, extension) : [child];
+    }));
+    return nested.flat().filter(file => !extension || extname(file) === extension);
+  } catch {
+    return [path];
+  }
+}
+
+export function parseTap(text: string) {
+  const value = (key: string) => number(text.match(new RegExp(`^# ${key} (\\d+(?:\\.\\d+)?)`, 'm'))?.[1]);
+  return {
+    tests: value('tests'),
+    passed: value('pass'),
+    failed: value('fail'),
+    skipped: value('skipped'),
+    durationMs: value('duration_ms'),
+  };
+}
+
+export function parseSwiftTest(text: string) {
+  const summaries = [...text.matchAll(/Executed\s+(\d+)\s+tests?,\s+with\s+(?:(\d+)\s+tests?\s+skipped\s+and\s+)?(\d+)\s+failures?[^\n]*?in\s+(\d+(?:\.\d+)?)(?:\s+\(\d+(?:\.\d+)?\))?\s+seconds/g)];
+  const match = summaries.at(-1);
+  if (!match) return { tests: 0, passed: 0, failed: 0, skipped: 0, durationMs: 0 };
+  const tests = number(match[1]);
+  const skipped = number(match[2]);
+  const failed = number(match[3]);
+  return { tests, passed: Math.max(0, tests - skipped - failed), failed, skipped, durationMs: number(match[4]) * 1000 };
+}
+
+
+export function parsePlaywright(report: {stats?: Record<string, unknown>} | null | undefined) {
+  const stats = report?.stats || {};
+  const flaky = number(stats.flaky);
+  const passed = number(stats.expected) + flaky;
+  const failed = number(stats.unexpected);
+  const skipped = number(stats.skipped);
+  return {
+    tests: passed + failed + skipped,
+    passed,
+    failed,
+    flaky,
+    skipped,
+    durationMs: number(stats.duration),
+  };
+}
+
+export function parseXCResult(summary: XCResultCount | null | undefined) {
+  const configurations = Array.isArray(summary?.devicesAndConfigurations) ? summary.devicesAndConfigurations : [];
+  const count = (key: string) => {
+    const direct = Array.isArray(summary?.[key]) ? summary[key].length : number(summary?.[key]);
+    return direct || configurations.reduce((sum, item) => sum + (Array.isArray(item?.[key]) ? item[key].length : number(item?.[key])), 0);
+  };
+  const total = number(summary?.totalTestCount ?? summary?.statistics?.find(item => item.title === 'Tests')?.value);
+  const failed = count('failedTests');
+  const skipped = count('skippedTests');
+  const explicitPassed = count('passedTests');
+  const timestamp = (value: unknown) => {
+    if (typeof value === 'number') return value < 10_000_000_000 ? value * 1000 : value;
+    return new Date((value || 0) as string | number).valueOf();
+  };
+  return {
+    tests: total || explicitPassed + failed + skipped,
+    passed: explicitPassed || Math.max(0, total - failed - skipped),
+    failed,
+    skipped,
+    durationMs: Math.max(0, timestamp(summary?.finishTime) - timestamp(summary?.startTime)),
+  };
+}
+
+export function parseIstanbul(summary: IstanbulReport | null | undefined) {
+  const total = summary?.total || {};
+  return ['statements', 'branches', 'functions', 'lines'].map(key => ({
+    label: (key[0] as string).toUpperCase() + key.slice(1),
+    value: number(total[key]?.pct),
+    suffix: '%',
+  }));
+}
+
+export function parseNodeCoverage(text: string) {
+  const match = text.match(/^(?:#|ℹ)\s+all files\s*\|\s*(\d+(?:\.\d+)?)\s*\|\s*(\d+(?:\.\d+)?)\s*\|\s*(\d+(?:\.\d+)?)\s*\|/m);
+  if (!match) return [];
+  return [
+    { label: 'Lines', value: number(match[1]), suffix: '%' },
+    { label: 'Branches', value: number(match[2]), suffix: '%' },
+    { label: 'Functions', value: number(match[3]), suffix: '%' },
+  ];
+}
+
+export function parseJacoco(xml: string) {
+  const labels: Record<string, string> = { INSTRUCTION: 'Instructions', BRANCH: 'Branches', METHOD: 'Methods', LINE: 'Lines' };
+  const counters = [...xml.matchAll(/<counter\s+([^>]+)\/?>/g)].map(match => {
+    const attributes = Object.fromEntries([...(match[1] as string).matchAll(/(\w+)="([^"]*)"/g)].map(attribute => [attribute[1], attribute[2]]));
+    return attributes;
+  });
+  const last = new Map(counters.filter(counter => labels[counter.type as string]).map(counter => [counter.type as string, counter]));
+  return Object.entries(labels).flatMap(([type, label]) => {
+    const counter = last.get(type);
+    if (!counter) return [];
+    const missed = number(counter.missed);
+    const covered = number(counter.covered);
+    return { label, value: percent(covered, covered + missed), suffix: '%' };
+  });
+}
+
+export function parseXCCov(report: XCCovReport | null | undefined) {
+  const targets = Array.isArray(report?.targets) ? report.targets : [];
+  // Xcode's report total includes the test bundles and package dependencies. Use the
+  // application target so adding test code cannot increase displayed app coverage.
+  const appTarget = targets.find(target => String(target?.name || '').endsWith('.app'));
+  const source = appTarget || report;
+  const executable = number(source?.executableLines) || targets.reduce((sum, target) => sum + number(target?.executableLines), 0);
+  const covered = number(source?.coveredLines) || targets.reduce((sum, target) => sum + number(target?.coveredLines), 0);
+  const coverage = executable ? percent(covered, executable) : number(source?.lineCoverage) * 100;
+  return [{ label: 'Lines', value: Number(coverage.toFixed(2)), suffix: '%' }];
+}
+
+export function parseLLVM(report: LLVMReport | null | undefined) {
+  const files = (report?.data || []).flatMap(item => item?.files || [])
+    .filter(file => String(file?.filename || '').includes('/BookstrIOS/Sources/'));
+  const metrics: Array<[string, string]> = [
+    ['regions', 'Statements'],
+    ['branches', 'Branches'],
+    ['functions', 'Functions'],
+    ['lines', 'Lines'],
+  ];
+  return metrics.flatMap(([key, label]) => {
+    const totals = files.reduce((result, file) => {
+      if (key === 'lines' && Array.isArray(file?.segments) && file.segments.length > 0) {
+        // Swift emits duplicate coverage mappings for synthesized/default-argument
+        // expansions. Count each executable physical source line once so the line
+        // metric cannot move merely because the compiler duplicated a mapping.
+        const lines = new Map();
+        for (const segment of file.segments) {
+          const [line, , executionCount, hasCount] = segment as [number, number, number, boolean];
+          if (!hasCount) continue;
+          lines.set(line, Boolean(lines.get(line)) || number(executionCount) > 0);
+        }
+        result.count += lines.size;
+        result.covered += [...lines.values()].filter(Boolean).length;
+        return result;
+      }
+      result.count += number(file?.summary?.[key]?.count);
+      result.covered += number(file?.summary?.[key]?.covered);
+      return result;
+    }, { count: 0, covered: 0 });
+    return totals.count ? [{ label, value: percent(totals.covered, totals.count), suffix: '%' }] : [];
+  });
+}
+
+async function optionalJSON(path: string | undefined) {
+  if (!path) return null;
+  try { return JSON.parse(await readFile(path, 'utf8')); } catch { return null; }
+}
+
+async function record(options: Record<string, string>) {
+  let results = { tests: 0, passed: 0, failed: 0, skipped: 0, durationMs: 0 };
+  if (options['results-format'] === 'tap') {
+    results = parseTap(await readFile(options.results as string, 'utf8').catch(() => ''));
+  } else if (options['results-format'] === 'swift') {
+    results = parseSwiftTest(await readFile(options.results as string, 'utf8').catch(() => ''));
+  } else if (options['results-format'] === 'junit') {
+    const files = await filesBelow(options.results, '.xml');
+    results = parseJUnit(await Promise.all(files.map(file => readFile(file, 'utf8').catch(() => ''))));
+  } else if (options['results-format'] === 'playwright') {
+    results = parsePlaywright(await optionalJSON(options.results));
+  } else if (options['results-format'] === 'xcresult') {
+    results = parseXCResult(await optionalJSON(options.results));
+  }
+  const measuredDurationMs = number(options['duration-ms']);
+  if (measuredDurationMs > 0) results.durationMs = measuredDurationMs;
+
+  let coverage: CoverageMetric[] = [];
+  if (options['coverage-format'] === 'istanbul') coverage = parseIstanbul(await optionalJSON(options.coverage));
+  if (options['coverage-format'] === 'node') coverage = parseNodeCoverage(await readFile(options.coverage as string, 'utf8').catch(() => ''));
+  if (options['coverage-format'] === 'jacoco') coverage = parseJacoco(await readFile(options.coverage as string, 'utf8').catch(() => ''));
+  if (options['coverage-format'] === 'xccov') coverage = parseXCCov(await optionalJSON(options.coverage));
+  if (options['coverage-format'] === 'llvm') coverage = parseLLVM(await optionalJSON(options.coverage));
+
+  const passing = options.status === 'passing' && results.tests > 0 && results.failed === 0;
+  const payload = {
+    id: options.id,
+    suite: options.suite,
+    status: passing ? 'passing' : 'failing',
+    recorded: options.recorded || new Date().toISOString(),
+    runUrl: options['run-url'] || '',
+    commit: options.commit || '',
+    knownTests: Math.max(0, Math.trunc(number(options['known-tests']))),
+    results,
+    coverage: coverage.filter(item => Number.isFinite(item.value)),
+  };
+  await mkdir(dirname(options.output as string), { recursive: true });
+  await writeFile(options.output as string, `${JSON.stringify(payload, null, 2)}\n`);
+}
+
+function escapeHTML(value: unknown) {
+  return String(value ?? '').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char] as string);
+}
+
+function duration(milliseconds: unknown) {
+  const seconds = Math.round(number(milliseconds) / 1000);
+  if (seconds < 60) return `${seconds}s`;
+  return `${Math.floor(seconds / 60)}m ${String(seconds % 60).padStart(2, '0')}s`;
+}
+
+function suiteRow(suite: SuiteReport) {
+  const result = suite.results || {};
+  const testTotal = result.tests || number(suite.knownTests);
+  const coverage = new Map((suite.coverage || []).map(item => [item.label, item]));
+  const coverageValue = (...labels: string[]) => {
+    const item = labels.map(label => coverage.get(label)).find(Boolean);
+    return item ? `${item.value.toFixed(2)}${item.suffix}` : '';
+  };
+  const status = suite.status === 'passing' ? 'Passing' : suite.status === 'failing' ? 'Failing' : 'Not recorded';
+  const date = suite.recorded ? new Date(suite.recorded) : null;
+  const recorded = date && !Number.isNaN(date.valueOf())
+    ? `<time datetime="${escapeHTML(suite.recorded)}" title="UTC">${escapeHTML(date.toISOString().slice(0, 16).replace('T', ' '))}</time>`
+    : 'Not recorded';
+  const suiteName = suite.runUrl
+    ? `<a href="${escapeHTML(suite.runUrl)}">${escapeHTML(suite.suite)}</a>`
+    : escapeHTML(suite.suite);
+  return `<tr>
+    <th scope="row">${suiteName}</th>
+    <td><span class="status ${suite.status}"><span aria-hidden="true"></span>${status}</span></td>
+    <td>${recorded}</td>
+    <td class="value">${testTotal ? `<strong>${result.passed || 0}/${testTotal}</strong>${result.skipped ? `<small>${result.skipped} skipped</small>` : ''}` : 'Not recorded'}</td>
+    <td class="value">${result.tests ? `<strong>${percent(result.passed, result.tests)}%</strong>` : ''}</td>
+    <td class="value">${result.durationMs ? `<strong>${duration(result.durationMs)}</strong>` : ''}</td>
+    <td class="value"><strong>${coverageValue('Statements', 'Instructions')}</strong></td>
+    <td class="value"><strong>${coverageValue('Branches')}</strong></td>
+    <td class="value"><strong>${coverageValue('Functions', 'Methods')}</strong></td>
+    <td class="value"><strong>${coverageValue('Lines')}</strong></td>
+  </tr>`;
+}
+
+export function renderDashboard(suites: SuiteReport[]) {
+  const order = ['web', 'web-e2e', 'electron', 'electron-e2e', 'android', 'android-ui', 'ios', 'ios-e2e'];
+  const names: Record<string, string> = {
+    web: 'Web',
+    'web-e2e': 'Web e2e',
+    electron: 'Electron',
+    'electron-e2e': 'Electron e2e',
+    android: 'Android',
+    'android-ui': 'Android e2e',
+    ios: 'iOS',
+    'ios-e2e': 'iOS e2e',
+  };
+  const byId = new Map(suites.map(suite => [suite.id, suite]));
+  const complete: SuiteReport[] = order.map(id => byId.get(id) || { id, suite: names[id], status: 'missing', results: {}, coverage: [] });
+  const passing = complete.filter(suite => suite.status === 'passing').length;
+  const failing = complete.filter(suite => suite.status === 'failing').length;
+  const summary = failing ? `${failing} suite${failing === 1 ? '' : 's'} failing` : `${passing} of ${complete.length} suites passing`;
+  const generated = new Date().toISOString().slice(0, 16).replace('T', ' ');
+  return `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f7f3ea">
+  <title>Bookstr test overview</title>
+  <link rel="icon" href="../public/favicon.svg" type="image/svg+xml">
+  <style>
+    :root { color-scheme: light; --paper:#f7f3ea; --surface:#fffaf2; --ink:#1c1916; --muted:#6b635a; --sage:#2f5d50; --sage-soft:#e5f1eb; --line:#d8cfc3; --red:#a33a2c; --red-soft:#f7e5e1; }
+    * { box-sizing: border-box; }
+    body { margin:0; min-height:100vh; background:var(--paper); color:var(--ink); font:15px/1.45 ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
+    main { width:min(100% - 1rem, 1600px); margin:0 auto; padding:clamp(.75rem,2vw,1.5rem) 0; }
+    header { display:flex; align-items:flex-end; justify-content:space-between; gap:1rem; margin-bottom:.75rem; }
+    .heading { display:flex; align-items:center; gap:.8rem; }
+    .logo { width:4.5rem; height:4.5rem; }
+    h1 { margin:0; font:700 clamp(1.65rem,4vw,2.4rem)/1.1 "Iowan Old Style",Palatino,Georgia,serif; color:var(--sage); }
+    header p { margin:.4rem 0 0; color:var(--muted); }
+    .back { color:var(--sage); font-weight:650; text-decoration-thickness:1px; text-underline-offset:.2em; white-space:nowrap; }
+    .table-wrap { background:var(--surface); border:1px solid var(--line); box-shadow:0 14px 40px rgba(67,55,43,.07); }
+    table { width:100%; border-collapse:collapse; table-layout:fixed; }
+    th,td { padding:.85rem .55rem; text-align:left; border-right:1px solid var(--line); border-bottom:1px solid var(--line); vertical-align:middle; overflow-wrap:anywhere; }
+    tr > :last-child { border-right:0; }
+    thead th { padding-top:.8rem; padding-bottom:.8rem; color:var(--muted); font-size:.72rem; letter-spacing:.09em; text-transform:uppercase; }
+    thead th:nth-child(1) { width:10%; }
+    thead th:nth-child(2) { width:10%; }
+    thead th:nth-child(3) { width:13%; }
+    tbody th { font-size:1rem; }
+    tbody th a { color:var(--ink); text-decoration-color:color-mix(in srgb,var(--sage) 40%,transparent); text-underline-offset:.2em; }
+    tbody tr:last-child > * { border-bottom:0; }
+    time { white-space:nowrap; }
+    .status { display:inline-flex; align-items:center; gap:.45rem; font-size:.75rem; font-weight:750; letter-spacing:.05em; text-transform:uppercase; }
+    .status span { width:.45rem; height:.45rem; border-radius:50%; background:currentColor; }
+    .status.passing { color:#167b67; }
+    .status.failing { color:var(--red); }
+    .status.missing { color:var(--muted); }
+    .value { color:#168573; }
+    .value small { display:block; color:var(--muted); font-size:.72rem; font-weight:400; }
+    footer { display:flex; align-items:center; justify-content:flex-end; gap:.65rem; padding:.65rem .1rem 0; color:var(--muted); font-size:.78rem; }
+    footer a { display:inline-flex; color:var(--sage); }
+    footer svg { width:1.2rem; height:1.2rem; fill:currentColor; }
+    @media (max-width:720px) { main { width:100%; padding:.5rem 0; } header { align-items:flex-start; padding:0 .5rem; } .back { margin-top:.25rem; } th,td { padding:.55rem .25rem; font-size:.68rem; } thead th { font-size:.58rem; letter-spacing:.03em; } tbody th { font-size:.75rem; } .status { font-size:.62rem; gap:.25rem; } .logo { width:3.5rem; height:3.5rem; } }
+    @media (prefers-color-scheme:dark) { :root { color-scheme:dark; --paper:#121212; --surface:#1b1a18; --ink:#e8e4dc; --muted:#aaa39a; --sage:#7fb8a7; --sage-soft:#18382f; --line:#3b3833; --red:#f09a87; --red-soft:#40221d; } }
+  </style>
+</head>
+<body>
+  <main>
+    <header><div class="heading"><img class="logo" src="../public/favicon.svg" alt="Bookstr"><div><h1>Test overview</h1><p>${escapeHTML(summary)} · latest completed run per suite</p></div></div><a class="back" href="../">Back to Bookstr</a></header>
+    <div class="table-wrap"><table><thead><tr><th>Suite</th><th>Status</th><th>Recorded (UTC)</th><th>Tests</th><th>Pass rate</th><th>Duration</th><th>Statements / instructions</th><th>Branches</th><th>Functions / methods</th><th>Lines</th></tr></thead><tbody>${complete.map(suiteRow).join('')}</tbody></table></div>
+    <footer><time datetime="${generated}Z">${generated} UTC</time><a href="https://github.com/guaka/bookstr" aria-label="Bookstr on GitHub"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 .7a11.5 11.5 0 0 0-3.64 22.41c.58.1.79-.25.79-.56v-2.23c-3.22.7-3.9-1.37-3.9-1.37-.53-1.34-1.29-1.7-1.29-1.7-1.05-.72.08-.71.08-.71 1.16.08 1.78 1.2 1.78 1.2 1.04 1.77 2.72 1.26 3.38.96.1-.75.4-1.26.74-1.55-2.57-.29-5.27-1.28-5.27-5.69 0-1.26.45-2.29 1.19-3.09-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.16 1.18a10.95 10.95 0 0 1 5.76 0c2.2-1.49 3.16-1.18 3.16-1.18.63 1.59.23 2.76.11 3.05.74.8 1.19 1.83 1.19 3.09 0 4.42-2.71 5.39-5.29 5.68.42.36.79 1.07.79 2.16v3.2c0 .31.21.67.8.56A11.5 11.5 0 0 0 12 .7Z"/></svg></a></footer>
+  </main>
+</body>
+</html>`;
+}
+
+async function render(options: Record<string, string>) {
+  const files = await filesBelow(options.input, '.json');
+  const suites = (await Promise.all(files.map(optionalJSON))).filter(value => value?.id);
+  await mkdir(dirname(options.output as string), { recursive: true });
+  await writeFile(options.output as string, renderDashboard(suites));
+}
+
+async function main() {
+  const [command, ...values] = process.argv.slice(2);
+  const options = argumentsMap(values);
+  if (command === 'record') return record(options);
+  if (command === 'render') return render(options);
+  throw new Error('Usage: test-overview.mjs <record|render> [--key value ...]');
+}
+
+if (import.meta.url === pathToFileURL(resolve(process.argv[1] || basename(import.meta.url))).href) {
+  main().catch(error => { console.error(error); process.exitCode = 1; });
+}

@@ -1,0 +1,4 @@
+{
+  "extends": "./tsconfig.tools.json",
+  "include": ["playwright.config.mts", "webtorrent-dev-bridge.mts"]
+}
