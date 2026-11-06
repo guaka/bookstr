@@ -1,7 +1,8 @@
+import { present } from './test-values.mts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-await import('../book-metadata.js');
+import '../book-metadata.js';
 const {
   bookIdentity,
   metadataObject,
@@ -342,8 +343,8 @@ test('findBookByReadUrl matches readUrl and url but ignores retired blossomUrl f
     { blossomUrl: 'https://blossom.test/file.epub#frag', title: 'C' },
   ];
 
-  assert.equal(findBookByReadUrl('https://example.test/books/guide.epub?download=1', books).title, 'A');
-  assert.equal(findBookByReadUrl('https://example.test/books/other.epub#section', books).title, 'B');
+  assert.equal(present(findBookByReadUrl('https://example.test/books/guide.epub?download=1', books)).title, 'A');
+  assert.equal(present(findBookByReadUrl('https://example.test/books/other.epub#section', books)).title, 'B');
   assert.equal(findBookByReadUrl('https://blossom.test/file.epub', books), null);
 });
 
@@ -352,7 +353,7 @@ test('findBookByReadUrl matches a collection entry in later argument lists', () 
   const fallback = [{ readUrl: 'https://example.test/b.epub', title: 'B' }];
 
   assert.equal(
-    findBookByReadUrl('https://example.test/b.epub?download=1#reader', preferred, fallback).title,
+    present(findBookByReadUrl('https://example.test/b.epub?download=1#reader', preferred, fallback)).title,
     'B',
   );
 });
@@ -362,7 +363,7 @@ test('findBookByReadUrl ignores non-matching collections and searches further en
   const fallback = [{ url: 'https://example.test/b.epub', title: 'B' }];
 
   assert.equal(
-    findBookByReadUrl('https://example.test/b.epub', preferred, fallback).title,
+    present(findBookByReadUrl('https://example.test/b.epub', preferred, fallback)).title,
     'B',
   );
 });
@@ -420,8 +421,8 @@ test('dedupeLibraryBooks preserves non-empty existing authors when incoming titl
   ]);
 
   assert.equal(unique.length, 1);
-  assert.equal(unique[0].title, 'Real Title');
-  assert.equal(unique[0].authors, 'Jane Doe');
+  assert.equal(present(unique[0]).title, 'Real Title');
+  assert.equal(present(unique[0]).authors, 'Jane Doe');
 });
 
 test('canonicalCatalogUrl normalizes canonical M-type openlibrary IDs to books URLs', () => {
@@ -454,9 +455,9 @@ test('sortBooks sorts by year descending while keeping deterministic title tie-b
   ];
 
   const sorted = sortBooks(books, 'year', 'desc');
-  assert.equal(sorted[0].title, 'Alpha');
-  assert.equal(sorted[1].title, 'Beta');
-  assert.equal(sorted[2].title, 'Zulu');
+  assert.equal(present(sorted[0]).title, 'Alpha');
+  assert.equal(present(sorted[1]).title, 'Beta');
+  assert.equal(present(sorted[2]).title, 'Zulu');
 });
 
 test('sortBooks can sort by cached status and prefers reading state input callback', () => {
@@ -465,10 +466,10 @@ test('sortBooks can sort by cached status and prefers reading state input callba
     { title: 'Cached', readUrl: 'b' },
     { title: 'Also Cached', readUrl: 'c' },
   ];
-  const sorted = sortBooks(books, 'cached', 'desc', (book) => book.title.startsWith('C'));
-  assert.equal(sorted[0].title, 'Cached');
-  assert.equal(sorted[1].title, 'Also Cached');
-  assert.equal(sorted[2].title, 'Not Cached');
+  const sorted = sortBooks(books, 'cached', 'desc', (book) => String(book.title).startsWith('C'));
+  assert.equal(present(sorted[0]).title, 'Cached');
+  assert.equal(present(sorted[1]).title, 'Also Cached');
+  assert.equal(present(sorted[2]).title, 'Not Cached');
 });
 
 test('findBookByReadUrl returns null when no candidates match', () => {
@@ -482,7 +483,7 @@ test('dedupeLibraryBooks keeps first identity and improves title from non-placeh
     { id: 'x'.repeat(32), title: 'Real Book Title', readUrl: 'https://example.test/book.epub' },
   ]);
   assert.equal(unique.length, 1);
-  assert.equal(unique[0].title, 'Real Book Title');
+  assert.equal(present(unique[0]).title, 'Real Book Title');
 });
 
 test('mergeLibraryState merges reading and favorites into a single book entry', () => {
@@ -493,14 +494,14 @@ test('mergeLibraryState merges reading and favorites into a single book entry', 
   );
 
   assert.equal(merged.length, 1);
-  assert.equal(merged[0].isReading, true);
-  assert.equal(merged[0].isFavorite, true);
-  assert.equal(merged[0].readingUpdatedAt, 10);
-  assert.equal(merged[0].favoriteAddedAt, 40);
+  assert.equal(present(merged[0]).isReading, true);
+  assert.equal(present(merged[0]).isFavorite, true);
+  assert.equal(present(merged[0]).readingUpdatedAt, 10);
+  assert.equal(present(merged[0]).favoriteAddedAt, 40);
 });
 
 test('mergeFavoriteEntry keeps earliest favorite timestamp and ignores blank fields', () => {
-  const entries = [];
+  const entries: Record<string, unknown>[] = [];
   const first = mergeFavoriteEntry(entries, { md5: 'A'.repeat(32), title: '', favoriteAddedAt: 1700000002 });
   const second = mergeFavoriteEntry(entries, { md5: 'a'.repeat(32), title: 'Real title', favoriteAddedAt: 1700000001 });
 
@@ -649,8 +650,8 @@ test('mergeLibraryState keeps current reading status when favorite arrives first
   );
 
   assert.equal(merged.length, 1);
-  assert.equal(merged[0].isReading, true);
-  assert.equal(merged[0].isFavorite, true);
-  assert.equal(merged[0].readingUpdatedAt, 111);
-  assert.equal(merged[0].favoriteAddedAt, 222);
+  assert.equal(present(merged[0]).isReading, true);
+  assert.equal(present(merged[0]).isFavorite, true);
+  assert.equal(present(merged[0]).readingUpdatedAt, 111);
+  assert.equal(present(merged[0]).favoriteAddedAt, 222);
 });

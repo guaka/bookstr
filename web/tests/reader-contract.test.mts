@@ -12,12 +12,12 @@ const app = await readFile(new URL('../index.html', import.meta.url), 'utf8');
 test('EPUB timeout identifies the active startup stage', async () => {
   const source = sharedReader.slice(sharedReader.indexOf('function withTimeout('), sharedReader.indexOf('function waitForReaderViewport('));
   const context = { setTimeout, clearTimeout, Promise, Error };
-  vm.runInNewContext(source, context);
+  const withTimeout = vm.runInNewContext(`${source}; withTimeout`, context) as <T>(promise: Promise<T>, milliseconds: number, message: () => string) => Promise<T>;
   let stage = 'fetching';
   const stalled = new Promise(() => {});
   stage = 'rendering';
   await assert.rejects(
-    context.withTimeout(stalled, 1, () => `EPUB reader timed out while ${stage}`),
+    withTimeout(stalled, 1, () => `EPUB reader timed out while ${stage}`),
     /EPUB reader timed out while rendering/,
   );
   assert.match(sharedReader, /reportReaderStartupStage\("fetching"\)/);
@@ -57,10 +57,14 @@ test('comic reader supports bounded CBZ and CBR page extraction and navigation',
 
 test('comic reader restores its opening message with legacy DOM child APIs', () => {
   class LegacyNode {
-    constructor(name) { this.name = name; this.parentNode = null; this.children = []; this._textContent = ''; }
-    set textContent(value) { this._textContent = value; this.children.forEach(child => { child.parentNode = null; }); this.children = []; }
+    name: string;
+    parentNode: LegacyNode | null;
+    children: LegacyNode[];
+    _textContent: string;
+    constructor(name: string) { this.name = name; this.parentNode = null; this.children = []; this._textContent = ''; }
+    set textContent(value: string) { this._textContent = value; this.children.forEach(child => { child.parentNode = null; }); this.children = []; }
     get textContent() { return this._textContent; }
-    appendChild(child) {
+    appendChild(child: LegacyNode) {
       if (child.parentNode) child.parentNode.children = child.parentNode.children.filter(item => item !== child);
       child.parentNode = this; this.children.push(child); return child;
     }

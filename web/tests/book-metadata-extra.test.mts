@@ -1,7 +1,8 @@
+import { present } from './test-values.mts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-await import('../book-metadata.js');
+import '../book-metadata.js';
 const {
   metadataObject,
   canonicalReadUrl,
@@ -58,7 +59,7 @@ test('isbnForBook supports ISBN-10 values with X checksum and identifiers', () =
 });
 
 test('mergeFavoriteEntry keeps existing title when incoming title is placeholder only', () => {
-  const entries = [];
+  const entries: Record<string, unknown>[] = [];
   mergeFavoriteEntry(entries, { md5: 'A'.repeat(32), title: 'Real title', format: 'epub' });
   mergeFavoriteEntry(entries, {
     md5: 'a'.repeat(32),
@@ -68,9 +69,9 @@ test('mergeFavoriteEntry keeps existing title when incoming title is placeholder
   });
 
   assert.equal(entries.length, 1);
-  assert.equal(entries[0].title, 'Real title');
-  assert.equal(entries[0].format, 'pdf');
-  assert.equal(entries[0].favoriteAddedAt, 200);
+  assert.equal(present(entries[0]).title, 'Real title');
+  assert.equal(present(entries[0]).format, 'pdf');
+  assert.equal(present(entries[0]).favoriteAddedAt, 200);
 });
 
 test('bookIdentity uses source_native_id alias when source id is provided', () => {
@@ -127,11 +128,11 @@ test('normalizeReadUrl returns non-http URLs unchanged without base resolution',
 });
 
 test('mergeFavoriteEntry picks the earliest addedAt across mixed timestamp formats', () => {
-  const entries = [];
+  const entries: Record<string, unknown>[] = [];
   mergeFavoriteEntry(entries, { md5: 'A'.repeat(32), title: 'First', favoriteAddedAt: 1_700_000_020 });
   mergeFavoriteEntry(entries, { md5: 'a'.repeat(32), favoriteAddedAt: '2022-01-01T00:00:00Z', title: 'Second' });
   assert.equal(entries.length, 1);
-  assert.equal(entries[0].favoriteAddedAt, 1_640_995_200);
+  assert.equal(present(entries[0]).favoriteAddedAt, 1_640_995_200);
 });
 
 test('enrichBookMetadata keeps an existing read URL when incoming metadata has no usable read URL', () => {
@@ -291,9 +292,9 @@ test('sortBooks falls back to title tie-breaker when language values are unavail
     'language',
   );
 
-  assert.equal(sorted[0].title, 'Beta');
-  assert.equal(sorted[1].title, 'Alpha');
-  assert.equal(sorted[2].title, 'Zulu');
+  assert.equal(present(sorted[0]).title, 'Beta');
+  assert.equal(present(sorted[1]).title, 'Alpha');
+  assert.equal(present(sorted[2]).title, 'Zulu');
 });
 
 test('sameLibraryBook favors stable IDs over URL collisions', () => {
@@ -391,8 +392,8 @@ test('dedupeLibraryBooks keeps the stronger title from incoming non-placeholder'
   ]);
 
   assert.equal(books.length, 1);
-  assert.equal(books[0].title, 'Real title');
-  assert.equal(books[0].favoriteAddedAt, 99);
+  assert.equal(present(books[0]).title, 'Real title');
+  assert.equal(present(books[0]).favoriteAddedAt, 99);
 });
 
 test('normalizeFavoriteAddedAt trims numeric values and rejects padded dates', () => {
@@ -499,8 +500,8 @@ test('dedupeLibraryBooks keeps earlier strong title and title metadata when inco
   ]);
 
   assert.equal(merged.length, 1);
-  assert.equal(merged[0].title, 'Primary Title');
-  assert.equal(merged[0].author || merged[0].authors, 'Another');
+  assert.equal(present(merged[0]).title, 'Primary Title');
+  assert.equal(present(merged[0]).author || present(merged[0]).authors, 'Another');
 });
 
 test('sameLibraryBook requires both values to share a stable key when both carry identifiers', () => {

@@ -1,17 +1,15 @@
+import { present, record } from './test-values.mts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-await import('../book-metadata.js');
+import '../book-metadata.js';
 const {
   metadataObject,
   canonicalReadUrl,
   canonicalCatalogUrl,
   authorSearchName,
   normalizeFavoriteAddedAt,
-  isbnForBook,
-  isPlaceholderTitle,
   sortBooks,
-  resolveTitle,
   normalizeReadUrl,
   metadataEndpointForReadUrl,
   languageForBook,
@@ -124,9 +122,9 @@ test('sortBooks orders by author and falls back to title for ties', () => {
     'author',
   );
 
-  assert.equal(sorted[0].title, 'C');
-  assert.equal(sorted[1].title, 'B');
-  assert.equal(sorted[2].title, 'A');
+  assert.equal(present(sorted[0]).title, 'C');
+  assert.equal(present(sorted[1]).title, 'B');
+  assert.equal(present(sorted[2]).title, 'A');
 });
 
 test('normalizeReadUrl resolves path with base and strips fragment', () => {
@@ -160,11 +158,11 @@ test('mergeLibraryState keeps latest reading timestamp and status flags', () => 
   );
 
   assert.equal(merged.length, 1);
-  assert.equal(merged[0].title, 'Favorite title');
-  assert.equal(merged[0].isReading, true);
-  assert.equal(merged[0].isFavorite, true);
-  assert.equal(merged[0].readingUpdatedAt, 250);
-  assert.equal(merged[0].favoriteAddedAt, 180);
+  assert.equal(present(merged[0]).title, 'Favorite title');
+  assert.equal(present(merged[0]).isReading, true);
+  assert.equal(present(merged[0]).isFavorite, true);
+  assert.equal(present(merged[0]).readingUpdatedAt, 250);
+  assert.equal(present(merged[0]).favoriteAddedAt, 180);
 });
 
 test('enrichBookMetadata applies replacements without provenance when provenance is blank', () => {
@@ -193,10 +191,10 @@ test('enrichBookMetadata tracks provenance only for filled fields', () => {
   assert.equal(merged.authors, 'Existing Author');
   assert.equal(merged.year, '2024');
   assert.equal(merged.language, 'en');
-  assert.equal(merged.metadataProvenance.title, undefined);
-  assert.equal(merged.metadataProvenance.authors, undefined);
-  assert.equal(merged.metadataProvenance.year, 'search-service');
-  assert.equal(merged.metadataProvenance.language, 'search-service');
+  assert.equal(record(merged.metadataProvenance).title, undefined);
+  assert.equal(record(merged.metadataProvenance).authors, undefined);
+  assert.equal(record(merged.metadataProvenance).year, 'search-service');
+  assert.equal(record(merged.metadataProvenance).language, 'search-service');
 });
 
 test('metadataObject handles null and primitive values consistently', () => {
@@ -271,7 +269,7 @@ test('dedupeLibraryBooks keeps newest titles and merges reading flags', () => {
 });
 
 test('mergeFavoriteEntry keeps earliest favorite timestamp and replaces placeholder title', () => {
-  const entries = [];
+  const entries: Record<string, unknown>[] = [];
   const first = mergeFavoriteEntry(entries, {
     md5: 'f'.repeat(32),
     title: 'Untitled book',

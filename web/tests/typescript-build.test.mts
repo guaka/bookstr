@@ -204,3 +204,14 @@ test('CI verifies generated assets and Pages publishes the clean static output',
     assert.ok(attributes.includes(`${output} linguist-generated=true`), output);
   }
 });
+
+test('migrated browser suites use strict checking and source-derived global API types', () => {
+  const tests = JSON.parse(fs.readFileSync(path.join(root, 'tsconfig.tests.json'), 'utf8')) as { extends: string; include: string[] };
+  const tools = JSON.parse(fs.readFileSync(path.join(root, 'tsconfig.tools.json'), 'utf8')) as { compilerOptions: { strict: boolean; noUncheckedIndexedAccess: boolean } };
+  assert.equal(tests.extends, './tsconfig.tools.json');
+  assert.ok(tests.include.includes('tests/*.mts'));
+  assert.ok(tests.include.includes('tests/*.d.ts'));
+  assert.equal(tools.compilerOptions.strict, true);
+  assert.equal(tools.compilerOptions.noUncheckedIndexedAccess, true);
+  assert.match(fs.readFileSync(path.join(root, 'tests/browser-runtime.d.ts'), 'utf8'), /import\('\.\.\/src\/book-metadata\.js'\)\.BookMetadataApi/);
+});

@@ -7,7 +7,7 @@ import { functionSource } from './source-tools.mts';
 const html = fs.readFileSync(new URL('../index.html', import.meta.url), 'utf8');
 const docs = fs.readFileSync(new URL('../../docs/ELECTRON_SOURCES.md', import.meta.url), 'utf8');
 
-function sourceIds(isDesktopMode) {
+function sourceIds(isDesktopMode: boolean) {
   const context = vm.createContext({
     isDesktopMode,
     state: { nip7: { pubkey: 'connected' }, settings: { opdsFeeds: [{ name: 'Custom', url: 'https://books.example/opds' }] } },
@@ -15,7 +15,7 @@ function sourceIds(isDesktopMode) {
     searchLibcatSource() {}, searchAllBooksPartySource() {}, searchUnglueIt() {},
     searchProjectGutenberg() {}, searchOapen() {}, searchOpenTextbookLibrary() {},
     searchDoab() {}, searchGlobalDigitalLibrary() {}, searchInternetArchive() {},
-    normalizePublicOPDSFeedSettings: feeds => feeds,
+    normalizePublicOPDSFeedSettings: (feeds: unknown[]) => feeds,
     searchCustomOPDSFeed() {},
   });
   vm.runInContext(functionSource(html, 'searchSourceRegistry'), context, { filename: 'web/index.html' });
