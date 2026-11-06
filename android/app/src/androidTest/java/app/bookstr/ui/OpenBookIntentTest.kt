@@ -11,6 +11,7 @@ import app.bookstr.MainActivity
 import app.bookstr.PdfReaderActivity
 import app.bookstr.ReaderActivity
 import app.bookstr.data.BookFormat
+import app.bookstr.util.Sha256
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.*
 import org.junit.Test
@@ -47,6 +48,7 @@ class OpenBookIntentTest {
                 Entry(epub, "application/epub+zip", ReaderActivity::class.java.name, BookFormat.Epub),
             )) {
                 val uri = FileProvider.getUriForFile(app, "${app.packageName}.books", file)
+                val expectedId = Sha256.hash(file)
                 val intent = Intent(Intent.ACTION_VIEW).setDataAndType(uri, mime)
                     .setClass(app, MainActivity::class.java).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                 val monitor = instrumentation.addMonitor(reader, null, false)
@@ -55,7 +57,8 @@ class OpenBookIntentTest {
                         val opened = instrumentation.waitForMonitorWithTimeout(monitor, 20_000)
                         assertNotNull("External file reached its reader", opened)
                         val book = runBlocking { app.catalogRepository.downloadedBooks(emptyList()) }
-                            .single { it.title == file.nameWithoutExtension && it.format == format }
+                            .single { it.id == expectedId && it.format == format }
+                        assertEquals(file.nameWithoutExtension, book.title)
                         assertTrue(app.catalogRepository.publicationFile(book.id, format).isFile)
                         instrumentation.runOnMainSync { opened.finish() }
                         instrumentation.waitForIdleSync()
