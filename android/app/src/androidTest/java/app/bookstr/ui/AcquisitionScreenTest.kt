@@ -16,6 +16,7 @@ import org.junit.runner.RunWith
 class AcquisitionScreenTest {
     @get:Rule val compose = createComposeRule()
     private val hash = "a".repeat(32)
+    @OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
     private fun touchContent(content: @androidx.compose.runtime.Composable () -> Unit) {
         compose.setContent {
             val inputMode = androidx.compose.ui.platform.LocalInputModeManager.current
