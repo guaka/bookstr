@@ -12,8 +12,26 @@
 #include <chrono>
 #include <thread>
 #include <algorithm>
+#ifdef BOOKSTR_NATIVE_COVERAGE
+#include <android/log.h>
+#include <filesystem>
+extern "C" {
+void __llvm_profile_set_filename(const char* filename);
+int __llvm_profile_write_file(void);
+}
+#endif
 namespace lt = libtorrent;
 namespace {
+#ifdef BOOKSTR_NATIVE_COVERAGE
+void set_coverage_profile_file(std::string const& root) {
+    const auto profile_path = std::filesystem::path(root).parent_path() / "bookstr-native-coverage-%p.profraw";
+    __llvm_profile_set_filename(profile_path.c_str());
+}
+void write_coverage_profile() {
+    const int result = __llvm_profile_write_file();
+    __android_log_print(ANDROID_LOG_INFO, "BookstrNativeCoverage", "Profile write status: %d", result);
+}
+#endif
 std::string text(JNIEnv* env, jstring value) {
     if (!value) return {};
     const char* chars = env->GetStringUTFChars(value, nullptr);
@@ -21,6 +39,18 @@ std::string text(JNIEnv* env, jstring value) {
 }
 void fail(JNIEnv* env, std::exception const& error) {
     env->ThrowNew(env->FindClass("java/lang/IllegalStateException"), error.what());
+}
+template <typename Result, typename Operation>
+Result with_exception_boundary(JNIEnv* env, Result fallback, Operation operation) {
+    try {
+        return operation();
+    } catch (std::exception const& error) {
+        fail(env, error);
+#ifdef BOOKSTR_NATIVE_COVERAGE
+        write_coverage_profile();
+#endif
+        return fallback;
+    }
 }
 struct Engine {
     std::unique_ptr<lt::session> session;
@@ -61,9 +91,12 @@ bool safe(std::string const& path) {
 }
 }
 extern "C" JNIEXPORT jlong JNICALL Java_app_bookstr_download_NativeTorrentEngine_create(JNIEnv* env, jobject, jstring root, jbyteArray metadata, jstring hash, jstring filename) {
-    try {
+    return with_exception_boundary(env, jlong{0}, [&]() -> jlong {
         auto engine = std::make_unique<Engine>();
         engine->root = text(env, root);
+#ifdef BOOKSTR_NATIVE_COVERAGE
+        set_coverage_profile_file(engine->root);
+#endif
         const auto md5 = text(env, hash), selected = text(env, filename);
         const auto count = env->GetArrayLength(metadata);
         if (count < 1 || count > 16 * 1024 * 1024 || md5.size() != 32 || md5.find_first_not_of("0123456789abcdef") != std::string::npos) throw std::runtime_error("Invalid torrent metadata");
@@ -118,11 +151,11 @@ extern "C" JNIEXPORT jlong JNICALL Java_app_bookstr_download_NativeTorrentEngine
         engine->handle = engine->session->add_torrent(params, ec);
         if (ec) throw std::runtime_error(ec.message());
         return reinterpret_cast<jlong>(engine.release());
-    } catch (std::exception const& error) { fail(env, error); return 0; }
+    });
 }
 extern "C" JNIEXPORT jobjectArray JNICALL Java_app_bookstr_download_NativeTorrentEngine_snapshot(JNIEnv* env, jobject, jlong pointer) {
     auto* engine = reinterpret_cast<Engine*>(pointer);
-    try {
+    return with_exception_boundary<jobjectArray>(env, nullptr, [&]() -> jobjectArray {
         engine->collect(); auto status = engine->handle.status();
         bool ready = status.is_finished && status.state != lt::torrent_status::checking_files && status.state != lt::torrent_status::checking_resume_data;
         if (std::chrono::steady_clock::now() - engine->last_save > std::chrono::seconds(10)) {
@@ -136,6 +169,11 @@ extern "C" JNIEXPORT jobjectArray JNICALL Java_app_bookstr_download_NativeTorren
         auto result = env->NewObjectArray(5, env->FindClass("java/lang/String"), nullptr);
         for (int i = 0; i < 5; ++i) { auto value = env->NewStringUTF(values[i].c_str()); env->SetObjectArrayElement(result, i, value); env->DeleteLocalRef(value); }
         return result;
-    } catch (std::exception const& error) { fail(env, error); return nullptr; }
+    });
 }
-extern "C" JNIEXPORT void JNICALL Java_app_bookstr_download_NativeTorrentEngine_destroy(JNIEnv*, jobject, jlong pointer) { delete reinterpret_cast<Engine*>(pointer); }
+extern "C" JNIEXPORT void JNICALL Java_app_bookstr_download_NativeTorrentEngine_destroy(JNIEnv*, jobject, jlong pointer) {
+    delete reinterpret_cast<Engine*>(pointer);
+#ifdef BOOKSTR_NATIVE_COVERAGE
+    write_coverage_profile();
+#endif
+}

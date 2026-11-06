@@ -73,6 +73,47 @@ non-empty coverage to `BOOKSTR_COVERAGE_FILE`.
 The report is at
 `app/build/reports/jacoco/jacocoCombinedDebugReport/jacocoCombinedDebugReport.xml`.
 
+### Opt-in JNI source coverage
+
+The NDK 27.2 LLVM source-coverage path is opt-in and instruments only the
+maintained `torrent_jni.cpp` translation unit; fetched libtorrent remains
+uninstrumented. Build and run the debug APK and tests for the emulator's ABI
+(CI uses `x86_64`):
+
+```sh
+./gradlew --max-workers=2 -Pbookstr.abis=x86_64 -Pbookstr.nativeCoverage=true assembleDebug assembleDebugAndroidTest
+./gradlew --max-workers=2 -Pbookstr.abis=x86_64 -Pbookstr.nativeCoverage=true connectedDebugAndroidTest
+```
+
+Before connected tests, clear profiles from earlier runs on the disposable
+emulator. This removes only Bookstr coverage `.profraw` files from the two
+app-private profile directories; it refuses physical devices and does not
+clear app data. Then collect the fresh profiles and report them with the
+matching unstripped library and NDK tools:
+
+```sh
+./scripts/prepare-native-coverage.sh "$ANDROID_HOME/platform-tools/adb" emulator-5554 app.bookstr
+./scripts/collect-native-coverage.sh "$ANDROID_HOME/platform-tools/adb" emulator-5554 app.bookstr app/build/coverage/native
+NATIVE_SO="$(find app/build/intermediates/cxx/Debug -type f -name libbookstr_torrent.so -print -quit)"
+./scripts/native-coverage.mjs \
+  --profile-dir app/build/coverage/native/raw \
+  --object "$NATIVE_SO" \
+  --ndk-bin "$ANDROID_HOME/ndk/27.2.12479018/toolchains/llvm/prebuilt/HOST_TAG/bin" \
+  --compiled-source-dir "$(realpath app/src/main/cpp)" \
+  --repo-root "$(cd .. && pwd)" \
+  --output-dir app/build/reports/native-coverage
+```
+
+Replace `HOST_TAG` with the NDK host directory (`darwin-x86_64` or
+`linux-x86_64`). The report command always writes HTML, a text summary, and
+`native-coverage.json` with measured line and branch percentages. Add
+`--require-complete true` to enforce 100% executable-line and branch coverage
+after those reports are written. Continuous `%c` profile mode is not used;
+Android runtime support for that mode has not been validated here. The
+preparation and collector scripts have host-side contract tests, but profile
+writing and collection still need a successful emulator run before this
+workflow can be treated as validated.
+
 Run connected tests only on an emulator. Gradle's
 connected-test cleanup can uninstall the app and erase its local data, including
 downloaded books and reading progress. For a personal tablet, build the APK and
