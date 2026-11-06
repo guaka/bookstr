@@ -548,6 +548,10 @@ class MainActivity : ComponentActivity() {
                                     error = "This favorite has not been published to Blossom yet."
                                 },
                                 publicationSize = { book -> catalog.publicationSize(book) },
+                                onShareBook = { book ->
+                                    error = BookSharing.share(this@MainActivity, book,
+                                        catalog.publicationFile(book.id, book.format))
+                                },
                                 canSendToKindle = { book -> book.format == BookFormat.Pdf &&
                                     downloadJobs.any { it.book.id == book.id && it.state == "complete" } },
                                 onSendToKindle = { book -> kindleRequest = KindleRequest(book.id) },

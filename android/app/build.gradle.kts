@@ -4,6 +4,7 @@ import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
 
 import org.gradle.testing.jacoco.tasks.JacocoReport
+import org.gradle.testing.jacoco.plugins.JacocoTaskExtension
 import org.gradle.api.tasks.Sync
 import org.gradle.api.tasks.testing.Test
 
@@ -176,6 +177,11 @@ jacoco {
 }
 
 tasks.withType<Test>().configureEach {
+    extensions.configure<JacocoTaskExtension> {
+        // Robolectric loads app classes without a code-source location.
+        isIncludeNoLocationClasses = true
+        excludes = listOf("jdk.internal.*")
+    }
     finalizedBy("jacocoDebugUnitTestReport")
 }
 
