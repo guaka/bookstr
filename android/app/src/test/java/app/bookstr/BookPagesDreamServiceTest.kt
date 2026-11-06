@@ -4,10 +4,12 @@ import android.app.Activity
 import android.content.Intent
 import android.content.Context
 import android.content.SharedPreferences
+import android.net.Uri
 import android.os.Looper
 import android.security.keystore.KeyGenParameterSpec
 import android.view.ViewGroup
 import android.webkit.WebView
+import android.webkit.WebResourceRequest
 import android.widget.LinearLayout
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
@@ -31,6 +33,7 @@ import org.robolectric.annotation.Implementation
 import org.robolectric.annotation.Implements
 import org.robolectric.Shadows.shadowOf
 import java.io.File
+import java.lang.reflect.Proxy
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.TimeUnit
@@ -172,6 +175,35 @@ class BookPagesDreamServiceTest {
     }
 
     @Test
+    fun assetInterceptionAndDestroyCleanUpUseAttachedWebViewAndReceiver() {
+        val activity = Robolectric.buildActivity(Activity::class.java).setup().get()
+        val controller = Robolectric.buildService(BookPagesDreamService::class.java).create()
+        val service = controller.get()
+        ReflectionHelpers.setField(service, "mWindow", activity.window)
+        service.onAttachedToWindow()
+
+        val webView = ReflectionHelpers.getField<WebView>(service, "webView")
+        val client = Shadows.shadowOf(webView).webViewClient
+        val readerAsset = client.shouldInterceptRequest(
+            webView,
+            webResourceRequest("https://appassets.androidplatform.net/assets/reader.html"),
+        )
+        assertTrue(readerAsset != null)
+        assertNull(client.shouldInterceptRequest(
+            webView,
+            webResourceRequest("https://appassets.androidplatform.net/books/$bookId.epub"),
+        ))
+        assertTrue(ReflectionHelpers.getField<Boolean>(service, "receiverRegistered"))
+
+        service.onDestroy()
+
+        assertFalse(ReflectionHelpers.getField<Boolean>(service, "receiverRegistered"))
+        assertNull(ReflectionHelpers.getField<WebView?>(service, "webView"))
+        controller.destroy()
+        activity.finish()
+    }
+
+    @Test
     fun savedEpubRendersPersistedPageAndFollowsPlayingBookProgressWithoutWritingIt() {
         val activity = Robolectric.buildActivity(Activity::class.java).setup().get()
         val controller = Robolectric.buildService(BookPagesDreamService::class.java).create()
@@ -195,6 +227,15 @@ class BookPagesDreamServiceTest {
         val webView = ReflectionHelpers.getField<WebView>(service, "webView")
         val webShadow = Shadows.shadowOf(webView)
         webShadow.webViewClient.onPageFinished(webView, "https://appassets.androidplatform.net/assets/reader.html")
+        val epubResponse = webShadow.webViewClient.shouldInterceptRequest(
+            webView,
+            webResourceRequest("https://appassets.androidplatform.net/books/$bookId.epub"),
+        )
+        assertEquals("fixture publication", requireNotNull(epubResponse).data.bufferedReader().use { it.readText() })
+        assertNull(webShadow.webViewClient.shouldInterceptRequest(
+            webView,
+            webResourceRequest("https://appassets.androidplatform.net/books/other.epub"),
+        ))
         val initialScript = requireNotNull(webShadow.lastEvaluatedJavascript)
         val arguments = loadBookArguments(initialScript)
         assertEquals("https://appassets.androidplatform.net/books/$bookId.epub", arguments.getString(0))
@@ -230,6 +271,20 @@ class BookPagesDreamServiceTest {
         ReflectionHelpers.getField<ExecutorService>(service, "io").execute { queued.countDown() }
         assertTrue("Dream IO work should finish", queued.await(5, TimeUnit.SECONDS))
     }
+
+    private fun webResourceRequest(url: String): WebResourceRequest =
+        Proxy.newProxyInstance(
+            WebResourceRequest::class.java.classLoader,
+            arrayOf(WebResourceRequest::class.java),
+        ) { _, method, _ ->
+            when (method.name) {
+                "getUrl" -> Uri.parse(url)
+                "isForMainFrame", "hasGesture", "isRedirect" -> false
+                "getMethod" -> "GET"
+                "getRequestHeaders" -> emptyMap<String, String>()
+                else -> null
+            }
+        } as WebResourceRequest
 }
 
 /** Robolectric does not provide AndroidKeyStore; app instrumentation tests retain real crypto coverage. */
