@@ -1255,12 +1255,16 @@ function setupIpcHandlers() {
       title: 'Import book into Bookstr',
       defaultPath: libraryDataDir,
       properties: ['openFile'],
-      filters: [{ name: 'Books', extensions: ['epub', 'pdf', 'fb2', 'txt'] }, { name: 'All files', extensions: ['*'] }],
+      filters: [{ name: 'Books', extensions: ['epub', 'pdf', 'txt'] }, { name: 'All files', extensions: ['*'] }],
     });
     if (selection.canceled || !selection.filePaths?.[0]) return null;
     const expectedSha256 = /^[a-f0-9]{64}$/i.test(String(request.expectedSha256 || ''))
       ? String(request.expectedSha256).toLowerCase()
       : undefined;
+    if (String(request.extension || path.extname(selection.filePaths[0]).slice(1)).toLowerCase() === 'fb2'
+      || path.extname(selection.filePaths[0]).toLowerCase() === '.fb2') {
+      throw new Error('The selected book format is not supported.');
+    }
     const imported = await getLibraryImporter().importFile(selection.filePaths[0], {
       extension: request.extension,
       expectedSha256,
@@ -1399,8 +1403,8 @@ function setupIpcHandlers() {
       throw new Error('Registered library file checksum does not match the stored edition.');
     }
     const fileExtension = path.extname(filePath).slice(1).toLowerCase();
-    if (!['epub', 'pdf', 'fb2'].includes(fileExtension)) {
-      throw new Error('Only EPUB, PDF, and FB2 files may be publicly seeded.');
+    if (!['epub', 'pdf'].includes(fileExtension)) {
+      throw new Error('Only EPUB and PDF files may be publicly seeded.');
     }
     const storedExtension = String(book.extension || '').trim().toLowerCase().replace(/^\./, '');
     if (storedExtension && storedExtension !== fileExtension) {

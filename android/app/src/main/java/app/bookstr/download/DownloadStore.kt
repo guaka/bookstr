@@ -3,6 +3,7 @@ package app.bookstr.download
 import app.bookstr.data.BookFormat
 import app.bookstr.data.CatalogBook
 import app.bookstr.data.TorrentEdition
+import app.bookstr.data.requireAvailable
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import org.json.JSONArray
@@ -12,7 +13,7 @@ import java.io.File
 private val activeStates = setOf("queued", "connecting", "downloading", "finding-peers", "verifying", "waiting-network")
 data class DownloadJob(val book: CatalogBook, val edition: TorrentEdition, val state: String = "queued", val bytes: Long = 0,
                        val size: Long = 0, val error: String? = null) {
-    val active get() = state in activeStates
+    val active get() = book.format.isAvailable && state in activeStates
     fun json(): JSONObject = JSONObject().put("book", JSONObject().put("id", book.id).put("title", book.title)
         .put("author", book.author).put("format", book.format.extension).put("year", book.year).put("language", book.language)
         .put("rights_status", book.rightsStatus).put("license", book.license).put("license_url", book.licenseUrl).put("rights_source", book.rightsSource))
@@ -67,6 +68,7 @@ class DownloadStore(private val directory: File) {
     }
     @Synchronized fun enqueue(book: CatalogBook, edition: TorrentEdition) {
         require(book.id == edition.md5)
+        book.format.requireAvailable()
         val old = mutable.value.find { it.book.id == book.id }
         if (old?.active == true || old?.state == "complete") return
         update(old?.copy(state = "queued", error = null) ?: DownloadJob(book, edition), moveToTop = true)

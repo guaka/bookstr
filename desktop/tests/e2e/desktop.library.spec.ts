@@ -624,7 +624,7 @@ test('switching MD5 books never treats the previous EPUB as the next book', asyn
   }
 });
 
-test('Library opens FB2 and CBZ books through their format-specific readers', async () => {
+test('Library keeps imported FB2 metadata unavailable and still opens CBZ books', async () => {
   const launch = electronArgs('formats-user-data');
   const fb2 = { md5: '3'.repeat(32), title: 'FB2 Fixture', authors: 'Fixture Author', extension: 'fb2', readUrl: 'https://files.test/book.fb2' };
   const cbz = { md5: '4'.repeat(32), title: 'CBZ Fixture', authors: 'Fixture Author', extension: 'cbz', readUrl: 'https://files.test/book.cbz' };
@@ -637,18 +637,14 @@ test('Library opens FB2 and CBZ books through their format-specific readers', as
     const page = await app.firstWindow();
     await app.context().route('https://lib.b.bfr.ee/api/books/**', route => route.fulfill({ status: 404, body: '{}' }));
     await app.context().route('https://lib.b.bfr.ee/api/nostr', route => route.fulfill({ status: 404, body: '{}' }));
-    await app.context().route(fb2.readUrl, route => route.fulfill({ status: 200, contentType: 'application/xml', body: minimalFB2(fb2.title) }));
     await app.context().route(cbz.readUrl, async route => route.fulfill({ status: 200, contentType: 'application/vnd.comicbook+zip', body: await minimalCBZ() }));
     await seedLibrary(page, [fb2, cbz]);
     await page.reload();
 
-    await page.getByRole('link', { name: fb2.title }).click();
-    let reader = page.frameLocator('#reader-frame');
-    await expect(reader.locator('#viewer')).toContainText('Distinct FB2 contents.');
-    await expect(reader.locator('body')).toHaveCSS('padding-left', '36px');
-    await page.getByRole('button', { name: 'Home' }).click();
+    await expect(page.getByRole('link', { name: fb2.title })).toHaveCount(0);
+    await expect(page.locator('.result-title.unavailable', { hasText: fb2.title })).toBeVisible();
     await page.getByRole('link', { name: cbz.title }).click();
-    reader = page.frameLocator('#reader-frame');
+    const reader = page.frameLocator('#reader-frame');
     await expect(reader.locator('#title')).toHaveText(cbz.title);
     await expect(reader.locator('#count')).toHaveText('1 / 1');
     await expect(reader.locator('#stage img')).toBeVisible();

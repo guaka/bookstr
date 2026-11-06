@@ -1,4 +1,5 @@
 import type { Readable as NodeReadable } from 'node:stream';
+import { isEnabledReaderFormat, requireEnabledReaderFormat } from './reader-formats';
 
 type Progress = { source?: string; bytes: number; totalBytes: number | null; bookId?: string };
 type ProgressCallback = (progress: Progress) => void;
@@ -121,9 +122,7 @@ function safePath(root: string, value: string): string {
 }
 
 function extensionFor(format: unknown): string {
-  const extension = String(format || '').trim().toLowerCase().replace(/^\./, '');
-  if (!['epub', 'pdf', 'fb2', 'cbz', 'cbr'].includes(extension)) throw new TypeError('unsupported acquisition format');
-  return extension;
+  return requireEnabledReaderFormat(format);
 }
 
 function responseLength(response: Pick<Response, 'headers'> | null | undefined): number | null {
@@ -616,6 +615,7 @@ class AcquisitionManager {
     const normalized = normalizeProviderRecord(record);
     const fields = providerBookFields(record);
     const candidates = listAcquisitions(normalized, { format, preferTorrent, includeRestricted })
+      .filter(candidate => isEnabledReaderFormat(candidate.format))
       // Private torrents require an authenticated peer handoff. Until that
       // exists, do not attempt them as ordinary catalog acquisitions.
       .filter(candidate => !candidate.private && (

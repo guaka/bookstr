@@ -69,6 +69,18 @@ test('home filtering keeps the matching in-progress book visible', async ({ page
   await expect(page.locator('#home-reading-list')).not.toContainText('Another Book');
 });
 
+test('saved FB2 reading metadata remains visible without a resume link', async ({ page }) => {
+  await page.addInitScript(() => {
+    localStorage.setItem('bookstr_reading_library_v1', JSON.stringify([
+      { md5: '3'.repeat(32), title: 'Saved FB2', authors: 'Fixture Author', extension: 'fb2', progression: 0.4, readUrl: 'https://files.example/book.fb2' },
+    ]));
+  });
+  await page.goto('/#home');
+  const readingList = page.locator('#home-reading-list');
+  await expect(readingList).toContainText('Saved FB2');
+  await expect(readingList.getByRole('link', { name: 'Saved FB2' })).toHaveCount(0);
+});
+
 async function minimalEpub(title, body = title, rights = '') {
   const zip = new JSZip();
   zip.file('mimetype', 'application/epub+zip', { compression: 'STORE' });
