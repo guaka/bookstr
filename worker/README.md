@@ -15,7 +15,7 @@ Deploy from this directory with Wrangler after authenticating to the Cloudflare
 account that owns `guaka.org`:
 
 ```sh
-npx wrangler deploy
+pnpm dlx wrangler deploy
 ```
 
 The route in `wrangler.toml` sends `https://books.guaka.org/api/*` through the
