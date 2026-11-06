@@ -2,13 +2,12 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
+import { functionSource } from './source-tools.mts';
 
 const html = fs.readFileSync(new URL('../index.html', import.meta.url), 'utf8');
 const docs = fs.readFileSync(new URL('../../docs/ELECTRON_SOURCES.md', import.meta.url), 'utf8');
 
 function sourceIds(isDesktopMode) {
-  const start = html.indexOf('      function searchSourceRegistry()');
-  const end = html.indexOf('      function disabledSearchSourceIds()', start);
   const context = vm.createContext({
     isDesktopMode,
     state: { nip7: { pubkey: 'connected' }, settings: { opdsFeeds: [{ name: 'Custom', url: 'https://books.example/opds' }] } },
@@ -19,7 +18,7 @@ function sourceIds(isDesktopMode) {
     normalizePublicOPDSFeedSettings: feeds => feeds,
     searchCustomOPDSFeed() {},
   });
-  vm.runInContext(html.slice(start, end), context, { filename: 'web/index.html' });
+  vm.runInContext(functionSource(html, 'searchSourceRegistry'), context, { filename: 'web/index.html' });
   return Array.from(vm.runInContext('searchSourceRegistry().map(source => source.id)', context));
 }
 
