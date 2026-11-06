@@ -1,11 +1,11 @@
-const test = require('node:test');
-const assert = require('node:assert/strict');
-const fs = require('node:fs');
-const path = require('node:path');
+const test = require('node:test') as typeof import('node:test');
+const assert: typeof import('node:assert/strict') = require('node:assert/strict');
+const fs = require('node:fs') as typeof import('node:fs');
+const path = require('node:path') as typeof import('node:path');
 
 const projectRoot = path.join(__dirname, '../../..');
 
-function pngHeader(relativePath) {
+function pngHeader(relativePath: string) {
   const contents = fs.readFileSync(path.join(projectRoot, relativePath));
   assert.equal(contents.toString('ascii', 1, 4), 'PNG');
   return {

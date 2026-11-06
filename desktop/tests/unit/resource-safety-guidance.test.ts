@@ -1,9 +1,9 @@
 'use strict';
 
-const assert = require('node:assert/strict');
-const fs = require('node:fs');
-const path = require('node:path');
-const test = require('node:test');
+const assert: typeof import('node:assert/strict') = require('node:assert/strict');
+const fs = require('node:fs') as typeof import('node:fs');
+const path = require('node:path') as typeof import('node:path');
+const test = require('node:test') as typeof import('node:test');
 
 test('repository guidance bounds Electron, Playwright, and native-test memory use', () => {
   const instructions = fs.readFileSync(path.join(__dirname, '../../../AGENTS.md'), 'utf8');
@@ -21,9 +21,9 @@ test('repository guidance bounds Electron, Playwright, and native-test memory us
 });
 
 test('Electron unit commands bound concurrent processes and heap size', () => {
-  const { scripts } = JSON.parse(fs.readFileSync(path.join(__dirname, '../../package.json'), 'utf8'));
+  const { scripts } = JSON.parse(fs.readFileSync(path.join(__dirname, '../../package.json'), 'utf8')) as import('../types/package-manifest').DesktopPackageManifest;
   for (const command of ['test:unit', 'test:coverage']) {
-    assert.match(scripts[command], /--test-concurrency=1\b/);
-    assert.match(scripts[command], /--max-old-space-size=768\b/);
+    assert.match(scripts[command]!, /--test-concurrency=1\b/);
+    assert.match(scripts[command]!, /--max-old-space-size=768\b/);
   }
 });

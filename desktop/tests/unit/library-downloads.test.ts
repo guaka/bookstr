@@ -1,20 +1,21 @@
 'use strict';
 
-const assert = require('node:assert/strict');
-const fs = require('node:fs/promises');
-const path = require('node:path');
-const test = require('node:test');
-const JSZip = require('../../../web/jszip.min.js');
-const { downloadsForRenderer, detectedFormat, sniffFileFormat } = require('../../library-downloads');
+const assert: typeof import('node:assert/strict') = require('node:assert/strict');
+const fs: typeof import('node:fs/promises') = require('node:fs/promises');
+const path: typeof import('node:path') = require('node:path');
+const test: typeof import('node:test') = require('node:test');
+interface ZipFixture { file(name: string, contents: string | Buffer): void; generateAsync(options: { type: 'nodebuffer' }): Promise<Buffer> }
+const JSZip = require('../../../web/jszip.min.js') as new () => ZipFixture;
+const { downloadsForRenderer, detectedFormat, sniffFileFormat } = require('../../library-downloads') as typeof import('../../src/library-downloads');
 
 async function fixtureFiles() {
   const root = await fs.mkdtemp(path.join(__dirname, '.library-downloads-'));
-  const files = new Map();
+  const files = new Map<string, string>();
   const epub = new JSZip();
   epub.file('META-INF/container.xml', '<container/>');
   const cbz = new JSZip();
   cbz.file('001.png', Buffer.from([1]));
-  const entries = [
+  const entries: Array<[string, Buffer]> = [
     ['epub', await epub.generateAsync({ type: 'nodebuffer' })],
     ['cbz', await cbz.generateAsync({ type: 'nodebuffer' })],
     ['cbr', Buffer.concat([Buffer.from('Rar!'), Buffer.alloc(16)])],
@@ -29,9 +30,9 @@ async function fixtureFiles() {
     files.set(format, filePath);
   }));
   for (const format of ['epub', 'cbz', 'cbr', 'fb2', 'pdf', 'txt']) {
-    assert.equal(await detectedFormat(files.get(format)), format === 'txt' ? '' : format);
+    assert.equal(await detectedFormat(files.get(format)!), format === 'txt' ? '' : format);
   }
-  assert.equal(await detectedFormat(files.get('legacy-epub')), 'cbz');
+  assert.equal(await detectedFormat(files.get('legacy-epub')!), 'cbz');
   return { root, files };
 }
 
@@ -40,23 +41,23 @@ test('renderer downloads expose actual registered reader formats as readable', a
   t.after(() => fs.rm(root, { recursive: true, force: true }));
   const formats = ['epub', 'pdf', 'fb2', 'cbz', 'cbr', 'txt'];
   const rows = [...formats, 'missing'].map(bookId => ({ bookId, status: 'ready' }));
-  const results = await downloadsForRenderer(rows, async bookId => {
+  const results = await downloadsForRenderer(rows, async (bookId: string) => {
     const filePath = files.get(bookId);
     if (!filePath) throw new Error('missing');
     return { filePath, book: { extension: bookId } };
   });
   assert.deepEqual(results.map(item => item.readable), [true, true, true, true, true, false, false]);
-  assert.equal(Object.hasOwn(results[0], 'filePath'), false);
+  assert.equal(Object.hasOwn(results[0]!, 'filePath'), false);
 });
 
 test('reader readability follows detected bytes when catalog and path extensions are stale', async t => {
   const { root, files } = await fixtureFiles();
   t.after(() => fs.rm(root, { recursive: true, force: true }));
   const [result] = await downloadsForRenderer([{ bookId: 'legacy' }], async () => ({
-    filePath: files.get('legacy-epub'), book: { extension: 'epub' },
+    filePath: files.get('legacy-epub')!, book: { extension: 'epub' },
   }));
-  assert.equal(result.readable, true);
-  assert.equal(result.extension, 'cbz');
+  assert.equal(result!.readable, true);
+  assert.equal(result!.extension, 'cbz');
 });
 
 test('format detection reads a bounded header from a large sparse file', async t => {
@@ -95,36 +96,53 @@ test('valid ZIP archives without reader markers remain unsupported', async t => 
 });
 
 test('format detection handles I/O failures and closes opened files', async () => {
-  assert.equal(await sniffFileFormat('/missing', { open: async () => { throw new Error('open failed'); } }), '');
+  assert.equal(await sniffFileFormat('/missing', { open: async () => { throw new Error('open failed'); } } as unknown as typeof fs), '');
   let readFailureClosed = false;
   assert.equal(await sniffFileFormat('/read-error', { open: async () => ({
     stat: async () => ({ isFile: () => true, size: 8 }),
     read: async () => { throw new Error('read failed'); },
     close: async () => { readFailureClosed = true; },
-  }) }), '');
+  }) } as unknown as typeof fs), '');
   assert.equal(readFailureClosed, true);
   let closed = false;
   const pdfFile = {
     stat: async () => ({ isFile: () => true, size: 8 }),
-    read: async (buffer, _offset, _length, position) => {
+    read: async (buffer: Buffer, _offset: number, _length: number, position: number) => {
       const bytes = Buffer.from(position === 0 ? '%PDF-1.4' : '');
       bytes.copy(buffer);
       return { bytesRead: bytes.length };
     },
     close: async () => { closed = true; throw new Error('close failed'); },
   };
-  assert.equal(await sniffFileFormat('/pdf', { open: async () => pdfFile }), 'pdf');
+  assert.equal(await sniffFileFormat('/pdf', { open: async () => pdfFile } as unknown as typeof fs), 'pdf');
   assert.equal(closed, true);
 });
 
 test('non-array download inputs and non-file registrations produce empty or unreadable rows', async t => {
   const root = await fs.mkdtemp(path.join(__dirname, '.library-downloads-dir-'));
   t.after(() => fs.rm(root, { recursive: true, force: true }));
-  assert.deepEqual(await downloadsForRenderer(null, async () => ({})), []);
-  assert.deepEqual(await downloadsForRenderer(undefined, async () => ({})), []);
+  assert.deepEqual(await downloadsForRenderer(null, async () => { throw new Error('missing'); }), []);
+  assert.deepEqual(await downloadsForRenderer(undefined, async () => { throw new Error('missing'); }), []);
   assert.equal(await detectedFormat(root), '');
   const [row] = await downloadsForRenderer([{ bookId: 'missing' }], async () => { throw new Error('not registered'); });
-  assert.equal(row.readable, false);
+  assert.equal(row!.readable, false);
+});
+
+test('renderer format checks stay within the worker limit and preserve row order', async t => {
+  const { root, files } = await fixtureFiles();
+  t.after(() => fs.rm(root, { recursive: true, force: true }));
+  let active = 0;
+  let peakActive = 0;
+  const rows = Array.from({ length: 12 }, (_, index) => ({ bookId: `book-${index}` }));
+  const results = await downloadsForRenderer(rows, async () => {
+    active += 1;
+    peakActive = Math.max(peakActive, active);
+    await new Promise(resolve => setTimeout(resolve, 1));
+    active -= 1;
+    return { filePath: files.get('pdf')! };
+  });
+  assert.equal(peakActive, 4);
+  assert.deepEqual(results.map(row => row.bookId), rows.map(row => row.bookId));
 });
 
 test('format cache remains bounded after many distinct files', async t => {

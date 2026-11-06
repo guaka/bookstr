@@ -1,5 +1,29 @@
-const test = require('node:test');
-const assert = require('node:assert/strict');
+const test: typeof import('node:test') = require('node:test');
+const assert: typeof import('node:assert/strict') = require('node:assert/strict');
+
+interface CoverBook { [key: string]: unknown }
+interface CoverOptions { desktop?: boolean; key?: string }
+interface CoverImage {
+  src: string;
+  complete?: boolean;
+  naturalWidth?: number;
+  classList?: { add?(value: string): void; remove?(value: string): void; toggle?(value: string, enabled: boolean): void };
+  getAttribute?(name: string): string | null;
+  addEventListener(name: string, callback: () => void): void;
+  remove?(): void;
+  closest?(selector: string): { classList: { toggle(value: string, enabled: boolean): void } } | null;
+}
+interface CoverAssetsApi {
+  attachImageFallback(image: CoverImage | null, candidates: string[], options?: { key?: string; onLoaded?: (url: string, detail: { isRealCover: boolean }) => void }): void;
+  bookCoverCandidates(book?: CoverBook, options?: CoverOptions): string[];
+  normalizeCoverUrl(url: string, desktop: boolean): string;
+  placeholderCoverUrl(book?: CoverBook): string;
+  retryBookCover(key: string): void;
+}
+declare global {
+  var BookMetadata: { isbnForBook(book?: CoverBook): string };
+  var CoverAssets: CoverAssetsApi;
+}
 
 globalThis.BookMetadata = {
   isbnForBook(book) {
@@ -18,7 +42,7 @@ test('desktop does not derive covers from private URLs or legacy hashes', () => 
     coverSha256: 'c'.repeat(64),
   }, { desktop: true });
   assert.equal(candidates.length, 1);
-  assert.ok(candidates.at(-1).startsWith('data:image/svg+xml,'));
+  assert.ok(candidates.at(-1)?.startsWith('data:image/svg+xml,'));
   assert.ok(!candidates.some(url => url.includes('lib.b.bfr.ee')));
 });
 
@@ -46,33 +70,33 @@ test('web cover candidates ignore legacy hashes and use public catalog covers', 
   assert.ok(!candidates.some(url => url.includes(sha256)));
   assert.ok(candidates.includes('https://covers.openlibrary.org/b/id/42-M.jpg'));
   assert.ok(!candidates.some(url => url.includes('lib.b.bfr.ee')));
-  assert.ok(decodeURIComponent(candidates.at(-1)).includes('>B</text>'));
+  assert.ok(decodeURIComponent(candidates.at(-1) ?? '').includes('>B</text>'));
   assert.equal(bookCoverCandidates({}, { desktop: true }).length, 1);
 });
 
 test('cover image fallback advances candidates and removes an exhausted image', () => {
-  const listeners = {};
-  const image = {
+  const listeners: Record<string, () => void> = {};
+  const image: CoverImage & { removed?: boolean } = {
     src: 'https://first.example/cover.jpg',
     getAttribute: () => 'https://first.example/cover.jpg',
     addEventListener: (name, callback) => { listeners[name] = callback; },
     remove: () => { image.removed = true; },
   };
   attachImageFallback(image, ['https://first.example/cover.jpg', 'data:image/svg+xml,fallback']);
-  listeners.error();
+  listeners.error?.();
   assert.equal(image.src, 'data:image/svg+xml,fallback');
-  listeners.error();
+  listeners.error?.();
   assert.equal(image.removed, true);
   assert.doesNotThrow(() => attachImageFallback(null, []));
-  const blankListeners = {};
-  const blank = {
+  const blankListeners: Record<string, () => void> = {};
+  const blank: CoverImage = {
     src: '',
     getAttribute: () => '',
     addEventListener: (name, callback) => { blankListeners[name] = callback; },
   };
   attachImageFallback(blank, ['data:image/svg+xml,only']);
   assert.equal(blank.src, 'data:image/svg+xml,only');
-  blankListeners.error();
+  blankListeners.error?.();
   const noAttributeImage = {
     src: '',
     addEventListener: () => {},
@@ -84,8 +108,8 @@ test('cover image fallback advances candidates and removes an exhausted image', 
 test('placeholder hover can reset a failed cover candidate', () => {
   const key = 'hover-retry';
   const failed = 'https://images.example/hover-retry.jpg';
-  const listeners = {};
-  const image = {
+  const listeners: Record<string, () => void> = {};
+  const image: CoverImage = {
     src: failed,
     getAttribute: () => failed,
     addEventListener: (name, callback) => { listeners[name] = callback; },
@@ -94,7 +118,7 @@ test('placeholder hover can reset a failed cover candidate', () => {
     remove() {},
   };
   attachImageFallback(image, [failed], { key });
-  listeners.error();
+  listeners.error?.();
   assert.ok(!bookCoverCandidates({ coverUrl: failed }, { key }).includes(failed));
   retryBookCover(key);
   assert.ok(bookCoverCandidates({ coverUrl: failed }, { key }).includes(failed));
@@ -154,7 +178,7 @@ test('desktop adds public catalog cover fallbacks without treating the letter pl
   }, { desktop: true });
   assert.ok(candidates.includes('https://www.gutenberg.org/cache/epub/1661/pg1661.cover.medium.jpg'));
   assert.ok(candidates.includes('https://covers.openlibrary.org/b/olid/OL123M-M.jpg?default=false'));
-  assert.ok(candidates.at(-1).startsWith('data:image/svg+xml,'));
+  assert.ok(candidates.at(-1)?.startsWith('data:image/svg+xml,'));
 });
 
 test('Internet Archive identifiers add a public cover candidate', () => {
@@ -165,21 +189,29 @@ test('Internet Archive identifiers add a public cover candidate', () => {
   assert.equal(candidates[0], 'https://archive.org/services/img/safe_archive-id.1');
 });
 
+test('Gutenberg cover IDs come only from trusted book URLs', () => {
+  const trusted = bookCoverCandidates({ readUrl: 'app://bookstr/api/books/84/download' }, { desktop: true });
+  assert.ok(trusted.includes('https://www.gutenberg.org/cache/epub/84/pg84.cover.medium.jpg'));
+
+  const untrusted = bookCoverCandidates({ readUrl: 'https://attacker.example/api/books/84/download' }, { desktop: true });
+  assert.ok(!untrusted.some(candidate => candidate.includes('gutenberg.org/cache/epub/84/')));
+});
+
 test('a loaded real cover updates visual state, callbacks, and preferred candidate order', () => {
   const url = 'https://images.example/loaded.jpg';
-  const changes = [];
-  const slotChanges = [];
-  let loaded;
-  const image = {
+  const changes: unknown[][] = [];
+  const slotChanges: unknown[][] = [];
+  let loaded: { value: string; detail: { isRealCover: boolean } } | undefined;
+  const image: CoverImage = {
     src: url,
     complete: true,
     naturalWidth: 120,
     getAttribute: () => url,
     classList: {
-      add: value => changes.push(['add', value]),
-      toggle: (value, enabled) => changes.push(['toggle', value, enabled]),
+      add: (value: string) => changes.push(['add', value]),
+      toggle: (value: string, enabled: boolean) => changes.push(['toggle', value, enabled]),
     },
-    closest: () => ({ classList: { toggle: (value, enabled) => slotChanges.push([value, enabled]) } }),
+    closest: () => ({ classList: { toggle: (value: string, enabled: boolean) => slotChanges.push([value, enabled]) } }),
     addEventListener() {},
   };
   attachImageFallback(image, [url], {

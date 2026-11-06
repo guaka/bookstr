@@ -1,18 +1,19 @@
 'use strict';
 
-const assert = require('node:assert/strict');
-const fs = require('node:fs/promises');
-const Module = require('node:module');
-const path = require('node:path');
-const { PassThrough } = require('node:stream');
-const test = require('node:test');
-const { ComicPdfConverter, comicPages } = require('../../comic-pdf');
+const assert: typeof import('node:assert/strict') = require('node:assert/strict');
+const fs: typeof import('node:fs/promises') = require('node:fs/promises');
+type ModuleLoader = typeof import('node:module') & { _load(request: string, parent: NodeJS.Module | undefined, isMain: boolean): unknown };
+const Module = require('node:module') as ModuleLoader;
+const path: typeof import('node:path') = require('node:path');
+const { PassThrough } = require('node:stream') as typeof import('node:stream');
+const test: typeof import('node:test') = require('node:test');
+const { ComicPdfConverter, comicPages } = require('../../comic-pdf') as typeof import('../../src/comic-pdf');
 
 const node = process.execPath;
 const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/pJcAAAAASUVORK5CYII=', 'base64');
 
 class FakePdfDocument extends PassThrough {
-  openImage(bytes) {
+  openImage(bytes: Buffer) {
     if (bytes.toString() === 'large-image') return { width: 5000, height: 2000 };
     if (bytes.toString() === 'oversized-image') return { width: 6000, height: 6000 };
     if (!bytes.subarray(0, 4).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47]))) throw new Error('Invalid image');
@@ -20,9 +21,9 @@ class FakePdfDocument extends PassThrough {
   }
   addPage() {}
   image() {}
-  end() {
+  end(): this {
     this.write('%PDF-1.4 fixture');
-    super.end();
+    return super.end();
   }
 }
 
@@ -34,11 +35,13 @@ Module._load = function(request, parent, isMain) {
 };
 test.after(() => { Module._load = originalLoad; });
 
-function listing(entries) {
+interface ArchiveEntry { Path?: string; Size?: string; Folder?: string; Encrypted?: string }
+function listing(entries: ArchiveEntry[]): string {
   return entries.map(entry => Object.entries(entry).map(([key, value]) => `${key} = ${value}`).join('\n')).join('\n\n');
 }
 
-async function conversionFixture(t, { archiveListing, pages = {}, failList = false } = {}) {
+interface ConversionFixtureOptions { archiveListing?: string; pages?: Record<string, Buffer>; failList?: boolean }
+async function conversionFixture(t: import('node:test').TestContext, { archiveListing, pages = {}, failList = false }: ConversionFixtureOptions = {}) {
   const root = await fs.mkdtemp(path.join(process.cwd(), '.comic-pdf-test-'));
   t.after(() => fs.rm(root, { recursive: true, force: true }));
   const source = path.join(root, 'comic.cbz');
@@ -120,13 +123,14 @@ test('conversion writes and verifies a PDF, then reuses the verified cache entry
   await fs.utimes(target, future, future);
   const refreshed = await converter.cached(digest);
   assert.notStrictEqual(refreshed, cached, 'changed cache file stats should trigger a fresh digest');
+  assert.ok(refreshed);
   assert.equal(refreshed.sha256, result.sha256);
   assert.deepEqual(await converter.convert(source, digest), result);
 });
 
 test('default archive tool resolves its unpacked Electron path', () => {
   const converter = new ComicPdfConverter({ cacheRoot: '/fixture/cache' });
-  assert.equal(converter.archiveTool, '/fixture/app.asar.unpacked/bin/7za');
+  assert.equal((converter as unknown as { archiveTool: string }).archiveTool, '/fixture/app.asar.unpacked/bin/7za');
   assert.throws(() => new ComicPdfConverter(), /cacheRoot is required/);
 });
 
@@ -135,34 +139,35 @@ test('conversion rejects invalid requests, missing archives, and archive listing
   await assert.rejects(converter.convert(source, 'not-a-digest'), /sourceSha256 is invalid/);
   await assert.rejects(converter.convert(path.join(path.dirname(source), 'missing.cbz'), 'b'.repeat(64)), /ENOENT/);
   await assert.rejects(converter.convert(source, 'c'.repeat(64)), /Command failed/);
-  assert.deepEqual(await fs.readdir(converter.cacheRoot), []);
+  assert.deepEqual(await fs.readdir(path.join(path.dirname(source), 'cache')), []);
 });
 
 test('conversion replaces an empty cache file and shares concurrent work', async t => {
   const { root, source, converter } = await conversionFixture(t);
   const digest = '9'.repeat(64);
-  await fs.mkdir(converter.cacheRoot, { recursive: true });
-  await fs.writeFile(path.join(converter.cacheRoot, `${digest}.pdf`), '');
+  const cacheRoot = path.join(root, 'cache');
+  await fs.mkdir(cacheRoot, { recursive: true });
+  await fs.writeFile(path.join(cacheRoot, `${digest}.pdf`), '');
   const [first, second] = await Promise.all([
     converter.convert(source, digest),
     converter.convert(source, digest),
   ]);
   assert.deepEqual(first, second);
   assert.ok(first.size > 0);
-  assert.equal((await fs.readdir(converter.cacheRoot)).length, 1);
+  assert.equal((await fs.readdir(cacheRoot)).length, 1);
 
   const directoryDigest = '8'.repeat(64);
-  await fs.mkdir(path.join(converter.cacheRoot, `${directoryDigest}.pdf`));
+  await fs.mkdir(path.join(cacheRoot, `${directoryDigest}.pdf`));
   await assert.rejects(converter.convert(source, directoryDigest));
 });
 
 test('temporary cleanup errors do not mask a successfully verified PDF', async t => {
-  const { source, converter } = await conversionFixture(t);
+  const { root, source, converter } = await conversionFixture(t);
   const remove = fs.rm;
   const digest = '7'.repeat(64);
   let cleanupFailureObserved = false;
   fs.rm = async (target, options) => {
-    if (String(target).startsWith(path.join(converter.cacheRoot, `.${digest}-`))) {
+    if (String(target).startsWith(path.join(root, 'cache', `.${digest}-`))) {
       cleanupFailureObserved = true;
       throw new Error('simulated cleanup failure');
     }
@@ -176,28 +181,28 @@ test('temporary cleanup errors do not mask a successfully verified PDF', async t
   }
   assert.ok(result.size > 0);
   assert.equal(cleanupFailureObserved, true);
-  assert.deepEqual(await fs.readdir(converter.cacheRoot), [`${digest}.pdf`]);
+  assert.deepEqual(await fs.readdir(path.join(root, 'cache')), [`${digest}.pdf`]);
 });
 
 test('conversion removes temporary PDFs after extraction or image decoding fails', async t => {
   const changedSize = listing([{ Path: 'page1.png', Size: String(png.length + 1), Folder: '-' }]);
   const first = await conversionFixture(t, { archiveListing: changedSize, pages: { 'page1.png': png } });
   await assert.rejects(first.converter.convert(first.source, 'd'.repeat(64)), /size changed during extraction/);
-  assert.deepEqual(await fs.readdir(first.converter.cacheRoot), []);
+  assert.deepEqual(await fs.readdir(path.join(first.root, 'cache')), []);
 
   const badImage = await conversionFixture(t, {
     archiveListing: listing([{ Path: 'page1.png', Size: '4', Folder: '-' }]),
     pages: { 'page1.png': Buffer.from('nope') },
   });
   await assert.rejects(badImage.converter.convert(badImage.source, 'e'.repeat(64)));
-  assert.deepEqual(await fs.readdir(badImage.converter.cacheRoot), []);
+  assert.deepEqual(await fs.readdir(path.join(badImage.root, 'cache')), []);
 
   const oversized = await conversionFixture(t, {
     archiveListing: listing([{ Path: 'page1.png', Size: String(Buffer.byteLength('oversized-image')), Folder: '-' }]),
     pages: { 'page1.png': Buffer.from('oversized-image') },
   });
   await assert.rejects(oversized.converter.convert(oversized.source, 'f'.repeat(64)), /dimensions exceed conversion limits/);
-  assert.deepEqual(await fs.readdir(oversized.converter.cacheRoot), []);
+  assert.deepEqual(await fs.readdir(path.join(oversized.root, 'cache')), []);
 });
 
 test('conversion expands one nested ZIP page and converts a legacy GIF page', async t => {
