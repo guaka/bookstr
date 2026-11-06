@@ -14,24 +14,24 @@
       }
     },
     "electron": {
-      "minimumTests": 329,
-      "source": "https://github.com/guaka/bookstr/pull/224",
-      "commit": "93494b2d37451c5a1b5555994891beec10ee7a3e",
+      "minimumTests": 325,
+      "source": "https://github.com/guaka/bookstr/actions/runs/41934069165",
+      "commit": "4720fd682510343443cbf5b06bb14054954f222e",
       "metrics": {
         "Lines": 100,
-        "Branches": 91.66,
+        "Branches": 91.63,
         "Functions": 100
       }
     },
     "android": {
-      "minimumTests": 545,
-      "source": "https://github.com/guaka/bookstr/pull/224",
-      "commit": "93494b2d37451c5a1b5555994891beec10ee7a3e",
+      "minimumTests": 532,
+      "source": "https://github.com/guaka/bookstr/actions/runs/33211395263",
+      "commit": "335eeb26a301edb47f83f7146deb81d6506dc979",
       "metrics": {
-        "Instructions": 57.83,
-        "Branches": 51.49,
-        "Methods": 61.22,
-        "Lines": 58.44
+        "Instructions": 57.31,
+        "Branches": 51.06,
+        "Methods": 60.43,
+        "Lines": 57.91
       }
     },
     "ios": {
