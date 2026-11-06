@@ -80,6 +80,7 @@ fun LibraryScreen(
     onUnfavoriteBook: (CatalogBook) -> Unit = {},
     onUnfavoriteExternal: (ExternalFavorite) -> Unit = {},
     onDeleteBook: (CatalogBook) -> Unit = {},
+    onShareBook: (CatalogBook) -> Unit = {},
 ) {
     var language by rememberSaveable { mutableStateOf("") }
     var format by rememberSaveable { mutableStateOf("") }
@@ -168,6 +169,10 @@ fun LibraryScreen(
             isFavorite = book.id in favoriteIds,
             publicationBytes = publicationSize(book),
             canSendToKindle = canSendToKindle(book),
+            onShare = {
+                selectedBook = null
+                onShareBook(book)
+            },
             onDismiss = { selectedBook = null },
             onOpen = {
                 selectedBook = null
@@ -293,6 +298,7 @@ private fun BookDetailsDialog(
     onUnfavorite: () -> Unit,
     onDelete: () -> Unit,
     onSendToKindle: () -> Unit,
+    onShare: () -> Unit,
 ) {
     FullScreenDetails(title = "Book details", onDismiss = onDismiss) {
         Text(book.title, style = MaterialTheme.typography.headlineMedium)
@@ -316,6 +322,11 @@ private fun BookDetailsDialog(
         RightsDetails(book.rightsStatus, book.license, book.licenseUrl, book.rightsSource)
         Spacer(modifier = Modifier.height(12.dp))
         Button(onClick = onOpen, modifier = Modifier.fillMaxWidth()) { Text("Open book") }
+        if (publicationBytes != null) {
+            OutlinedButton(onClick = onShare, modifier = Modifier.fillMaxWidth().testTag("library.share.${book.id}")) {
+                Text("Share book")
+            }
+        }
         if (canSendToKindle && publicationBytes != null) {
             OutlinedButton(onClick = onSendToKindle, modifier = Modifier.fillMaxWidth().testTag("library.kindle.${book.id}")) {
                 Text("Send to Kindle")
