@@ -18,6 +18,7 @@ enum LibraryUITestFixtures {
            FileManager.default.fileExists(atPath: fileStore.bookFileURL(bookId: cbzID, format: .cbz).path) {
             return
         }
+        fileStore.ensureBooksDirectory()
         fileStore.save("downloads.json", value: [BookDownloadQueue.Job]())
         settings.theme = .night
         settings.authMode = .none
