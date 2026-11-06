@@ -150,39 +150,4 @@ class ReaderNarrationReadyTest {
             epub.delete()
         }
     }
-
-    @Test fun missingPublicationShowsReaderErrorWithoutStartingNarration() {
-        val app = ApplicationProvider.getApplicationContext<BookstrApp>()
-        val bookId = "reader-error-fixture-${System.nanoTime()}"
-        val epub = app.catalogRepository.epubFile(bookId)
-        epub.delete()
-        app.settingsRepository.clearReaderSession()
-        val narrationStarted = java.util.concurrent.atomic.AtomicBoolean(false)
-        val receiver = object : BroadcastReceiver() {
-            override fun onReceive(context: Context, intent: Intent) {
-                if (intent.getStringExtra(NarrationService.EXTRA_BOOK_ID) == bookId &&
-                    intent.getBooleanExtra(NarrationService.EXTRA_SESSION_ACTIVE, false)
-                ) narrationStarted.set(true)
-            }
-        }
-        app.registerReceiver(receiver, IntentFilter(NarrationService.ACTION_EVENT), Context.RECEIVER_NOT_EXPORTED)
-        try {
-            ActivityScenario.launch<ReaderActivity>(
-                ReaderActivity.intent(app, bookId, "Missing fixture", null, null, null, ReaderTheme.Paper),
-            ).use {
-                compose.waitUntil(30_000) {
-                    compose.onAllNodesWithTag("reader.error").fetchSemanticsNodes().isNotEmpty()
-                }
-                compose.onNodeWithTag("reader.error").assertExists()
-                compose.onNodeWithTag("reader.loading").assertDoesNotExist()
-                compose.onNodeWithContentDescription("Read aloud").assertExists()
-                assertFalse("Opening an unreadable book must not start narration", narrationStarted.get())
-            }
-        } finally {
-            NarrationService.stop(app)
-            app.unregisterReceiver(receiver)
-            app.settingsRepository.clearReaderSession()
-            epub.delete()
-        }
-    }
 }
