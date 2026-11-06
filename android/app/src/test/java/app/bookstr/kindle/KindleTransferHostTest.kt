@@ -327,13 +327,3 @@ private class HostDocumentsProvider : DocumentsProvider() {
         files.remove(documentId)?.delete()
     }
 }
-
-/** Robolectric routes the legacy query overload directly; Android uses the Bundle overload. */
-@Implements(DocumentsProvider::class)
-class ModernDocumentsProviderQuery : org.robolectric.shadows.ShadowContentProvider() {
-    @RealObject lateinit var provider: DocumentsProvider
-
-    @Implementation
-    fun query(uri: Uri, projection: Array<String>?, selection: String?, selectionArgs: Array<String>?, sortOrder: String?): Cursor? =
-        provider.query(uri, projection, Bundle(), null)
-}
