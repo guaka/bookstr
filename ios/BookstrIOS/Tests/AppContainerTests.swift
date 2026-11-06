@@ -460,7 +460,7 @@ final class AppContainerTests: XCTestCase {
         guard let startedBook = cachedBooks.first(where: { $0.title == "Started Remote" }) else {
             return XCTFail("The readable cached favorite must be restored")
         }
-        progress.save(bookId: startedBook.id, progression: 0.5, cfi: "chapter", updatedAt: 100)
+        progress.save(bookId: startedBook.id, progression: 0.5, cfi: "chapter")
         let viewModel = LibraryViewModel()
         viewModel.attach(container)
         let started = Date()
