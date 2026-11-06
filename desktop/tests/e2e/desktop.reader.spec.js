@@ -150,7 +150,8 @@ test('Desktop EPUB reader supports speech control transitions', async () => {
   const readUrl = 'https://files.test/desktop-reader.epub';
   const epub = await minimalEpub('Desktop Reader Speech');
   const electronApp = await electron.launch({
-    args: [path.join(__dirname, '../..')],
+    // Keep native speech disabled; the harness below exercises speech events silently.
+    args: ['--mute-audio', '--disable-speech-api', path.join(__dirname, '../..')],
   });
 
   try {
@@ -211,7 +212,8 @@ test('Desktop EPUB reader supports speech control transitions', async () => {
 test('Desktop PDF reader supports speech control transitions', async () => {
   const pdfUrl = 'https://files.test/desktop-reader.pdf';
   const electronApp = await electron.launch({
-    args: [path.join(__dirname, '../..')],
+    // Keep native speech disabled; the harness below exercises speech events silently.
+    args: ['--mute-audio', '--disable-speech-api', path.join(__dirname, '../..')],
   });
 
   try {
