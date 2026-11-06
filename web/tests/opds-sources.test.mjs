@@ -112,6 +112,8 @@ test('OPDS accepts PDF filenames and EPUB format labels while ignoring unknown a
     { metadata: { identifier: 'pdf' }, links: [{ href: '/book.PDF' }] },
     { metadata: { identifier: 'epub' }, links: [{ href: '/download', type: 'epub' }] },
     { metadata: { identifier: 'unknown' }, links: [{ href: '/book.mobi' }] },
+    { metadata: { identifier: 'ftp' }, links: [{ href: 'ftp://books.example/book.pdf', type: 'application/pdf' }] },
+    { metadata: { identifier: 'malformed' }, links: [{ href: 'http://[', type: 'application/pdf' }] },
   ] })));
   assert.deepEqual(records.map(record => record.acquisitions[0].format), ['pdf', 'epub']);
   assert.equal(providerRecordToBook(records[0], feed.url).extension, 'pdf');
