@@ -30,13 +30,20 @@ cd android
   -Pandroid.testInstrumentationRunnerArguments.class=app.bookstr.ui.TvControlsTest
 ```
 
-Android CI runs as four jobs: JVM unit tests with JaCoCo and the shared coverage
-baseline, APK packaging, emulator UI tests, and signed release publishing.
+Android CI separates JVM unit tests with JaCoCo and the shared coverage
+baseline, APK packaging, four parallel emulator shards, combined coverage, and
+signed release publishing. AndroidJUnitRunner assigns every discovered test
+to exactly one shard, including new tests. Shards do not cancel one another;
+each has a 20-minute execution limit and separate logs and coverage artifacts.
+The required **Emulator UI tests** check waits for all four shards and merges
+JVM, instrumentation, and native coverage before allowing a release. Missing
+shard data or any failed shard fails that check. **Rerun failed jobs** reuses
+successful shards from the same workflow run.
 Pull requests and pushes to `main` that change Android code or bundled reader
 assets build a debug APK. Open the matching run under
 [Actions → Android CI](https://github.com/guaka/bookstr/actions/workflows/android.yml)
 and download `bookstr-android-apks-<commit>` from **Artifacts**. It contains the
-debug app and instrumentation APK, retained for 14 days. The emulator job
+debug app and instrumentation APK, retained for 14 days. Each emulator shard
 installs these exact APKs and runs the instrumentation runner without invoking
 Gradle or compiling native code. These use the runner's debug signing key, so
 they cannot replace an installed APK signed with a different key. Unit coverage,

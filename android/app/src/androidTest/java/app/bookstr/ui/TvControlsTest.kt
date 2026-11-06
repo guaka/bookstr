@@ -15,6 +15,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.InputMode
 import androidx.compose.ui.platform.LocalInputModeManager
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
@@ -35,12 +36,22 @@ class TvControlsTest {
     @get:Rule val compose = createComposeRule()
 
     private fun television(content: @androidx.compose.runtime.Composable () -> Unit) {
+        var ready = false
         compose.setContent {
             val configuration = Configuration(LocalConfiguration.current).apply {
                 uiMode = Configuration.UI_MODE_TYPE_TELEVISION or Configuration.UI_MODE_NIGHT_YES
             }
-            CompositionLocalProvider(LocalConfiguration provides configuration) { BookstrTheme { content() } }
+            CompositionLocalProvider(LocalConfiguration provides configuration) {
+                BookstrTheme {
+                    // A phone emulator may inherit touch mode from another test.
+                    // Mount controls only once the simulated TV window can accept focus.
+                    ready = LocalWindowInfo.current.isWindowFocused &&
+                        LocalInputModeManager.current.inputMode == InputMode.Keyboard
+                    if (ready) content()
+                }
+            }
         }
+        compose.waitUntil(5_000) { ready }
     }
 
     @Test fun remoteFocusAndSelectReachEveryReaderControl() {

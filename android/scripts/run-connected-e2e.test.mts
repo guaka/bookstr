@@ -112,7 +112,7 @@ fi
 if [[ "\${1:-}" == pull ]]; then
   target="\${@: -1}"
   mkdir -p "$target"
-  printf 'png' > "$target/screenshot.png"
+  [[ "\${FAKE_NO_SCREENSHOTS:-}" == true ]] || printf 'png' > "$target/screenshot.png"
   exit 0
 fi
 exit 1
@@ -127,7 +127,7 @@ exit 1
     deviceCoverage,
     coverageFile,
     nativeOutput,
-    async run({ optIn = true, nativeCoverage = false, args = ['--prebuilt', appApk, testApk], ...overrides }: {optIn?: boolean; nativeCoverage?: boolean; args?: string[]; ANDROID_SERIAL?: string; FAKE_INSTRUMENT_STATUS?: string} = {}) {
+    async run({ optIn = true, nativeCoverage = false, args = ['--prebuilt', appApk, testApk], ...overrides }: {optIn?: boolean; nativeCoverage?: boolean; args?: string[]; ANDROID_SERIAL?: string; FAKE_INSTRUMENT_STATUS?: string; BOOKSTR_SHARD_COUNT?: string; BOOKSTR_SHARD_INDEX?: string; FAKE_NO_SCREENSHOTS?: string; FAKE_NATIVE_PROFILE?: string} = {}) {
       const env = {
         ...process.env,
         ANDROID_HOME: sdk,
@@ -384,4 +384,48 @@ test('prebuilt mode without coverage opt-in keeps instrumentation arguments and 
   } finally {
     await f.cleanup();
   }
+});
+
+for (const index of ['0', '1', '2', '3']) {
+  test(`shard ${index} passes the complete partition to AndroidJUnitRunner and keeps isolated results`, async () => {
+    const f = await fixture();
+    try {
+      const result = await f.run({ BOOKSTR_SHARD_COUNT: '4', BOOKSTR_SHARD_INDEX: index, FAKE_NO_SCREENSHOTS: 'true' });
+      assert.equal(result.status, 0, result.stderr);
+      assert.ok((await f.calls()).some(call => call.includes(`-e numShards 4 -e shardIndex ${index} app.bookstr.test/`)));
+      assert.ok(existsSync(join(f.cwd, `android/e2e-results/shard-${index}/instrumentation.xml`)));
+      assert.equal(existsSync(join(f.cwd, 'android/e2e-results/instrumentation.xml')), false);
+    } finally { await f.cleanup(); }
+  });
+}
+
+for (const [count, index] of [['', '0'], ['4', ''], ['0', '0'], ['4', '4'], ['4', '-1'], ['04', '0'], ['4', '01'], ['100', '0'], ['4', '$(touch unsafe)']]) {
+  test(`invalid shard configuration ${count}/${index} is rejected before device access`, async () => {
+    const f = await fixture();
+    try {
+      const result = await f.run({ BOOKSTR_SHARD_COUNT: count, BOOKSTR_SHARD_INDEX: index });
+      assert.equal(result.status, 2, result.stderr);
+      assert.equal(existsSync(f.logPath), false);
+    } finally { await f.cleanup(); }
+  });
+}
+
+test('unsharded runs still require screenshots', async () => {
+  const f = await fixture();
+  try {
+    const result = await f.run({ FAKE_NO_SCREENSHOTS: 'true' });
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /produced no screenshots/);
+  } finally { await f.cleanup(); }
+});
+
+
+test('a shard without JNI tests still records successful empty native collection', async () => {
+  const f = await fixture();
+  try {
+    const result = await f.run({ nativeCoverage: true, BOOKSTR_SHARD_COUNT: '4', BOOKSTR_SHARD_INDEX: '2', FAKE_NATIVE_PROFILE: '' });
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(await readFile(join(f.nativeOutput, 'native-coverage-collected.marker'), 'utf8'), 'collected\n');
+    assert.deepEqual(await readdir(join(f.nativeOutput, 'raw')), []);
+  } finally { await f.cleanup(); }
 });

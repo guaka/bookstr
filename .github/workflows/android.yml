@@ -107,7 +107,7 @@ jobs:
       - name: Test Android release version resolver
         run: node --test --experimental-test-coverage --test-coverage-lines=100 --test-coverage-branches=100 --test-coverage-functions=100 android/scripts/android-release-version.test.mts
       - name: Test connected Android runner
-        run: node --test android/scripts/run-connected-e2e.test.mts
+        run: node --test android/scripts/run-connected-e2e.test.mts android/scripts/combine-shard-coverage.test.mts
       - name: Test native coverage tooling
         run: |
           node --test --experimental-test-coverage --test-coverage-lines=100 --test-coverage-branches=100 --test-coverage-functions=100 android/scripts/native-coverage.test.mts
@@ -286,11 +286,15 @@ jobs:
           retention-days: 14
           overwrite: true
 
-  emulator-tests:
-    name: Emulator UI tests
-    needs: [unit-tests, package-apks]
+  emulator-shards:
+    name: Android emulator shard ${{ matrix.shard }}
+    needs: package-apks
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -304,6 +308,71 @@ jobs:
         with:
           name: bookstr-android-apks-${{ github.sha }}
           path: android/prebuilt-apks
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Run UI tests against prebuilt APKs
+        id: ui_tests
+        continue-on-error: true
+        timeout-minutes: 20
+        uses: reactivecircus/android-emulator-runner@v2
+        env:
+          BOOKSTR_SHARD_COUNT: 4
+          BOOKSTR_SHARD_INDEX: ${{ matrix.shard }}
+          BOOKSTR_COVERAGE_FILE: android/app/build/coverage/shard-${{ matrix.shard }}/full.ec
+          BOOKSTR_NATIVE_PROFILE_OUTPUT: android/app/build/coverage/shard-${{ matrix.shard }}/native
+        with:
+          api-level: 30
+          arch: x86_64
+          target: google_apis
+          profile: pixel_2
+          disk-size: 2048M
+          emulator-options: -no-window -no-audio -no-boot-anim -gpu swiftshader_indirect -memory 2048 -cores 2
+          script: |
+            adb shell settings put global window_animation_scale 0
+            adb shell settings put global transition_animation_scale 0
+            adb shell settings put global animator_duration_scale 0
+            ./android/scripts/run-connected-e2e.sh --prebuilt android/prebuilt-apks/app-debug.apk android/prebuilt-apks/app-debug-androidTest.apk
+      - name: Upload shard results and coverage
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bookstr-android-shard-${{ matrix.shard }}-${{ github.run_id }}
+          path: |
+            android/app/build/coverage/shard-${{ matrix.shard }}/
+            android/e2e-results/shard-${{ matrix.shard }}/
+            android/e2e-screenshots/shard-${{ matrix.shard }}/
+          if-no-files-found: error
+          retention-days: 14
+          overwrite: true
+      - name: Fail unsuccessful Android shard
+        if: always() && steps.ui_tests.outcome != 'success'
+        run: exit 1
+
+  emulator-tests:
+    name: Emulator UI tests
+    needs: [changes, unit-tests, package-apks, emulator-shards]
+    if: always() && needs.changes.outputs.android == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+      - name: Download shard results and coverage
+        uses: actions/download-artifact@v4
+        with:
+          pattern: bookstr-android-shard-*-${{ github.run_id }}
+          merge-multiple: true
+          path: android
+      - name: Combine every shard's execution data
+        run: bash android/scripts/combine-shard-coverage.sh 4
       - name: Download JVM JaCoCo execution data
         uses: actions/download-artifact@v4
         with:
@@ -319,42 +388,15 @@ jobs:
         with:
           name: bookstr-android-native-coverage-inputs-${{ github.sha }}
           path: android/native-coverage-input
-      - name: Enable KVM
-        run: |
-          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
-          sudo udevadm control --reload-rules
-          sudo udevadm trigger --name-match=kvm
-      - name: Start Android UI timer
-        id: ui_timer
-        run: echo "started=$(date +%s)" >> "$GITHUB_OUTPUT"
-      - name: Run UI tests against prebuilt APKs
-        id: ui_tests
-        continue-on-error: true
-        uses: reactivecircus/android-emulator-runner@v2
-        env:
-          BOOKSTR_COVERAGE_FILE: android/app/build/coverage/full.ec
-          BOOKSTR_NATIVE_PROFILE_OUTPUT: android/app/build/coverage/native
-        with:
-          api-level: 30
-          arch: x86_64
-          target: google_apis
-          profile: pixel_2
-          disk-size: 2048M
-          emulator-options: -no-window -no-audio -no-boot-anim -gpu swiftshader_indirect -memory 2048 -cores 2
-          script: |
-            adb shell settings put global window_animation_scale 0
-            adb shell settings put global transition_animation_scale 0
-            adb shell settings put global animator_duration_scale 0
-            ./android/scripts/run-connected-e2e.sh --prebuilt android/prebuilt-apks/app-debug.apk android/prebuilt-apks/app-debug-androidTest.apk
       - name: Generate native source coverage report
-        if: always() && hashFiles('android/app/build/coverage/native/native-coverage-collected.marker') != '' && hashFiles('android/app/build/coverage/native/raw/**/*.profraw') != ''
+        if: always() && hashFiles('android/app/build/coverage/shard-*/native/raw/**/*.profraw') != ''
         id: native_coverage
         run: |
           set -euo pipefail
           chmod +x android/native-coverage-input/bin/llvm-cov android/native-coverage-input/bin/llvm-profdata
           export LD_LIBRARY_PATH="$GITHUB_WORKSPACE/android/native-coverage-input/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
           ./android/scripts/native-coverage.mjs \
-            --profile-dir android/app/build/coverage/native/raw \
+            --profile-dir android/app/build/coverage \
             --object android/native-coverage-input/libbookstr_torrent.so \
             --ndk-bin android/native-coverage-input/bin \
             --compiled-source-dir "$(cat android/native-coverage-input/compiled-source-dir.txt)" \
@@ -367,12 +409,12 @@ jobs:
           name: bookstr-android-native-coverage-${{ github.sha }}
           path: |
             android/app/build/reports/native-coverage/
-            android/app/build/coverage/native/raw/
+            android/app/build/coverage/shard-*/native/raw/
           if-no-files-found: error
           retention-days: 14
           overwrite: true
       - name: Fail missing native source coverage report
-        if: always() && steps.ui_tests.outcome == 'success' && steps.native_coverage.outcome != 'success'
+        if: always() && steps.native_coverage.outcome != 'success'
         run: exit 1
       - name: Set up Java for coverage reporting
         if: always()
@@ -407,19 +449,17 @@ jobs:
         if: always() && steps.full_coverage.outcome != 'success'
         run: exit 1
       - name: Record Android UI test overview
-        if: always() && hashFiles('android/e2e-results/instrumentation.started') != ''
+        if: always() && hashFiles('android/e2e-results/shard-*/instrumentation.started') != ''
         working-directory: .
         env:
-          TEST_STATUS: ${{ steps.ui_tests.outcome == 'success' && 'passing' || 'failing' }}
-          TEST_STARTED: ${{ steps.ui_timer.outputs.started }}
+          TEST_STATUS: ${{ needs.emulator-shards.result == 'success' && 'passing' || 'failing' }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           mkdir -p test-overview
-          TEST_DURATION_MS=$((($(date +%s) - TEST_STARTED) * 1000))
           KNOWN_TESTS=$(grep -R -h -E '^[[:space:]]*@Test' android/app/src/androidTest --include='*.kt' | wc -l | tr -d ' ')
-          node scripts/test-overview.mjs record --id android-ui --suite "Android e2e" --status "$TEST_STATUS" --results-format junit --results android/e2e-results --known-tests "$KNOWN_TESTS" --duration-ms "$TEST_DURATION_MS" --output test-overview/android-ui.json --recorded "$(date -u +%FT%TZ)" --run-url "$RUN_URL" --commit "$GITHUB_SHA"
+          node scripts/test-overview.mjs record --id android-ui --suite "Android e2e" --status "$TEST_STATUS" --results-format junit --results android/e2e-results --known-tests "$KNOWN_TESTS" --output test-overview/android-ui.json --recorded "$(date -u +%FT%TZ)" --run-url "$RUN_URL" --commit "$GITHUB_SHA"
       - name: Upload Android UI test overview
-        if: always() && hashFiles('android/e2e-results/instrumentation.started') != ''
+        if: always() && hashFiles('android/e2e-results/shard-*/instrumentation.started') != ''
         uses: actions/upload-artifact@v4
         with:
           name: bookstr-test-overview-android-ui-${{ github.run_id }}
@@ -437,7 +477,7 @@ jobs:
           retention-days: 14
           overwrite: true
       - name: Upload Android UI results
-        if: always() && hashFiles('android/e2e-results/instrumentation.started') != ''
+        if: always() && hashFiles('android/e2e-results/shard-*/instrumentation.started') != ''
         uses: actions/upload-artifact@v4
         with:
           name: bookstr-android-ui-results-${{ github.run_id }}-${{ github.run_attempt }}
@@ -446,7 +486,7 @@ jobs:
           retention-days: 14
           overwrite: true
       - name: Fail unsuccessful Android UI checks
-        if: always() && steps.ui_tests.outcome != 'success'
+        if: always() && (needs.emulator-shards.result != 'success' || needs.unit-tests.result != 'success' || needs.package-apks.result != 'success')
         run: exit 1
 
   release:
