@@ -84,7 +84,7 @@ android {
         targetSdk = 35
         versionCode = providers.gradleProperty("bookstr.versionCode").orNull?.toInt() ?: timestampVersionCode
         versionName = providers.gradleProperty("bookstr.versionName").orNull ?: "0.1-$versionTimestamp"
-        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        testInstrumentationRunner = "app.bookstr.BookstrTestRunner"
         buildConfigField("String", "BUILD_DATE", "\"$buildDate\"")
     }
 

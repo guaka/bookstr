@@ -10,6 +10,7 @@ import androidx.compose.ui.input.InputMode
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalInputModeManager
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.unit.Density
 import app.bookstr.appFontMultiplier
 import app.bookstr.isTelevision
@@ -61,8 +62,9 @@ fun BookstrTheme(
     val configuration = LocalConfiguration.current
     val television = isTelevision(configuration.uiMode)
     val inputMode = LocalInputModeManager.current
-    LaunchedEffect(television, inputMode) {
-        if (television) inputMode.requestInputMode(InputMode.Keyboard)
+    val windowFocused = LocalWindowInfo.current.isWindowFocused
+    LaunchedEffect(television, inputMode, windowFocused) {
+        if (television && windowFocused) inputMode.requestInputMode(InputMode.Keyboard)
     }
     val multiplier = appFontMultiplier(configuration.uiMode, configuration.smallestScreenWidthDp)
     CompositionLocalProvider(LocalDensity provides Density(density.density, density.fontScale * multiplier)) {
