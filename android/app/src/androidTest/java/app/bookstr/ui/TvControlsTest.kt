@@ -133,6 +133,55 @@ class TvControlsTest {
         compose.runOnIdle { assertEquals(book, opened) }
     }
 
+    @Test fun remoteTraversesMultipleModelsAndSkipsAnActiveDownload() {
+        fun model(id: String) = SpeechModel(id, "en", id, "fixture", "revision", "kokoro", "model",
+            listOf(SpeechModelFile("model", 1024)))
+        val installed = model("installed")
+        val available = model("available")
+        val downloading = model("downloading")
+        var removed = ""; var requested = ""
+        television {
+            Column {
+                SpeechSettingsControls(listOf("en"), "en", "", listOf(installed, available, downloading),
+                    setOf(installed.id), emptyList(), mapOf(downloading.id to 0.5f), emptyMap(),
+                    {}, {}, { requested = it.id }, { removed = it.id })
+            }
+        }
+        compose.onNodeWithTag("speech-language").assertIsFocused().performKeyInput { pressKey(Key.DirectionDown) }
+        compose.onNodeWithTag("speech-model-installed").assertIsFocused()
+            .performKeyInput { pressKey(Key.DirectionCenter); pressKey(Key.DirectionDown) }
+        compose.onNodeWithTag("speech-model-available").assertIsFocused()
+            .performKeyInput { pressKey(Key.DirectionCenter); pressKey(Key.DirectionUp) }
+        compose.onNodeWithTag("speech-model-installed").assertIsFocused()
+            .performKeyInput { pressKey(Key.DirectionDown); pressKey(Key.DirectionDown) }
+        compose.onNodeWithTag("speech-voice").assertIsFocused().performKeyInput { pressKey(Key.DirectionUp) }
+        compose.onNodeWithTag("speech-model-available").assertIsFocused()
+        compose.onNodeWithTag("speech-model-downloading").assertIsNotEnabled()
+        compose.runOnIdle { assertEquals(installed.id, removed); assertEquals(available.id, requested) }
+    }
+
+    @Test fun remoteReachesVoiceAndLanguageChoicesWithoutMatchingModels() {
+        var voice = "unset"; var language = "unset"
+        television {
+            Column {
+                SpeechSettingsControls(listOf("en", "nl"), "nl", "", emptyList(), emptySet(),
+                    listOf("system-nl" to "Dutch system voice"), emptyMap(), emptyMap(),
+                    { language = it }, { voice = it }, {}, {})
+            }
+        }
+        compose.onNodeWithTag("speech-language").assertIsFocused().performKeyInput { pressKey(Key.DirectionDown) }
+        compose.onNodeWithTag("speech-voice").assertIsFocused().performKeyInput { pressKey(Key.DirectionCenter) }
+        compose.onNodeWithTag("speech-voice-option-system-nl")
+            .performSemanticsAction(androidx.compose.ui.semantics.SemanticsActions.RequestFocus)
+        compose.onNodeWithTag("speech-voice-option-system-nl").performKeyInput { pressKey(Key.DirectionCenter) }
+        compose.onNodeWithTag("speech-voice").performKeyInput { pressKey(Key.DirectionUp) }
+        compose.onNodeWithTag("speech-language").assertIsFocused().performKeyInput { pressKey(Key.DirectionCenter) }
+        compose.onNodeWithTag("speech-language-option-en")
+            .performSemanticsAction(androidx.compose.ui.semantics.SemanticsActions.RequestFocus)
+        compose.onNodeWithTag("speech-language-option-en").performKeyInput { pressKey(Key.DirectionCenter) }
+        compose.runOnIdle { assertEquals("en", language); assertEquals("system-nl", voice) }
+    }
+
     @Test fun themeUsesDistanceScaleAndInsetLeavesControlsSpace() {
         var scale = 0f
         var systemScale = 0f

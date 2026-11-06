@@ -201,7 +201,8 @@ object Fb2Parser {
     private fun blockText(parser: XmlPullParser): String {
         val depth = parser.depth
         val out = StringBuilder()
-        while (parser.next() != XmlPullParser.END_DOCUMENT && parser.depth > depth) {
+        while (parser.next() != XmlPullParser.END_DOCUMENT &&
+            !(parser.eventType == XmlPullParser.END_TAG && parser.depth == depth)) {
             when (parser.eventType) {
                 XmlPullParser.TEXT, XmlPullParser.CDSECT -> out.append(parser.text)
                 XmlPullParser.START_TAG -> if (parser.name.substringAfterLast(':') == "v") {

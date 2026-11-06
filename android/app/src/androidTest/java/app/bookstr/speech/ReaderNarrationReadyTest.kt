@@ -32,7 +32,11 @@ class ReaderNarrationReadyTest {
 
     @Test fun televisionOpeningBookAutomaticallyRequestsNarrationWhenReaderIsReady() = checkReaderReady(true)
 
-    @Test fun missingPublicationShowsReaderErrorWithoutStartingNarration() {
+    @Test fun missingPublicationShowsReaderErrorWithoutStartingNarration() = checkMissingPublication(false)
+
+    @Test fun missingTelevisionPublicationShowsErrorWithoutAutoplay() = checkMissingPublication(true)
+
+    private fun checkMissingPublication(television: Boolean) {
         val app = ApplicationProvider.getApplicationContext<BookstrApp>()
         val bookId = "reader-error-fixture-${System.nanoTime()}"
         val epub = app.catalogRepository.epubFile(bookId)
@@ -48,6 +52,12 @@ class ReaderNarrationReadyTest {
         }
         app.registerReceiver(receiver, IntentFilter(NarrationService.ACTION_EVENT), Context.RECEIVER_NOT_EXPORTED)
         try {
+            if (television) {
+                val configuration = Configuration(app.resources.configuration).apply {
+                    uiMode = (uiMode and Configuration.UI_MODE_TYPE_MASK.inv()) or Configuration.UI_MODE_TYPE_TELEVISION
+                }
+                BookstrTestRunner.setActivityConfiguration(ReaderActivity::class.java.name, configuration)
+            }
             ActivityScenario.launch<ReaderActivity>(
                 ReaderActivity.intent(app, bookId, "Missing fixture", null, null, null, ReaderTheme.Paper),
             ).use {
@@ -56,12 +66,14 @@ class ReaderNarrationReadyTest {
                 }
                 compose.onNodeWithTag("reader.error").assertExists()
                 compose.onNodeWithTag("reader.loading").assertDoesNotExist()
-                compose.onNodeWithContentDescription("Read aloud").assertExists()
+                if (television) compose.onNodeWithTag("tv.reader.speech").assertExists()
+                else compose.onNodeWithContentDescription("Read aloud").assertExists()
                 assertFalse("Opening an unreadable book must not start narration", narrationStarted.get())
             }
         } finally {
             NarrationService.stop(app)
             app.unregisterReceiver(receiver)
+            if (television) BookstrTestRunner.clearActivityConfiguration(ReaderActivity::class.java.name)
             app.settingsRepository.clearReaderSession()
             epub.delete()
         }
