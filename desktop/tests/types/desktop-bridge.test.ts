@@ -21,6 +21,7 @@ void bridge.library.linkFolder('/books');
 void bridge.devices.announce();
 void bridge.devices.announce({ name: 'reader' });
 void bridge.transfers.setPreferences();
+void bridge.transfers.setPreferences(null);
 void bridge.transfers.setPreferences({ enabled: true });
 
 // @ts-expect-error acquire requires its book record

@@ -1,14 +1,30 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { run } = require('../../scripts/electron-e2e.cjs');
+const fs = require('node:fs');
+const path = require('node:path');
+const vm = require('node:vm');
+const { stripTypeScriptTypes } = require('node:module');
+const filename = require.resolve('../../scripts/electron-e2e.cts');
+const source = stripTypeScriptTypes(fs.readFileSync(filename, 'utf8'));
+
+function loadRunner({ main = false, process: runtime = process, spawnSync } = {}) {
+  const entry = { exports: {} };
+  const fakeRequire = name => name === 'node:child_process' && spawnSync ? { spawnSync } : require(name);
+  fakeRequire.main = main ? entry : undefined;
+  vm.runInNewContext(source, {
+    require: fakeRequire, module: entry, process: runtime, __dirname: path.dirname(filename),
+  }, { filename });
+  return entry.exports;
+}
+const { run } = loadRunner();
 
 test('Linux always launches Playwright on a new virtual display with one worker', () => {
   const calls = [];
-  assert.equal(run(['tests/e2e/desktop.smoke.spec.js'], { platform: 'linux', spawn: (...args) => {
+  assert.equal(run(['tests/e2e/desktop.smoke.spec.ts'], { platform: 'linux', spawn: (...args) => {
     calls.push(args);
     return { status: 0 };
   } }), 0);
-  assert.deepEqual(calls[0].slice(0, 2), ['xvfb-run', ['-a', 'pnpm', 'exec', 'playwright', 'test', 'tests/e2e/desktop.smoke.spec.js', '--workers=1']]);
+  assert.deepEqual(structuredClone(calls[0].slice(0, 2)), ['xvfb-run', ['-a', 'pnpm', 'exec', 'playwright', 'test', 'tests/e2e/desktop.smoke.spec.ts', '--workers=1']]);
   assert.equal(calls.length, 1);
   assert.equal(calls[0][2].stdio, 'inherit');
 });
@@ -21,8 +37,8 @@ test('macOS and Windows build and run an isolated Docker test environment', () =
       return { status: 0 };
     } }), 0);
     assert.equal(calls.length, 2);
-    assert.deepEqual(calls[0].slice(0, 2), ['docker', ['build', '--file', 'desktop/Dockerfile.test', '--tag', 'bookstr-electron-tests', '.']]);
-    assert.deepEqual(calls[1].slice(0, 2), ['docker', ['run', '--rm', '--init', '--ipc=host', 'bookstr-electron-tests', 'pnpm', 'run', 'test:e2e', '--headed']]);
+    assert.deepEqual(structuredClone(calls[0].slice(0, 2)), ['docker', ['build', '--file', 'desktop/Dockerfile.test', '--tag', 'bookstr-electron-tests', '.']]);
+    assert.deepEqual(structuredClone(calls[1].slice(0, 2)), ['docker', ['run', '--rm', '--init', '--ipc=host', 'bookstr-electron-tests', 'pnpm', 'run', 'test:e2e', '--headed']]);
   }
 });
 
@@ -37,24 +53,26 @@ test('failed builds, interrupted tests and missing isolation tools fail closed',
 test('every desktop GUI test shortcut uses the isolated runner', () => {
   const { scripts } = require('../../package.json');
   for (const name of ['test:e2e', 'test:e2e:smoke', 'test:e2e:transfers', 'test:e2e:reader', 'test:e2e:headed']) {
-    assert.match(scripts[name], /^node scripts\/electron-e2e\.cjs(?: |$)/);
+    assert.match(scripts[name], /^node scripts\/electron-e2e\.cts(?: |$)/);
   }
 });
 
 test('CLI forwards arguments and propagates the isolated process exit status', () => {
-  const fs = require('node:fs');
-  const vm = require('node:vm');
-  const filename = require.resolve('../../scripts/electron-e2e.cjs');
-  const main = { exports: {} };
   const fakeProcess = { platform: 'linux', argv: ['node', filename, '--grep', 'reader'] };
-  const fakeRequire = name => name === 'node:child_process' ? { spawnSync: (command, args) => {
+  loadRunner({ main: true, process: fakeProcess, spawnSync(command, args) {
     assert.equal(command, 'xvfb-run');
     assert.deepEqual(Array.from(args), ['-a', 'pnpm', 'exec', 'playwright', 'test', '--grep', 'reader', '--workers=1']);
     return { status: 9 };
-  } } : require(name);
-  fakeRequire.main = main;
-  vm.runInNewContext(fs.readFileSync(filename, 'utf8'), {
-    require: fakeRequire, module: main, process: fakeProcess, __dirname: require('node:path').dirname(filename)
-  }, { filename });
+  } });
   assert.equal(fakeProcess.exitCode, 9);
+});
+
+
+test('container test failures propagate after a successful image build', () => {
+  const calls = [];
+  assert.equal(run([], { platform: 'darwin', spawn: (command, args) => {
+    calls.push([command, args[0]]);
+    return { status: args[0] === 'build' ? 0 : 6 };
+  } }), 6);
+  assert.deepEqual(calls, [['docker', 'build'], ['docker', 'run']]);
 });
