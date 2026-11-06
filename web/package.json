@@ -21,7 +21,7 @@
     "jszip": "3.10.1",
     "libarchive-wasm": "1.2.0",
     "nostr-tools": "2.24.1",
-    "pdfjs-dist": "5.7.284",
+    "pdfjs-dist": "6.2.108",
     "sql.js": "1.13.0",
     "typescript": "7.0.2"
   }

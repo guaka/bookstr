@@ -167,6 +167,9 @@ class MainActivity : ComponentActivity() {
             var readerAlignment by remember { mutableStateOf(settings.readerAlignment) }
             BookstrThemeFromSettings(readerTheme = theme) {
                 var selectedTab by remember { mutableStateOf(requestedTab ?: if (requestedWord.isNullOrBlank()) 0 else 1) }
+                androidx.activity.compose.BackHandler(enabled = isTelevision(resources.configuration.uiMode) && selectedTab != 0) {
+                    selectedTab = 0
+                }
                 LaunchedEffect(requestedTab, requestedTabKey) { requestedTab?.let { selectedTab = it } }
                 var books by remember { mutableStateOf<List<CatalogBook>>(emptyList()) }
                 var favoriteIds by remember { mutableStateOf(emptySet<String>()) }

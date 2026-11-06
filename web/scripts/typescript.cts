@@ -42,7 +42,7 @@ function pageSource(template: string, name: string, javascript: string): string 
 function stageSite(directory = root): void {
   const destination = path.join(directory, 'site-dist');
   const excluded = new Set(['node_modules', 'src', 'types', 'templates', 'scripts', 'coverage', 'test-results', 'playwright-report', 'site-dist', '.typescript-output']);
-  const sourceFiles = new Set(['package.json', 'pnpm-lock.yaml', 'build-manifest.json', 'playwright.config.mjs', 'webtorrent-dev-bridge.mjs', 'tsconfig.json', 'tsconfig.tools.json', 'tsconfig.tests.json']);
+  const sourceFiles = new Set(['package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml', 'build-manifest.json', 'playwright.config.mjs', 'webtorrent-dev-bridge.mjs', 'tsconfig.json', 'tsconfig.tools.json', 'tsconfig.tests.json']);
   fs.rmSync(destination, { recursive: true, force: true });
   fs.mkdirSync(destination, { recursive: true });
   function copy(relative: string): void {

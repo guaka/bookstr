@@ -67,7 +67,7 @@ test('generated-file checking reports drift without modifying served files', t =
 
 test('site output contains static assets and reports while excluding development dependencies', t => {
   const temporary = directory(t);
-  for (const name of ['index.html', 'vendor/reader.wasm', 'docs/README.md', 'tests/index.html', 'tests/source.test.mjs', 'src/app.ts', 'templates/index.html', 'scripts/build.cts', 'types/window.d.ts', 'node_modules/tool/index.js', 'package.json', 'pnpm-lock.yaml', 'build-manifest.json', 'playwright.config.mjs', 'webtorrent-dev-bridge.mjs', 'tsconfig.json', 'tsconfig.tools.json', '.hidden']) {
+  for (const name of ['index.html', 'vendor/reader.wasm', 'docs/README.md', 'tests/index.html', 'tests/source.test.mjs', 'src/app.ts', 'templates/index.html', 'scripts/build.cts', 'types/window.d.ts', 'node_modules/tool/index.js', 'package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml', 'build-manifest.json', 'playwright.config.mjs', 'webtorrent-dev-bridge.mjs', 'tsconfig.json', 'tsconfig.tools.json', '.hidden']) {
     fs.mkdirSync(path.dirname(path.join(temporary, name)), { recursive: true });
     fs.writeFileSync(path.join(temporary, name), name);
   }

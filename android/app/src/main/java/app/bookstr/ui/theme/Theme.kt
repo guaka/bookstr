@@ -5,10 +5,15 @@ import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.input.InputMode
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalInputModeManager
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.unit.Density
-import app.bookstr.tabletFontMultiplier
+import app.bookstr.appFontMultiplier
+import app.bookstr.isTelevision
 import app.bookstr.data.ReaderTheme
 
 private val WhiteColorScheme = lightColorScheme(
@@ -42,6 +47,7 @@ private val NightColorScheme = darkColorScheme(
 )
 
 @Composable
+@OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
 fun BookstrTheme(
     readerTheme: ReaderTheme = ReaderTheme.Paper,
     content: @Composable () -> Unit,
@@ -53,7 +59,14 @@ fun BookstrTheme(
     }
 
     val density = LocalDensity.current
-    val multiplier = tabletFontMultiplier(LocalConfiguration.current.smallestScreenWidthDp)
+    val configuration = LocalConfiguration.current
+    val television = isTelevision(configuration.uiMode)
+    val inputMode = LocalInputModeManager.current
+    val windowFocused = LocalWindowInfo.current.isWindowFocused
+    LaunchedEffect(television, inputMode, windowFocused) {
+        if (television && windowFocused) inputMode.requestInputMode(InputMode.Keyboard)
+    }
+    val multiplier = appFontMultiplier(configuration.uiMode, configuration.smallestScreenWidthDp)
     CompositionLocalProvider(LocalDensity provides Density(density.density, density.fontScale * multiplier)) {
         MaterialTheme(
             colorScheme = colorScheme,

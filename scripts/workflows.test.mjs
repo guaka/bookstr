@@ -196,7 +196,7 @@ test('Android CI has four ordered jobs and the emulator consumes prebuilt APKs',
   assert.match(e2eRunner, /require-emulator\.sh/);
   assert.match(e2eRunner, /install -r "\$app_apk"/);
   assert.match(e2eRunner, /install -r "\$test_apk"/);
-  assert.match(e2eRunner, /shell am instrument -w -r app\.bookstr\.test\/androidx\.test\.runner\.AndroidJUnitRunner/);
+  assert.match(e2eRunner, /shell am instrument -w -r app\.bookstr\.test\/app\.bookstr\.BookstrTestRunner/);
   assert.match(e2eRunner, /rm -f "\$results_dir\/instrumentation\.log"/);
   assert.match(ignore, /^\/android\/e2e-results\/$/m);
   assert.match(ignore, /^\/android\/e2e-screenshots\/$/m);
