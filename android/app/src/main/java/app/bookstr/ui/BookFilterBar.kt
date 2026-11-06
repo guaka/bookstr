@@ -14,7 +14,6 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.unit.dp
 import java.util.Locale
 
@@ -51,12 +50,8 @@ private fun FilterMenu(tag: String, all: String, options: List<String>, selectio
                        display: (String) -> String, icon: androidx.compose.ui.graphics.vector.ImageVector,
                        onSelect: (String) -> Unit, modifier: Modifier = Modifier) {
     var expanded by remember { mutableStateOf(false) }
-    val focusManager = LocalFocusManager.current
     Box(modifier) {
-        TextButton(onClick = {
-            focusManager.clearFocus(force = true)
-            expanded = true
-        }, modifier = Modifier.fillMaxWidth().testTag(tag)) {
+        TextButton(onClick = { expanded = true }, modifier = Modifier.fillMaxWidth().testTag(tag)) {
             Icon(icon, contentDescription = null, modifier = Modifier.size(18.dp))
             Spacer(Modifier.width(5.dp))
             Text(if (selection.isEmpty()) all else display(selection), maxLines = 1)
