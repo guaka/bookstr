@@ -36,7 +36,7 @@ test('Android screenshots are ignored without hiding their tests or capture scri
     cwd: root, input: [screenshot, source, script].join('\n') + '\n', encoding: 'utf8',
   });
   assert.equal(ignored.trim(), screenshot);
-  assert.match(read(script), /host_screenshot_dir='android\/e2e-screenshots'/);
+  assert.match(read(script), /host_screenshot_dir="android\/e2e-screenshots\$shard_suffix"/);
   assert.match(read('.github/workflows/android.yml'), /path: android\/e2e-screenshots\/\*\*\/\*\.png/);
 });
 
