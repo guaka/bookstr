@@ -6,6 +6,20 @@ import XCTest
 #endif
 
 final class DeviceTransferTransportTests: XCTestCase {
+    func testMapperHandlesUnknownTotalsAndOptionalErrors() {
+        let update = TransferUpdateMapper.safe(requestId: "request-2", phase: "completed")
+        XCTAssertEqual(update?.completedBytes, 0)
+        XCTAssertEqual(update?.totalBytes, 0)
+        XCTAssertNil(update?.errorCode)
+        XCTAssertNil(TransferUpdateMapper.safe(requestId: nil, phase: "idle"))
+        XCTAssertNil(TransferUpdateMapper.safe(requestId: "request-2", phase: nil))
+        let unbounded = TransferUpdateMapper.safe(requestId: "request-2", phase: "transferring", completedBytes: 12, totalBytes: -1, errorCode: "  ")
+        XCTAssertEqual(unbounded?.completedBytes, 12)
+        XCTAssertEqual(unbounded?.totalBytes, 0)
+        XCTAssertNil(unbounded?.errorCode)
+        XCTAssertEqual(TransferUpdateMapper.safe(requestId: "request-2", phase: "failed", completedBytes: -1, errorCode: String(repeating: "e", count: 100))?.errorCode?.count, 80)
+    }
+
     func testMapperOnlyReturnsUserSafeTransferState() {
         let update = TransferUpdateMapper.safe(
             requestId: "request-1", phase: " TRANSFERRING ", completedBytes: 12, totalBytes: 10, errorCode: "  failed  "
