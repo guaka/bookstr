@@ -122,7 +122,7 @@ export interface DesktopBridge {
     setRegistryEvent(event: DesktopOptions): Promise<unknown>;
   };
   transfers: {
-    setPreferences(preferences?: DesktopOptions): Promise<unknown>;
+    setPreferences(preferences?: DesktopOptions | null): Promise<unknown>;
     status(): Promise<unknown>;
     seedPublic(bookId: string): Promise<unknown>;
     addPublic(request: DesktopOptions): Promise<unknown>;

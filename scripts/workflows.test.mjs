@@ -70,7 +70,7 @@ test('Electron unit coverage and smoke results are published beside other client
   assert.match(electronJob, /path: desktop\/electron-playwright\.json/);
   assert.ok(electronJob.indexOf('pnpm install --frozen-lockfile') < electronJob.indexOf('pnpm run typecheck'));
   assert.match(electronJob, /pnpm run test:coverage:ci \| tee electron-tests\.tap/);
-  assert.match(electronJob, /xvfb-run -a pnpm exec playwright test tests\/e2e\/desktop\.smoke\.spec\.js/);
+  assert.match(electronJob, /xvfb-run -a pnpm exec playwright test tests\/e2e\/desktop\.smoke\.spec\.ts/);
   assert.doesNotMatch(electronJob, /\bnpm\b|\bnpx\b/);
   assert.match(workflow, /bookstr-e2e-screenshots-web-\$\{\{ github\.run_id \}\}/);
   assert.match(workflow, /web\/test-results\/\*\*\/\*\.png/);

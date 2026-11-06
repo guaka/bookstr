@@ -62,12 +62,19 @@ struct ReaderChromeMetrics: Equatable {
 
 @MainActor
 final class ReaderChromeVisibilityController: ObservableObject {
+    typealias Sleeper = @MainActor (Duration) async throws -> Void
+
     @Published private(set) var isButtonIslandVisible = false
     private var dismissalTask: Task<Void, Never>?
     private let dismissalDelay: Duration
+    private let sleep: Sleeper
 
-    init(dismissalDelay: Duration = .seconds(4)) {
+    init(
+        dismissalDelay: Duration = .seconds(4),
+        sleep: @escaping Sleeper = { duration in try await Task.sleep(for: duration) }
+    ) {
         self.dismissalDelay = dismissalDelay
+        self.sleep = sleep
     }
 
     func reveal() {
@@ -83,8 +90,8 @@ final class ReaderChromeVisibilityController: ObservableObject {
 
     func scheduleDismissal() {
         dismissalTask?.cancel()
-        dismissalTask = Task { [weak self, dismissalDelay] in
-            try? await Task.sleep(for: dismissalDelay)
+        dismissalTask = Task { [weak self, dismissalDelay, sleep] in
+            try? await sleep(dismissalDelay)
             guard !Task.isCancelled else { return }
             self?.isButtonIslandVisible = false
         }
