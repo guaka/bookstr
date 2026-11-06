@@ -47,7 +47,9 @@ final class AppContainerTests: XCTestCase {
         let container = AppContainer.bootstrap()
         let model = LibraryViewModel()
         var refreshes = 0
-        let observation = model.$reading.dropFirst().sink { _ in refreshes += 1 }
+        let observation = model.$debugText.dropFirst()
+            .filter { $0.hasPrefix("=== library load ===") }
+            .sink { _ in refreshes += 1 }
         let host = UIHostingController(rootView: NavigationStack {
             LibraryView(viewModel: model)
         }.environmentObject(container).environmentObject(container.readerPlayback)
@@ -407,7 +409,11 @@ final class AppContainerTests: XCTestCase {
                             year: nil,
                             format: "epub",
                             addedAt: 1_700_000_000
-                        )
+                        ),
+                        SharedFavoriteRef(bookstrId: "unread-remote", url: "https://example.test/unread.epub",
+                                          title: "Unread Remote", format: "epub"),
+                        SharedFavoriteRef(bookstrId: "started-remote", url: "https://example.test/started.epub",
+                                          title: "Started Remote", format: "epub")
                     ],
                     fallbackAddedAt: 1_700_000_000
                 )
@@ -450,6 +456,11 @@ final class AppContainerTests: XCTestCase {
             nip46Service: nip46
         )
 
+        let cachedBooks = sync.cachedFavorites().external.compactMap(CatalogRepository.fromExternalFavorite)
+        guard let startedBook = cachedBooks.first(where: { $0.title == "Started Remote" }) else {
+            return XCTFail("The readable cached favorite must be restored")
+        }
+        progress.save(bookId: startedBook.id, progression: 0.5, cfi: "chapter", updatedAt: 100)
         let viewModel = LibraryViewModel()
         viewModel.attach(container)
         let started = Date()
@@ -459,6 +470,8 @@ final class AppContainerTests: XCTestCase {
 
         XCTAssertLessThan(elapsed, 1.5, "Foreground load must not await relay pulls")
         XCTAssertTrue(viewModel.hasNostrIdentity)
+        XCTAssertEqual(viewModel.reading.map(\.id), [startedBook.id])
+        XCTAssertTrue(viewModel.favorites.contains { $0.title == "Unread Remote" })
         XCTAssertTrue(
             viewModel.debugText.contains("showing cache; nostr refresh scheduled"),
             viewModel.debugText
