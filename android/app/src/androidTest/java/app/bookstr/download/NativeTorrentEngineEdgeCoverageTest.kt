@@ -4,6 +4,8 @@ import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import app.bookstr.data.TorrentEdition
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
@@ -110,7 +112,7 @@ class NativeTorrentEngineEdgeCoverageTest {
     }
 
     @Test
-    fun untrustedTorrentPathComponentsStayWithinPayloadRootOrAreRejected() {
+    fun normalizedTorrentPathComponentsKeepPayloadInsideDownloadRoot() {
         val content = "unsafe path".toByteArray()
         val hash = md5(content)
         val unsafePaths = listOf(
@@ -121,6 +123,10 @@ class NativeTorrentEngineEdgeCoverageTest {
             listOf("drive:component", "$hash.pdf"),
         )
         unsafePaths.forEachIndexed { index, path ->
+            val sandbox = newRoot("normalized-path-$index")
+            val root = File(sandbox, "download").also { it.mkdirs() }
+            val outsidePayload = File(sandbox, "payload")
+            val coverageProfile = File(sandbox, "bookstr-native-coverage-${android.os.Process.myPid()}.profraw")
             val metadata = bencode(mapOf("info" to mapOf(
                 "name" to "bundle",
                 "piece length" to 16_384,
@@ -128,30 +134,15 @@ class NativeTorrentEngineEdgeCoverageTest {
                 "pieces" to sha1(content),
                 "private" to 1,
             )))
-            val sandbox = newRoot("unsafe-$index")
-            val root = File(sandbox, "download").also { it.mkdirs() }
             try {
+                assertFalse("Fixture starts without an outside payload", outsidePayload.exists())
                 NativeTorrentEngine().use { engine ->
-                    try {
-                        engine.start(root, metadata, TorrentEdition(hash, 1, "fiction", content.size.toLong()))
-                        val snapshot = engine.poll()
-                        assertTrue(
-                            "Torrent output must stay at the local payload path",
-                            File(snapshot.path).canonicalPath == File(root, "payload").canonicalPath,
-                        )
-                    } catch (error: IllegalStateException) {
-                        val reason = error.message.orEmpty()
-                        assertTrue(
-                            "Unexpected rejection for sanitized metainfo path: $reason",
-                            reason.contains("Unsafe torrent path") ||
-                                reason.contains("Edition absent from torrent") ||
-                                reason.contains("invalid length of torrent"),
-                        )
-                    }
+                    engine.start(root, metadata, TorrentEdition(hash, 1, "fiction", content.size.toLong()))
+                    assertEquals(File(root, "payload").canonicalPath, File(engine.poll().path).canonicalPath)
                 }
-                val coverageProfile = File(sandbox, "bookstr-native-coverage-${android.os.Process.myPid()}.profraw")
+                assertFalse("Normalized torrent paths must not create a payload beside the download root", outsidePayload.exists())
                 assertTrue(
-                    "Untrusted metainfo must not create sibling files outside its download root",
+                    "Only the download root and this process's native profile may be siblings",
                     sandbox.listFiles().orEmpty().all {
                         it.canonicalFile == root.canonicalFile ||
                             (it.isFile && it.canonicalFile == coverageProfile.canonicalFile)
