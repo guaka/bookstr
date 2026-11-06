@@ -1,9 +1,12 @@
-const path = require('node:path');
-const { spawnSync } = require('node:child_process');
+const path = require('node:path') as typeof import('node:path');
+const { spawnSync } = require('node:child_process') as typeof import('node:child_process');
 
-function run(args, { platform = process.platform, spawn = spawnSync } = {}) {
+type SpawnResult = Pick<ReturnType<typeof spawnSync>, 'status' | 'error'>;
+type Spawn = (command: string, parameters: string[], options: { cwd: string; stdio: 'inherit' }) => SpawnResult;
+
+function run(args: string[], { platform = process.platform, spawn = spawnSync as Spawn }: { platform?: string; spawn?: Spawn } = {}): number {
   const cwd = path.resolve(__dirname, '..');
-  const invoke = (command, parameters, directory = cwd) => {
+  const invoke = (command: string, parameters: string[], directory = cwd): number => {
     const result = spawn(command, parameters, { cwd: directory, stdio: 'inherit' });
     if (result.error) throw result.error;
     return result.status ?? 1;
