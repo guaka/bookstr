@@ -1,17 +1,46 @@
-'use strict';
+import fsp = require('node:fs/promises');
+import path = require('node:path');
+import { execFile } from 'node:child_process';
+import { MtpSession } from './mtp-session';
 
-const fsp = require('node:fs/promises');
-const path = require('node:path');
-const { execFile } = require('node:child_process');
-const { promisify } = require('node:util');
-const { hashFile } = require('./library-import');
-const { MtpSession } = require('./mtp-session');
-
+type NodeExecOptions = { timeout?: number; windowsHide?: boolean; maxBuffer?: number };
+import { promisify } from 'node:util';
 const execFileAsync = promisify(execFile);
+type Device = { id: string; helperId?: string; name: string; kind: 'mtp' | 'mounted' };
+type TransferBook = { bookId: string; title?: string; path: string; size: number; sha256: string };
+type RemoteFile = { id: string; name: string; size: number; deviceId: string };
+type HelperRunner = (file: string, args: string[], options: NodeExecOptions) => Promise<{ stdout: string }>;
+type Session = {
+  deviceId: string;
+  freeBytes: number | null;
+  command(action: string, ...args: string[]): Promise<unknown>;
+  close(): Promise<void>;
+};
+type SessionFactory = (options: { helper: string; deviceId: string; onProgress: (progress: Record<string, unknown>) => void }) => Session;
+type Progress = Record<string, unknown>;
+type SessionOperation<T> = () => Promise<T>;
+type HashFile = (filePath: string) => Promise<{ sha256: string }>;
+const hashFile = (require('./library-import') as { hashFile: HashFile }).hashFile;
+export class MtpKindles {
+  declare private readonly platform: string;
+  declare private readonly stagingRoot?: string;
+  declare private readonly runner: HelperRunner;
+  declare private readonly sessionFactory: SessionFactory;
+  declare private readonly onProgress: (progress: Progress) => void;
+  declare private session: Session | null;
+  declare private sessionDevice: Device | null | undefined;
+  declare private sessionFailed: boolean | undefined;
+  declare private sessionDepth: number;
+  declare private operationChain: Promise<unknown>;
+  declare private closed: boolean;
+  declare private discovery: Promise<Device[]> | null;
+  declare private helper: string;
+  declare private currentBook: Record<string, unknown> | undefined;
 
-class MtpKindles {
   constructor({ platform = process.platform, resourcesPath = process.resourcesPath || __dirname,
-    stagingRoot, runner = execFileAsync, sessionFactory = options => new MtpSession(options), onProgress = () => {} } = {}) {
+    stagingRoot, runner = execFileAsync as HelperRunner, sessionFactory = options => new MtpSession(options) as Session,
+    onProgress = () => {} }: { platform?: string; resourcesPath?: string; stagingRoot?: string;
+      runner?: HelperRunner; sessionFactory?: SessionFactory; onProgress?: (progress: Progress) => void } = {}) {
     this.platform = platform;
     this.stagingRoot = stagingRoot;
     this.runner = runner;
@@ -27,14 +56,14 @@ class MtpKindles {
       : path.join(resourcesPath, 'kindle-mtp');
   }
 
-  async withSession(device, operation) {
+  async withSession<T>(device: Device, operation: SessionOperation<T>): Promise<T> {
     if (this.closed) throw new Error('Kindle transport is closed.');
     if (this.platform === 'win32') return operation();
     const run = this.operationChain.then(async () => {
       if (this.closed) throw new Error('Kindle transport is closed.');
       if (this.session && this.session.deviceId !== device.helperId) throw new Error('A different Kindle session is active.');
       if (!this.session) {
-        this.session = this.sessionFactory({ helper: this.helper, deviceId: device.helperId,
+        this.session = this.sessionFactory({ helper: this.helper, deviceId: device.helperId!,
           onProgress: progress => this.onProgress({ ...this.currentBook, ...progress, deviceId: device.id }) });
         this.sessionDevice = device;
         this.sessionFailed = false;
@@ -55,7 +84,7 @@ class MtpKindles {
     return run;
   }
 
-  async command(action, ...args) {
+  async command(action: string, ...args: string[]): Promise<unknown> {
     if (this.closed) throw new Error('Kindle transport is closed.');
     if (!this.stagingRoot) throw new Error('MTP staging directory is unavailable.');
     if (this.session && action !== 'devices') {
@@ -74,88 +103,88 @@ class MtpKindles {
     return JSON.parse(response || 'null');
   }
 
-  async devices() {
-    if (this.sessionDepth) return [this.sessionDevice];
+  async devices(): Promise<Device[]> {
+    if (this.sessionDepth) return [this.sessionDevice!];
     if (!this.discovery) {
       this.discovery = this.discover().finally(() => { this.discovery = null; });
     }
     return this.discovery;
   }
 
-  async discover() {
+  async discover(): Promise<Device[]> {
     let entries;
     try {
       entries = await this.command('devices');
     } catch (error) {
-      const detail = String(error?.stderr || error?.code || 'adapter error').replace(/\s+/g, ' ').trim().slice(0, 200);
+      const detail = String((error as NodeJS.ErrnoException & { stderr?: string })?.stderr || (error as NodeJS.ErrnoException)?.code || 'adapter error').replace(/\s+/g, ' ').trim().slice(0, 200);
       process.stderr.write(`Kindle MTP discovery failed: ${detail}\n`);
       return [];
     }
     if (!Array.isArray(entries)) return [];
-    const devices = entries.map(entry => ({
+    const devices: Device[] = (entries as Record<string, unknown>[]).map(entry => ({
       id: `mtp:${this.platform}:${String(entry.id)}`,
       helperId: String(entry.id),
       name: String(entry.name || 'Kindle'),
       kind: 'mtp',
     }));
-    if (this.session && this.sessionDepth === 0 && !devices.some(device => device.helperId === this.session.deviceId)) {
+    if (this.session && this.sessionDepth === 0 && !devices.some(device => device.helperId === this.session!.deviceId)) {
       const stale = this.session;
       this.session = null;
       this.sessionDevice = null;
       await stale.close().catch(() => {});
     } else if (this.session && this.sessionDepth === 0) {
-      this.sessionDevice = devices.find(device => device.helperId === this.session.deviceId);
+      this.sessionDevice = devices.find(device => device.helperId === this.session!.deviceId);
     }
     return devices;
   }
 
-  async files(device, allowedSizes) {
+  async files(device: Device, allowedSizes: Set<number>): Promise<RemoteFile[]> {
     this.currentBook = {};
-    const entries = await this.command('files', device.helperId);
-    return (Array.isArray(entries) ? entries : [])
+    const entries = await this.command('files', device.helperId!);
+    return (Array.isArray(entries) ? entries as Record<string, unknown>[] : [])
       .filter(entry => allowedSizes.has(Number(entry.size)))
-      .map(entry => ({ id: String(entry.id), name: String(entry.name), size: Number(entry.size), deviceId: device.helperId }));
+      .map(entry => ({ id: String(entry.id), name: String(entry.name), size: Number(entry.size), deviceId: device.helperId! }));
   }
 
-  ensureSpace(bytes) {
+  ensureSpace(bytes: number): void {
     if (this.session?.freeBytes !== null && this.session?.freeBytes !== undefined && this.session.freeBytes < bytes) {
       throw new Error('Kindle does not have enough free space.');
     }
   }
 
-  async hash(file) {
-    await fsp.mkdir(this.stagingRoot, { recursive: true });
-    const directory = await fsp.mkdtemp(path.join(this.stagingRoot, 'kindle-'));
+  async hash(file: Partial<RemoteFile>): Promise<string> {
+    await fsp.mkdir(this.stagingRoot!, { recursive: true });
+    const directory = await fsp.mkdtemp(path.join(this.stagingRoot!, 'kindle-'));
     const target = path.join(directory, 'download.tmp');
     try {
-      await this.command('get', file.deviceId, file.id, target);
+      await this.command('get', file.deviceId!, file.id!, target);
       return (await hashFile(target)).sha256;
     } finally {
       await fsp.rm(directory, { recursive: true, force: true });
     }
   }
 
-  async copy(device, book, name) {
+  async copy(device: Device, book: TransferBook, name: string): Promise<void> {
     this.currentBook = { bookId: book.bookId, title: book.title };
     this.ensureSpace(book.size);
     let source = book.path;
     let directory = '';
     if (this.platform === 'win32') {
-      await fsp.mkdir(this.stagingRoot, { recursive: true });
-      directory = await fsp.mkdtemp(path.join(this.stagingRoot, 'kindle-'));
+      await fsp.mkdir(this.stagingRoot!, { recursive: true });
+      directory = await fsp.mkdtemp(path.join(this.stagingRoot!, 'kindle-'));
       source = path.join(directory, name);
       await fsp.copyFile(book.path, source);
     }
-    let result;
-    try { result = await this.command('put', device.helperId, source, name); }
+    let result: { id?: unknown } | null | undefined;
+    try { result = await this.command('put', device.helperId!, source, name) as typeof result; }
     finally { if (directory) await fsp.rm(directory, { recursive: true, force: true }); }
     if (!result?.id) throw new Error('Kindle did not confirm the copied file.');
-    const copied = { id: String(result.id), deviceId: device.helperId };
+    const copied: Partial<RemoteFile> = { id: String(result.id), deviceId: device.helperId };
     if (await this.hash(copied) !== book.sha256) throw new Error('Kindle copy verification failed.');
     if (this.session?.freeBytes !== null && this.session?.freeBytes !== undefined) this.session.freeBytes -= book.size;
   }
 
-  async close() {
+  async close(): Promise<void> {
     this.closed = true;
     const session = this.session;
     const closePromise = session?.close();
@@ -167,5 +196,3 @@ class MtpKindles {
     await closePromise;
   }
 }
-
-module.exports = { MtpKindles };

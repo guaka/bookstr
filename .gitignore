@@ -53,12 +53,32 @@ android/app/.cxx/
 android/.kotlin/
 
 # Electron JavaScript emitted from strict TypeScript sources
+/desktop/acquisition-manager.js
+/desktop/catalog-invitations.js
+/desktop/catalog-proxy.js
+/desktop/comic-image.js
+/desktop/comic-pdf.js
+/desktop/desktop-bridge.js
+/desktop/device-pairing.js
+/desktop/dictionary-proxy.js
+/desktop/download-queue.js
+/desktop/kindle-mtp.js
+/desktop/kindle-sync.js
+/desktop/library-cover.js
+/desktop/library-downloads.js
+/desktop/library-import.js
+/desktop/library-store.js
+/desktop/main.js
+/desktop/mtp-session.js
+/desktop/playwright.config.js
 /desktop/preload.js
 /desktop/security-policy.js
-/desktop/catalog-invitations.js
-/desktop/dictionary-proxy.js
-/desktop/desktop-bridge.js
+/desktop/speech-model-store.js
+/desktop/stamp-build.js
+/desktop/webtorrent-bridge.js
 /desktop/*.js.map
+/desktop/native/build-kindle-mtp.js
+/desktop/native/*.js.map
 
 # Generated Electron build metadata
 desktop/build-info.json
