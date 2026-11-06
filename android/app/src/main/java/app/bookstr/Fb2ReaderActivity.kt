@@ -147,7 +147,8 @@ object Fb2Parser {
         var title: String? = null
         var author: String? = null
         var language: String? = null
-        while (parser.next() != XmlPullParser.END_DOCUMENT) {
+        while (true) {
+            require(parser.next() != XmlPullParser.END_DOCUMENT) { "Unexpected end of FB2 element" }
             if (parser.eventType == XmlPullParser.END_TAG && parser.depth == depth) break
             if (parser.eventType != XmlPullParser.START_TAG) continue
             when (parser.name.substringAfterLast(':')) {
@@ -166,7 +167,8 @@ object Fb2Parser {
         val depth = parser.depth
         val sections = mutableListOf<Fb2Section>()
         val paragraphs = mutableListOf<Fb2Paragraph>()
-        while (parser.next() != XmlPullParser.END_DOCUMENT) {
+        while (true) {
+            require(parser.next() != XmlPullParser.END_DOCUMENT) { "Unexpected end of FB2 element" }
             if (parser.eventType == XmlPullParser.END_TAG && parser.depth == depth) break
             if (parser.eventType != XmlPullParser.START_TAG) continue
             when (parser.name.substringAfterLast(':')) {
@@ -186,7 +188,8 @@ object Fb2Parser {
         var title = ""
         val paragraphs = mutableListOf<Fb2Paragraph>()
         val children = mutableListOf<Fb2Section>()
-        while (parser.next() != XmlPullParser.END_DOCUMENT) {
+        while (true) {
+            require(parser.next() != XmlPullParser.END_DOCUMENT) { "Unexpected end of FB2 element" }
             if (parser.eventType == XmlPullParser.END_TAG && parser.depth == depth) break
             if (parser.eventType != XmlPullParser.START_TAG) continue
             when (parser.name.substringAfterLast(':')) {
@@ -203,7 +206,8 @@ object Fb2Parser {
     private fun blockText(parser: XmlPullParser): String {
         val depth = parser.depth
         val out = StringBuilder()
-        while (parser.next() != XmlPullParser.END_DOCUMENT) {
+        while (true) {
+            require(parser.next() != XmlPullParser.END_DOCUMENT) { "Unexpected end of FB2 element" }
             if (parser.eventType == XmlPullParser.END_TAG && parser.depth == depth) break
             when (parser.eventType) {
                 XmlPullParser.TEXT, XmlPullParser.CDSECT -> out.append(parser.text)

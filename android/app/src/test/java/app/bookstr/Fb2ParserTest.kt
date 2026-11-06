@@ -176,6 +176,48 @@ class Fb2ParserTest {
         }
     }
 
+    @Test
+    fun rejectsTruncatedDescriptionSectionAndTextScopes() {
+        val truncatedDescription = """
+            <FictionBook><description><title-info><book-title>Title</book-title></title-info>
+        """.trimIndent()
+        val truncatedSection = "<FictionBook><body><section><p>Text</p>"
+        val truncatedText = "<FictionBook><body><section><p>Text"
+        val truncatedBody = "<FictionBook><body><section><p>Text</p></section>"
+
+        for (xml in listOf(truncatedDescription, truncatedSection, truncatedText)) {
+            assertThrows(Exception::class.java) {
+                Fb2Parser.parse(ByteArrayInputStream(xml.toByteArray()))
+            }
+        }
+
+        val bodyError = assertThrows(IllegalArgumentException::class.java) {
+            Fb2Parser.parse(ByteArrayInputStream(truncatedBody.toByteArray()))
+        }
+        assertEquals("Unexpected end of FB2 element", bodyError.message)
+    }
+
+    @Test
+    fun readsRecognizedContentInsideUnknownBodyWrappersUntilBodyEndTag() {
+        val xml = """
+            <FictionBook>
+              <body>
+                <wrapper>
+                  <section id="nested"><title><p>Nested chapter</p></title><unknown><p>Nested text</p></unknown></section>
+                </wrapper>
+                <section id="sibling"><p>Sibling text</p></section>
+              </body>
+            </FictionBook>
+        """.trimIndent()
+
+        val document = Fb2Parser.parse(ByteArrayInputStream(xml.toByteArray()))
+
+        assertEquals(listOf("nested", "sibling"), document.sections.map { it.id })
+        assertEquals("Nested chapter", document.sections.first().title)
+        assertEquals("Nested text", document.sections.first().paragraphs.single().text)
+        assertEquals("Sibling text", document.sections.last().paragraphs.single().text)
+    }
+
     private fun zip(vararg entries: Pair<String, String>): File {
         val target = folder.newFile("fixture-${entries.first().first.replace('/', '_')}.fb2.zip")
         ZipOutputStream(target.outputStream()).use { output ->

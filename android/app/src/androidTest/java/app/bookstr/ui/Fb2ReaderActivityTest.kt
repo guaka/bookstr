@@ -58,11 +58,11 @@ class Fb2ReaderActivityTest {
             ),
         ).use { scenario ->
             compose.waitUntil(10_000) {
-                compose.onAllNodesWithText("First chapter paragraph 1", substring = true)
+                compose.onAllNodesWithText("First chapter paragraph 1 with enough text to fill the reader and scroll.")
                     .fetchSemanticsNodes().isNotEmpty()
             }
             compose.onNodeWithText("FB2 reader fixture").assertIsDisplayed()
-            compose.onNodeWithText("First chapter paragraph 1", substring = true).assertIsDisplayed()
+            compose.onNodeWithText("First chapter paragraph 1 with enough text to fill the reader and scroll.").assertIsDisplayed()
 
             compose.onNodeWithContentDescription("Table of contents").performClick()
             compose.onNodeWithText("Contents").assertIsDisplayed()
