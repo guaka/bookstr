@@ -57,6 +57,86 @@ final class LibraryReaderUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Remote Author"].exists)
     }
 
+    func testExternalFavoriteWithURLOpensReaderAndShowsUnknownAuthor() {
+        app.terminate()
+        app.launchArguments = ["--ui-testing-library-fixtures", "--ui-testing-external-favorite"]
+        app.launch()
+        let library = app.tabBars.buttons["Library"]
+        XCTAssertTrue(library.waitForExistence(timeout: 12))
+        library.tap()
+
+        let filter = app.searchFields["Filter books"]
+        if !filter.isHittable { app.swipeDown() }
+        XCTAssertTrue(filter.waitForExistence(timeout: 5))
+        filter.tap()
+        filter.typeText("Remote URL Fixture")
+
+        let favorite = app.buttons["library-book-ui-test-readable-remote"]
+        XCTAssertTrue(favorite.waitForExistence(timeout: 8), app.debugDescription)
+        XCTAssertTrue(favorite.staticTexts["Unknown"].exists)
+        XCTAssertTrue(favorite.staticTexts["EPUB"].exists)
+        favorite.press(forDuration: 1)
+        let rights = app.buttons["library-book-rights-ui-test-readable-remote"]
+        XCTAssertTrue(rights.waitForExistence(timeout: 5), app.debugDescription)
+        rights.tap()
+        XCTAssertTrue(app.navigationBars["Book details"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Remote URL Fixture"].exists)
+        XCTAssertTrue(app.staticTexts["Unknown"].exists)
+        XCTAssertTrue(app.staticTexts["EPUB"].exists)
+        app.buttons["Done"].tap()
+
+        let readerDetails = app.buttons["reader-book-details"]
+        favorite.tap()
+        XCTAssertTrue(readerDetails.waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertEqual(readerDetails.label, "Book details for Remote URL Fixture")
+    }
+
+    func testUnreadableExternalFavoriteUsesUnknownAuthorFallback() {
+        app.terminate()
+        app.launchArguments = ["--ui-testing-library-fixtures", "--ui-testing-external-favorite"]
+        app.launch()
+        let library = app.tabBars.buttons["Library"]
+        XCTAssertTrue(library.waitForExistence(timeout: 12))
+        library.tap()
+
+        let filter = app.searchFields["Filter books"]
+        if !filter.isHittable { app.swipeDown() }
+        XCTAssertTrue(filter.waitForExistence(timeout: 5))
+        filter.tap()
+        filter.typeText("Unreadable Unknown Author Fixture")
+
+        let favorite = app.buttons["library-favorite-ui-test-unreadable-unknown-author"]
+        XCTAssertTrue(favorite.waitForExistence(timeout: 8), app.debugDescription)
+        XCTAssertTrue(favorite.staticTexts["Unreadable Unknown Author Fixture"].exists)
+        XCTAssertTrue(favorite.staticTexts["Unknown author"].exists)
+        XCTAssertTrue(favorite.staticTexts["EPUB"].exists)
+    }
+
+    func testDownloadedPDFCanBeDeletedFromLibrary() throws {
+        let filter = app.searchFields["Filter books"]
+        if !filter.isHittable { app.swipeDown() }
+        XCTAssertTrue(filter.waitForExistence(timeout: 5))
+        filter.tap()
+        filter.typeText("Alice PDF Fixture")
+
+        let pdf = app.buttons["library-book-ui-test-alice-pdf"]
+        XCTAssertTrue(pdf.waitForExistence(timeout: 8), app.debugDescription)
+        pdf.swipeLeft()
+        let delete = app.buttons["library-delete-ui-test-alice-pdf"]
+        XCTAssertTrue(delete.waitForExistence(timeout: 5), app.debugDescription)
+        delete.tap()
+        let confirmationButtons = app.buttons.matching(identifier: "library-delete-confirm")
+        XCTAssertTrue(confirmationButtons.element.waitForExistence(timeout: 5), app.debugDescription)
+        let leafButtons = confirmationButtons.allElementsBoundByIndex.filter {
+            $0.children(matching: .button).count == 0
+        }
+        XCTAssertEqual(leafButtons.count, 1)
+        let confirm = try XCTUnwrap(leafButtons.first)
+        confirm.tap()
+        let removed = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: pdf)
+        XCTAssertEqual(XCTWaiter.wait(for: [removed], timeout: 5), .completed, app.debugDescription)
+    }
+
     func testEPUBTimeoutRecoversOnceWithFreshReader() {
         app.terminate()
         app.launchArguments = ["--ui-testing-library-fixtures", "--ui-testing-epub-timeout-once"]
