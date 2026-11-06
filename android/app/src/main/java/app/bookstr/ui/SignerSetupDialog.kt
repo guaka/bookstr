@@ -27,7 +27,7 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import app.bookstr.nostr.NostrCrypto
 
-internal enum class SignerSetupChoice { Generate, Import, Connect }
+internal enum class SignerSetupChoice { Generate, Import, Connect, ConnectQr }
 
 @Composable
 internal fun SignerSetupDialog(
@@ -38,8 +38,10 @@ internal fun SignerSetupDialog(
     onDismiss: () -> Unit,
     onSaveNsec: (String) -> Unit,
     onConnectSigner: () -> Unit,
+    television: Boolean = false,
+    onConnectQr: () -> Unit = {},
 ) {
-    var choice by remember { mutableStateOf(if (preferredSignerLabel != null) SignerSetupChoice.Connect else SignerSetupChoice.Generate) }
+    var choice by remember { mutableStateOf(if (television) SignerSetupChoice.ConnectQr else if (preferredSignerLabel != null) SignerSetupChoice.Connect else SignerSetupChoice.Generate) }
     var importedNsec by remember { mutableStateOf("") }
     var generatedNsec by remember { mutableStateOf<String?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
@@ -59,13 +61,18 @@ internal fun SignerSetupDialog(
                         Text(generatedNsec!!, modifier = Modifier.testTag("signer.generated-key"))
                     }
                 } else {
-                    Text("Pick how you'd like to unlock the book search.")
-                    SetupChoiceRow(SignerSetupChoice.Generate, choice, "Make a new key", "Start fresh with a secret key to keep safe.") {
-                        choice = it; error = null
+                    Text(if (television) "Connect a signer from your phone." else "Pick how you'd like to unlock the book search.")
+                    if (!television) {
+                        SetupChoiceRow(SignerSetupChoice.Generate, choice, "Make a new key", "Start fresh with a secret key to keep safe.") {
+                            choice = it; error = null
+                        }
+                        SetupChoiceRow(SignerSetupChoice.Import, choice, "Use my secret key", "Have a key starting with nsec1? Paste it here.") {
+                            choice = it; error = null
+                        }
                     }
-                    SetupChoiceRow(SignerSetupChoice.Import, choice, "Use my secret key", "Have a key starting with nsec1? Paste it here.") {
-                        choice = it; error = null
-                    }
+                    if (television) SetupChoiceRow(
+                        SignerSetupChoice.ConnectQr, choice, "Scan with your phone", "Connect Amber or another NIP-46 signer.",
+                    ) { choice = it; error = null }
                     SetupChoiceRow(
                         SignerSetupChoice.Connect, choice, "Connect a signer app",
                         preferredSignerLabel?.let { "$it is ready on this tablet." }
@@ -97,6 +104,7 @@ internal fun SignerSetupDialog(
                 onClick = {
                     when {
                         generatedNsec != null -> onSaveNsec(generatedNsec!!)
+                        choice == SignerSetupChoice.ConnectQr -> onConnectQr()
                         choice == SignerSetupChoice.Generate -> generatedNsec = NostrCrypto.generateNsec()
                         choice == SignerSetupChoice.Import -> {
                             val value = importedNsec.trim()
@@ -117,6 +125,7 @@ internal fun SignerSetupDialog(
                     choice == SignerSetupChoice.Generate -> "Make my key"
                     choice == SignerSetupChoice.Import -> "Use this key"
                     connecting -> "Connecting…"
+                    choice == SignerSetupChoice.ConnectQr -> "Show QR code"
                     else -> "Connect app"
                 })
             }

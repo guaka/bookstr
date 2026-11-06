@@ -3,6 +3,7 @@ package app.bookstr.data
 import android.content.Context
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
+import app.bookstr.nostr.Nip46Sessions
 
 enum class ReaderTheme(val key: String) {
     White("white"),
@@ -46,6 +47,7 @@ enum class NostrAuthMode(val key: String) {
     None("none"),
     Nsec("nsec"),
     Amber("amber"),
+    Nip46("nip46"),
     ;
 
     companion object {
@@ -163,16 +165,41 @@ class SettingsRepository(context: Context) {
             }.apply()
         }
 
+    var nip46ClientSecretHex: String?
+        get() = securePrefs.getString(KEY_NIP46_CLIENT_SECRET, null)
+        private set(value) { setSecureString(KEY_NIP46_CLIENT_SECRET, value) }
+
+    var nip46RemoteSignerPubkey: String?
+        get() = securePrefs.getString(KEY_NIP46_REMOTE_PUBKEY, null)?.takeIf(String::isNotBlank)
+        private set(value) { setSecureString(KEY_NIP46_REMOTE_PUBKEY, value?.lowercase()) }
+
+    var nip46Relays: List<String>
+        get() = securePrefs.getString(KEY_NIP46_RELAYS, null)?.split('\n')?.filter(String::isNotBlank).orEmpty()
+        private set(value) {
+            securePrefs.edit().apply {
+                if (value.isEmpty()) remove(KEY_NIP46_RELAYS) else putString(KEY_NIP46_RELAYS, value.joinToString("\n"))
+            }.apply()
+        }
+
+    private fun setSecureString(key: String, value: String?) {
+        securePrefs.edit().apply {
+            if (value.isNullOrBlank()) remove(key) else putString(key, value.trim())
+        }.apply()
+    }
+
     fun hasNostrIdentity(): Boolean =
         when (authMode) {
             NostrAuthMode.None -> false
             NostrAuthMode.Nsec -> !nsec.isNullOrBlank()
             NostrAuthMode.Amber -> !pubkeyHex.isNullOrBlank() && !signerPackage.isNullOrBlank()
+            NostrAuthMode.Nip46 -> !pubkeyHex.isNullOrBlank() && !nip46ClientSecretHex.isNullOrBlank() &&
+                !nip46RemoteSignerPubkey.isNullOrBlank() && nip46Relays.isNotEmpty()
         }
 
     fun connectAmber(pubkeyHex: String, signerPackage: String) {
         clearFavoriteCacheForDifferentIdentity(pubkeyHex)
         this.nsec = null
+        clearNip46Credentials()
         this.pubkeyHex = pubkeyHex
         this.signerPackage = signerPackage
         this.authMode = NostrAuthMode.Amber
@@ -181,15 +208,41 @@ class SettingsRepository(context: Context) {
     fun connectNsec(nsecValue: String, pubkeyHex: String) {
         clearFavoriteCacheForDifferentIdentity(pubkeyHex)
         this.signerPackage = null
+        clearNip46Credentials()
         this.nsec = nsecValue
         this.pubkeyHex = pubkeyHex
         this.authMode = NostrAuthMode.Nsec
+    }
+
+    fun connectNip46(clientSecretHex: String, remoteSignerPubkey: String, userPubkey: String, relays: List<String>) {
+        require(clientSecretHex.matches(Regex("[0-9a-fA-F]{64}"))) { "Invalid NIP-46 client secret" }
+        require(remoteSignerPubkey.matches(Regex("[0-9a-fA-F]{64}"))) { "Invalid remote signer public key" }
+        require(userPubkey.matches(Regex("[0-9a-fA-F]{64}"))) { "Invalid Nostr public key" }
+        val cleanRelays = relays.map(String::trim).filter(String::isNotBlank).distinct()
+        require(cleanRelays.isNotEmpty()) { "NIP-46 requires at least one relay" }
+        clearFavoriteCacheForDifferentIdentity(userPubkey)
+        if (!nip46ClientSecretHex.equals(clientSecretHex, ignoreCase = true)) clearNip46Credentials()
+        this.nsec = null
+        this.signerPackage = null
+        this.pubkeyHex = userPubkey
+        this.nip46ClientSecretHex = clientSecretHex.lowercase()
+        this.nip46RemoteSignerPubkey = remoteSignerPubkey
+        this.nip46Relays = cleanRelays
+        this.authMode = NostrAuthMode.Nip46
+    }
+
+    private fun clearNip46Credentials() {
+        Nip46Sessions.forget(nip46ClientSecretHex)
+        nip46ClientSecretHex = null
+        nip46RemoteSignerPubkey = null
+        nip46Relays = emptyList()
     }
 
     fun disconnectNostr() {
         nsec = null
         pubkeyHex = null
         signerPackage = null
+        clearNip46Credentials()
         authMode = NostrAuthMode.None
         securePrefs.edit()
             .remove(KEY_FAVORITES_CACHE_PUBKEY)
@@ -306,6 +359,9 @@ class SettingsRepository(context: Context) {
         private const val KEY_PUBKEY = "pubkey_hex"
         private const val KEY_SIGNER_PACKAGE = "signer_package"
         private const val KEY_NSEC = "nsec"
+        private const val KEY_NIP46_CLIENT_SECRET = "nip46_client_secret"
+        private const val KEY_NIP46_REMOTE_PUBKEY = "nip46_remote_pubkey"
+        private const val KEY_NIP46_RELAYS = "nip46_relays"
         private const val KEY_FAVORITES_CACHE_PUBKEY = "nostr_favorites_cache_pubkey"
         private const val KEY_FAVORITES_CACHE_CONTENT = "nostr_favorites_cache_content"
         private const val KEY_COLLECTIONS_CACHE_PUBKEY = "nostr_collections_cache_pubkey"
