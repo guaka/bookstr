@@ -4,6 +4,8 @@ import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import app.bookstr.data.TorrentEdition
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
@@ -105,7 +107,7 @@ class NativeTorrentEngineEdgeCoverageTest {
     }
 
     @Test
-    fun unsafeTorrentPathComponentsAreRejectedBeforeCreatingPayload() {
+    fun normalizedTorrentPathComponentsKeepPayloadInsideDownloadRoot() {
         val content = "unsafe path".toByteArray()
         val hash = md5(content)
         val unsafePaths = listOf(
@@ -116,6 +118,8 @@ class NativeTorrentEngineEdgeCoverageTest {
             listOf("drive:component", "$hash.pdf"),
         )
         unsafePaths.forEachIndexed { index, path ->
+            val root = newRoot("normalized-path-$index")
+            val outsidePayload = File(cacheDir, "payload")
             val metadata = bencode(mapOf("info" to mapOf(
                 "name" to "bundle",
                 "piece length" to 16_384,
@@ -123,14 +127,23 @@ class NativeTorrentEngineEdgeCoverageTest {
                 "pieces" to sha1(content),
                 "private" to 1,
             )))
-            assertCreateFails(newRoot("unsafe-$index"), metadata, TorrentEdition(hash, 1, "fiction", content.size.toLong()), "Unsafe torrent path")
+            try {
+                assertFalse("Fixture starts without an outside payload", outsidePayload.exists())
+                NativeTorrentEngine().use { engine ->
+                    engine.start(root, metadata, TorrentEdition(hash, 1, "fiction", content.size.toLong()))
+                    assertEquals(File(root, "payload").canonicalPath, engine.poll().path)
+                }
+                assertFalse("Normalized torrent paths must not create a payload beside the download root", outsidePayload.exists())
+            } finally {
+                root.deleteRecursively()
+            }
         }
     }
 
     @Test
     fun zeroLengthAndOverEightGibEditionsAreRejectedFromMetadataOnly() {
         val empty = byteArrayOf()
-        assertCreateFails(newRoot("empty-edition"), singleFile(md5(empty), empty), edition(empty), "Unsupported edition size")
+        assertCreateFails(newRoot("empty-edition"), singleFile(md5(empty), empty), edition(empty), "invalid length of torrent")
 
         val pieceLength = 1_048_576
         val fileSize = 8L * 1024 * 1024 * 1024 + 1
