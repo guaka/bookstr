@@ -74,6 +74,7 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import app.bookstr.data.BookProgress
 import app.bookstr.data.BookFormat
 import app.bookstr.data.ReaderSession
 import app.bookstr.data.ReaderTheme
@@ -85,6 +86,8 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlin.math.roundToInt
 import kotlin.math.abs
 import kotlin.math.hypot
@@ -104,6 +107,14 @@ private data class PdfHighlightData(
     val pageWidth: Float = 1f,
     val pageHeight: Float = 1f,
 )
+
+/** Save positions in arrival order even when an earlier database write suspends. */
+internal class PdfProgressRecorder(private val save: suspend (String, Double, String) -> BookProgress) {
+    private val writes = Mutex()
+
+    suspend fun record(bookId: String, progression: Double, cfi: String): BookProgress =
+        writes.withLock { save(bookId, progression, cfi) }
+}
 
 internal class PdfPositionReporter(private val onPositionChanged: (Int, Int) -> Unit) {
     private var lastReportedPosition: Pair<Int, Int>? = null
@@ -185,6 +196,7 @@ class PdfReaderActivity : ComponentActivity() {
         renderer = openedRenderer
         val pageRatios = pageRatios(openedRenderer)
         val readerTheme = app.settingsRepository.theme
+        val progressRecorder = PdfProgressRecorder(app.catalogRepository::saveProgress)
 
         setContent {
             BookstrThemeFromSettings(readerTheme = readerTheme) {
@@ -213,7 +225,7 @@ class PdfReaderActivity : ComponentActivity() {
                                 .coerceIn(0.0, 1.0)
                         }
                         lifecycleScope.launch {
-                            val saved = app.catalogRepository.saveProgress(
+                            val saved = progressRecorder.record(
                                 bookId,
                                 progression,
                                 "pdf:$page:$offset",
