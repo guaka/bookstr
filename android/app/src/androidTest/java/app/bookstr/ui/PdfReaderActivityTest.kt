@@ -112,6 +112,7 @@ class PdfReaderActivityTest {
                 }
                 // Closing a successfully opened reader keeps the session for resuming later.
                 assertEquals(1, app.settingsRepository.readerSession()?.pageIndex)
+                assertTrue(runBlocking { app.catalogRepository.getProgress(bookId)?.cfi?.startsWith("pdf:1:") == true })
             }
         } finally {
             file.delete()
