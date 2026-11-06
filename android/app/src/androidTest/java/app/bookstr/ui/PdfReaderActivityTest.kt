@@ -18,6 +18,7 @@ import app.bookstr.data.BookFormat
 import app.bookstr.data.ReaderTheme
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
+import org.junit.Assert.fail
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -38,7 +39,8 @@ class PdfReaderActivityTest {
         val app = ApplicationProvider.getApplicationContext<BookstrApp>()
         val bookId = "pdf-reader-${UUID.randomUUID()}"
         val file = app.catalogRepository.publicationFile(bookId, BookFormat.Pdf)
-        writePdf(file, pageCount = 2)
+        // Keep a following page after the destination so page 2 is not clamped at the list end.
+        writePdf(file, pageCount = 3)
         val previousTheme = app.settingsRepository.theme
         resetState(app, bookId)
 
@@ -68,14 +70,34 @@ class PdfReaderActivityTest {
                 assertEquals(0, initialSession?.pageIndex)
 
                 compose.onNodeWithContentDescription("Page 1").performTouchInput { swipeLeft() }
-                compose.waitUntil(15_000) {
-                    compose.onAllNodesWithContentDescription("Page 2").fetchSemanticsNodes().isNotEmpty() &&
-                        runBlocking { app.catalogRepository.getProgress(bookId)?.cfi?.startsWith("pdf:1:") == true }
+                try {
+                    compose.waitUntil(15_000) { hasPage("Page 2") }
+                } catch (timeout: androidx.compose.ui.test.ComposeTimeoutException) {
+                    val progressAfterSwipe = runBlocking { app.catalogRepository.getProgress(bookId) }
+                    fail(
+                        "PDF swipe did not expose page 2; page1=${hasPage("Page 1")}, " +
+                            "page2=${hasPage("Page 2")}, cfi=${progressAfterSwipe?.cfi}, " +
+                            "progression=${progressAfterSwipe?.progression}; ${timeout.message}",
+                    )
                 }
                 compose.onNodeWithContentDescription("Page 2").assertIsDisplayed()
+
+                try {
+                    compose.waitUntil(15_000) {
+                        runBlocking { app.catalogRepository.getProgress(bookId)?.cfi?.startsWith("pdf:1:") == true }
+                    }
+                } catch (timeout: androidx.compose.ui.test.ComposeTimeoutException) {
+                    val progressAfterPageChange = runBlocking { app.catalogRepository.getProgress(bookId) }
+                    fail(
+                        "PDF page 2 is visible but progress was not persisted; " +
+                            "page1=${hasPage("Page 1")}, page2=${hasPage("Page 2")}, " +
+                            "cfi=${progressAfterPageChange?.cfi}, " +
+                            "progression=${progressAfterPageChange?.progression}; ${timeout.message}",
+                    )
+                }
                 val progress = runBlocking { app.catalogRepository.getProgress(bookId) }
                 assertNotNull(progress)
-                assertTrue(progress!!.progression >= 0.5)
+                assertTrue(progress!!.progression >= 1.0 / 3.0)
 
                 scenario.moveToState(Lifecycle.State.STARTED)
                 assertEquals(1, app.settingsRepository.readerSession()?.pageIndex)
@@ -134,6 +156,9 @@ class PdfReaderActivityTest {
         app.settingsRepository.theme = ReaderTheme.White
         runBlocking { app.catalogRepository.clearProgress(bookId) }
     }
+
+    private fun hasPage(description: String): Boolean =
+        compose.onAllNodesWithContentDescription(description).fetchSemanticsNodes().isNotEmpty()
 
     private fun writePdf(file: File, pageCount: Int) {
         file.parentFile?.mkdirs()
