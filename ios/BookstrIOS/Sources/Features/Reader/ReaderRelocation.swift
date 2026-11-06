@@ -49,17 +49,26 @@ enum ReaderRelocation {
 
 @MainActor
 final class ReaderProgressSyncDebouncer {
+    typealias Sleeper = @MainActor (UInt64) async throws -> Void
+
     private var task: Task<Void, Never>?
     private let delayNanoseconds: UInt64
+    private let sleep: Sleeper
 
-    init(delayNanoseconds: UInt64 = 1_000_000_000) {
+    init(
+        delayNanoseconds: UInt64 = 1_000_000_000,
+        sleep: @escaping Sleeper = { nanoseconds in
+            try await Task.sleep(nanoseconds: nanoseconds)
+        }
+    ) {
         self.delayNanoseconds = delayNanoseconds
+        self.sleep = sleep
     }
 
     func schedule(_ operation: @escaping () async -> Void) {
         task?.cancel()
-        task = Task { [delayNanoseconds] in
-            try? await Task.sleep(nanoseconds: delayNanoseconds)
+        task = Task { [delayNanoseconds, sleep] in
+            try? await sleep(delayNanoseconds)
             guard !Task.isCancelled else { return }
             await operation()
         }
