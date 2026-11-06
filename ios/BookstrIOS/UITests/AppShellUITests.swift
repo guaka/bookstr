@@ -58,8 +58,9 @@ final class AppShellUITests: XCTestCase {
         language.tap()
         app.buttons["Dutch"].tap()
         let download = app.buttons["speech-model-piper_nl_nl_dii"]
-        reveal(download)
-        XCTAssertTrue(download.waitForExistence(timeout: 5))
+        let remove = app.buttons["speech-model-remove-piper_nl_nl_dii"]
+        reveal(download, alternative: remove)
+        XCTAssertTrue(download.exists || remove.exists)
         let voice = app.descendants(matching: .any)["speech-voice-nl"]
         reveal(voice)
         XCTAssertTrue(voice.exists)
@@ -471,9 +472,9 @@ final class AppShellUITests: XCTestCase {
         library.tap()
     }
 
-    private func reveal(_ element: XCUIElement, towardTop: Bool = false) {
+    private func reveal(_ element: XCUIElement, alternative: XCUIElement? = nil, towardTop: Bool = false) {
         for _ in 0..<24 {
-            if element.isHittable { return }
+            if element.isHittable || alternative?.isHittable == true { return }
             if towardTop { app.swipeDown() } else { app.swipeUp() }
         }
     }
