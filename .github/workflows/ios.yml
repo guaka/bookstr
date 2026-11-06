@@ -29,7 +29,7 @@ jobs:
       contents: read
       pull-requests: read
     outputs:
-      ios: ${{ github.event_name != 'pull_request' || steps.filter.outputs.ios == 'true' }}
+      ios: ${{ (github.event_name != 'pull_request' || steps.filter.outputs.ios_code == 'true' || steps.baseline.outputs.ios == 'true') && 'true' || 'false' }}
     steps:
       - uses: actions/checkout@v4
       - uses: dorny/paths-filter@0e4a8c6effa4802afeda77dc8d303f8176d7dfad
@@ -37,14 +37,33 @@ jobs:
         if: github.event_name == 'pull_request'
         with:
           filters: |
-            ios:
+            ios_code:
               - 'ios/**'
               - 'shared/reader/**'
-              - 'shared/coverage/**'
               - 'scripts/coverage-ratchet.mjs'
               - 'scripts/test-overview.mjs'
-              - '.github/workflows/ios.yml'
               - '.nvmrc'
+      - name: Compare iOS coverage floor with pull request base
+        id: baseline
+        if: github.event_name == 'pull_request'
+        env:
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          if ! git fetch --no-tags --depth=1 origin "$PR_BASE_SHA"; then
+            echo 'ios=true' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if ! git show "$PR_BASE_SHA:shared/coverage/baselines-v1.json" > "$RUNNER_TEMP/base-baselines.json"; then
+            echo 'ios=true' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if ! git show "$PR_BASE_SHA:.github/workflows/ios.yml" > "$RUNNER_TEMP/base-ios.yml"; then
+            echo 'ios=true' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          result=$(node scripts/platform-baseline-routing-cli.mjs --suite ios --base "$RUNNER_TEMP/base-baselines.json" --head shared/coverage/baselines-v1.json --workflow-base "$RUNNER_TEMP/base-ios.yml" --workflow-head .github/workflows/ios.yml)
+          echo "ios=$result" >> "$GITHUB_OUTPUT"
 
   ios:
     name: iOS
@@ -78,7 +97,7 @@ jobs:
           COVERAGE_PATH: ${{ steps.ios_tests.outputs.coverage_path }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
-          KNOWN_TESTS=$(grep -h -E '^[[:space:]]*func test' ios/BookstrIOS/Tests/{TorrentDownloadTests,CatalogConnectionTests,CatalogSearchPageTests,DictionaryRepositoryTests,FavoritesParserTests,NostrClientProgressTests,ProgressRepositoryTests,ReaderAssetContractTests,ReaderPlaybackSessionTests,ReaderRelocationTests,ReaderSelectionActionsTests,SettingsRepositoryTests,SpeechLanguageSettingsTests,SpeechModelStoreTests,NeuralSpeechSessionTests,SnippetRepositoryTests,BookstrDebugLogTests,VocabularyRepositoryTests,WordNavigationStateTests,WordSortOrderingTests}.swift | wc -l | tr -d ' ')
+          KNOWN_TESTS=$(grep -h -E '^[[:space:]]*func test' ios/BookstrIOS/Tests/{DeviceTransferCoreTests,DeviceTransferTransportTests,TorrentDownloadTests,CatalogConnectionTests,CatalogSearchPageTests,DictionaryRepositoryTests,FavoritesParserTests,NostrClientProgressTests,ProgressRepositoryTests,ReaderAssetContractTests,ReaderPlaybackSessionTests,ReaderRelocationTests,ReaderSelectionActionsTests,SettingsRepositoryTests,SpeechLanguageSettingsTests,SpeechModelStoreTests,NeuralSpeechSessionTests,SnippetRepositoryTests,BookstrDebugLogTests,VocabularyRepositoryTests,WordNavigationStateTests,WordSortOrderingTests}.swift | wc -l | tr -d ' ')
           node scripts/test-overview.mjs record --id ios --suite iOS --status "$TEST_STATUS" --results-format swift --results ios/swift-test-results.log --coverage-format llvm --coverage "$COVERAGE_PATH" --known-tests "$KNOWN_TESTS" --duration-ms "$TEST_DURATION_MS" --output test-overview/ios.json --recorded "$(date -u +%FT%TZ)" --run-url "$RUN_URL" --commit "$GITHUB_SHA"
       - name: Enforce iOS coverage baseline
         if: always()
@@ -102,17 +121,38 @@ jobs:
           brew list cmake >/dev/null 2>&1 || brew install cmake
           brew list boost >/dev/null 2>&1 || brew install boost
           BOOST_ROOT="$(brew --prefix boost)" scripts/ensure-ios-torrent.sh
-      - name: Build and run e2e tests
+      - name: Build iOS e2e tests
+        timeout-minutes: 15
+        run: |
+          xcodebuild build-for-testing \
+            -project ios/BookstrIOS.xcodeproj \
+            -scheme BookstrIOS \
+            -destination 'platform=iOS Simulator,id=${{ steps.simulator.outputs.id }}' \
+            -derivedDataPath "$RUNNER_TEMP/BookstrIOSDerivedData" \
+            -only-testing:BookstrIOSUITests \
+            -only-testing:BookstrIOSTests/ReaderAssetContractTests \
+            -only-testing:BookstrIOSTests/AppContainerTests \
+            -only-testing:BookstrIOSTests/TorrentDownloadTests \
+            -only-testing:BookstrIOSTests/FavoritesParserTests/testRealPdfIsAccepted \
+            -only-testing:BookstrIOSTests/FavoritesParserTests/testPublicDomainAlicePdfFixtureIsAcceptedAndHasReadableText \
+            -only-testing:BookstrIOSTests/FavoritesParserTests/testPublicDomainAliceEpubFixtureIsAccepted \
+            -only-testing:BookstrIOSTests/FavoritesParserTests/testPublicDomainAliceEpubActuallyReachesReadyReader \
+            -only-testing:BookstrIOSTests/FavoritesParserTests/testEPUBReaderCanAdjustFontPercentViaReaderAPI \
+            -parallel-testing-enabled NO \
+            -skipPackagePluginValidation \
+            CODE_SIGNING_ALLOWED=NO
+      - name: Run iOS e2e tests
         id: ios_e2e_tests
         continue-on-error: true
         timeout-minutes: 30
         run: |
           started=$(date +%s)
           set +e
-          xcodebuild test \
+          xcodebuild test-without-building \
             -project ios/BookstrIOS.xcodeproj \
             -scheme BookstrIOS \
             -destination 'platform=iOS Simulator,id=${{ steps.simulator.outputs.id }}' \
+            -derivedDataPath "$RUNNER_TEMP/BookstrIOSDerivedData" \
             -only-testing:BookstrIOSUITests \
             -only-testing:BookstrIOSTests/ReaderAssetContractTests \
             -only-testing:BookstrIOSTests/AppContainerTests \

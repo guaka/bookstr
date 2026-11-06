@@ -2,8 +2,6 @@ package app.bookstr.data
 
 import android.content.Context
 import android.util.Log
-import app.bookstr.nostr.AmberIntentSession
-import app.bookstr.nostr.Nip55
 import app.bookstr.nostr.Nip55Exception
 import app.bookstr.nostr.NostrClient
 import app.bookstr.nostr.NostrCrypto
@@ -265,32 +263,15 @@ class NostrFavoritesRepository(
     }
 
     private suspend fun encryptToSelf(pubkey: String, plaintext: String): String {
-        if (settings.authMode != NostrAuthMode.Amber) {
-            throw Nip55Exception("Editing private favorites currently requires an external signer on Android")
-        }
-        val pkg = settings.signerPackage ?: throw Nip55Exception("External signer is not connected")
-        return Nip55.encryptNip44ViaContentResolver(context, pkg, plaintext, pubkey, pubkey)
-            ?: AmberIntentSession.Host.session?.encryptNip44(plaintext, pubkey, pubkey, pkg)
-            ?: throw Nip55Exception(
-                "Your signer needs approval to encrypt favorites. Reconnect your signer in Settings.",
-            )
+        val signer = NostrSignerFactory.create(context, settings)
+            ?: throw Nip55Exception("Connect Nostr to edit favorites")
+        return signer.nip44Encrypt(plaintext, pubkey)
     }
 
     private suspend fun decryptFromSelf(pubkey: String, ciphertext: String): String {
-        return when (settings.authMode) {
-            NostrAuthMode.Amber -> {
-                val pkg = settings.signerPackage ?: throw Nip55Exception("External signer is not connected")
-                Nip55.decryptNip44ViaContentResolver(context, pkg, ciphertext, pubkey, pubkey)
-                    ?: AmberIntentSession.Host.session?.decryptNip44(ciphertext, pubkey, pubkey, pkg)
-                    ?: throw Nip55Exception(
-                        "Your signer needs approval to decrypt favorites. Open Settings and reconnect your signer.",
-                    )
-            }
-            NostrAuthMode.Nsec -> throw Nip55Exception(
-                "Private favorite decryption currently requires an external signer on Android.",
-            )
-            NostrAuthMode.None -> throw Nip55Exception("Connect Nostr to load LibVault favorites")
-        }
+        val signer = NostrSignerFactory.create(context, settings)
+            ?: throw Nip55Exception("Connect Nostr to load LibVault favorites")
+        return signer.nip44Decrypt(ciphertext, pubkey)
     }
 
     companion object {

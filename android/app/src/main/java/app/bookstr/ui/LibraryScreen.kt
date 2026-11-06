@@ -249,6 +249,8 @@ private fun LazyListScope.bookRows(
             ) {
                 Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
                     Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                        BookCover(book.id, book.format, book.coverUrl)
+                        Spacer(Modifier.width(8.dp))
                         Text(
                             text = book.title,
                             style = MaterialTheme.typography.titleMedium,
