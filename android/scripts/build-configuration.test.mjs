@@ -245,4 +245,3 @@ test('managed coverage input guard reuses the configuration cache', () => {
     rmSync(directory, { recursive: true, force: true });
   }
 });
-
