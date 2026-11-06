@@ -1,5 +1,5 @@
 const { test } = require('node:test') as typeof import('node:test');
-const assert = require('node:assert/strict') as typeof import('node:assert/strict');
+const assert: typeof import('node:assert/strict') = require('node:assert/strict');
 const { isEnabledReaderFormat, requireEnabledReaderFormat } = require('../../reader-formats') as typeof import('../../src/reader-formats');
 
 test('reader format validation normalizes supported formats and rejects empty or disabled formats', () => {
