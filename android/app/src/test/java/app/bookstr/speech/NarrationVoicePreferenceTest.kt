@@ -55,6 +55,31 @@ class NarrationVoicePreferenceTest {
         }
     }
 
+    @Test fun changingFromNeuralToAnInitializingSystemVoiceWaitsWithoutReusingOldAudio() {
+        val controller = Robolectric.buildService(NarrationService::class.java).create()
+        val service = controller.get()
+        val engine = Engine(service)
+        fun field(name: String) = NarrationService::class.java.getDeclaredField(name).apply { isAccessible = true }
+        val settings = SpeechSettings(service.getSharedPreferences("bookstr_settings", Context.MODE_PRIVATE))
+        try {
+            field("textToSpeech").set(service, engine)
+            field("textToSpeechReady").set(service, false)
+            field("speechLanguage").set(service, "pt-pt")
+            field("speechText").set(service, "Antes. Depois da pausa.")
+            field("activeVoice").set(service, "kokoro_pt_pt")
+            field("currentRangeStart").set(service, 7)
+            field("speechQueue").set(service, listOf(app.bookstr.NarrationChunk("old", "Antes.", "Antes.", 0, 0, 0, false)))
+            settings.setVoice("pt-pt", "")
+            NarrationService::class.java.getDeclaredMethod("playOrRequestText").apply { isAccessible = true }.invoke(service)
+            assertTrue(field("pendingPlay").getBoolean(service))
+            assertTrue((field("speechQueue").get(service) as List<*>).isEmpty())
+            assertEquals(7, field("resumeOffset").getInt(service))
+            service.onInit(TextToSpeech.SUCCESS)
+            assertEquals("", field("activeVoice").get(service))
+            assertEquals(7, ((field("speechQueue").get(service) as List<*>).first() as app.bookstr.NarrationChunk).offset)
+        } finally { controller.destroy(); engine.shutdown() }
+    }
+
     @Test fun missingNeuralVoiceReportsAnErrorAndStoppedSynthesisCannotReportStaleErrors() {
         val controller = Robolectric.buildService(NarrationService::class.java).create()
         val service = controller.get()

@@ -525,9 +525,11 @@ class NarrationService : MediaBrowserServiceCompat(), TextToSpeech.OnInitListene
         updatePlaybackState(PlaybackStateCompat.STATE_PLAYING)
         updateNotification()
         publishState()
+        // Settings can change while paused; cached audio still belongs to the old voice.
         if (speechQueue.isNotEmpty() && activeVoice != speechSettings.voice(speechLanguage)) {
-            startSpeakingAt(currentRangeStart)
-            return
+            generation += 1
+            resetAudioPipeline(cancelSynthesis = true)
+            resumeOffset = currentRangeStart
         }
         mediaPlayer?.let { player ->
             if (!player.isPlaying) {
