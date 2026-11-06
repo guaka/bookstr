@@ -8,18 +8,25 @@ import android.content.pm.ProviderInfo
 import android.database.Cursor
 import android.database.MatrixCursor
 import android.net.Uri
+import android.os.Looper
 import androidx.room.Room
 import app.bookstr.nostr.Nip55
 import app.bookstr.nostr.AmberIntentSession
 import app.bookstr.nostr.NostrCrypto
 import app.bookstr.nostr.NostrClient
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import okhttp3.WebSocket
 import okhttp3.WebSocketListener
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
 import org.json.JSONArray
 import org.json.JSONObject
+import org.robolectric.Shadows.shadowOf
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -241,34 +248,51 @@ class NostrRepositoryCoverageTest {
 
     @Test
     fun vocabularyIsAmberOnlyAndMissingEncryptionProviderFailsSafely() = runBlocking<Unit> {
-        val repo = repository()
-        settings.connectNsec(PRIVATE_KEY, PUBKEY)
-        assertFalse(repo.publishVocabularyWord(word("local")))
-        assertEquals(0, repo.pullVocabulary())
+        withMainLooperPumped {
+            val repo = repository()
+            settings.connectNsec(PRIVATE_KEY, PUBKEY)
+            assertFalse(repo.publishVocabularyWord(word("local")))
+            assertEquals(0, repo.pullVocabulary())
 
-        val existing = word("existing", lastSeenAt = 9_000L)
-        database.vocabularyWordDao().upsert(existing)
-        val server = relay { socket, message ->
-            val request = JSONArray(message)
-            if (request.getString(0) == "REQ") {
-                val remote = JSONObject().put("id", "without-decrypt-permission")
-                    .put("tags", JSONArray().put(JSONArray().put("d").put(NostrClient.VOCABULARY_D_PREFIX + "unreadable")))
-                    .put("content", "ciphertext")
-                socket.send(JSONArray().put("EVENT").put(request.getString(1)).put(remote).toString())
-                socket.send(JSONArray().put("EOSE").put(request.getString(1)).toString())
+            val existing = word("existing", lastSeenAt = 9_000L)
+            database.vocabularyWordDao().upsert(existing)
+            val server = relay { socket, message ->
+                val request = JSONArray(message)
+                if (request.getString(0) == "REQ") {
+                    val remote = JSONObject().put("id", "without-decrypt-permission")
+                        .put("tags", JSONArray().put(JSONArray().put("d").put(NostrClient.VOCABULARY_D_PREFIX + "unreadable")))
+                        .put("content", "ciphertext")
+                    socket.send(JSONArray().put("EVENT").put(request.getString(1)).put(remote).toString())
+                    socket.send(JSONArray().put("EOSE").put(request.getString(1)).toString())
+                }
             }
-        }
-        settings.connectAmber(PUBKEY, "absent.vocabulary.signer")
-        settings.relays = listOf(serverUrl(server))
-        assertFalse(repo.publishVocabularyWord(word("local")))
-        assertEquals(0, repo.pullVocabulary())
-        assertEquals(existing, database.vocabularyWordDao().get(existing.key))
-        assertNull(database.vocabularyWordDao().getByWord("en", "unreadable"))
+            settings.connectAmber(PUBKEY, "absent.vocabulary.signer")
+            settings.relays = listOf(serverUrl(server))
+            assertFalse(repo.publishVocabularyWord(word("local")))
+            assertEquals(0, repo.pullVocabulary())
+            assertEquals(existing, database.vocabularyWordDao().get(existing.key))
+            assertNull(database.vocabularyWordDao().getByWord("en", "unreadable"))
 
-        settings.relays = listOf("not a relay URL")
-        assertEquals(0, repo.pullVocabulary())
-        assertEquals(existing, database.vocabularyWordDao().get(existing.key))
-        assertNull(database.vocabularyWordDao().getByWord("en", "unreadable"))
+            settings.relays = listOf("not a relay URL")
+            assertEquals(0, repo.pullVocabulary())
+            assertEquals(existing, database.vocabularyWordDao().get(existing.key))
+            assertNull(database.vocabularyWordDao().getByWord("en", "unreadable"))
+        }
+    }
+
+    private suspend fun <T> withMainLooperPumped(timeoutMillis: Long = 15_000, operation: suspend () -> T): T = coroutineScope {
+        val result = async(Dispatchers.Default) { operation() }
+        try {
+            withTimeout(timeoutMillis) {
+                while (!result.isCompleted) {
+                    shadowOf(Looper.getMainLooper()).idleFor(100, TimeUnit.MILLISECONDS)
+                    delay(1)
+                }
+                result.await()
+            }
+        } finally {
+            result.cancel()
+        }
     }
 
     private fun repository() = NostrRepository(context, settings, database.bookProgressDao(), vocabulary)

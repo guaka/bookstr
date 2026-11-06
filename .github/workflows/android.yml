@@ -16,7 +16,7 @@ on:
       - 'scripts/coverage-ratchet.mjs'
       - 'scripts/test-overview.mjs'
       - '.github/workflows/android.yml'
-      - 'scripts/workflows.test.mjs'
+      - 'scripts/workflows.test.mts'
       - '.nvmrc'
   pull_request:
   workflow_dispatch:
@@ -63,7 +63,7 @@ jobs:
               - 'web/vendor/libarchive.wasm'
               - 'scripts/coverage-ratchet.mjs'
               - 'scripts/test-overview.mjs'
-              - 'scripts/workflows.test.mjs'
+              - 'scripts/workflows.test.mts'
               - '.nvmrc'
       - name: Compare Android coverage floor with pull request base
         id: baseline
@@ -101,16 +101,16 @@ jobs:
         with:
           node-version-file: .nvmrc
       - name: Test instrumentation result parser
-        run: node --test --experimental-test-coverage --test-coverage-lines=100 --test-coverage-branches=100 --test-coverage-functions=100 android/scripts/instrumentation-results.test.mjs
+        run: node --test --experimental-test-coverage --test-coverage-lines=100 --test-coverage-branches=100 --test-coverage-functions=100 android/scripts/instrumentation-results.test.mts scripts/junit.test.mts
       - name: Test Android release publisher
-        run: node --test android/scripts/publish-obtainium-release.test.mjs
+        run: node --test android/scripts/publish-obtainium-release.test.mts
       - name: Test Android release version resolver
-        run: node --test --experimental-test-coverage --test-coverage-lines=100 --test-coverage-branches=100 --test-coverage-functions=100 android/scripts/android-release-version.test.mjs
+        run: node --test --experimental-test-coverage --test-coverage-lines=100 --test-coverage-branches=100 --test-coverage-functions=100 android/scripts/android-release-version.test.mts
       - name: Test connected Android runner
-        run: node --test android/scripts/run-connected-e2e.test.mjs
+        run: node --test android/scripts/run-connected-e2e.test.mts
       - name: Test native coverage tooling
         run: |
-          node --test android/scripts/native-coverage.test.mjs
+          node --test --experimental-test-coverage --test-coverage-lines=100 --test-coverage-branches=100 --test-coverage-functions=100 android/scripts/native-coverage.test.mts
           bash android/scripts/test-prepare-native-coverage.sh
           bash android/scripts/test-collect-native-coverage.sh
       - uses: actions/setup-java@v4
@@ -124,7 +124,7 @@ jobs:
       - name: Install Android build tools
         run: sdkmanager "platforms;android-35" "build-tools;35.0.0" "ndk;27.2.12479018" "cmake;3.22.1"
       - name: Test Android build configuration
-        run: node --test --test-concurrency=1 android/scripts/build-configuration.test.mjs
+        run: node --test --test-concurrency=1 android/scripts/build-configuration.test.mts
       - name: Unit tests and JaCoCo
         id: unit_tests
         continue-on-error: true

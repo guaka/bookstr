@@ -1,269 +1,257 @@
 #!/usr/bin/env node
-
+import { parseJUnit } from './junit.mjs';
+export { parseJUnit } from './junit.mjs';
 import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
 import { basename, dirname, extname, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
-
 function argumentsMap(values) {
-  const result = {};
-  for (let index = 0; index < values.length; index += 2) {
-    result[values[index].replace(/^--/, '')] = values[index + 1];
-  }
-  return result;
+    const result = {};
+    for (let index = 0; index < values.length; index += 2) {
+        result[values[index].replace(/^--/, '')] = values[index + 1];
+    }
+    return result;
 }
-
 function number(value) {
-  const parsed = Number(value?._value ?? value?.value ?? value);
-  return Number.isFinite(parsed) ? parsed : 0;
+    const parsed = Number(value?._value ?? value?.value ?? value);
+    return Number.isFinite(parsed) ? parsed : 0;
 }
-
 function percent(covered, total) {
-  return total ? Number(((covered / total) * 100).toFixed(2)) : 0;
+    return total ? Number(((covered / total) * 100).toFixed(2)) : 0;
 }
-
 async function filesBelow(path, extension) {
-  if (!path) return [];
-  try {
-    const entries = await readdir(path, { withFileTypes: true });
-    const nested = await Promise.all(entries.map(entry => {
-      const child = join(path, entry.name);
-      return entry.isDirectory() ? filesBelow(child, extension) : [child];
-    }));
-    return nested.flat().filter(file => !extension || extname(file) === extension);
-  } catch {
-    return [path];
-  }
+    if (!path)
+        return [];
+    try {
+        const entries = await readdir(path, { withFileTypes: true });
+        const nested = await Promise.all(entries.map(entry => {
+            const child = join(path, entry.name);
+            return entry.isDirectory() ? filesBelow(child, extension) : [child];
+        }));
+        return nested.flat().filter(file => !extension || extname(file) === extension);
+    }
+    catch {
+        return [path];
+    }
 }
-
 export function parseTap(text) {
-  const value = key => number(text.match(new RegExp(`^# ${key} (\\d+(?:\\.\\d+)?)`, 'm'))?.[1]);
-  return {
-    tests: value('tests'),
-    passed: value('pass'),
-    failed: value('fail'),
-    skipped: value('skipped'),
-    durationMs: value('duration_ms'),
-  };
+    const value = (key) => number(text.match(new RegExp(`^# ${key} (\\d+(?:\\.\\d+)?)`, 'm'))?.[1]);
+    return {
+        tests: value('tests'),
+        passed: value('pass'),
+        failed: value('fail'),
+        skipped: value('skipped'),
+        durationMs: value('duration_ms'),
+    };
 }
-
 export function parseSwiftTest(text) {
-  const summaries = [...text.matchAll(/Executed\s+(\d+)\s+tests?,\s+with\s+(?:(\d+)\s+tests?\s+skipped\s+and\s+)?(\d+)\s+failures?[^\n]*?in\s+(\d+(?:\.\d+)?)(?:\s+\(\d+(?:\.\d+)?\))?\s+seconds/g)];
-  const match = summaries.at(-1);
-  if (!match) return { tests: 0, passed: 0, failed: 0, skipped: 0, durationMs: 0 };
-  const tests = number(match[1]);
-  const skipped = number(match[2]);
-  const failed = number(match[3]);
-  return { tests, passed: Math.max(0, tests - skipped - failed), failed, skipped, durationMs: number(match[4]) * 1000 };
+    const summaries = [...text.matchAll(/Executed\s+(\d+)\s+tests?,\s+with\s+(?:(\d+)\s+tests?\s+skipped\s+and\s+)?(\d+)\s+failures?[^\n]*?in\s+(\d+(?:\.\d+)?)(?:\s+\(\d+(?:\.\d+)?\))?\s+seconds/g)];
+    const match = summaries.at(-1);
+    if (!match)
+        return { tests: 0, passed: 0, failed: 0, skipped: 0, durationMs: 0 };
+    const tests = number(match[1]);
+    const skipped = number(match[2]);
+    const failed = number(match[3]);
+    return { tests, passed: Math.max(0, tests - skipped - failed), failed, skipped, durationMs: number(match[4]) * 1000 };
 }
-
-export function parseJUnit(documents) {
-  const result = { tests: 0, passed: 0, failed: 0, skipped: 0, durationMs: 0 };
-  for (const document of documents) {
-    const suite = document.match(/<testsuite\s+([^>]+)>/i)?.[1] || '';
-    const attribute = name => suite.match(new RegExp(`${name}="([^"]+)"`, 'i'))?.[1];
-    const tests = number(attribute('tests'));
-    const failed = number(attribute('failures')) + number(attribute('errors'));
-    const skipped = number(attribute('skipped'));
-    result.tests += tests;
-    result.failed += failed;
-    result.skipped += skipped;
-    result.passed += Math.max(0, tests - failed - skipped);
-    result.durationMs += number(attribute('time')) * 1000;
-  }
-  return result;
-}
-
 export function parsePlaywright(report) {
-  const stats = report?.stats || {};
-  const flaky = number(stats.flaky);
-  const passed = number(stats.expected) + flaky;
-  const failed = number(stats.unexpected);
-  const skipped = number(stats.skipped);
-  return {
-    tests: passed + failed + skipped,
-    passed,
-    failed,
-    flaky,
-    skipped,
-    durationMs: number(stats.duration),
-  };
+    const stats = report?.stats || {};
+    const flaky = number(stats.flaky);
+    const passed = number(stats.expected) + flaky;
+    const failed = number(stats.unexpected);
+    const skipped = number(stats.skipped);
+    return {
+        tests: passed + failed + skipped,
+        passed,
+        failed,
+        flaky,
+        skipped,
+        durationMs: number(stats.duration),
+    };
 }
-
 export function parseXCResult(summary) {
-  const configurations = Array.isArray(summary?.devicesAndConfigurations) ? summary.devicesAndConfigurations : [];
-  const count = key => {
-    const direct = Array.isArray(summary?.[key]) ? summary[key].length : number(summary?.[key]);
-    return direct || configurations.reduce((sum, item) => sum + (Array.isArray(item?.[key]) ? item[key].length : number(item?.[key])), 0);
-  };
-  const total = number(summary?.totalTestCount ?? summary?.statistics?.find(item => item.title === 'Tests')?.value);
-  const failed = count('failedTests');
-  const skipped = count('skippedTests');
-  const explicitPassed = count('passedTests');
-  const timestamp = value => {
-    if (typeof value === 'number') return value < 10_000_000_000 ? value * 1000 : value;
-    return new Date(value || 0).valueOf();
-  };
-  return {
-    tests: total || explicitPassed + failed + skipped,
-    passed: explicitPassed || Math.max(0, total - failed - skipped),
-    failed,
-    skipped,
-    durationMs: Math.max(0, timestamp(summary?.finishTime) - timestamp(summary?.startTime)),
-  };
+    const configurations = Array.isArray(summary?.devicesAndConfigurations) ? summary.devicesAndConfigurations : [];
+    const count = (key) => {
+        const direct = Array.isArray(summary?.[key]) ? summary[key].length : number(summary?.[key]);
+        return direct || configurations.reduce((sum, item) => sum + (Array.isArray(item?.[key]) ? item[key].length : number(item?.[key])), 0);
+    };
+    const total = number(summary?.totalTestCount ?? summary?.statistics?.find(item => item.title === 'Tests')?.value);
+    const failed = count('failedTests');
+    const skipped = count('skippedTests');
+    const explicitPassed = count('passedTests');
+    const timestamp = (value) => {
+        if (typeof value === 'number')
+            return value < 10_000_000_000 ? value * 1000 : value;
+        return new Date((value || 0)).valueOf();
+    };
+    return {
+        tests: total || explicitPassed + failed + skipped,
+        passed: explicitPassed || Math.max(0, total - failed - skipped),
+        failed,
+        skipped,
+        durationMs: Math.max(0, timestamp(summary?.finishTime) - timestamp(summary?.startTime)),
+    };
 }
-
 export function parseIstanbul(summary) {
-  const total = summary?.total || {};
-  return ['statements', 'branches', 'functions', 'lines'].map(key => ({
-    label: key[0].toUpperCase() + key.slice(1),
-    value: number(total[key]?.pct),
-    suffix: '%',
-  }));
+    const total = summary?.total || {};
+    return ['statements', 'branches', 'functions', 'lines'].map(key => ({
+        label: key[0].toUpperCase() + key.slice(1),
+        value: number(total[key]?.pct),
+        suffix: '%',
+    }));
 }
-
 export function parseNodeCoverage(text) {
-  const match = text.match(/^(?:#|ℹ)\s+all files\s*\|\s*(\d+(?:\.\d+)?)\s*\|\s*(\d+(?:\.\d+)?)\s*\|\s*(\d+(?:\.\d+)?)\s*\|/m);
-  if (!match) return [];
-  return [
-    { label: 'Lines', value: number(match[1]), suffix: '%' },
-    { label: 'Branches', value: number(match[2]), suffix: '%' },
-    { label: 'Functions', value: number(match[3]), suffix: '%' },
-  ];
+    const match = text.match(/^(?:#|ℹ)\s+all files\s*\|\s*(\d+(?:\.\d+)?)\s*\|\s*(\d+(?:\.\d+)?)\s*\|\s*(\d+(?:\.\d+)?)\s*\|/m);
+    if (!match)
+        return [];
+    return [
+        { label: 'Lines', value: number(match[1]), suffix: '%' },
+        { label: 'Branches', value: number(match[2]), suffix: '%' },
+        { label: 'Functions', value: number(match[3]), suffix: '%' },
+    ];
 }
-
 export function parseJacoco(xml) {
-  const labels = { INSTRUCTION: 'Instructions', BRANCH: 'Branches', METHOD: 'Methods', LINE: 'Lines' };
-  const counters = [...xml.matchAll(/<counter\s+([^>]+)\/?>/g)].map(match => {
-    const attributes = Object.fromEntries([...match[1].matchAll(/(\w+)="([^"]*)"/g)].map(attribute => [attribute[1], attribute[2]]));
-    return attributes;
-  });
-  const last = new Map(counters.filter(counter => labels[counter.type]).map(counter => [counter.type, counter]));
-  return Object.entries(labels).flatMap(([type, label]) => {
-    const counter = last.get(type);
-    if (!counter) return [];
-    const missed = number(counter.missed);
-    const covered = number(counter.covered);
-    return { label, value: percent(covered, covered + missed), suffix: '%' };
-  });
+    const labels = { INSTRUCTION: 'Instructions', BRANCH: 'Branches', METHOD: 'Methods', LINE: 'Lines' };
+    const counters = [...xml.matchAll(/<counter\s+([^>]+)\/?>/g)].map(match => {
+        const attributes = Object.fromEntries([...match[1].matchAll(/(\w+)="([^"]*)"/g)].map(attribute => [attribute[1], attribute[2]]));
+        return attributes;
+    });
+    const last = new Map(counters.filter(counter => labels[counter.type]).map(counter => [counter.type, counter]));
+    return Object.entries(labels).flatMap(([type, label]) => {
+        const counter = last.get(type);
+        if (!counter)
+            return [];
+        const missed = number(counter.missed);
+        const covered = number(counter.covered);
+        return { label, value: percent(covered, covered + missed), suffix: '%' };
+    });
 }
-
 export function parseXCCov(report) {
-  const targets = Array.isArray(report?.targets) ? report.targets : [];
-  // Xcode's report total includes the test bundles and package dependencies. Use the
-  // application target so adding test code cannot increase displayed app coverage.
-  const appTarget = targets.find(target => String(target?.name || '').endsWith('.app'));
-  const source = appTarget || report;
-  const executable = number(source?.executableLines) || targets.reduce((sum, target) => sum + number(target?.executableLines), 0);
-  const covered = number(source?.coveredLines) || targets.reduce((sum, target) => sum + number(target?.coveredLines), 0);
-  const coverage = executable ? percent(covered, executable) : number(source?.lineCoverage) * 100;
-  return [{ label: 'Lines', value: Number(coverage.toFixed(2)), suffix: '%' }];
+    const targets = Array.isArray(report?.targets) ? report.targets : [];
+    // Xcode's report total includes the test bundles and package dependencies. Use the
+    // application target so adding test code cannot increase displayed app coverage.
+    const appTarget = targets.find(target => String(target?.name || '').endsWith('.app'));
+    const source = appTarget || report;
+    const executable = number(source?.executableLines) || targets.reduce((sum, target) => sum + number(target?.executableLines), 0);
+    const covered = number(source?.coveredLines) || targets.reduce((sum, target) => sum + number(target?.coveredLines), 0);
+    const coverage = executable ? percent(covered, executable) : number(source?.lineCoverage) * 100;
+    return [{ label: 'Lines', value: Number(coverage.toFixed(2)), suffix: '%' }];
 }
-
 export function parseLLVM(report) {
-  const files = (report?.data || []).flatMap(item => item?.files || [])
-    .filter(file => String(file?.filename || '').includes('/BookstrIOS/Sources/'));
-  const metrics = [
-    ['regions', 'Statements'],
-    ['branches', 'Branches'],
-    ['functions', 'Functions'],
-    ['lines', 'Lines'],
-  ];
-  return metrics.flatMap(([key, label]) => {
-    const totals = files.reduce((result, file) => {
-      if (key === 'lines' && Array.isArray(file?.segments) && file.segments.length > 0) {
-        // Swift emits duplicate coverage mappings for synthesized/default-argument
-        // expansions. Count each executable physical source line once so the line
-        // metric cannot move merely because the compiler duplicated a mapping.
-        const lines = new Map();
-        for (const segment of file.segments) {
-          const [line, , executionCount, hasCount] = segment;
-          if (!hasCount) continue;
-          lines.set(line, Boolean(lines.get(line)) || number(executionCount) > 0);
-        }
-        result.count += lines.size;
-        result.covered += [...lines.values()].filter(Boolean).length;
-        return result;
-      }
-      result.count += number(file?.summary?.[key]?.count);
-      result.covered += number(file?.summary?.[key]?.covered);
-      return result;
-    }, { count: 0, covered: 0 });
-    return totals.count ? [{ label, value: percent(totals.covered, totals.count), suffix: '%' }] : [];
-  });
+    const files = (report?.data || []).flatMap(item => item?.files || [])
+        .filter(file => String(file?.filename || '').includes('/BookstrIOS/Sources/'));
+    const metrics = [
+        ['regions', 'Statements'],
+        ['branches', 'Branches'],
+        ['functions', 'Functions'],
+        ['lines', 'Lines'],
+    ];
+    return metrics.flatMap(([key, label]) => {
+        const totals = files.reduce((result, file) => {
+            if (key === 'lines' && Array.isArray(file?.segments) && file.segments.length > 0) {
+                // Swift emits duplicate coverage mappings for synthesized/default-argument
+                // expansions. Count each executable physical source line once so the line
+                // metric cannot move merely because the compiler duplicated a mapping.
+                const lines = new Map();
+                for (const segment of file.segments) {
+                    const [line, , executionCount, hasCount] = segment;
+                    if (!hasCount)
+                        continue;
+                    lines.set(line, Boolean(lines.get(line)) || number(executionCount) > 0);
+                }
+                result.count += lines.size;
+                result.covered += [...lines.values()].filter(Boolean).length;
+                return result;
+            }
+            result.count += number(file?.summary?.[key]?.count);
+            result.covered += number(file?.summary?.[key]?.covered);
+            return result;
+        }, { count: 0, covered: 0 });
+        return totals.count ? [{ label, value: percent(totals.covered, totals.count), suffix: '%' }] : [];
+    });
 }
-
 async function optionalJSON(path) {
-  if (!path) return null;
-  try { return JSON.parse(await readFile(path, 'utf8')); } catch { return null; }
+    if (!path)
+        return null;
+    try {
+        return JSON.parse(await readFile(path, 'utf8'));
+    }
+    catch {
+        return null;
+    }
 }
-
 async function record(options) {
-  let results = { tests: 0, passed: 0, failed: 0, skipped: 0, durationMs: 0 };
-  if (options['results-format'] === 'tap') {
-    results = parseTap(await readFile(options.results, 'utf8').catch(() => ''));
-  } else if (options['results-format'] === 'swift') {
-    results = parseSwiftTest(await readFile(options.results, 'utf8').catch(() => ''));
-  } else if (options['results-format'] === 'junit') {
-    const files = await filesBelow(options.results, '.xml');
-    results = parseJUnit(await Promise.all(files.map(file => readFile(file, 'utf8').catch(() => ''))));
-  } else if (options['results-format'] === 'playwright') {
-    results = parsePlaywright(await optionalJSON(options.results));
-  } else if (options['results-format'] === 'xcresult') {
-    results = parseXCResult(await optionalJSON(options.results));
-  }
-  const measuredDurationMs = number(options['duration-ms']);
-  if (measuredDurationMs > 0) results.durationMs = measuredDurationMs;
-
-  let coverage = [];
-  if (options['coverage-format'] === 'istanbul') coverage = parseIstanbul(await optionalJSON(options.coverage));
-  if (options['coverage-format'] === 'node') coverage = parseNodeCoverage(await readFile(options.coverage, 'utf8').catch(() => ''));
-  if (options['coverage-format'] === 'jacoco') coverage = parseJacoco(await readFile(options.coverage, 'utf8').catch(() => ''));
-  if (options['coverage-format'] === 'xccov') coverage = parseXCCov(await optionalJSON(options.coverage));
-  if (options['coverage-format'] === 'llvm') coverage = parseLLVM(await optionalJSON(options.coverage));
-
-  const passing = options.status === 'passing' && results.tests > 0 && results.failed === 0;
-  const payload = {
-    id: options.id,
-    suite: options.suite,
-    status: passing ? 'passing' : 'failing',
-    recorded: options.recorded || new Date().toISOString(),
-    runUrl: options['run-url'] || '',
-    commit: options.commit || '',
-    knownTests: Math.max(0, Math.trunc(number(options['known-tests']))),
-    results,
-    coverage: coverage.filter(item => Number.isFinite(item.value)),
-  };
-  await mkdir(dirname(options.output), { recursive: true });
-  await writeFile(options.output, `${JSON.stringify(payload, null, 2)}\n`);
+    let results = { tests: 0, passed: 0, failed: 0, skipped: 0, durationMs: 0 };
+    if (options['results-format'] === 'tap') {
+        results = parseTap(await readFile(options.results, 'utf8').catch(() => ''));
+    }
+    else if (options['results-format'] === 'swift') {
+        results = parseSwiftTest(await readFile(options.results, 'utf8').catch(() => ''));
+    }
+    else if (options['results-format'] === 'junit') {
+        const files = await filesBelow(options.results, '.xml');
+        results = parseJUnit(await Promise.all(files.map(file => readFile(file, 'utf8').catch(() => ''))));
+    }
+    else if (options['results-format'] === 'playwright') {
+        results = parsePlaywright(await optionalJSON(options.results));
+    }
+    else if (options['results-format'] === 'xcresult') {
+        results = parseXCResult(await optionalJSON(options.results));
+    }
+    const measuredDurationMs = number(options['duration-ms']);
+    if (measuredDurationMs > 0)
+        results.durationMs = measuredDurationMs;
+    let coverage = [];
+    if (options['coverage-format'] === 'istanbul')
+        coverage = parseIstanbul(await optionalJSON(options.coverage));
+    if (options['coverage-format'] === 'node')
+        coverage = parseNodeCoverage(await readFile(options.coverage, 'utf8').catch(() => ''));
+    if (options['coverage-format'] === 'jacoco')
+        coverage = parseJacoco(await readFile(options.coverage, 'utf8').catch(() => ''));
+    if (options['coverage-format'] === 'xccov')
+        coverage = parseXCCov(await optionalJSON(options.coverage));
+    if (options['coverage-format'] === 'llvm')
+        coverage = parseLLVM(await optionalJSON(options.coverage));
+    const passing = options.status === 'passing' && results.tests > 0 && results.failed === 0;
+    const payload = {
+        id: options.id,
+        suite: options.suite,
+        status: passing ? 'passing' : 'failing',
+        recorded: options.recorded || new Date().toISOString(),
+        runUrl: options['run-url'] || '',
+        commit: options.commit || '',
+        knownTests: Math.max(0, Math.trunc(number(options['known-tests']))),
+        results,
+        coverage: coverage.filter(item => Number.isFinite(item.value)),
+    };
+    await mkdir(dirname(options.output), { recursive: true });
+    await writeFile(options.output, `${JSON.stringify(payload, null, 2)}\n`);
 }
-
 function escapeHTML(value) {
-  return String(value ?? '').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]);
+    return String(value ?? '').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]);
 }
-
 function duration(milliseconds) {
-  const seconds = Math.round(number(milliseconds) / 1000);
-  if (seconds < 60) return `${seconds}s`;
-  return `${Math.floor(seconds / 60)}m ${String(seconds % 60).padStart(2, '0')}s`;
+    const seconds = Math.round(number(milliseconds) / 1000);
+    if (seconds < 60)
+        return `${seconds}s`;
+    return `${Math.floor(seconds / 60)}m ${String(seconds % 60).padStart(2, '0')}s`;
 }
-
 function suiteRow(suite) {
-  const result = suite.results || {};
-  const testTotal = result.tests || number(suite.knownTests);
-  const coverage = new Map((suite.coverage || []).map(item => [item.label, item]));
-  const coverageValue = (...labels) => {
-    const item = labels.map(label => coverage.get(label)).find(Boolean);
-    return item ? `${item.value.toFixed(2)}${item.suffix}` : '';
-  };
-  const status = suite.status === 'passing' ? 'Passing' : suite.status === 'failing' ? 'Failing' : 'Not recorded';
-  const date = suite.recorded ? new Date(suite.recorded) : null;
-  const recorded = date && !Number.isNaN(date.valueOf())
-    ? `<time datetime="${escapeHTML(suite.recorded)}" title="UTC">${escapeHTML(date.toISOString().slice(0, 16).replace('T', ' '))}</time>`
-    : 'Not recorded';
-  const suiteName = suite.runUrl
-    ? `<a href="${escapeHTML(suite.runUrl)}">${escapeHTML(suite.suite)}</a>`
-    : escapeHTML(suite.suite);
-  return `<tr>
+    const result = suite.results || {};
+    const testTotal = result.tests || number(suite.knownTests);
+    const coverage = new Map((suite.coverage || []).map(item => [item.label, item]));
+    const coverageValue = (...labels) => {
+        const item = labels.map(label => coverage.get(label)).find(Boolean);
+        return item ? `${item.value.toFixed(2)}${item.suffix}` : '';
+    };
+    const status = suite.status === 'passing' ? 'Passing' : suite.status === 'failing' ? 'Failing' : 'Not recorded';
+    const date = suite.recorded ? new Date(suite.recorded) : null;
+    const recorded = date && !Number.isNaN(date.valueOf())
+        ? `<time datetime="${escapeHTML(suite.recorded)}" title="UTC">${escapeHTML(date.toISOString().slice(0, 16).replace('T', ' '))}</time>`
+        : 'Not recorded';
+    const suiteName = suite.runUrl
+        ? `<a href="${escapeHTML(suite.runUrl)}">${escapeHTML(suite.suite)}</a>`
+        : escapeHTML(suite.suite);
+    return `<tr>
     <th scope="row">${suiteName}</th>
     <td><span class="status ${suite.status}"><span aria-hidden="true"></span>${status}</span></td>
     <td>${recorded}</td>
@@ -276,26 +264,25 @@ function suiteRow(suite) {
     <td class="value"><strong>${coverageValue('Lines')}</strong></td>
   </tr>`;
 }
-
 export function renderDashboard(suites) {
-  const order = ['web', 'web-e2e', 'electron', 'electron-e2e', 'android', 'android-ui', 'ios', 'ios-e2e'];
-  const names = {
-    web: 'Web',
-    'web-e2e': 'Web e2e',
-    electron: 'Electron',
-    'electron-e2e': 'Electron e2e',
-    android: 'Android',
-    'android-ui': 'Android e2e',
-    ios: 'iOS',
-    'ios-e2e': 'iOS e2e',
-  };
-  const byId = new Map(suites.map(suite => [suite.id, suite]));
-  const complete = order.map(id => byId.get(id) || { id, suite: names[id], status: 'missing', results: {}, coverage: [] });
-  const passing = complete.filter(suite => suite.status === 'passing').length;
-  const failing = complete.filter(suite => suite.status === 'failing').length;
-  const summary = failing ? `${failing} suite${failing === 1 ? '' : 's'} failing` : `${passing} of ${complete.length} suites passing`;
-  const generated = new Date().toISOString().slice(0, 16).replace('T', ' ');
-  return `<!doctype html>
+    const order = ['web', 'web-e2e', 'electron', 'electron-e2e', 'android', 'android-ui', 'ios', 'ios-e2e'];
+    const names = {
+        web: 'Web',
+        'web-e2e': 'Web e2e',
+        electron: 'Electron',
+        'electron-e2e': 'Electron e2e',
+        android: 'Android',
+        'android-ui': 'Android e2e',
+        ios: 'iOS',
+        'ios-e2e': 'iOS e2e',
+    };
+    const byId = new Map(suites.map(suite => [suite.id, suite]));
+    const complete = order.map(id => byId.get(id) || { id, suite: names[id], status: 'missing', results: {}, coverage: [] });
+    const passing = complete.filter(suite => suite.status === 'passing').length;
+    const failing = complete.filter(suite => suite.status === 'failing').length;
+    const summary = failing ? `${failing} suite${failing === 1 ? '' : 's'} failing` : `${passing} of ${complete.length} suites passing`;
+    const generated = new Date().toISOString().slice(0, 16).replace('T', ' ');
+    return `<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
@@ -349,22 +336,21 @@ export function renderDashboard(suites) {
 </body>
 </html>`;
 }
-
 async function render(options) {
-  const files = await filesBelow(options.input, '.json');
-  const suites = (await Promise.all(files.map(optionalJSON))).filter(value => value?.id);
-  await mkdir(dirname(options.output), { recursive: true });
-  await writeFile(options.output, renderDashboard(suites));
+    const files = await filesBelow(options.input, '.json');
+    const suites = (await Promise.all(files.map(optionalJSON))).filter(value => value?.id);
+    await mkdir(dirname(options.output), { recursive: true });
+    await writeFile(options.output, renderDashboard(suites));
 }
-
 async function main() {
-  const [command, ...values] = process.argv.slice(2);
-  const options = argumentsMap(values);
-  if (command === 'record') return record(options);
-  if (command === 'render') return render(options);
-  throw new Error('Usage: test-overview.mjs <record|render> [--key value ...]');
+    const [command, ...values] = process.argv.slice(2);
+    const options = argumentsMap(values);
+    if (command === 'record')
+        return record(options);
+    if (command === 'render')
+        return render(options);
+    throw new Error('Usage: test-overview.mjs <record|render> [--key value ...]');
 }
-
 if (import.meta.url === pathToFileURL(resolve(process.argv[1] || basename(import.meta.url))).href) {
-  main().catch(error => { console.error(error); process.exitCode = 1; });
+    main().catch(error => { console.error(error); process.exitCode = 1; });
 }

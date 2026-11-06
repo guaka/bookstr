@@ -912,7 +912,7 @@ export type IndexAppPageBindings = {
         const tools = await nostrToolsModule;
         return (Array.isArray(events) ? events : []).filter(event => {
           try {
-            return tools.verifyEvent(event);
+            return tools.verifyEvent(event as Parameters<typeof tools.verifyEvent>[0]);
           } catch {
             return false;
           }

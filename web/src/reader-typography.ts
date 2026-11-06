@@ -62,5 +62,5 @@ export interface ReaderTypographyApi {
   normalizeAlignment(value: unknown): string;
   normalizePadding(value: unknown): number;
   fontStack(name: unknown): string;
-  css(font: unknown, alignment: unknown, padding: unknown): string;
+  css(font?: unknown, alignment?: unknown, padding?: unknown): string;
 }

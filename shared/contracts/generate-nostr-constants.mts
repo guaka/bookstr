@@ -1,0 +1,132 @@
+#!/usr/bin/env node
+
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { dirname, resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
+
+type Constants = {
+  version: number;
+  kinds: { progress: number; favorites: number; blossomAuthorization: number };
+  dTags: { favorites: string; collectionIndex: string };
+  prefixes: { progress: string; favoritesChunk: string; collectionChunk: string; vocabulary: string; snippet: string };
+};
+type JsonRecord = Record<string, unknown>;
+type GeneratorIO = {
+  mkdir(path: string, options: { recursive: true }): Promise<unknown>;
+  readFile(path: string, encoding: 'utf8'): Promise<string | undefined>;
+  writeFile(path: string, content: string): Promise<unknown>;
+};
+
+const outputs: Record<string, (value: Constants) => string> = {
+  'web/generated/nostr-constants-v1.js': renderJavaScript,
+  'android/app/src/main/java/app/bookstr/shared/generated/NostrConstantsV1.kt': renderKotlin,
+  'ios/BookstrIOS/Sources/Shared/Generated/NostrConstantsV1.swift': renderSwift,
+};
+
+const required: Record<string, readonly string[]> = {
+  kinds: ['progress', 'favorites', 'blossomAuthorization'],
+  dTags: ['favorites', 'collectionIndex'],
+  prefixes: ['progress', 'favoritesChunk', 'collectionChunk', 'vocabulary', 'snippet'],
+};
+
+export function validateConstants(value: unknown): Constants {
+  if (!value || typeof value !== 'object' || Array.isArray(value) || (value as JsonRecord).version !== 1) throw new Error('Nostr constants version must be 1');
+  const constants = value as JsonRecord;
+  for (const [section, names] of Object.entries(required)) {
+    const actual = constants[section];
+    if (!actual || typeof actual !== 'object' || Array.isArray(actual)) throw new Error(`${section} must be an object`);
+    const fields = actual as JsonRecord;
+    if (Object.keys(fields).sort().join() !== [...names].sort().join()) throw new Error(`${section} must contain the canonical keys`);
+    for (const name of names) {
+      const item = fields[name];
+      const invalid = section === 'kinds'
+        ? typeof item !== 'number' || !Number.isSafeInteger(item) || item <= 0
+        : typeof item !== 'string' || item.length === 0;
+      if (invalid) {
+        throw new Error(`${section}.${name} has an invalid value`);
+      }
+    }
+  }
+  return value as Constants;
+}
+
+const header = (prefix: string): string => `${prefix} Generated from shared/contracts/nostr-constants-v1.json. Do not edit.\n`;
+const upperSnake = (name: string): string => name.replace(/[A-Z]/g, letter => `_${letter}`).toUpperCase();
+
+export function renderJavaScript(value: Constants): string {
+  validateConstants(value);
+  return `${header('//')}(function initBookstrNostrConstants(root) {
+  root.BookstrNostrConstants = Object.freeze(${JSON.stringify(value, null, 2)});
+})(globalThis);
+`;
+}
+
+export function renderKotlin(value: Constants): string {
+  validateConstants(value);
+  const declarations = Object.entries(value.kinds).map(([name, item]) => `    const val ${upperSnake(name)}_KIND = ${item}`)
+    .concat(Object.entries(value.dTags).map(([name, item]) => `    const val ${upperSnake(name)}_D_TAG = ${JSON.stringify(item)}`))
+    .concat(Object.entries(value.prefixes).map(([name, item]) => `    const val ${upperSnake(name)}_PREFIX = ${JSON.stringify(item)}`));
+  return `${header('//')}package app.bookstr.shared.generated
+
+object NostrConstantsV1 {
+${declarations.join('\n')}
+}
+`;
+}
+
+export function renderSwift(value: Constants): string {
+  validateConstants(value);
+  const declarations = Object.entries(value.kinds)
+    .filter(([name]) => name !== 'blossomAuthorization')
+    .map(([name, item]) => `    static let ${name}Kind = ${item}`)
+    .concat(Object.entries(value.dTags).map(([name, item]) => `    static let ${name}DTag = ${JSON.stringify(item)}`))
+    .concat(Object.entries(value.prefixes).map(([name, item]) => `    static let ${name}Prefix = ${JSON.stringify(item)}`));
+  return `${header('//')}enum NostrConstantsV1 {
+${declarations.join('\n')}
+}
+`;
+}
+
+export function parseArgs(args: string[]): { check: boolean } {
+  if (args.length === 0) return { check: false };
+  if (args.length === 1 && args[0] === '--check') return { check: true };
+  throw new Error(`Unknown arguments: ${args.join(' ')}`);
+}
+
+export async function run(args: string[], io: GeneratorIO = { mkdir, readFile, writeFile }, cwd = process.cwd()): Promise<string> {
+  const { check } = parseArgs(args);
+  const source = resolve(cwd, 'shared/contracts/nostr-constants-v1.json');
+  const value = validateConstants(JSON.parse((await io.readFile(source, 'utf8')) ?? ''));
+  for (const [relativePath, renderer] of Object.entries(outputs)) {
+    const output = resolve(cwd, relativePath);
+    const generated = renderer(value);
+    if (check) {
+      const current = await io.readFile(output, 'utf8').catch(() => '');
+      if (current !== generated) throw new Error(`${relativePath} is stale`);
+    } else {
+      await io.mkdir(dirname(output), { recursive: true });
+      await io.writeFile(output, generated);
+    }
+  }
+  return check ? 'checked' : 'generated';
+}
+
+export async function cli(args: string[], services: { run?: typeof run; writeError?: (message: string) => void; fail?: () => void } = {}): Promise<string> {
+  const execute = services.run || run;
+  const writeError = services.writeError || ((message: string) => process.stderr.write(message));
+  const fail = services.fail || (() => { process.exitCode = 1; });
+  try {
+    return await execute(args);
+  } catch (error) {
+    writeError(`${error instanceof Error ? error.message : String(error)}\n`);
+    fail();
+    return 'failed';
+  }
+}
+
+export function invokeIfMain(moduleUrl: string, argv: string[], action: typeof cli = cli): Promise<string> {
+  const invoked = argv[1] ? pathToFileURL(resolve(argv[1])).href : '';
+  return moduleUrl === invoked ? action(argv.slice(2)) : Promise.resolve('imported');
+}
+
+await invokeIfMain(import.meta.url, process.argv);

@@ -1,39 +1,36 @@
 #!/usr/bin/env node
-
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
-
 const OUTPUTS = {
-  'web/generated/catalog-provider-record-v1.js': renderJavaScript,
-  'android/app/src/main/java/app/bookstr/shared/generated/CatalogProviderRecordV1.kt': renderKotlin,
-  'ios/BookstrIOS/Sources/Shared/Generated/CatalogProviderRecordV1.swift': renderSwift,
+    'web/generated/catalog-provider-record-v1.js': renderJavaScript,
+    'android/app/src/main/java/app/bookstr/shared/generated/CatalogProviderRecordV1.kt': renderKotlin,
+    'ios/BookstrIOS/Sources/Shared/Generated/CatalogProviderRecordV1.swift': renderSwift,
 };
-
-export function validateSchema(schema) {
-  const record = schema?.$defs?.providerRecord;
-  const rights = schema?.$defs?.rights;
-  const acquisition = schema?.$defs?.acquisition;
-  if (schema?.properties?.version?.const !== 1) throw new Error('Provider schema version must be 1');
-  if (!Array.isArray(record?.required) || !record.required.includes('publicationId')) {
-    throw new Error('Provider schema must require publicationId');
-  }
-  if (!Array.isArray(rights?.properties?.status?.enum) || rights.properties.status.enum.length === 0) {
-    throw new Error('Provider schema must define rights statuses');
-  }
-  if (!Array.isArray(acquisition?.properties?.format?.enum) || acquisition.properties.format.enum.length === 0) {
-    throw new Error('Provider schema must define acquisition formats');
-  }
-  return schema;
+export function validateSchema(value) {
+    const schema = value;
+    const record = schema?.$defs?.providerRecord;
+    const rights = schema?.$defs?.rights;
+    const acquisition = schema?.$defs?.acquisition;
+    if (schema?.properties?.version?.const !== 1)
+        throw new Error('Provider schema version must be 1');
+    if (!Array.isArray(record?.required) || !record.required.includes('publicationId')) {
+        throw new Error('Provider schema must require publicationId');
+    }
+    if (!Array.isArray(rights?.properties?.status?.enum) || rights.properties.status.enum.length === 0) {
+        throw new Error('Provider schema must define rights statuses');
+    }
+    if (!Array.isArray(acquisition?.properties?.format?.enum) || acquisition.properties.format.enum.length === 0) {
+        throw new Error('Provider schema must define acquisition formats');
+    }
+    return schema;
 }
-
 function header(comment) {
-  return `${comment} Generated from shared/catalog/provider-records.schema.json. Do not edit.\n`;
+    return `${comment} Generated from shared/catalog/provider-records.schema.json. Do not edit.\n`;
 }
-
 export function renderJavaScript(schema) {
-  validateSchema(schema);
-  return `${header('//')}export const CATALOG_PROVIDER_RECORD_VERSION = 1;
+    validateSchema(schema);
+    return `${header('//')}export const CATALOG_PROVIDER_RECORD_VERSION = 1;
 
 function object(value, path) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new TypeError(\`${'${path}'} must be an object\`);
@@ -84,10 +81,9 @@ export function serializeCatalogProviderRecordV1(record) {
 }
 `;
 }
-
 export function renderKotlin(schema) {
-  validateSchema(schema);
-  return `${header('//')}package app.bookstr.shared.generated
+    validateSchema(schema);
+    return `${header('//')}package app.bookstr.shared.generated
 
 import org.json.JSONArray
 import org.json.JSONObject
@@ -172,10 +168,9 @@ private fun JSONArray.strings(): List<String> = (0 until length()).map(::getStri
 private fun JSONArray.objects(): List<JSONObject> = (0 until length()).map(::getJSONObject)
 `;
 }
-
 export function renderSwift(schema) {
-  validateSchema(schema);
-  return `${header('//')}import Foundation
+    validateSchema(schema);
+    return `${header('//')}import Foundation
 
 let catalogProviderRecordVersion = 1
 
@@ -205,46 +200,46 @@ struct CatalogProviderRecordV1: Codable, Equatable {
 }
 `;
 }
-
 export function parseArgs(args) {
-  if (args.length === 0) return { check: false };
-  if (args.length === 1 && args[0] === '--check') return { check: true };
-  throw new Error(`Unknown arguments: ${args.join(' ')}`);
+    if (args.length === 0)
+        return { check: false };
+    if (args.length === 1 && args[0] === '--check')
+        return { check: true };
+    throw new Error(`Unknown arguments: ${args.join(' ')}`);
 }
-
 export async function run(args, io = { readFile, writeFile, mkdir }, cwd = process.cwd()) {
-  const { check } = parseArgs(args);
-  const schema = validateSchema(JSON.parse(await io.readFile(resolve(cwd, 'shared/catalog/provider-records.schema.json'), 'utf8')));
-  for (const [relativePath, render] of Object.entries(OUTPUTS)) {
-    const output = resolve(cwd, relativePath);
-    const generated = render(schema);
-    if (check) {
-      const current = await io.readFile(output, 'utf8').catch(() => '');
-      if (current !== generated) throw new Error(`${relativePath} is stale; regenerate it`);
-    } else {
-      await io.mkdir(dirname(output), { recursive: true });
-      await io.writeFile(output, generated);
+    const { check } = parseArgs(args);
+    const schema = validateSchema(JSON.parse((await io.readFile(resolve(cwd, 'shared/catalog/provider-records.schema.json'), 'utf8')) ?? ''));
+    for (const [relativePath, render] of Object.entries(OUTPUTS)) {
+        const output = resolve(cwd, relativePath);
+        const generated = render(schema);
+        if (check) {
+            const current = await io.readFile(output, 'utf8').catch(() => '');
+            if (current !== generated)
+                throw new Error(`${relativePath} is stale; regenerate it`);
+        }
+        else {
+            await io.mkdir(dirname(output), { recursive: true });
+            await io.writeFile(output, generated);
+        }
     }
-  }
-  return check ? 'checked' : 'generated';
+    return check ? 'checked' : 'generated';
 }
-
 export async function cli(args, services = {}) {
-  const execute = services.run || run;
-  const writeError = services.writeError || ((message) => process.stderr.write(message));
-  const fail = services.fail || (() => { process.exitCode = 1; });
-  try {
-    return await execute(args);
-  } catch (error) {
-    writeError(`${error.message}\n`);
-    fail();
-    return 'failed';
-  }
+    const execute = services.run || run;
+    const writeError = services.writeError || ((message) => process.stderr.write(message));
+    const fail = services.fail || (() => { process.exitCode = 1; });
+    try {
+        return await execute(args);
+    }
+    catch (error) {
+        writeError(`${error instanceof Error ? error.message : String(error)}\n`);
+        fail();
+        return 'failed';
+    }
 }
-
 export function invokeIfMain(moduleUrl, argv, action = cli) {
-  const invokedPath = argv[1] ? pathToFileURL(resolve(argv[1])).href : '';
-  return moduleUrl === invokedPath ? action(argv.slice(2)) : Promise.resolve('imported');
+    const invokedPath = argv[1] ? pathToFileURL(resolve(argv[1])).href : '';
+    return moduleUrl === invokedPath ? action(argv.slice(2)) : Promise.resolve('imported');
 }
-
 await invokeIfMain(import.meta.url, process.argv);
