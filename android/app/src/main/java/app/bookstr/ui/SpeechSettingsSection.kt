@@ -11,6 +11,10 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalInputModeManager
+import androidx.compose.ui.platform.LocalWindowInfo
+import androidx.compose.ui.input.InputMode
+import androidx.compose.ui.layout.onPlaced
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.AndroidViewModel
@@ -23,6 +27,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.flow.first
 
 class SpeechSettingsViewModel(application: Application, val models: SpeechModels) : AndroidViewModel(application) {
     constructor(application: Application) : this(application, SpeechModels(application))
@@ -105,14 +110,17 @@ fun SpeechSettingsControls(
     onLanguage: (String) -> Unit, onVoice: (String) -> Unit, onInstall: (SpeechModel) -> Unit, onRemove: (SpeechModel) -> Unit,
 ) {
     val television = isTelevision(LocalConfiguration.current.uiMode)
+    val inputMode = LocalInputModeManager.current
+    val windowInfo = LocalWindowInfo.current
     val languageFocus = remember { FocusRequester() }
+    var languagePlaced by remember { mutableStateOf(false) }
     val voiceFocus = remember { FocusRequester() }
     val matching = models.filter { it.language == language }
     val modelFocus = remember(matching.map { it.id }) { matching.associate { it.id to FocusRequester() } }
     val available = matching.filter { it.id !in downloads }.map { it.id }
     Text("Text-to-speech", style = MaterialTheme.typography.titleSmall)
     SpeechPicker("Language", "speech-language", language, languages.map { it to SpeechLanguages.name(it) }, onLanguage,
-        Modifier.focusRequester(languageFocus).focusProperties {
+        Modifier.onPlaced { languagePlaced = true }.focusRequester(languageFocus).focusProperties {
             if (television) down = available.firstOrNull()?.let { modelFocus.getValue(it) } ?: voiceFocus
         })
     matching.forEach { model ->
@@ -144,7 +152,14 @@ fun SpeechSettingsControls(
         Modifier.focusRequester(voiceFocus).focusProperties {
             if (television) up = available.lastOrNull()?.let { modelFocus.getValue(it) } ?: languageFocus
         })
-    LaunchedEffect(television) { if (television) languageFocus.requestFocus() }
+    LaunchedEffect(television) {
+        if (television) {
+            snapshotFlow {
+                languagePlaced && windowInfo.isWindowFocused && inputMode.inputMode == InputMode.Keyboard
+            }.first { it }
+            languageFocus.requestFocus()
+        }
+    }
 }
 
 @Composable

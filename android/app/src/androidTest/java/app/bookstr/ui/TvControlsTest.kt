@@ -13,6 +13,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.InputMode
+import androidx.compose.ui.platform.LocalInputModeManager
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
@@ -134,16 +136,19 @@ class TvControlsTest {
     @Test fun themeUsesDistanceScaleAndInsetLeavesControlsSpace() {
         var scale = 0f
         var systemScale = 0f
+        var inputMode = InputMode.Touch
         compose.setContent {
             val configuration = Configuration(LocalConfiguration.current).apply { uiMode = Configuration.UI_MODE_TYPE_TELEVISION }
             systemScale = LocalDensity.current.fontScale
             CompositionLocalProvider(LocalConfiguration provides configuration) {
                 BookstrTheme { scale = LocalDensity.current.fontScale
+                    inputMode = LocalInputModeManager.current.inputMode
                     androidx.compose.foundation.layout.Box(Modifier.testTag("publication").tvReaderInset())
                 }
             }
         }
         compose.runOnIdle { assertEquals(systemScale * 1.5f, scale, 0.01f) }
+        compose.runOnIdle { assertEquals(InputMode.Keyboard, inputMode) }
         compose.onNodeWithTag("publication").assertHeightIsEqualTo(androidx.compose.ui.unit.Dp(112f))
     }
 }
