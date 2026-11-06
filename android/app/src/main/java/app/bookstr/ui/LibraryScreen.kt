@@ -5,6 +5,8 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.material3.*
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.platform.LocalConfiguration
+import app.bookstr.isTelevision
 import androidx.compose.runtime.LaunchedEffect
 import app.bookstr.data.displayBookAuthor
 import app.bookstr.data.BookListFilters
@@ -109,7 +111,8 @@ fun LibraryScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding),
-            contentPadding = PaddingValues(start = 6.dp, top = 2.dp, end = 6.dp, bottom = 8.dp),
+            contentPadding = if (isTelevision(LocalConfiguration.current.uiMode)) PaddingValues(32.dp)
+                else PaddingValues(start = 6.dp, top = 2.dp, end = 6.dp, bottom = 8.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             item {
@@ -235,6 +238,8 @@ private fun LazyListScope.bookRows(
             Card(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .testTag("library.open.${book.id}")
+                    .tvFocus()
                     .combinedClickable(
                         enabled = openingBookId == null,
                         onClick = { onOpenBook(book) },
@@ -244,6 +249,8 @@ private fun LazyListScope.bookRows(
             ) {
                 Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
                     Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                        BookCover(book.id, book.format, book.coverUrl)
+                        Spacer(Modifier.width(8.dp))
                         Text(
                             text = book.title,
                             style = MaterialTheme.typography.titleMedium,

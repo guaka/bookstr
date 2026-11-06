@@ -84,7 +84,7 @@ android {
         targetSdk = 35
         versionCode = providers.gradleProperty("bookstr.versionCode").orNull?.toInt() ?: timestampVersionCode
         versionName = providers.gradleProperty("bookstr.versionName").orNull ?: "0.1-$versionTimestamp"
-        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        testInstrumentationRunner = "app.bookstr.BookstrTestRunner"
         buildConfigField("String", "BUILD_DATE", "\"$buildDate\"")
     }
 
@@ -207,7 +207,8 @@ tasks.register<JacocoReport>("jacocoDebugUnitTestReport") {
         // These are exercised by the separate Android e2e suite, not JVM unit tests.
         "**/ui/**",
         "**/*Activity*",
-        "**/*Service*",
+        "**/NarrationService*",
+        "**/download/DownloadService*",
         "**/BookstrApp*",
         "**/ComposableSingletons*",
     )
@@ -231,6 +232,7 @@ tasks.register<JacocoReport>("jacocoDebugUnitTestReport") {
 
 dependencies {
     implementation("com.ibm.icu:icu4j:76.1")
+    implementation("com.google.zxing:core:3.5.4")
     val composeBom = platform("androidx.compose:compose-bom:2024.10.01")
     implementation(composeBom)
     androidTestImplementation(composeBom)
@@ -260,6 +262,8 @@ dependencies {
     testImplementation("org.robolectric:robolectric:4.14.1")
     testImplementation("fr.acinq.secp256k1:secp256k1-kmp-jni-jvm:0.15.0")
     testImplementation("com.squareup.okhttp3:mockwebserver:4.12.0")
+    androidTestImplementation("com.squareup.okhttp3:mockwebserver:4.12.0")
+    androidTestImplementation("com.squareup.okhttp3:okhttp-tls:4.12.0")
     testImplementation("com.squareup.okhttp3:okhttp-tls:4.12.0")
 
     implementation("androidx.security:security-crypto:1.1.0-alpha06")

@@ -1,0 +1,249 @@
+interface ComicArchiveFunctions {
+ archive_read_new_memory:(pointer:number,length:number,options:null)=>number;
+ archive_read_next_entry:(archive:number)=>number;
+ archive_entry_pathname_utf8:(entry:number)=>string;
+ archive_entry_filetype:(entry:number)=>number;
+ archive_entry_size:(entry:number)=>number;
+ archive_read_has_encrypted_entries:(archive:number)=>number;
+ archive_read_data:(archive:number,pointer:number,length:number)=>number;
+ archive_read_data_skip:(archive:number)=>number;
+ archive_read_free:(archive:number)=>number;
+}
+interface ComicArchiveModule {
+ _malloc(bytes:number):number;_free(pointer:number):void;HEAP8:Int8Array<ArrayBuffer>;
+ cwrap<Name extends keyof ComicArchiveFunctions>(name:Name,result:string,args:string[]):ComicArchiveFunctions[Name];
+}
+declare const libarchive: (()=>Promise<ComicArchiveModule>) | undefined;
+interface ComicOptions {format:string;bookId?:unknown;bookTitle?:string;initialPage?:unknown;pages?:Array<{name:string;url:string}|null>;archiveBlob?:Pick<Blob,'arrayBuffer'>;archiveURL?:string;base64?:string}
+interface ComicCallbacks {onComicError?(message:string):void;onComicPan?(pan:{x:number;y:number;maximumX:number;maximumY:number}):void;onComicZoom?(scale:number):void;onComicProgress?(page:number,total:number):void}
+type ComicWindow = Window & {BookstrComic?:ComicCallbacks;BookstrComicZoom:{set(value:unknown):void;in():void;out():void;fit():void};loadComic:typeof loadComic};
+const MAX_ENTRIES = 2000, MAX_PAGE_BYTES = 30 * 1024 * 1024, FIT_SCALE = .92, MIN_SCALE = .25, MAX_SCALE = 3;
+let pages: string[] = [], current = 0, scale = FIT_SCALE, urls: string[] = [];
+const stage = (document.getElementById('stage') as HTMLElement), surface = document.createElement('div'), image = document.createElement('img'), secondImage = document.createElement('img'), message = (document.getElementById('message') as HTMLElement), count = (document.getElementById('count') as HTMLElement);
+surface.className = 'page-surface';
+image.className = secondImage.className = 'page';
+image.alt = secondImage.alt = '';
+let comicBookId = '';
+const openingLabel = (document.getElementById('opening-label') as HTMLElement), openingProgress = (document.getElementById('opening-progress') as HTMLProgressElement);
+function setOpeningProgress(label:string, done?:number, total?:number) { openingLabel.textContent = label; if (Number.isFinite(total) && total! > 0) {
+    openingProgress.max = total!;
+    openingProgress.value = Math.min(total!, Math.max(0, done!));
+}
+else
+    openingProgress.removeAttribute('value'); }
+function resetComicMessage() { message.textContent = ''; message.appendChild(openingLabel); message.appendChild(openingProgress); if (message.parentNode !== stage)
+    stage.appendChild(message); }
+function nextPaint() { return new Promise<number>(resolve => requestAnimationFrame(resolve)); }
+function imageName(name:unknown) { const value = String(name || '').replace(/\\/g, '/'); if (!value || value.endsWith('/') || value.split('/').includes('..'))
+    return false; if (/(^|\/)__MACOSX(\/|$)/i.test(value) || /(^|\/)(?:thumbs?|thumbnails?)(\/|$)/i.test(value))
+    return false; return /\.(?:jpe?g|png|gif|webp)$/i.test(value); }
+function error(text:string) { image.remove(); message.textContent = text; message.hidden = false; (document.getElementById('prev') as HTMLButtonElement).disabled = true; (document.getElementById('next') as HTMLButtonElement).disabled = true; if ((window as unknown as ComicWindow).BookstrComic?.onComicError)
+    (window as unknown as ComicWindow).BookstrComic!.onComicError!(text); }
+function reportPan() { if ((window as unknown as ComicWindow).BookstrComic?.onComicPan)
+    (window as unknown as ComicWindow).BookstrComic!.onComicPan!({ x: Math.round(stage.scrollLeft), y: Math.round(stage.scrollTop), maximumX: Math.max(0, Math.round(stage.scrollWidth - stage.clientWidth)), maximumY: Math.max(0, Math.round(stage.scrollHeight - stage.clientHeight)) }); }
+function wideLandscape() { return matchMedia('(orientation: landscape) and (min-width: 900px)').matches; }
+function facingPages() { return wideLandscape() && current > 0 && current + 1 < pages.length; }
+// Android WebView can retain a zero CSS containing-block height after attaching to Compose.
+// Its innerHeight is correct; use that explicit size for the reader's grid and update on rotation.
+function syncComicViewport() { const height = (window as unknown as ComicWindow).innerHeight; if (!Number.isFinite(height) || height <= 0)
+    return; document.documentElement.style.height = `${height}px`; document.body.style.height = `${height}px`; }
+syncComicViewport();
+(window as unknown as ComicWindow).addEventListener('resize', syncComicViewport);
+(window as unknown as ComicWindow).addEventListener('pageshow', syncComicViewport);
+function layoutImage(reset = false) { if (!image.naturalWidth || !image.naturalHeight || !stage.clientWidth || !stage.clientHeight)
+    return; const centerX = (stage.scrollLeft + stage.clientWidth / 2) / Math.max(stage.scrollWidth, 1), centerY = (stage.scrollTop + stage.clientHeight / 2) / Math.max(stage.scrollHeight, 1), two = facingPages(), availableWidth = two ? stage.clientWidth / 2 : stage.clientWidth, fit = Math.min(availableWidth / image.naturalWidth, stage.clientHeight / image.naturalHeight), width = Math.max(1, Math.round(image.naturalWidth * fit * scale)), height = Math.max(1, Math.round(image.naturalHeight * fit * scale)); image.style.width = `${width}px`; image.style.height = `${height}px`; image.style.maxWidth = 'none'; image.style.maxHeight = 'none'; if (two && secondImage.naturalWidth && secondImage.naturalHeight) {
+    const secondFit = Math.min(availableWidth / secondImage.naturalWidth, stage.clientHeight / secondImage.naturalHeight);
+    secondImage.style.width = `${Math.max(1, Math.round(secondImage.naturalWidth * secondFit * scale))}px`;
+    secondImage.style.height = `${Math.max(1, Math.round(secondImage.naturalHeight * secondFit * scale))}px`;
+    secondImage.style.maxWidth = 'none';
+    secondImage.style.maxHeight = 'none';
+    if (secondImage.parentNode !== surface)
+        surface.appendChild(secondImage);
+}
+else
+    secondImage.remove(); surface.style.width = `${Math.max(stage.clientWidth, width + (two ? parseInt(secondImage.style.width) || width : 0))}px`; surface.style.height = `${Math.max(stage.clientHeight, height, parseInt(secondImage.style.height) || 0)}px`; requestAnimationFrame(() => { stage.scrollLeft = reset ? Math.max(0, (stage.scrollWidth - stage.clientWidth) / 2) : Math.max(0, centerX * stage.scrollWidth - stage.clientWidth / 2); stage.scrollTop = reset ? 0 : Math.max(0, centerY * stage.scrollHeight - stage.clientHeight / 2); reportPan(); }); }
+function setZoom(value:unknown) { scale = Math.max(MIN_SCALE, Math.min(MAX_SCALE, Number(value) || FIT_SCALE)); layoutImage(); (document.getElementById('zoom-label') as HTMLElement).textContent = Math.abs(scale - FIT_SCALE) < .01 ? 'Fit' : `${Math.round(scale * 100)}%`; if ((window as unknown as ComicWindow).BookstrComic?.onComicZoom)
+    (window as unknown as ComicWindow).BookstrComic!.onComicZoom!(scale); }
+function show(index:number) { syncComicViewport(); if (!pages.length)
+    return; current = Math.max(0, Math.min(index, pages.length - 1)); if (wideLandscape() && current > 0 && current % 2 === 0)
+    current--; image.src = urls[current]!; const two = facingPages(); if (two) {
+    secondImage.src = urls[current + 1]!;
+    if (secondImage.parentNode !== surface)
+        surface.appendChild(secondImage);
+    count.textContent = `${current + 1}–${current + 2} / ${pages.length}`;
+}
+else {
+    secondImage.remove();
+    secondImage.removeAttribute('src');
+    count.textContent = `${current + 1} / ${pages.length}`;
+} (document.getElementById('prev') as HTMLButtonElement).disabled = current === 0; (document.getElementById('next') as HTMLButtonElement).disabled = current === pages.length - 1; const progress = { type: 'bookstr-comic-progress', bookId: comicBookId, pageIndex: current, pageCount: pages.length }; parent.postMessage(progress, location.origin); if ((window as unknown as ComicWindow).BookstrComic?.onComicProgress)
+    (window as unknown as ComicWindow).BookstrComic!.onComicProgress!(current, pages.length); }
+async function loadZip(raw:Uint8Array) { const zip = await JSZip.loadAsync(raw, { checkCRC32: true, createFolders: false }); const names = Object.keys(zip.files).filter(imageName).sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' })); if (names.length > MAX_ENTRIES)
+    throw new Error('The archive contains too many pages.'); setOpeningProgress('Extracting pages…', 0, names.length); await nextPaint(); let processed = 0; for (const name of names) {
+    processed++;
+    const file = zip.files[name]! as import('jszip').JSZipObject & {_data?:{uncompressedSize:number}};
+    if (file.dir || (file._data?.uncompressedSize as number) > MAX_PAGE_BYTES)
+        continue;
+    const data = await file.async('blob');
+    if (data.size > MAX_PAGE_BYTES)
+        continue;
+    pages.push(name);
+    urls.push(URL.createObjectURL(data));
+    setOpeningProgress(`Extracting pages · ${processed} of ${names.length}`, processed, names.length);
+    if (processed % 8 === 0)
+        await nextPaint();
+} }
+async function loadRar(raw:Uint8Array) { setOpeningProgress('Opening comic archive…'); await nextPaint(); if (typeof libarchive !== 'function')
+    throw new Error('CBR extraction is unavailable in this build.'); const mod = await libarchive(); const malloc = mod._malloc.bind(mod), free = mod._free.bind(mod); const ptr = malloc(raw.length); mod.HEAP8.set(raw, ptr); const create = mod.cwrap('archive_read_new_memory', 'number', ['number', 'number', 'string']); const next = mod.cwrap('archive_read_next_entry', 'number', ['number']); const path = mod.cwrap('archive_entry_pathname_utf8', 'string', ['number']); const type = mod.cwrap('archive_entry_filetype', 'number', ['number']); const size = mod.cwrap('archive_entry_size', 'number', ['number']); const encrypted = mod.cwrap('archive_read_has_encrypted_entries', 'number', ['number']); const read = mod.cwrap('archive_read_data', 'number', ['number', 'number', 'number']); const skip = mod.cwrap('archive_read_data_skip', 'number', ['number']); const release = mod.cwrap('archive_read_free', 'number', ['number']); let archive = 0; try {
+    archive = create(ptr, raw.length, null);
+    if (!archive)
+        throw new Error('Could not open the RAR archive.');
+    if (encrypted(archive) > 0)
+        throw new Error('Encrypted comic archives are not supported.');
+    let entry;
+    let seen = 0;
+    while ((entry = next(archive))) {
+        seen++;
+        if (seen > MAX_ENTRIES)
+            throw new Error('The archive contains too many pages.');
+        const name = path(entry);
+        const bytes = size(entry);
+        if (type(entry) !== 32768 || !imageName(name) || bytes <= 0 || bytes > MAX_PAGE_BYTES) {
+            skip(archive);
+            continue;
+        }
+        const out = malloc(bytes);
+        const readBytes = read(archive, out, bytes);
+        if (readBytes !== bytes) {
+            free(out);
+            throw new Error('The RAR archive is corrupt.');
+        }
+        const data = mod.HEAP8.slice(out, out + readBytes);
+        free(out);
+        pages.push(name);
+        urls.push(URL.createObjectURL(new Blob([data])));
+        setOpeningProgress(`Extracting page ${pages.length}…`);
+        if (pages.length % 8 === 0)
+            await nextPaint();
+    }
+    if (!pages.length)
+        throw new Error('The archive contains no readable comic pages.');
+}
+finally {
+    if (archive)
+        release(archive);
+    free(ptr);
+} }
+async function loadComic(options:ComicOptions | null | undefined) { try {
+    urls.forEach(url => { if (url.startsWith('blob:'))
+        URL.revokeObjectURL(url); });
+    pages = [];
+    urls = [];
+    image.remove();
+    secondImage.remove();
+    resetComicMessage();
+    setOpeningProgress('Opening comic…');
+    await nextPaint();
+    if (!options || !['cbz', 'cbr'].includes(options.format))
+        throw new Error('Unsupported comic format.');
+    comicBookId = String(options.bookId || '');
+    if (Array.isArray(options.pages)) {
+        for (const page of options.pages) {
+            if (!page || !imageName(page.name) || typeof page.url !== 'string')
+                continue;
+            pages.push(page.name);
+            urls.push(page.url);
+        }
+    }
+    else {
+        let raw;
+        if (options.archiveBlob && typeof options.archiveBlob.arrayBuffer === 'function') {
+            raw = new Uint8Array(await options.archiveBlob.arrayBuffer());
+        }
+        else if (options.archiveURL) {
+            const response = await fetch(options.archiveURL, { cache: 'no-store' });
+            if (!response.ok)
+                throw new Error('Could not read the downloaded comic archive.');
+            raw = new Uint8Array(await response.arrayBuffer());
+        }
+        else if (options.base64) {
+            raw = Uint8Array.from(atob(options.base64), c => c.charCodeAt(0));
+        }
+        else {
+            throw new Error('Comic archive data is missing.');
+        }
+        if (options.format === 'cbz')
+            await loadZip(raw);
+        else
+            await loadRar(raw);
+    }
+    const ordered = pages.map((name, index) => ({ name, url: urls[index]! })).sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }));
+    pages = ordered.map(item => item.name);
+    urls.splice(0, urls.length, ...ordered.map(item => item.url));
+    if (!pages.length)
+        throw new Error('The archive contains no readable comic pages.');
+    document.title = options.bookTitle || 'Comic reader';
+    (document.getElementById('title') as HTMLElement).textContent = options.bookTitle || 'Comic';
+    setOpeningProgress('Rendering first page…');
+    surface.appendChild(image);
+    stage.appendChild(surface);
+    show(Number(options.initialPage) || 0);
+    return true;
+}
+catch (e) {
+    error((e as {message?:string}|null)?.message || 'Could not open comic archive.');
+    return false;
+} }
+function turn(direction:number) { const step = wideLandscape() ? (current === 0 && direction > 0 ? 1 : 2) : 1; show(current + direction * step); }
+(document.getElementById('prev') as HTMLButtonElement).onclick = () => turn(-1);
+(document.getElementById('next') as HTMLButtonElement).onclick = () => turn(1);
+(document.getElementById('zoom-in') as HTMLButtonElement).onclick = () => setZoom(scale + .2);
+(document.getElementById('zoom-out') as HTMLButtonElement).onclick = () => setZoom(scale - .2);
+document.addEventListener('keydown', e => { if (e.key === 'ArrowLeft')
+    turn(-1); if (e.key === 'ArrowRight')
+    turn(1); if (e.key === '+' || e.key === '=')
+    setZoom(scale + .2); if (e.key === '-')
+    setZoom(scale - .2); if (e.key === '0')
+    setZoom(FIT_SCALE); });
+let startX = 0, startY = 0, startTime = 0, lastFlipAt = 0, pinchDistance = 0, pinchScale = FIT_SCALE, pinching = false;
+function beginGesture(x:number, y:number) { startX = x; startY = y; startTime = performance.now(); }
+function finishGesture(x:number, y:number) { if (pinching)
+    return; const deltaX = x - startX, deltaY = y - startY, now = performance.now(); let flip = false; if (scale <= FIT_SCALE + .01)
+    flip = Math.abs(deltaX) > 45;
+else {
+    const elapsed = Math.max(1, now - startTime), horizontal = Math.abs(deltaX) > Math.abs(deltaY) * 1.4, fast = Math.abs(deltaX) / elapsed > .35;
+    flip = Math.abs(deltaX) > 55 && horizontal && fast;
+} if (flip && now - lastFlipAt > 300) {
+    lastFlipAt = now;
+    turn(deltaX < 0 ? 1 : -1);
+} }
+image.addEventListener('load', () => { message.remove(); layoutImage(true); });
+secondImage.addEventListener('load', () => layoutImage(true));
+stage.addEventListener('scroll', reportPan, { passive: true });
+stage.addEventListener('pointerdown', e => beginGesture(e.clientX, e.clientY));
+stage.addEventListener('pointerup', e => finishGesture(e.clientX, e.clientY));
+stage.addEventListener('touchstart', e => { if (e.touches.length === 1)
+    beginGesture(e.touches[0]!.clientX, e.touches[0]!.clientY); if (e.touches.length === 2) {
+    pinching = true;
+    pinchDistance = Math.hypot(e.touches[0]!.clientX - e.touches[1]!.clientX, e.touches[0]!.clientY - e.touches[1]!.clientY);
+    pinchScale = scale;
+    e.preventDefault();
+} }, { passive: false });
+stage.addEventListener('touchmove', e => { if (e.touches.length === 2 && pinchDistance > 0) {
+    const distance = Math.hypot(e.touches[0]!.clientX - e.touches[1]!.clientX, e.touches[0]!.clientY - e.touches[1]!.clientY);
+    setZoom(pinchScale * distance / pinchDistance);
+    e.preventDefault();
+} }, { passive: false });
+stage.addEventListener('touchend', e => { if (pinching) {
+    if (e.touches.length < 2) {
+        pinchDistance = 0;
+        pinching = false;
+    }
+    return;
+} const touch = e.changedTouches[0]; if (touch)
+    finishGesture(touch.clientX, touch.clientY); }, { passive: false });
+new ResizeObserver(() => layoutImage()).observe(stage);
+matchMedia('(orientation: landscape) and (min-width: 900px)').addEventListener('change', () => show(current));
+(window as unknown as ComicWindow).BookstrComicZoom = { set: setZoom, in: () => setZoom(scale + .2), out: () => setZoom(scale - .2), fit: () => setZoom(FIT_SCALE) };
+(window as unknown as ComicWindow).addEventListener('beforeunload', () => urls.forEach(URL.revokeObjectURL));
+(window as unknown as ComicWindow).loadComic = loadComic;

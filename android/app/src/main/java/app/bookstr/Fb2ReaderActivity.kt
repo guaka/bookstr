@@ -7,6 +7,8 @@ import android.os.Bundle
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.foundation.gestures.animateScrollBy
+import app.bookstr.ui.tvReaderInset
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
@@ -199,7 +201,8 @@ object Fb2Parser {
     private fun blockText(parser: XmlPullParser): String {
         val depth = parser.depth
         val out = StringBuilder()
-        while (parser.next() != XmlPullParser.END_DOCUMENT && parser.depth > depth) {
+        while (parser.next() != XmlPullParser.END_DOCUMENT &&
+            !(parser.eventType == XmlPullParser.END_TAG && parser.depth == depth)) {
             when (parser.eventType) {
                 XmlPullParser.TEXT, XmlPullParser.CDSECT -> out.append(parser.text)
                 XmlPullParser.START_TAG -> if (parser.name.substringAfterLast(':') == "v") {
@@ -337,6 +340,7 @@ private fun Fb2ReaderScreen(title: String, author: String?, year: String?, right
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
     val tts = remember(context) { android.speech.tts.TextToSpeech(context, null) }
+    androidx.compose.runtime.DisposableEffect(tts) { onDispose { tts.stop(); tts.shutdown() } }
     LaunchedEffect(file) {
         val result = withContext(Dispatchers.IO) { runCatching { Fb2Parser.parse(file) } }
         result.onSuccess { document = it }.onFailure { error = it.message ?: "Cannot open FB2" }
@@ -380,7 +384,7 @@ private fun Fb2ReaderScreen(title: String, author: String?, year: String?, right
         when {
             error != null -> Text(error ?: "Cannot open FB2", color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(24.dp))
             doc == null -> CircularProgressIndicator(Modifier.padding(24.dp))
-            else -> LazyColumn(state = listState, modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
+            else -> LazyColumn(state = listState, modifier = Modifier.fillMaxSize().tvReaderInset().padding(horizontal = 16.dp)) {
                 itemsIndexed(blocks, key = { _, block -> "${block.sectionID}:${block.paragraphIndex}" }) { index, block ->
                     block.title?.let { title -> Text(title, fontSize = 22.sp, fontWeight = FontWeight.Bold,
                         modifier = Modifier.padding(top = if (index == 0) 18.dp else 28.dp, bottom = 8.dp)) }
@@ -389,7 +393,15 @@ private fun Fb2ReaderScreen(title: String, author: String?, year: String?, right
             }
         }
     }
-    app.bookstr.ui.ReaderBottomNavigation(onSelectTab, Modifier.align(Alignment.BottomCenter))
+    app.bookstr.ui.ReaderBottomNavigation(onSelectTab, Modifier.align(Alignment.BottomCenter),
+        onPrevious = { scope.launch { listState.animateScrollBy(-listState.layoutInfo.viewportSize.height * 0.8f) } },
+        onNext = { scope.launch { listState.animateScrollBy(listState.layoutInfo.viewportSize.height * 0.8f) } },
+        onSpeech = {
+            if (speaking) { tts.stop(); speaking = false }
+            else { doc?.let { tts.speak(it.allParagraphs().joinToString(" ") { pair -> pair.second.text }, android.speech.tts.TextToSpeech.QUEUE_FLUSH, null, "fb2") }; speaking = true }
+        },
+        isSpeaking = speaking,
+    )
     }
     if (showContents && doc != null) AlertDialog(onDismissRequest = { showContents = false }, title = { Text("Contents") },
         text = { LazyColumn { itemsIndexed(doc.flatSections()) { index, section -> Text(section.title.ifBlank { "Section ${index + 1}" }, Modifier.fillMaxWidth().clickable {

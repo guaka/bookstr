@@ -42,7 +42,7 @@ internal fun BookstrNavigationBar(selectedTab: Int, onSelectTab: (Int) -> Unit) 
                 NavigationBarItem(
                     selected = selectedTab == tab.id,
                     onClick = { onSelectTab(tab.id) },
-                    modifier = Modifier.testTag("tab.${tab.label.lowercase()}"),
+                    modifier = Modifier.testTag("tab.${tab.label.lowercase()}").tvFocus(),
                     icon = {
                         Icon(tab.icon, contentDescription = tab.label, modifier = Modifier.size(iconSize))
                     },

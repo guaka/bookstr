@@ -14,6 +14,10 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalView
+import app.bookstr.isTelevision
 import androidx.compose.ui.unit.dp
 import java.util.Locale
 
@@ -50,13 +54,25 @@ private fun FilterMenu(tag: String, all: String, options: List<String>, selectio
                        display: (String) -> String, icon: androidx.compose.ui.graphics.vector.ImageVector,
                        onSelect: (String) -> Unit, modifier: Modifier = Modifier) {
     var expanded by remember { mutableStateOf(false) }
+    val focusManager = LocalFocusManager.current
+    val view = LocalView.current
+    val television = isTelevision(LocalConfiguration.current.uiMode)
     Box(modifier) {
-        TextButton(onClick = { expanded = true }, modifier = Modifier.fillMaxWidth().testTag(tag)) {
+        TextButton(onClick = {
+            if (!television) focusManager.clearFocus()
+            expanded = true
+        }, modifier = Modifier.fillMaxWidth().testTag(tag).tvFocus()) {
             Icon(icon, contentDescription = null, modifier = Modifier.size(18.dp))
             Spacer(Modifier.width(5.dp))
             Text(if (selection.isEmpty()) all else display(selection), maxLines = 1)
         }
         DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            DisposableEffect(television, focusManager, view) {
+                onDispose {
+                    // Popup dismissal restores the previous window's focus after selection.
+                    if (!television) view.post { focusManager.clearFocus(force = true) }
+                }
+            }
             (listOf("") + options).forEach { option ->
                 DropdownMenuItem(
                     text = { Text(if (option.isEmpty()) all else display(option)) },

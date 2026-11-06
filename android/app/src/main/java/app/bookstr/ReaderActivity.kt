@@ -58,6 +58,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
@@ -80,6 +81,7 @@ import app.bookstr.nostr.AmberIntentSession
 import app.bookstr.ui.theme.BookstrThemeFromSettings
 import app.bookstr.ui.RightsMarker
 import app.bookstr.ui.ReaderBottomNavigation
+import app.bookstr.ui.tvReaderInset
 import app.bookstr.ui.ReaderHeaderText
 import app.bookstr.ui.NarrationIsland
 import kotlinx.coroutines.delay
@@ -222,10 +224,11 @@ class ReaderActivity : ComponentActivity() {
             finish()
             return
         }
-        startNarrationFromExternalRequest = intent.getBooleanExtra(
-            NarrationService.EXTRA_START_NARRATION,
-            false,
-        ) && savedInstanceState?.getBoolean(STATE_NARRATION_REQUEST_HANDLED) != true
+        startNarrationFromExternalRequest = shouldStartReaderNarration(
+            resources.configuration.uiMode,
+            intent.getBooleanExtra(NarrationService.EXTRA_START_NARRATION, false),
+            savedInstanceState?.getBoolean(STATE_NARRATION_REQUEST_HANDLED) == true,
+        )
         externalNarrationRequestToken = if (startNarrationFromExternalRequest) {
             intent.getStringExtra(EXTRA_EXTERNAL_NARRATION_TOKEN)
         } else {
@@ -509,12 +512,13 @@ class ReaderActivity : ComponentActivity() {
                             modifier = Modifier
                                 .align(Alignment.Center)
                                 .background(androidx.compose.material3.MaterialTheme.colorScheme.surface)
-                                .padding(24.dp),
+                                .padding(24.dp)
+                                .testTag("reader.error"),
                         )
                     }
 
                     if (readerLoading && readerError == null) {
-                        CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
+                        CircularProgressIndicator(modifier = Modifier.align(Alignment.Center).testTag("reader.loading"))
                     }
 
                     ReaderChrome(
@@ -559,6 +563,10 @@ class ReaderActivity : ComponentActivity() {
                     )
                     ReaderBottomNavigation(
                         onSelectTab = { tab -> openMainTab(tab) },
+                        onPrevious = { webView?.evaluateJavascript("prevPage();", null) },
+                        onNext = { webView?.evaluateJavascript("nextPage();", null) },
+                        onSpeech = { toggleTextToSpeech() },
+                        isSpeaking = isSpeaking,
                         modifier = Modifier.align(Alignment.BottomCenter).zIndex(3f),
                     )
                     if (showSections) {
@@ -1264,6 +1272,7 @@ private fun ReaderWebView(
     AndroidView(
         modifier = Modifier
             .fillMaxSize()
+            .tvReaderInset()
             .padding(top = 24.dp, bottom = 5.dp),
         factory = { ctx ->
             val epubFile = app.catalogRepository.epubFile(bookId)
@@ -1350,6 +1359,7 @@ private fun ReaderWebView(
                         view.evaluateJavascript(
                             "setReaderTheme($themeJs); " +
                                 "setReaderTypography($fontJs, $alignmentJs, 0); " +
+                                (if (isTelevision(ctx.resources.configuration.uiMode)) "adjustReaderFont(Math.max(0, 150 - window.readerFontPercent)); " else "") +
                                 "setKnownWords($knownWordsJs); " +
                                 "loadBookUrl($bookUrlJs, $cfiJs, $themeJs, $highlightCfiJs, $bookIdJs);",
                             null,

@@ -36,7 +36,8 @@ test('web tests are gated by web-related path changes', async () => {
   assert.match(workflow, /name: Detect web changes/);
   assert.match(workflow, /- 'web\/\*\*'/);
   assert.match(workflow, /- 'shared\/architecture\/\*\*'/);
-  assert.match(workflow, /- 'shared\/coverage\/\*\*'/);
+  assert.doesNotMatch(workflow.match(/            web_code:[\s\S]*?            electron_code:/)?.[0] ?? '', /shared\/coverage/);
+  assert.match(workflow, /platform-baseline-routing-cli\.mjs/);
   assert.match(workflow, /- 'docs\/CLIENT_CAPABILITIES\.md'/);
   assert.match(workflow, /- 'scripts\/\*\*'/);
   assert.match(workflow, /node scripts\/generate-client-overview\.mjs --check/);
@@ -56,7 +57,7 @@ test('Electron unit coverage and smoke results are published beside other client
   const workflow = await readWorkflow('ci.yml');
   const deploy = await readWorkflow('deploy-web.yml');
 
-  assert.match(workflow, /electron: \$\{\{ steps\.filter\.outputs\.electron \}\}/);
+  assert.match(workflow, /electron: \$\{\{ \(steps\.filter\.outputs\.electron_code/);
   const electronJob = workflow.match(/^  electron:\n[\s\S]*$/m)?.[0];
   assert.ok(electronJob, 'Electron job exists');
   assert.match(electronJob, /uses: pnpm\/action-setup@v4/);
@@ -163,16 +164,17 @@ test('CodeQL workflow is disabled', async () => {
   assert.equal(workflows.includes('codeql.yml'), false);
 });
 
-test('Android APK builds have separate sequential steps on the same runner', async () => {
+test('Android APK builds share one bounded Gradle invocation without waiting for unit tests', async () => {
   const workflow = await readWorkflow('android.yml');
   const packaging = workflow.match(/^  package-apks:\n([\s\S]*?)(?=^  emulator-tests:)/m)[1];
   assert.match(packaging, /^    name: Build debug app and test APKs$/m);
   const builds = [...packaging.matchAll(/      - name: (Build[^\n]+)\n        working-directory: android\n        run: (.+)/g)];
   assert.deepEqual(builds.map(match => [match[1], match[2]]), [
-    ['Build debug app APK', './gradlew --no-daemon --max-workers=2 assembleDebug -Pbookstr.abis=x86_64 -Pbookstr.cxxCompilerLauncher=ccache'],
-    ['Build instrumentation test APK', './gradlew --no-daemon --max-workers=2 assembleDebugAndroidTest -Pbookstr.abis=x86_64 -Pbookstr.cxxCompilerLauncher=ccache'],
+    ['Build debug app and instrumentation APKs', "./gradlew --daemon --max-workers=2 '-Dorg.gradle.jvmargs=-Xmx1536m -Dfile.encoding=UTF-8' assembleDebug assembleDebugAndroidTest -Pbookstr.abis=x86_64 -Pbookstr.cxxCompilerLauncher=ccache"],
   ]);
-  assert.ok(packaging.indexOf('name: Stage prebuilt APKs') > builds[1].index);
+  assert.ok(packaging.indexOf('name: Stage prebuilt APKs') > builds[0].index);
+  assert.match(packaging, /needs: changes\n    if: needs.changes.outputs.android == 'true'/);
+  assert.doesNotMatch(packaging, /needs: unit-tests/);
   assert.match(packaging, /name: Upload prebuilt APKs[\s\S]*?compression-level: 0/);
 });
 
@@ -218,8 +220,7 @@ test('Android CI has four ordered jobs and the emulator consumes prebuilt APKs',
   ]);
   assert.match(workflow, /testDebugUnitTest jacocoDebugUnitTestReport/);
   assert.match(workflow, /node --test --experimental-test-coverage --test-coverage-lines=100 --test-coverage-branches=100 --test-coverage-functions=100 android\/scripts\/instrumentation-results\.test\.mjs/);
-  assert.match(workflow, /run: \.\/gradlew --no-daemon --max-workers=2 assembleDebug -Pbookstr.abis=x86_64 -Pbookstr.cxxCompilerLauncher=ccache\n/);
-  assert.match(workflow, /needs: unit-tests/);
+  assert.match(workflow, /assembleDebug assembleDebugAndroidTest -Pbookstr.abis=x86_64 -Pbookstr.cxxCompilerLauncher=ccache\n/);
   assert.match(workflow, /needs: package-apks/);
   assert.match(workflow, /needs: \[unit-tests, package-apks, emulator-tests\]/);
   const emulatorJob = workflow.match(/^  emulator-tests:\n([\s\S]*?)(?=^  release:)/m)[1];
@@ -231,7 +232,7 @@ test('Android CI has four ordered jobs and the emulator consumes prebuilt APKs',
   assert.match(e2eRunner, /require-emulator\.sh/);
   assert.match(e2eRunner, /install -r "\$app_apk"/);
   assert.match(e2eRunner, /install -r "\$test_apk"/);
-  assert.match(e2eRunner, /shell am instrument -w -r app\.bookstr\.test\/androidx\.test\.runner\.AndroidJUnitRunner/);
+  assert.match(e2eRunner, /shell am instrument -w -r app\.bookstr\.test\/app\.bookstr\.BookstrTestRunner/);
   assert.match(e2eRunner, /rm -f "\$results_dir\/instrumentation\.log"/);
   assert.match(ignore, /^\/android\/e2e-results\/$/m);
   assert.match(ignore, /^\/android\/e2e-screenshots\/$/m);
@@ -342,11 +343,14 @@ test('Android CI rebuilds APKs for Android and bundled reader changes', async ()
       'android/**', 'shared/reader/**', 'web/reader-speech.js',
       'web/reader-typography.js', 'web/reader-chrome.js',
       'web/comic-reader.html', 'web/vendor/libarchive.js',
-      'web/vendor/libarchive.wasm', '.github/workflows/android.yml',
+      'web/vendor/libarchive.wasm',
     ]) {
       assert.ok(trigger.includes(`- '${path}'`), `${path} triggers an APK build`);
     }
   }
+  assert.ok(push.includes("- '.github/workflows/android.yml'"));
+  assert.doesNotMatch(pullRequest.match(/android_code:[\s\S]*?(?=      - name: Compare)/)?.[0] ?? '', /\.github\/workflows\/android\.yml/);
+  assert.match(pullRequest, /--workflow-head \.github\/workflows\/android\.yml/);
 });
 
 test('required native checks are always reported and route only relevant PR paths', async () => {
@@ -354,19 +358,60 @@ test('required native checks are always reported and route only relevant PR path
     const workflow = await readWorkflow(file);
     const push = workflow.match(/^  push:\n([\s\S]*?)(?=^  pull_request:)/m)[1];
     const routing = workflow.match(/^  changes:\n([\s\S]*?)(?=^  (?:unit-tests|ios):)/m)[1];
+    const codeFilter = routing.match(/filters:\s*\|\n([\s\S]*?)(?=      - name: Compare)/)?.[1] ?? '';
     assert.match(workflow, /  pull_request:\n  workflow_dispatch:/);
     assert.doesNotMatch(workflow, /pull_request:\n    paths:/);
     assert.match(routing, /runs-on: ubuntu-latest/);
     assert.match(routing, /permissions:\n      contents: read\n      pull-requests: read/);
     assert.match(routing, /dorny\/paths-filter@0e4a8c6effa4802afeda77dc8d303f8176d7dfad/);
     assert.match(routing, /if: github\.event_name == 'pull_request'/);
-    assert.ok(routing.includes(`github.event_name != 'pull_request' || steps.filter.outputs.${platform} == 'true'`));
+    assert.ok(routing.includes(`steps.filter.outputs.${platform}_code == 'true'`));
+    assert.ok(routing.includes(`steps.baseline.outputs.${platform} == 'true'`));
+    assert.match(routing, /git fetch --no-tags --depth=1 origin/);
+    assert.match(routing, /scripts\/platform-baseline-routing-cli\.mjs --suite/);
+    assert.match(routing, /--workflow-base .*--workflow-head/);
+    assert.match(push, /- 'shared\/coverage\/\*\*'/);
+    assert.doesNotMatch(codeFilter, /shared\/coverage/);
+    assert.doesNotMatch(codeFilter, new RegExp(`\\.github/workflows/${platform}\\.yml`));
+    assert.match(push, new RegExp(`- '\\.github/workflows/${platform}\\.yml'`));
     const paths = (text) => [...text.matchAll(/- '([^']+)'/g)].map((match) => match[1]);
-    assert.deepEqual(paths(routing), paths(push));
+    const sourcePaths = [
+      platform === 'android' ? 'android/**' : 'ios/**',
+      'shared/reader/**', 'scripts/coverage-ratchet.mjs', 'scripts/test-overview.mjs',
+    ];
+    for (const path of sourcePaths) {
+      assert.ok(paths(codeFilter).includes(path), `${path} remains in the source-code filter`);
+      assert.ok(paths(push).includes(path), `${path} remains in the push trigger`);
+    }
     const native = workflow.slice(workflow.indexOf(`  ${job}:\n`));
     assert.match(native, /needs: changes/);
     assert.ok(native.includes(`if: needs.changes.outputs.${platform} == 'true'`));
   }
+});
+
+test('platform baseline edits use semantic comparison while code and workflow checks stay routed', async () => {
+  const ci = await readWorkflow('ci.yml');
+  const android = await readWorkflow('android.yml');
+  const ios = await readWorkflow('ios.yml');
+  for (const workflow of [ci, android, ios]) {
+    assert.match(workflow, /pull_request:\n(?:\s*\n|  workflow_dispatch:)/);
+    assert.doesNotMatch(workflow, /pull_request:\n    paths:/);
+    assert.match(workflow, /git fetch --no-tags --depth=1 origin/);
+    assert.match(workflow, /shared\/coverage\/baselines-v1\.json/);
+    assert.match(workflow, /platform-baseline-routing-cli\.mjs/);
+  }
+  assert.match(ci, /electron_code:[\s\S]*?!shared\/coverage\/\*\*/);
+  assert.match(ci, /shared_coverage:[\s\S]*?- 'shared\/coverage\/\*\*'/);
+  assert.match(ci, /event_name != 'pull_request' && steps\.filter\.outputs\.shared_coverage == 'true'/);
+  assert.match(ci, /steps\.baseline\.outputs\.web/);
+  assert.match(ci, /steps\.baseline\.outputs\.electron/);
+  assert.match(android, /steps\.baseline\.outputs\.android/);
+  assert.match(ios, /steps\.baseline\.outputs\.ios/);
+  for (const [workflow, name] of [[android, 'android'], [ios, 'ios']]) {
+    assert.match(workflow, new RegExp(`--workflow-base \\"\\$RUNNER_TEMP/base-${name}\\.yml\\" --workflow-head \.github/workflows/${name}\\.yml`));
+  }
+  assert.match(ci, /steps\.filter\.outputs\.web_code/);
+  assert.match(ci, /steps\.filter\.outputs\.electron_code/);
 });
 
 test('main protection names real workflow jobs and requires trusted up-to-date checks', async () => {
