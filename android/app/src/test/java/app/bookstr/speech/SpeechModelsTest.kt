@@ -16,7 +16,7 @@ class SpeechModelsTest {
     private val fixture = SpeechModel("test", "nl", "Dutch", "test/repo", "123", "vits", "voice.onnx", listOf(SpeechModelFile("voice.onnx", 4), SpeechModelFile("data/tokens", 2)))
     @Test fun catalogIncludesPinnedVoicesAndCompletePronunciationData() {
         val models = SpeechModels.parse(File("src/main/assets/speech-models.json").readText())
-        assertEquals(12, models.size)
+        assertEquals(15, models.size)
         assertEquals(setOf("en", "pt-pt", "fr", "de", "es", "ca", "nl", "it"), models.map { it.language }.toSet())
         val brazilian = models.single { it.id == "kokoro_pt_br" }
         assertEquals(42, brazilian.speaker)
@@ -50,6 +50,7 @@ class SpeechModelsTest {
             assertTrue(model.files.all { it.bytes > 0 && !it.path.contains("..") })
             assertTrue(model.bytes > 60_000_000)
             assertTrue(model.files.any { it.path == model.model })
+            if (model.kind == "pocket") return@forEach
             assertTrue(model.files.any { it.path == "espeak-ng-data/lang/gmw/nl" })
             assertTrue(model.files.any { it.path == "espeak-ng-data/lang/gmw/en-US" })
             assertTrue(model.files.any { it.path == "espeak-ng-data/it_dict" && it.bytes == 152889L })

@@ -13,20 +13,20 @@ import org.junit.rules.TemporaryFolder
 class PocketSpeechCatalogContractTest {
     @get:Rule val temporary = TemporaryFolder()
 
-    @Test fun unfinishedPocketDraftIsAbsentFromProductionAndSelectableCatalogs() {
+    @Test fun pocketCatalogMatchesPinnedDescriptor() {
         val catalog = SpeechModels.parse(File("src/main/assets/speech-models.json").readText())
-        val dutchModels = catalog.filter { it.language == PocketSpeechModel.language }
-
-        assertFalse(catalog.any {
-            it.kind.contains("pocket", ignoreCase = true) ||
-                it.repository == PocketSpeechModel.repository ||
-                it.label == PocketSpeechModel.label
-        })
-
-        // Settings builds its per-language model rows from this production catalog.
-        val selectableIds = dutchModels.map { it.id }
-        assertTrue(selectableIds.isNotEmpty())
-        assertFalse(dutchModels.any { it.repository == PocketSpeechModel.repository })
+        val model = catalog.single { it.id == "pocket_nl_daan" }
+        assertEquals(PocketSpeechModel.language, model.language)
+        assertEquals(PocketSpeechModel.label, model.label)
+        assertEquals(PocketSpeechModel.repository, model.repository)
+        assertEquals(PocketSpeechModel.revision, model.revision)
+        assertEquals("pocket", model.kind)
+        // Avoid recursive companion discovery for a standalone language bundle (MediaPipe #6395).
+        assertEquals("daan.litertlm", model.model)
+        assertEquals(model.model, model.files.single().path)
+        assertEquals(PocketSpeechModel.resolvedUrl, model.files.single().url)
+        assertEquals(PocketSpeechModel.bundleBytes, model.bytes)
+        assertEquals(PocketSpeechModel.sha256, model.files.single().sha256)
     }
 
     @Test fun handoffDocumentationMatchesPinnedDraftDescriptor() {

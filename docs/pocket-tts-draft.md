@@ -1,6 +1,6 @@
 # Pocket TTS Dutch: implementation handoff
 
-> Initial draft for issue #222: documents candidate artifacts, upstream runtime guidance, and validation work. It does not propose or claim a completed runtime integration.
+> Android integration for issue #222, following the initial draft in #227. Pocket uses the published MediaPipe 1.2.2 runtime. Phone performance and comparative narration quality remain unmeasured.
 
 ## Artifact and rights
 
@@ -8,21 +8,37 @@
 - Repository model card and bundle documentation declare [CC-BY-4.0](https://creativecommons.org/licenses/by/4.0/). Credit Kyutai for the original architecture, weights, and voice embeddings; credit LiteRT Community / MediaPipe for conversion and quantization. Preserve the license and attribution with any redistributed model artifact. Check the current model card and underlying voice assets before release.
 - Keep the artifact URL and digest revision-pinned; do not silently replace them with `main`. Treat the ~120 MiB artifact as a user-initiated, resumable download if the product flow supports that.
 
-## Runtime feasibility (unverified for Bookstr)
+## Android runtime
 
-- The model card documents Android `com.google.mediapipe:tasks-audio` and specifies `minSdk = 26` plus `arm64-v8a`. Bookstr currently sets `minSdk = 27`, so the SDK floor is not a blocker by itself, but ABI coverage, dependency resolution, app packaging, native library size, and actual inference/build compatibility remain to be checked. The model-card snippet uses `latest.release`; choose and pin a concrete version before integrating.
+The downloaded bundle is stored as `daan.litertlm`, preserving the original
+revision-pinned URL and checksum. Do not use the upstream
+`pocket_tts_nl_int8.litertlm` filename locally: MediaPipe's companion discovery
+can recursively reload that file for `nl-NL` and exhaust memory
+([upstream issue #6395](https://github.com/google-ai-edge/mediapipe/issues/6395)).
+
+
+- Android pins `com.google.mediapipe:tasks-audio:1.2.2`. The published AAR contains the `TextToSpeech`, `TextToSpeechOptions` and `AudioResult` APIs and native libraries for arm64-v8a, armeabi-v7a, x86 and x86_64. Bookstr loads the Dutch bundle with voice `daan` and locale `nl-NL`, using 24 kHz PCM.
+- Settings → Text-to-speech → Dutch offers **Pocket TTS · Daan**. The existing staged download verifies exact bytes and SHA-256 before promotion; intact files can be reused on retry. An interrupted partial download restarts rather than resuming its byte range.
+- The serial narration executor owns and closes the engine, switching it when the selected model changes. Bounded phrases feed the existing WAV queue, playback controls, and reading offsets. Cancellation discards an in-flight phrase after its synchronous native call returns; it does not interrupt that call mid-inference.
+- Pocket does not need or initialize eSpeak pronunciation files. Existing Piper and Kokoro voices continue through sherpa-onnx.
 - The model card documents Swift Package Manager dependency `https://github.com/google-ai-edge/mediapipe` and library `MediaPipeTasksAudio` for iOS. This is not evidence that the current Bookstr Swift package/project can consume it or that the bundle runs on the project's deployment target; verify package product/platform support and build separately before proposing a shared implementation.
-- Treat the upstream README as integration guidance, not proof of Bookstr compatibility or performance. First compile a minimal loader on each platform, list the Dutch voices, synthesize a short Dutch sample, and validate PCM format, lifecycle/cancellation, memory, and error handling on supported hardware. No runtime integration or performance result is claimed here.
+- Emulator tests exercise model loading, PCM output and switching. They do not establish phone latency, battery use, peak memory, or listening quality. See the implementation PR for commands and observed results.
 
-## Readiness checklist
+## Validation and remaining work
 
-- [ ] Confirm model licensing and attribution for all shipped files; retain a copy of the pinned model card/license metadata.
-- [ ] Implement a staged, resumable downloader that verifies the pinned SHA-256 before atomically promoting the artifact; cover interruption/resume, mismatch, storage failure, and cleanup.
-- [ ] Confirm Android ABI support on Bookstr's supported devices; pin MediaPipe version and compile/run a Dutch smoke test.
-- [ ] Confirm iOS SPM product and deployment-target compatibility; compile/run an independent Dutch smoke test.
-- [ ] Test the default `daan` voice and explicit `alba` selection with Dutch text; verify audio playback and reader cancellation.
-- [ ] Measure download, cold-start, peak memory, synthesis speed, and battery on representative devices before making product/performance claims.
-- [ ] Add platform unit/contract coverage, user-flow end-to-end coverage where controls/navigation change, and generated coverage reports before implementation is considered ready.
+- The downloaded bundle SHA-256 matches the pinned descriptor above.
+- ARM64 Android 12 emulator testing passed native synthesis for Pocket, Nathalie,
+  RDH and the existing Dutch/Kokoro voices; Settings install/select/remove;
+  download cancellation; and Pocket narration progress/section continuation.
+- All eight targeted tests passed with both 3 GB and 2 GB emulator memory. The
+  original upstream filename triggered kernel OOM kills in both configurations;
+  the neutral local filename avoids that failure without changing the model bytes.
+- Cancellation is phrase-granular. Byte-range download resume, explicit Alba
+  selection, iOS integration, phone latency/battery measurements and comparative
+  Dutch listening quality remain follow-up work.
+- See the implementation PR for exact unit, build, coverage and emulator results,
+  including checks not performed locally. Emulator results do not establish
+  performance on physical phones.
 
 ## Audition alternative: Supertonic 3
 
