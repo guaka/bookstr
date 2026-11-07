@@ -122,14 +122,6 @@
             android:theme="@style/Theme.Bookstr" />
 
         <activity
-            android:name=".Fb2ReaderActivity"
-            android:exported="false"
-            android:configChanges="orientation|screenSize|keyboardHidden"
-            android:showWhenLocked="true"
-            android:turnScreenOn="true"
-            android:theme="@style/Theme.Bookstr.Reader" />
-
-        <activity
             android:name=".ComicReaderActivity"
             android:exported="false"
             android:configChanges="orientation|screenSize|keyboardHidden"

@@ -15,51 +15,34 @@ import okhttp3.HttpUrl.Companion.toHttpUrl
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
-import java.io.IOException
 import java.util.concurrent.TimeUnit
 import java.util.zip.ZipFile
-import java.io.BufferedInputStream
 import java.text.Normalizer
-import javax.xml.parsers.SAXParserFactory
-import org.xml.sax.Attributes
-import org.xml.sax.InputSource
-import org.xml.sax.SAXException
-import org.xml.sax.helpers.DefaultHandler
 import org.xmlpull.v1.XmlPullParser
 
 enum class BookFormat(val extension: String) {
     Epub("epub"),
     Pdf("pdf"),
-    Fb2("fb2"),
     Cbr("cbr"),
     Cbz("cbz"),
     ;
-
-    /** Formats currently offered to users in the Android app. Keep enum/parser support for saved data. */
-    val isAvailable: Boolean get() = this != Fb2
 
     companion object {
         fun from(value: String?, url: String = ""): BookFormat {
             val normalized = value?.trim()?.lowercase()
             if (normalized == "pdf") return Pdf
             if (normalized == "epub") return Epub
-            if (normalized == "fb2" || normalized == "fb2.zip") return Fb2
             if (normalized == "cbr") return Cbr
             if (normalized == "cbz") return Cbz
             val path = url.substringBefore('?').substringBefore('#').lowercase()
             return when {
                 path.endsWith(".pdf") -> Pdf
-                path.endsWith(".fb2") || path.endsWith(".fb2.zip") -> Fb2
                 path.endsWith(".cbr") -> Cbr
                 path.endsWith(".cbz") -> Cbz
                 else -> Epub
             }
         }
     }
-}
-
-internal fun BookFormat.requireAvailable() {
-    require(isAvailable) { "Unsupported publication format" }
 }
 
 data class CatalogBook(
@@ -81,11 +64,8 @@ data class CatalogBook(
     val language: String? = null,
 )
 
-internal fun availableCatalogBooks(books: List<CatalogBook>): List<CatalogBook> =
-    books.filter { it.format.isAvailable }
-
 internal fun availableExternalFavorites(favorites: List<ExternalFavorite>): List<ExternalFavorite> =
-    favorites.filter { BookFormat.from(it.format).isAvailable }
+    favorites.filter { favorite -> BookFormat.entries.any { it.extension.equals(favorite.format, ignoreCase = true) } }
 
 data class BookSearchResult(
     val id: String,
@@ -108,7 +88,7 @@ data class BookSearchResult(
     val torrentEdition: TorrentEdition? = null,
     val unavailableReason: String? = null,
 ) {
-    val isReadable: Boolean get() = unavailableReason == null && format?.isAvailable == true &&
+    val isReadable: Boolean get() = unavailableReason == null && format != null &&
         (!downloadUrl.isNullOrBlank() || libvaultMd5 != null)
 
     fun asCatalogBook(): CatalogBook? {
@@ -192,15 +172,14 @@ open class CatalogRepository(
         withContext(Dispatchers.IO) { synchronized(this@CatalogRepository) {
             val cached = loadDownloadedBookMetadata().associateBy { it.id }.toMutableMap()
             val discovered = booksDir().listFiles().orEmpty()
-                .filter { it.isFile && it.extension.lowercase() in setOf("epub", "pdf", "fb2") }
-                .filter { it.extension.lowercase() != "fb2" || isStructurallyValidFb2(it) }
+                .filter { it.isFile && it.extension.lowercase() in setOf("epub", "pdf") }
                 .mapNotNull { file ->
                     val id = file.nameWithoutExtension.lowercase()
                     cached[id] ?: discoverDownloadedBook(file, externalFavorites)
                 }
             val merged = (cached.values + discovered).distinctBy { it.id }
             saveDownloadedBookMetadata(merged)
-            availableCatalogBooks(merged)
+            merged
         } }
 
     private val privateCatalog = app.bookstr.nostr.PrivateCatalogClient()
@@ -225,7 +204,6 @@ open class CatalogRepository(
 
     suspend fun importVerified(book: CatalogBook, source: File): File = withContext(Dispatchers.IO) {
         require(Regex("[0-9a-f]{32}").matches(book.id))
-        book.format.requireAvailable()
         require(isValidCachedFile(book, source)) { "Unsupported or invalid publication" }
         val target = publicationFile(book.id, book.format)
         val temporary = File(target.parentFile, target.name + ".importing")
@@ -252,7 +230,6 @@ open class CatalogRepository(
         }
 
     suspend fun ensureDownloaded(book: CatalogBook): File = withContext(Dispatchers.IO) {
-        book.format.requireAvailable()
         val target = publicationFile(book.id, book.format)
         if (target.exists() && isValidCachedFile(book, target)) {
             rememberDownloadedBook(withEmbeddedRights(book, target))
@@ -316,7 +293,6 @@ open class CatalogRepository(
     ): CatalogBook? {
         val format = when (file.extension.lowercase()) {
             "pdf" -> BookFormat.Pdf
-            "fb2" -> BookFormat.Fb2
             "cbr" -> BookFormat.Cbr
             "cbz" -> BookFormat.Cbz
             else -> BookFormat.Epub
@@ -324,7 +300,6 @@ open class CatalogRepository(
         val embedded = when (format) {
             BookFormat.Epub -> readEpubMetadata(file)
             BookFormat.Pdf -> readPdfMetadata(file)
-            BookFormat.Fb2 -> readFb2Metadata(file)
             BookFormat.Cbr, BookFormat.Cbz -> Triple(null, null, null)
         }
         val matched = embedded.first?.let { title ->
@@ -436,41 +411,6 @@ open class CatalogRepository(
         Triple(field("Title"), field("Author"), date?.let { Regex("(1[0-9]{3}|20[0-9]{2}|21[0-9]{2})").find(it)?.value })
     }.getOrDefault(Triple(null, null, null))
 
-    /** Reads only descriptive FB2 fields. The XML parser is non-validating and
-     * never resolves external entities; the content is bounded by the caller's
-     * structural validation before this method is used for a downloaded file.
-     */
-    private fun readFb2Metadata(file: File): Triple<String?, String?, String?> = runCatching {
-        withFb2Input(file) { input ->
-            val parser = Xml.newPullParser().apply {
-                setFeature(XmlPullParser.FEATURE_PROCESS_NAMESPACES, true)
-                runCatching { setFeature("http://xmlpull.org/v1/doc/features.html#process-docdecl", false) }
-                runCatching { setFeature("http://xmlpull.org/v1/doc/features.html#process-namespaces", true) }
-                setInput(input, null)
-            }
-            var title: String? = null
-            var author: String? = null
-            var year: String? = null
-            var firstName: String? = null
-            var lastName: String? = null
-            while (parser.eventType != XmlPullParser.END_DOCUMENT) {
-                if (parser.eventType == XmlPullParser.START_TAG) {
-                    when (parser.name.lowercase()) {
-                        "book-title" -> if (title == null) title = parser.nextText().trim().ifBlank { null }
-                        "first-name" -> if (firstName == null) firstName = parser.nextText().trim().ifBlank { null }
-                        "last-name" -> if (lastName == null) lastName = parser.nextText().trim().ifBlank { null }
-                        "nickname" -> if (author == null) author = parser.nextText().trim().ifBlank { null }
-                        "date" -> if (year == null) year = Regex("\\b(1[0-9]{3}|20[0-9]{2}|21[0-9]{2})\\b")
-                            .find(parser.nextText())?.value
-                    }
-                }
-                parser.next()
-            }
-            if (author == null) author = listOfNotNull(firstName, lastName).joinToString(" ").ifBlank { null }
-            Triple(title, author, year)
-        }
-    }.getOrDefault(Triple(null, null, null))
-
     @Synchronized private fun rememberDownloadedBook(book: CatalogBook) {
         val existing = loadDownloadedBookMetadata()
         val previous = existing.firstOrNull { it.id == book.id }
@@ -545,7 +485,6 @@ open class CatalogRepository(
                     runCatching {
                         ZipFile(file).use { archive -> archive.getEntry("META-INF/container.xml") != null }
                     }.getOrDefault(false)
-            BookFormat.Fb2 -> isStructurallyValidFb2(file)
             BookFormat.Cbr -> signature[0] == 0x52.toByte() && signature[1] == 0x61.toByte() && signature[2] == 0x72.toByte() && signature[3] == 0x21.toByte()
             BookFormat.Cbz -> signature[0] == 0x50.toByte() && signature[1] == 0x4b.toByte()
         }
@@ -584,129 +523,6 @@ open class CatalogRepository(
         const val BLOSSOM_HOST = "blossom.bfr.ee"
         const val BOOKS_API_BASE = "https://books-api.guaka.org/api"
         private const val DOWNLOADED_BOOKS_CACHE_FILE = "downloaded-books.json"
-        const val MAX_FB2_BYTES = 50L * 1024L * 1024L
-
-        /** Public for contract tests and shared by discovery/download validation. */
-        internal fun isStructurallyValidFb2(file: File): Boolean {
-            if (!file.isFile || file.length() <= 0L || file.length() > MAX_FB2_BYTES) return false
-            return runCatching {
-                withFb2Input(file) { input ->
-                    val parser = SAXParserFactory.newInstance().apply {
-                        isNamespaceAware = true
-                        listOf(
-                            "http://apache.org/xml/features/disallow-doctype-decl" to true,
-                            "http://xml.org/sax/features/external-general-entities" to false,
-                            "http://xml.org/sax/features/external-parameter-entities" to false,
-                            "http://apache.org/xml/features/nonvalidating/load-external-dtd" to false,
-                        ).forEach { (feature, enabled) -> runCatching { setFeature(feature, enabled) } }
-                    }
-                    var rootSeen = false
-                    var rootClosed = false
-                    var rootDepth = 0
-                    var sections = 0
-                    var depth = 0
-                    val handler = object : DefaultHandler() {
-                        private fun nameOf(localName: String?, qName: String?): String =
-                            (localName.takeUnless { it.isNullOrBlank() } ?: qName.orEmpty()).substringAfterLast(':')
-
-                        override fun startElement(uri: String?, localName: String?, qName: String?, attributes: Attributes?) {
-                            depth++
-                            val name = nameOf(localName, qName)
-                            if (!rootSeen) {
-                                if (!name.equals("FictionBook", ignoreCase = true)) throw SAXException("Expected FictionBook root")
-                                rootSeen = true
-                                rootDepth = depth
-                            } else if (rootClosed) {
-                                throw SAXException("Unexpected XML after FictionBook root")
-                            } else if (name.equals("section", ignoreCase = true)) {
-                                sections++
-                            }
-                        }
-
-                        override fun endElement(uri: String?, localName: String?, qName: String?) {
-                            if (rootSeen && depth == rootDepth && nameOf(localName, qName).equals("FictionBook", ignoreCase = true)) {
-                                rootClosed = true
-                            }
-                            depth--
-                        }
-
-                        override fun resolveEntity(publicId: String?, systemId: String?): InputSource? {
-                            throw SAXException("External entities are not allowed")
-                        }
-                    }
-                    parser.newSAXParser().parse(XmlSafetyInputStream(BufferedInputStream(input)), handler)
-                    rootSeen && rootClosed && sections > 0
-                }
-            }.getOrDefault(false)
-        }
-
-        /** Runs a bounded parser over either native XML or one safe FB2 ZIP entry. */
-        /**
-         * Opens native FB2 XML or the sole validated entry in an FB2 ZIP.
-         *
-         * Readers use this after the cache gate has retained the original
-         * download, so an accepted `.fb2.zip` is never handed to an XML parser
-         * as archive bytes.
-         */
-        internal fun <T> withFb2Input(file: File, block: (java.io.InputStream) -> T): T {
-            val prefix = file.inputStream().use { input -> ByteArray(2).also { input.read(it) } }
-            if (prefix.size == 2 && prefix[0] == 'P'.code.toByte() && prefix[1] == 'K'.code.toByte()) {
-                ZipFile(file).use { archive ->
-                    val entries = archive.entries().toList()
-                    val files = entries.filterNot { it.isDirectory }
-                    if (entries.size != 1 || files.size != 1) throw IllegalArgumentException("FB2 ZIP must contain exactly one file")
-                    val entry = files.single()
-                    val name = entry.name.replace('\\', '/')
-                    val safe = !name.startsWith('/') && name.split('/').none { it == ".." || it.isBlank() }
-                        && name.endsWith(".fb2", ignoreCase = true)
-                    if (!safe || entry.size <= 0L || entry.size > MAX_FB2_BYTES) throw IllegalArgumentException("Unsafe FB2 ZIP entry")
-                    return block(archive.getInputStream(entry).limit(MAX_FB2_BYTES))
-                }
-            }
-            return block(file.inputStream().limit(MAX_FB2_BYTES))
-        }
-
-        /** Rejects DTD/entity declarations even on XML parsers lacking a DTD-disabling feature. */
-        private class XmlSafetyInputStream(input: java.io.InputStream) : java.io.FilterInputStream(input) {
-            private val prohibited = arrayOf("<!doctype".encodeToByteArray(), "<!entity".encodeToByteArray())
-            private val matched = IntArray(prohibited.size)
-
-            override fun read(): Int = super.read().also { if (it >= 0) inspect(it) }
-
-            override fun read(buffer: ByteArray, offset: Int, length: Int): Int {
-                val count = super.read(buffer, offset, length)
-                if (count > 0) for (index in offset until offset + count) inspect(buffer[index].toInt() and 0xff)
-                return count
-            }
-
-            private fun inspect(value: Int) {
-                val normalized = if (value in 'A'.code..'Z'.code) value + ('a'.code - 'A'.code) else value
-                prohibited.forEachIndexed { index, pattern ->
-                    var prefix = matched[index]
-                    if (prefix > 0 && pattern[prefix].toInt() != normalized) prefix = 0
-                    if (pattern[prefix].toInt() == normalized) prefix++
-                    if (prefix == pattern.size) throw IOException("DTD and entity declarations are not allowed")
-                    matched[index] = prefix
-                }
-            }
-        }
-
-        private fun java.io.InputStream.limit(maxBytes: Long): java.io.InputStream = object : java.io.FilterInputStream(this) {
-            private var remaining = maxBytes
-            override fun read(): Int {
-                if (remaining <= 0) return -1
-                val value = super.read()
-                if (value >= 0) remaining--
-                return value
-            }
-            override fun read(buffer: ByteArray, offset: Int, length: Int): Int {
-                if (remaining <= 0) return -1
-                val count = super.read(buffer, offset, minOf(length.toLong(), remaining).toInt())
-                if (count > 0) remaining -= count
-                return count
-            }
-        }
-
         private fun parseDownloadedBookMetadata(json: String): List<CatalogBook> {
             val root = JSONObject(json)
             val items: JSONArray = when {
@@ -778,15 +594,11 @@ open class CatalogRepository(
                     val format = when (rawFormat?.trim()?.lowercase()) {
                         "epub" -> BookFormat.Epub
                         "pdf" -> BookFormat.Pdf
-                        "fb2", "fb2.zip" -> BookFormat.Fb2
                         null -> when {
                             explicitUrl.orEmpty().substringBefore('?').substringBefore('#')
                                 .endsWith(".epub", ignoreCase = true) -> BookFormat.Epub
                             explicitUrl.orEmpty().substringBefore('?').substringBefore('#')
                                 .endsWith(".pdf", ignoreCase = true) -> BookFormat.Pdf
-                            explicitUrl.orEmpty().substringBefore('?').substringBefore('#')
-                                .endsWith(".fb2", ignoreCase = true) || explicitUrl.orEmpty()
-                                .substringBefore('?').substringBefore('#').endsWith(".fb2.zip", ignoreCase = true) -> BookFormat.Fb2
                             else -> null
                         }
                         else -> null

@@ -1,5 +1,5 @@
 const RIGHTS_STATUSES = new Set<string>(['public_domain', 'open_license', 'copyrighted', 'unknown']);
-const ACQUISITION_FORMATS = new Set<string>(['epub', 'pdf', 'fb2']);
+const ACQUISITION_FORMATS = new Set<string>(['epub', 'pdf']);
 const AVAILABILITY = new Set<string>(['open', 'borrow', 'buy', 'preview', 'restricted']);
 type JsonRecord = Record<string, unknown>;
 
@@ -54,7 +54,7 @@ export function validateProviderRecords(value: unknown): string[] {
         return;
       }
       const acquisition = acquisitionValue as JsonRecord;
-      if (typeof acquisition.format !== 'string' || !ACQUISITION_FORMATS.has(acquisition.format)) errors.push(error(`${acquisitionPath}.format`, 'must be epub, pdf, or fb2'));
+      if (typeof acquisition.format !== 'string' || !ACQUISITION_FORMATS.has(acquisition.format)) errors.push(error(`${acquisitionPath}.format`, 'must be epub or pdf'));
       if (!isHttpUrl(acquisition.url)) errors.push(error(`${acquisitionPath}.url`, 'must be an absolute HTTP(S) URL'));
       if (typeof acquisition.availability !== 'string' || !AVAILABILITY.has(acquisition.availability)) errors.push(error(`${acquisitionPath}.availability`, 'must be a known availability'));
     });

@@ -1,7 +1,7 @@
 import { normalizeRightsV2 } from '../rights/rights.mjs';
 import { sourceDescriptor } from './source-registry.mjs';
 
-const FORMATS = new Set<string>(['epub', 'pdf', 'fb2', 'cbz', 'cbr']);
+const FORMATS = new Set<string>(['epub', 'pdf', 'cbz', 'cbr']);
 const AVAILABILITY = new Set<string>(['open', 'borrow', 'buy', 'preview', 'restricted']);
 type JsonRecord = Record<string, unknown>;
 type Acquisition = {

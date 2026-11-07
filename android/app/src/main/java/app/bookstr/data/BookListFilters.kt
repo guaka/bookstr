@@ -28,7 +28,7 @@ data class BookListFilters(val language: String = "", val format: String = "") {
             return languageAliases[raw] ?: raw.substringBefore('-').substringBefore('_')
         }
         fun normalizedFormat(value: String?): String = value.orEmpty().trim()
-            .lowercase(Locale.ROOT).removePrefix(".").let { if (it == "fb2.zip") "fb2" else it }
+            .lowercase(Locale.ROOT).removePrefix(".")
         fun languages(values: List<String?>) = values.map(::normalizedLanguage).filter(String::isNotEmpty).distinct().sorted()
         fun formats(values: List<String?>) = values.map(::normalizedFormat).filter(String::isNotEmpty).distinct().sorted()
     }

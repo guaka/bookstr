@@ -13,8 +13,6 @@ const {
   detectImage,
   epubCover,
   epubMetadata,
-  fb2Cover,
-  fb2Metadata,
   localBookCover,
   localBookFormat,
   localBookMetadata,
@@ -47,6 +45,31 @@ test('extracts language and identity metadata from an EPUB package', async () =>
   });
 });
 
+test('resolves EPUB 3 cover-image paths with encoded spaces and fragments', async () => {
+  const zip = new JSZip();
+  zip.file('OPS/book.opf', '<package><manifest><item id="art" href="images/title%20page.png#cover" media-type="image/png" properties="cover-image"/></manifest></package>');
+  zip.file('OPS/images/title page.png', PNG);
+  const cover = await epubCover(await zip.generateAsync({ type: 'nodebuffer' }));
+  assert.ok(cover);
+  assert.equal(cover.mime, 'image/png');
+  assert.deepEqual(cover.bytes, PNG);
+});
+
+test('replaces an invalid cached cover with the EPUB package image', async t => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'bookstr-invalid-cover-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const bookId = 'c'.repeat(32);
+  const bookPath = path.join(root, 'book.epub');
+  const cacheDir = path.join(root, 'covers');
+  fs.mkdirSync(cacheDir);
+  fs.writeFileSync(path.join(cacheDir, `${bookId}.png`), 'invalid cached image');
+  fs.writeFileSync(bookPath, await coveredEpub());
+  const cover = await localBookCover({ bookId, bookPath, cacheDir });
+  assert.ok(cover);
+  assert.equal(cover.cached, false);
+  assert.deepEqual(fs.readFileSync(path.join(cacheDir, `${bookId}.png`)), PNG);
+});
+
 test('detects EPUB and comic archive bytes independently of a misleading filename extension', async () => {
   assert.equal(await localBookFormat(await coveredEpub(), '.cbz'), 'epub');
   const comic = new JSZip();
@@ -55,7 +78,7 @@ test('detects EPUB and comic archive bytes independently of a misleading filenam
   assert.equal(await localBookFormat(Buffer.concat([Buffer.from('Rar!'), Buffer.alloc(32)]), '.epub'), 'cbr');
 });
 
-test('detects every supported local image signature and an FB2 document without relying on its filename', async () => {
+test('detects local image signatures and rejects unrecognized document bytes', async () => {
   const gif = Buffer.alloc(32);
   gif.write('GIF89a', 0, 'ascii');
   const webp = Buffer.alloc(32);
@@ -63,7 +86,7 @@ test('detects every supported local image signature and an FB2 document without 
   webp.write('WEBP', 8, 'ascii');
   assert.equal(detectImage(gif)?.mime, 'image/gif');
   assert.equal(detectImage(webp)?.mime, 'image/webp');
-  assert.equal(await localBookFormat(Buffer.from('<FictionBook><description/></FictionBook>'), '.bin'), 'fb2');
+  assert.equal(await localBookFormat(Buffer.from('<document/>'), '.bin'), '');
 });
 
 test('returns no EPUB cover when the package has no usable image', async () => {
@@ -81,37 +104,23 @@ test('finds an EPUB package document when container.xml is absent', async () => 
   });
 });
 
-test('extracts an FB2 coverpage binary', () => {
-  const xml = Buffer.from(`<FictionBook xmlns:l="http://www.w3.org/1999/xlink"><description><title-info><coverpage><image l:href="#front-art"/></coverpage></title-info></description><binary id="front-art" content-type="image/png">${PNG.toString('base64')}</binary></FictionBook>`);
-  const cover = fb2Cover(xml);
-  assert.ok(cover);
-  assert.equal(cover.mime, 'image/png');
-  assert.deepEqual(cover.bytes, PNG);
-});
-
-test('extracts FB2 language metadata', () => {
-  const xml = Buffer.from('<FictionBook><description><title-info><book-title>Fixture FB2</book-title><author><first-name>Ada</first-name><last-name>Lovelace</last-name></author><lang>en</lang></title-info><publish-info><isbn>9780000000000</isbn></publish-info></description></FictionBook>');
-  assert.deepEqual(fb2Metadata(xml), {
-    title: 'Fixture FB2', authors: 'Ada Lovelace', language: 'en', isbn: '9780000000000',
+test('EPUB metadata decodes valid entities and discards invalid numeric entities', async () => {
+  const zip = new JSZip();
+  zip.file('META-INF/container.xml', '<container><rootfiles><rootfile full-path="book.opf"/></rootfiles></container>');
+  zip.file('book.opf', '<package><metadata><dc:title xmlns:dc="dc">A &#65; &#x42; &#0; &#x110000;</dc:title><dc:creator xmlns:dc="dc">Ada &amp; Lovelace</dc:creator></metadata><manifest/></package>');
+  assert.deepEqual(await epubMetadata(await zip.generateAsync({ type: 'nodebuffer' })), {
+    title: 'A A B', authors: 'Ada & Lovelace', language: '', isbn: '',
   });
 });
 
-test('falls back to a cover-named FB2 binary when coverpage metadata is absent', () => {
-  const xml = Buffer.from(`<FictionBook><binary id="front-cover" content-type="image/png">${PNG.toString('base64')}</binary></FictionBook>`);
-  assert.equal(fb2Cover(xml)?.mime, 'image/png');
-});
-
-test('local FB2 metadata decodes valid entities and discards invalid numeric entities', async t => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'bookstr-fb2-metadata-'));
+test('local metadata recognizes PDF bytes and ignores unsupported document types', async t => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'bookstr-local-metadata-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-  const bookPath = path.join(root, 'book.fb2');
-  fs.writeFileSync(bookPath, Buffer.from('<FictionBook><description><title-info><book-title>A &#65; &#x42; &#0; &#x110000;</book-title><author><first-name>Ada</first-name><middle-name>&amp;</middle-name><last-name>Lovelace</last-name></author><lang>en</lang></title-info></description></FictionBook>'));
-  assert.deepEqual(await localBookMetadata({ bookId: 'b'.repeat(32), bookPath }), {
-    extension: 'fb2',
-    title: 'A A B',
-    authors: 'Ada & Lovelace',
-    language: 'en',
-  });
+  const bookPath = path.join(root, 'book.bin');
+  fs.writeFileSync(bookPath, '%PDF-1.4\n');
+  assert.deepEqual(await localBookMetadata({ bookId: 'b'.repeat(32), bookPath }), { extension: 'pdf' });
+  fs.writeFileSync(bookPath, '<document/>');
+  assert.equal(await localBookMetadata({ bookId: 'b'.repeat(32), bookPath }), null);
 });
 
 test('caches a local cover by a filesystem-safe book digest', async t => {

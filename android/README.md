@@ -4,7 +4,7 @@ The same APK supports phones, tablets, and Android TV / Google TV, including
 Chromecast with Google TV. TV installations have a home-screen banner and do
 not require a touchscreen. On TV, use the remote D-pad and Select to navigate
 the library, filters, and app destinations. Readers keep Previous page, Next
-page, and Library controls visible; EPUB and FB2 also provide Speech. Back
+page, and Library controls visible; EPUB also provides Speech. Back
 returns from an app destination to Library before leaving the app. TV text is
 scaled for viewing at a distance. Opening an EPUB on TV starts narration after
 the reader is ready, using the selected voice and saved position. Pause/resume
@@ -216,7 +216,7 @@ The first install time should remain unchanged. Keep UI tests on a disposable
 emulator. Search automatically requests the next page near the list end; newly
 queued downloads appear first, and completed rows open when tapped. In a reader,
 tap the bottom edge to reveal the four app destinations.
-Tap an author's name in the EPUB, PDF, or FB2 header to search for that author.
+Tap an author's name in the EPUB or PDF header to search for that author.
 
 While TTS is active, Android's media controls show the current book title and
 author on the lock screen. The current spoken paragraph is secondary metadata.

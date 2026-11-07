@@ -2058,7 +2058,7 @@ export type IndexAppPageBindings = {
 
       function isDisabledBookFormat(value: unknown): boolean {
         const format = String(value || '').trim().toLowerCase().replace(/^\./, '');
-        return format === 'fb2' || format.includes('fictionbook') || format.includes('application/fb2');
+        return Boolean(format) && !['epub', 'pdf', 'cbz', 'cbr', 'application/epub+zip', 'application/pdf', 'application/vnd.comicbook+zip', 'application/vnd.comicbook-rar'].includes(format);
       }
 
       function normalizeSearchBooks(payload: unknown, source: string): PageBook[] {
@@ -4482,7 +4482,7 @@ export type IndexAppPageBindings = {
 		if (rights.rights_source) {
           const source = document.createElement('span');
           source.className = 'read-metadata-source';
-          const sourceLabels: Record<string, string> = { epub_opf: 'EPUB metadata', epub_content: 'EPUB content', fb2_description: 'FB2 metadata', metadata: 'Embedded metadata' };
+          const sourceLabels: Record<string, string> = { epub_opf: 'EPUB metadata', epub_content: 'EPUB content', metadata: 'Embedded metadata' };
           source.textContent = ` · ${sourceLabels[rights.rights_source] || String(rights.rights_source).replaceAll('_', ' ')}`;
           rightsRow.append(source);
         }
@@ -5474,10 +5474,7 @@ export type IndexAppPageBindings = {
         if (!(blob instanceof Blob)) return '';
         const type = String(blob.type || '').toLowerCase();
         if (type.includes('pdf')) return 'pdf';
-        if (type.includes('fictionbook') || type.includes('fb2')) return 'fb2';
         if (type.includes('zip') || type.includes('epub')) {
-          const inspected = await window.BookstrFB2?.inspect(blob);
-          if (inspected?.format === 'fb2') return 'fb2';
           try {
             const zip = await JSZip.loadAsync(blob, { checkCRC32: true, createFolders: false });
             const names = Object.keys(zip.files).map(name => name.replaceAll('\\', '/'));
@@ -5490,8 +5487,6 @@ export type IndexAppPageBindings = {
           const bytes = new Uint8Array(await blob.slice(0, 5).arrayBuffer());
           if (String.fromCharCode(...bytes) === '%PDF-') return 'pdf';
           if (bytes[0] === 0x50 && bytes[1] === 0x4b) {
-            const inspected = await window.BookstrFB2?.inspect(blob);
-            if (inspected?.format === 'fb2') return 'fb2';
             try {
               const zip = await JSZip.loadAsync(blob, { checkCRC32: true, createFolders: false });
               const names = Object.keys(zip.files).map(name => name.replaceAll('\\', '/'));
@@ -5501,15 +5496,13 @@ export type IndexAppPageBindings = {
             return 'epub';
           }
           if (bytes[0] === 0x52 && bytes[1] === 0x61 && bytes[2] === 0x72 && bytes[3] === 0x21) return 'cbr';
-          const prefix = new TextDecoder('utf-8', { fatal: false }).decode(bytes);
-          if (prefix.trimStart().startsWith('<')) return 'fb2';
         } catch {}
         return '';
       }
 
       function rememberDetectedBookFormat(book: PageBook, format: string): void {
         const detected = String(format || '').replace(/^\./, '').toLowerCase();
-        if (!['epub', 'pdf', 'fb2', 'cbz', 'cbr'].includes(detected)) return;
+        if (!['epub', 'pdf', 'cbz', 'cbr'].includes(detected)) return;
         const update = (item: PageBook): PageBook => BookMetadata.sameLibraryBook(item, book)
           ? {
               ...item,
@@ -5793,8 +5786,8 @@ export type IndexAppPageBindings = {
       let readerFrameNavigationId = 0;
 
       async function readerFrameLoader(kind: string, openGeneration: number, bookId: string): Promise<ReaderLoader | null> {
-        const loaderName = kind === 'pdf' ? 'loadPdf' : kind === 'fb2' ? 'loadFB2' : kind === 'comic' ? 'loadComic' : 'loadBook';
-        const readerPath = kind === 'pdf' ? 'pdf-reader.html' : kind === 'fb2' ? 'fb2-reader.html' : kind === 'comic' ? 'comic-reader.html' : 'reader.html';
+        const loaderName = kind === 'pdf' ? 'loadPdf' : kind === 'comic' ? 'loadComic' : 'loadBook';
+        const readerPath = kind === 'pdf' ? 'pdf-reader.html' : kind === 'comic' ? 'comic-reader.html' : 'reader.html';
         const requestedBookId = String(bookId || '').trim().toLowerCase();
         const existingLoader = (readerFrame.contentWindow as (Window & Record<string, unknown>) | null)?.[loaderName];
         if (!readerFrameNavigation && readerFrameKind === kind && readerFrameBookId === requestedBookId && typeof existingLoader === 'function') {
@@ -5869,17 +5862,6 @@ export type IndexAppPageBindings = {
           book.md5 || BookMetadata.bookIdentity(book),
           { ...book, readUrl: readPath || book.readUrl || book.url || '' },
         );
-        applyOpenReaderTypography();
-        if (revealReadableBook(book, openGeneration)) status.textContent = `Opened ${book.title || 'book'}.`;
-      }
-
-      async function displayFB2(blob: Blob, book: PageBook, _readPath: string, openGeneration: number): Promise<void> {
-        blob = await window.BookstrFB2?.normalizeBlob(blob) || blob;
-        const base64 = await blobToBase64(blob);
-        if (openGeneration !== readerOpenGeneration) return;
-        const readerLoad = await readerFrameLoader('fb2', openGeneration, book.md5 || BookMetadata.bookIdentity(book));
-        if (!readerLoad) return;
-        await readerLoad(base64, book.cfi || '', state.settings.theme === 'dark' ? 'night' : state.settings.theme, book.md5 || BookMetadata.bookIdentity(book));
         applyOpenReaderTypography();
         if (revealReadableBook(book, openGeneration)) status.textContent = `Opened ${book.title || 'book'}.`;
       }
@@ -5981,8 +5963,7 @@ export type IndexAppPageBindings = {
           status.textContent = `${(book as PageBook | null | undefined)?.title || 'This book'} has metadata only; no readable copy is available.`;
           return;
         }
-        if (isDisabledBookFormat(book.extension || book.format)
-          || /\.fb2(?:\.zip)?(?:[?#]|$)/i.test(String(book.readUrl || book.url || ''))) {
+        if (isDisabledBookFormat(book.extension || book.format)) {
           status.textContent = `Could not open ${book.title || 'book'}: The downloaded book format is not supported.`;
           return;
         }
@@ -6019,10 +6000,8 @@ export type IndexAppPageBindings = {
           }
           if (torrentBlob) {
             const torrentFormat = await bookFormatForBlob(torrentBlob) || String(book.extension || '').toLowerCase();
-            if (torrentFormat === 'fb2') throw new Error('The downloaded book format is not supported.');
             rememberDetectedBookFormat(book, torrentFormat);
             if (torrentFormat === 'pdf') await displayPdf(torrentBlob, book, readPath, openGeneration);
-            else if (torrentFormat === 'fb2') await displayFB2(torrentBlob, book, readPath, openGeneration);
             else if (torrentFormat === 'cbz' || torrentFormat === 'cbr') await displayComic(torrentBlob, book, readPath, openGeneration, torrentFormat);
             else await displayEpub(torrentBlob, book, readPath, openGeneration);
           } else {
@@ -6040,18 +6019,6 @@ export type IndexAppPageBindings = {
               void cacheBookBlob(book, readPath, blob).catch(() => {});
             }
             await displayPdf(blob, book, readPath, openGeneration);
-            } else if (String(book.extension || '').toLowerCase() === 'fb2' || /\.fb2(?:\.zip)?(?:\?|$)/i.test(readPath)) {
-            let blob = await cachedBookBlob(book, readPath).catch(() => null);
-            if (!blob) {
-              if (!readPath) throw new Error('No cached FB2 copy was found.');
-              const response = await fetch(readPath);
-              if (!response.ok) throw new Error(`FB2 download failed (${response.status}).`);
-              blob = await response.blob();
-              await enforceBlobSha256(book, blob);
-              await window.BookstrFB2!.normalizeBlob(blob);
-              void cacheBookBlob(book, readPath, blob).catch(() => {});
-            }
-            await displayFB2(blob, book, readPath, openGeneration);
             } else if (['cbz', 'cbr'].includes(String(book.extension || '').toLowerCase()) || /\.(?:cbz|cbr)(?:\?|$)/i.test(readPath)) {
             let blob = await cachedBookBlob(book, readPath).catch(() => null);
             if (!blob) {
@@ -6080,7 +6047,6 @@ export type IndexAppPageBindings = {
               void cacheBookBlob(book, readPath, blob).catch(() => {});
             }
             const format = await bookFormatForBlob(blob);
-            if (format === 'fb2') throw new Error('The downloaded book format is not supported.');
             if (format === 'pdf') await displayPdf(blob, book, readPath, openGeneration);
             else await displayEpub(blob, book, readPath, openGeneration);
             } else if (/\/api\/files\/[a-f0-9]{32}(?:\?|$)/i.test(readPath)) {
@@ -6091,10 +6057,8 @@ export type IndexAppPageBindings = {
             await enforceBlobSha256(book, blob);
             if (openGeneration !== readerOpenGeneration) return;
             const format = await bookFormatForBlob(blob);
-            if (format === 'fb2') throw new Error('The downloaded book format is not supported.');
             if (format === 'pdf') await displayPdf(blob, book, readPath, openGeneration);
             else if (format === 'epub') await displayEpub(blob, book, readPath, openGeneration);
-            else if (format === 'fb2') throw new Error('The downloaded book format is not supported.');
             else if (format === 'cbz' || format === 'cbr') await displayComic(blob, book, readPath, openGeneration, format);
             else throw new Error('The downloaded book format is not supported.');
             void cacheBookBlob(book, readPath, blob).catch(() => {});

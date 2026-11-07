@@ -441,13 +441,6 @@ test('selected torrent download rejects an abort that arrives while addPublic is
   assert.equal(torrent.listenerCount('metadata'), 0);
 });
 
-test('selected torrent download rejects FB2 before opening a torrent', async () => {
-  let opened = false;
-  const bridge = createBridge({ clientFactory: async () => { opened = true; return { torrents: [] }; } });
-  await assert.rejects(bridge.downloadSelected('metadata', { fileName: 'book.fb2' }), /unsupported acquisition format/);
-  assert.equal(opened, false);
-});
-
 test('selected torrent metadata wait catches abort during listener registration', async () => {
   const bridge = createBridge({ clientFactory: async () => ({ torrents: [] }) });
   const controller = new AbortController();

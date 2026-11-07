@@ -29,7 +29,6 @@ function electronArgs(label: string): { args: string[]; userData: string } {
 async function localFormatBytes(book: FixtureBook): Promise<Buffer> {
   const extension = String(book.extension || 'epub').toLowerCase();
   if (extension === 'epub') return minimalEpub(book.title || 'Local fixture', book.body || book.title || 'Local fixture');
-  if (extension === 'fb2') return minimalFB2(book.title || 'Local fixture');
   if (extension === 'cbz') return minimalCBZ();
   if (extension === 'cbr') return Buffer.concat([Buffer.from('Rar!'), Buffer.alloc(32)]);
   if (extension === 'pdf') return Buffer.from('%PDF-1.4\n% local fixture\n');
@@ -83,10 +82,6 @@ async function minimalEpub(title: string, body = title, { cover = false, inlineI
   return zip.generateAsync({ type: 'nodebuffer', mimeType: 'application/epub+zip' });
 }
 
-function minimalFB2(title: string): Buffer {
-  return Buffer.from(`<?xml version="1.0" encoding="utf-8"?>
-    <FictionBook xmlns="http://www.gribuser.ru/xml/fictionbook/2.0"><description><title-info><book-title>${title}</book-title><author><first-name>Test</first-name><last-name>Author</last-name></author></title-info></description><body><section><title><p>${title}</p></title><p>Distinct FB2 contents.</p></section></body></FictionBook>`);
-}
 
 async function minimalCBZ(): Promise<Buffer> {
   const zip = new JSZip();
@@ -624,12 +619,10 @@ test('switching MD5 books never treats the previous EPUB as the next book', asyn
   }
 });
 
-test('Library keeps imported FB2 metadata unavailable and still opens CBZ books', async () => {
+test('Library opens local CBZ books', async () => {
   const launch = electronArgs('formats-user-data');
-  const fb2 = { md5: '3'.repeat(32), title: 'FB2 Fixture', authors: 'Fixture Author', extension: 'fb2', readUrl: 'https://files.test/book.fb2' };
   const cbz = { md5: '4'.repeat(32), title: 'CBZ Fixture', authors: 'Fixture Author', extension: 'cbz', readUrl: 'https://files.test/book.cbz' };
-  await seedDesktopStore(launch.userData, [fb2, cbz], [
-    { bookId: fb2.md5, status: 'ready', source: 'torrent' },
+  await seedDesktopStore(launch.userData, [cbz], [
     { bookId: cbz.md5, status: 'ready', source: 'torrent' },
   ]);
   const app = await electron.launch({ args: launch.args });
@@ -638,11 +631,9 @@ test('Library keeps imported FB2 metadata unavailable and still opens CBZ books'
     await app.context().route('https://lib.b.bfr.ee/api/books/**', route => route.fulfill({ status: 404, body: '{}' }));
     await app.context().route('https://lib.b.bfr.ee/api/nostr', route => route.fulfill({ status: 404, body: '{}' }));
     await app.context().route(cbz.readUrl, async route => route.fulfill({ status: 200, contentType: 'application/vnd.comicbook+zip', body: await minimalCBZ() }));
-    await seedLibrary(page, [fb2, cbz]);
+    await seedLibrary(page, [cbz]);
     await page.reload();
 
-    await expect(page.getByRole('link', { name: fb2.title })).toHaveCount(0);
-    await expect(page.locator('.result-title.unavailable', { hasText: fb2.title })).toBeVisible();
     await page.getByRole('link', { name: cbz.title }).click();
     const reader = page.frameLocator('#reader-frame');
     await expect(reader.locator('#title')).toHaveText(cbz.title);

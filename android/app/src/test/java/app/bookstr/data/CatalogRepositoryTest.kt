@@ -4,58 +4,18 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
-import java.io.File
-import java.util.zip.ZipEntry
-import java.util.zip.ZipOutputStream
 
 class CatalogRepositoryTest {
 
     @Test
-    fun validatesNativeFb2AndRejectsDtdOrMissingSections() {
-        val valid = temporaryFile("""
-            <?xml version="1.0" encoding="UTF-8"?>
-            <FictionBook xmlns="http://www.gribuser.ru/xml/fictionbook/2.0">
-              <description><title-info><book-title>Тест</book-title><author><first-name>Ada</first-name><last-name>Writer</last-name></author><date>2024-01-01</date></title-info></description>
-              <body><section><title><p>Глава</p></title><p>Текст</p></section></body>
-            </FictionBook>
-        """.trimIndent())
-        val noSections = temporaryFile("<FictionBook><body/></FictionBook>")
-        val dtd = temporaryFile("<!DOCTYPE FictionBook [<!ENTITY x SYSTEM \"https://example.test/x\">]><FictionBook><body><section><p>&x;</p></section></body></FictionBook>")
-        try {
-            assertTrue(CatalogRepository.isStructurallyValidFb2(valid))
-            assertFalse(CatalogRepository.isStructurallyValidFb2(noSections))
-            assertFalse(CatalogRepository.isStructurallyValidFb2(dtd))
-        } finally {
-            valid.delete(); noSections.delete(); dtd.delete()
+    fun externalFavoritesOnlyOfferRegisteredReaderFormats() {
+        val favorites = listOf("EPUB", "pdf", "cbr", "cbz", "mobi").map { format ->
+            ExternalFavorite(format, "Book", "Author", url = null, isbn = null, libvaultMd5 = null, format = format)
         }
+        assertEquals(favorites.take(4), availableExternalFavorites(favorites))
+        assertEquals(listOf("epub", "pdf", "cbr", "cbz"), BookFormat.entries.map { it.extension })
     }
 
-    @Test
-    fun validatesExactlyOneSafeFb2ZipAndRejectsMultipleOrTraversalEntries() {
-        fun zip(vararg names: String): File {
-            val file = File.createTempFile("bookstr-fb2-", ".fb2.zip")
-            ZipOutputStream(file.outputStream()).use { output ->
-                names.forEach { name ->
-                    output.putNextEntry(ZipEntry(name))
-                    output.write("<FictionBook><body><section><p>Text</p></section></body></FictionBook>".toByteArray())
-                    output.closeEntry()
-                }
-            }
-            return file
-        }
-        val valid = zip("book.fb2")
-        val multiple = zip("one.fb2", "two.fb2")
-        val traversal = zip("../book.fb2")
-        try {
-            assertTrue(CatalogRepository.isStructurallyValidFb2(valid))
-            assertFalse(CatalogRepository.isStructurallyValidFb2(multiple))
-            assertFalse(CatalogRepository.isStructurallyValidFb2(traversal))
-        } finally {
-            valid.delete(); multiple.delete(); traversal.delete()
-        }
-    }
-
-    private fun temporaryFile(contents: String): File = File.createTempFile("bookstr-fb2-", ".fb2").also { it.writeText(contents) }
     @Test
     fun parsesAndPrioritizesReadableWebSearchResults() {
         val results = CatalogRepository.parseSearchResponse(
@@ -150,50 +110,6 @@ class CatalogRepositoryTest {
         assertEquals(BookFormat.Epub, BookFormat.from(null, "https://example.org/file.epub"))
         assertEquals(BookFormat.Cbr, BookFormat.from("CBR"))
         assertEquals(BookFormat.Cbz, BookFormat.from(null, "https://example.org/file.cbz?download=1"))
-    }
-
-    @Test
-    fun keepsFb2FormatParsingForSavedDataButMarksItUnavailableAndUnreadable() {
-        val fb2 = CatalogRepository.parseSearchResponse(
-            """{"results":[{"id":"old-fb2","source":"archive","title":"Saved FB2","format":"fb2","url":"https://example.org/book.fb2"}]}""",
-        ).single()
-
-        assertEquals(BookFormat.Fb2, fb2.format)
-        assertEquals(BookFormat.Fb2, BookFormat.from("fb2"))
-        assertFalse(BookFormat.Fb2.isAvailable)
-        try {
-            BookFormat.Fb2.requireAvailable()
-            throw AssertionError("FB2 must not pass the availability gate")
-        } catch (expected: IllegalArgumentException) {
-            assertEquals("Unsupported publication format", expected.message)
-        }
-        BookFormat.Epub.requireAvailable()
-        assertFalse(fb2.isReadable)
-        assertTrue(BookFormat.Epub.isAvailable)
-        assertTrue(BookFormat.Pdf.isAvailable)
-        assertTrue(BookFormat.Cbr.isAvailable)
-        assertTrue(BookFormat.Cbz.isAvailable)
-    }
-
-    @Test
-    fun filtersFb2FromAvailableLibraryWithoutMutatingSavedBookMetadata() {
-        val epub = CatalogBook("a".repeat(32), "Available", "Author", "", null)
-        val fb2 = CatalogBook("b".repeat(32), "Preserved", "Author", "", null, format = BookFormat.Fb2)
-        val savedMetadata = listOf(epub, fb2)
-
-        assertEquals(listOf(epub), availableCatalogBooks(savedMetadata))
-        assertEquals(BookFormat.Fb2, savedMetadata.last().format)
-        assertEquals("b".repeat(32), savedMetadata.last().id)
-    }
-
-    @Test
-    fun hidesFb2ExternalFavoritesWithoutChangingTheirStoredFormat() {
-        val epub = ExternalFavorite("epub", "Current", "Author", url = null, isbn = null, libvaultMd5 = null, format = "epub")
-        val fb2 = ExternalFavorite("fb2", "Legacy", "Author", url = null, isbn = null, libvaultMd5 = null, format = "fb2")
-        val saved = listOf(epub, fb2)
-
-        assertEquals(listOf(epub), availableExternalFavorites(saved))
-        assertEquals("fb2", saved.last().format)
     }
 
     @Test

@@ -2218,7 +2218,7 @@
             </select>
             </label>
             <label class="setting-option settings-control-row desktop-reader-settings">
-              <span class="setting-copy"><strong>Typeface</strong><small>Choose the shape of EPUB and FB2 text.</small></span>
+              <span class="setting-copy"><strong>Typeface</strong><small>Choose the shape of EPUB text.</small></span>
               <select id="reader-font">
                 <option value="arial">Arial</option>
                 <option value="georgia">Georgia</option>
@@ -2239,7 +2239,7 @@
               <output id="reader-font-size-value" for="reader-font-size">100%</output>
             </label>
             <label class="setting-option settings-range desktop-reader-settings">
-              <span class="setting-copy"><strong>Page padding</strong><small>Set the side margins for EPUB and FB2 books.</small></span>
+              <span class="setting-copy"><strong>Page padding</strong><small>Set the side margins for EPUB books.</small></span>
               <input id="reader-padding" type="range" min="8" max="64" step="4" value="24" />
               <output id="reader-padding-value" for="reader-padding">24 px</output>
             </label>
@@ -2373,7 +2373,6 @@
     <script src="passage-results.js"></script>
     <script src="nostr-social.js"></script>
     <script src="jszip.min.js"></script>
-    <script src="fb2-validation.js"></script>
     <script src="desktop-progress.js"></script>
     <script src="desktop-kindle.js"></script>
     <script src="generated/nostr-constants-v1.js"></script>
@@ -4229,7 +4228,7 @@ function authorMatchKey(value) {
 }
 function isDisabledBookFormat(value) {
     const format = String(value || '').trim().toLowerCase().replace(/^\./, '');
-    return format === 'fb2' || format.includes('fictionbook') || format.includes('application/fb2');
+    return Boolean(format) && !['epub', 'pdf', 'cbz', 'cbr', 'application/epub+zip', 'application/pdf', 'application/vnd.comicbook+zip', 'application/vnd.comicbook-rar'].includes(format);
 }
 function normalizeSearchBooks(payload, source) {
     const value = payload;
@@ -6708,7 +6707,7 @@ function showReadMetadataFallback(book) {
     if (rights.rights_source) {
         const source = document.createElement('span');
         source.className = 'read-metadata-source';
-        const sourceLabels = { epub_opf: 'EPUB metadata', epub_content: 'EPUB content', fb2_description: 'FB2 metadata', metadata: 'Embedded metadata' };
+        const sourceLabels = { epub_opf: 'EPUB metadata', epub_content: 'EPUB content', metadata: 'Embedded metadata' };
         source.textContent = ` · ${sourceLabels[rights.rights_source] || String(rights.rights_source).replaceAll('_', ' ')}`;
         rightsRow.append(source);
     }
@@ -7745,12 +7744,7 @@ async function bookFormatForBlob(blob) {
     const type = String(blob.type || '').toLowerCase();
     if (type.includes('pdf'))
         return 'pdf';
-    if (type.includes('fictionbook') || type.includes('fb2'))
-        return 'fb2';
     if (type.includes('zip') || type.includes('epub')) {
-        const inspected = await window.BookstrFB2?.inspect(blob);
-        if (inspected?.format === 'fb2')
-            return 'fb2';
         try {
             const zip = await JSZip.loadAsync(blob, { checkCRC32: true, createFolders: false });
             const names = Object.keys(zip.files).map(name => name.replaceAll('\\', '/'));
@@ -7767,9 +7761,6 @@ async function bookFormatForBlob(blob) {
         if (String.fromCharCode(...bytes) === '%PDF-')
             return 'pdf';
         if (bytes[0] === 0x50 && bytes[1] === 0x4b) {
-            const inspected = await window.BookstrFB2?.inspect(blob);
-            if (inspected?.format === 'fb2')
-                return 'fb2';
             try {
                 const zip = await JSZip.loadAsync(blob, { checkCRC32: true, createFolders: false });
                 const names = Object.keys(zip.files).map(name => name.replaceAll('\\', '/'));
@@ -7782,16 +7773,13 @@ async function bookFormatForBlob(blob) {
         }
         if (bytes[0] === 0x52 && bytes[1] === 0x61 && bytes[2] === 0x72 && bytes[3] === 0x21)
             return 'cbr';
-        const prefix = new TextDecoder('utf-8', { fatal: false }).decode(bytes);
-        if (prefix.trimStart().startsWith('<'))
-            return 'fb2';
     }
     catch { }
     return '';
 }
 function rememberDetectedBookFormat(book, format) {
     const detected = String(format || '').replace(/^\./, '').toLowerCase();
-    if (!['epub', 'pdf', 'fb2', 'cbz', 'cbr'].includes(detected))
+    if (!['epub', 'pdf', 'cbz', 'cbr'].includes(detected))
         return;
     const update = (item) => BookMetadata.sameLibraryBook(item, book)
         ? {
@@ -8077,8 +8065,8 @@ let readerFrameBookId = '';
 let readerFrameNavigation = null;
 let readerFrameNavigationId = 0;
 async function readerFrameLoader(kind, openGeneration, bookId) {
-    const loaderName = kind === 'pdf' ? 'loadPdf' : kind === 'fb2' ? 'loadFB2' : kind === 'comic' ? 'loadComic' : 'loadBook';
-    const readerPath = kind === 'pdf' ? 'pdf-reader.html' : kind === 'fb2' ? 'fb2-reader.html' : kind === 'comic' ? 'comic-reader.html' : 'reader.html';
+    const loaderName = kind === 'pdf' ? 'loadPdf' : kind === 'comic' ? 'loadComic' : 'loadBook';
+    const readerPath = kind === 'pdf' ? 'pdf-reader.html' : kind === 'comic' ? 'comic-reader.html' : 'reader.html';
     const requestedBookId = String(bookId || '').trim().toLowerCase();
     const existingLoader = readerFrame.contentWindow?.[loaderName];
     if (!readerFrameNavigation && readerFrameKind === kind && readerFrameBookId === requestedBookId && typeof existingLoader === 'function') {
@@ -8151,19 +8139,6 @@ async function displayEpub(blob, book, readPath, openGeneration) {
     if (!readerLoad)
         return;
     await readerLoad(base64, book.cfi || '', theme, book.md5 || BookMetadata.bookIdentity(book), { ...book, readUrl: readPath || book.readUrl || book.url || '' });
-    applyOpenReaderTypography();
-    if (revealReadableBook(book, openGeneration))
-        status.textContent = `Opened ${book.title || 'book'}.`;
-}
-async function displayFB2(blob, book, _readPath, openGeneration) {
-    blob = await window.BookstrFB2?.normalizeBlob(blob) || blob;
-    const base64 = await blobToBase64(blob);
-    if (openGeneration !== readerOpenGeneration)
-        return;
-    const readerLoad = await readerFrameLoader('fb2', openGeneration, book.md5 || BookMetadata.bookIdentity(book));
-    if (!readerLoad)
-        return;
-    await readerLoad(base64, book.cfi || '', state.settings.theme === 'dark' ? 'night' : state.settings.theme, book.md5 || BookMetadata.bookIdentity(book));
     applyOpenReaderTypography();
     if (revealReadableBook(book, openGeneration))
         status.textContent = `Opened ${book.title || 'book'}.`;
@@ -8267,8 +8242,7 @@ async function openBook(book, { updateHash = true, addToReading = true } = {}) {
         status.textContent = `${book?.title || 'This book'} has metadata only; no readable copy is available.`;
         return;
     }
-    if (isDisabledBookFormat(book.extension || book.format)
-        || /\.fb2(?:\.zip)?(?:[?#]|$)/i.test(String(book.readUrl || book.url || ''))) {
+    if (isDisabledBookFormat(book.extension || book.format)) {
         status.textContent = `Could not open ${book.title || 'book'}: The downloaded book format is not supported.`;
         return;
     }
@@ -8305,13 +8279,9 @@ async function openBook(book, { updateHash = true, addToReading = true } = {}) {
         }
         if (torrentBlob) {
             const torrentFormat = await bookFormatForBlob(torrentBlob) || String(book.extension || '').toLowerCase();
-            if (torrentFormat === 'fb2')
-                throw new Error('The downloaded book format is not supported.');
             rememberDetectedBookFormat(book, torrentFormat);
             if (torrentFormat === 'pdf')
                 await displayPdf(torrentBlob, book, readPath, openGeneration);
-            else if (torrentFormat === 'fb2')
-                await displayFB2(torrentBlob, book, readPath, openGeneration);
             else if (torrentFormat === 'cbz' || torrentFormat === 'cbr')
                 await displayComic(torrentBlob, book, readPath, openGeneration, torrentFormat);
             else
@@ -8336,21 +8306,6 @@ async function openBook(book, { updateHash = true, addToReading = true } = {}) {
                     void cacheBookBlob(book, readPath, blob).catch(() => { });
                 }
                 await displayPdf(blob, book, readPath, openGeneration);
-            }
-            else if (String(book.extension || '').toLowerCase() === 'fb2' || /\.fb2(?:\.zip)?(?:\?|$)/i.test(readPath)) {
-                let blob = await cachedBookBlob(book, readPath).catch(() => null);
-                if (!blob) {
-                    if (!readPath)
-                        throw new Error('No cached FB2 copy was found.');
-                    const response = await fetch(readPath);
-                    if (!response.ok)
-                        throw new Error(`FB2 download failed (${response.status}).`);
-                    blob = await response.blob();
-                    await enforceBlobSha256(book, blob);
-                    await window.BookstrFB2.normalizeBlob(blob);
-                    void cacheBookBlob(book, readPath, blob).catch(() => { });
-                }
-                await displayFB2(blob, book, readPath, openGeneration);
             }
             else if (['cbz', 'cbr'].includes(String(book.extension || '').toLowerCase()) || /\.(?:cbz|cbr)(?:\?|$)/i.test(readPath)) {
                 let blob = await cachedBookBlob(book, readPath).catch(() => null);
@@ -8388,8 +8343,6 @@ async function openBook(book, { updateHash = true, addToReading = true } = {}) {
                     void cacheBookBlob(book, readPath, blob).catch(() => { });
                 }
                 const format = await bookFormatForBlob(blob);
-                if (format === 'fb2')
-                    throw new Error('The downloaded book format is not supported.');
                 if (format === 'pdf')
                     await displayPdf(blob, book, readPath, openGeneration);
                 else
@@ -8405,14 +8358,10 @@ async function openBook(book, { updateHash = true, addToReading = true } = {}) {
                 if (openGeneration !== readerOpenGeneration)
                     return;
                 const format = await bookFormatForBlob(blob);
-                if (format === 'fb2')
-                    throw new Error('The downloaded book format is not supported.');
                 if (format === 'pdf')
                     await displayPdf(blob, book, readPath, openGeneration);
                 else if (format === 'epub')
                     await displayEpub(blob, book, readPath, openGeneration);
-                else if (format === 'fb2')
-                    throw new Error('The downloaded book format is not supported.');
                 else if (format === 'cbz' || format === 'cbr')
                     await displayComic(blob, book, readPath, openGeneration, format);
                 else

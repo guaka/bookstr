@@ -308,3 +308,25 @@ test('OPDS selects EPUB and PDF by MIME or filename and ignores unsupported link
     { id: 'unknown', public_domain: true, free: true, files: [{ format: 'mobi', url: 'https://books.example/book.mobi', direct: true }] },
   ] }).map(record => record.acquisitions[0].format), ['pdf', 'pdf', 'epub']);
 });
+
+test('OPDS selects a supported acquisition after an unsupported link in the same publication', () => {
+  const records = normalizeOPDS2Feed({ publications: [{
+    metadata: { identifier: 'mixed-edition', title: 'Mixed formats' },
+    links: [
+      { href: '/book.mobi', type: 'application/x-mobipocket-ebook' },
+      { href: '/download', type: 'application/pdf' },
+      { href: '/book.epub', type: 'application/epub+zip' },
+    ],
+  }] }, { provider: 'feed', feedURL: 'https://books.example/catalog' });
+  assert.equal(records.length, 1);
+  assert.deepEqual(records[0]?.acquisitions, [{ format: 'pdf', url: 'https://books.example/download', availability: 'open' }]);
+});
+
+test('LitRes requires supported format evidence even when an unknown format has a PDF filename', () => {
+  const records = normalizeLitresPublicDomainRecords({ items: [
+    { id: 'mislabeled', public_domain: true, free: true, files: [{ format: 'mobi', url: 'https://books.example/book.pdf', direct: true }] },
+    { id: 'unlabeled', public_domain: true, free: true, files: [{ url: 'https://books.example/book.epub', direct: true }] },
+    { id: 'supported', public_domain: true, free: true, files: [{ format: 'pdf', url: 'https://books.example/book.pdf', direct: true }] },
+  ] });
+  assert.deepEqual(records.map(record => record.recordId), ['supported']);
+});

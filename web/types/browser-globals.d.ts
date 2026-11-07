@@ -124,7 +124,6 @@ interface Window {
   BookstrSpeech?: import('../src/reader-speech.js').SpeechApi;
   ePub?: typeof import('epubjs').default;
   setReaderTypography?: (font: unknown, alignment: unknown, padding: unknown) => void;
-  BookstrFB2?: import('../src/fb2-validation.js').FB2ValidationApi;
 }
 
 declare var nostr: MigratedNostrSigner | undefined;

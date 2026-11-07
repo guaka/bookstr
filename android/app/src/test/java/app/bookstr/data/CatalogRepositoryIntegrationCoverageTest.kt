@@ -169,6 +169,8 @@ class CatalogRepositoryIntegrationCoverageTest {
         val bookId = "c".repeat(64)
         val local = repository.publicationFile(bookId, BookFormat.Pdf)
         local.writeBytes("%PDF-1.7\n/Title (  A Book! )\n/Author (Ada Writer)\n/CreationDate (D:20230417)".toByteArray())
+        File(local.parentFile, "unrelated.mobi").writeText("unsupported publication")
+        File(local.parentFile, "directory.epub").mkdir()
         val favorite = ExternalFavorite(
             key = "favorite-key",
             title = "a book",

@@ -29,7 +29,7 @@ class BookSharingTest {
     }
 
     @Test fun sharesEveryFormatAsReadableAttachmentWithTemporaryReadPermission() {
-        val types = listOf("application/epub+zip", "application/pdf", "application/x-fictionbook+xml",
+        val types = listOf("application/epub+zip", "application/pdf",
             "application/vnd.comicbook-rar", "application/vnd.comicbook+zip")
         BookFormat.entries.forEachIndexed { index, format ->
             val file = File(context.filesDir, "books/share.${format.extension}")

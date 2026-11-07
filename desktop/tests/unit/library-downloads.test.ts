@@ -19,7 +19,7 @@ async function fixtureFiles() {
     ['epub', await epub.generateAsync({ type: 'nodebuffer' })],
     ['cbz', await cbz.generateAsync({ type: 'nodebuffer' })],
     ['cbr', Buffer.concat([Buffer.from('Rar!'), Buffer.alloc(16)])],
-    ['fb2', Buffer.from('<FictionBook><body/></FictionBook>')],
+    ['xml', Buffer.from('<document/>')],
     ['pdf', Buffer.from('%PDF-1.4\n')],
     ['txt', Buffer.from('plain text')],
     ['legacy-epub', await cbz.generateAsync({ type: 'nodebuffer' })],
@@ -29,8 +29,8 @@ async function fixtureFiles() {
     await fs.writeFile(filePath, bytes);
     files.set(format, filePath);
   }));
-  for (const format of ['epub', 'cbz', 'cbr', 'fb2', 'pdf', 'txt']) {
-    assert.equal(await detectedFormat(files.get(format)!), format === 'txt' ? '' : format);
+  for (const format of ['epub', 'cbz', 'cbr', 'xml', 'pdf', 'txt']) {
+    assert.equal(await detectedFormat(files.get(format)!), ['txt', 'xml'].includes(format) ? '' : format);
   }
   assert.equal(await detectedFormat(files.get('legacy-epub')!), 'cbz');
   return { root, files };
@@ -39,7 +39,7 @@ async function fixtureFiles() {
 test('renderer downloads expose actual registered reader formats as readable', async t => {
   const { root, files } = await fixtureFiles();
   t.after(() => fs.rm(root, { recursive: true, force: true }));
-  const formats = ['epub', 'pdf', 'fb2', 'cbz', 'cbr', 'txt'];
+  const formats = ['epub', 'pdf', 'xml', 'cbz', 'cbr', 'txt'];
   const rows = [...formats, 'missing'].map(bookId => ({ bookId, status: 'ready' }));
   const results = await downloadsForRenderer(rows, async (bookId: string) => {
     const filePath = files.get(bookId);

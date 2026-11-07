@@ -19,12 +19,11 @@ fun DownloadsSheet(jobs: List<DownloadJob>, onDismiss: () -> Unit, onAction: (St
                    onSendToKindle: (DownloadJob) -> Unit = {}) {
     var language by rememberSaveable { mutableStateOf("") }
     var format by rememberSaveable { mutableStateOf("") }
-    val availableJobs = jobs.filter { it.book.format.isAvailable }
-    val languages = BookListFilters.languages(availableJobs.map { it.book.language })
-    val formats = BookListFilters.formats(availableJobs.map { it.book.format.extension })
+    val languages = BookListFilters.languages(jobs.map { it.book.language })
+    val formats = BookListFilters.formats(jobs.map { it.book.format.extension })
     val filters = BookListFilters(language, format).sanitize(languages, formats)
     LaunchedEffect(filters) { language = filters.language; format = filters.format }
-    val visible = availableJobs.filter { filters.matches(it.book.language, it.book.format.extension) }
+    val visible = jobs.filter { filters.matches(it.book.language, it.book.format.extension) }
     ModalBottomSheet(onDismissRequest = onDismiss, modifier = Modifier.testTag("downloads.sheet")) {
         LazyColumn(Modifier.fillMaxWidth().padding(16.dp)) {
             item { Text("Downloads", style = MaterialTheme.typography.titleLarge) }

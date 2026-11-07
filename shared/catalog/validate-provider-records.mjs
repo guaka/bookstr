@@ -1,5 +1,5 @@
 const RIGHTS_STATUSES = new Set(['public_domain', 'open_license', 'copyrighted', 'unknown']);
-const ACQUISITION_FORMATS = new Set(['epub', 'pdf', 'fb2']);
+const ACQUISITION_FORMATS = new Set(['epub', 'pdf']);
 const AVAILABILITY = new Set(['open', 'borrow', 'buy', 'preview', 'restricted']);
 function error(path, message) {
     return `${path}: ${message}`;
@@ -59,7 +59,7 @@ export function validateProviderRecords(value) {
             }
             const acquisition = acquisitionValue;
             if (typeof acquisition.format !== 'string' || !ACQUISITION_FORMATS.has(acquisition.format))
-                errors.push(error(`${acquisitionPath}.format`, 'must be epub, pdf, or fb2'));
+                errors.push(error(`${acquisitionPath}.format`, 'must be epub or pdf'));
             if (!isHttpUrl(acquisition.url))
                 errors.push(error(`${acquisitionPath}.url`, 'must be an absolute HTTP(S) URL'));
             if (typeof acquisition.availability !== 'string' || !AVAILABILITY.has(acquisition.availability))

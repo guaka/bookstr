@@ -10,6 +10,13 @@ import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import app.bookstr.BookstrApp
 import app.bookstr.MainActivity
+import app.bookstr.PdfReaderActivity
+import app.bookstr.data.BookFormat
+import android.graphics.pdf.PdfDocument
+import androidx.test.platform.app.InstrumentationRegistry
+import kotlinx.coroutines.runBlocking
+import java.util.UUID
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
@@ -43,8 +50,8 @@ class MainActivityNewIntentTest {
 
     @get:Rule val rules: RuleChain = RuleChain.outerRule(clean).around(compose)
 
-    private fun withActivity(block: (ActivityScenario<MainActivity>) -> Unit) {
-        ActivityScenario.launch<MainActivity>(Intent(app, MainActivity::class.java)).use { scenario ->
+    private fun withActivity(intent: Intent = Intent(app, MainActivity::class.java), block: (ActivityScenario<MainActivity>) -> Unit) {
+        ActivityScenario.launch<MainActivity>(intent).use { scenario ->
             lateinit var launchIntent: Intent
             scenario.onActivity { launchIntent = it.intent }
             try {
@@ -53,6 +60,51 @@ class MainActivityNewIntentTest {
                 // ActivityScenario matches lifecycle events against its launch intent. The app
                 // correctly replaces that intent in onNewIntent; restore it only for teardown.
                 scenario.onActivity { it.intent = launchIntent }
+            }
+        }
+    }
+
+    @Test
+    fun savedWordsReportMissingPublicationsAndOpenAnAvailablePdf() {
+        val suffix = UUID.randomUUID().toString()
+        val previousSort = app.settingsRepository.wordSort
+        app.settingsRepository.wordSort = "recent"
+        val missing = runBlocking { app.vocabularyRepository.saveSelection(
+            "missing-$suffix", "en", "missing-$suffix", "Missing", "pdf:0:0", "Missing fixture",
+        ) }
+        val available = runBlocking { app.vocabularyRepository.saveSelection(
+            "available-$suffix", "en", "available-$suffix", "Available PDF", "pdf:0:0", "Available fixture",
+        ) }
+        val file = app.catalogRepository.publicationFile(available.bookId, BookFormat.Pdf)
+        val pdf = PdfDocument()
+        try {
+            val page = pdf.startPage(PdfDocument.PageInfo.Builder(200, 300, 1).create())
+            pdf.finishPage(page)
+            file.outputStream().use(pdf::writeTo)
+        } finally {
+            pdf.close()
+        }
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val monitor = instrumentation.addMonitor(PdfReaderActivity::class.java.name, null, false)
+        try {
+            withActivity(Intent(app, MainActivity::class.java).putExtra(MainActivity.EXTRA_SELECT_TAB, 1)) {
+                compose.waitUntil(10_000) {
+                    compose.onAllNodesWithTag("word.open.${missing.key}").fetchSemanticsNodes().isNotEmpty()
+                }
+                compose.onNodeWithTag("word.open.${missing.key}").performClick()
+                compose.onNodeWithText("This book is no longer downloaded. Open it from Library first.").assertIsDisplayed()
+                compose.onNodeWithTag("word.open.${available.key}").performClick()
+                val reader = instrumentation.waitForMonitorWithTimeout(monitor, 10_000)
+                assertNotNull("A saved PDF word must open the PDF reader", reader)
+                instrumentation.runOnMainSync { reader?.finish() }
+            }
+        } finally {
+            instrumentation.removeMonitor(monitor)
+            app.settingsRepository.wordSort = previousSort
+            file.delete()
+            runBlocking {
+                app.vocabularyRepository.remove(missing.key)
+                app.vocabularyRepository.remove(available.key)
             }
         }
     }
@@ -131,6 +183,10 @@ class MainActivityNewIntentTest {
                 )
             }
 
+            compose.waitUntil(5_000) {
+                compose.onAllNodesWithText("Invalid catalog invitation").fetchSemanticsNodes().isEmpty()
+            }
+            assertIntentDeliveredToResumedActivity(scenario, "https://example.test/not-a-bookstr-invitation")
             compose.onNodeWithText("Invalid catalog invitation").assertDoesNotExist()
             compose.onNodeWithTag("tab.settings").assertIsSelected()
         }

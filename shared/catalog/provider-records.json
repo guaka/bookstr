@@ -61,7 +61,7 @@
       "languages": ["ru"],
       "publishedYear": "1860",
       "rights": { "status": "public_domain", "license": "Public Domain", "source": "litres" },
-      "acquisitions": [{ "format": "fb2", "url": "https://www.litres.ru/book/fedor-dostoevskiy/zapiski-iz-mertvogo-doma-172569/", "availability": "open" }]
+      "acquisitions": [{ "format": "epub", "url": "https://example.test/public-domain.epub", "availability": "open" }]
     }
   ]
 }
