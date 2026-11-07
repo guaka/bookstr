@@ -42,7 +42,9 @@ class TvReaderActivitiesTest {
         BookstrTestRunner.setActivityConfiguration(T::class.java.name, configuration)
         try { ActivityScenario.launch<T>(intent).use { scenario ->
             try { block(scenario) } catch (error: Throwable) {
-                println(compose.onRoot(useUnmergedTree = true).printToString())
+                runCatching { compose.onRoot(useUnmergedTree = true).printToString() }
+                    .onSuccess { println(it) }
+                    .onFailure { error.addSuppressed(it) }
                 throw error
             }
         } }
@@ -55,7 +57,15 @@ class TvReaderActivitiesTest {
     }
 
     private fun awaitLibrary() {
-        compose.waitUntil(30_000) { compose.onAllNodesWithTag("library.language").fetchSemanticsNodes().isNotEmpty() }
+        compose.waitUntil(30_000) {
+            try {
+                compose.onAllNodesWithTag("library.language").fetchSemanticsNodes().isNotEmpty()
+            } catch (error: IllegalStateException) {
+                // The reader can finish before MainActivity registers its Compose root.
+                if (error.message?.contains("No compose hierarchies found") != true) throw error
+                false
+            }
+        }
     }
 
     private fun comicPage(scenario: ActivityScenario<ComicReaderActivity>): String {

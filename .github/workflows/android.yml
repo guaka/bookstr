@@ -101,7 +101,7 @@ jobs:
         with:
           node-version-file: .nvmrc
       - name: Test instrumentation result parser
-        run: node --test --experimental-test-coverage --test-coverage-lines=100 --test-coverage-branches=100 --test-coverage-functions=100 android/scripts/instrumentation-results.test.mts scripts/junit.test.mts
+        run: node --test --experimental-test-coverage --test-coverage-lines=100 --test-coverage-branches=100 --test-coverage-functions=100 android/scripts/instrumentation-results.test.mts scripts/junit.test.mts android/scripts/ci-instrumentation.test.mts
       - name: Test Android release publisher
         run: node --test android/scripts/publish-obtainium-release.test.mts
       - name: Test Android release version resolver
@@ -290,7 +290,7 @@ jobs:
     name: Android emulator shard ${{ matrix.shard }}
     needs: package-apks
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
@@ -319,6 +319,31 @@ jobs:
         timeout-minutes: 20
         uses: reactivecircus/android-emulator-runner@v2
         env:
+          BOOKSTR_SHARD_TIMINGS: android/scripts/shard-timings.json
+          BOOKSTR_SHARD_COUNT: 4
+          BOOKSTR_SHARD_INDEX: ${{ matrix.shard }}
+          BOOKSTR_COVERAGE_FILE: android/app/build/coverage/shard-${{ matrix.shard }}/full.ec
+          BOOKSTR_NATIVE_PROFILE_OUTPUT: android/app/build/coverage/shard-${{ matrix.shard }}/native
+        with:
+          api-level: 30
+          arch: x86_64
+          target: google_apis
+          profile: pixel_2
+          disk-size: 2048M
+          emulator-options: -no-window -no-audio -no-boot-anim -gpu swiftshader_indirect -memory 2048 -cores 2
+          script: |
+            adb shell settings put global window_animation_scale 0
+            adb shell settings put global transition_animation_scale 0
+            adb shell settings put global animator_duration_scale 0
+            ./android/scripts/run-connected-e2e.sh --prebuilt android/prebuilt-apks/app-debug.apk android/prebuilt-apks/app-debug-androidTest.apk
+      - name: Retry emulator boot or APK setup
+        id: ui_retry
+        if: steps.ui_tests.outcome == 'failure' && hashFiles(format('android/e2e-results/shard-{0}/instrumentation.started', matrix.shard)) == ''
+        continue-on-error: true
+        timeout-minutes: 20
+        uses: reactivecircus/android-emulator-runner@v2
+        env:
+          BOOKSTR_SHARD_TIMINGS: android/scripts/shard-timings.json
           BOOKSTR_SHARD_COUNT: 4
           BOOKSTR_SHARD_INDEX: ${{ matrix.shard }}
           BOOKSTR_COVERAGE_FILE: android/app/build/coverage/shard-${{ matrix.shard }}/full.ec
@@ -348,7 +373,7 @@ jobs:
           retention-days: 14
           overwrite: true
       - name: Fail unsuccessful Android shard
-        if: always() && steps.ui_tests.outcome != 'success'
+        if: always() && steps.ui_tests.outcome != 'success' && steps.ui_retry.outcome != 'success'
         run: exit 1
 
   emulator-tests:
