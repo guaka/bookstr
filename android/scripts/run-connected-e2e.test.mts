@@ -38,6 +38,8 @@ async function fixture({ device = 'emulator', instrumentation = passLog, coverag
   const logPath = join(cwd, 'adb.log');
   const deviceCoverage = join(cwd, 'device-coverage.ec');
   const instrumentationLog = join(cwd, 'instrumentation.log');
+  const discoveryLog = join(cwd, 'discovery.log');
+  const timingsFile = join(cwd, 'timings.json');
   const coverageFile = join(cwd, 'coverage', 'full.ec');
   const fakeApp = join(cwd, 'fake-app');
   const nativeProfile = join(fakeApp, 'cache', 'bookstr-native-coverage-1.profraw');
@@ -47,6 +49,8 @@ async function fixture({ device = 'emulator', instrumentation = passLog, coverag
     writeFile(appApk, 'app apk'),
     writeFile(testApk, 'test apk'),
     writeFile(instrumentationLog, instrumentation),
+    writeFile(discoveryLog, Array.from({ length: 4 }, (_, index) => passLog.replace('test=passes', `test=passes${index}`).replace('numtests=1', 'numtests=4').replace('INSTRUMENTATION_CODE: -1', '')).join('\n') + '\nINSTRUMENTATION_CODE: -1'),
+    writeFile(timingsFile, JSON.stringify({ seconds: {} })),
   ]);
   if (hostCoverage !== null) {
     await mkdir(dirname(coverageFile), { recursive: true });
@@ -88,6 +92,7 @@ if [[ "\${1:-}" == shell && "\${2:-}" == run-as ]]; then
 fi
 if [[ "\${1:-}" == shell && "\${2:-}" == rm ]]; then exit 0; fi
 if [[ "\${1:-}" == shell && "\${2:-}" == am && "\${3:-}" == instrument ]]; then
+  if [[ " $* " == *" -e log true "* ]]; then cat "$FAKE_DISCOVERY_LOG"; exit 0; fi
   cat "$FAKE_INSTRUMENTATION_LOG"
   case "$FAKE_COVERAGE_MODE" in
     write) printf 'fresh-coverage' > "$FAKE_DEVICE_COVERAGE" ;;
@@ -127,7 +132,9 @@ exit 1
     deviceCoverage,
     coverageFile,
     nativeOutput,
-    async run({ optIn = true, nativeCoverage = false, args = ['--prebuilt', appApk, testApk], ...overrides }: {optIn?: boolean; nativeCoverage?: boolean; args?: string[]; ANDROID_SERIAL?: string; FAKE_INSTRUMENT_STATUS?: string; BOOKSTR_SHARD_COUNT?: string; BOOKSTR_SHARD_INDEX?: string; FAKE_NO_SCREENSHOTS?: string; FAKE_NATIVE_PROFILE?: string} = {}) {
+    discoveryLog,
+    timingsFile,
+    async run({ optIn = true, nativeCoverage = false, args = ['--prebuilt', appApk, testApk], ...overrides }: {optIn?: boolean; nativeCoverage?: boolean; args?: string[]; ANDROID_SERIAL?: string; FAKE_INSTRUMENT_STATUS?: string; BOOKSTR_SHARD_COUNT?: string; BOOKSTR_SHARD_INDEX?: string; FAKE_NO_SCREENSHOTS?: string; FAKE_NATIVE_PROFILE?: string; BOOKSTR_SHARD_TIMINGS?: string} = {}) {
       const env = {
         ...process.env,
         ANDROID_HOME: sdk,
@@ -136,6 +143,7 @@ exit 1
         FAKE_APP: fakeApp,
         FAKE_NATIVE_PROFILE: nativeCoverage ? nativeProfile : '',
         FAKE_INSTRUMENTATION_LOG: instrumentationLog,
+        FAKE_DISCOVERY_LOG: discoveryLog,
         FAKE_DEVICE: device === 'emulator' ? 'emulator' : 'physical',
         FAKE_COVERAGE_MODE: coverage === null ? 'absent' : coverage === '' ? '' : coverage === 'empty' ? 'empty' : 'write',
         FAKE_PULL_FAILURE: String(pullFailure),
@@ -427,5 +435,44 @@ test('a shard without JNI tests still records successful empty native collection
     assert.equal(result.status, 0, result.stderr);
     assert.equal(await readFile(join(f.nativeOutput, 'native-coverage-collected.marker'), 'utf8'), 'collected\n');
     assert.deepEqual(await readdir(join(f.nativeOutput, 'raw')), []);
+    assert.equal(existsSync(join(f.cwd, '--allow-empty')), false);
+  } finally { await f.cleanup(); }
+});
+
+
+test('duration-based shards discover all tests then select only their complete planned partition', async () => {
+  const f = await fixture({ instrumentation: passLog.replace('test=passes', 'test=passes2') });
+  try {
+    const result = await f.run({ BOOKSTR_SHARD_COUNT: '4', BOOKSTR_SHARD_INDEX: '2', BOOKSTR_SHARD_TIMINGS: f.timingsFile });
+    assert.equal(result.status, 0, result.stderr);
+    const calls = await f.calls();
+    assert.ok(calls.some(call => call.includes('-e log true')));
+    assert.ok(calls.some(call => call.includes("-e class 'app.bookstr.ExampleTest#passes2'")));
+    assert.equal(calls.some(call => call.includes('-e numShards')), false);
+    const plan = JSON.parse(await readFile(join(f.cwd, 'android/e2e-results/shard-2/test-selection.txt.json'), 'utf8'));
+    assert.equal(new Set(plan.flatMap((shard: { tests: string[] }) => shard.tests)).size, 4);
+    assert.match(await readFile(join(f.cwd, 'android/e2e-results/shard-2/current-test.txt'), 'utf8'), /FINISHED app.bookstr.ExampleTest#passes/);
+  } finally { await f.cleanup(); }
+});
+
+test('incomplete runtime discovery stops before tests and preserves bounded diagnostic failures', async () => {
+  const f = await fixture();
+  try {
+    await writeFile(f.discoveryLog, 'broken discovery');
+    const result = await f.run({ BOOKSTR_SHARD_COUNT: '4', BOOKSTR_SHARD_INDEX: '0', BOOKSTR_SHARD_TIMINGS: f.timingsFile });
+    assert.equal(result.status, 1);
+    assert.equal(existsSync(join(f.cwd, 'android/e2e-results/shard-0/instrumentation.started')), false);
+    assert.ok(existsSync(join(f.cwd, 'android/e2e-results/shard-0/logcat.txt.error.txt')));
+    assert.equal((await f.calls()).some(call => call.includes('-e class ')), false);
+  } finally { await f.cleanup(); }
+});
+
+
+test('a runner that ignores the selected test filter fails even when its own reported tests pass', async () => {
+  const f = await fixture();
+  try {
+    const result = await f.run({ BOOKSTR_SHARD_COUNT: '4', BOOKSTR_SHARD_INDEX: '2', BOOKSTR_SHARD_TIMINGS: f.timingsFile });
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /selection|Missing|missing|unexpected/i);
   } finally { await f.cleanup(); }
 });

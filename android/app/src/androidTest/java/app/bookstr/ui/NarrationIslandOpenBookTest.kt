@@ -51,6 +51,17 @@ class NarrationIslandOpenBookTest {
             app.settingsRepository.disconnectNostr()
             app.settingsRepository.clearReaderSession()
             NarrationService.stop(app)
+            // The library is backed by app-private files and a metadata cache.
+            // Earlier ordered tests can leave cached books after deleting their
+            // fixtures, changing which LazyColumn rows are composed in this test.
+            val booksDirectory = File(app.filesDir, "books")
+            check(!booksDirectory.exists() || booksDirectory.deleteRecursively()) {
+                "Could not clear downloaded book fixtures"
+            }
+            listOf("downloaded-books.json", "downloaded-books.json.part").forEach { name ->
+                val cache = File(app.filesDir, name)
+                check(!cache.exists() || cache.delete()) { "Could not clear downloaded book cache: $name" }
+            }
             val downloaded = app.catalogRepository.publicationFile(downloadedId, BookFormat.Pdf)
             downloaded.parentFile?.mkdirs()
             downloaded.writeBytes(pdf)

@@ -48,7 +48,7 @@ if [[ -n "$native_profile_output" && "$prebuilt" != true ]]; then
 fi
 native_profile_marker=''
 if [[ -n "$native_profile_output" ]]; then
-  if ! mkdir -p -- "$native_profile_output" ${native_collection_args[@]+"${native_collection_args[@]}"}; then
+  if ! mkdir -p -- "$native_profile_output"; then
     echo "Could not create native profile output directory: $native_profile_output" >&2
     exit 1
   fi
@@ -75,13 +75,21 @@ mkdir -p "$host_screenshot_dir" "$results_dir"
 # Remove results from an earlier local invocation so artifacts always describe
 # this run. The device screenshot directory is cleared only after the emulator
 # check below.
-rm -f "$results_dir/instrumentation.log" "$results_dir/instrumentation.xml" "$results_dir/instrumentation.started"
+rm -f "$results_dir/instrumentation.log" "$results_dir/instrumentation.xml" "$results_dir/instrumentation.started" "$results_dir/current-test.txt" "$results_dir/discovery.log" "$results_dir/test-selection.txt" "$results_dir/test-selection.txt.json"
 find "$host_screenshot_dir" -type f -name '*.png' -delete
 readonly adb_path="${ANDROID_HOME:+$ANDROID_HOME/platform-tools/}adb"
 
 # This check must happen before install: instrumentation can modify app-local data.
 bash "$(dirname "$0")/require-emulator.sh" "$adb_path" || exit $?
 
+# These are bounded diagnostics from an emulator already checked by require-emulator.
+collect_failure_diagnostics() {
+  local result=$?
+  if [[ $result -ne 0 ]]; then
+    node "$(dirname "$0")/ci-instrumentation.mjs" diagnostics "$adb_path" "$results_dir" || true
+  fi
+  return "$result"
+}
 native_device_serial=''
 if [[ -n "$native_profile_output" ]]; then
   if [[ -n "${ANDROID_SERIAL:-}" ]]; then
@@ -94,6 +102,9 @@ if [[ -n "$native_profile_output" ]]; then
     exit 1
   fi
 fi
+
+trap collect_failure_diagnostics EXIT
+trap 'exit 143' TERM
 
 status=0
 instrument_status=0
@@ -141,6 +152,19 @@ if $prebuilt; then
       native_coverage_prepared=true
     fi
   fi
+  if [[ $status -eq 0 && -n "${BOOKSTR_SHARD_TIMINGS:-}" ]]; then
+    if [[ -z "$shard_suffix" ]]; then
+      echo 'Duration-based selection requires BOOKSTR_SHARD_COUNT and BOOKSTR_SHARD_INDEX.' >&2
+      status=1
+    elif ! "$adb_path" shell am instrument -w -r -e log true app.bookstr.test/app.bookstr.BookstrTestRunner > "$results_dir/discovery.log" 2>&1; then
+      status=1
+    elif ! node "$(dirname "$0")/ci-instrumentation.mjs" plan "$results_dir/discovery.log" "$BOOKSTR_SHARD_TIMINGS" "$BOOKSTR_SHARD_INDEX" "$BOOKSTR_SHARD_COUNT" "$results_dir/test-selection.txt"; then
+      status=1
+    else
+      # adb shell parses its arguments again on the device. Preserve nested-class '$'.
+      shard_args=(-e class "'$(cat "$results_dir/test-selection.txt")'")
+    fi
+  fi
   if [[ $status -eq 0 ]]; then
     log_file="$results_dir/instrumentation.log"
     junit_file="$results_dir/instrumentation.xml"
@@ -149,13 +173,19 @@ if $prebuilt; then
     if [[ -n "$native_profile_output" ]]; then native_coverage_instrument_attempted=true; fi
     if [[ -n "$coverage_file" ]]; then
       coverage_instrument_attempted=true
-      "$adb_path" shell am instrument -w -r -e coverage true -e coverageFile "$device_coverage_file" ${shard_args[@]+"${shard_args[@]}"} app.bookstr.test/app.bookstr.BookstrTestRunner 2>&1 | tee "$log_file"
+      "$adb_path" shell am instrument -w -r -e coverage true -e coverageFile "$device_coverage_file" ${shard_args[@]+"${shard_args[@]}"} app.bookstr.test/app.bookstr.BookstrTestRunner 2>&1 | node "$(dirname "$0")/ci-instrumentation.mjs" stream "$results_dir/current-test.txt" | tee "$log_file"
     else
-      "$adb_path" shell am instrument -w -r ${shard_args[@]+"${shard_args[@]}"} app.bookstr.test/app.bookstr.BookstrTestRunner 2>&1 | tee "$log_file"
+      "$adb_path" shell am instrument -w -r ${shard_args[@]+"${shard_args[@]}"} app.bookstr.test/app.bookstr.BookstrTestRunner 2>&1 | node "$(dirname "$0")/ci-instrumentation.mjs" stream "$results_dir/current-test.txt" | tee "$log_file"
     fi
-    instrument_status=${PIPESTATUS[0]}
+    pipeline_status=("${PIPESTATUS[@]}")
+    for code in "${pipeline_status[@]}"; do
+      if [[ $code -ne 0 ]]; then instrument_status=1; fi
+    done
     node "$(dirname "$0")/instrumentation-results.mjs" "$log_file" "$junit_file"
     parser_status=$?
+    if [[ -n "${BOOKSTR_SHARD_TIMINGS:-}" ]] && ! node "$(dirname "$0")/ci-instrumentation.mjs" verify "$log_file" "$results_dir/test-selection.txt"; then
+      status=1
+    fi
     set -e
     if [[ $instrument_status -ne 0 || $parser_status -ne 0 ]]; then status=1; fi
   fi

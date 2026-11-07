@@ -32,13 +32,32 @@ cd android
 
 Android CI separates JVM unit tests with JaCoCo and the shared coverage
 baseline, APK packaging, four parallel emulator shards, combined coverage, and
-signed release publishing. AndroidJUnitRunner assigns every discovered test
-to exactly one shard, including new tests. Shards do not cancel one another;
+signed release publishing. AndroidJUnitRunner discovers the complete suite without
+executing tests. The planner assigns every discovered test to exactly one shard, longest measured
+test first; new tests receive a three-second default estimate. The checked-in
+`android/scripts/shard-timings.json` records the source CI run for the initial
+measurements. Settings download fixtures no longer use their old live-download
+timings. Each shard verifies that its executed test identities exactly match its
+selection; a silently ignored or incomplete filter fails the run.
+Shards do not cancel one another;
 each has a 20-minute execution limit and separate logs and coverage artifacts.
 The required **Emulator UI tests** check waits for all four shards and merges
 JVM, instrumentation, and native coverage before allowing a release. Missing
 shard data or any failed shard fails that check. **Rerun failed jobs** reuses
-successful shards from the same workflow run.
+successful shards from the same workflow run. A failed emulator setup is retried
+once only if instrumentation was never launched. Once an instrumentation attempt
+is made, neither assertion failures nor runner crashes are retried.
+The shard job allows 45 minutes for at most two 20-minute attempts and uploads.
+Failed runs include bounded logcat, a screenshot, activity state, and the last test
+identifier. Every test's elapsed time is recorded in the instrumentation log and
+JUnit report. Refresh timing estimates from downloaded shard logs with:
+
+```bash
+node android/scripts/ci-instrumentation.mjs timings android/e2e-results/shard-*/instrumentation.log > /tmp/shard-timings.json
+```
+
+Review the resulting measurements before replacing the checked-in timing file;
+only passing tests with positive durations are included.
 Pull requests and pushes to `main` that change Android code or bundled reader
 assets build a debug APK. Open the matching run under
 [Actions → Android CI](https://github.com/guaka/bookstr/actions/workflows/android.yml)
