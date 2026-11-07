@@ -45,7 +45,6 @@ import app.bookstr.data.matchingDownloadedBook
 import app.bookstr.data.SharedFavoriteRef
 import app.bookstr.data.CatalogRepository
 import app.bookstr.data.BookFormat
-import app.bookstr.data.availableCatalogBooks
 import app.bookstr.data.availableExternalFavorites
 import app.bookstr.data.NostrAuthMode
 import app.bookstr.data.RIGHTS_UNKNOWN
@@ -129,19 +128,6 @@ class MainActivity : ComponentActivity() {
                                 year = session.year,
                                 pageIndex = session.pageIndex,
                                 pageOffset = session.pageOffset,
-                            )
-                        } else if (session.format == BookFormat.Fb2) {
-                            Fb2ReaderActivity.intent(
-                                context = this@MainActivity,
-                                bookId = session.bookId,
-                                bookTitle = session.bookTitle,
-                                author = session.author,
-                                year = session.year,
-                                locator = session.locator,
-                                rightsStatus = session.rightsStatus,
-                                license = session.license,
-                                licenseUrl = session.licenseUrl,
-                                rightsSource = session.rightsSource,
                             )
                         } else {
                             ReaderActivity.intent(
@@ -240,7 +226,6 @@ class MainActivity : ComponentActivity() {
                 ) {
                     val blossomBooks = shared.external
                         .mapNotNull(CatalogRepository::fromBlossomFavorite)
-                        .filter { it.format.isAvailable }
                         .associateBy { it.libvaultMd5 }
                     val downloadedBooks = catalog.downloadedBooks(shared.external)
                     val downloadedFavoriteIds = downloadedBooks.filter { downloaded ->
@@ -251,7 +236,7 @@ class MainActivity : ComponentActivity() {
                                     downloaded.format.extension.equals(favorite.format, ignoreCase = true))
                         }
                     }.map { it.id }.toSet()
-                    books = availableCatalogBooks(knownBooks + blossomBooks.values + downloadedBooks)
+                    books = (knownBooks + blossomBooks.values + downloadedBooks)
                         .distinctBy { it.id }
                     favoriteIds = shared.bookIds + blossomBooks.values.map { it.id } + downloadedFavoriteIds
                     externalFavorites = availableExternalFavorites(shared.external).filter { favorite ->
@@ -360,22 +345,6 @@ class MainActivity : ComponentActivity() {
                                         bookTitle = book.title,
                                         author = book.author,
                                         year = book.year,
-                                    ),
-                                )
-                            } else if (book.format == BookFormat.Fb2) {
-                                val localProgress = catalog.getProgressForBooks(listOf(book))[book.id]
-                                startActivity(
-                                    Fb2ReaderActivity.intent(
-                                        context = this@MainActivity,
-                                        bookId = book.id,
-                                        bookTitle = book.title,
-                                        author = book.author,
-                                        year = book.year,
-                                        locator = localProgress?.cfi,
-                                        rightsStatus = book.rightsStatus,
-                                        license = book.license,
-                                        licenseUrl = book.licenseUrl,
-                                        rightsSource = book.rightsSource,
                                     ),
                                 )
                             } else {
@@ -717,16 +686,12 @@ class MainActivity : ComponentActivity() {
                                 },
                                 onOpenWord = { word ->
                                     val isPdf = word.cfi.startsWith("pdf:")
-                                    val isFb2 = word.cfi.startsWith("fb2:")
                                     val format = when {
                                         isPdf -> BookFormat.Pdf
-                                        isFb2 -> BookFormat.Fb2
                                         else -> BookFormat.Epub
                                     }
                                     val publication = catalog.publicationFile(word.bookId, format)
-                                    if (!format.isAvailable) {
-                                        error = "Unsupported publication format"
-                                    } else if (!publication.isFile) {
+                                    if (!publication.isFile) {
                                         error = "This book is no longer downloaded. Open it from Library first."
                                     } else {
                                         val book = books.firstOrNull { it.id == word.bookId }
@@ -742,19 +707,6 @@ class MainActivity : ComponentActivity() {
                                                 pageIndex = parts.getOrNull(1)?.toIntOrNull() ?: 0,
                                                 pageOffset = parts.getOrNull(2)?.toIntOrNull() ?: 0,
                                                 highlightWord = word.word,
-                                            )
-                                        } else if (isFb2) {
-                                            Fb2ReaderActivity.intent(
-                                                context = this@MainActivity,
-                                                bookId = word.bookId,
-                                                bookTitle = word.bookTitle,
-                                                author = book?.author,
-                                                year = book?.year,
-                                                locator = word.cfi,
-                                                rightsStatus = book?.rightsStatus,
-                                                license = book?.license,
-                                                licenseUrl = book?.licenseUrl,
-                                                rightsSource = book?.rightsSource,
                                             )
                                         } else {
                                             ReaderActivity.intent(
@@ -1061,18 +1013,6 @@ class MainActivity : ComponentActivity() {
                                                     pageIndex = session.pageIndex,
                                                     pageOffset = session.pageOffset,
                                                 )
-                                                BookFormat.Fb2 -> Fb2ReaderActivity.intent(
-                                                    context = this@MainActivity,
-                                                    bookId = session.bookId,
-                                                    bookTitle = title,
-                                                    author = session.author ?: author.takeIf(String::isNotBlank),
-                                                    year = session.year,
-                                                    locator = session.locator,
-                                                    rightsStatus = session.rightsStatus,
-                                                    license = session.license,
-                                                    licenseUrl = session.licenseUrl,
-                                                    rightsSource = session.rightsSource,
-                                                )
                                                 else -> ReaderActivity.intent(
                                                     context = this@MainActivity,
                                                     bookId = session.bookId,
@@ -1177,4 +1117,4 @@ internal fun shouldRestoreReaderOnLaunch(
 ): Boolean = isLocked && isFreshLaunch && !hasInvitation && !openingDownloads && requestedTab == null
 
 internal fun canRestoreReaderSession(session: app.bookstr.data.ReaderSession, publicationExists: Boolean): Boolean =
-    publicationExists && session.format.isAvailable
+    publicationExists && session.bookId.isNotBlank()

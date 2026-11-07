@@ -132,35 +132,8 @@ export async function localBookFormat(bytes: Buffer, filenameExtension = ''): Pr
       if (names.some(name => /\.(?:jpe?g|png|gif|webp)$/i.test(name))) return 'cbz';
     } catch {}
   }
-  if (bytes.subarray(0, 4096).toString('utf8').match(/<FictionBook\b/i)) return 'fb2';
   const fallback = String(filenameExtension || '').replace(/^\./, '').toLowerCase();
-  return ['epub', 'fb2', 'pdf', 'cbz', 'cbr'].includes(fallback) ? fallback : '';
-}
-
-export function fb2Metadata(bytes: Buffer): Metadata {
-  const xml = bytes.toString('utf8');
-  const titleInfo = xml.match(/<title-info\b[^>]*>([\s\S]*?)<\/title-info>/i)?.[1] || xml;
-  const firstName = xmlElement(titleInfo, 'first-name');
-  const middleName = xmlElement(titleInfo, 'middle-name');
-  const lastName = xmlElement(titleInfo, 'last-name');
-  return {
-    title: xmlElement(titleInfo, 'book-title'),
-    authors: [firstName, middleName, lastName].filter(Boolean).join(' '),
-    language: xmlElement(titleInfo, 'lang'),
-    isbn: xmlElement(xml, 'isbn'),
-  };
-}
-
-export function fb2Cover(bytes: Buffer): ImageCover | null {
-  const xml = bytes.toString('utf8');
-  const coverID = xml.match(/<coverpage\b[^>]*>[\s\S]*?<image\b[^>]*(?:l:href|xlink:href|href)\s*=\s*["']#([^"']+)["']/i)?.[1] || '';
-  const binaries = [...xml.matchAll(/<binary\b([^>]*)>([\s\S]*?)<\/binary>/gi)];
-  const selected = binaries.find(match => xmlAttribute(match[1]!, 'id') === coverID)
-    || binaries.find(match => /cover|front/i.test(xmlAttribute(match[1]!, 'id')));
-  if (!selected) return null;
-  const encoded = selected[2]!.replace(/\s+/g, '');
-  if (!encoded || encoded.length > Math.ceil(MAX_COVER_BYTES * 4 / 3) + 8) return null;
-  return detectImage(Buffer.from(encoded, 'base64'));
+  return ['epub', 'pdf', 'cbz', 'cbr'].includes(fallback) ? fallback : '';
 }
 
 async function existingCover(cacheDir: string, id: string): Promise<ImageCover | null> {
@@ -187,7 +160,7 @@ export async function localBookCover({ bookId, bookPath, cacheDir }:
   if (!stat.isFile() || stat.size <= 0 || stat.size > MAX_BOOK_BYTES) return null;
   const extension = path.extname(bookPath).toLowerCase();
   const bytes = await fs.readFile(bookPath);
-  const cover = extension === '.epub' ? await epubCover(bytes) : extension === '.fb2' ? fb2Cover(bytes) : null;
+  const cover = extension === '.epub' ? await epubCover(bytes) : null;
   if (!cover) return null;
   await fs.mkdir(cacheDir, { recursive: true });
   const outputPath = path.join(cacheDir, `${id}${cover.extension}`);
@@ -204,9 +177,7 @@ export async function localBookMetadata({ bookId, bookPath }:
   const extension = await localBookFormat(bytes, path.extname(bookPath));
   const metadata = extension === 'epub'
     ? await epubMetadata(bytes)
-    : extension === 'fb2'
-      ? fb2Metadata(bytes)
-      : {};
+    : {};
   const useful = Object.fromEntries(Object.entries({ extension, ...(metadata || {}) })
     .filter(([, value]) => String(value || '').trim()));
   return Object.keys(useful).length ? useful as Partial<Metadata> & { extension: string } : null;

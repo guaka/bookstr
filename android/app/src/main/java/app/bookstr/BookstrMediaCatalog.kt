@@ -25,7 +25,6 @@ internal object BookstrMediaCatalog {
     /** Accepts only real local download IDs and preserves all readable-format metadata. */
     fun entries(books: List<CatalogBook>, isDownloaded: (CatalogBook) -> Boolean): List<Entry> =
         books.asSequence()
-            .filter { it.format.isAvailable }
             .filter { isValidMediaId(it.id) }
             .filter(isDownloaded)
             .distinctBy { it.id }

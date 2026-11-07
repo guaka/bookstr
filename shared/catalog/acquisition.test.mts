@@ -98,3 +98,26 @@ test('ranks borrow and preview options while honoring torrent preference', () =>
   assert.equal(listAcquisitions(alternate, { preferTorrent: false }).length, 1);
   assert.equal(selectAcquisition({ provider: 'unregistered-provider', recordId: 'empty' }), null);
 });
+
+test('skips malformed acquisition entries while preserving a supported PDF', () => {
+  const normalized = normalizeProviderRecord({
+    ...record,
+    acquisitions: [null, [], 42, { format: 'mobi', url: 'https://example.test/book.mobi' },
+      { extension: '.PDF', href: 'https://example.test/book.pdf', access: 'open' }],
+  });
+  assert.equal(normalized.acquisitions.length, 1);
+  assert.equal(selectAcquisition(normalized)?.format, 'pdf');
+  assert.equal(selectAcquisition(normalized)?.url, 'https://example.test/book.pdf');
+});
+
+test('bounds saved provider metadata and drops control characters in language entries', () => {
+  const normalized = normalizeProviderRecord({
+    ...record,
+    title: 'x'.repeat(401),
+    authors: 'invalid\u0000author',
+    languages: ['', 'en\u0000', 'x'.repeat(33), ...Array.from({ length: 20 }, (_, index) => `lang-${index}`)],
+  });
+  assert.equal(normalized.title, '');
+  assert.equal(normalized.authors, '');
+  assert.deepEqual(normalized.languages, Array.from({ length: 16 }, (_, index) => `lang-${index}`));
+});

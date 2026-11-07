@@ -7,7 +7,7 @@ test('reader format validation normalizes supported formats and rejects empty or
     assert.equal(isEnabledReaderFormat(value), true);
     assert.equal(requireEnabledReaderFormat(value), value.trim().toLowerCase().replace(/^\./, ''));
   }
-  for (const value of [undefined, null, '', 'fb2', 'application/fb2', 'txt']) {
+  for (const value of [undefined, null, '', 'mobi', 'application/octet-stream', 'txt']) {
     assert.equal(isEnabledReaderFormat(value), false);
     assert.throws(() => requireEnabledReaderFormat(value), /unsupported acquisition format/);
   }

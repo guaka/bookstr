@@ -40,7 +40,7 @@ native build; metadata itself is fetched over HTTPS with OkHttp.
 | P2 | Cover artwork | The local iOS branch also contains `da7ec3b` (covers in library, search and now playing). Android search/library still use text-focused rows. Port the cover loading/cache behavior and verify missing-cover fallbacks separately. |
 | P2 | Neural speech | iOS has `NeuralSpeechSession`, `NeuralSpeechPlayback` and downloadable speech models. Android uses system TextToSpeech and NarrationService. Add local model playback and per-language model/voice controls if this is the next desired capability. |
 | P2 | Reader selections | iOS has a dedicated snippet repository and native selection actions. Android has dictionary/vocabulary actions but no matching snippet repository. Specify snippet persistence/sync before porting. |
-| P2 | Library organization | Android decodes shared collections, but its library surface needs comparison with iOS's collection workflows. Reader formats already include EPUB, PDF, FB2 and CBZ/CBR; format support alone is not proof of interaction parity. |
+| P2 | Library organization | Android decodes shared collections, but its library surface needs comparison with iOS's collection workflows. Reader formats already include EPUB, PDF and CBZ/CBR; format support alone is not proof of interaction parity. |
 | P2 | Acquisition polish | Detect the actual format when catalog extension metadata is wrong, and add HTTPS tracker support with a pinned TLS dependency. Existing verified files and partials must survive either change. |
 | P3 | Device pairing | Shared pairing contracts exist, but the roadmap still identifies native host bridge work. Treat device-to-device transfer as separate work from Libcat metadata search and torrent acquisition. |
 

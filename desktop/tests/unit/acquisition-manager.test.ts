@@ -43,7 +43,7 @@ test('acquisition format validation includes CBZ and CBR', () => {
   assert.equal(extensionFor('cbz'), 'cbz');
   assert.equal(extensionFor('cbr'), 'cbr');
   assert.equal(extensionFor(' .CBZ '), 'cbz');
-  assert.throws(() => extensionFor('fb2'), /unsupported acquisition format/);
+  assert.throws(() => extensionFor('mobi'), /unsupported acquisition format/);
 });
 
 test('private IPv6 torrent hosts include unique-local, link-local, and multicast ranges', () => {

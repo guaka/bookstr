@@ -26,7 +26,6 @@ object BookSharing {
             type = when (book.format) {
                 BookFormat.Epub -> "application/epub+zip"
                 BookFormat.Pdf -> "application/pdf"
-                BookFormat.Fb2 -> "application/x-fictionbook+xml"
                 BookFormat.Cbr -> "application/vnd.comicbook-rar"
                 BookFormat.Cbz -> "application/vnd.comicbook+zip"
             }

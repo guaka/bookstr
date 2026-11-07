@@ -30,7 +30,6 @@ async function sniffFileFormat(filePath: string, fileSystem = fs) {
     const prefix = await readAt(0, 4096);
     if (prefix.subarray(0, 5).toString('ascii') === '%PDF-') return 'pdf';
     if (prefix.subarray(0, 4).toString('ascii') === 'Rar!') return 'cbr';
-    if (/<FictionBook\b/i.test(prefix.toString('utf8'))) return 'fb2';
     if (prefix.readUInt32LE(0) !== ZIP_SIGNATURE || stats.size < 22) return '';
 
     const tailLength = Math.min(stats.size, MAX_ZIP_TAIL_BYTES);

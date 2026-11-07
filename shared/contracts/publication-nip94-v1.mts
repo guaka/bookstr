@@ -5,7 +5,6 @@ export const NIP94_FILE_METADATA_KIND_V1 = 1063;
 const FORMATS: Readonly<Record<string, string>> = Object.freeze({
   epub: 'application/epub+zip',
   pdf: 'application/pdf',
-  fb2: 'application/x-fictionbook+xml',
 });
 
 type JsonRecord = Record<string, unknown>;

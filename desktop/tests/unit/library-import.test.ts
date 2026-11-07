@@ -59,16 +59,6 @@ test('import boundaries reject missing roots, invalid paths, directories and uns
   for (const relative of ['', '/outside', 'book\0.pdf', '.']) assert.throws(() => importer.resolveRelativePath(relative), /relative path/);
 }));
 
-test('FB2 import is disabled without altering an existing source file', () => withRoot(async root => {
-  const source = path.join(root, 'book.fb2');
-  const contents = '<FictionBook><body/></FictionBook>';
-  await fsp.writeFile(source, contents);
-  const importer = new LibraryImporter({ libraryRoot: path.join(root, 'library') });
-  await assert.rejects(importer.importFile(source), /unsupported import format/);
-  assert.equal(await fsp.readFile(source, 'utf8'), contents);
-  await assert.rejects(fsp.stat(importer.booksRoot), { code: 'ENOENT' });
-}));
-
 test('import storage errors preserve the failure and clean partial files', t => withRoot(async root => {
   const source = path.join(root, 'source.pdf');
   await fsp.writeFile(source, 'book');

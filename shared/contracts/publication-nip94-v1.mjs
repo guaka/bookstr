@@ -3,7 +3,6 @@ export const NIP94_FILE_METADATA_KIND_V1 = 1063;
 const FORMATS = Object.freeze({
     epub: 'application/epub+zip',
     pdf: 'application/pdf',
-    fb2: 'application/x-fictionbook+xml',
 });
 function text(value, max) {
     const result = String(value ?? '').trim();
