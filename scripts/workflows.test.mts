@@ -746,10 +746,15 @@ test('four Android shards finish independently and the existing required check g
   const shards = present(workflow.split('  emulator-shards:\n')[1]?.split('  emulator-tests:\n')[0]);
   const aggregate = present(workflow.split('  emulator-tests:\n')[1]?.split('  release:\n')[0]);
   assert.match(shards, /needs: package-apks/);
-  assert.match(shards, /timeout-minutes: 25/);
+  assert.match(shards, /timeout-minutes: 45/);
   assert.match(shards, /fail-fast: false/);
   assert.match(shards, /shard: \[0, 1, 2, 3\]/);
   assert.match(shards, /BOOKSTR_SHARD_COUNT: 4/);
+  assert.match(shards, /BOOKSTR_SHARD_TIMINGS: android\/scripts\/shard-timings\.json/);
+  const retry = present(shards.match(/name: Retry emulator boot or APK setup[\s\S]*?(?=      - name: Upload shard results)/))[0];
+  assert.match(retry, /steps\.ui_tests\.outcome == 'failure'/);
+  assert.match(retry, /instrumentation\.started.*== ''/);
+  assert.match(shards, /steps\.ui_tests\.outcome != 'success' && steps\.ui_retry\.outcome != 'success'/);
   assert.match(shards, /timeout-minutes: 20/);
   assert.doesNotMatch(shards, /gradlew|setup-java|setup-gradle/);
   assert.match(shards, /name: Upload shard results and coverage\n        if: always\(\)/);
