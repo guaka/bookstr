@@ -3,7 +3,9 @@ package app.bookstr.ui
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.lifecycle.Lifecycle
 import androidx.test.core.app.ApplicationProvider
+import androidx.test.platform.app.InstrumentationRegistry
 import app.bookstr.BookstrApp
 import app.bookstr.MainActivity
 import app.bookstr.PdfReaderActivity
@@ -79,22 +81,7 @@ class AcquisitionActionsTest {
         compose.waitUntil(5000) { compose.onAllNodesWithTag("search.open.$id").fetchSemanticsNodes().isNotEmpty() }
     }
 
-    private fun pressSystemBack() {
-        val instrumentation = androidx.test.platform.app.InstrumentationRegistry.getInstrumentation()
-        val automation = instrumentation.uiAutomation
-        compose.waitUntil(5000) {
-            var readerFocused = false
-            instrumentation.runOnMainSync {
-                readerFocused = androidx.test.runner.lifecycle.ActivityLifecycleMonitorRegistry.getInstance()
-                    .getActivitiesInStage(androidx.test.runner.lifecycle.Stage.RESUMED)
-                    .any { it is PdfReaderActivity && it.hasWindowFocus() }
-            }
-            readerFocused
-        }
-        assertTrue(automation.performGlobalAction(android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_BACK))
-        compose.waitUntil(5000) { compose.activity.hasWindowFocus() }
-    }
-
+    @Suppress("DEPRECATION")
     @Test fun oneTapStartsDownloadAndDeletionRemovesTheActualPublication() {
         search()
         compose.onNodeWithTag("search.open.$id").performClick()
@@ -107,10 +94,24 @@ class AcquisitionActionsTest {
             SemanticsMatcher.keyIsDefined(SemanticsActions.Dismiss)
         compose.onNode(dismissSheet, useUnmergedTree = true).performSemanticsAction(SemanticsActions.Dismiss)
         compose.waitUntil(5000) { compose.onAllNodesWithTag("downloads.sheet").fetchSemanticsNodes().isEmpty() }
-        compose.onNodeWithTag("search.open.$id").performClick()
-        compose.waitUntil(5000) { app.settingsRepository.readerSession()?.bookId == id }
-        pressSystemBack()
-        compose.onNodeWithContentDescription("Library").performClick()
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val readerMonitor = instrumentation.addMonitor(PdfReaderActivity::class.java.name, null, false)
+        try {
+            compose.onNodeWithTag("search.open.$id").performClick()
+            val reader = requireNotNull(instrumentation.waitForMonitorWithTimeout(readerMonitor, 10_000) as? PdfReaderActivity) {
+                "Opening the downloaded publication must launch the PDF reader"
+            }
+            try {
+                compose.waitUntil(5000) { app.settingsRepository.readerSession()?.bookId == id }
+            } finally {
+                // Global Back can be consumed by system UI before it reaches the reader.
+                instrumentation.runOnMainSync { reader.onBackPressed() }
+            }
+        } finally {
+            instrumentation.removeMonitor(readerMonitor)
+        }
+        compose.waitUntil(10_000) { compose.activityRule.scenario.state == Lifecycle.State.RESUMED }
+        compose.onNodeWithTag("tab.library").performClick()
         compose.onNodeWithTag("library.swipe.$id").performTouchInput { swipeLeft() }
         compose.onNodeWithTag("library.delete.confirm").performClick()
         compose.waitUntil(5000) { !app.catalogRepository.publicationFile(id, BookFormat.Pdf).exists() }
