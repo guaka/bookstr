@@ -319,6 +319,7 @@ dependencies {
     androidTestImplementation(composeBom)
 
     implementation("com.k2fsa.sherpa:sherpa-onnx:1.13.8@aar")
+    implementation("com.google.mediapipe:tasks-audio:1.2.2")
     implementation("androidx.core:core-ktx:1.15.0")
     implementation("androidx.activity:activity-compose:1.9.3")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")

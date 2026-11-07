@@ -24,7 +24,7 @@ class NeuralSpeechTest {
     @Test fun downloadedNeuralVoicesGeneratePlayablePcm() = runBlocking {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val store = SpeechModels(context)
-        val ids = InstrumentationRegistry.getArguments().getString("speechModelIds", "piper_nl_nl_dii,kokoro_en,kokoro_it,kokoro_pt_pt").split(',')
+        val ids = InstrumentationRegistry.getArguments().getString("speechModelIds", "piper_nl_nl_dii,pocket_nl_daan,piper_nl_be_nathalie,piper_nl_be_rdh,kokoro_en,kokoro_it,kokoro_pt_pt").split(',')
         val neural = NeuralSpeech(store)
         val file = File(context.cacheDir, "speech-regression.wav")
         try {
@@ -46,6 +46,7 @@ class NeuralSpeechTest {
                 assertEquals("RIFF", String(data, 0, 4)); assertEquals("WAVE", String(data, 8, 4))
                 val buffer = ByteBuffer.wrap(data).order(ByteOrder.LITTLE_ENDIAN)
                 assertEquals(data.size - 44, buffer.getInt(40)); assertTrue(buffer.getInt(24) > 16000)
+                if (id == "pocket_nl_daan") assertEquals(24000, buffer.getInt(24))
                 assertTrue(data.size > 10000)
                 assertTrue(data.drop(44).any { it != 0.toByte() })
                 neural.synthesize(model, "...", file) { false }
