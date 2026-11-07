@@ -8,16 +8,20 @@ for that language. Removing the selected voice restores System default.
 The downloadable voices include Kokoro English, Italian (Sara), Brazilian
 Portuguese and European Portuguese (logus2k); Portuguese Tugão, Miro and Dii;
 French, German and Spanish Miro; Catalan UPC Ona. Dutch adds
-[Dii (Netherlands)](https://huggingface.co/csukuangfj/vits-piper-nl_NL-dii-high).
+[Dii (Netherlands)](https://huggingface.co/csukuangfj/vits-piper-nl_NL-dii-high),
+[Nathalie and RDH (nl-BE)](android-flemish-voices.md), and
+[Pocket TTS · Daan (nl-NL)](pocket-tts-draft.md).
 Device TTS voices remain selectable; network-dependent voices are marked Online.
 
-Models run locally with [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx), pinned
+Piper and Kokoro models run locally with [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx), pinned
 to Android AAR 1.13.8. `android/app/src/main/assets/speech-models.json` pins model
 repository revisions and expected file sizes. Each repository contains the
 upstream model documentation and licensing information. Downloads stream into a
 staging directory and become available only after every file passes validation.
-All models carry the complete supported pronunciation data and share one stable
+Piper and Kokoro models carry the complete supported pronunciation data and share one stable
 eSpeak directory, allowing language switches within a running app.
+Pocket uses MediaPipe Tasks Audio 1.2.2 and a self-contained 125 MB Dutch bundle,
+without eSpeak. The new models include SHA-256 validation during installation.
 No speech text is sent to a server by the built-in neural voices.
 
 Neural synthesis runs on a serial executor, using bounded phrases and disk-backed

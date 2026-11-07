@@ -1333,5 +1333,284 @@
         "bytes": 109
       }
     ]
+  },
+  {
+    "id": "piper_nl_be_nathalie",
+    "language": "nl",
+    "label": "Nathalie · Nederlands (nl-BE)",
+    "repository": "csukuangfj/vits-piper-nl_BE-nathalie-medium",
+    "revision": "1356793b677b4effa325817d758902c88d775709",
+    "kind": "vits",
+    "model": "nl_BE-nathalie-medium.onnx",
+    "files": [
+      {
+        "path": "nl_BE-nathalie-medium.onnx",
+        "bytes": 63201420,
+        "sha256": "d6901ce5548dc4ca2d7f42fd5e53647fdd790b5b6a4350aa8b4e24adc3e903dc"
+      },
+      {
+        "path": "tokens.txt",
+        "bytes": 921,
+        "sha256": "87c8ef66eae5473ed0cc0366b3964c736ca6c5f676c979522ea31234e47430b9"
+      },
+      {
+        "path": "espeak-ng-data/ca_dict",
+        "bytes": 45566,
+        "url": "https://huggingface.co/csukuangfj/vits-piper-nl_NL-dii-high/resolve/12169a38e0f40f3ffc429273346f6d0700387cdf/espeak-ng-data/ca_dict"
+      },
+      {
+        "path": "espeak-ng-data/de_dict",
+        "bytes": 68276,
+        "url": "https://huggingface.co/csukuangfj/vits-piper-nl_NL-dii-high/resolve/12169a38e0f40f3ffc429273346f6d0700387cdf/espeak-ng-data/de_dict"
+      },
+      {
+        "path": "espeak-ng-data/en_dict",
+        "bytes": 166944,
+        "url": "https://huggingface.co/csukuangfj/vits-piper-nl_NL-dii-high/resolve/12169a38e0f40f3ffc429273346f6d0700387cdf/espeak-ng-data/en_dict"
+      },
+      {
+        "path": "espeak-ng-data/es_dict",
+        "bytes": 49252,
+        "url": "https://huggingface.co/csukuangfj/vits-piper-nl_NL-dii-high/resolve/12169a38e0f40f3ffc429273346f6d0700387cdf/espeak-ng-data/es_dict"
+      },
+      {
+        "path": "espeak-ng-data/fr_dict",
+        "bytes": 63727,
+        "url": "https://huggingface.co/csukuangfj/vits-piper-nl_NL-dii-high/resolve/12169a38e0f40f3ffc429273346f6d0700387cdf/espeak-ng-data/fr_dict"
+      },
+      {
+        "path": "espeak-ng-data/intonations",
+        "bytes": 2040,
+        "url": "https://huggingface.co/csukuangfj/vits-piper-nl_NL-dii-high/resolve/12169a38e0f40f3ffc429273346f6d0700387cdf/espeak-ng-data/intonations"
+      },
+      {
+        "path": "espeak-ng-data/lang/gmw/de",
+        "bytes": 42,
+        "url": "https://huggingface.co/csukuangfj/vits-piper-nl_NL-dii-high/resolve/12169a38e0f40f3ffc429273346f6d0700387cdf/espeak-ng-data/lang/gmw/de"
+      },
+      {
+        "path": "espeak-ng-data/lang/gmw/en",
+        "bytes": 140,
+        "url": "https://huggingface.co/csukuangfj/vits-piper-nl_NL-dii-high/resolve/12169a38e0f40f3ffc429273346f6d0700387cdf/espeak-ng-data/lang/gmw/en"
+      },
+      {
+        "path": "espeak-ng-data/lang/gmw/en-US",
+        "bytes": 257,
+        "url": "https://huggingface.co/csukuangfj/vits-piper-nl_NL-dii-high/resolve/12169a38e0f40f3ffc429273346f6d0700387cdf/espeak-ng-data/lang/gmw/en-US"
+      },
+      {
+        "path": "espeak-ng-data/lang/gmw/nl",
+        "bytes": 23,
+        "url": "https://huggingface.co/csukuangfj/vits-piper-nl_NL-dii-high/resolve/12169a38e0f40f3ffc429273346f6d0700387cdf/espeak-ng-data/lang/gmw/nl"
+      },
+      {
+        "path": "espeak-ng-data/lang/roa/ca",
+        "bytes": 25,
+        "url": "https://huggingface.co/csukuangfj/vits-piper-nl_NL-dii-high/resolve/12169a38e0f40f3ffc429273346f6d0700387cdf/espeak-ng-data/lang/roa/ca"
+      },
+      {
+        "path": "espeak-ng-data/lang/roa/es",
+        "bytes": 63,
+        "url": "https://huggingface.co/csukuangfj/vits-piper-nl_NL-dii-high/resolve/12169a38e0f40f3ffc429273346f6d0700387cdf/espeak-ng-data/lang/roa/es"
+      },
+      {
+        "path": "espeak-ng-data/lang/roa/fr",
+        "bytes": 79,
+        "url": "https://huggingface.co/csukuangfj/vits-piper-nl_NL-dii-high/resolve/12169a38e0f40f3ffc429273346f6d0700387cdf/espeak-ng-data/lang/roa/fr"
+      },
+      {
+        "path": "espeak-ng-data/lang/roa/pt",
+        "bytes": 95,
+        "url": "https://huggingface.co/csukuangfj/vits-piper-nl_NL-dii-high/resolve/12169a38e0f40f3ffc429273346f6d0700387cdf/espeak-ng-data/lang/roa/pt"
+      },
+      {
+        "path": "espeak-ng-data/nl_dict",
+        "bytes": 65979,
+        "url": "https://huggingface.co/csukuangfj/vits-piper-nl_NL-dii-high/resolve/12169a38e0f40f3ffc429273346f6d0700387cdf/espeak-ng-data/nl_dict"
+      },
+      {
+        "path": "espeak-ng-data/phondata",
+        "bytes": 550424,
+        "url": "https://huggingface.co/csukuangfj/vits-piper-nl_NL-dii-high/resolve/12169a38e0f40f3ffc429273346f6d0700387cdf/espeak-ng-data/phondata"
+      },
+      {
+        "path": "espeak-ng-data/phondata-manifest",
+        "bytes": 21821,
+        "url": "https://huggingface.co/csukuangfj/vits-piper-nl_NL-dii-high/resolve/12169a38e0f40f3ffc429273346f6d0700387cdf/espeak-ng-data/phondata-manifest"
+      },
+      {
+        "path": "espeak-ng-data/phonindex",
+        "bytes": 39074,
+        "url": "https://huggingface.co/csukuangfj/vits-piper-nl_NL-dii-high/resolve/12169a38e0f40f3ffc429273346f6d0700387cdf/espeak-ng-data/phonindex"
+      },
+      {
+        "path": "espeak-ng-data/phontab",
+        "bytes": 55796,
+        "url": "https://huggingface.co/csukuangfj/vits-piper-nl_NL-dii-high/resolve/12169a38e0f40f3ffc429273346f6d0700387cdf/espeak-ng-data/phontab"
+      },
+      {
+        "path": "espeak-ng-data/pt_dict",
+        "bytes": 67817,
+        "url": "https://huggingface.co/csukuangfj/vits-piper-nl_NL-dii-high/resolve/12169a38e0f40f3ffc429273346f6d0700387cdf/espeak-ng-data/pt_dict"
+      },
+      {
+        "path": "espeak-ng-data/it_dict",
+        "bytes": 152889,
+        "url": "https://huggingface.co/csukuangfj/kokoro-multi-lang-v1_0/resolve/f7b96bb6bef5c5da4d3aa4f4e0498fbbf62dc78b/espeak-ng-data/it_dict"
+      },
+      {
+        "path": "espeak-ng-data/lang/roa/it",
+        "bytes": 109,
+        "url": "https://huggingface.co/csukuangfj/vits-piper-nl_NL-dii-high/resolve/12169a38e0f40f3ffc429273346f6d0700387cdf/espeak-ng-data/lang/roa/it"
+      }
+    ]
+  },
+  {
+    "id": "piper_nl_be_rdh",
+    "language": "nl",
+    "label": "RDH · Nederlands (nl-BE)",
+    "repository": "csukuangfj/vits-piper-nl_BE-rdh-medium",
+    "revision": "6e4aa36cc18a29bd5b72786dc52eee9fb49bc26a",
+    "kind": "vits",
+    "model": "nl_BE-rdh-medium.onnx",
+    "files": [
+      {
+        "path": "nl_BE-rdh-medium.onnx",
+        "bytes": 63104652,
+        "sha256": "45260062e54e44270d6e3b57c082b3d0d7085e4b542fa2909cf212ffad4b73a0"
+      },
+      {
+        "path": "tokens.txt",
+        "bytes": 763,
+        "sha256": "42d1a69ed2b91a51928a711aa228ed9f3dc021c6d359a3e9c4f37eb1d20f80bd"
+      },
+      {
+        "path": "espeak-ng-data/ca_dict",
+        "bytes": 45566,
+        "url": "https://huggingface.co/csukuangfj/vits-piper-nl_NL-dii-high/resolve/12169a38e0f40f3ffc429273346f6d0700387cdf/espeak-ng-data/ca_dict"
+      },
+      {
+        "path": "espeak-ng-data/de_dict",
+        "bytes": 68276,
+        "url": "https://huggingface.co/csukuangfj/vits-piper-nl_NL-dii-high/resolve/12169a38e0f40f3ffc429273346f6d0700387cdf/espeak-ng-data/de_dict"
+      },
+      {
+        "path": "espeak-ng-data/en_dict",
+        "bytes": 166944,
+        "url": "https://huggingface.co/csukuangfj/vits-piper-nl_NL-dii-high/resolve/12169a38e0f40f3ffc429273346f6d0700387cdf/espeak-ng-data/en_dict"
+      },
+      {
+        "path": "espeak-ng-data/es_dict",
+        "bytes": 49252,
+        "url": "https://huggingface.co/csukuangfj/vits-piper-nl_NL-dii-high/resolve/12169a38e0f40f3ffc429273346f6d0700387cdf/espeak-ng-data/es_dict"
+      },
+      {
+        "path": "espeak-ng-data/fr_dict",
+        "bytes": 63727,
+        "url": "https://huggingface.co/csukuangfj/vits-piper-nl_NL-dii-high/resolve/12169a38e0f40f3ffc429273346f6d0700387cdf/espeak-ng-data/fr_dict"
+      },
+      {
+        "path": "espeak-ng-data/intonations",
+        "bytes": 2040,
+        "url": "https://huggingface.co/csukuangfj/vits-piper-nl_NL-dii-high/resolve/12169a38e0f40f3ffc429273346f6d0700387cdf/espeak-ng-data/intonations"
+      },
+      {
+        "path": "espeak-ng-data/lang/gmw/de",
+        "bytes": 42,
+        "url": "https://huggingface.co/csukuangfj/vits-piper-nl_NL-dii-high/resolve/12169a38e0f40f3ffc429273346f6d0700387cdf/espeak-ng-data/lang/gmw/de"
+      },
+      {
+        "path": "espeak-ng-data/lang/gmw/en",
+        "bytes": 140,
+        "url": "https://huggingface.co/csukuangfj/vits-piper-nl_NL-dii-high/resolve/12169a38e0f40f3ffc429273346f6d0700387cdf/espeak-ng-data/lang/gmw/en"
+      },
+      {
+        "path": "espeak-ng-data/lang/gmw/en-US",
+        "bytes": 257,
+        "url": "https://huggingface.co/csukuangfj/vits-piper-nl_NL-dii-high/resolve/12169a38e0f40f3ffc429273346f6d0700387cdf/espeak-ng-data/lang/gmw/en-US"
+      },
+      {
+        "path": "espeak-ng-data/lang/gmw/nl",
+        "bytes": 23,
+        "url": "https://huggingface.co/csukuangfj/vits-piper-nl_NL-dii-high/resolve/12169a38e0f40f3ffc429273346f6d0700387cdf/espeak-ng-data/lang/gmw/nl"
+      },
+      {
+        "path": "espeak-ng-data/lang/roa/ca",
+        "bytes": 25,
+        "url": "https://huggingface.co/csukuangfj/vits-piper-nl_NL-dii-high/resolve/12169a38e0f40f3ffc429273346f6d0700387cdf/espeak-ng-data/lang/roa/ca"
+      },
+      {
+        "path": "espeak-ng-data/lang/roa/es",
+        "bytes": 63,
+        "url": "https://huggingface.co/csukuangfj/vits-piper-nl_NL-dii-high/resolve/12169a38e0f40f3ffc429273346f6d0700387cdf/espeak-ng-data/lang/roa/es"
+      },
+      {
+        "path": "espeak-ng-data/lang/roa/fr",
+        "bytes": 79,
+        "url": "https://huggingface.co/csukuangfj/vits-piper-nl_NL-dii-high/resolve/12169a38e0f40f3ffc429273346f6d0700387cdf/espeak-ng-data/lang/roa/fr"
+      },
+      {
+        "path": "espeak-ng-data/lang/roa/pt",
+        "bytes": 95,
+        "url": "https://huggingface.co/csukuangfj/vits-piper-nl_NL-dii-high/resolve/12169a38e0f40f3ffc429273346f6d0700387cdf/espeak-ng-data/lang/roa/pt"
+      },
+      {
+        "path": "espeak-ng-data/nl_dict",
+        "bytes": 65979,
+        "url": "https://huggingface.co/csukuangfj/vits-piper-nl_NL-dii-high/resolve/12169a38e0f40f3ffc429273346f6d0700387cdf/espeak-ng-data/nl_dict"
+      },
+      {
+        "path": "espeak-ng-data/phondata",
+        "bytes": 550424,
+        "url": "https://huggingface.co/csukuangfj/vits-piper-nl_NL-dii-high/resolve/12169a38e0f40f3ffc429273346f6d0700387cdf/espeak-ng-data/phondata"
+      },
+      {
+        "path": "espeak-ng-data/phondata-manifest",
+        "bytes": 21821,
+        "url": "https://huggingface.co/csukuangfj/vits-piper-nl_NL-dii-high/resolve/12169a38e0f40f3ffc429273346f6d0700387cdf/espeak-ng-data/phondata-manifest"
+      },
+      {
+        "path": "espeak-ng-data/phonindex",
+        "bytes": 39074,
+        "url": "https://huggingface.co/csukuangfj/vits-piper-nl_NL-dii-high/resolve/12169a38e0f40f3ffc429273346f6d0700387cdf/espeak-ng-data/phonindex"
+      },
+      {
+        "path": "espeak-ng-data/phontab",
+        "bytes": 55796,
+        "url": "https://huggingface.co/csukuangfj/vits-piper-nl_NL-dii-high/resolve/12169a38e0f40f3ffc429273346f6d0700387cdf/espeak-ng-data/phontab"
+      },
+      {
+        "path": "espeak-ng-data/pt_dict",
+        "bytes": 67817,
+        "url": "https://huggingface.co/csukuangfj/vits-piper-nl_NL-dii-high/resolve/12169a38e0f40f3ffc429273346f6d0700387cdf/espeak-ng-data/pt_dict"
+      },
+      {
+        "path": "espeak-ng-data/it_dict",
+        "bytes": 152889,
+        "url": "https://huggingface.co/csukuangfj/kokoro-multi-lang-v1_0/resolve/f7b96bb6bef5c5da4d3aa4f4e0498fbbf62dc78b/espeak-ng-data/it_dict"
+      },
+      {
+        "path": "espeak-ng-data/lang/roa/it",
+        "bytes": 109,
+        "url": "https://huggingface.co/csukuangfj/vits-piper-nl_NL-dii-high/resolve/12169a38e0f40f3ffc429273346f6d0700387cdf/espeak-ng-data/lang/roa/it"
+      }
+    ]
+  },
+  {
+    "id": "pocket_nl_daan",
+    "language": "nl",
+    "label": "Pocket TTS · Daan",
+    "repository": "litert-community/pocket-tts",
+    "revision": "03f949ec418ccd4d153008f7ef9c58c754cc0616",
+    "kind": "pocket",
+    "model": "daan.litertlm",
+    "files": [
+      {
+        "path": "daan.litertlm",
+        "bytes": 125247496,
+        "sha256": "e38af0d6b726c550548b0126c5563245d9ac563c6669b66af924a2b545b51387",
+        "url": "https://huggingface.co/litert-community/pocket-tts/resolve/03f949ec418ccd4d153008f7ef9c58c754cc0616/pocket_tts_nl_int8.litertlm"
+      }
+    ]
   }
 ]

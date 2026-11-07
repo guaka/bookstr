@@ -296,11 +296,15 @@ class NeuralNarrationServiceTest {
         }
     }
 
-    @Test fun dutchNarrationPlaysReportsProgressAndRequestsTheNextSection() = runBlocking {
+    @Test fun dutchNarrationPlaysReportsProgressAndRequestsTheNextSection() = verifyDutchNarration("piper_nl_nl_dii")
+
+    @Test fun pocketNarrationPlaysReportsProgressAndRequestsTheNextSection() = verifyDutchNarration("pocket_nl_daan")
+
+    private fun verifyDutchNarration(modelId: String) = runBlocking {
         val app = ApplicationProvider.getApplicationContext<BookstrApp>()
         app.settingsRepository.clearReaderSession()
         val models = SpeechModels(app)
-        val model = models.models.first { it.language == "nl" }
+        val model = models.models.single { it.id == modelId }
         if (!models.installed(model)) models.install(model) {}
         val settings = SpeechSettings(app.getSharedPreferences("bookstr_settings", Context.MODE_PRIVATE))
         settings.setVoice("Dutch", model.id)

@@ -1,17 +1,16 @@
 package app.bookstr.speech
 
-import com.k2fsa.sherpa.onnx.OfflineTts
-import com.k2fsa.sherpa.onnx.OfflineTtsConfig
-import com.k2fsa.sherpa.onnx.OfflineTtsModelConfig
-import com.k2fsa.sherpa.onnx.OfflineTtsKokoroModelConfig
-import com.k2fsa.sherpa.onnx.OfflineTtsVitsModelConfig
 import java.io.File
 import java.io.RandomAccessFile
 
 /** Access only on the narration synthesis executor, including close(). */
-class NeuralSpeech(private val models: SpeechModels) {
+class NeuralSpeech internal constructor(
+    private val models: SpeechModels,
+    private val createEngine: (SpeechModel, SpeechModels) -> NeuralSpeechEngine,
+) {
+    constructor(models: SpeechModels) : this(models, ::createNeuralSpeechEngine)
     private var loaded: String? = null
-    private var engine: OfflineTts? = null
+    private var engine: NeuralSpeechEngine? = null
 
     fun synthesize(model: SpeechModel, text: String, file: File, cancelled: () -> Boolean) {
         val synthesizer = synthesizer(model)
@@ -21,7 +20,7 @@ class NeuralSpeech(private val models: SpeechModels) {
             output.write(ByteArray(44))
             for (phrase in phrases(text)) {
                 if (cancelled()) return
-                val audio = synthesizer.generate(phrase, model.speaker)
+                val audio = synthesizer.generate(phrase)
                 check(audio.samples.isNotEmpty()) { "Voice could not generate audio" }
                 val pcm = java.nio.ByteBuffer.allocate(audio.samples.size * 2).order(java.nio.ByteOrder.LITTLE_ENDIAN)
                 for (sample in audio.samples) pcm.putShort((sample.coerceIn(-1f, 1f) * 32767).toInt().toShort())
@@ -32,7 +31,7 @@ class NeuralSpeech(private val models: SpeechModels) {
             output.seek(0)
             output.writeBytes("RIFF"); output.writeInt(Integer.reverseBytes(size + 36)); output.writeBytes("WAVEfmt ")
             output.writeInt(Integer.reverseBytes(16)); output.writeShort(256); output.writeShort(256)
-            val rate = synthesizer.sampleRate()
+            val rate = synthesizer.sampleRate
             output.writeInt(Integer.reverseBytes(rate)); output.writeInt(Integer.reverseBytes(rate * 2))
             output.writeShort(512); output.writeShort(4096); output.writeBytes("data"); output.writeInt(Integer.reverseBytes(size))
         }
@@ -54,35 +53,25 @@ class NeuralSpeech(private val models: SpeechModels) {
             fileStem = fileStem,
             cancelled = cancelled,
             render = { phrase ->
-                val audio = synthesizer.generate(phrase, model.speaker)
+                val audio = synthesizer.generate(phrase)
                 check(audio.samples.isNotEmpty()) { "Voice could not generate audio" }
-                PhraseAudio(audio.samples, synthesizer.sampleRate())
+                PhraseAudio(audio.samples, synthesizer.sampleRate)
             },
             onPhraseReady = onPhraseReady,
         )
     }
 
-    private fun synthesizer(model: SpeechModel): OfflineTts {
+    private fun synthesizer(model: SpeechModel): NeuralSpeechEngine {
         check(models.installed(model)) { "Download this voice in Settings first" }
         if (loaded != model.id) {
             close()
-            val directory = models.directory(model)
-            val config = OfflineTtsModelConfig(numThreads = 4)
-            val tokens = File(directory, "tokens.txt").path
-            val data = models.pronunciationDirectory(model).path
-            val path = File(directory, model.model).path
-            if (model.kind == "kokoro") {
-                config.kokoro = OfflineTtsKokoroModelConfig(model = path, voices = File(directory, "voices.bin").path, tokens = tokens, dataDir = data, lang = model.engineLanguage.orEmpty())
-            } else {
-                config.vits = OfflineTtsVitsModelConfig(model = path, tokens = tokens, dataDir = data)
-            }
-            engine = OfflineTts(config = OfflineTtsConfig(model = config))
+            engine = createEngine(model, models)
             loaded = model.id
         }
         return checkNotNull(engine)
     }
 
-    fun close() { engine?.release(); engine = null; loaded = null }
+    fun close() { engine?.close(); engine = null; loaded = null }
 
     companion object {
         fun phrases(text: String): List<String> {
