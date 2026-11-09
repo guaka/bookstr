@@ -11,6 +11,7 @@ import android.view.ViewGroup
 import android.webkit.WebView
 import android.webkit.WebResourceRequest
 import android.widget.LinearLayout
+import android.widget.TextView
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
 import app.bookstr.data.BookFormat
@@ -158,6 +159,12 @@ class BookPagesDreamServiceTest {
         Shadows.shadowOf(Looper.getMainLooper()).idle()
         val content = service.window?.decorView?.findViewById<ViewGroup>(android.R.id.content)
         assertTrue(content?.getChildAt(0) is LinearLayout)
+        val fallback = content!!.getChildAt(0) as LinearLayout
+        val message = fallback.getChildAt(fallback.childCount - 1) as TextView
+        assertEquals("Download and open an EPUB to show its page here.", message.text.toString())
+        // TextView exposes its text to accessibility; an app-name description would mask it.
+        assertNull(message.contentDescription)
+        assertNull(ReflectionHelpers.getField<WebView?>(service, "webView"))
         assertEquals(before, runBlocking { app.database.bookProgressDao().getAll() })
 
         service.sendBroadcast(Intent(NarrationService.ACTION_EVENT).setPackage(service.packageName)

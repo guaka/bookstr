@@ -249,11 +249,10 @@ class BookPagesDreamService : DreamService() {
         if (icon != null) root.addView(ImageView(this).apply { setImageDrawable(icon) },
             LinearLayout.LayoutParams(96, 96))
         root.addView(TextView(this).apply {
-            text = getString(R.string.app_name)
+            text = getString(R.string.screensaver_open_book)
             setTextColor(Color.WHITE)
             textSize = 24f
             gravity = Gravity.CENTER
-            contentDescription = getString(R.string.app_name)
         }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT))
         setContentView(root)
     }
