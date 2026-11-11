@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.background
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
@@ -51,6 +52,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.ui.text.input.ImeAction
@@ -83,6 +85,8 @@ fun SettingsScreen(
     readerFont: ReaderFont,
     readerAlignment: ReaderAlignment,
     keepOnLockScreen: Boolean,
+    dreamOpenPageOnSelect: Boolean = true,
+    dreamFollowNarration: Boolean = true,
     syncing: Boolean,
     connectingAmber: Boolean,
     syncMessage: String?,
@@ -103,6 +107,9 @@ fun SettingsScreen(
     onReaderFontChange: (ReaderFont) -> Unit,
     onReaderAlignmentChange: (ReaderAlignment) -> Unit,
     onKeepOnLockScreenChange: (Boolean) -> Unit,
+    onDreamOpenPageOnSelectChange: (Boolean) -> Unit = {},
+    onDreamFollowNarrationChange: (Boolean) -> Unit = {},
+    onOpenSystemScreensaverSettings: () -> Unit = {},
     onInstallDictionaryPack: (DictionaryPack) -> Unit,
     onRemoveDictionaryPack: (DictionaryPack) -> Unit,
     onSyncNow: () -> Unit,
@@ -162,6 +169,30 @@ fun SettingsScreen(
                     color = MaterialTheme.colorScheme.secondary,
                 )
               }
+            }
+
+            if (television) {
+                SettingsCard {
+                    SettingsSectionTitle("Screensaver")
+                    SettingsSwitchRow(
+                        label = "Open page on select",
+                        checked = dreamOpenPageOnSelect,
+                        tag = "settings.screensaver.open-page",
+                        onCheckedChange = onDreamOpenPageOnSelectChange,
+                    )
+                    SettingsSwitchRow(
+                        label = "Follow narration",
+                        checked = dreamFollowNarration,
+                        tag = "settings.screensaver.follow-narration",
+                        onCheckedChange = onDreamFollowNarrationChange,
+                    )
+                    OutlinedButton(
+                        onClick = onOpenSystemScreensaverSettings,
+                        modifier = Modifier.fillMaxWidth().testTag("settings.screensaver.system-settings"),
+                    ) {
+                        Text("System screensaver settings")
+                    }
+                }
             }
 
             Card(
@@ -625,6 +656,26 @@ private fun SettingsCard(content: @Composable () -> Unit) {
         ) {
             content()
         }
+    }
+}
+
+@Composable
+private fun SettingsSwitchRow(
+    label: String,
+    checked: Boolean,
+    tag: String,
+    onCheckedChange: (Boolean) -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag(tag)
+            .toggleable(value = checked, role = Role.Switch, onValueChange = onCheckedChange),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(label)
+        Switch(checked = checked, onCheckedChange = null)
     }
 }
 

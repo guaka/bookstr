@@ -40,6 +40,8 @@ class SettingsRepositoryTest {
         assertEquals(ReaderFont.Arial, settings.readerFont)
         assertEquals(ReaderAlignment.Justified, settings.readerAlignment)
         assertTrue(settings.keepReadingOnLockScreen)
+        assertTrue(settings.dreamOpenPageOnSelect)
+        assertTrue(settings.dreamFollowNarration)
         assertEquals("recent", settings.wordSort)
         assertEquals("en", settings.dictionarySource)
         assertEquals("pt", settings.dictionaryTarget)
@@ -49,6 +51,8 @@ class SettingsRepositoryTest {
         settings.readerFont = ReaderFont.NotoSerif
         settings.readerAlignment = ReaderAlignment.Left
         settings.keepReadingOnLockScreen = false
+        settings.dreamOpenPageOnSelect = false
+        settings.dreamFollowNarration = false
         settings.wordSort = "title"
         settings.dictionarySource = "fr"
         settings.dictionaryTarget = "de"
@@ -58,6 +62,8 @@ class SettingsRepositoryTest {
         assertEquals(ReaderFont.NotoSerif, restored.readerFont)
         assertEquals(ReaderAlignment.Left, restored.readerAlignment)
         assertFalse(restored.keepReadingOnLockScreen)
+        assertFalse(restored.dreamOpenPageOnSelect)
+        assertFalse(restored.dreamFollowNarration)
         assertEquals("title", restored.wordSort)
         assertEquals("fr", restored.dictionarySource)
         assertEquals("de", restored.dictionaryTarget)

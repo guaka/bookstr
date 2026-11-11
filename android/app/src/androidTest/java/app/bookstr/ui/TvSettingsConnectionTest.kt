@@ -9,6 +9,8 @@ import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
 import app.bookstr.data.*
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 
@@ -16,7 +18,15 @@ import org.junit.Test
 class TvSettingsConnectionTest {
     @get:Rule val compose = createComposeRule()
 
-    private fun settings(television: Boolean, signerAvailable: Boolean) {
+    private fun settings(
+        television: Boolean,
+        signerAvailable: Boolean,
+        openPageOnSelect: Boolean = true,
+        followNarration: Boolean = true,
+        onOpenPageOnSelectChange: (Boolean) -> Unit = {},
+        onFollowNarrationChange: (Boolean) -> Unit = {},
+        onOpenSystemScreensaverSettings: () -> Unit = {},
+    ) {
         var keyboardReadyForTest = !television
         compose.setContent {
             var pairing by remember { mutableStateOf(false) }
@@ -37,12 +47,16 @@ class TvSettingsConnectionTest {
                     authMode = NostrAuthMode.None, television = television, npubDisplay = "", amberAvailable = signerAvailable,
                     nsec = "", showNsec = false, relays = "", theme = ReaderTheme.entries.first(),
                     readerFont = ReaderFont.entries.first(), readerAlignment = ReaderAlignment.entries.first(),
-                    keepOnLockScreen = false, syncing = false, connectingAmber = false, syncMessage = null,
+                    keepOnLockScreen = false, dreamOpenPageOnSelect = openPageOnSelect,
+                    dreamFollowNarration = followNarration, syncing = false, connectingAmber = false, syncMessage = null,
                     dictionaryPacks = emptyList(), dictionaryPackBusy = null, dictionaryPackProgress = null,
                     dictionaryMessage = null, initialDictionarySource = "en", initialDictionaryTarget = "pt",
                     onDictionaryPairChange = { _, _ -> }, onConnectAmber = {}, onConnectNip46 = { pairing = true },
                     onDisconnectNostr = {}, onShowNsecChange = {}, onNsecChange = {}, onRelaysChange = {},
                     onThemeChange = {}, onReaderFontChange = {}, onReaderAlignmentChange = {}, onKeepOnLockScreenChange = {},
+                    onDreamOpenPageOnSelectChange = onOpenPageOnSelectChange,
+                    onDreamFollowNarrationChange = onFollowNarrationChange,
+                    onOpenSystemScreensaverSettings = onOpenSystemScreensaverSettings,
                     onInstallDictionaryPack = {}, onRemoveDictionaryPack = {}, onSyncNow = {},
                 )
                 if (pairing) Nip46PairingQrDialog("nostrconnect://${"ab".repeat(32)}?secret=fixture", false, null, { pairing = false })
@@ -69,10 +83,39 @@ class TvSettingsConnectionTest {
         compose.onNodeWithTag("signer.connect").assertDoesNotExist()
     }
 
+    @Test fun televisionScreensaverOptionsAreNavigableAndOpenSystemSettings() {
+        var openPageChanged: Boolean? = null
+        var followNarrationChanged: Boolean? = null
+        var systemSettingsOpened = false
+        settings(
+            television = true,
+            signerAvailable = false,
+            onOpenPageOnSelectChange = { openPageChanged = it },
+            onFollowNarrationChange = { followNarrationChanged = it },
+            onOpenSystemScreensaverSettings = { systemSettingsOpened = true },
+        )
+
+        compose.onNodeWithTag("settings.screensaver.open-page").assertIsOn()
+        compose.onNodeWithTag("settings.screensaver.follow-narration").assertIsOn()
+        for (tag in listOf("open-page", "follow-narration", "system-settings")) {
+            val control = compose.onNodeWithTag("settings.screensaver.$tag")
+            control.performScrollTo().performSemanticsAction(SemanticsActions.RequestFocus)
+            control.assertIsFocused().performKeyInput { pressKey(Key.DirectionCenter) }
+        }
+        compose.runOnIdle {
+            assertEquals(false, openPageChanged)
+            assertEquals(false, followNarrationChanged)
+            assertTrue(systemSettingsOpened)
+        }
+    }
+
     @Test fun phoneKeepsItsInstalledSignerConnection() {
         settings(television = false, signerAvailable = true)
         compose.onNodeWithTag("signer.connect").assertExists()
         compose.onNodeWithTag("signer.connect-qr").assertDoesNotExist()
+        compose.onNodeWithTag("settings.screensaver.open-page").assertDoesNotExist()
+        compose.onNodeWithTag("settings.screensaver.follow-narration").assertDoesNotExist()
+        compose.onNodeWithTag("settings.screensaver.system-settings").assertDoesNotExist()
     }
 
     @Test fun phoneWithoutSignerKeepsInstallationPrompt() {

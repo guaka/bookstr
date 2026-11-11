@@ -1,9 +1,11 @@
 package app.bookstr.ui
 
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.res.Configuration
 import android.graphics.Bitmap
 import android.graphics.pdf.PdfDocument
+import android.provider.Settings
 import android.view.View
 import android.view.ViewGroup
 import android.webkit.WebView
@@ -13,6 +15,7 @@ import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import androidx.test.core.app.ActivityScenario
 import androidx.test.core.app.ApplicationProvider
+import androidx.test.platform.app.InstrumentationRegistry
 import app.bookstr.BookstrApp
 import app.bookstr.BookstrTestRunner
 import app.bookstr.ComicReaderActivity
@@ -65,6 +68,50 @@ class TvReaderActivitiesTest {
                 if (error.message?.contains("No compose hierarchies found") != true) throw error
                 false
             }
+        }
+    }
+
+    @Test fun tvScreensaverSwitchesPersistThroughMainActivitySettingsWithRemoteInput() {
+        val savedOpenPageOnSelect = app.settingsRepository.dreamOpenPageOnSelect
+        val savedFollowNarration = app.settingsRepository.dreamFollowNarration
+        app.settingsRepository.dreamOpenPageOnSelect = true
+        app.settingsRepository.dreamFollowNarration = true
+        try {
+            television<MainActivity>(Intent(app, MainActivity::class.java).putExtra(MainActivity.EXTRA_SELECT_TAB, 2)) {
+                compose.waitUntil(15_000) {
+                    compose.onAllNodesWithTag("settings.screensaver.open-page").fetchSemanticsNodes().isNotEmpty() &&
+                        compose.onAllNodesWithTag("settings.screensaver.follow-narration").fetchSemanticsNodes().isNotEmpty()
+                }
+                compose.onNodeWithTag("settings.screensaver.open-page").assertIsOn()
+                compose.onNodeWithTag("settings.screensaver.open-page").performScrollTo()
+                select("settings.screensaver.open-page")
+                compose.onNodeWithTag("settings.screensaver.open-page").assertIsOff()
+
+                compose.onNodeWithTag("settings.screensaver.follow-narration").assertIsOn()
+                compose.onNodeWithTag("settings.screensaver.follow-narration").performScrollTo()
+                select("settings.screensaver.follow-narration")
+                compose.onNodeWithTag("settings.screensaver.follow-narration").assertIsOff()
+
+                assertFalse(app.settingsRepository.dreamOpenPageOnSelect)
+                assertFalse(app.settingsRepository.dreamFollowNarration)
+
+                val instrumentation = InstrumentationRegistry.getInstrumentation()
+                val settingsIntent = IntentFilter().apply {
+                    addAction(Settings.ACTION_DREAM_SETTINGS)
+                    addAction(Settings.ACTION_DISPLAY_SETTINGS)
+                }
+                val monitor = instrumentation.addMonitor(settingsIntent, null, true)
+                try {
+                    compose.onNodeWithTag("settings.screensaver.system-settings").performScrollTo()
+                    select("settings.screensaver.system-settings")
+                    assertEquals(1, monitor.hits)
+                } finally {
+                    instrumentation.removeMonitor(monitor)
+                }
+            }
+        } finally {
+            app.settingsRepository.dreamOpenPageOnSelect = savedOpenPageOnSelect
+            app.settingsRepository.dreamFollowNarration = savedFollowNarration
         }
     }
 

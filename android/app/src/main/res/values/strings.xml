@@ -1,4 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">bookstr</string>
+    <item name="dream_open_page" type="id" />
+    <string name="dream_open_page">Open %1$s at this page</string>
 </resources>

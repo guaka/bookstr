@@ -225,7 +225,6 @@ class ReaderActivity : ComponentActivity() {
             return
         }
         startNarrationFromExternalRequest = shouldStartReaderNarration(
-            resources.configuration.uiMode,
             intent.getBooleanExtra(NarrationService.EXTRA_START_NARRATION, false),
             savedInstanceState?.getBoolean(STATE_NARRATION_REQUEST_HANDLED) == true,
         )

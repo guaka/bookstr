@@ -109,6 +109,14 @@ class SettingsRepository(context: Context) {
         get() = plainPrefs.getBoolean(KEY_KEEP_ON_LOCK, true)
         set(value) = plainPrefs.edit().putBoolean(KEY_KEEP_ON_LOCK, value).apply()
 
+    var dreamOpenPageOnSelect: Boolean
+        get() = plainPrefs.getBoolean(KEY_DREAM_OPEN_PAGE_ON_SELECT, true)
+        set(value) = plainPrefs.edit().putBoolean(KEY_DREAM_OPEN_PAGE_ON_SELECT, value).apply()
+
+    var dreamFollowNarration: Boolean
+        get() = plainPrefs.getBoolean(KEY_DREAM_FOLLOW_NARRATION, true)
+        set(value) = plainPrefs.edit().putBoolean(KEY_DREAM_FOLLOW_NARRATION, value).apply()
+
     var wordSort: String
         get() = plainPrefs.getString(KEY_WORD_SORT, "recent") ?: "recent"
         set(value) = plainPrefs.edit().putString(KEY_WORD_SORT, value).apply()
@@ -351,6 +359,8 @@ class SettingsRepository(context: Context) {
         private const val KEY_READER_FONT = "reader_font"
         private const val KEY_READER_ALIGNMENT = "reader_alignment"
         private const val KEY_KEEP_ON_LOCK = "keep_on_lock"
+        private const val KEY_DREAM_OPEN_PAGE_ON_SELECT = "dream_open_page_on_select"
+        private const val KEY_DREAM_FOLLOW_NARRATION = "dream_follow_narration"
         private const val KEY_WORD_SORT = "word_sort"
         private const val KEY_DICTIONARY_SOURCE = "dictionary_source"
         private const val KEY_DICTIONARY_TARGET = "dictionary_target"

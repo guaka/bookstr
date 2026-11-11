@@ -38,6 +38,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import app.bookstr.data.CatalogBook
 import app.bookstr.data.BookSearchResult
@@ -116,10 +117,10 @@ class MainActivity : ComponentActivity() {
             settings.readerSession()?.let { session ->
                 val publication = catalog.publicationFile(session.bookId, session.format)
                 if (canRestoreReaderSession(session, publication.isFile)) {
-                    startActivity(
-                        if (session.format == BookFormat.Cbr || session.format == BookFormat.Cbz) {
-                            ComicReaderActivity.intent(this@MainActivity, session.bookId, session.format, session.bookTitle)
-                        } else if (session.format == BookFormat.Pdf) {
+                    if (session.format == BookFormat.Cbr || session.format == BookFormat.Cbz) {
+                        startActivity(ComicReaderActivity.intent(this@MainActivity, session.bookId, session.format, session.bookTitle))
+                    } else if (session.format == BookFormat.Pdf) {
+                        startActivity(
                             PdfReaderActivity.intent(
                                 context = this@MainActivity,
                                 bookId = session.bookId,
@@ -128,23 +129,13 @@ class MainActivity : ComponentActivity() {
                                 year = session.year,
                                 pageIndex = session.pageIndex,
                                 pageOffset = session.pageOffset,
-                            )
-                        } else {
-                            ReaderActivity.intent(
-                                context = this@MainActivity,
-                                bookId = session.bookId,
-                                bookTitle = session.bookTitle,
-                                author = session.author,
-                                year = session.year,
-                                initialCfi = session.locator,
-                                theme = settings.theme,
-                                rightsStatus = session.rightsStatus,
-                                license = session.license,
-                                licenseUrl = session.licenseUrl,
-                                rightsSource = session.rightsSource,
-                            )
-                        },
-                    )
+                            ),
+                        )
+                    } else {
+                        lifecycleScope.launch {
+                            startActivity(readerSessionRestoreIntent(this@MainActivity, session, settings.theme, catalog))
+                        }
+                    }
                 } else {
                     settings.clearReaderSession()
                 }
@@ -192,6 +183,8 @@ class MainActivity : ComponentActivity() {
                 var showNsec by remember { mutableStateOf(authMode == NostrAuthMode.Nsec) }
                 var relays by remember { mutableStateOf(settings.relays.joinToString("\n")) }
                 var keepOnLock by remember { mutableStateOf(settings.keepReadingOnLockScreen) }
+                var dreamOpenPageOnSelect by remember { mutableStateOf(settings.dreamOpenPageOnSelect) }
+                var dreamFollowNarration by remember { mutableStateOf(settings.dreamFollowNarration) }
                 var syncing by remember { mutableStateOf(false) }
                 var connectingAmber by remember { mutableStateOf(false) }
                 var syncMessage by remember { mutableStateOf<String?>(null) }
@@ -750,6 +743,8 @@ class MainActivity : ComponentActivity() {
                                 readerFont = readerFont,
                                 readerAlignment = readerAlignment,
                                 keepOnLockScreen = keepOnLock,
+                                dreamOpenPageOnSelect = dreamOpenPageOnSelect,
+                                dreamFollowNarration = dreamFollowNarration,
                                 syncing = syncing,
                                 connectingAmber = connectingAmber,
                                 syncMessage = syncMessage,
@@ -833,6 +828,22 @@ class MainActivity : ComponentActivity() {
                                 onKeepOnLockScreenChange = {
                                     keepOnLock = it
                                     settings.keepReadingOnLockScreen = it
+                                },
+                                onDreamOpenPageOnSelectChange = {
+                                    dreamOpenPageOnSelect = it
+                                    settings.dreamOpenPageOnSelect = it
+                                },
+                                onDreamFollowNarrationChange = {
+                                    dreamFollowNarration = it
+                                    settings.dreamFollowNarration = it
+                                },
+                                onOpenSystemScreensaverSettings = {
+                                    val dreamSettings = Intent(android.provider.Settings.ACTION_DREAM_SETTINGS)
+                                    if (dreamSettings.resolveActivity(packageManager) != null) {
+                                        startActivity(dreamSettings)
+                                    } else {
+                                        startActivity(Intent(android.provider.Settings.ACTION_DISPLAY_SETTINGS))
+                                    }
                                 },
                                 onInstallDictionaryPack = { pack ->
                                     scope.launch {
@@ -1118,3 +1129,26 @@ internal fun shouldRestoreReaderOnLaunch(
 
 internal fun canRestoreReaderSession(session: app.bookstr.data.ReaderSession, publicationExists: Boolean): Boolean =
     publicationExists && session.bookId.isNotBlank()
+
+internal suspend fun readerSessionRestoreIntent(
+    context: android.content.Context,
+    session: app.bookstr.data.ReaderSession,
+    theme: app.bookstr.data.ReaderTheme,
+    catalog: app.bookstr.data.CatalogRepository,
+): Intent = ReaderActivity.intent(
+    context = context,
+    bookId = session.bookId,
+    bookTitle = session.bookTitle,
+    author = session.author,
+    year = session.year,
+    initialCfi = readerSessionRestoreCfi(session.locator, catalog.getProgress(session.bookId)?.cfi),
+    theme = theme,
+    rightsStatus = session.rightsStatus,
+    license = session.license,
+    licenseUrl = session.licenseUrl,
+    rightsSource = session.rightsSource,
+)
+
+internal fun readerSessionRestoreCfi(sessionLocator: String?, progressCfi: String?): String? =
+    // ReaderSession has no timestamp, so the database locator is the freshest comparable position.
+    progressCfi?.takeIf(String::isNotBlank) ?: sessionLocator
