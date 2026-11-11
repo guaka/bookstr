@@ -1,11 +1,28 @@
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
-    android:width="160dp" android:height="90dp"
-    android:viewportWidth="320" android:viewportHeight="180">
-    <path android:fillColor="#F4ECD8" android:pathData="M0,0h320v180h-320z" />
-    <path android:fillColor="#59452C" android:pathData="M28,56Q48,48 66,58Q84,48 104,56V116Q84,108 66,120Q48,108 28,116z" />
-    <path android:strokeColor="#F4ECD8" android:strokeWidth="3" android:pathData="M66,59V111" />
+    android:width="160dp"
+    android:height="90dp"
+    android:viewportWidth="320"
+    android:viewportHeight="180">
+    <path android:fillColor="#2F5D50" android:pathData="M0,0h320v180h-320z" />
+
+    <!-- Keep the TV banner mark identical to the phone launcher artwork. -->
+    <group android:scaleX="0.2" android:scaleY="0.2" android:translateX="34" android:translateY="39">
+        <path
+            android:fillColor="#FFFAF2"
+            android:pathData="M78,112C137,87 196,93 256,130C316,93 375,87 434,112L342,255H418L237,454L254,303H93L184,160H78V112Z" />
+        <path
+            android:fillColor="#C74B32"
+            android:pathData="M256,130C226,110 195,99 164,96V142C196,145 227,157 256,178C285,157 316,145 348,142V96C317,99 286,110 256,130Z" />
+        <path
+            android:fillColor="#2F5D50"
+            android:pathData="M256,132L256,193"
+            android:strokeColor="#2F5D50"
+            android:strokeLineCap="round"
+            android:strokeWidth="14" />
+    </group>
+
     <!-- Outlined lettering keeps the launcher name independent of installed fonts. -->
-    <path android:fillColor="@android:color/transparent" android:strokeColor="#59452C"
+    <path android:fillColor="@android:color/transparent" android:strokeColor="#FFFAF2"
         android:strokeWidth="5" android:strokeLineCap="round" android:strokeLineJoin="round"
         android:pathData="M126,69V105M126,89C145,74 149,110 126,103 M162,85C148,85 148,105 162,105C176,105 176,85 162,85 M187,85C173,85 173,105 187,105C201,105 201,85 187,85 M207,69V105M222,85L208,95L224,105 M246,87C228,78 226,96 239,95C254,94 251,111 232,103 M263,77V99Q263,107 272,104M256,86H273 M284,86V105M284,93Q290,83 299,87" />
 </vector>

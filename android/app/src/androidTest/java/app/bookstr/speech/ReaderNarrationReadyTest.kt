@@ -22,6 +22,7 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.UUID
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 
@@ -30,7 +31,9 @@ class ReaderNarrationReadyTest {
 
     @Test fun openingReaderAnswersNarrationRequestMadeBeforeWebViewWasReady() = checkReaderReady(false)
 
-    @Test fun televisionOpeningBookAutomaticallyRequestsNarrationWhenReaderIsReady() = checkReaderReady(true)
+    @Test fun televisionOpeningBookDoesNotAutomaticallyRequestNarrationWhenReaderIsReady() = checkReaderReady(true)
+
+    @Test fun televisionExplicitNarrationRequestStartsWhenReaderIsReady() = checkReaderReady(true, explicitRequest = true)
 
     @Test fun missingPublicationShowsReaderErrorWithoutStartingNarration() = checkMissingPublication(false)
 
@@ -80,10 +83,12 @@ class ReaderNarrationReadyTest {
     }
 
     @Suppress("DEPRECATION")
-    private fun checkReaderReady(television: Boolean) {
+    private fun checkReaderReady(television: Boolean, explicitRequest: Boolean = false) {
         val app = ApplicationProvider.getApplicationContext<BookstrApp>()
-        val bookId = if (television) "1234567890abcdef1234567890abcdef" else "reader-narration-ready-fixture"
+        val bookId = if (television) UUID.randomUUID().toString().replace("-", "") else "reader-narration-ready-fixture"
         val epub = app.catalogRepository.epubFile(bookId)
+        NarrationService.stop(app)
+        app.settingsRepository.clearReaderSession()
         ZipOutputStream(epub.outputStream()).use { zip ->
             fun entry(name: String, value: String) {
                 zip.putNextEntry(ZipEntry(name))
@@ -123,7 +128,16 @@ class ReaderNarrationReadyTest {
                 assertTrue("Narration did not request text", initialRequest.await(10, TimeUnit.SECONDS))
             }
             ActivityScenario.launch<ReaderActivity>(
-                ReaderActivity.intent(app, bookId, "Ready fixture", null, null, null, ReaderTheme.Paper),
+                ReaderActivity.intent(
+                    app,
+                    bookId,
+                    "Ready fixture",
+                    null,
+                    null,
+                    null,
+                    ReaderTheme.Paper,
+                    startNarration = explicitRequest,
+                ),
             ).use { scenario ->
                 if (television) {
                     scenario.onActivity { activity ->
@@ -139,26 +153,40 @@ class ReaderNarrationReadyTest {
                     }
                     val readerSnapshot = compose.onRoot().printToString()
                     assertTrue(
-                        "Reader did not become ready before TV autoplay. uiMode=${observedUiMode.get()}, " +
+                        "Reader did not become ready on TV. uiMode=${observedUiMode.get()}, " +
                             "error=${compose.onAllNodesWithTag("reader.error").fetchSemanticsNodes().isNotEmpty()}\n$readerSnapshot",
                         compose.onAllNodesWithTag("reader.loading").fetchSemanticsNodes().isEmpty(),
                     )
                     assertTrue(
-                        "TV reader reported an error before autoplay. uiMode=${observedUiMode.get()}\n$readerSnapshot",
+                        "TV reader reported an error. uiMode=${observedUiMode.get()}\n$readerSnapshot",
                         compose.onAllNodesWithTag("reader.error").fetchSemanticsNodes().isEmpty(),
                     )
-                    assertTrue(
-                        "TV did not automatically request narration. uiMode=${observedUiMode.get()}, " +
-                            "reader=$readerSnapshot, narrationEvents=$narrationEvents",
-                        initialRequest.await(45, TimeUnit.SECONDS),
-                    )
+                    if (explicitRequest) {
+                        assertTrue(
+                            "Explicit TV narration request was ignored. uiMode=${observedUiMode.get()}, " +
+                                "reader=$readerSnapshot, narrationEvents=$narrationEvents",
+                            initialRequest.await(45, TimeUnit.SECONDS),
+                        )
+                    } else {
+                        assertFalse(
+                            "TV book open must not request narration automatically. uiMode=${observedUiMode.get()}, " +
+                                "reader=$readerSnapshot, narrationEvents=$narrationEvents",
+                            initialRequest.await(1, TimeUnit.SECONDS),
+                        )
+                        assertFalse("TV book open must not send narration text", receivedText.await(1, TimeUnit.SECONDS))
+                    }
                 }
-                assertTrue("Reader did not supply narration text after becoming ready", receivedText.await(45, TimeUnit.SECONDS))
+                if (!television || explicitRequest) {
+                    assertTrue("Reader did not supply narration text after becoming ready", receivedText.await(45, TimeUnit.SECONDS))
+                } else {
+                    assertTrue("TV book open emitted narration events: $narrationEvents", narrationEvents.isEmpty())
+                }
             }
         } finally {
             NarrationService.stop(app)
             app.unregisterReceiver(receiver)
             if (television) BookstrTestRunner.clearActivityConfiguration(ReaderActivity::class.java.name)
+            app.settingsRepository.clearReaderSession()
             epub.delete()
         }
     }

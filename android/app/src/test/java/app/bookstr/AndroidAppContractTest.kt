@@ -65,6 +65,18 @@ class AndroidAppContractTest {
             .parse(File("src/main/res/drawable/tv_banner.xml")).documentElement
         assertEquals("320", banner.getAttribute("android:viewportWidth"))
         assertEquals("180", banner.getAttribute("android:viewportHeight"))
+        val bannerPaths = banner.getElementsByTagName("path")
+        val launcherPaths = javax.xml.parsers.DocumentBuilderFactory.newInstance().newDocumentBuilder()
+            .parse(File("src/main/res/drawable/ic_launcher_foreground.xml")).getElementsByTagName("path")
+        val bannerArtwork = (0 until bannerPaths.length).map { bannerPaths.item(it) as org.w3c.dom.Element }
+            .map { it.getAttribute("android:pathData") }
+        val launcherArtwork = (0 until launcherPaths.length).map { launcherPaths.item(it) as org.w3c.dom.Element }
+            .map { it.getAttribute("android:pathData") }
+        assertTrue(bannerArtwork.containsAll(launcherArtwork))
+        assertTrue((0 until bannerPaths.length).map { bannerPaths.item(it) as org.w3c.dom.Element }
+            .any { it.getAttribute("android:fillColor") == "#2F5D50" })
+        assertTrue((0 until bannerPaths.length).map { bannerPaths.item(it) as org.w3c.dom.Element }
+            .any { it.getAttribute("android:strokeColor") == "#FFFAF2" })
     }
 
     @Test

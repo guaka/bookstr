@@ -1,5 +1,6 @@
 package app.bookstr
 
+import org.junit.Assert.assertEquals
 import app.bookstr.data.BookFormat
 import app.bookstr.data.ReaderSession
 
@@ -23,5 +24,14 @@ class MainActivityLaunchTest {
         assertFalse(shouldRestoreReaderOnLaunch(true, true, true, false, null))
         assertFalse(shouldRestoreReaderOnLaunch(true, true, false, true, null))
         assertFalse(shouldRestoreReaderOnLaunch(true, true, false, false, 3))
+    }
+
+    @Test fun readerAutoResumePrefersCurrentProgressOverStaleSessionLocator() {
+        assertEquals("current-db-cfi", readerSessionRestoreCfi("stale-session-cfi", "current-db-cfi"))
+    }
+
+    @Test fun readerAutoResumeFallsBackToSessionLocatorWhenProgressHasNoCfi() {
+        assertEquals("session-cfi", readerSessionRestoreCfi("session-cfi", " "))
+        assertEquals("session-cfi", readerSessionRestoreCfi("session-cfi", null))
     }
 }

@@ -1,10 +1,10 @@
 package app.bookstr
 
-import android.graphics.Color
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.graphics.Color
 import android.os.Handler
 import android.os.Looper
 import android.service.dreams.DreamService
@@ -13,11 +13,13 @@ import android.view.ViewGroup
 import android.webkit.WebResourceResponse
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import android.widget.Button
+import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
-import androidx.webkit.WebViewAssetLoader
 import androidx.core.content.ContextCompat
+import androidx.webkit.WebViewAssetLoader
 import app.bookstr.data.BookFormat
 import app.bookstr.data.ReaderSession
 import java.io.File
@@ -72,7 +74,7 @@ class BookPagesDreamService : DreamService() {
     private var loaded = false
     @Volatile private var narrationPlaying = false
     @Volatile private var narrationBookId: String? = null
-    @Volatile private var lastDisplayedCfi: String? = null
+    private var lastDisplayedCfi: String? = null
     private var receiverRegistered = false
 
     private val narrationReceiver = object : BroadcastReceiver() {
@@ -89,12 +91,12 @@ class BookPagesDreamService : DreamService() {
             if (bookId != null && shouldFollowDreamNarration(active, narrationPlaying, bookId, narrationBookId)) {
                 io.execute {
                     val cfi = runBlocking { (application as BookstrApp).database.bookProgressDao().get(bookId)?.cfi }
-                    if (cfi.isNullOrBlank() || cfi == lastDisplayedCfi) return@execute
-                    lastDisplayedCfi = cfi
+                    if (cfi.isNullOrBlank()) return@execute
                     mainHandler.post {
-                        if (active && narrationPlaying && narrationBookId == bookId) {
+                        if (active && narrationPlaying && narrationBookId == bookId && cfi != lastDisplayedCfi) {
+                            lastDisplayedCfi = cfi
                             webView?.evaluateJavascript(
-                                "if (window.displaySearchResult) window.displaySearchResult(${org.json.JSONObject.quote(cfi)});",
+                                "if (window.restoreReaderLocation) window.restoreReaderLocation(${org.json.JSONObject.quote(cfi)});",
                                 null,
                             )
                         }
@@ -124,8 +126,7 @@ class BookPagesDreamService : DreamService() {
             }
         }
         webView = view
-        setContentView(view)
-        view.loadUrl(READER_URL)
+        setContentView(FrameLayout(this).apply { addView(view) })
         ContextCompat.registerReceiver(
             this,
             narrationReceiver,
@@ -141,7 +142,6 @@ class BookPagesDreamService : DreamService() {
         active = true
         loaded = false
         mainHandler.removeCallbacks(followNarration)
-        mainHandler.postDelayed(followNarration, FOLLOW_INTERVAL_MS)
         io.execute {
             val app = application as BookstrApp
             val session = app.settingsRepository.readerSession()
@@ -163,6 +163,7 @@ class BookPagesDreamService : DreamService() {
 
     override fun onDreamingStopped() {
         active = false
+        isInteractive = false
         mainHandler.removeCallbacks(followNarration)
         webView?.stopLoading()
         super.onDreamingStopped()
@@ -212,30 +213,61 @@ class BookPagesDreamService : DreamService() {
     @Volatile private var selectedBookFile: File? = null
 
     private fun showBook(session: ReaderSession, file: File, cfi: String?) {
+        val page = webView ?: return
+        val settings = (application as BookstrApp).settingsRepository
         selectedBookId = session.bookId
         selectedBookFile = file
-        syncDreamNarration(this, session.bookId)
-        webView?.settings?.apply {
-            javaScriptEnabled = true
-            domStorageEnabled = true
-        }
-        webView?.webViewClient = object : WebViewClient() {
+        if (settings.dreamFollowNarration) syncDreamNarration(this, session.bookId)
+        page.webViewClient = object : WebViewClient() {
             override fun shouldInterceptRequest(view: WebView, request: android.webkit.WebResourceRequest) =
                 assetLoader.shouldInterceptRequest(request.url)
 
             override fun onPageFinished(view: WebView, url: String) {
                 if (!url.endsWith("/assets/reader.html")) return
-                val settings = (application as BookstrApp).settingsRepository
                 val script = dreamReaderBootstrap(session, cfi, settings.theme.key, settings.readerFont.key, settings.readerAlignment.key)
                 view.evaluateJavascript(
                     script,
                     null,
                 )
                 view.contentDescription = session.bookTitle
+                if (settings.dreamFollowNarration) {
+                    mainHandler.removeCallbacks(followNarration)
+                    mainHandler.postDelayed(followNarration, FOLLOW_INTERVAL_MS)
+                }
             }
         }
-        webView?.setBackgroundColor(Color.rgb(244, 240, 230))
-        webView?.loadUrl(READER_URL)
+        page.loadUrl(READER_URL)
+
+        if (!settings.dreamOpenPageOnSelect) return
+        val container = page.parent as FrameLayout
+        val openPage = Button(this).apply {
+            id = R.id.dream_open_page
+            contentDescription = getString(R.string.dream_open_page, session.bookTitle)
+            background = null
+            defaultFocusHighlightEnabled = false
+            isFocusableInTouchMode = true
+            setOnClickListener {
+                startActivity(
+                    ReaderActivity.intent(
+                        context = this@BookPagesDreamService,
+                        bookId = session.bookId,
+                        bookTitle = session.bookTitle,
+                        author = session.author,
+                        year = session.year,
+                        initialCfi = lastDisplayedCfi,
+                        theme = settings.theme,
+                        rightsStatus = session.rightsStatus,
+                        license = session.license,
+                        licenseUrl = session.licenseUrl,
+                        rightsSource = session.rightsSource,
+                    ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+                )
+                finish()
+            }
+        }
+        container.addView(openPage, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+        openPage.requestFocus()
+        isInteractive = true
     }
 
     private fun showFallback() {

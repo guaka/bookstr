@@ -315,29 +315,22 @@ let book: SharedBook | null = null;
         activeReaderHighlights.words.forEach(function(value) { applyHighlight(value, "word"); });
         activeReaderHighlights.marks.forEach(function(value) { applyHighlight(value, "mark"); });
         if (highlightCfi) positionReferenceBelowTop();
+        const openedBook = book!;
+        const openedRendition = rendition!;
         reportReaderStartupStage("ready");
         if (window.AndroidBridge) AndroidBridge.onReaderReady!();
-        const restore = String(cfi || "").trim();
-        function reportRestoredLocation() {
+        function reportGeneratedLocation() {
+          if (book !== openedBook || rendition !== openedRendition) return;
           if (speechActive) {
             reportSpeechLocator(lastSpeechCfi, false);
-            return Promise.resolve();
+            return;
           }
-          const shown = restore && rendition && typeof rendition!.display === "function"
-            ? rendition!.display(restore)
-            : Promise.resolve();
-          return Promise.resolve(shown).then(function() {
-            reportLocation(rendition!.currentLocation());
-          }).catch(function() {
-            reportLocation(rendition!.currentLocation());
-          });
+          reportLocation(openedRendition.currentLocation());
         }
-        if (!restore) reportLocation(rendition!.currentLocation());
-        book!.locations.generate(100).then(function() {
-          return reportRestoredLocation();
-        }).catch(function(error) {
+        if (!String(cfi || "").trim()) reportLocation(openedRendition.currentLocation());
+        openedBook.locations.generate(100).then(reportGeneratedLocation, function(error) {
           console.warn("Could not generate EPUB locations", error);
-          reportRestoredLocation();
+          reportGeneratedLocation();
         });
       });
     }

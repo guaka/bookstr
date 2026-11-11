@@ -7,9 +7,11 @@ import android.content.SharedPreferences
 import android.net.Uri
 import android.os.Looper
 import android.security.keystore.KeyGenParameterSpec
+import android.view.KeyEvent
 import android.view.ViewGroup
 import android.webkit.WebView
 import android.webkit.WebResourceRequest
+import android.widget.Button
 import android.widget.LinearLayout
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
@@ -135,7 +137,7 @@ class BookPagesDreamServiceTest {
         assertFalse(script.contains("saveProgress"))
         val readerHtml = File("../../shared/reader/reader.html").readText()
         assertTrue(readerHtml.contains("window.loadBookUrl"))
-        assertTrue(readerHtml.contains(Regex("""window\.displaySearchResult\s*=\s*function\s*\(cfi\)""")))
+        assertTrue(readerHtml.contains(Regex("""window\.restoreReaderLocation\s*=\s*function\s*\(cfi\)""")))
     }
 
     @Test
@@ -158,6 +160,8 @@ class BookPagesDreamServiceTest {
         Shadows.shadowOf(Looper.getMainLooper()).idle()
         val content = service.window?.decorView?.findViewById<ViewGroup>(android.R.id.content)
         assertTrue(content?.getChildAt(0) is LinearLayout)
+        assertNull(service.window?.findViewById<Button>(R.id.dream_open_page))
+        assertFalse(service.isInteractive)
         assertEquals(before, runBlocking { app.database.bookProgressDao().getAll() })
 
         service.sendBroadcast(Intent(NarrationService.ACTION_EVENT).setPackage(service.packageName)
@@ -184,6 +188,7 @@ class BookPagesDreamServiceTest {
 
         val webView = ReflectionHelpers.getField<WebView>(service, "webView")
         val client = Shadows.shadowOf(webView).webViewClient
+        assertNull("The reader must wait for a book before loading", Shadows.shadowOf(webView).lastLoadedUrl)
         val readerAsset = client.shouldInterceptRequest(
             webView,
             webResourceRequest("https://appassets.androidplatform.net/assets/reader.html"),
@@ -204,7 +209,7 @@ class BookPagesDreamServiceTest {
     }
 
     @Test
-    fun savedEpubRendersPersistedPageAndFollowsPlayingBookProgressWithoutWritingIt() {
+    fun savedEpubFollowsNarrationAndRemoteSelectOpensDisplayedPageSilently() {
         val activity = Robolectric.buildActivity(Activity::class.java).setup().get()
         val controller = Robolectric.buildService(BookPagesDreamService::class.java).create()
         val service = controller.get()
@@ -252,7 +257,22 @@ class BookPagesDreamServiceTest {
         Shadows.shadowOf(Looper.getMainLooper()).idle()
 
         val followScript = requireNotNull(webShadow.lastEvaluatedJavascript)
-        assertTrue(followScript.contains("window.displaySearchResult(\"narration-progress-cfi\")"))
+        assertTrue(followScript.contains("window.restoreReaderLocation(\"narration-progress-cfi\")"))
+        assertFalse(followScript.contains("displaySearchResult"))
+        assertEquals(narrationProgress, runBlocking { app.database.bookProgressDao().get(bookId) })
+
+        val openPage = requireNotNull(service.window?.findViewById<Button>(R.id.dream_open_page))
+        assertTrue(service.isInteractive)
+        assertTrue(openPage.hasFocus())
+        assertEquals("Open Example book at this page", openPage.contentDescription)
+        assertTrue(openPage.dispatchKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_DPAD_CENTER)))
+        assertTrue(openPage.dispatchKeyEvent(KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_DPAD_CENTER)))
+        Shadows.shadowOf(Looper.getMainLooper()).idle()
+        val reader = requireNotNull(shadowOf(app).nextStartedActivity)
+        assertEquals(ReaderActivity::class.java.name, reader.component?.className)
+        assertEquals(bookId, reader.getStringExtra("book_id"))
+        assertEquals("narration-progress-cfi", reader.getStringExtra("initial_cfi"))
+        assertFalse(reader.getBooleanExtra(NarrationService.EXTRA_START_NARRATION, true))
         assertEquals(narrationProgress, runBlocking { app.database.bookProgressDao().get(bookId) })
 
         service.onDreamingStopped()
@@ -261,6 +281,49 @@ class BookPagesDreamServiceTest {
         activity.finish()
         file.delete()
         app.settingsRepository.clearReaderSession()
+    }
+
+    @Test
+    fun disabledScreensaverOptionsLeaveTheSavedPagePassiveAndStationary() {
+        val activity = Robolectric.buildActivity(Activity::class.java).setup().get()
+        val controller = Robolectric.buildService(BookPagesDreamService::class.java).create()
+        val service = controller.get()
+        ReflectionHelpers.setField(service, "mWindow", activity.window)
+        service.onAttachedToWindow()
+        val app = service.application as BookstrApp
+        val file = app.catalogRepository.epubFile(bookId).apply { writeText("fixture publication") }
+        app.settingsRepository.saveReaderSession(session)
+        app.settingsRepository.dreamOpenPageOnSelect = false
+        app.settingsRepository.dreamFollowNarration = false
+        try {
+            service.onDreamingStarted()
+            awaitDreamIo(service)
+            Shadows.shadowOf(Looper.getMainLooper()).idle()
+            val page = ReflectionHelpers.getField<WebView>(service, "webView")
+            val webShadow = Shadows.shadowOf(page)
+            webShadow.webViewClient.onPageFinished(page, "https://appassets.androidplatform.net/assets/reader.html")
+            val initialScript = requireNotNull(webShadow.lastEvaluatedJavascript)
+            assertEquals("session-cfi", loadBookArguments(initialScript).getString(1))
+            assertFalse(service.isInteractive)
+            assertNull(service.window?.findViewById<Button>(R.id.dream_open_page))
+
+            service.sendBroadcast(Intent(NarrationService.ACTION_EVENT).setPackage(service.packageName)
+                .putExtra(NarrationService.EXTRA_IS_PLAYING, true)
+                .putExtra(NarrationService.EXTRA_BOOK_ID, bookId))
+            runBlocking { app.database.bookProgressDao().upsert(BookProgress(bookId, 0.5, "new-cfi", 20L)) }
+            Shadows.shadowOf(Looper.getMainLooper()).idleFor(2, TimeUnit.SECONDS)
+            awaitDreamIo(service)
+            Shadows.shadowOf(Looper.getMainLooper()).idle()
+            assertEquals(initialScript, webShadow.lastEvaluatedJavascript)
+            assertNull(shadowOf(app).nextStartedActivity)
+        } finally {
+            service.onDreamingStopped()
+            service.onDetachedFromWindow()
+            controller.destroy()
+            activity.finish()
+            file.delete()
+            app.settingsRepository.clearReaderSession()
+        }
     }
 
     private fun loadBookArguments(script: String): org.json.JSONArray =

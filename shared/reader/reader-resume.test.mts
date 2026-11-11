@@ -1,8 +1,99 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
+import vm from 'node:vm';
+import { functionSource } from '../../web/tests/source-tools.mts';
 
 const reader = await readFile(new URL('./reader.html', import.meta.url), 'utf8');
+
+function deferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((done, fail) => { resolve = done; reject = fail; });
+  return { promise, resolve, reject };
+}
+
+function readerHarness() {
+  const reports: Array<Record<string, unknown>> = [];
+  const ready: string[] = [];
+  const warnings: unknown[][] = [];
+  const books: Array<{
+    generated: ReturnType<typeof deferred<void>>;
+    displayCalls: Array<string | undefined>;
+    currentCfi: () => string;
+    moveTo: (cfi: string, percentage: number) => void;
+  }> = [];
+  const bridge = {
+    onRelocated(payload: string) { reports.push(JSON.parse(payload) as Record<string, unknown>); },
+    onReaderReady() { ready.push('ready'); },
+  };
+  function createBook() {
+    const generated = deferred<void>();
+    const displayCalls: Array<string | undefined> = [];
+    let location = {
+      start: { cfi: 'epubcfi(/6/2[chapter]!/4/1:0)', percentage: 0.1, index: 0 },
+    };
+    let relocated: ((value: typeof location) => void) | undefined;
+    const rendition = {
+      hooks: { content: { register() {} } },
+      on(event: string, callback: (value: typeof location) => void) {
+        if (event === 'relocated') relocated = callback;
+      },
+      themes: { fontSize() {} },
+      display(target?: string) {
+        displayCalls.push(target);
+        if (target) location = { start: { cfi: target, percentage: 0.25, index: 0 } };
+        relocated?.(location);
+        return Promise.resolve();
+      },
+      currentLocation() { return location; },
+    };
+    const book = {
+      ready: Promise.resolve(),
+      spine: { spineItems: [{ linear: true, index: 0 }], get: () => ({ index: 0 }) },
+      packaging: { metadata: { language: 'en' } },
+      renderTo() { return rendition; },
+      locations: {
+        generate() { return generated.promise; },
+        length() { return 100; },
+        percentageFromCfi() { return 0.25; },
+      },
+    };
+    books.push({
+      generated,
+      displayCalls,
+      currentCfi: () => location.start.cfi,
+      moveTo(cfi, percentage) {
+        location = { start: { cfi, percentage, index: 0 } };
+        relocated?.(location);
+      },
+    });
+    return book;
+  }
+  const context = vm.createContext({
+    window: { AndroidBridge: bridge }, AndroidBridge: bridge,
+    ePub: () => createBook(), readerFontPercent: 100,
+    console: { warn(...args: unknown[]) { warnings.push(args); } },
+    waitForReaderViewport: () => Promise.resolve(), applyTheme() {},
+    reportBookMetadata() {}, reportBookSections() {}, installContinuousShellWatch() {},
+    registerThemes() {}, restoredHighlights: () => ({ words: [], marks: [] }),
+    rememberReaderHighlights() {}, activeReaderHighlights: { words: [], marks: [] },
+    applyHighlight() {}, reportReaderStartupStage() {},
+  });
+  vm.runInContext(functionSource(reader, 'includeOpeningSpineItems'), context);
+  vm.runInContext(functionSource(reader, 'cfiProgression'), context);
+  vm.runInContext(functionSource(reader, 'spinePositionForCfi'), context);
+  vm.runInContext(functionSource(reader, 'reportLocation'), context);
+  vm.runInContext(functionSource(reader, 'reportSpeechLocator'), context);
+  vm.runInContext(functionSource(reader, 'openBook'), context);
+  return {
+    context, reports, ready, warnings,
+    get generated() { return books[0].generated; },
+    get displayCalls() { return books[0].displayCalls; },
+    moveTo(cfi: string, percentage: number) { books.at(-1)?.moveTo(cfi, percentage); },
+    currentCfi() { return books.at(-1)?.currentCfi(); },
+  };
+}
 
 test('iOS keeps the system text selection menu instead of a custom reader toolbar', () => {
   assert.match(reader, /if \(window\.bookstrNativeSwipeNavigation\)\s*return;/);
@@ -66,11 +157,103 @@ test('reader captures live iframe selection for Add Word and Mark', () => {
   assert.match(reader, /AndroidBridge\.onTextSelected\(JSON\.stringify\(payload\)\)/);
 });
 
-test('reopening an EPUB does not let location generation overwrite the restored CFI', () => {
-  assert.match(reader, /function reportRestoredLocation\s*\(\)/);
-  assert.match(reader, /if \(!restore\)\s*reportLocation\(rendition\.currentLocation\(\)\)/);
-  assert.match(reader, /book\.locations\.generate\(100\)\.then\(function\s*\(\) \{\s*return reportRestoredLocation\(\);/s);
-  assert.match(reader, /function reportLocation\s*\(location\) \{\s*(?:if \(!location\)\s*return;\s*)?if \(speechActive\)\s*return;/s);
+test('an unmoved reopen reports the saved CFI after location generation', async () => {
+  const harness = readerHarness();
+  const savedCfi = 'epubcfi(/6/8[chapter]!/4/12:3)';
+  await harness.context.openBook('fixture', savedCfi, 'paper', '', 'saved-book');
+
+  assert.deepEqual(harness.displayCalls, [savedCfi]);
+  assert.deepEqual(harness.ready, ['ready']);
+  const reportsBeforeGeneration = harness.reports.length;
+  harness.generated.resolve();
+  await harness.generated.promise;
+  await new Promise(resolve => setImmediate(resolve));
+
+  assert.equal(harness.currentCfi(), savedCfi);
+  assert.ok(harness.reports.length > reportsBeforeGeneration);
+  assert.equal(harness.reports.at(-1)?.cfi, savedCfi);
+});
+
+test('a user relocation after ready survives deferred location generation and reaches Android', async () => {
+  const harness = readerHarness();
+  const savedCfi = 'epubcfi(/6/8[chapter]!/4/12:3)';
+  const userCfi = 'epubcfi(/6/8[chapter]!/4/44:9)';
+  await harness.context.openBook('fixture', savedCfi, 'paper', '', 'saved-book');
+  assert.deepEqual(harness.ready, ['ready']);
+
+  harness.moveTo(userCfi, 0.72);
+  assert.equal(harness.reports.at(-1)?.cfi, userCfi);
+  const reportsBeforeGeneration = harness.reports.length;
+  harness.generated.resolve();
+  await harness.generated.promise;
+  await new Promise(resolve => setImmediate(resolve));
+
+  assert.equal(harness.currentCfi(), userCfi);
+  assert.ok(harness.reports.length > reportsBeforeGeneration);
+  assert.equal(harness.reports.at(-1)?.cfi, userCfi);
+});
+
+test('a user relocation is reported when location generation rejects', async () => {
+  const harness = readerHarness();
+  const savedCfi = 'epubcfi(/6/8[chapter]!/4/12:3)';
+  const userCfi = 'epubcfi(/6/8[chapter]!/4/44:9)';
+  await harness.context.openBook('fixture', savedCfi, 'paper', '', 'saved-book');
+
+  harness.moveTo(userCfi, 0.72);
+  const reportsBeforeGeneration = harness.reports.length;
+  harness.generated.reject(new Error('fixture generation failure'));
+  await assert.rejects(harness.generated.promise, /fixture generation failure/);
+  await new Promise(resolve => setImmediate(resolve));
+
+  assert.equal(harness.currentCfi(), userCfi);
+  assert.ok(harness.reports.length > reportsBeforeGeneration);
+  assert.equal(harness.reports.at(-1)?.cfi, userCfi);
+  assert.ok(harness.warnings.some(([message, error]) =>
+    message === 'Could not generate EPUB locations' && String(error).includes('fixture generation failure')));
+});
+
+test('an EPUB opened without a saved CFI reports its current location before generation finishes', async () => {
+  const harness = readerHarness();
+  await harness.context.openBook('fixture', '', 'paper', '', 'new-book');
+
+  assert.deepEqual(harness.displayCalls, [undefined]);
+  assert.equal(harness.reports.at(-1)?.cfi, 'epubcfi(/6/2[chapter]!/4/1:0)');
+  harness.generated.resolve();
+  await harness.generated.promise;
+});
+
+test('location generation while speaking reports the spoken CFI without restoring the saved CFI', async () => {
+  const harness = readerHarness();
+  const savedCfi = 'epubcfi(/6/8[chapter]!/4/12:3)';
+  const spokenCfi = 'epubcfi(/6/8[chapter]!/4/61:4)';
+  await harness.context.openBook('fixture', savedCfi, 'paper', '', 'saved-book');
+
+  harness.moveTo(spokenCfi, 0.9);
+  harness.context.speechActive = true;
+  harness.context.lastSpeechCfi = spokenCfi;
+  harness.generated.resolve();
+  await harness.generated.promise;
+  await new Promise(resolve => setImmediate(resolve));
+
+  assert.equal(harness.currentCfi(), spokenCfi);
+  assert.equal(harness.reports.at(-1)?.cfi, spokenCfi);
+  assert.equal(harness.reports.at(-1)?.source, 'speech');
+});
+
+test('obsolete location generation cannot restore into a newly opened book', async () => {
+  const harness = readerHarness();
+  const firstSavedCfi = 'epubcfi(/6/2[old]!/4/12:3)';
+  const secondSavedCfi = 'epubcfi(/6/4[new]!/4/20:7)';
+  await harness.context.openBook('first-fixture', firstSavedCfi, 'paper', '', 'first-book');
+  await harness.context.openBook('second-fixture', secondSavedCfi, 'paper', '', 'second-book');
+  const reportsBeforeOldCompletion = harness.reports.length;
+
+  harness.generated.resolve();
+  await harness.generated.promise;
+  await new Promise(resolve => setImmediate(resolve));
+
+  assert.equal(harness.currentCfi(), secondSavedCfi);
+  assert.equal(harness.reports.length, reportsBeforeOldCompletion);
 });
 
 test('speech progress and reading progress share the spoken CFI after locations exist', () => {
