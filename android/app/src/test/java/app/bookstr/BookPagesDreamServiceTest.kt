@@ -231,6 +231,8 @@ class BookPagesDreamServiceTest {
 
         val webView = ReflectionHelpers.getField<WebView>(service, "webView")
         val webShadow = Shadows.shadowOf(webView)
+        webShadow.webViewClient.onPageFinished(webView, "https://appassets.androidplatform.net/assets/other.html")
+        assertNull(webShadow.lastEvaluatedJavascript)
         webShadow.webViewClient.onPageFinished(webView, "https://appassets.androidplatform.net/assets/reader.html")
         val epubResponse = webShadow.webViewClient.shouldInterceptRequest(
             webView,
@@ -250,6 +252,15 @@ class BookPagesDreamServiceTest {
             .putExtra(NarrationService.EXTRA_IS_PLAYING, true)
             .putExtra(NarrationService.EXTRA_BOOK_ID, bookId))
         Shadows.shadowOf(Looper.getMainLooper()).idle()
+        Shadows.shadowOf(Looper.getMainLooper()).idleFor(2, TimeUnit.SECONDS)
+        awaitDreamIo(service)
+        Shadows.shadowOf(Looper.getMainLooper()).idle()
+        assertEquals("Unchanged progress must leave the screensaver page in place", initialScript, webShadow.lastEvaluatedJavascript)
+        runBlocking { app.database.bookProgressDao().upsert(initialProgress.copy(cfi = " ")) }
+        Shadows.shadowOf(Looper.getMainLooper()).idleFor(2, TimeUnit.SECONDS)
+        awaitDreamIo(service)
+        Shadows.shadowOf(Looper.getMainLooper()).idle()
+        assertEquals("Blank progress must leave the screensaver page in place", initialScript, webShadow.lastEvaluatedJavascript)
         val narrationProgress = initialProgress.copy(progression = 0.4, cfi = "narration-progress-cfi", updatedAt = 20L)
         runBlocking { app.database.bookProgressDao().upsert(narrationProgress) }
         Shadows.shadowOf(Looper.getMainLooper()).idleFor(2, TimeUnit.SECONDS)
